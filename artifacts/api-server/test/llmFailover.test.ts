@@ -1625,6 +1625,68 @@ describe("createChatStreamWithFailover", () => {
     expect(result.failedOver).toBe(true);
     expect(createMock).toHaveBeenCalledTimes(1);
   });
+
+  it("hops to OpenRouter when Workers AI streams a 4006 SSE error after run() returns", async () => {
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    const encoder = new TextEncoder();
+    setAiBinding({
+      run: async () =>
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(
+              encoder.encode(
+                'data: {"success":false,"errors":[{"code":4006,"message":"You have used up your daily free allocation of 10,000 neurons"}]}\n\n',
+              ),
+            );
+            controller.close();
+          },
+        }),
+    });
+    createMock.mockResolvedValueOnce(fakeStream("openrouter-sse"));
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 32,
+      messages: [{ role: "user", content: "hello" }],
+    });
+    expect(result.provider).toBe("openrouter");
+    expect(result.failedOver).toBe(true);
+    expect(result.model).toBe("minimax/minimax-m2.7:free");
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("hops to OpenRouter when Workers AI returns a 429 Response with 4006", async () => {
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    setAiBinding({
+      run: async () =>
+        new Response(
+          JSON.stringify({
+            success: false,
+            errors: [
+              {
+                code: 4006,
+                message: "You have used up your daily free allocation of 10,000 neurons",
+              },
+            ],
+          }),
+          { status: 429 },
+        ),
+    });
+    createMock.mockResolvedValueOnce(fakeStream("openrouter-429"));
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 32,
+      messages: [{ role: "user", content: "hello" }],
+    });
+    expect(result.provider).toBe("openrouter");
+    expect(result.failedOver).toBe(true);
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("createChatCompletionWithFailover", () => {

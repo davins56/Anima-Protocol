@@ -9,11 +9,8 @@ const express: any = require("express");
 
 import { runWithDbRequestScope } from "@workspace/db";
 import { aiBinding } from "./lib/aiBinding";
-import {
-  WORKERS_AI_CHAT_MODEL,
-  isWorkersAiFreeQuotaError,
-  workersAiHttpFailure,
-} from "./lib/workersAi";
+import { createChatCompletionWithFailover } from "./lib/llmFailover";
+import { workersAiHttpFailure } from "./lib/workersAi";
 import { syncCloudflareRuntimeEnvMiddleware } from "./lib/cloudflareEnv";
 import {
   CLERK_PROXY_PATH,
@@ -112,7 +109,11 @@ app.get("/api/health", (_req, res) => {
 // CLERK_PUBLISHABLE_KEY cannot 500 every character/store request.
 app.use(safeClerkMiddleware());
 
-// DeepSeek via Workers AI — routed through AI Gateway.
+// Upgrade / operator probe. Same provider chain as signed-in chat
+// (`createChatCompletionWithFailover`): Workers AI first, OpenRouter after
+// hoppable 4006 when ANIMA_OPENROUTER_FALLBACK is on. Do not call
+// `aiBinding.run` here — that is what made the probe return instant 429
+// while healthz already listed chain=[workersai,openrouter].
 app.post("/api/ai/chat", async (req: Request, res: Response) => {
   if (!aiBinding) {
     res.status(503).json({ error: "AI binding not available" });
@@ -124,18 +125,17 @@ app.post("/api/ai/chat", async (req: Request, res: Response) => {
     [{ role: "system", content: "You are a helpful assistant." },
      { role: "user", content: prompt ?? "Hello!" }];
   try {
-    const response = await aiBinding.run(WORKERS_AI_CHAT_MODEL, {
+    const result = await createChatCompletionWithFailover({
+      tier: "standard",
+      maxTokens: 256,
       messages: chatMessages,
     });
-    if (isWorkersAiFreeQuotaError(response)) {
-      const failure = workersAiHttpFailure(response);
-      res.status(failure.status).json({
-        error: failure.error,
-        code: failure.code,
-      });
-      return;
-    }
-    res.json(response);
+    res.json({
+      response: result.content,
+      provider: result.provider,
+      model: result.model,
+      failed_over: result.failedOver,
+    });
   } catch (err) {
     logger.error({ err }, "DeepSeek AI request failed");
     const failure = workersAiHttpFailure(err);
