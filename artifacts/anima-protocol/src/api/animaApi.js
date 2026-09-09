@@ -15,7 +15,7 @@ export function chatHttpError(err, status) {
   if (status === 401 || /unauthorized/i.test(raw)) {
     return chatAuthRequiredError();
   }
-  if (status === 404 || /session not found/i.test(raw)) {
+  if (status === 404 || /session not found|^not found$/i.test(raw)) {
     const missing = new Error(
       "This conversation could not be found. Go back and start the session again.",
     );
@@ -30,7 +30,7 @@ export function chatHttpError(err, status) {
   return new Error(raw || err?.error || `API error: ${status}`);
 }
 
-async function requireChatAuthHeaders(extra, options = {}) {
+export async function requireChatAuthHeaders(extra, options = {}) {
   const headers = await authHeaders(extra, options);
   if (!headers.Authorization) {
     throw chatAuthRequiredError();
@@ -41,11 +41,11 @@ async function requireChatAuthHeaders(extra, options = {}) {
 /**
  * Cap a hung SSE body so Chat cannot sit on "Processing..." forever.
  * Must stay above the Worker free-tier open budget (80s) plus first-chunk
- * (35s) so the browser does not abort while OpenRouter is still hopping
- * m2.7 → m3 → Gemma 4. Keep in lockstep with
+ * (50s) so the browser does not abort while DeepSeek R1 is still thinking
+ * or OpenRouter is hopping models. Keep in lockstep with
  * `artifacts/api-server/src/lib/chatTimeouts.ts` `CHAT_STREAM_TIMEOUT_MS`.
  */
-export const CHAT_STREAM_TIMEOUT_MS = 115_000;
+export const CHAT_STREAM_TIMEOUT_MS = 130_000;
 
 function chatStreamTimeoutError() {
   const err = new Error("The companion took too long to reply. Please try again.");
@@ -71,6 +71,43 @@ async function request(path, options = {}) {
   return res;
 }
 
+/**
+ * Clerk-gated SSE POST used by `/chat/messages` and `/openai/…`.
+ * Auth wait is outside the abort window so a late mint cannot starve the reply.
+ */
+async function* postAuthedSse(path, body) {
+  let headers = await requireChatAuthHeaders();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CHAT_STREAM_TIMEOUT_MS);
+  try {
+    const postOnce = (requestHeaders) =>
+      fetch(apiUrl(path), {
+        method: "POST",
+        headers: requestHeaders,
+        credentials: "same-origin",
+        signal: controller.signal,
+        body,
+      });
+    let res = await postOnce(headers);
+    if (res.status === 401) {
+      headers = await requireChatAuthHeaders(undefined, { skipCache: true });
+      res = await postOnce(headers);
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw chatHttpError(err, res.status);
+    }
+    yield* readSseJsonStream(res.body);
+  } catch (err) {
+    if (err?.name === "AbortError" || err?.code === "ABORT_ERR") {
+      throw chatStreamTimeoutError();
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export const animaApi = {
   conversations: {
     list: () => request("/openai/conversations").then((r) => r.json()),
@@ -92,26 +129,43 @@ export const animaApi = {
     responseJsonSchema,
     maxTokens,
   ) {
-    const res = await fetch(
-      apiUrl(`/openai/conversations/${conversationId}/messages`),
-      {
-        method: "POST",
-        headers: await authHeaders(),
-        credentials: 'same-origin',
-        body: JSON.stringify({
-          content,
-          systemPrompt,
-          deepMode: !!deepMode,
-          ...(responseJsonSchema ? { responseJsonSchema } : {}),
-          ...(typeof maxTokens === "number" ? { maxTokens } : {}),
-        }),
-      }
+    yield* postAuthedSse(
+      `/openai/conversations/${conversationId}/messages`,
+      JSON.stringify({
+        content,
+        systemPrompt,
+        deepMode: !!deepMode,
+        ...(responseJsonSchema ? { responseJsonSchema } : {}),
+        ...(typeof maxTokens === "number" ? { maxTokens } : {}),
+      }),
     );
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(err.error || err.message || res.statusText || `API error: ${res.status}`);
-    }
-    yield* readSseJsonStream(res.body);
+  },
+
+  /**
+   * Signed-in OpenAI chat completions (Clerk Bearer). Used by InvokeLLM.
+   * Do not confuse with unauthenticated POST /api/ai/chat.
+   */
+  chatCompletions: async function* ({
+    messages,
+    content,
+    systemPrompt,
+    deepMode,
+    responseJsonSchema,
+    maxTokens,
+    stream = true,
+  } = {}) {
+    yield* postAuthedSse(
+      "/openai/v1/chat/completions",
+      JSON.stringify({
+        ...(Array.isArray(messages) ? { messages } : {}),
+        ...(typeof content === "string" ? { content } : {}),
+        systemPrompt,
+        deepMode: !!deepMode,
+        stream: stream !== false,
+        ...(responseJsonSchema ? { responseJsonSchema } : {}),
+        ...(typeof maxTokens === "number" ? { maxTokens } : {}),
+      }),
+    );
   },
 
   chat: {
@@ -168,57 +222,30 @@ export const animaApi = {
       region,
     }) {
       // Resolve Clerk before arming the stream abort — a late OTP mint must
-      // not consume the 115s reply budget (same isolation as ChatSession create).
-      let headers = await requireChatAuthHeaders();
-      const body = JSON.stringify({
-        session_id: sessionId,
-        content,
-        character_id: characterId,
-        character_ids: characterIds,
-        assistant_character_id: assistantCharacterId,
-        assistant_character_name: assistantCharacterName,
-        force_character_id: forceCharacterId || null,
-        eligible_character_ids: eligibleCharacterIds,
-        use_scene_mind: useSceneMind,
-        is_continue: !!isContinue,
-        mode,
-        system_prompt: systemPrompt,
-        deep_mode: !!deepMode,
-        persist,
-        turn_id: turnId,
-        persistence_owner: persistenceOwner,
-        metadata,
-        region,
-      });
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), CHAT_STREAM_TIMEOUT_MS);
-      try {
-        const postOnce = (requestHeaders) =>
-          fetch(apiUrl("/chat/messages"), {
-            method: "POST",
-            headers: requestHeaders,
-            credentials: "same-origin",
-            signal: controller.signal,
-            body,
-          });
-        let res = await postOnce(headers);
-        if (res.status === 401) {
-          headers = await requireChatAuthHeaders(undefined, { skipCache: true });
-          res = await postOnce(headers);
-        }
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({ error: res.statusText }));
-          throw chatHttpError(err, res.status);
-        }
-        yield* readSseJsonStream(res.body);
-      } catch (err) {
-        if (err?.name === "AbortError" || err?.code === "ABORT_ERR") {
-          throw chatStreamTimeoutError();
-        }
-        throw err;
-      } finally {
-        clearTimeout(timer);
-      }
+      // not consume the reply budget (same isolation as ChatSession create).
+      yield* postAuthedSse(
+        "/chat/messages",
+        JSON.stringify({
+          session_id: sessionId,
+          content,
+          character_id: characterId,
+          character_ids: characterIds,
+          assistant_character_id: assistantCharacterId,
+          assistant_character_name: assistantCharacterName,
+          force_character_id: forceCharacterId || null,
+          eligible_character_ids: eligibleCharacterIds,
+          use_scene_mind: useSceneMind,
+          is_continue: !!isContinue,
+          mode,
+          system_prompt: systemPrompt,
+          deep_mode: !!deepMode,
+          persist,
+          turn_id: turnId,
+          persistence_owner: persistenceOwner,
+          metadata,
+          region,
+        }),
+      );
     },
 
     completeMessage: async (payload) => {

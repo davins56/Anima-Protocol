@@ -156,4 +156,22 @@ describe("consumeLlmStream", () => {
     expect(result.content).toBe("I hear you. Stay close.");
     expect(deltas.join("")).toBe("I hear you. Stay close.");
   });
+
+  it("treats DeepSeek <think> tokens as first-chunk activity, not a stall", async () => {
+    let reasoning = 0;
+    async function* thinkThenAnswer() {
+      yield { choices: [{ delta: { content: "<think>plan" } }] };
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      yield { choices: [{ delta: { content: " it</think>\n\nStay close." } }] };
+    }
+
+    const result = await consumeLlmStream(thinkThenAnswer(), {
+      onReasoning: () => reasoning++,
+      firstChunkMs: 80,
+      stallMs: 20,
+      totalMs: 200,
+    });
+    expect(result.content).toBe("Stay close.");
+    expect(reasoning).toBe(1);
+  });
 });
