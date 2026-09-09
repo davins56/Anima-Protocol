@@ -35,6 +35,7 @@ vi.mock("@/api/base44Client", () => ({
     },
   },
   waitForStoreAuth: mocks.waitForStoreAuth,
+  awaitCompanionStoreAuth: mocks.waitForStoreAuth,
 }));
 
 vi.mock("@/lib/AuthContext", () => ({
