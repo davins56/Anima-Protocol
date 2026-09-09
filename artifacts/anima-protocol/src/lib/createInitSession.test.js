@@ -308,6 +308,40 @@ describe("applyIdentityFallback", () => {
 });
 
 describe("Chat Init wiring", () => {
+  it("locks the New Session → ChatSession → primed /chat/:id hand-off", () => {
+    const chat = readFileSync(join(srcRoot, "pages/Chat.jsx"), "utf8");
+    const modal = readFileSync(
+      join(srcRoot, "components/chat/NewSessionModal.jsx"),
+      "utf8",
+    );
+    const init = readFileSync(join(srcRoot, "lib/createInitSession.js"), "utf8");
+    const auth = readFileSync(join(srcRoot, "lib/AuthContext.jsx"), "utf8");
+    const client = readFileSync(join(srcRoot, "api/base44Client.js"), "utf8");
+
+    expect(modal).toMatch(/if \(mode === "solo"\) \{\s*setSelected\(\[id\]\)/);
+    expect(modal).toContain("character_id: selectedIds[0]");
+    expect(modal).toContain("character: resolvedSelected[0]");
+    expect(modal).toContain("const newSession = await onCreate(sessionData)");
+    expect(modal).not.toMatch(/toggleSelect[\s\S]{0,400}navigate\(`\/chat\//);
+
+    expect(init).toContain("await waitForAuth()");
+    expect(init).toContain("requireCreatedSession(await create(sessionFields))");
+    expect(client).toContain("waitForAuth: false");
+    expect(client).toMatch(/Auth wait is NOT covered by AbortSignal\.timeout/);
+
+    expect(chat).toContain("await createInitChatSession(payload)");
+    expect(chat).toContain("if (!isUsableSessionId(newSession?.id))");
+    expect(chat).toContain("rememberCreatedSession(primedSession)");
+    expect(chat).toContain(
+      "navigate(`/chat/${primedSession.id}`, { state: { primedSession } })",
+    );
+    expect(chat).not.toContain("navigate(`/chat/${undefined}");
+
+    expect(auth).toContain("setAuthTokenGetter(async () => {");
+    expect(auth).not.toContain("setAuthTokenGetter(() => getToken");
+    expect(auth).not.toContain("setAuthTokenGetter(() => async () =>");
+  });
+
   it("awaits createInitChatSession and does not rewrite messages after create", () => {
     const chat = readFileSync(join(srcRoot, "pages/Chat.jsx"), "utf8");
     const init = readFileSync(join(srcRoot, "lib/createInitSession.js"), "utf8");

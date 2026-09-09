@@ -425,6 +425,30 @@ describe("NewSessionModal", () => {
     });
   });
 
+  it("does not navigate on character tap — only Init calls onCreate", async () => {
+    const onCreate = vi.fn().mockResolvedValue({ id: "session-1" });
+    const { container, root, overlay } = renderModal({ onCreate });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await click(buttonByText(overlay, "Serenity"));
+    expect(onCreate).not.toHaveBeenCalled();
+    expect(navigateMock).not.toHaveBeenCalled();
+
+    await click(buttonByText(overlay, "Init"));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(onCreate).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      root.unmount();
+      container.remove();
+    });
+  });
+
   it("creates immediately with seed ids while a remapping upsert runs in the background", async () => {
     loadRosterCharactersMock.mockResolvedValue({
       characters: [
