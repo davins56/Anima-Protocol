@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/api/base44Client", () => ({
+  awaitCompanionStoreAuth: vi.fn().mockResolvedValue("token"),
   base44: {
     entities: {
       Anima: { list: mocks.listAnima },
@@ -15,6 +16,7 @@ vi.mock("@/api/base44Client", () => ({
   },
 }));
 
+import { awaitCompanionStoreAuth } from "@/api/base44Client";
 import {
   companionLookHref,
   companionPersistPatch,
@@ -158,6 +160,7 @@ describe("loadCompanionRecord", () => {
 
 describe("listPersonalAnimas", () => {
   beforeEach(() => {
+    awaitCompanionStoreAuth.mockReset().mockResolvedValue("token");
     mocks.listAnima.mockReset().mockResolvedValue([]);
     mocks.listCharacter.mockReset().mockResolvedValue([]);
     mocks.filterCharacter.mockReset().mockResolvedValue([]);
@@ -192,6 +195,7 @@ describe("listPersonalAnimas", () => {
     });
 
     const rows = await listPersonalAnimas(100);
+    expect(awaitCompanionStoreAuth).toHaveBeenCalled();
     expect(rows.map((row) => row.name)).toEqual(
       expect.arrayContaining(["Serenity", "Aelynd"]),
     );

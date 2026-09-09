@@ -43,6 +43,7 @@ vi.mock("react-router-dom", async () => {
 });
 
 vi.mock("@/api/base44Client", () => ({
+  awaitCompanionStoreAuth: vi.fn().mockResolvedValue("tok"),
   waitForStoreAuth: vi.fn().mockResolvedValue("tok"),
   base44: {
     entities: {

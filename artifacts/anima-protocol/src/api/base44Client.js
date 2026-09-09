@@ -26,6 +26,7 @@ import {
   clearAuthTokenGetter,
   getToken,
   hasAuthTokenGetter,
+  awaitCompanionStoreAuth,
   resolveStoreToken,
   setAuthTokenGetter,
   waitForStoreAuth,
@@ -34,7 +35,13 @@ import { hydrateStoreList, hydrateStoreRecord } from '@/lib/storeRecords';
 
 const STORE_BASE = () => apiUrl('/store');
 
-export { clearAuthTokenGetter, hasAuthTokenGetter, setAuthTokenGetter, waitForStoreAuth };
+export {
+  awaitCompanionStoreAuth,
+  clearAuthTokenGetter,
+  hasAuthTokenGetter,
+  setAuthTokenGetter,
+  waitForStoreAuth,
+};
 export {
   STORE_COMPANION_CREATE_TIMEOUT_MS,
   STORE_FETCH_TIMEOUT_MS,
@@ -241,8 +248,6 @@ export async function parseStoreErrorResponse(res) {
  * @param {string|{message: string, reason?: string, code?: string,
  *   dbError?: boolean, transport?: boolean}} detail
  */
-const AUTH_REQUIRED_ENTITIES = new Set(['Character', 'Anima', 'ChatSession']);
-
 function storeError(res, detail) {
   const info = typeof detail === 'string' ? { message: detail } : detail || {};
   const e = new Error(info.message);
@@ -953,11 +958,10 @@ async function queryEntity(entityName, opts) {
   const promise = (async () => {
     const token = await resolveStoreToken();
     if (!token) {
-      // A registered getter that has not minted yet used to look like an
-      // empty account — custom characters vanished and Init opened nothing.
-      if (AUTH_REQUIRED_ENTITIES.has(entityName) && hasAuthTokenGetter()) {
-        throw missingStoreTokenError();
-      }
+      // Shared store-level wait already ran. Keep the [] contract so
+      // Customise Anima (#428) can classify empty+no-token as unsigned.
+      // Roster / chat-open call awaitCompanionStoreAuth() first so a late
+      // Clerk mint is not treated as an empty account.
       return [];
     }
     const res = await storeFetch(
@@ -1085,7 +1089,7 @@ async function replaceMessages(sessionId, messages) {
 async function messagesBySessions(ids) {
   const list = Array.isArray(ids) ? ids.filter(Boolean) : [];
   if (list.length === 0) return {};
-  const token = await getToken();
+  const token = await resolveStoreToken();
   if (!token) return {};
   const res = await storeFetch('/messages/by-sessions', {
     method: 'POST',
