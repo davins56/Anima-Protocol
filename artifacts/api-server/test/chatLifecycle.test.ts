@@ -167,6 +167,7 @@ describe("chat lifecycle", () => {
     ).toBe("Hello from Anima.");
     expect(events.at(-1)).toMatchObject({
       done: true,
+      visible: "Hello from Anima.",
       turn_id: turnId,
       persistence_status: "generated",
     });
