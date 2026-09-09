@@ -343,7 +343,9 @@ export async function createInitChatSession(
   for (let i = 0; i < attempts; i += 1) {
     try {
       const session = requireCreatedSession(
-        await create(sessionFields, createOpts),
+        createOpts
+          ? await create(sessionFields, createOpts)
+          : await create(sessionFields),
       );
       if (messages.length > 0) {
         Promise.resolve(persistMessages(session.id, messages)).catch((err) => {
