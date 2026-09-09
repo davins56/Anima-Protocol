@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyCustomiseAnimaLoadError,
+  classifyEmptyCustomiseAnimaLoad,
   customiseAnimaLoadCopy,
 } from "./customiseAnimaLoad";
 
@@ -103,6 +104,14 @@ describe("classifyCustomiseAnimaLoadError", () => {
         }),
       ),
     ).toBe("database");
+  });
+});
+
+describe("classifyEmptyCustomiseAnimaLoad", () => {
+  it("treats an empty roster without a store token as unsigned", () => {
+    expect(classifyEmptyCustomiseAnimaLoad({ token: null })).toBe("unsigned");
+    expect(classifyEmptyCustomiseAnimaLoad({})).toBe("unsigned");
+    expect(classifyEmptyCustomiseAnimaLoad({ token: "sess" })).toBe("empty");
   });
 });
 

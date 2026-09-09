@@ -203,6 +203,55 @@ describe("Customise Anima hub", () => {
     expect(screen.getByRole("tab", { name: /Look/i })).toBeTruthy();
   });
 
+  it("still loads the hub when the Clerk token wait times out", async () => {
+    mocks.waitForStoreAuth.mockRejectedValue(
+      new Error("Store auth token not available"),
+    );
+    mocks.listAnima.mockResolvedValue([
+      { id: "anima-1", name: "Serenity", assigned_user: "operator@example.com" },
+    ]);
+    renderPage();
+
+    expect(await screen.findByText("Look panel Serenity")).toBeTruthy();
+    expect(screen.queryByText(/Sign in to customise/i)).toBeNull();
+  });
+
+  it("treats an empty list after a token timeout as unsigned, not Forge Anima", async () => {
+    mocks.waitForStoreAuth.mockRejectedValue(
+      new Error("Store auth token not available"),
+    );
+    renderPage();
+
+    expect(await screen.findByText("Sign in to customise your Anima.")).toBeTruthy();
+    expect(screen.queryByText("No personal Anima found yet.")).toBeNull();
+  });
+
+  it("does not restart the companion load when Clerk hydrates a new user object", async () => {
+    mocks.auth.user = { id: "user_1", email: "operator@example.com" };
+    mocks.listAnima.mockResolvedValue([
+      { id: "anima-1", name: "Serenity", assigned_user: "operator@example.com" },
+    ]);
+    const { rerender } = renderPage();
+    expect(await screen.findByText("Look panel Serenity")).toBeTruthy();
+    const calls = mocks.listAnima.mock.calls.length;
+
+    mocks.auth.user = {
+      id: "user_1",
+      email: "operator@example.com",
+      full_name: "Operator",
+    };
+    rerender(
+      <MemoryRouter>
+        <CustomiseAnima />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Look panel Serenity")).toBeTruthy();
+    });
+    expect(mocks.listAnima.mock.calls.length).toBe(calls);
+  });
+
   it("loads the personal Anima hub when the store works", async () => {
     mocks.listAnima.mockResolvedValue([
       { id: "anima-1", name: "Serenity", assigned_user: "operator@example.com" },
