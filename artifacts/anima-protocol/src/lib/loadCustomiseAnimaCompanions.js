@@ -1,8 +1,10 @@
-import { base44, waitForStoreAuth } from "@/api/base44Client";
-import { STORE_AUTH_WAIT_MS } from "@/lib/storeTimeouts";
+import { base44 } from "@/api/base44Client";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import { classifyEmptyCustomiseAnimaLoad } from "@/lib/customiseAnimaLoad";
-import { listPersonalAnimas } from "@/lib/listPersonalAnimas";
+import {
+  awaitCompanionStoreAuth,
+  listPersonalAnimas,
+} from "@/lib/listPersonalAnimas";
 
 /**
  * Shared Settings + Customise Anima companion fetch.
@@ -23,10 +25,9 @@ export async function loadCustomiseAnimaCompanions({
   } catch {
     /* bootstrap is fail-open — still try the companion list */
   }
-  try {
-    token = await waitForStoreAuth(STORE_AUTH_WAIT_MS);
-  } catch (err) {
-    authWaitError = err;
+  token = await awaitCompanionStoreAuth();
+  if (!token) {
+    authWaitError = new Error("Store auth token not available");
   }
 
   let me = meFallback || null;

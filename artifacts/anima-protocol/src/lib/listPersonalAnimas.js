@@ -1,4 +1,5 @@
-import { base44 } from "@/api/base44Client";
+import { base44, waitForStoreAuth } from "@/api/base44Client";
+import { STORE_AUTH_WAIT_MS } from "@/lib/storeTimeouts";
 import {
   isKnownPersonalAnimaName,
   isPersonalAnimaRecord,
@@ -102,6 +103,21 @@ async function listByNameSearch(entity, name, limit) {
 }
 
 /**
+ * Wait for a Clerk store token before companion lists.
+ *
+ * Shared root (also used by chat roster via Character.list): queryEntity
+ * returns [] when getToken() is still minting. This helper is the Customise /
+ * Animas wait only — chat-open / loadRosterCharacters stays on Upgrade's lane.
+ */
+export async function awaitCompanionStoreAuth() {
+  try {
+    return await waitForStoreAuth(STORE_AUTH_WAIT_MS);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Load personal companions from Anima + Character.
  *
  * Character.list(limit) is newest-first. A second Anima stored as an older
@@ -109,6 +125,10 @@ async function listByNameSearch(entity, name, limit) {
  * Also query `creation_method` and known name aliases across the whole store.
  */
 export async function listPersonalAnimas(limit = 500) {
+  // queryEntity returns [] when the token is not ready. Wait here so Settings
+  // → Customise Anima and Animas do not look empty on iPad Safari hydration.
+  // Chat-open still uses Character.list / loadRosterCharacters (Upgrade lane).
+  await awaitCompanionStoreAuth();
   // Primary Anima.list must throw so Customise Anima can classify
   // timeout / database / misconfigured failures. Recovery queries are
   // best-effort and must not hide that error.
