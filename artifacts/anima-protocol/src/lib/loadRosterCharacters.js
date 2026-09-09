@@ -91,19 +91,10 @@ export async function loadRosterCharacters({
     await whenBootstrapReady();
   }
 
-  // Same fail-open Clerk wait Customise Anima uses. Character.list still
-  // returns [] when getToken() is minting — do not treat that as empty.
-  const token = await awaitCompanionStoreAuth(STORE_AUTH_WAIT_MS);
-  const authError = token
-    ? null
-    : new Error("Store auth token not available");
-  if (authError) {
-    console.warn(
-      "[Anima] Store auth not ready for roster load:",
-      authError.message,
-    );
-  }
-
+  // Do not awaitCompanionStoreAuth here. Character.list → queryEntity already
+  // waits for Clerk, then storeFetch arms a fresh 8s abort. Stacking an 8s
+  // caller wait + storeFetch(8s) is what left the list with zero time and
+  // painted bundled OFFLINE starters after a healthy Worker GET.
   let rawCharacters = [];
   let listError = null;
   try {
@@ -114,9 +105,8 @@ export async function loadRosterCharacters({
     listError = err;
     console.warn("[Anima] Character roster load failed:", err?.message || err);
     rawCharacters = [];
-    // First list after OTP often races schema warmup. Wait for auth again,
-    // then retry once with a fresh storeFetch abort — do not treat that as
-    // a sticky offline roster.
+    // Optional one retry after auth settles. The retry list still gets its
+    // own fresh 8s — this wait is not shared with the fetch abort.
     if (isStoreTimeoutError(err)) {
       await awaitCompanionStoreAuth(STORE_AUTH_WAIT_MS);
       try {
@@ -167,7 +157,7 @@ export async function loadRosterCharacters({
     animas = [];
   }
 
-  const storeError = listError || seedError || authError;
+  const storeError = listError || seedError;
   const storeCharacters = rawCharacters;
   let usingBundledSeed = false;
   // Always merge missing starters onto a successful store list so custom

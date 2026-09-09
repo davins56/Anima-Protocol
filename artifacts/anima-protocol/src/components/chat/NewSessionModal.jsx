@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { X, Search, Check, Plus } from "lucide-react";
 import { toast } from "sonner";
-import { awaitCompanionStoreAuth } from "@/lib/listPersonalAnimas";
 import { base44 } from "@/api/base44Client";
 import StoryTemplateBrowser from "@/components/templates/StoryTemplateBrowser";
 import CanonicalStoriesBrowser from "@/components/stories/CanonicalStoriesBrowser";
@@ -183,11 +182,9 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
     if (selected.length === 0 || creating) return;
     setCreating(true);
     setLoadError(null);
-    try {
-      await awaitCompanionStoreAuth();
-    } catch {
-      // createInitChatSession / storeFetch still surface a sign-in error.
-    }
+    // Clerk mint is awaited inside createInitChatSession, then ChatSession.create
+    // uses a fresh 20s abort with that token. Do not wait 8s here — stacking
+    // that wait with storeFetch left Init with no create budget.
 
     // Bundled starters are not in Postgres yet. Persist them in the background
     // — bulk-upsert keeps client seed ids, so Init must not await a 20s

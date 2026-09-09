@@ -82,6 +82,7 @@ async function storeFetch(path, options = {}) {
     signal: userSignal,
     headers: optionHeaders,
     retryOnTimeout = false,
+    token: providedToken,
     ...fetchOptions
   } = options;
   const budget =
@@ -89,10 +90,15 @@ async function storeFetch(path, options = {}) {
       ? timeoutMs
       : STORE_FETCH_TIMEOUT_MS;
 
-  // Auth wait is NOT covered by AbortSignal.timeout. After OTP, Clerk mint
-  // can take seconds — if that wait shares the ChatSession create budget,
-  // Init hangs for ~20s then aborts before the POST can finish.
-  let token = await getToken();
+  // Auth wait is its own budget (STORE_AUTH_WAIT_MS / getToken cap).
+  // Never arm AbortSignal.timeout until the bearer is ready — a shared
+  // 8s signal is what made roster lists look timed-out/offline after mint.
+  // Callers that already awaited auth must pass `token` so this does not
+  // stack a second 8s wait that leaves the list with zero time.
+  let token =
+    typeof providedToken === 'string' && providedToken.length > 0
+      ? providedToken
+      : await getToken();
   if (!token && hasAuthTokenGetter()) {
     token = await resolveStoreToken();
   }
@@ -973,19 +979,18 @@ async function queryEntity(entityName, opts) {
   const promise = (async () => {
     const token = await resolveStoreToken();
     if (!token) {
-      // Shared store-level wait already ran. Keep the [] contract so
+      // One store-level auth wait already ran. Keep the [] contract so
       // Customise Anima (#428) can classify empty+no-token as unsigned.
-      // Roster / chat-open call awaitCompanionStoreAuth() first so a late
-      // Clerk mint is not treated as an empty account.
       return [];
     }
     const res = await storeFetch(
       `/${encodeURIComponent(entityName)}${qs ? `?${qs}` : ''}`,
       {
         retryOnTimeout: true,
-        timeoutMs: ROSTER_ENTITIES.has(entityName)
-          ? STORE_LIST_TIMEOUT_MS
-          : undefined,
+        token,
+        // Fresh 8s after the auth wait — do not reuse the auth clock and
+        // do not raise the list budget (lists are 65–100ms when authed).
+        timeoutMs: STORE_LIST_TIMEOUT_MS,
       },
     );
     // Never cache auth failures as an empty roster — that made bootstrap/repair
@@ -1072,7 +1077,7 @@ async function listMessages(sessionId, { limit, beforeSeq } = {}) {
   params.set('session_id', sessionId);
   if (typeof limit === 'number' && limit >= 0) params.set('limit', String(limit));
   if (typeof beforeSeq === 'number') params.set('before_seq', String(beforeSeq));
-  const res = await storeFetch(`/messages?${params.toString()}`);
+  const res = await storeFetch(`/messages?${params.toString()}`, { token });
   if (res.status === 401) throw missingStoreTokenError();
   if (!res.ok) await throwErr(res);
   return res.json();
@@ -1116,6 +1121,7 @@ async function messagesBySessions(ids) {
   const res = await storeFetch('/messages/by-sessions', {
     method: 'POST',
     body: JSON.stringify({ ids: list }),
+    token,
   });
   if (res.status === 401) return {};
   if (!res.ok) await throwErr(res);
@@ -1214,6 +1220,7 @@ function entityStore(entityName) {
       }
       const res = await storeFetch(
         `/${encodeURIComponent(entityName)}/${encodeURIComponent(id)}`,
+        { token },
       );
       if (res.status === 401) throw missingStoreTokenError();
       if (res.status === 404) return null;
@@ -1236,6 +1243,7 @@ function entityStore(entityName) {
         body: JSON.stringify(data || {}),
         timeoutMs,
         timeoutMessage: opts.timeoutMessage,
+        token: opts.token,
       });
       if (!res.ok) await throwErr(res);
       bumpVersion(entityName);
@@ -1319,7 +1327,7 @@ function entityStore(entityName) {
   if (entityName === 'ChatSession') {
     return {
       ...base,
-      async create(data) {
+      async create(data, opts = {}) {
         const hasMessages =
           data && Object.prototype.hasOwnProperty.call(data, 'messages');
         const messages = hasMessages ? data.messages : undefined;
@@ -1334,7 +1342,7 @@ function entityStore(entityName) {
         // to persist — empty replace was a second 8s-budget write on Init.
         const session = await base.create(
           { ...rest, messages_migrated: rest.messages_migrated ?? true },
-          { timeoutMs: STORE_SESSION_CREATE_TIMEOUT_MS },
+          { timeoutMs: STORE_SESSION_CREATE_TIMEOUT_MS, token: opts.token },
         );
         if (Array.isArray(messages) && messages.length > 0) {
           const savedMessages = await replaceMessages(session.id, messages);

@@ -89,7 +89,7 @@ describe("createInitChatSession", () => {
       create.mock.invocationCallOrder[0],
     );
     expect(create).toHaveBeenCalledTimes(1);
-    expect(create).toHaveBeenCalledWith(payload);
+    expect(create).toHaveBeenCalledWith(payload, { token: "tok" });
     expect(session).toEqual({ id: "sess-1", title: "T'Challa" });
   });
 
@@ -325,9 +325,10 @@ describe("Chat Init wiring", () => {
     expect(modal).not.toMatch(/toggleSelect[\s\S]{0,400}navigate\(`\/chat\//);
 
     expect(init).toContain("await waitForAuth()");
-    expect(init).toContain("requireCreatedSession(await create(sessionFields))");
+    expect(init).toContain("await create(sessionFields, createOpts)");
+    expect(init).toContain("token");
     expect(client).toContain("waitForAuth: false");
-    expect(client).toMatch(/Auth wait is NOT covered by AbortSignal\.timeout/);
+    expect(client).toMatch(/Auth wait is its own budget/);
 
     expect(chat).toContain("await createInitChatSession(payload)");
     expect(chat).toContain("if (!isUsableSessionId(newSession?.id))");
@@ -372,15 +373,16 @@ describe("Chat Init wiring", () => {
     expect(protocol).not.toMatch(/const NewChat = lazy/);
   });
 
-  it("New Session Init waits for Clerk before onCreate / ChatSession.create", () => {
+  it("New Session Init does not stack an 8s auth wait before onCreate", () => {
     const modal = readFileSync(
       join(srcRoot, "components/chat/NewSessionModal.jsx"),
       "utf8",
     );
-    expect(modal).toContain("await awaitCompanionStoreAuth()");
-    expect(modal).toMatch(
-      /await awaitCompanionStoreAuth\(\);[\s\S]*const newSession = await onCreate\(sessionData\)/,
-    );
+    const init = readFileSync(join(srcRoot, "lib/createInitSession.js"), "utf8");
+    expect(modal).not.toContain("await awaitCompanionStoreAuth()");
+    expect(modal).toContain("const newSession = await onCreate(sessionData)");
+    expect(init).toContain("const token = await waitForAuth()");
+    expect(init).toContain("await create(sessionFields, createOpts)");
   });
 
   it("Story Chooser creates via createInitChatSession so /messages/replace cannot block", () => {

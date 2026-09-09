@@ -77,7 +77,7 @@ describe("loadRosterCharacters", () => {
     const result = await loadRosterCharacters();
 
     expect(whenBootstrapReady).toHaveBeenCalled();
-    expect(awaitCompanionStoreAuth).toHaveBeenCalled();
+    expect(awaitCompanionStoreAuth).not.toHaveBeenCalled();
     expect(retryStarterSeed).not.toHaveBeenCalled();
     expect(result.characters.map((c) => c.name)).toContain("Korra");
     expect(result.usingBundledSeed).toBe(false);
@@ -210,7 +210,7 @@ describe("loadRosterCharacters", () => {
 
     const result = await loadRosterCharacters({ retrySeed: false });
 
-    expect(awaitCompanionStoreAuth).toHaveBeenCalledTimes(2);
+    expect(awaitCompanionStoreAuth).toHaveBeenCalledTimes(1);
     expect(characterList).toHaveBeenCalledTimes(2);
     expect(result.usingBundledSeed).toBe(false);
     expect(result.fallbackKind).toBeNull();
