@@ -20,6 +20,16 @@
     "nodejs_compat",
     "nodejs_compat_populate_process_env"
   ],
+  // Workers Logs: ingest invocation events so Observability is not an empty
+  // "healthy" dashboard. Needed to tell API HTML/5xx from edge/assets
+  // failures after deploy. Schema: observability.logs (wrangler 4.129.1).
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "invocation_logs": true,
+      "head_sampling_rate": 1
+    }
+  },
   "assets": {
     // Root `pnpm build` copies artifacts/anima-protocol/dist/public → ./dist
     // and drops Netlify `_redirects` (invalid on Workers: 200! / SPA loop).
