@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createVisibleReplyFilter,
+  hasThinkMarkup,
   visibleAssistantReply,
 } from "../src/lib/visibleAssistantReply";
 
@@ -8,6 +9,8 @@ describe("visibleAssistantReply", () => {
   it("leaves ordinary replies untouched", () => {
     expect(visibleAssistantReply("Hello there.")).toBe("Hello there.");
     expect(visibleAssistantReply("")).toBe("");
+    expect(hasThinkMarkup("Hello there.")).toBe(false);
+    expect(hasThinkMarkup("<think>plan")).toBe(true);
   });
 
   it("keeps the answer after DeepSeek R1 think tags", () => {

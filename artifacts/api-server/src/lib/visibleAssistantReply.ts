@@ -9,6 +9,10 @@ const UNCLOSED_THINK_RE = /<think(?:ing)?\b[^>]*>[\s\S]*$/i;
 const INNER_THINK_RE = /<think(?:ing)?\b[^>]*>([\s\S]*?)(?:<\/think(?:ing)?>|$)/gi;
 const HAS_THINK_RE = /<think(?:ing)?\b/i;
 
+export function hasThinkMarkup(raw: string): boolean {
+  return HAS_THINK_RE.test(String(raw ?? ""));
+}
+
 export function visibleAssistantReply(
   raw: string,
   opts: { allowThinkFallback?: boolean } = {},
