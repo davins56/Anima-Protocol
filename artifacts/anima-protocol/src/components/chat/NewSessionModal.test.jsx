@@ -102,8 +102,11 @@ vi.mock("@/lib/loadRosterCharacters", () => ({
       name: "Serenity",
       universe: "Protocol",
       category: "companion",
+      _bundled: true,
     },
   ],
+  hasAccountRosterRows: (characters) =>
+    (characters || []).some((c) => c && c.id && !c._bundled),
   loadRosterCharacters: loadRosterCharactersMock,
 }));
 
@@ -111,7 +114,9 @@ vi.mock("@/lib/seedCharacters", () => ({
   upsertCharacters: upsertCharactersMock,
 }));
 
-import NewSessionModal from "./NewSessionModal";
+import NewSessionModal, {
+  ACCOUNT_CHARACTERS_LOADING_MESSAGE,
+} from "./NewSessionModal";
 
 const TAB_BAR_Z = 999;
 
@@ -123,7 +128,17 @@ function tailwindZIndex(className) {
 }
 
 function modalOverlay() {
-  return document.querySelector('[data-testid="new-session-overlay"]');
+  const overlays = document.querySelectorAll('[data-testid="new-session-overlay"]');
+  return overlays[overlays.length - 1] || null;
+}
+
+function flushLoads() {
+  return act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
 }
 
 function renderModal(props = {}) {
@@ -170,6 +185,12 @@ async function fillTextarea(textarea, value) {
 }
 
 describe("NewSessionModal", () => {
+  afterEach(() => {
+    document.querySelectorAll('[data-testid="new-session-overlay"]').forEach((node) => {
+      node.remove();
+    });
+  });
+
   beforeEach(() => {
     createBranchForSessionMock.mockReset();
     loadRosterCharactersMock.mockReset();
@@ -258,6 +279,96 @@ describe("NewSessionModal", () => {
     expect(initFooter.className).toMatch(/flex-shrink-0/);
     expect(window.getComputedStyle(initButton).position).not.toBe("fixed");
     expect(window.getComputedStyle(initFooter).position).not.toBe("fixed");
+
+    act(() => {
+      root.unmount();
+      container.remove();
+    });
+  });
+
+  it("clears the loading banner and shows store companions after roster sync", async () => {
+    loadRosterCharactersMock.mockResolvedValue({
+      characters: [
+        {
+          id: "anima-serenity",
+          name: "Serenity",
+          universe: "Anima",
+          category: "guardian",
+          _isAnima: true,
+        },
+        {
+          id: "char-aelyndra",
+          name: "Aelyndra",
+          universe: "Original",
+          category: "muse",
+        },
+        {
+          id: "seed_avatar",
+          name: "Korra",
+          universe: "Avatar: Legend of Korra",
+          _bundled: true,
+        },
+      ],
+      usingBundledSeed: false,
+    });
+    const { container, root, overlay } = renderModal();
+    expect(overlay.textContent).toContain(ACCOUNT_CHARACTERS_LOADING_MESSAGE);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(overlay.textContent).not.toContain(ACCOUNT_CHARACTERS_LOADING_MESSAGE);
+    expect(overlay.textContent).toContain("Serenity");
+    expect(overlay.textContent).toContain("Aelyndra");
+    expect(buttonByText(overlay, "Init")?.disabled).toBe(true);
+
+    act(() => {
+      root.unmount();
+      container.remove();
+    });
+  });
+
+  it("keeps custom companions when a later bundled-only sync arrives", async () => {
+    loadRosterCharactersMock
+      .mockResolvedValueOnce({
+        characters: [
+          {
+            id: "anima-serenity",
+            name: "Serenity",
+            universe: "Anima",
+            _isAnima: true,
+          },
+          {
+            id: "char-aelynd",
+            name: "Aelynd",
+            universe: "Original",
+          },
+        ],
+        usingBundledSeed: false,
+      })
+      .mockResolvedValue({
+        characters: [
+          {
+            id: "seed_avatar",
+            name: "Korra",
+            universe: "Avatar: Legend of Korra",
+            _bundled: true,
+          },
+        ],
+        usingBundledSeed: true,
+      });
+    const { container, root, overlay } = renderModal();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(overlay.textContent).toContain("Serenity");
+    expect(overlay.textContent).toContain("Aelynd");
+    expect(overlay.textContent).not.toContain(ACCOUNT_CHARACTERS_LOADING_MESSAGE);
 
     act(() => {
       root.unmount();
