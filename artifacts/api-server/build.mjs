@@ -118,6 +118,19 @@ async function buildAll() {
     ],
   });
 
+  // Cloud Run image — production logger (no pino-pretty worker). Same externals
+  // as the Node server so @google-cloud/storage stays a runtime install.
+  await esbuild({
+    ...sharedEsbuildOptions,
+    entryPoints: [path.resolve(artifactDir, "src/index.ts")],
+    outfile: path.resolve(distDir, "cloudrun.mjs"),
+    external: [...nativeExternals, "@google-cloud/*", "@google/*", "googleapis"],
+    plugins: [],
+    define: {
+      "process.env.NODE_ENV": '"production"',
+    },
+  });
+
   // Vercel serverless — bundle JS deps (no runtime node_modules); skip pino workers.
   // Fold NODE_ENV=production so the logger never references pino-pretty in the bundle.
   await esbuild({

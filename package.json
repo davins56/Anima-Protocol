@@ -30,6 +30,7 @@
     "llm:eval": "node scripts/llm/eval/run-evals.mjs",
     "llm:eval:validate": "node scripts/llm/eval/run-evals.mjs --validate",
     "llm:verify-deploy": "bash scripts/llm/verify-deploy.sh",
+    "gcp:validate": "node scripts/gcp/validate-staging-prep.mjs",
     "postinstall": "node scripts/cloudflare/install-wrangler-deploy-guard.mjs",
     "deploy:cloudflare": "rm -f ./dist/_redirects && node scripts/cloudflare/workers-builds-deploy.mjs deploy --assets=./dist --compatibility-date=2026-08-14 --name anima-protocol"
   },

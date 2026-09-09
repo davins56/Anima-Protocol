@@ -1,0 +1,79 @@
+# Cloud Run staging/backup — Knative service spec (placeholders only).
+# Apply AFTER substituting PLACEHOLDER_* values and creating Secret Manager
+# secrets. Never commit secret values. Never attach this to anima-protocol.com.
+#
+#   gcloud run services replace deploy/gcp/cloudrun.service.yaml --region=REGION
+#
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: anima-protocol-staging
+  labels:
+    app: anima-protocol
+    anima-protocol.dev/role: staging-backup
+  annotations:
+    run.googleapis.com/ingress: all
+    run.googleapis.com/description: Staging/backup only. Production remains Cloudflare Workers.
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "2"
+        run.googleapis.com/cpu-throttling: "true"
+        run.googleapis.com/startup-cpu-boost: "true"
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 60
+      # Replace with the project's Cloud Run runtime service account email.
+      serviceAccountName: PLACEHOLDER_CLOUD_RUN_SA
+      containers:
+        - image: PLACEHOLDER_REGION-docker.pkg.dev/PLACEHOLDER_PROJECT_ID/PLACEHOLDER_AR_REPO/anima-protocol-staging:PLACEHOLDER_TAG
+          ports:
+            - name: http1
+              containerPort: 8080
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: ANIMA_RUNTIME
+              value: cloudrun
+            - name: ANIMA_LLM_PROVIDER
+              value: custom
+            - name: ANIMA_STATIC_DIR
+              value: /app/public
+            - name: PORT
+              value: "8080"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: DATABASE_URL
+                  key: latest
+            - name: CLERK_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: CLERK_SECRET_KEY
+                  key: latest
+            - name: CLERK_PUBLISHABLE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: CLERK_PUBLISHABLE_KEY
+                  key: latest
+          startupProbe:
+            httpGet:
+              path: /api/healthz
+              port: 8080
+            timeoutSeconds: 3
+            periodSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /api/healthz
+              port: 8080
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3

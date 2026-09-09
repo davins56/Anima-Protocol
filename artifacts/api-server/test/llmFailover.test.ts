@@ -12,6 +12,18 @@ vi.mock("../src/lib/openaiClient", () => {
     chat: { completions: { create: (...args: unknown[]) => createMock(...args) } },
     models: { list: (...args: unknown[]) => modelsListMock(...args) },
   };
+  const serverlessNoLoopback = () =>
+    Boolean(
+      process.env.ANIMA_RUNTIME === "worker" ||
+        process.env.ANIMA_RUNTIME === "cloudrun" ||
+        process.env.ANIMA_RUNTIME === "cloud-run" ||
+        process.env.ANIMA_RUNTIME === "gcp" ||
+        process.env.VERCEL ||
+        process.env.VERCEL_ENV ||
+        process.env.CF_PAGES ||
+        process.env.K_SERVICE ||
+        process.env.CLOUD_RUN_JOB,
+    );
   return {
     OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1",
     OPENROUTER_VENICE_UNCENSORED:
@@ -97,12 +109,14 @@ vi.mock("../src/lib/openaiClient", () => {
       }
       return openRouterClient;
     },
-    isLoopbackUnreachableRuntime: () =>
+    isLoopbackUnreachableRuntime: () => serverlessNoLoopback(),
+    isCloudRunRuntime: () =>
       Boolean(
-        process.env.ANIMA_RUNTIME === "worker" ||
-          process.env.VERCEL ||
-          process.env.VERCEL_ENV ||
-          process.env.CF_PAGES,
+        process.env.ANIMA_RUNTIME === "cloudrun" ||
+          process.env.ANIMA_RUNTIME === "cloud-run" ||
+          process.env.ANIMA_RUNTIME === "gcp" ||
+          process.env.K_SERVICE ||
+          process.env.CLOUD_RUN_JOB,
       ),
     localLlmBaseUrl: () => {
       const explicit =
@@ -110,10 +124,7 @@ vi.mock("../src/lib/openaiClient", () => {
         process.env.VLLM_BASE_URL?.trim();
       if (explicit) {
         if (
-          (process.env.ANIMA_RUNTIME === "worker" ||
-            process.env.VERCEL ||
-            process.env.VERCEL_ENV ||
-            process.env.CF_PAGES) &&
+          serverlessNoLoopback() &&
           /localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0/i.test(explicit)
         ) {
           return null;
@@ -125,12 +136,7 @@ vi.mock("../src/lib/openaiClient", () => {
         const root = ollama.replace(/\/$/, "");
         return root.endsWith("/v1") ? root : `${root}/v1`;
       }
-      if (
-        process.env.ANIMA_RUNTIME === "worker" ||
-        process.env.VERCEL ||
-        process.env.VERCEL_ENV ||
-        process.env.CF_PAGES
-      ) {
+      if (serverlessNoLoopback()) {
         return null;
       }
       return "http://localhost:11434/v1";
@@ -142,21 +148,13 @@ vi.mock("../src/lib/openaiClient", () => {
         process.env.OLLAMA_BASE_URL?.trim();
       if (
         explicit &&
-        (process.env.ANIMA_RUNTIME === "worker" ||
-          process.env.VERCEL ||
-          process.env.VERCEL_ENV ||
-          process.env.CF_PAGES) &&
+        serverlessNoLoopback() &&
         /localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0/i.test(explicit)
       ) {
         return false;
       }
       if (explicit) return true;
-      if (
-        process.env.ANIMA_RUNTIME === "worker" ||
-        process.env.VERCEL ||
-        process.env.VERCEL_ENV ||
-        process.env.CF_PAGES
-      ) {
+      if (serverlessNoLoopback()) {
         return false;
       }
       return true;
@@ -183,12 +181,7 @@ vi.mock("../src/lib/openaiClient", () => {
           base = root.endsWith("/v1") ? root : `${root}/v1`;
         }
       }
-      const noLoopback = Boolean(
-        process.env.ANIMA_RUNTIME === "worker" ||
-          process.env.VERCEL ||
-          process.env.VERCEL_ENV ||
-          process.env.CF_PAGES,
-      );
+      const noLoopback = serverlessNoLoopback();
       const explicitLoopback = Boolean(
         explicit && /localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0/i.test(explicit),
       );
@@ -905,6 +898,16 @@ describe("getProviderChain", () => {
     });
     expect(getProviderChain()).toEqual(["workersai"]);
     expect(allowOpenRouterFallback()).toBe(false);
+  });
+
+  it("fails closed on Cloud Run even when OpenRouter and MiniMax keys exist", () => {
+    process.env.ANIMA_RUNTIME = "cloudrun";
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.MINIMAX_API_KEY = "minimax-test";
+    expect(getProviderChain()).toEqual([]);
   });
 });
 
