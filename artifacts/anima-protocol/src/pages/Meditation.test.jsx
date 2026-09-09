@@ -186,6 +186,7 @@ describe("Meditation affirmations", () => {
 
   it("shows in-memory defaults without the timeout banner when filter is empty", async () => {
     affirmationMocks.filter.mockResolvedValue([]);
+    affirmationMocks.create.mockReturnValue(new Promise(() => {}));
     renderPage();
 
     expect(await screen.findByText("Sacred Space")).toBeTruthy();
@@ -315,6 +316,7 @@ describe("Meditation affirmations", () => {
   it("shows a sign-in error when Add is clicked without a session", async () => {
     const unauthorized = new Error("Unauthorized");
     unauthorized.status = 401;
+    affirmationMocks.peekMe.mockReturnValue({});
     affirmationMocks.me.mockRejectedValue(unauthorized);
     renderPage();
 

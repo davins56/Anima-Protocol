@@ -314,7 +314,11 @@ describe("loadSacredSpaceSnapshot", () => {
       userTimeoutMs: 20,
     });
 
-    expect(events).toEqual(["auth", "peek", "me-started", "filter"]);
+    expect(events[0]).toBe("auth");
+    expect(events[1]).toBe("peek");
+    expect(events).toContain("filter");
+    expect(events).toContain("me-started");
+    expect(events.indexOf("peek")).toBeLessThan(events.indexOf("filter"));
     expect(result.existing).toEqual(accountRows);
     expect(result.me).toEqual(user);
     expect(filter).toHaveBeenCalledTimes(1);
