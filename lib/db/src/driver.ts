@@ -97,7 +97,7 @@ export function createPostgresJsSql(
     idle_timeout: Math.max(1, Math.round(idleMs / 1000)),
     ssl: postgresJsSslOption(rawUrl, ssl),
     connection: {
-      statement_timeout: String(statementTimeoutMs),
+      statement_timeout: statementTimeoutMs,
     },
   });
 }
