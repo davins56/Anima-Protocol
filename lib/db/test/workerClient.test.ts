@@ -89,6 +89,16 @@ describe("Worker-safe database driver", () => {
     expect(getDbDriver({})).toBe("node-pg");
   });
 
+  it("sets statement_timeout so queries cannot sit until the Worker wall timeout", async () => {
+    const { resolveStatementTimeoutMs } = await import("../src/driver");
+    expect(resolveStatementTimeoutMs({})).toBe(8000);
+    expect(resolveStatementTimeoutMs({ PG_STATEMENT_TIMEOUT_MS: "5000" })).toBe(
+      5000,
+    );
+    const driverSource = readFileSync(path.join(srcDir, "driver.ts"), "utf8");
+    expect(driverSource).toMatch(/statement_timeout/);
+  });
+
   it("does not force TLS against a Hyperdrive proxy socket", async () => {
     const { postgresJsSslOption } = await import("../src/driver");
     expect(

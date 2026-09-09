@@ -7,12 +7,7 @@ type NextFunction = any;
 
 const express: any = require("express");
 
-// Keep the server bootable when the optional workspace DB package is not
-// available in the deployment bundle. The package can replace this wrapper
-// when present; otherwise the callback still runs in the current request.
-const runWithDbRequestScope = (next: NextFunction): void => {
-  next();
-};
+import { runWithDbRequestScope } from "@workspace/db";
 import { aiBinding } from "./lib/aiBinding";
 import { WORKERS_AI_CHAT_MODEL } from "./lib/workersAi";
 import { syncCloudflareRuntimeEnvMiddleware } from "./lib/cloudflareEnv";
@@ -77,7 +72,12 @@ app.use(syncCloudflareRuntimeEnvMiddleware());
 // reports as "the database could not be reached". Must run before any route
 // that touches the database, including /api/healthz/db.
 app.use((_req, _res, next) => {
-  runWithDbRequestScope(next);
+  // ALS.run must wrap next() so async store/chat handlers keep this
+  // request's Postgres client. Passing `next` directly is the same call,
+  // but the arrow makes the lifetime explicit. A no-op stub here (c7c6c1e)
+  // reused the previous request's Hyperdrive socket and hung authed
+  // /api/store lists until the 20s Worker wall timeout.
+  runWithDbRequestScope(() => next());
 });
 
 // Clerk Frontend API proxy — must be mounted before the body parsers because it

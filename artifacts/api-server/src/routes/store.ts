@@ -52,8 +52,8 @@ function requireUser(
 router.use(requireUser);
 
 // Self-heal a blank / partially migrated Postgres on first authenticated store
-// hit. Idempotent CREATE IF NOT EXISTS; cached per process after success so
-// warm instances pay at most one information_schema round-trip + DDL burst.
+// hit. After a successful inspect the isolate skips DDL entirely; the first
+// request pays at most one information_schema lookup, not ~50 CREATE round-trips.
 async function ensureSchemaMiddleware(
   _req: Request,
   _res: Response,
@@ -689,11 +689,13 @@ router.get("/revision", async (req, res) => {
 // --- Profile (per-user settings record) -------------------------------------
 router.get("/profile", async (req, res) => {
   const userId = getUserId(req);
-  const [row] = await db
-    .select()
-    .from(userProfiles)
-    .where(eq(userProfiles.userId, userId))
-    .limit(1);
+  const [row] = await withTransientDbRetry(() =>
+    db
+      .select()
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId))
+      .limit(1),
+  );
   res.json(row ? (row.data as Record<string, unknown>) : null);
 });
 
