@@ -297,7 +297,11 @@ vi.mock("../src/lib/openaiClient", () => {
 
 import { resetLocalModelCatalogForTests } from "../src/lib/localModelCatalog";
 import { resetAiBindingForTests, setAiBinding } from "../src/lib/aiBinding";
-import { WORKERS_AI_CHAT_MODEL, WORKERS_AI_GATEWAY_ID } from "../src/lib/workersAi";
+import {
+  WORKERS_AI_CHAT_MODEL,
+  WORKERS_AI_GATEWAY_ID,
+  resetWorkersAiQuotaSkipForTests,
+} from "../src/lib/workersAi";
 import {
   allowOpenRouterFallback,
   createChatCompletionWithFailover,
@@ -1173,11 +1177,13 @@ describe("createChatStreamWithFailover", () => {
     resetLocalModelCatalogForTests();
     resetOpenRouterCreditFallbackForTests();
     resetAiBindingForTests();
+    resetWorkersAiQuotaSkipForTests();
   });
 
   afterEach(() => {
     process.env = { ...SAVED };
     resetAiBindingForTests();
+    resetWorkersAiQuotaSkipForTests();
   });
 
   it("streams from the local Anima LLM", async () => {
@@ -1687,6 +1693,40 @@ describe("createChatStreamWithFailover", () => {
     expect(result.failedOver).toBe(true);
     expect(createMock).toHaveBeenCalledTimes(1);
   });
+
+  it("skips Workers AI on the next turn after isolate 4006 so OpenRouter is first", async () => {
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    let workersAiRuns = 0;
+    setAiBinding({
+      run: async () => {
+        workersAiRuns += 1;
+        throw Object.assign(
+          new Error("4006: You have used up your daily free allocation of 10,000 neurons"),
+          { code: 4006 },
+        );
+      },
+    });
+    createMock.mockResolvedValueOnce(fakeStream("hop-1"));
+    createMock.mockResolvedValueOnce(fakeStream("hop-2"));
+    await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 32,
+      messages: [{ role: "user", content: "first" }],
+    });
+    const second = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 32,
+      messages: [{ role: "user", content: "second" }],
+    });
+    expect(workersAiRuns).toBe(1);
+    expect(second.provider).toBe("openrouter");
+    expect(second.failedOver).toBe(true);
+    expect(createMock).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("createChatCompletionWithFailover", () => {
@@ -1703,10 +1743,12 @@ describe("createChatCompletionWithFailover", () => {
     resetLocalModelCatalogForTests();
     resetOpenRouterCreditFallbackForTests();
     resetAiBindingForTests();
+    resetWorkersAiQuotaSkipForTests();
   });
 
   afterEach(() => {
     process.env = { ...SAVED };
+    resetWorkersAiQuotaSkipForTests();
     resetAiBindingForTests();
   });
 
