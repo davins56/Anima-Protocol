@@ -34,6 +34,9 @@ describe("chat send auth and HTTP errors", () => {
     expect(chatHttpError({ error: "Session not found" }, 404).message).toMatch(
       /start the session again/i,
     );
+    expect(chatHttpError({ error: "Not found" }, 404).message).toMatch(
+      /start the session again/i,
+    );
   });
 
   it("keeps Workers AI / DeepSeek errors intact", () => {
@@ -100,6 +103,63 @@ describe("chat send auth and HTTP errors", () => {
     await expect(
       animaApi.chat.sendMessage({ sessionId: "sess-1", content: "hello" }).next(),
     ).rejects.toThrow(/Not signed in/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("attaches Authorization before POST /openai/v1/chat/completions and retries a 401", async () => {
+    authHeaders
+      .mockResolvedValueOnce({
+        "Content-Type": "application/json",
+        Authorization: "Bearer stale",
+      })
+      .mockResolvedValueOnce({
+        "Content-Type": "application/json",
+        Authorization: "Bearer fresh",
+      });
+
+    const encoder = new TextEncoder();
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"content":"Stay close."}\n\n'));
+        controller.enqueue(encoder.encode('data: {"done":true}\n\n'));
+        controller.close();
+      },
+    });
+
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({ error: "Unauthorized" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        body,
+      });
+
+    const { animaApi } = await import("./animaApi.js");
+    const events = [];
+    for await (const event of animaApi.chatCompletions({
+      content: "hello",
+    })) {
+      events.push(event);
+    }
+
+    expect(authHeaders.mock.calls[1][1]).toMatchObject({ skipCache: true });
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "https://example.test/api/openai/v1/chat/completions",
+    );
+    expect(fetchMock.mock.calls[1][1].headers.Authorization).toBe("Bearer fresh");
+    expect(events.some((event) => event.content === "Stay close.")).toBe(true);
+  });
+
+  it("refuses to POST /openai conversation messages without a Bearer token", async () => {
+    authHeaders.mockResolvedValue({ "Content-Type": "application/json" });
+    const { animaApi } = await import("./animaApi.js");
+    await expect(animaApi.sendMessage(12, "hello").next()).rejects.toThrow(
+      /Not signed in/,
+    );
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

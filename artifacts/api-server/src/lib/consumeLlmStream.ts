@@ -19,7 +19,11 @@ import {
   LLM_STREAM_STALL_MS,
   LLM_STREAM_TOTAL_MS,
 } from "./chatTimeouts";
-import { createVisibleReplyFilter, visibleAssistantReply } from "./visibleAssistantReply";
+import {
+  createVisibleReplyFilter,
+  hasThinkMarkup,
+  visibleAssistantReply,
+} from "./visibleAssistantReply";
 
 export {
   LLM_STREAM_FIRST_CHUNK_MS,
@@ -104,6 +108,8 @@ export async function consumeLlmStream(
   let lastActivity = started;
   const iterator = stream[Symbol.asyncIterator]();
   const hasVisible = () => filter.peek().trim().length > 0;
+  // `<think>` tokens are not yet visible, but they prove the model is alive.
+  // Keep the first-chunk window (not the short stall) until an answer appears.
 
   const finalize = (timedOut: boolean): ConsumeLlmStreamResult => {
     const finished = filter.finish();
@@ -174,6 +180,10 @@ export async function consumeLlmStream(
       const delta = chunkTextDelta(chunk);
       if (delta) {
         rawContent += delta;
+        if (!sawReasoning && hasThinkMarkup(rawContent)) {
+          sawReasoning = true;
+          opts.onReasoning?.();
+        }
         const extra = filter.push(delta);
         if (extra) opts.onDelta?.(extra);
       }

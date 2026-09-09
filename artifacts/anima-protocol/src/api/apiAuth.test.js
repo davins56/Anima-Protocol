@@ -82,12 +82,45 @@ describe('API auth bridge', () => {
     expect(String(options.headers.Authorization)).not.toContain('async');
   });
 
-  it('omits Authorization when no getter is registered', async () => {
+  it('refuses to POST /openai/invoke without a Bearer token', async () => {
     clearAuthTokenGetter();
 
-    await base44.functions.invoke('debugApp', {});
+    const result = await base44.functions.invoke('debugApp', {});
 
-    const [, options] = global.fetch.mock.calls[0];
-    expect(options.headers.Authorization).toBeUndefined();
+    expect(result).toBeNull();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('retries /openai/invoke once after a 401 with a fresh Clerk token', async () => {
+    const getter = vi
+      .fn()
+      .mockResolvedValueOnce('stale-token')
+      .mockResolvedValueOnce('fresh-token');
+    setAuthTokenGetter(getter);
+
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({ error: 'Unauthorized' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ result: { ok: true } }),
+      });
+
+    const result = await base44.functions.invoke('debugApp', {});
+
+    expect(result).toEqual({ ok: true });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(global.fetch.mock.calls[0][1].headers.Authorization).toBe(
+      'Bearer stale-token',
+    );
+    expect(global.fetch.mock.calls[1][1].headers.Authorization).toBe(
+      'Bearer fresh-token',
+    );
+    expect(getter).toHaveBeenCalledWith({ skipCache: true });
   });
 });
