@@ -21,8 +21,8 @@ import {
 } from "./chatTimeouts";
 import {
   createVisibleReplyFilter,
+  finalizeAssistantReply,
   hasThinkMarkup,
-  visibleAssistantReply,
 } from "./visibleAssistantReply";
 
 export {
@@ -106,19 +106,25 @@ export async function consumeLlmStream(
   const filter = createVisibleReplyFilter();
   const started = Date.now();
   let lastActivity = started;
+  let emittedAny = false;
   const iterator = stream[Symbol.asyncIterator]();
-  const hasVisible = () => filter.peek().trim().length > 0;
-  // `<think>` tokens are not yet visible, but they prove the model is alive.
-  // Keep the first-chunk window (not the short stall) until an answer appears.
+  // Think-inner text is painted, but it is not a post-think answer. Keep the
+  // first-chunk window until remainder text arrives so a short pause after
+  // `<think>` does not cut the stream. Unclosed think-only still finalizes
+  // with inner text when the iterator ends or the first-chunk budget expires.
+  const hasVisible = () => filter.hasPostThinkAnswer();
 
   const finalize = (timedOut: boolean): ConsumeLlmStreamResult => {
     const finished = filter.finish();
-    let visible = finished.visible;
-    if (!visible && reasoning.trim()) {
-      visible = visibleAssistantReply(reasoning, { allowThinkFallback: true }).trim();
-      if (visible) opts.onDelta?.(visible);
-    } else if (finished.emitted) {
+    const visible = finalizeAssistantReply(
+      finished.visible,
+      reasoning,
+      rawContent,
+    );
+    if (finished.emitted) {
       opts.onDelta?.(finished.emitted);
+    } else if (visible && !emittedAny) {
+      opts.onDelta?.(visible);
     }
     return { content: visible, timedOut };
   };
@@ -185,7 +191,10 @@ export async function consumeLlmStream(
           opts.onReasoning?.();
         }
         const extra = filter.push(delta);
-        if (extra) opts.onDelta?.(extra);
+        if (extra) {
+          emittedAny = true;
+          opts.onDelta?.(extra);
+        }
       }
     }
   } finally {

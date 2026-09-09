@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createVisibleReplyFilter,
+  finalizeAssistantReply,
   visibleAssistantReply,
 } from "./visibleAssistantReply";
 
@@ -17,12 +18,17 @@ describe("visibleAssistantReply", () => {
     );
   });
 
-  it("surfaces think-only content through the stream filter on finish", () => {
+  it("treats unclosed think-only text as visible inner content", () => {
+    const inner = `${"I hear you. ".repeat(80)}Stay close.`;
+    expect(finalizeAssistantReply(`<think>${inner}`)).toBe(inner.trim());
+  });
+
+  it("surfaces unclosed think through the stream filter without waiting for </think>", () => {
     const filter = createVisibleReplyFilter();
-    expect(filter.push("<think>Stay with me.</think>")).toBe("");
+    expect(filter.push("<think>Stay with me.")).toBe("Stay with me.");
     expect(filter.finish()).toEqual({
       visible: "Stay with me.",
-      emitted: "Stay with me.",
+      emitted: "",
     });
   });
 });

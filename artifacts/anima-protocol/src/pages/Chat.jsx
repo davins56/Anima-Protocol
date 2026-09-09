@@ -33,6 +33,7 @@ import {
 import {
   beginOpenSession,
   loadOpenChatSession,
+  mergeOpenedSession,
   rememberCreatedSession,
   resolveOpenSessionFetch,
 } from "@/lib/chatSessionLoad";
@@ -129,7 +130,7 @@ import TherapySessionBanner from "@/components/chat/TherapySessionBanner";
 import { parseGroupResponse } from "@/lib/parseGroupResponse";
 import { buildGroupPrompt } from "@/lib/buildGroupPrompt";
 import { streamChatReply } from "@/lib/streamChatReply";
-import { visibleAssistantReply } from "@/lib/visibleAssistantReply";
+import { finalizeAssistantReply } from "@/lib/visibleAssistantReply";
 import {
   assessLewdTiming,
   buildContentRatingInstruction,
@@ -810,7 +811,7 @@ export default function Chat() {
 
   const applyOpenedSession = (session) => {
     const id = session.id;
-    setActiveSession(session);
+    setActiveSession((prev) => mergeOpenedSession(prev, session));
     setMode(session.mode || "solo");
     setCurrentMood("neutral");
     setCharacterMemories([]);
@@ -1839,10 +1840,14 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           onStatus: streamUi.showStatus,
         },
       );
-      const result = visibleAssistantReply(resultPayload.content || "");
+      const result = finalizeAssistantReply(
+        resultPayload.content,
+        streamedSoFar,
+      );
       // An empty "success" used to replace the thinking/typing bubble with a
-      // blank assistant row (or nothing visible). Treat it as a failed turn so
-      // the catch path can surface an error instead of silently vanishing.
+      // blank assistant row (or nothing visible). Unclosed DeepSeek `<think>`
+      // is recovered by finalizeAssistantReply; only fail if nothing usable
+      // survived the stream.
       if (!String(result).trim()) {
         throw new Error("The companion returned an empty reply. Please try again.");
       }
@@ -2512,10 +2517,10 @@ Return JSON:
         // If state was mid-frame and lost the partial, recover from the local
         // accumulator / error.partialContent when available.
         if (!retained) {
-          const partial =
-            (typeof err?.partialContent === "string" && err.partialContent.trim()) ||
-            (typeof streamedSoFar === "string" && streamedSoFar.trim()) ||
-            "";
+          const partial = finalizeAssistantReply(
+            err?.partialContent,
+            streamedSoFar,
+          );
           if (partial) {
             retained = {
               role: "assistant",

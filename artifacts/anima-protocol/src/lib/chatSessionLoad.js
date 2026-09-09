@@ -87,6 +87,30 @@ function primedMessageCount(sessionId) {
  * the error/missing screens. A normal open of an unknown id still goes
  * missing/error.
  */
+/**
+ * Init GET can land after the user already sent. Never replace an in-flight
+ * thinking/streaming/turn_* tail with a stale remote snapshot.
+ */
+export function mergeOpenedSession(current, incoming) {
+  if (!incoming) return current;
+  if (!current || current.id !== incoming.id) return incoming;
+  const local = current.messages || [];
+  const remote = incoming.messages || [];
+  const inFlight = local.some(
+    (m) =>
+      m?.character_name === "__typing__" ||
+      m?.character_name === "__thinking__" ||
+      m?.is_streaming === true,
+  );
+  const hasTurnLocal = local.some(
+    (m) => typeof m?.id === "string" && String(m.id).startsWith("turn_"),
+  );
+  if (inFlight || hasTurnLocal || local.length > remote.length) {
+    return { ...incoming, messages: local };
+  }
+  return incoming;
+}
+
 export function resolveOpenSessionFetch({ result, sessionId } = {}) {
   if (!result || result.status === "stale") return { status: "stale" };
 

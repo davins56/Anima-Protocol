@@ -1,18 +1,19 @@
-import { createVisibleReplyFilter, visibleAssistantReply } from "./visibleAssistantReply";
+import {
+  createVisibleReplyFilter,
+  finalizeAssistantReply,
+} from "./visibleAssistantReply";
 
 /**
  * Consume a chat SSE async-iterable and surface tokens as they arrive.
  *
- * The API already streams deltas; the Chat page historically buffered them via
- * completeMessage(). This helper keeps that buffering available (return value)
- * while letting the UI render partial content for a fluid conversation feel.
+ * `/api/chat/messages` streams extras, then a `done` event that carries the
+ * full visible reply. iPad Safari can drop the last content frame; `done.visible`
+ * is the authoritative paint so an unclosed DeepSeek `<think>` still lands.
  *
- * onDelta receives the accumulated text so far. Updates are rAF-coalesced so
- * high-frequency token bursts don't flood React with one setState per byte.
+ * onDelta receives the accumulated visible text so far.
  *
  * @param {AsyncIterable<{ content?: string, done?: boolean, error?: string, status?: string }>} events
  * @param {{ onDelta?: (accumulated: string) => void, onFirstToken?: (accumulated: string) => void, onStatus?: (event: object) => void }} [hooks]
- * @returns {Promise<{ content: string, done?: object }>}
  */
 export async function streamChatReply(events, { onDelta, onFirstToken, onStatus } = {}) {
   let content = "";
@@ -42,33 +43,39 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus 
     rafId = requestAnimationFrame(flush);
   };
 
+  const paintVisible = (next) => {
+    const visible = finalizeAssistantReply(next, content);
+    if (!visible) return;
+    content = visible;
+    if (!sawFirst) {
+      sawFirst = true;
+      onFirstToken?.(content);
+    }
+    scheduleDelta(content);
+  };
+
   try {
     for await (const event of events) {
       if (event?.error) {
         const err = new Error(event.error);
-        // Preserve tokens already painted so callers can keep a partial reply
-        // instead of wiping the bubble when the stream fails mid-response.
         if (content) err.partialContent = content;
         throw err;
       }
       if (event?.status) {
         onStatus?.(event);
       }
-      if (event?.content) {
-        const visibleDelta = replyFilter.push(event.content);
-        if (!visibleDelta) continue;
-        content += visibleDelta;
-        if (!sawFirst) {
-          sawFirst = true;
-          onFirstToken?.(content);
-        }
-        scheduleDelta(content);
+      if (event?.content && !event?.done) {
+        replyFilter.push(event.content);
+        paintVisible(replyFilter.peek());
       }
       if (event?.done) {
         doneEvent = event;
-        // Resolve as soon as the server signals completion. Waiting for the
-        // HTTP body to close used to leave the Chat page on "Processing..."
-        // while persist/evolution work (or a hung tunnel) kept the stream open.
+        const terminal = event.visible || event.content;
+        if (terminal) {
+          paintVisible(
+            finalizeAssistantReply(terminal, replyFilter.peek(), content),
+          );
+        }
         break;
       }
     }
@@ -77,18 +84,18 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus 
       cancelAnimationFrame(rafId);
       rafId = null;
     }
-    // Ensure the final accumulated text is delivered even if the last tokens
-    // were still waiting on a coalesced frame when the stream ended.
     if (pending != null) flush();
     else if (content && onDelta) onDelta(content);
   }
 
   const finished = replyFilter.finish();
-  if (finished.emitted) {
-    content += finished.emitted;
-    if (onDelta) onDelta(content);
-  }
-  content = finished.visible || visibleAssistantReply(content) || content;
+  content = finalizeAssistantReply(
+    doneEvent?.visible,
+    doneEvent?.content,
+    finished.visible,
+    content,
+  );
+  if (content && onDelta) onDelta(content);
 
-  return { content, ...(doneEvent || {}) };
+  return { ...(doneEvent || {}), content };
 }
