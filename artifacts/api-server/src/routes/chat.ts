@@ -34,6 +34,10 @@ import {
   type LlmProviderId,
 } from "../lib/llmFailover";
 import {
+  WORKERS_AI_FREE_QUOTA_HINT,
+  isWorkersAiFreeQuotaError,
+} from "../lib/workersAi";
+import {
   consumeLlmStream,
   LlmStreamTimeoutError,
 } from "../lib/consumeLlmStream.js";
@@ -201,6 +205,9 @@ function startSseHeartbeat(res: Response): () => void {
 
 function streamErrorMessage(err: unknown): string {
   if (err instanceof LlmStreamTimeoutError) return err.message;
+  if (isWorkersAiFreeQuotaError(err)) {
+    return WORKERS_AI_FREE_QUOTA_HINT;
+  }
   if (isOpenRouterZdrOrDataPolicyError(err)) {
     return OPENROUTER_ZDR_PRIVACY_HINT;
   }

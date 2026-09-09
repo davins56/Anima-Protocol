@@ -22,6 +22,18 @@ export function chatHttpError(err, status) {
     missing.status = 404;
     return missing;
   }
+  if (
+    /\b4006\b|10[, ]?000 neurons|daily free (?:allocation|quota)|used up your daily free/i.test(
+      raw,
+    )
+  ) {
+    const quota = new Error(
+      "Workers AI daily free quota exhausted — enable Workers Paid or temporarily allow OpenRouter failover",
+    );
+    quota.status = status;
+    quota.code = "workersai_free_quota_exhausted";
+    return quota;
+  }
   if (/workers ai|deepseek/i.test(raw)) {
     const aiErr = new Error(raw);
     aiErr.status = status;

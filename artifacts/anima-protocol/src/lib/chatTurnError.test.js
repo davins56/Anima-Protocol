@@ -73,6 +73,25 @@ describe("chatTurnErrorMessage", () => {
     ).toMatch(/DeepSeek on Workers AI failed: model overloaded/);
   });
 
+  it("remaps Workers AI error 4006 to the free-quota hint", () => {
+    expect(
+      chatTurnErrorMessage(
+        new Error(
+          "4006: you have used up your daily free allocation of 10,000 neurons, please upgrade to Cloudflare's Workers Paid plan if",
+        ),
+      ),
+    ).toBe(
+      "Workers AI daily free quota exhausted — enable Workers Paid or temporarily allow OpenRouter failover",
+    );
+    expect(
+      chatTurnErrorMessage(
+        new Error(
+          "DeepSeek on Workers AI failed: 4006: you have used up your daily free allocation of 10,000 neurons",
+        ),
+      ),
+    ).toMatch(/Workers AI daily free quota exhausted/);
+  });
+
   it("remaps unauthorized and missing-session send failures", () => {
     expect(chatTurnErrorMessage(new Error("Unauthorized"))).toMatch(/Not signed in/);
     expect(chatTurnErrorMessage(new Error("Session not found"))).toMatch(
