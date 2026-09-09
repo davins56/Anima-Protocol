@@ -77,6 +77,22 @@ export async function waitForStoreAuth(timeoutMs = STORE_AUTH_WAIT_MS) {
   throw new Error('Store auth token not available');
 }
 
+/**
+ * One-shot token for a store read. If Clerk is still minting (common on iPad
+ * Safari after the proxy handshake), wait the store-auth budget instead of
+ * treating "not ready yet" as an empty roster / missing chat.
+ */
+export async function resolveStoreToken(timeoutMs = STORE_AUTH_WAIT_MS) {
+  const immediate = await getToken();
+  if (immediate) return immediate;
+  if (!hasAuthTokenGetter()) return null;
+  try {
+    return await waitForStoreAuth(timeoutMs);
+  } catch {
+    return null;
+  }
+}
+
 export function publicOriginHeaders() {
   if (typeof window === 'undefined' || !window.location?.host) return {};
   return {

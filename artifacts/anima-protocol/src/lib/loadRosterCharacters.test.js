@@ -76,9 +76,9 @@ describe("loadRosterCharacters", () => {
     expect(whenBootstrapReady).toHaveBeenCalled();
     expect(waitForStoreAuth).toHaveBeenCalled();
     expect(retryStarterSeed).not.toHaveBeenCalled();
-    expect(result.rawCharacters).toHaveLength(1);
-    expect(result.characters[0].name).toBe("Korra");
+    expect(result.characters.map((c) => c.name)).toContain("Korra");
     expect(result.usingBundledSeed).toBe(false);
+    expect(result.characters.length).toBeGreaterThan(1);
   });
 
   it("retries starter seeding when the character roster is empty", async () => {
@@ -93,7 +93,6 @@ describe("loadRosterCharacters", () => {
     const result = await loadRosterCharacters({ retrySeed: true });
 
     expect(retryStarterSeed).toHaveBeenCalledTimes(1);
-    expect(result.rawCharacters).toHaveLength(1);
     expect(result.characters.map((c) => c.name)).toContain("Korra");
     expect(result.usingBundledSeed).toBe(false);
   });
@@ -127,12 +126,13 @@ describe("loadRosterCharacters", () => {
 
     const result = await loadRosterCharacters({ retrySeed: false });
 
-    expect(result.characters).toHaveLength(2);
     expect(result.characters[0]).toMatchObject({
       name: "Serenity",
       _isAnima: true,
       universe: "Anima",
     });
+    expect(result.characters.map((c) => c.name)).toContain("Spider-Man");
+    expect(result.characters.length).toBeGreaterThan(2);
   });
 
   it("falls back to bundled starters when store DB is down after seed retry", async () => {
@@ -167,6 +167,28 @@ describe("loadRosterCharacters", () => {
     expect(result.characters.length).toBeGreaterThan(0);
     expect(result.characters[0]._bundled).toBe(true);
     expect(result.error?.message).toMatch(/auth token/i);
+  });
+
+  it("keeps custom store rows and fills missing bundled starters", async () => {
+    characterList.mockResolvedValue([
+      { id: "char_custom", name: "Aelynd", universe: "Original", creation_method: "ai_prompt" },
+    ]);
+    const { loadRosterCharacters, mergeRosterWithBundled, getBundledStarterRoster } =
+      await loadModule();
+
+    const result = await loadRosterCharacters({ retrySeed: false });
+
+    expect(result.usingBundledSeed).toBe(false);
+    expect(result.characters.map((c) => c.id)).toContain("char_custom");
+    expect(result.characters.some((c) => c._bundled && c.name === "Korra")).toBe(
+      true,
+    );
+
+    const merged = mergeRosterWithBundled(
+      [{ id: "seed_avatar-legend-of-korra-korra", name: "Korra", universe: "Avatar: Legend of Korra" }],
+      getBundledStarterRoster(),
+    );
+    expect(merged.filter((c) => c.name === "Korra")).toHaveLength(1);
   });
 
   it("exposes getBundledStarterRoster for immediate modal paint", async () => {

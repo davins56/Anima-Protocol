@@ -20,6 +20,7 @@ import {
 import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import type { Request, Response, NextFunction } from "express";
 import { addClient, removeClient, notifyUser } from "../lib/storeEvents";
+import { presentEntityData } from "../lib/entityRecord";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -350,7 +351,7 @@ async function listEntities(
       const mixedRows = await withTransientDbRetry(() =>
         db.select().from(userEntities).where(whereClause),
       );
-      const data = mixedRows.map((r) => r.data as Record<string, unknown>);
+      const data = mixedRows.map((r) => presentEntityData(r));
       data.sort(compareByField(field, desc));
       const end = cap === undefined ? undefined : off + cap;
       return off > 0 || end !== undefined ? data.slice(off, end) : data;
@@ -369,7 +370,7 @@ async function listEntities(
   }
 
   const rows = await withTransientDbRetry(() => q);
-  return rows.map((r) => r.data as Record<string, unknown>);
+  return rows.map((r) => presentEntityData(r));
 }
 
 async function upsertEntity(
@@ -1251,7 +1252,7 @@ router.get("/:entity/:id", async (req, res) => {
       )
       .limit(1),
   );
-  res.json(row ? (row.data as Record<string, unknown>) : null);
+  res.json(row ? presentEntityData(row) : null);
 });
 
 // --- Create -----------------------------------------------------------------

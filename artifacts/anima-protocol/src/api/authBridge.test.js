@@ -4,6 +4,7 @@ import {
   clearAuthTokenGetter,
   getToken,
   hasAuthTokenGetter,
+  resolveStoreToken,
   setAuthTokenGetter,
   waitForStoreAuth,
 } from "./authBridge";
@@ -81,5 +82,18 @@ describe("authBridge getToken", () => {
     await expect(waitForStoreAuth(80)).rejects.toThrow(
       "Store auth token not available",
     );
+  });
+
+  it("resolveStoreToken waits for a late Clerk mint instead of returning empty", async () => {
+    let token = null;
+    setAuthTokenGetter(() => token);
+    const pending = resolveStoreToken(200);
+    await new Promise((r) => setTimeout(r, 40));
+    token = "late-jwt";
+    await expect(pending).resolves.toBe("late-jwt");
+  });
+
+  it("resolveStoreToken returns null when no getter is registered", async () => {
+    await expect(resolveStoreToken(20)).resolves.toBeNull();
   });
 });
