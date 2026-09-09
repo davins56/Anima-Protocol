@@ -54,7 +54,9 @@ describe("store fail-fast budget", () => {
     expect(client).toContain("retryOnTimeout: true");
     expect(client).toContain("STORE_LIST_RETRY_LIMIT");
     expect(client).toContain("waitForAuth: false");
-    expect(client).toMatch(/Auth wait is NOT covered by AbortSignal\.timeout/);
+    expect(client).toMatch(/Auth wait is its own budget/);
+    expect(client).toContain("token: providedToken");
+    expect(client).toContain("timeoutMs: STORE_LIST_TIMEOUT_MS");
     expect(topicCreate).toContain("STORE_TOPIC_CREATE_TIMEOUT_MS");
     expect(companionCreate).toContain("STORE_COMPANION_CREATE_TIMEOUT_MS");
     expect(therapyPage).toContain("createTherapyTopic(");
@@ -89,11 +91,11 @@ describe("store fail-fast budget", () => {
     expect(STORE_SESSION_CREATE_TIMEOUT_MS).toBeGreaterThan(STORE_FETCH_TIMEOUT_MS);
   });
 
-  it("keeps the global 8s fetch cap and a longer roster list budget", () => {
+  it("keeps the roster list budget at 8s — do not raise it to paper over auth wait", () => {
     expect(STORE_LIST_RETRY_LIMIT).toBe(1);
     expect(STORE_FETCH_TIMEOUT_MS).toBe(8000);
-    expect(STORE_LIST_TIMEOUT_MS).toBe(20000);
-    expect(STORE_LIST_TIMEOUT_MS).toBe(STORE_SESSION_CREATE_TIMEOUT_MS);
+    expect(STORE_LIST_TIMEOUT_MS).toBe(STORE_FETCH_TIMEOUT_MS);
+    expect(STORE_LIST_TIMEOUT_MS).not.toBe(STORE_SESSION_CREATE_TIMEOUT_MS);
     expect(STORE_SESSION_CREATE_TIMEOUT_MS).toBeGreaterThan(STORE_FETCH_TIMEOUT_MS);
   });
 });

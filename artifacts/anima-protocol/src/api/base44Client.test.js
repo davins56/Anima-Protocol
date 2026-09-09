@@ -381,7 +381,7 @@ describe("Character roster list budget", () => {
     delete global.fetch;
   });
 
-  it("uses the roster list budget, not the 8s write cap", async () => {
+  it("uses a fresh 8s list abort after auth, not a raised 20s list cap", async () => {
     const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
       const controller = new AbortController();
       controller.signal.budgetMs = ms;
@@ -396,8 +396,36 @@ describe("Character roster list budget", () => {
     });
     expect(rows).toEqual([{ id: "char-1", name: "Korra" }]);
     expect(timeoutSpy).toHaveBeenCalledWith(STORE_LIST_TIMEOUT_MS);
-    expect(STORE_LIST_TIMEOUT_MS).toBe(20000);
+    expect(STORE_LIST_TIMEOUT_MS).toBe(STORE_FETCH_TIMEOUT_MS);
+    expect(STORE_LIST_TIMEOUT_MS).toBe(8000);
     expect(STORE_FETCH_TIMEOUT_MS).toBe(8000);
+  });
+
+  it("does not arm the list abort until Clerk mint finishes", async () => {
+    let token = null;
+    setAuthTokenGetter(() => token);
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      controller.signal.budgetMs = ms;
+      return controller.signal;
+    });
+    let fetchStarted = false;
+    global.fetch = vi.fn(async () => {
+      fetchStarted = true;
+      return Response.json([{ id: "char-1", name: "Korra" }]);
+    });
+
+    const pending = base44.entities.Character.list("-created_date", 10, {
+      _bootstrapInternal: true,
+    });
+    await new Promise((r) => setTimeout(r, 40));
+    expect(timeoutSpy).not.toHaveBeenCalled();
+    expect(fetchStarted).toBe(false);
+
+    token = "live-jwt";
+    await expect(pending).resolves.toEqual([{ id: "char-1", name: "Korra" }]);
+    expect(fetchStarted).toBe(true);
+    expect(timeoutSpy).toHaveBeenCalledWith(STORE_FETCH_TIMEOUT_MS);
   });
 });
 

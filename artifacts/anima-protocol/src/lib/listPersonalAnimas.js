@@ -111,9 +111,8 @@ async function listByNameSearch(entity, name, limit) {
  * Also query `creation_method` and known name aliases across the whole store.
  */
 export async function listPersonalAnimas(limit = 500) {
-  // Shared Clerk mint wait for Customise Anima and chat roster. queryEntity
-  // still returns [] when getToken() is not ready — do not skip this wait.
-  await awaitCompanionStoreAuth();
+  // queryEntity waits for Clerk once, then storeFetch uses that token with
+  // a fresh 8s abort. Do not stack awaitCompanionStoreAuth(8s) here.
   // Primary Anima.list must throw so Customise Anima can classify
   // timeout / database / misconfigured failures. Recovery queries are
   // best-effort and must not hide that error.

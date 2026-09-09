@@ -169,19 +169,11 @@ describe("listPersonalAnimas", () => {
     mocks.waitForStoreAuth.mockReset().mockResolvedValue("token");
   });
 
-  it("waits for a store token before Anima.list so an empty token is not an empty roster", async () => {
-    let listed = false;
-    awaitCompanionStoreAuth.mockImplementation(async () => {
-      expect(listed).toBe(false);
-      return "token";
-    });
-    mocks.listAnima.mockImplementation(async () => {
-      listed = true;
-      return [{ id: "anima-1", name: "Serenity" }];
-    });
+  it("does not stack an 8s auth wait before Anima.list", async () => {
+    mocks.listAnima.mockResolvedValue([{ id: "anima-1", name: "Serenity" }]);
 
     const rows = await listPersonalAnimas(100);
-    expect(awaitCompanionStoreAuth).toHaveBeenCalled();
+    expect(awaitCompanionStoreAuth).not.toHaveBeenCalled();
     expect(rows.map((row) => row.name)).toEqual(["Serenity"]);
   });
 
@@ -224,7 +216,7 @@ describe("listPersonalAnimas", () => {
     });
 
     const rows = await listPersonalAnimas(100);
-    expect(awaitCompanionStoreAuth).toHaveBeenCalled();
+    expect(awaitCompanionStoreAuth).not.toHaveBeenCalled();
     expect(rows.map((row) => row.name)).toEqual(
       expect.arrayContaining(["Serenity", "Aelynd"]),
     );

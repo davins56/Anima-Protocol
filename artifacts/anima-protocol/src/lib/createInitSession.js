@@ -321,7 +321,7 @@ export function beginBundledStarterUpsert({
 export async function createInitChatSession(
   payload,
   {
-    create = (data) => base44.entities.ChatSession.create(data),
+    create = (data, opts) => base44.entities.ChatSession.create(data, opts),
     persistMessages = (sessionId, messages) =>
       base44.messages.replace(sessionId, messages),
     retryLimit = STORE_SESSION_CREATE_RETRY_LIMIT,
@@ -329,17 +329,22 @@ export async function createInitChatSession(
   } = {},
 ) {
   // Mint must finish before ChatSession.create arms its 20s abort. Sharing
-  // that signal with Clerk getToken() is the iPad ~20s Init hang.
-  await waitForAuth();
+  // that signal with Clerk getToken() is the iPad ~20s Init hang. Pass the
+  // token through so storeFetch does not stack a second 8s auth wait.
+  const token = await waitForAuth();
   const messages = Array.isArray(payload?.messages) ? payload.messages : [];
   const sessionFields = { ...(payload || {}) };
   delete sessionFields.messages;
+  const createOpts =
+    typeof token === "string" && token.length > 0 ? { token } : undefined;
 
   const attempts = Math.max(0, retryLimit) + 1;
   let lastErr;
   for (let i = 0; i < attempts; i += 1) {
     try {
-      const session = requireCreatedSession(await create(sessionFields));
+      const session = requireCreatedSession(
+        await create(sessionFields, createOpts),
+      );
       if (messages.length > 0) {
         Promise.resolve(persistMessages(session.id, messages)).catch((err) => {
           console.warn("[Anima] Opening messages persist failed:", err);
