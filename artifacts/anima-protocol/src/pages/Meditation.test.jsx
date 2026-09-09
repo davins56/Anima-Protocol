@@ -41,6 +41,7 @@ vi.mock("@/lib/storeTimeouts", async (importOriginal) => {
   return {
     ...actual,
     STORE_FETCH_TIMEOUT_MS: 50,
+    STORE_LIST_TIMEOUT_MS: 50,
     STORE_AUTH_WAIT_MS: 20,
     BOOTSTRAP_UI_TIMEOUT_MS: 50,
   };
@@ -140,6 +141,83 @@ describe("Meditation affirmations", () => {
     expect(screen.queryByText(AFFIRMATION_LOAD_TIMEOUT)).toBeNull();
     expect(screen.queryByText("I am healthy, wealthy, and wise.")).toBeNull();
     expect(affirmationMocks.filter).toHaveBeenCalledTimes(2);
+  });
+
+  it("loads account affirmations when auth.me is slow but filter is ready", async () => {
+    affirmationMocks.me.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => resolve({ email: "operator@example.com" }), 35);
+        }),
+    );
+    affirmationMocks.filter.mockResolvedValue([
+      { id: "acct-4", text: "Profile GET cannot steal this vow.", category: "clarity" },
+    ]);
+    renderPage();
+
+    expect(await screen.findByText("Profile GET cannot steal this vow.")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(AFFIRMATION_LOAD_TIMEOUT)).toBeNull();
+    expect(screen.queryByText("I am healthy, wealthy, and wise.")).toBeNull();
+  });
+
+  it("populates Anima when filter and Anima.list are both slow", async () => {
+    affirmationMocks.filter.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(
+            () =>
+              resolve([
+                {
+                  id: "acct-5",
+                  text: "Companions cannot starve this vow.",
+                  category: "healing",
+                },
+              ]),
+            30,
+          );
+        }),
+    );
+    affirmationMocks.listAnima.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(
+            () =>
+              resolve([
+                {
+                  id: "anima-serenity",
+                  name: "Serenity",
+                  assigned_user: "operator@example.com",
+                },
+              ]),
+            30,
+          );
+        }),
+    );
+    renderPage();
+
+    expect(
+      await screen.findByText("Companions cannot starve this vow."),
+    ).toBeTruthy();
+    expect(await screen.findByText(/Serenity · Wellness Protocol/)).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(AFFIRMATION_LOAD_TIMEOUT)).toBeNull();
+  });
+
+  it("keeps account affirmations when Character.list never settles", async () => {
+    affirmationMocks.filter.mockResolvedValue([
+      { id: "acct-3", text: "Roster cannot steal this vow.", category: "strength" },
+    ]);
+    affirmationMocks.listCharacter.mockReturnValue(new Promise(() => {}));
+    affirmationMocks.listAnima.mockReturnValue(new Promise(() => {}));
+    renderPage();
+
+    expect(await screen.findByText("Roster cannot steal this vow.")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(AFFIRMATION_LOAD_TIMEOUT)).toBeNull();
+    expect(screen.queryByText("I am healthy, wealthy, and wise.")).toBeNull();
+    expect(screen.queryByText(/Attuning frequency/i)).toBeNull();
+    expect(affirmationMocks.filter).toHaveBeenCalledTimes(1);
   });
 
   it("retries Sacred Space after a timeout instead of leaving sticky defaults", async () => {
