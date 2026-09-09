@@ -959,6 +959,8 @@ async function countEntity(entityName, { filters, search } = {}) {
 }
 
 const ROSTER_ENTITIES = new Set(['Character', 'Anima']);
+/** First-paint lists that can pay ensureSchemaOnce() — not the 8s write cap. */
+const LONG_LIST_ENTITIES = new Set(['Character', 'Anima', 'Affirmation']);
 
 async function queryEntity(entityName, opts) {
   // Wait for starter seeding before UI reads the roster. Bootstrap-internal
@@ -988,7 +990,7 @@ async function queryEntity(entityName, opts) {
       `/${encodeURIComponent(entityName)}${qs ? `?${qs}` : ''}`,
       {
         retryOnTimeout: true,
-        timeoutMs: ROSTER_ENTITIES.has(entityName)
+        timeoutMs: LONG_LIST_ENTITIES.has(entityName)
           ? STORE_LIST_TIMEOUT_MS
           : undefined,
       },

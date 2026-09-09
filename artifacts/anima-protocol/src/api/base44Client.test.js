@@ -399,6 +399,43 @@ describe("Character roster list budget", () => {
     expect(STORE_LIST_TIMEOUT_MS).toBe(20000);
     expect(STORE_FETCH_TIMEOUT_MS).toBe(8000);
   });
+
+  it("uses the long list budget for Affirmation.filter, not the 8s write cap", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      controller.signal.budgetMs = ms;
+      return controller.signal;
+    });
+    global.fetch = vi.fn(async () =>
+      Response.json([{ id: "aff-1", text: "I am here.", category: "healing" }]),
+    );
+
+    const rows = await base44.entities.Affirmation.filter({
+      user_email: "operator@example.com",
+      is_active: true,
+    });
+    expect(rows).toEqual([
+      { id: "aff-1", text: "I am here.", category: "healing" },
+    ]);
+    expect(timeoutSpy).toHaveBeenCalledWith(STORE_LIST_TIMEOUT_MS);
+    expect(STORE_LIST_TIMEOUT_MS).toBe(20000);
+    expect(STORE_FETCH_TIMEOUT_MS).toBe(8000);
+  });
+
+  it("uses the long list budget for Affirmation.list as well as filter", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      controller.signal.budgetMs = ms;
+      return controller.signal;
+    });
+    global.fetch = vi.fn(async () =>
+      Response.json([{ id: "aff-2", text: "Listed.", category: "love" }]),
+    );
+
+    const rows = await base44.entities.Affirmation.list("-created_date", 20);
+    expect(rows).toEqual([{ id: "aff-2", text: "Listed.", category: "love" }]);
+    expect(timeoutSpy).toHaveBeenCalledWith(STORE_LIST_TIMEOUT_MS);
+  });
 });
 
 describe("Character / Anima store create budget", () => {

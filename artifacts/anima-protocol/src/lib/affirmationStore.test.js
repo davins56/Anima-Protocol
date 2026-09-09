@@ -364,4 +364,121 @@ describe("loadSacredSpaceSnapshot", () => {
     expect(filter).toHaveBeenCalledTimes(1);
     expect(waitForAuth).toHaveBeenCalledTimes(1);
   });
+
+  it("does not treat a slow auth.me as an affirmation list timeout", async () => {
+    let meDone = false;
+    const waitForAuth = vi.fn().mockResolvedValue("token");
+    const filter = vi.fn(async () => {
+      expect(meDone).toBe(true);
+      return accountRows;
+    });
+
+    await expect(
+      loadSacredSpaceSnapshot({
+        loadUser: async () => {
+          await new Promise((r) => setTimeout(r, 40));
+          meDone = true;
+          return user;
+        },
+        filter,
+        waitForAuth,
+        // Shorter than auth.me — #434's shared snapshot budget failed here.
+        listTimeoutMs: 25,
+        userTimeoutMs: 80,
+      }),
+    ).resolves.toMatchObject({ existing: accountRows });
+    expect(filter).toHaveBeenCalledTimes(1);
+    expect(waitForAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not share one STORE_FETCH window across Affirmation.filter and Anima.list", async () => {
+    const waitForAuth = vi.fn().mockResolvedValue("token");
+    const animas = [
+      { id: "anima-1", name: "Serenity", assigned_user: "a@b.c" },
+    ];
+
+    await expect(
+      loadSacredSpaceSnapshot({
+        loadUser: async () => user,
+        filter: async () => {
+          await new Promise((r) => setTimeout(r, 30));
+          return accountRows;
+        },
+        listAnimas: async () => {
+          await new Promise((r) => setTimeout(r, 30));
+          return animas;
+        },
+        waitForAuth,
+        // Each 30ms leg fits its own 45ms budget. #434's shared 45ms
+        // Promise.all window would abort the second leg.
+        listTimeoutMs: 45,
+        rosterTimeoutMs: 45,
+        userTimeoutMs: 20,
+      }),
+    ).resolves.toMatchObject({
+      existing: accountRows,
+      animas,
+    });
+    expect(waitForAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not treat a hung Character.list as sticky default affirmations", async () => {
+    const waitForAuth = vi.fn().mockResolvedValue("token");
+    const filter = vi.fn(async () => accountRows);
+    const listCharacters = vi.fn(() => new Promise(() => {}));
+    const listAnimas = vi.fn(() => new Promise(() => {}));
+
+    await expect(
+      loadSacredSpaceSnapshot({
+        loadUser: async () => user,
+        filter,
+        listAnimas,
+        listCharacters,
+        waitForAuth,
+        listTimeoutMs: 80,
+        rosterTimeoutMs: 20,
+      }),
+    ).resolves.toMatchObject({
+      existing: accountRows,
+      animas: [],
+      chars: [],
+    });
+    expect(filter).toHaveBeenCalledTimes(1);
+    expect(waitForAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it("delivers a late roster without failing the affirmation list", async () => {
+    const waitForAuth = vi.fn().mockResolvedValue("token");
+    const onRoster = vi.fn();
+    let resolveChars;
+    const listCharacters = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveChars = resolve;
+        }),
+    );
+
+    const pending = loadSacredSpaceSnapshot({
+      loadUser: async () => user,
+      filter: async () => accountRows,
+      listCharacters,
+      waitForAuth,
+      listTimeoutMs: 80,
+      rosterTimeoutMs: 15,
+      onRoster,
+    });
+
+    const result = await pending;
+    expect(result.existing).toEqual(accountRows);
+    expect(result.chars).toEqual([]);
+
+    resolveChars([{ id: "char-1", name: "Nyx" }]);
+    await vi.waitFor(() => {
+      expect(onRoster).toHaveBeenCalledWith({
+        me: user,
+        animas: [],
+        chars: [{ id: "char-1", name: "Nyx" }],
+      });
+    });
+  });
 });
