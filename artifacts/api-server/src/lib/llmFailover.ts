@@ -61,6 +61,8 @@ import {
   hasWorkersAiBinding,
   isWorkersAiFreeQuotaError,
   isWorkersAiNeuronQuotaError,
+  isWorkersAiQuotaExhaustedThisIsolate,
+  markWorkersAiQuotaExhausted,
   streamWorkersAi,
   WORKERS_AI_CHAT_MODEL,
   WORKERS_AI_FREE_PLAN_NEURONS_PER_DAY,
@@ -1860,6 +1862,10 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
   for (const provider of chain) {
     try {
       if (provider === "workersai") {
+        if (isWorkersAiQuotaExhaustedThisIsolate()) {
+          triedWorkersAi = true;
+          throw new WorkersAiRequestError(WORKERS_AI_FREE_QUOTA_HINT);
+        }
         triedWorkersAi = true;
         const stream = await streamWorkersAi({
           messages: req.messages,
@@ -1918,6 +1924,9 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
       throw new Error(`Unsupported chat provider: ${provider}`);
     } catch (err) {
       lastErr = err;
+      if (provider === "workersai" && isWorkersAiFreeQuotaError(err)) {
+        markWorkersAiQuotaExhausted();
+      }
       if (provider === "local" && isProviderConnectionError(err)) {
         localConnectionFailed = true;
       }
@@ -1970,6 +1979,10 @@ export async function createChatCompletionWithFailover(
   for (const provider of chain) {
     try {
       if (provider === "workersai") {
+        if (isWorkersAiQuotaExhaustedThisIsolate()) {
+          triedWorkersAi = true;
+          throw new WorkersAiRequestError(WORKERS_AI_FREE_QUOTA_HINT);
+        }
         triedWorkersAi = true;
         const content = await completeWorkersAi({
           messages: req.messages,
@@ -2033,6 +2046,9 @@ export async function createChatCompletionWithFailover(
       throw new Error(`Unsupported chat provider: ${provider}`);
     } catch (err) {
       lastErr = err;
+      if (provider === "workersai" && isWorkersAiFreeQuotaError(err)) {
+        markWorkersAiQuotaExhausted();
+      }
       if (provider === "local" && isProviderConnectionError(err)) {
         localConnectionFailed = true;
       }
