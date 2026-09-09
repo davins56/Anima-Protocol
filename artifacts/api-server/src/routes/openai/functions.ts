@@ -47,7 +47,11 @@ async function llm(systemPrompt: string, userPrompt: string, maxTokens = 1024): 
       { role: "user", content: userPrompt },
     ],
   });
-  return visibleAssistantReply(result.content);
+  const visible = visibleAssistantReply(result.content);
+  if (!String(visible).trim()) {
+    throw new Error("The companion returned an empty reply. Please try again.");
+  }
+  return visible;
 }
 
 // Web search grounding is an OpenAI Responses API feature and chat never

@@ -88,7 +88,7 @@ describe("client/server budget lockstep", () => {
       join(repoRoot, "artifacts/anima-protocol/src/api/animaApi.js"),
       "utf8",
     );
-    expect(animaApi).toMatch(/CHAT_STREAM_TIMEOUT_MS = 115_000/);
-    expect(CHAT_STREAM_TIMEOUT_MS).toBe(115_000);
+    expect(animaApi).toMatch(/CHAT_STREAM_TIMEOUT_MS = 130_000/);
+    expect(CHAT_STREAM_TIMEOUT_MS).toBe(130_000);
   });
 });
