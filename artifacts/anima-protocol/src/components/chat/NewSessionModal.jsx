@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { X, Search, Check, Plus } from "lucide-react";
 import { toast } from "sonner";
-import { base44 } from "@/api/base44Client";
+import { base44, waitForStoreAuth } from "@/api/base44Client";
 import StoryTemplateBrowser from "@/components/templates/StoryTemplateBrowser";
 import CanonicalStoriesBrowser from "@/components/stories/CanonicalStoriesBrowser";
 import StoryCharacterChooser from "@/components/stories/StoryCharacterChooser";
@@ -181,6 +181,11 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
     if (selected.length === 0 || creating) return;
     setCreating(true);
     setLoadError(null);
+    try {
+      await waitForStoreAuth();
+    } catch {
+      // createInitChatSession / storeFetch still surface a sign-in error.
+    }
 
     // Bundled starters are not in Postgres yet. Persist them in the background
     // — bulk-upsert keeps client seed ids, so Init must not await a 20s

@@ -26,9 +26,11 @@ import {
   clearAuthTokenGetter,
   getToken,
   hasAuthTokenGetter,
+  resolveStoreToken,
   setAuthTokenGetter,
   waitForStoreAuth,
 } from './authBridge';
+import { hydrateStoreList, hydrateStoreRecord } from '@/lib/storeRecords';
 
 const STORE_BASE = () => apiUrl('/store');
 
@@ -239,6 +241,8 @@ export async function parseStoreErrorResponse(res) {
  * @param {string|{message: string, reason?: string, code?: string,
  *   dbError?: boolean, transport?: boolean}} detail
  */
+const AUTH_REQUIRED_ENTITIES = new Set(['Character', 'Anima', 'ChatSession']);
+
 function storeError(res, detail) {
   const info = typeof detail === 'string' ? { message: detail } : detail || {};
   const e = new Error(info.message);
@@ -250,6 +254,16 @@ function storeError(res, detail) {
   if (info.code) e.code = info.code;
   if (typeof info.dbError === 'boolean') e.dbError = info.dbError;
   return e;
+}
+
+function missingStoreTokenError() {
+  return storeError(
+    { status: 401 },
+    {
+      message:
+        'Session not recognized by the server — sign out, sign back in, and try again.',
+    },
+  );
 }
 
 // Shared helper for image API calls (edit / generate). Surfaces abort vs
@@ -937,8 +951,15 @@ async function queryEntity(entityName, opts) {
   if (inflight.has(key)) return inflight.get(key);
 
   const promise = (async () => {
-    const token = await getToken();
-    if (!token) return [];
+    const token = await resolveStoreToken();
+    if (!token) {
+      // A registered getter that has not minted yet used to look like an
+      // empty account — custom characters vanished and Init opened nothing.
+      if (AUTH_REQUIRED_ENTITIES.has(entityName) && hasAuthTokenGetter()) {
+        throw missingStoreTokenError();
+      }
+      return [];
+    }
     const res = await storeFetch(
       `/${encodeURIComponent(entityName)}${qs ? `?${qs}` : ''}`,
       { retryOnTimeout: true },
@@ -965,15 +986,16 @@ async function queryEntity(entityName, opts) {
         { message: STORE_UNREACHABLE_MESSAGE, transport: true },
       );
     }
-    let data;
+    let parsed;
     try {
-      data = JSON.parse(text);
+      parsed = JSON.parse(text);
     } catch {
       throw storeError(
         { status: 503 },
         { message: STORE_UNREACHABLE_MESSAGE, transport: true },
       );
     }
+    const data = opts?.count ? parsed : hydrateStoreList(parsed);
     // Don't cache an empty roster while bootstrap may still be seeding — pages
     // that fetched too early would otherwise keep [] for the TTL window.
     const skipEmptyRosterCache =
@@ -1015,14 +1037,17 @@ async function throwErr(res) {
 // is the whole history; limit/beforeSeq page it (see the server contract).
 async function listMessages(sessionId, { limit, beforeSeq } = {}) {
   if (!sessionId) return [];
-  const token = await getToken();
-  if (!token) return [];
+  const token = await resolveStoreToken();
+  if (!token) {
+    if (hasAuthTokenGetter()) throw missingStoreTokenError();
+    return [];
+  }
   const params = new URLSearchParams();
   params.set('session_id', sessionId);
   if (typeof limit === 'number' && limit >= 0) params.set('limit', String(limit));
   if (typeof beforeSeq === 'number') params.set('before_seq', String(beforeSeq));
   const res = await storeFetch(`/messages?${params.toString()}`);
-  if (res.status === 401) return [];
+  if (res.status === 401) throw missingStoreTokenError();
   if (!res.ok) await throwErr(res);
   return res.json();
 }
@@ -1156,17 +1181,21 @@ function entityStore(entityName) {
     },
 
     async get(id, opts) {
-      const token = await getToken();
-      if (!token) return null;
+      const token = await resolveStoreToken();
+      if (!token) {
+        if (hasAuthTokenGetter()) throw missingStoreTokenError();
+        return null;
+      }
       const res = await storeFetch(
         `/${encodeURIComponent(entityName)}/${encodeURIComponent(id)}`,
       );
-      if (res.status === 401 || res.status === 404) return null;
+      if (res.status === 401) throw missingStoreTokenError();
+      if (res.status === 404) return null;
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
         throw new Error(err.error || res.statusText);
       }
-      return res.json();
+      return hydrateStoreRecord(await res.json(), id);
     },
 
     async create(data, opts = {}) {

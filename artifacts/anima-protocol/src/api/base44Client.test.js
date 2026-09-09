@@ -419,6 +419,7 @@ describe("Character.list HTML failures", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     clearAuthTokenGetter();
     vi.restoreAllMocks();
     delete global.fetch;
@@ -473,6 +474,37 @@ describe("Character.list HTML failures", () => {
       status: 503,
       message: expect.stringMatching(/unreachable|database/i),
     });
+  });
+
+  it("does not treat a missing Clerk token as an empty Character roster", async () => {
+    vi.useFakeTimers();
+    setAuthTokenGetter(() => null);
+    global.fetch = vi.fn();
+
+    const pending = base44.entities.Character.list("-created_date", 100, {
+      _bootstrapInternal: true,
+    });
+    const expectReject = expect(pending).rejects.toMatchObject({
+      status: 401,
+      message: expect.stringMatching(/sign out|sign back in/i),
+    });
+    await vi.advanceTimersByTimeAsync(STORE_FETCH_TIMEOUT_MS + 200);
+    await expectReject;
+    expect(global.fetch).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("unwraps a wrapped Character list so custom rows are not dropped", async () => {
+    global.fetch = vi.fn(async () =>
+      Response.json({
+        items: [{ id: "char_custom", name: "Aelynd" }],
+      }),
+    );
+
+    const rows = await base44.entities.Character.list("-created_date", 100, {
+      _bootstrapInternal: true,
+    });
+    expect(rows).toEqual([{ id: "char_custom", name: "Aelynd" }]);
   });
 });
 
