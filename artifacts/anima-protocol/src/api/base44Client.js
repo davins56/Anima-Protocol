@@ -19,6 +19,7 @@ import {
   STORE_COMPANION_CREATE_TIMEOUT_MS,
   STORE_FETCH_TIMEOUT_MS,
   STORE_LIST_RETRY_LIMIT,
+  STORE_LIST_TIMEOUT_MS,
   STORE_SESSION_CREATE_TIMEOUT_MS,
 } from '@/lib/storeTimeouts';
 import {
@@ -46,6 +47,7 @@ export {
   STORE_COMPANION_CREATE_TIMEOUT_MS,
   STORE_FETCH_TIMEOUT_MS,
   STORE_LIST_RETRY_LIMIT,
+  STORE_LIST_TIMEOUT_MS,
   STORE_SESSION_CREATE_TIMEOUT_MS,
 };
 
@@ -74,18 +76,6 @@ function storeTimeoutError(timeoutMessage) {
 }
 
 async function storeFetch(path, options = {}) {
-  let token = await getToken();
-  if (!token && hasAuthTokenGetter()) {
-    token = await resolveStoreToken();
-  }
-  if (!token) {
-    const err = new Error(
-      'Not signed in — your session may have expired. Sign out and sign in again, then retry.',
-    );
-    err.status = 401;
-    throw err;
-  }
-
   const {
     timeoutMs,
     timeoutMessage,
@@ -99,8 +89,26 @@ async function storeFetch(path, options = {}) {
       ? timeoutMs
       : STORE_FETCH_TIMEOUT_MS;
 
-  const makeRequest = async (retryOptions = {}, signal) => {
-    const headers = await authHeaders(optionHeaders, retryOptions);
+  // Auth wait is NOT covered by AbortSignal.timeout. After OTP, Clerk mint
+  // can take seconds — if that wait shares the ChatSession create budget,
+  // Init hangs for ~20s then aborts before the POST can finish.
+  let token = await getToken();
+  if (!token && hasAuthTokenGetter()) {
+    token = await resolveStoreToken();
+  }
+  if (!token) {
+    const err = new Error(
+      'Not signed in — your session may have expired. Sign out and sign in again, then retry.',
+    );
+    err.status = 401;
+    throw err;
+  }
+
+  const makeRequest = async (requestToken, signal) => {
+    const headers = await authHeaders(optionHeaders, {
+      waitForAuth: false,
+      token: requestToken,
+    });
     return await fetch(`${STORE_BASE()}${path}`, {
       ...fetchOptions,
       headers,
@@ -110,21 +118,25 @@ async function storeFetch(path, options = {}) {
   };
 
   const runOnce = async () => {
-    // First attempt + 401 retry share one budget. A 503 reset gets a fresh
-    // AbortSignal so a hung Hyperdrive socket cannot starve the retry.
     const firstSignal = createStoreAbortSignal(budget, userSignal);
-    let res = await makeRequest({}, firstSignal);
+    let res = await makeRequest(token, firstSignal);
     if (res.status === 401) {
-      const retried = await makeRequest({ skipCache: true }, firstSignal);
-      if (retried.status !== 401) {
-        return retried;
-      }
-      res = retried;
+      // Refresh Clerk outside the create/list abort window, then retry with
+      // a fresh budget so a late mint cannot starve ChatSession.create.
+      const refreshed =
+        (await getToken({ skipCache: true })) ||
+        (await resolveStoreToken()) ||
+        token;
+      token = refreshed;
+      res = await makeRequest(
+        refreshed,
+        createStoreAbortSignal(budget, userSignal),
+      );
     }
     // Stale Worker/pg sockets surface as 503 "Database connection reset".
     // One extra attempt lets the server open a fresh connection.
     if (await isRetryableStoreReset(res)) {
-      res = await makeRequest({}, createStoreAbortSignal(budget, userSignal));
+      res = await makeRequest(token, createStoreAbortSignal(budget, userSignal));
     }
     return res;
   };
@@ -969,7 +981,12 @@ async function queryEntity(entityName, opts) {
     }
     const res = await storeFetch(
       `/${encodeURIComponent(entityName)}${qs ? `?${qs}` : ''}`,
-      { retryOnTimeout: true },
+      {
+        retryOnTimeout: true,
+        timeoutMs: ROSTER_ENTITIES.has(entityName)
+          ? STORE_LIST_TIMEOUT_MS
+          : undefined,
+      },
     );
     // Never cache auth failures as an empty roster — that made bootstrap/repair
     // think seeding succeeded when the store was never reachable. After bootstrap

@@ -20,6 +20,13 @@ vi.mock("@/api/base44Client", () => ({
     },
   },
   waitForStoreAuth: mocks.waitForStoreAuth,
+  awaitCompanionStoreAuth: async (timeoutMs) => {
+    try {
+      return await mocks.waitForStoreAuth(timeoutMs);
+    } catch {
+      return null;
+    }
+  },
 }));
 
 vi.mock("@/lib/syncBootstrap", () => ({

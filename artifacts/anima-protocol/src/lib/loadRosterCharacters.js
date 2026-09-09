@@ -14,13 +14,24 @@ import { normalizeStoreList } from "@/lib/storeRecords";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import { STORE_AUTH_WAIT_MS } from "@/lib/storeTimeouts";
 import {
+  classifyRosterFallback,
   isStoreDatabaseError,
   isStoreReadUnavailable,
+  isStoreTimeoutError,
+  rosterFallbackLabel,
+  rosterFallbackMessage,
 } from "@/lib/storeErrorSignals";
 
 // Re-exported for existing importers; the implementation now lives in
 // storeErrorSignals.js so Characters.jsx and this loader cannot drift apart.
-export { isStoreDatabaseError, isStoreReadUnavailable };
+export {
+  classifyRosterFallback,
+  isStoreDatabaseError,
+  isStoreReadUnavailable,
+  isStoreTimeoutError,
+  rosterFallbackLabel,
+  rosterFallbackMessage,
+};
 
 function asAnimaChars(animas) {
   return (animas || []).map((a) => ({
@@ -62,7 +73,7 @@ export function mergeRosterWithBundled(storeChars, bundledChars) {
 /**
  * Load Character + Anima rows for chat pickers.
  * @param {{ retrySeed?: boolean, characterLimit?: number, animaLimit?: number, waitBootstrap?: boolean, allowBundledFallback?: boolean, notifyOnSeed?: boolean }} [opts]
- * @returns {Promise<{ characters: object[], rawCharacters: object[], animas: object[], animaAsChars: object[], error: Error|null, usingBundledSeed: boolean }>}
+ * @returns {Promise<{ characters: object[], rawCharacters: object[], animas: object[], animaAsChars: object[], error: Error|null, usingBundledSeed: boolean, fallbackKind: string|null }>}
  */
 export async function loadRosterCharacters({
   retrySeed = true,
@@ -103,6 +114,25 @@ export async function loadRosterCharacters({
     listError = err;
     console.warn("[Anima] Character roster load failed:", err?.message || err);
     rawCharacters = [];
+    // First list after OTP often races schema warmup. Wait for auth again,
+    // then retry once with a fresh storeFetch abort — do not treat that as
+    // a sticky offline roster.
+    if (isStoreTimeoutError(err)) {
+      await awaitCompanionStoreAuth(STORE_AUTH_WAIT_MS);
+      try {
+        rawCharacters = normalizeStoreList(
+          await base44.entities.Character.list("-created_date", characterLimit),
+        );
+        listError = null;
+      } catch (retryErr) {
+        listError = retryErr;
+        console.warn(
+          "[Anima] Character roster retry after timeout failed:",
+          retryErr?.message || retryErr,
+        );
+        rawCharacters = [];
+      }
+    }
   }
 
   let seedError = null;
@@ -152,6 +182,7 @@ export async function loadRosterCharacters({
   }
 
   const animaAsChars = asAnimaChars(animas);
+  const fallbackKind = usingBundledSeed ? classifyRosterFallback(storeError) : null;
   return {
     characters: [...animaAsChars, ...rawCharacters],
     rawCharacters,
@@ -159,5 +190,6 @@ export async function loadRosterCharacters({
     animaAsChars,
     error: storeError,
     usingBundledSeed,
+    fallbackKind,
   };
 }

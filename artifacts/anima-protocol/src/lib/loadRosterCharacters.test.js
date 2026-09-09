@@ -194,6 +194,47 @@ describe("loadRosterCharacters", () => {
     expect(merged.filter((c) => c.name === "Korra")).toHaveLength(1);
   });
 
+  it("retries Character.list after auth wait when the first list times out", async () => {
+    const timeout = Object.assign(
+      new Error(
+        "The server took too long to respond. Check your connection or try again in a moment.",
+      ),
+      { code: "timeout" },
+    );
+    characterList
+      .mockRejectedValueOnce(timeout)
+      .mockResolvedValueOnce([
+        { id: "char_store", name: "Aelynd", universe: "Original" },
+      ]);
+    const { loadRosterCharacters } = await loadModule();
+
+    const result = await loadRosterCharacters({ retrySeed: false });
+
+    expect(awaitCompanionStoreAuth).toHaveBeenCalledTimes(2);
+    expect(characterList).toHaveBeenCalledTimes(2);
+    expect(result.usingBundledSeed).toBe(false);
+    expect(result.fallbackKind).toBeNull();
+    expect(result.characters.map((c) => c.id)).toContain("char_store");
+  });
+
+  it("keeps bundled fallback after a second timeout without labeling it the success path", async () => {
+    const timeout = Object.assign(
+      new Error(
+        "The server took too long to respond. Check your connection or try again in a moment.",
+      ),
+      { code: "timeout" },
+    );
+    characterList.mockRejectedValue(timeout);
+    const { loadRosterCharacters } = await loadModule();
+
+    const result = await loadRosterCharacters({ retrySeed: false });
+
+    expect(result.usingBundledSeed).toBe(true);
+    expect(result.fallbackKind).toBe("timeout");
+    expect(result.characters.length).toBeGreaterThan(0);
+    expect(result.error).toBe(timeout);
+  });
+
   it("exposes getBundledStarterRoster for immediate modal paint", async () => {
     const { getBundledStarterRoster } = await loadModule();
     const roster = getBundledStarterRoster();
