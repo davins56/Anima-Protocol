@@ -87,6 +87,8 @@ async function storeFetch(path, options = {}) {
     signal: userSignal,
     headers: optionHeaders,
     retryOnTimeout = false,
+    token: providedToken,
+    waitForAuth: _waitForAuth,
     ...fetchOptions
   } = options;
   const budget =
@@ -97,7 +99,12 @@ async function storeFetch(path, options = {}) {
   // Auth wait is NOT covered by AbortSignal.timeout. After OTP, Clerk mint
   // can take seconds — if that wait shares the ChatSession create budget,
   // Init hangs for ~20s then aborts before the POST can finish.
-  let token = await getToken();
+  // Sacred Space already waited; pass that Bearer so getToken() cannot eat
+  // the Affirmation.filter abort window.
+  let token =
+    typeof providedToken === 'string' && providedToken.length > 0
+      ? providedToken
+      : await getToken();
   if (!token && hasAuthTokenGetter()) {
     token = await resolveStoreToken();
   }
@@ -977,8 +984,11 @@ async function queryEntity(entityName, opts) {
 
   if (inflight.has(key)) return inflight.get(key);
 
+  const providedToken =
+    typeof opts?.token === 'string' && opts.token.length > 0 ? opts.token : '';
+
   const promise = (async () => {
-    const token = await resolveStoreToken();
+    const token = providedToken || (await resolveStoreToken());
     if (!token) {
       // Shared store-level wait already ran. Keep the [] contract so
       // Customise Anima (#428) can classify empty+no-token as unsigned.
@@ -993,6 +1003,7 @@ async function queryEntity(entityName, opts) {
         timeoutMs: LONG_LIST_ENTITIES.has(entityName)
           ? STORE_LIST_TIMEOUT_MS
           : undefined,
+        token,
       },
     );
     // Never cache auth failures as an empty roster — that made bootstrap/repair
@@ -1309,6 +1320,7 @@ function entityStore(entityName) {
         limit,
         offset,
         _bootstrapInternal: opts?._bootstrapInternal,
+        token: opts?.token,
       });
     },
   };

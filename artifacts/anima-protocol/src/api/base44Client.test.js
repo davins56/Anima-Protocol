@@ -436,6 +436,30 @@ describe("Character roster list budget", () => {
     expect(rows).toEqual([{ id: "aff-2", text: "Listed.", category: "love" }]);
     expect(timeoutSpy).toHaveBeenCalledWith(STORE_LIST_TIMEOUT_MS);
   });
+
+  it("sends the provided Bearer on Affirmation.filter without a second mint wait", async () => {
+    let getterCalls = 0;
+    setAuthTokenGetter(() => {
+      getterCalls += 1;
+      return "getter-jwt";
+    });
+    global.fetch = vi.fn(async (_url, options) => {
+      expect(options.headers.Authorization).toBe("Bearer sacred-bearer");
+      return Response.json([
+        { id: "aff-1", text: "Mine", category: "healing" },
+      ]);
+    });
+
+    const rows = await base44.entities.Affirmation.filter(
+      { is_active: true },
+      undefined,
+      undefined,
+      { token: "sacred-bearer", waitForAuth: false },
+    );
+    expect(rows).toEqual([{ id: "aff-1", text: "Mine", category: "healing" }]);
+    expect(getterCalls).toBe(0);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("Character / Anima store create budget", () => {

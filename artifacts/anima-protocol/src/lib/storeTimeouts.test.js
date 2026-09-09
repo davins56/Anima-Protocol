@@ -77,12 +77,17 @@ describe("store fail-fast budget", () => {
     expect(affirmationStore).toContain("peekUser");
     expect(affirmationStore).toContain("readPeekUser");
     expect(affirmationStore).toContain("requireEmail: false");
-    expect(affirmationStore).toContain("runAffirmationListStep");
+    expect(affirmationStore).toContain("STORE_LIST_RETRY_LIMIT");
+    expect(affirmationStore).toContain("callAffirmationFilter");
+    expect(affirmationStore).toContain("affirmationListHangCapMs");
+    expect(affirmationStore).toContain("onExisting");
+    expect(affirmationStore).not.toContain("runAffirmationListStep");
     expect(affirmationStore).not.toContain("runSacredSpaceStep");
     expect(affirmationStore).not.toContain("waitForPeekUser");
     expect(affirmationStore).toMatch(
-      /await waitForAuth\(authWaitMs\);[\s\S]*requireEmail: false/,
+      /const token = await waitForAuth\(authWaitMs\);[\s\S]*requireEmail: false/,
     );
+    expect(affirmationStore).toContain("waitForAuth: false");
     expect(affirmationStore).not.toContain("fetchSnapshot()");
     expect(affirmationStore).toContain(
       "settleRosterList(rawAnima, rosterTimeoutMs)",
@@ -104,6 +109,8 @@ describe("store fail-fast budget", () => {
     expect(client).toContain("LONG_LIST_ENTITIES");
     expect(client).toMatch(/LONG_LIST_ENTITIES[\s\S]*Affirmation/);
     expect(client).toContain("peekMe");
+    expect(client).toContain("token: opts?.token");
+    expect(client).toContain("token: providedToken");
     expect(client).toMatch(
       /storeFetch\('\/profile'[\s\S]*timeoutMs: STORE_LIST_TIMEOUT_MS/,
     );
@@ -112,6 +119,10 @@ describe("store fail-fast budget", () => {
     expect(meditation).toContain("loadSacredSpaceSnapshot");
     expect(meditation).toContain("peekUser");
     expect(meditation).toContain("peekMe");
+    expect(meditation).toContain("onExisting");
+    expect(meditation).toMatch(
+      /Affirmation\.filter\(query,\s*undefined,\s*undefined,\s*opts\)/,
+    );
     expect(meditation).toContain("seedDefaultAffirmations");
     expect(meditation).not.toContain("loadAndSeedAffirmations");
     expect(meditation).not.toContain("BOOTSTRAP_UI_TIMEOUT_MS");

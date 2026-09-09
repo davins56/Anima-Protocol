@@ -449,30 +449,53 @@ describe("loadSacredSpaceSnapshot", () => {
     expect(filter).toHaveBeenCalledTimes(1);
   });
 
-  it("retries once after auth settles when the first list times out", async () => {
+  it("maps a signed-in Affirmation.filter store timeout to AFFIRMATION_LOAD_TIMEOUT", async () => {
     const timeout = Object.assign(
       new Error("The server took too long to respond. Check your connection."),
       { code: "timeout" },
     );
     const waitForAuth = vi.fn().mockResolvedValue("token");
-    const filter = vi
-      .fn()
-      .mockRejectedValueOnce(timeout)
-      .mockResolvedValueOnce(accountRows);
+    const filter = vi.fn().mockRejectedValue(timeout);
 
-    const result = await loadSacredSpaceSnapshot({
-      loadUser: async () => user,
-      filter,
-      waitForAuth,
-      listTimeoutMs: 80,
+    await expect(
+      loadSacredSpaceSnapshot({
+        loadUser: async () => user,
+        peekUser: () => user,
+        filter,
+        waitForAuth,
+        listTimeoutMs: 80,
+      }),
+    ).rejects.toMatchObject({
+      message: AFFIRMATION_LOAD_TIMEOUT,
+      code: "timeout",
     });
-
-    expect(waitForAuth).toHaveBeenCalledTimes(2);
-    expect(filter).toHaveBeenCalledTimes(2);
-    expect(result.existing).toEqual(accountRows);
+    expect(filter).toHaveBeenCalledTimes(1);
+    expect(waitForAuth).toHaveBeenCalledTimes(1);
   });
 
-  it("throws the timeout banner only after the retry also times out", async () => {
+  it("does not paint AFFIRMATION_LOAD_TIMEOUT for a signed-in 401", async () => {
+    const unauthorized = Object.assign(new Error("Unauthorized"), {
+      status: 401,
+    });
+    const waitForAuth = vi.fn().mockResolvedValue("token");
+    const filter = vi.fn().mockRejectedValue(unauthorized);
+
+    await expect(
+      loadSacredSpaceSnapshot({
+        loadUser: async () => user,
+        peekUser: () => user,
+        filter,
+        waitForAuth,
+        listTimeoutMs: 50,
+      }),
+    ).rejects.toMatchObject({
+      message: AFFIRMATION_AUTH_REQUIRED,
+      status: 401,
+    });
+    expect(filter).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws the timeout banner only when Affirmation.filter never settles", async () => {
     const waitForAuth = vi.fn().mockResolvedValue("token");
     const filter = vi.fn().mockReturnValue(new Promise(() => {}));
 
@@ -487,8 +510,68 @@ describe("loadSacredSpaceSnapshot", () => {
       message: AFFIRMATION_LOAD_TIMEOUT,
       code: "timeout",
     });
-    expect(waitForAuth).toHaveBeenCalledTimes(2);
-    expect(filter).toHaveBeenCalledTimes(2);
+    expect(waitForAuth).toHaveBeenCalledTimes(1);
+    expect(filter).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not paint AFFIRMATION_LOAD_TIMEOUT when filter outlasts one list abort", async () => {
+    const waitForAuth = vi.fn().mockResolvedValue("sacred-bearer");
+    const filter = vi.fn(async (query, opts) => {
+      expect(query).toEqual({ is_active: true, user_email: "a@b.c" });
+      expect(opts).toMatchObject({ token: "sacred-bearer", waitForAuth: false });
+      await new Promise((r) => setTimeout(r, 70));
+      return accountRows;
+    });
+
+    await expect(
+      loadSacredSpaceSnapshot({
+        loadUser: async () => user,
+        peekUser: () => user,
+        filter,
+        waitForAuth,
+        // #437 raced filter against this 50ms clock and ignored the late GET.
+        listTimeoutMs: 50,
+        listTimeoutSlackMs: 0,
+      }),
+    ).resolves.toMatchObject({ existing: accountRows });
+    expect(filter).toHaveBeenCalledTimes(1);
+    expect(waitForAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies a late Affirmation.filter after the hang cap so the banner is not sticky", async () => {
+    const waitForAuth = vi.fn().mockResolvedValue("token");
+    const onExisting = vi.fn();
+    let resolveFilter;
+    const filter = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveFilter = resolve;
+        }),
+    );
+
+    await expect(
+      loadSacredSpaceSnapshot({
+        loadUser: async () => user,
+        peekUser: () => user,
+        filter,
+        waitForAuth,
+        onExisting,
+        listTimeoutMs: 15,
+        listTimeoutSlackMs: 0,
+      }),
+    ).rejects.toMatchObject({
+      message: AFFIRMATION_LOAD_TIMEOUT,
+      code: "timeout",
+    });
+    expect(onExisting).not.toHaveBeenCalled();
+
+    resolveFilter(accountRows);
+    await vi.waitFor(() => {
+      expect(onExisting).toHaveBeenCalledWith({
+        me: user,
+        existing: accountRows,
+      });
+    });
   });
 
   it("does not retry non-timeout store failures", async () => {

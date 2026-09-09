@@ -17,11 +17,12 @@
  * before either budget starts (storeFetch waits, then arms a fresh abort).
  *
  * Sacred Space: awaitCompanionStoreAuth, then Affirmation.filter and
- * Anima/Character.list each arm their own AbortSignal. #436 split those
- * list clocks but still gated filter on auth.me() under STORE_FETCH (8s).
- * /profile pays ensureSchemaOnce() on the first authed hit — that leftover
- * 8s race is the post-#436 iPad AFFIRMATION_LOAD_TIMEOUT banner. Peek the
- * Clerk email and start filter without waiting for the profile GET.
+ * Anima/Character.list each arm their own AbortSignal. #437 started filter
+ * immediately but still wrapped it in withStoreTimeout (list+token slack).
+ * That competing clock is shorter than queryEntity mint + storeFetch abort
+ * + retry, and a late resolve is ignored — iPad sticky defaults. Do not
+ * race Affirmation.filter with a second wall-clock; pass the minted Bearer
+ * and let storeFetch own the abort.
  */
 export const STORE_FETCH_TIMEOUT_MS = 8000;
 export const STORE_AUTH_WAIT_MS = 8000;
