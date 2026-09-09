@@ -71,11 +71,22 @@ describe("store fail-fast budget", () => {
     );
     expect(affirmationStore).toContain("awaitCompanionStoreAuth");
     expect(affirmationStore).toContain("STORE_FETCH_TIMEOUT_MS");
+    expect(affirmationStore).toContain("STORE_LIST_TIMEOUT_MS");
     expect(affirmationStore).toContain("withStoreTimeout");
     expect(affirmationStore).toContain("isStoreTimeoutError");
     expect(affirmationStore).toMatch(
-      /await waitForAuth\(authWaitMs\);[\s\S]*withStoreTimeout\(fetchSnapshot\(\), listTimeoutMs/,
+      /await waitForAuth\(authWaitMs\);[\s\S]*loadAffirmations\(\{ user: me, filter \}/,
     );
+    expect(affirmationStore).not.toContain("fetchSnapshot()");
+    expect(affirmationStore).toContain(
+      "settleRosterList(listAnimas, rosterTimeoutMs)",
+    );
+    expect(affirmationStore).toContain(
+      "settleRosterList(listCharacters, rosterTimeoutMs)",
+    );
+
+    expect(client).toContain("LONG_LIST_ENTITIES");
+    expect(client).toMatch(/LONG_LIST_ENTITIES[\s\S]*Affirmation/);
 
     const meditation = readFileSync(join(srcRoot, "pages/Meditation.jsx"), "utf8");
     expect(meditation).toContain("loadSacredSpaceSnapshot");

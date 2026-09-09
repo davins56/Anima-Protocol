@@ -68,6 +68,7 @@ export default function Meditation() {
   const [storeError, setStoreError] = useState("");
   const [addError, setAddError] = useState("");
   const [adding, setAdding] = useState(false);
+  const initGen = useRef(0);
 
   useEffect(() => {
     init();
@@ -98,24 +99,36 @@ export default function Meditation() {
       });
   };
 
+  const applyAnima = (me, animas) => {
+    const userAnima =
+      animas?.find((a) => a.assigned_user === me?.email) || animas?.[0] || null;
+    if (userAnima) setAnima(userAnima);
+  };
+
   const init = async () => {
+    const gen = ++initGen.current;
     setLoading(true);
     setStoreError("");
     try {
-      // Token mint finishes before Affirmation.filter arms STORE_FETCH.
-      // A shared timeout here was the iPad OTP sticky-defaults banner.
+      // After auth, Affirmation.filter and Anima.list each get a fresh
+      // STORE_LIST budget. A shared Promise.all STORE_FETCH window was
+      // the post-#434 iPad banner and empty Anima header.
       const { me, existing, animas, chars } = await loadSacredSpaceSnapshot({
         loadUser: () => base44.auth.me(),
         filter: (query) => base44.entities.Affirmation.filter(query),
         listAnimas: () => base44.entities.Anima.list("-created_date", 10),
         listCharacters: () =>
           base44.entities.Character.list("-created_date", 100),
+        onRoster: ({ me: rosterUser, animas: nextAnimas, chars: nextChars }) => {
+          if (gen !== initGen.current) return;
+          setCharacters(nextChars || []);
+          applyAnima(rosterUser, nextAnimas);
+        },
       });
+      if (gen !== initGen.current) return;
       setUser(me);
       setCharacters(chars || []);
-      const userAnima =
-        animas?.find((a) => a.assigned_user === me.email) || animas?.[0] || null;
-      setAnima(userAnima);
+      applyAnima(me, animas);
 
       if (existing.length > 0) {
         setAffirmations(existing);
@@ -124,10 +137,11 @@ export default function Meditation() {
         startBackgroundSeed(me);
       }
     } catch (err) {
+      if (gen !== initGen.current) return;
       setStoreError(affirmationErrorMessage(err, AFFIRMATION_LOAD_FAILED));
       applyLocalDefaults();
     } finally {
-      setLoading(false);
+      if (gen === initGen.current) setLoading(false);
     }
   };
 
