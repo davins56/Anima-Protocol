@@ -132,19 +132,45 @@ const NO_LOOPBACK_ANIMA_RUNTIMES = new Set([
   "vercel",
   "serverless",
   "edge",
+  "cloudrun",
+  "cloud-run",
+  "gcp",
 ]);
 
 /** ANIMA_RUNTIME values that keep the local-dev localhost default. */
 const LOOPBACK_OK_ANIMA_RUNTIMES = new Set(["node", "local", "dev", "docker"]);
 
 /**
+ * True on Google Cloud Run (or an explicit GCP staging runtime). Used so
+ * staging does not invent localhost Ollama and does not pretend Workers AI
+ * is bound. `ANIMA_RUNTIME=node` still wins for local debugging.
+ */
+export function isCloudRunRuntime(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  const runtime = (env.ANIMA_RUNTIME || "").trim().toLowerCase();
+  if (runtime) {
+    if (LOOPBACK_OK_ANIMA_RUNTIMES.has(runtime)) return false;
+    if (
+      runtime === "cloudrun" ||
+      runtime === "cloud-run" ||
+      runtime === "gcp"
+    ) {
+      return true;
+    }
+  }
+  return Boolean(env.K_SERVICE || env.CLOUD_RUN_JOB);
+}
+
+/**
  * True on runtimes that cannot open loopback TCP (Workers isolate, Vercel,
- * Cloudflare Pages). Local Node / Docker keep the Ollama localhost default.
+ * Cloudflare Pages, Cloud Run). Local Node / Docker keep the Ollama localhost
+ * default.
  *
  * Detection (first match wins):
  * - `ANIMA_RUNTIME=node|local|dev|docker` → loopback allowed (tests / VPS)
- * - `ANIMA_RUNTIME=worker|cloudflare|vercel|serverless|edge` → no loopback
- * - `VERCEL` / `VERCEL_ENV` / `CF_PAGES` → no loopback
+ * - `ANIMA_RUNTIME=worker|cloudflare|vercel|serverless|edge|cloudrun|gcp` → no loopback
+ * - `VERCEL` / `VERCEL_ENV` / `CF_PAGES` / `K_SERVICE` → no loopback
  * - `isCloudflareWorkerRuntime()` (`navigator.userAgent === "Cloudflare-Workers"`)
  *
  * Do not treat `NODE_ENV=production` as no-loopback: a VPS can run Node
@@ -161,6 +187,7 @@ export function isLoopbackUnreachableRuntime(
   }
   if (env.VERCEL || env.VERCEL_ENV) return true;
   if (env.CF_PAGES) return true;
+  if (env.K_SERVICE || env.CLOUD_RUN_JOB) return true;
   return isCloudflareWorkerRuntime(globalObj);
 }
 

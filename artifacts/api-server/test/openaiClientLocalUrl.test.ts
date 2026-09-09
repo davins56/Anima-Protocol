@@ -50,7 +50,7 @@ describe("isLoopbackUnreachableRuntime", () => {
     expect(isLoopbackUnreachableRuntime(process.env, workerGlobal)).toBe(true);
   });
 
-  it("is true for VERCEL / CF_PAGES / ANIMA_RUNTIME=worker", () => {
+  it("is true for VERCEL / CF_PAGES / ANIMA_RUNTIME=worker / Cloud Run", () => {
     clearLocalLlmEnv();
     expect(isLoopbackUnreachableRuntime({ VERCEL: "1" })).toBe(true);
     expect(isLoopbackUnreachableRuntime({ VERCEL_ENV: "production" })).toBe(true);
@@ -58,6 +58,10 @@ describe("isLoopbackUnreachableRuntime", () => {
     expect(isLoopbackUnreachableRuntime({ ANIMA_RUNTIME: "worker" })).toBe(true);
     expect(isLoopbackUnreachableRuntime({ ANIMA_RUNTIME: "cloudflare" })).toBe(true);
     expect(isLoopbackUnreachableRuntime({ ANIMA_RUNTIME: "serverless" })).toBe(true);
+    expect(isLoopbackUnreachableRuntime({ ANIMA_RUNTIME: "cloudrun" })).toBe(true);
+    expect(
+      isLoopbackUnreachableRuntime({ K_SERVICE: "anima-protocol-staging" }),
+    ).toBe(true);
   });
 
   it("ANIMA_RUNTIME=node keeps loopback even if VERCEL is set", () => {

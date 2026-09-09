@@ -3,9 +3,11 @@ import "dotenv/config";
 
 import path from "node:path";
 import fs from "node:fs";
+import http from "node:http";
 import app from "./app";
 import { ensureClerkPreviewRedirects } from "./lib/ensureClerkPreviewRedirects";
 import { logger } from "./lib/logger";
+import { resolveNodeSpaDir, tryServeNodeSpa } from "./lib/nodeSpa";
 
 // If the repo is run from a different CWD, dotenv/config may not find the
 // package-local or repository-root .env file. Load the first existing file.
@@ -62,11 +64,19 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-app.listen(port, (err) => {
-  if (err) {
-    logger.error({ err }, "Error listening on port");
-    process.exit(1);
-  }
+const spaDir = resolveNodeSpaDir();
+const server = http.createServer((req, res) => {
+  // Worker serves the SPA from Assets, never through Express/Clerk. Cloud Run
+  // has one Node port, so intercept non-API GET/HEAD here first.
+  if (spaDir && tryServeNodeSpa(req, res)) return;
+  app(req, res);
+});
 
-  logger.info({ port }, "Server listening");
+server.listen(port, () => {
+  logger.info({ port, spa: Boolean(spaDir) }, "Server listening");
+});
+
+server.on("error", (err) => {
+  logger.error({ err }, "Error listening on port");
+  process.exit(1);
 });

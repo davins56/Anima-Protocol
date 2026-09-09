@@ -34,6 +34,7 @@ import {
   hasLocalLlm,
   hasOpenRouterKey,
   DEEPSHI_DEFAULT_MODEL,
+  isCloudRunRuntime,
   isLoopbackUnreachableRuntime,
   logLocalLlmClientInitOnce,
   OPENROUTER_FREE_MODEL,
@@ -1136,6 +1137,13 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
             "Set ANIMA_LOCAL_LLM_BASE_URL to a public HTTPS OpenAI-compatible URL (…/v1) and redeploy. " +
             "OpenRouter will not be used. See scripts/llm/public-v1/README.md."
           : LOCAL_LLM_SETUP_HINT,
+      );
+    }
+    if (isCloudRunRuntime() && !hasWorkersAiBinding()) {
+      noteParts.push(
+        "Cloud Run staging has no Workers AI binding (DeepSeek via deepseek-gateway) and no Hyperdrive. " +
+          "Chat stays fail-closed rather than switching to OpenRouter, Claude, or MiniMax. " +
+          "Production chat remains the Cloudflare Worker.",
       );
     }
   } else {
