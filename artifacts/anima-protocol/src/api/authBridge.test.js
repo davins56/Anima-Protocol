@@ -79,6 +79,12 @@ describe("authBridge getToken", () => {
     expect(getter).toHaveBeenCalledWith({ skipCache: true });
   });
 
+  it("waitForStoreAuth fails immediately when no getter is registered", async () => {
+    await expect(waitForStoreAuth(8000)).rejects.toThrow(
+      "Store auth token not available",
+    );
+  });
+
   it("waitForStoreAuth throws when getToken never settles", async () => {
     setAuthTokenGetter(() => new Promise(() => {}));
     await expect(waitForStoreAuth(80)).rejects.toThrow(
