@@ -321,6 +321,45 @@ describe("workersAi helpers", () => {
     ).rejects.toThrow(WORKERS_AI_FREE_QUOTA_HINT);
   });
 
+  it("throws at stream-open when AI.run returns a 429 Response with 4006", async () => {
+    setAiBinding({
+      run: async () =>
+        new Response(
+          JSON.stringify({
+            success: false,
+            errors: [
+              {
+                code: 4006,
+                message: "You have used up your daily free allocation of 10,000 neurons",
+              },
+            ],
+          }),
+          { status: 429, headers: { "content-type": "application/json" } },
+        ),
+    });
+    await expect(
+      streamWorkersAi({
+        messages: [{ role: "user", content: "hi" }],
+        maxTokens: 16,
+      }),
+    ).rejects.toThrow(WORKERS_AI_FREE_QUOTA_HINT);
+  });
+
+  it("throws at stream-open when the first SSE chunk is a 4006 error object", async () => {
+    setAiBinding({
+      run: async () =>
+        sseByteStream([
+          'data: {"success":false,"errors":[{"code":4006,"message":"You have used up your daily free allocation of 10,000 neurons"}]}\n\n',
+        ]),
+    });
+    await expect(
+      streamWorkersAi({
+        messages: [{ role: "user", content: "hi" }],
+        maxTokens: 16,
+      }),
+    ).rejects.toThrow(WORKERS_AI_FREE_QUOTA_HINT);
+  });
+
   it("throws a clear Workers AI error when completion is empty", async () => {
     setAiBinding({
       run: async () => ({ response: "" }),

@@ -280,9 +280,56 @@ function* emitParsedSseLine(
     const text = extractWorkersAiText(parsed);
     const reasoning = text ? "" : extractWorkersAiReasoning(parsed);
     if (text || reasoning) yield workersAiChunk(text, false, reasoning);
-  } catch {
-    yield workersAiChunk(payload, false);
+  } catch (err) {
+    // 4006 / Workers AI error objects must not become "content" — that hid
+    // the failure from llmFailover after stream-open already succeeded.
+    if (err instanceof SyntaxError) {
+      yield workersAiChunk(payload, false);
+      return;
+    }
+    throw err;
   }
+}
+
+/**
+ * Pull the first iterator result before createChatStreamWithFailover treats
+ * Workers AI as open. Production `AI.run({ stream: true })` returns a
+ * ReadableStream/Response immediately; 4006 arrives on first read.
+ */
+async function ensureWorkersAiStreamOpens(
+  stream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>,
+): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
+  const iterator = stream[Symbol.asyncIterator]();
+  let first: IteratorResult<OpenAI.Chat.Completions.ChatCompletionChunk>;
+  try {
+    first = await iterator.next();
+  } catch (err) {
+    try {
+      void iterator.return?.();
+    } catch {
+      // Ignore cancel failures; the hop path must still see the original error.
+    }
+    throw err;
+  }
+
+  async function* replay(): AsyncGenerator<OpenAI.Chat.Completions.ChatCompletionChunk> {
+    try {
+      if (!first.done) yield first.value;
+      while (true) {
+        const next = await iterator.next();
+        if (next.done) return;
+        yield next.value;
+      }
+    } finally {
+      try {
+        void iterator.return?.();
+      } catch {
+        // Best-effort cancel.
+      }
+    }
+  }
+
+  return replay();
 }
 
 async function* iterateSseByteStream(
@@ -466,6 +513,14 @@ export async function streamWorkersAi(opts: {
     );
     // Fail at stream-open so llmFailover can hop (e.g. 4006 neuron quota)
     // instead of returning a "successful" stream that throws on first read.
+    if (typeof Response !== "undefined" && response instanceof Response && !response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new WorkersAiRequestError(
+        formatWorkersAiError(
+          body.trim() || `Workers AI stream failed (${response.status})`,
+        ),
+      );
+    }
     if (isWorkersAiFreeQuotaError(response)) {
       throw new WorkersAiRequestError(WORKERS_AI_FREE_QUOTA_HINT);
     }
@@ -473,7 +528,9 @@ export async function streamWorkersAi(opts: {
     if (errorMessage) {
       throw new WorkersAiRequestError(formatWorkersAiError(errorMessage));
     }
-    return withEmptyStreamFallback(iterateWorkersAiStream(response), opts);
+    return await ensureWorkersAiStreamOpens(
+      withEmptyStreamFallback(iterateWorkersAiStream(response), opts),
+    );
   } catch (err) {
     if (err instanceof WorkersAiRequestError) throw err;
     if (isWorkersAiFreeQuotaError(err)) {
