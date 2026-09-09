@@ -89,6 +89,10 @@ Optional: `ELEVENLABS_API_KEY` for TTS routes.
 
 Optional: `CURSOR_API_KEY` (alias `CURSOR_CLOUD_API_KEY`) lets Serenity launch Cursor Cloud Agents that upgrade Anima Protocol source when the steward asks for an interface or system weave. Default repo is `https://github.com/davins56/Anima-Protocol`. Restrict stewards with `PROTOCOL_UPGRADE_ADMIN_EMAILS` (defaults to `davins56@gmail.com,davins56@hotmail.com`).
 
+### Google Cloud staging / backup (manual, not production)
+
+Cloud Run can host the Node API + SPA as a **staging/backup** only. It cannot bind Workers AI DeepSeek, Hyperdrive, or the `clerk.anima-protocol.com` CNAME gateway. Chat on that image is fail-closed (`ANIMA_RUNTIME=cloudrun`, `ANIMA_LLM_PROVIDER=custom`) — do not point it at OpenRouter/Claude to paper over the missing AI binding. Production remains the Cloudflare Worker. Do not change DNS. Do not deploy until a billing-enabled `GCP_PROJECT_ID`, region, Artifact Registry name, Cloud Run service name, and Workload Identity Federation are provided. Runbook: `deploy/gcp/README.md`. Validate without deploying: `pnpm gcp:validate`.
+
 ### Account data migration (ops)
 
 Characters and all progress are scoped by **Clerk `user_id`** in Postgres (`user_entities`), not email. To copy data between two accounts (e.g. `davins56@hotmail.com` → `davins56@gmail.com`):

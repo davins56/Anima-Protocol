@@ -125,3 +125,13 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build frontend
         run: pnpm --filter @workspace/anima-protocol run build
+
+  gcp-staging-prep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Validate Cloud Run staging prep (no deploy)
+        run: node scripts/gcp/validate-staging-prep.mjs
