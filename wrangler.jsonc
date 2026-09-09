@@ -94,21 +94,18 @@
     // Never invent localhost on this isolate (belt-and-suspenders with
     // navigator.userAgent === "Cloudflare-Workers").
     "ANIMA_RUNTIME": "worker",
-    // Production chat is Cloudflare Workers AI (DeepSeek R1 distill) via
-    // `ai.binding` + gateway id `deepseek-gateway` below. Do not set up
-    // Fly.io Ollama for production chat. Local LLM secrets remain bound
-    // for optional Node/dev and healthz diagnostics; getProviderChain
-    // prefers the AI binding when env.AI is present.
-    // Do NOT put ANIMA_LOCAL_LLM_BASE_URL in vars.
-    // ANIMA_LOCAL_LLM_BACKEND stays in vars only (`ollama` is not secret).
-    // Binding the same name in secrets_store_secrets fails wrangler deploy:
-    // "Bindings must have unique names".
+    // Production chat prefers the self-hosted Anima LLM (anima-chat) via
+    // Secrets Store ANIMA_LOCAL_LLM_BASE_URL. Workers AI DeepSeek is only
+    // used when that URL is unset/unusable. Do NOT put ANIMA_LOCAL_LLM_BASE_URL
+    // in vars. ANIMA_LOCAL_LLM_BACKEND stays in vars only (`ollama` is not
+    // secret). Binding the same name in secrets_store_secrets fails wrangler
+    // deploy: "Bindings must have unique names".
     "ANIMA_LLM_PROVIDER": "custom",
     "ANIMA_LOCAL_LLM_BACKEND": "ollama",
     "ANIMA_OLLAMA_MODEL_STANDARD": "anima-chat",
-    // Temporary until Workers Paid / quota recovers; DeepSeek stays preferred.
-    // ANIMA_OPENROUTER_FALLBACK appends OpenRouter after Workers AI only
-    // (error 4006 / neuron quota hop). Does not switch preferred provider.
+    // Temporary until Workers Paid / quota recovers. Hop after a down custom
+    // host (or Workers AI 4006 when no custom host is set). Does not make
+    // OpenRouter the preferred provider.
     "ANIMA_OPENROUTER_FALLBACK": "true",
     "ANIMA_OPENROUTER_FREE": "true"
   },
@@ -131,7 +128,8 @@
   // MINIMAX_API_KEY stays a classic Worker secret (`wrangler secret put
   // MINIMAX_API_KEY`). Do not add it to secrets_store_secrets until that
   // secret_name exists in the store.
-  // Production chat does not use Fly.io Ollama. See wrangler `ai.gateway`.
+  // Custom LLM URL + bearer live in Secrets Store. See wrangler `ai.gateway`
+  // only as the no-host fallback (DeepSeek).
   "secrets_store_secrets": [
     {
       "binding": "CLERK_SECRET_KEY",
@@ -167,7 +165,7 @@
   // Free plan: 10k neurons/day. Exhaustion is Workers AI error 4006 — the
   // AI binding is still present (healthz/llm configured:true). Dàvīn approved
   // temporary OpenRouter failover via ANIMA_OPENROUTER_FALLBACK=true.
-  // DeepSeek stays preferred. Enable Workers Paid to drop the hop.
+  // Custom anima-chat stays preferred when ANIMA_LOCAL_LLM_BASE_URL is set.
   "ai": {
     "binding": "AI",
     "gateway": {

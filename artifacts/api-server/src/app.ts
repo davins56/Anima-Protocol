@@ -110,10 +110,11 @@ app.get("/api/health", (_req, res) => {
 app.use(safeClerkMiddleware());
 
 // Upgrade / operator probe. Same provider chain as signed-in chat
-// (`createChatCompletionWithFailover`): Workers AI first, OpenRouter after
-// hoppable 4006 when ANIMA_OPENROUTER_FALLBACK is on. Do not call
-// `aiBinding.run` here — that is what made the probe return instant 429
-// while healthz already listed chain=[workersai,openrouter].
+// (`createChatCompletionWithFailover`): custom Anima LLM first when
+// configured, OpenRouter after hoppable failures when
+// ANIMA_OPENROUTER_FALLBACK is on. Do not call `aiBinding.run` here —
+// that is what made the probe return instant 429 while healthz already
+// listed the failover chain.
 app.post("/api/ai/chat", async (req: Request, res: Response) => {
   if (!aiBinding) {
     res.status(503).json({ error: "AI binding not available" });

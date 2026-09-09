@@ -8,6 +8,7 @@ export default defineConfig({
       "test/consumeLlmStream.test.ts",
       "test/localEnsemble.test.ts",
       "test/llmFailover.test.ts",
+      "test/wranglerConfig.test.ts",
       "test/localLlmLive.test.ts",
       "test/localModelCatalog.test.ts",
       "test/modelRouter.test.ts",
