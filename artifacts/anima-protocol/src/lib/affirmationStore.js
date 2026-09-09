@@ -4,10 +4,10 @@
  * silent no-op on Add or the initial seed.
  *
  * Sacred Space init must wait for Clerk mint before arming the list timeout.
- * #436 split Affirmation vs Anima/Character STORE_LIST clocks after that wait,
- * but still ran auth.me() through runSacredSpaceStep under STORE_FETCH (8s).
- * That leftover path is the post-#436 iPad banner: /profile + ensureSchemaOnce
- * lost the 8s race, AFFIRMATION_LOAD_TIMEOUT painted, and filter never started.
+ * #436 split Affirmation vs Anima STORE_LIST clocks, then still ran auth.me()
+ * through the affirmation timeout helper (STORE_FETCH 8s). Peek+profile
+ * fallback still waited for clerkUser.email (often "" on iPad) and reused
+ * that helper — filter never started. List immediately after the token wait.
  */
 
 import { awaitCompanionStoreAuth } from "@/api/authBridge";
@@ -123,21 +123,28 @@ export function isLocalAffirmationId(id) {
 /**
  * Load persisted affirmations only — never creates seed rows.
  *
+ * Store rows are already scoped by Clerk user_id. Sacred Space may list
+ * `{ is_active: true }` before clerkUser.email hydrates (iPad). Other
+ * callers still require email so Add/seed cannot silently drop user_email.
+ *
  * @param {{
  *   user: { email?: string } | null,
  *   filter: (query: Record<string, unknown>) => Promise<unknown[]>,
+ *   requireEmail?: boolean,
  * }} input
  * @returns {Promise<unknown[]>}
  */
-export async function loadAffirmations({ user, filter }) {
-  if (!user?.email) {
+export async function loadAffirmations({ user, filter, requireEmail = true }) {
+  if (requireEmail && !user?.email) {
     const err = new Error(AFFIRMATION_AUTH_REQUIRED);
     err.code = "auth";
     throw err;
   }
+  const query = { is_active: true };
+  if (user?.email) query.user_email = user.email;
   let existing;
   try {
-    existing = await filter({ user_email: user.email, is_active: true });
+    existing = await filter(query);
   } catch (err) {
     const wrapped = new Error(
       affirmationErrorMessage(err, AFFIRMATION_LOAD_FAILED),
@@ -172,23 +179,9 @@ async function readPeekUser(peekUser) {
   }
 }
 
-/**
- * iPad Safari often has isSignedIn before clerkUser.email hydrates.
- * Poll peek (syncIdentity) — do not wait on auth.me() /profile for that email.
- */
-async function waitForPeekUser(peekUser, timeoutMs) {
-  if (typeof peekUser !== "function") return null;
-  const budget = Number(timeoutMs);
-  if (!Number.isFinite(budget) || budget <= 0) {
-    return readPeekUser(peekUser);
-  }
-  const deadline = Date.now() + budget;
-  let peeked = await readPeekUser(peekUser);
-  while (!peeked && Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 50));
-    peeked = await readPeekUser(peekUser);
-  }
-  return peeked;
+/** Already-settled value, else fallback — never wait on a hung roster/profile. */
+function takeIfSettled(promise, fallback) {
+  return Promise.race([promise, Promise.resolve(fallback)]);
 }
 
 function safeRosterList(listFn) {
@@ -217,8 +210,9 @@ async function settleRosterList(listPromise, timeoutMs) {
 }
 
 /**
- * Fresh wall-clock for one Sacred Space step. A late resolve is ignored so a
- * hung auth.me() or filter cannot leak into the next step's budget.
+ * Filter-only wall-clock. Do not use this for auth.me() / profile — that
+ * leftover helper is why #436 painted AFFIRMATION_LOAD_TIMEOUT on iPad
+ * before Affirmation.filter started.
  *
  * @template T
  * @param {() => Promise<T>} run
@@ -229,7 +223,7 @@ async function settleRosterList(listPromise, timeoutMs) {
  * }} opts
  * @returns {Promise<T>}
  */
-async function runSacredSpaceStep(run, { waitForAuth, authWaitMs, timeoutMs }) {
+async function runAffirmationListStep(run, { waitForAuth, authWaitMs, timeoutMs }) {
   try {
     return await withStoreTimeout(run(), timeoutMs, affirmationLoadTimeoutError);
   } catch (err) {
@@ -240,16 +234,16 @@ async function runSacredSpaceStep(run, { waitForAuth, authWaitMs, timeoutMs }) {
 }
 
 /**
- * Sacred Space first paint: mint the store token, peek the Clerk email, then
- * list affirmations with a fresh STORE_LIST budget. #436 still required
- * auth.me() to finish under STORE_FETCH before filter started — /profile
- * ensureSchemaOnce() on iPad lost that 8s race and painted this banner
- * without ever calling Affirmation.filter.
+ * Sacred Space first paint: wait for the store token, then list affirmations.
+ * #436 split list clocks but still ran auth.me() through the affirmation
+ * timeout helper. Peek-then-profile fallback still burned authWaitMs waiting
+ * for clerkUser.email, then used that same helper — iPad provisional identity
+ * has email "" so filter never started.
  *
- * Peek + filter are independent of the profile GET. Anima/Character.list
- * stay fail-open and never raise AFFIRMATION_LOAD_TIMEOUT. An empty filter
- * result (no token / 401-as-[]) is not a timeout — that path seeds defaults
- * without this banner.
+ * After waitForAuth, Affirmation.filter runs immediately (email optional;
+ * store is user_id scoped). auth.me() / Anima.list never throw
+ * AFFIRMATION_LOAD_TIMEOUT and never hold Attuning. Empty filter (`[]`) is
+ * not a timeout.
  *
  * @param {{
  *   loadUser: () => Promise<{ email?: string } | null>,
@@ -295,40 +289,31 @@ export async function loadSacredSpaceSnapshot({
   // paints defaults before Affirmation.filter can run.
   await waitForAuth(authWaitMs);
 
-  // Clerk email is already on syncIdentity after sign-in, or arrives once
-  // clerkUser hydrates (common on iPad). Do not wait for auth.me() /profile
-  // (STORE_FETCH 8s + ensureSchemaOnce) before filter.
-  const peeked = await waitForPeekUser(peekUser, authWaitMs);
-  let me = peeked;
-  if (!me) {
-    me = sacredSpaceUser(
-      await runSacredSpaceStep(() => Promise.resolve().then(loadUser), {
-        waitForAuth,
-        authWaitMs,
-        timeoutMs: userTimeoutMs,
-      }),
-    );
-    if (!me) {
-      const err = new Error(AFFIRMATION_AUTH_REQUIRED);
-      err.code = "auth";
-      throw err;
-    }
-  } else if (typeof loadUser === "function") {
-    // Warm the profile cache in the background. A hung GET must not hold
-    // Attuning or own AFFIRMATION_LOAD_TIMEOUT after peek already has email.
-    void Promise.resolve().then(loadUser).catch(() => {});
-  }
+  // Immediate peek only — do not poll for email. iPad often has isSignedIn
+  // with email "" for seconds; that wait used to own this banner.
+  const peeked = await readPeekUser(peekUser);
+  const userPromise =
+    typeof loadUser === "function"
+      ? Promise.resolve()
+          .then(loadUser)
+          .then((row) => sacredSpaceUser(row))
+          .catch(() => null)
+      : Promise.resolve(null);
 
   // Slack covers getToken() inside storeFetch after this clock starts, so the
   // outer withStoreTimeout cannot beat Affirmation.filter's own 20s abort.
   const filterBudget =
     Number(listTimeoutMs) + Math.max(0, Number(listTimeoutSlackMs) || 0);
 
-  // After auth+peek, each list arms its own budget. #436 still waited for
-  // auth.me() first — that leftover 8s profile clock painted sticky defaults
-  // even when filter would have succeeded.
-  const existingPromise = runSacredSpaceStep(
-    () => loadAffirmations({ user: me, filter }),
+  // Filter starts now. Email is optional. Profile GET / Anima.list are not
+  // on this clock and cannot throw AFFIRMATION_LOAD_TIMEOUT.
+  const existingPromise = runAffirmationListStep(
+    () =>
+      loadAffirmations({
+        user: peeked,
+        filter,
+        requireEmail: false,
+      }),
     { waitForAuth, authWaitMs, timeoutMs: filterBudget },
   );
   const rawAnima = safeRosterList(listAnimas);
@@ -336,13 +321,18 @@ export async function loadSacredSpaceSnapshot({
   const animaPromise = settleRosterList(rawAnima, rosterTimeoutMs);
   const charsPromise = settleRosterList(rawChars, rosterTimeoutMs);
   if (typeof onRoster === "function") {
-    void Promise.all([rawAnima, rawChars]).then(([animas, chars]) => {
-      onRoster({ me, animas, chars });
-    });
+    void Promise.all([userPromise, rawAnima, rawChars]).then(
+      ([loaded, animas, chars]) => {
+        onRoster({ me: loaded || peeked, animas, chars });
+      },
+    );
   }
 
   const existing = await existingPromise;
-  const [animas, chars] = await Promise.all([animaPromise, charsPromise]);
+  // Do not hold Attuning for /profile or a hung Anima/Character list.
+  const me = (await takeIfSettled(userPromise, peeked)) || peeked;
+  const animas = await takeIfSettled(animaPromise, []);
+  const chars = await takeIfSettled(charsPromise, []);
 
   return {
     me,

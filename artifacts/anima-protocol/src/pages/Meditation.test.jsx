@@ -132,20 +132,20 @@ describe("Meditation affirmations", () => {
     expect(affirmationMocks.create).not.toHaveBeenCalled();
   });
 
-  it("clears Attuning when auth.me never settles and peek has no email", async () => {
+  it("loads account affirmations when peek has no email and auth.me hangs", async () => {
     affirmationMocks.me.mockReturnValue(new Promise(() => {}));
     affirmationMocks.peekMe.mockReturnValue({});
+    affirmationMocks.filter.mockResolvedValue([
+      { id: "acct-8", text: "Email hydration cannot own this vow.", category: "clarity" },
+    ]);
     renderPage();
 
     expect(screen.getByText(/Attuning frequency/i)).toBeTruthy();
-    expect(await screen.findByText("Sacred Space")).toBeTruthy();
+    expect(await screen.findByText("Email hydration cannot own this vow.")).toBeTruthy();
     expect(screen.queryByText(/Attuning frequency/i)).toBeNull();
-    expect((await screen.findByRole("alert")).textContent).toBe(
-      AFFIRMATION_LOAD_TIMEOUT,
-    );
-    expect(screen.getByText("I am healthy, wealthy, and wise.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Affirmations/i })).toBeTruthy();
-    expect(affirmationMocks.filter).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(AFFIRMATION_LOAD_TIMEOUT)).toBeNull();
+    expect(affirmationMocks.filter).toHaveBeenCalled();
     expect(affirmationMocks.create).not.toHaveBeenCalled();
   });
 
@@ -320,9 +320,8 @@ describe("Meditation affirmations", () => {
     affirmationMocks.me.mockRejectedValue(unauthorized);
     renderPage();
 
-    expect((await screen.findByRole("alert")).textContent).toMatch(
-      AFFIRMATION_AUTH_REQUIRED,
-    );
+    expect(await screen.findByText("Sacred Space")).toBeTruthy();
+    expect(screen.queryByText(AFFIRMATION_LOAD_TIMEOUT)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /Add Affirmation/i }));
     fireEvent.change(screen.getByPlaceholderText("Write your affirmation..."), {
       target: { value: "I am safe." },

@@ -111,9 +111,9 @@ export default function Meditation() {
     setLoading(true);
     setStoreError("");
     try {
-      // Peek Clerk email so Affirmation.filter does not wait on auth.me()
-      // /profile (STORE_FETCH 8s + ensureSchemaOnce). That leftover gate is
-      // why #436 still painted AFFIRMATION_LOAD_TIMEOUT on iPad.
+      // After the token wait, Affirmation.filter starts even if peek email
+      // is still "" and auth.me() / Anima.list are hung. Those must not use
+      // AFFIRMATION_LOAD_TIMEOUT — that leftover helper is the iPad banner.
       const { me, existing, animas, chars } = await loadSacredSpaceSnapshot({
         loadUser: () => base44.auth.me(),
         peekUser: () => base44.auth.peekMe(),

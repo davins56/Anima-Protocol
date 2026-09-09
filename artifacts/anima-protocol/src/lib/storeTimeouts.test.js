@@ -76,9 +76,12 @@ describe("store fail-fast budget", () => {
     expect(affirmationStore).toContain("isStoreTimeoutError");
     expect(affirmationStore).toContain("peekUser");
     expect(affirmationStore).toContain("readPeekUser");
-    expect(affirmationStore).toContain("waitForPeekUser");
+    expect(affirmationStore).toContain("requireEmail: false");
+    expect(affirmationStore).toContain("runAffirmationListStep");
+    expect(affirmationStore).not.toContain("runSacredSpaceStep");
+    expect(affirmationStore).not.toContain("waitForPeekUser");
     expect(affirmationStore).toMatch(
-      /await waitForAuth\(authWaitMs\);[\s\S]*loadAffirmations\(\{ user: me, filter \}/,
+      /await waitForAuth\(authWaitMs\);[\s\S]*requireEmail: false/,
     );
     expect(affirmationStore).not.toContain("fetchSnapshot()");
     expect(affirmationStore).toContain(

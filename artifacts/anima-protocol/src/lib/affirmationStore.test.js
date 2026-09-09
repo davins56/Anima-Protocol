@@ -278,8 +278,31 @@ describe("loadSacredSpaceSnapshot", () => {
       listTimeoutMs: 50,
     });
 
-    expect(events).toEqual(["auth", "me", "filter"]);
+    expect(events[0]).toBe("auth");
+    expect(events).toContain("filter");
+    expect(events.indexOf("auth")).toBeLessThan(events.indexOf("filter"));
     expect(result.existing).toEqual(accountRows);
+    expect(waitForAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it("lists affirmations before Clerk email or auth.me settle", async () => {
+    const waitForAuth = vi.fn().mockResolvedValue("token");
+    const filter = vi.fn(async (query) => {
+      expect(query).toEqual({ is_active: true });
+      return accountRows;
+    });
+
+    await expect(
+      loadSacredSpaceSnapshot({
+        loadUser: () => new Promise(() => {}),
+        peekUser: () => ({}),
+        filter,
+        waitForAuth,
+        listTimeoutMs: 50,
+        userTimeoutMs: 15,
+      }),
+    ).resolves.toMatchObject({ existing: accountRows });
+    expect(filter).toHaveBeenCalledTimes(1);
     expect(waitForAuth).toHaveBeenCalledTimes(1);
   });
 
@@ -325,30 +348,25 @@ describe("loadSacredSpaceSnapshot", () => {
     resolveMe?.({ email: "late@b.c" });
   });
 
-  it("waits for Clerk email on peek instead of timing out a hung auth.me", async () => {
-    let email = "";
+  it("does not poll for peek email before starting Affirmation.filter", async () => {
     const waitForAuth = vi.fn().mockResolvedValue("token");
-    const peekUser = vi.fn(() => (email ? { email } : {}));
+    const peekUser = vi.fn(() => ({}));
     const loadUser = vi.fn(() => new Promise(() => {}));
     const filter = vi.fn(async () => accountRows);
 
-    const pending = loadSacredSpaceSnapshot({
-      loadUser,
-      peekUser,
-      filter,
-      waitForAuth,
-      authWaitMs: 80,
-      userTimeoutMs: 15,
-      listTimeoutMs: 50,
-    });
-    await new Promise((r) => setTimeout(r, 30));
-    email = user.email;
-    await expect(pending).resolves.toMatchObject({
-      existing: accountRows,
-      me: { email: user.email },
-    });
+    await expect(
+      loadSacredSpaceSnapshot({
+        loadUser,
+        peekUser,
+        filter,
+        waitForAuth,
+        authWaitMs: 80,
+        userTimeoutMs: 15,
+        listTimeoutMs: 50,
+      }),
+    ).resolves.toMatchObject({ existing: accountRows });
+    expect(peekUser.mock.calls.length).toBeLessThan(3);
     expect(filter).toHaveBeenCalledTimes(1);
-    expect(loadUser).toHaveBeenCalled();
   });
 
   it("does not paint AFFIRMATION_LOAD_TIMEOUT when auth.me hangs after peek", async () => {
@@ -489,23 +507,18 @@ describe("loadSacredSpaceSnapshot", () => {
   });
 
   it("does not treat a slow auth.me as an affirmation list timeout", async () => {
-    let meDone = false;
     const waitForAuth = vi.fn().mockResolvedValue("token");
-    const filter = vi.fn(async () => {
-      expect(meDone).toBe(true);
-      return accountRows;
-    });
+    const filter = vi.fn(async () => accountRows);
 
     await expect(
       loadSacredSpaceSnapshot({
         loadUser: async () => {
           await new Promise((r) => setTimeout(r, 40));
-          meDone = true;
           return user;
         },
         filter,
         waitForAuth,
-        // Shorter than auth.me — #434's shared snapshot budget failed here.
+        // Shorter than auth.me — filter must not wait on /profile.
         listTimeoutMs: 25,
         userTimeoutMs: 80,
       }),
@@ -516,6 +529,7 @@ describe("loadSacredSpaceSnapshot", () => {
 
   it("does not share one STORE_FETCH window across Affirmation.filter and Anima.list", async () => {
     const waitForAuth = vi.fn().mockResolvedValue("token");
+    const onRoster = vi.fn();
     const animas = [
       { id: "anima-1", name: "Serenity", assigned_user: "a@b.c" },
     ];
@@ -532,17 +546,45 @@ describe("loadSacredSpaceSnapshot", () => {
           return animas;
         },
         waitForAuth,
-        // Each 30ms leg fits its own 45ms budget. #434's shared 45ms
-        // Promise.all window would abort the second leg.
+        onRoster,
+        // Filter must resolve on its own 45ms clock. Anima arrives via
+        // onRoster — holding the snapshot for roster was the leftover burn.
         listTimeoutMs: 45,
         rosterTimeoutMs: 45,
         userTimeoutMs: 20,
       }),
     ).resolves.toMatchObject({
       existing: accountRows,
-      animas,
+    });
+    await vi.waitFor(() => {
+      expect(onRoster).toHaveBeenCalledWith({
+        me: user,
+        animas,
+        chars: [],
+      });
     });
     expect(waitForAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not hold account affirmations for a hung Anima list", async () => {
+    const waitForAuth = vi.fn().mockResolvedValue("token");
+    const started = Date.now();
+
+    const result = await loadSacredSpaceSnapshot({
+      loadUser: async () => user,
+      peekUser: () => user,
+      filter: async () => accountRows,
+      listAnimas: () => new Promise(() => {}),
+      listCharacters: () => new Promise(() => {}),
+      waitForAuth,
+      listTimeoutMs: 50,
+      rosterTimeoutMs: 400,
+    });
+
+    expect(result.existing).toEqual(accountRows);
+    expect(result.animas).toEqual([]);
+    expect(result.chars).toEqual([]);
+    expect(Date.now() - started).toBeLessThan(200);
   });
 
   it("does not treat a hung Character.list as sticky default affirmations", async () => {
