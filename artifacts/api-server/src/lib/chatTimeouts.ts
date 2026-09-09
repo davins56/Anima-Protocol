@@ -25,14 +25,22 @@ export const LLM_OPEN_TIMEOUT_MS = 35_000;
  */
 export const LLM_OPEN_TIMEOUT_FREE_TIER_MS = 80_000;
 
-/** After the upstream stream is open, wait this long for first activity. */
-export const LLM_STREAM_FIRST_CHUNK_MS = 35_000;
+/**
+ * After the upstream stream is open, wait this long for first activity.
+ * DeepSeek R1 on Workers AI often buffers `<think>` before the first SSE
+ * byte; 35s was aborting signed-in `/openai` sends that `/api/ai/chat`
+ * (unauth, non-stream) still completed.
+ */
+export const LLM_STREAM_FIRST_CHUNK_MS = 50_000;
 
 /** Once visible text has arrived, treat this idle gap as end-of-reply. */
 export const LLM_STREAM_STALL_MS = 15_000;
 
-/** Hard cap for consuming an already-open stream. */
-export const LLM_STREAM_TOTAL_MS = 50_000;
+/**
+ * Hard cap for consuming an already-open stream.
+ * R1 can spend most of a turn inside `<think>` before a visible answer.
+ */
+export const LLM_STREAM_TOTAL_MS = 90_000;
 
 /**
  * Browser `fetch` abort for `/chat/messages`.
