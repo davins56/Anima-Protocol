@@ -1,4 +1,10 @@
-import { getPool, withTransientDbRetry, type SqlQueryable } from "./client";
+import {
+  getDbRequestEpoch,
+  getPool,
+  isCloudflareWorkerRuntime,
+  withTransientDbRetry,
+  type SqlQueryable,
+} from "./client";
 
 /** Core relations the store / chat API require. */
 export const REQUIRED_TABLES = [
@@ -162,9 +168,21 @@ export async function ensureSchema(
 }
 
 async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
-  // Inspect must not gate DDL. A Hyperdrive/postgres.js array-bind failure
-  // used to throw here and skip every CREATE IF NOT EXISTS.
+  // Inspect must not gate DDL when it throws (Hyperdrive/postgres.js array-bind
+  // used to skip every CREATE IF NOT EXISTS). When inspect succeeds and every
+  // required table is already present, skip the ~50 sequential CREATE
+  // IF NOT EXISTS round-trips — that burst is what burned the Worker's 20s
+  // store wall timeout on every first authed /api/store list.
   const before = await inspectSchemaOrAssumeMissing(db);
+  if (before.ok && before.missingTables.length === 0) {
+    return {
+      ok: true,
+      missingBefore: [],
+      createdTables: [],
+      hasPgTrgm: before.hasPgTrgm,
+      errors: [],
+    };
+  }
   const errors: string[] = [];
   const createdTables: RequiredTable[] = [];
 
@@ -560,35 +578,60 @@ async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
   };
 }
 
-let ensureOnce: Promise<EnsureSchemaResult> | null = null;
+const SCHEMA_ALREADY_PRESENT: EnsureSchemaResult = {
+  ok: true,
+  missingBefore: [],
+  createdTables: [],
+  hasPgTrgm: true,
+  errors: [],
+};
+
+let ensureSucceeded = false;
+let inFlight: Promise<EnsureSchemaResult> | null = null;
+let inFlightEpoch: number | null = null;
 
 /**
- * Ensure schema at most once per process. Concurrent callers share the same
- * promise. Failures clear the latch so a later request can retry (e.g. after
- * a transient privilege error creating an extension).
+ * Ensure schema at most once per isolate after success. Concurrent callers
+ * *within the same Worker request* share the in-flight promise.
+ *
+ * Do not share that promise across requests: Cloudflare binds sockets to the
+ * request that created them, so awaiting another request's DDL hangs until
+ * the 20s store wall timeout (outcome canceled / JSON 503).
  */
 export function ensureSchemaOnce(
   db?: Queryable,
 ): Promise<EnsureSchemaResult> {
-  if (!ensureOnce) {
-    ensureOnce = ensureSchema(db).then(
-      (result) => {
-        if (!result.ok) {
-          // Keep retrying until core tables exist.
-          ensureOnce = null;
-        }
-        return result;
-      },
-      (err) => {
-        ensureOnce = null;
-        throw err;
-      },
-    );
+  if (ensureSucceeded && !db) {
+    return Promise.resolve({ ...SCHEMA_ALREADY_PRESENT });
   }
-  return ensureOnce;
+
+  const epoch = isCloudflareWorkerRuntime() ? getDbRequestEpoch() : 0;
+  if (inFlight && inFlightEpoch === epoch) {
+    return inFlight;
+  }
+
+  const startedEpoch = epoch;
+  const run = ensureSchema(db).then(
+    (result) => {
+      if (inFlightEpoch === startedEpoch) inFlight = null;
+      if (result.ok && !db) {
+        ensureSucceeded = true;
+      }
+      return result;
+    },
+    (err) => {
+      if (inFlightEpoch === startedEpoch) inFlight = null;
+      throw err;
+    },
+  );
+  inFlight = run;
+  inFlightEpoch = startedEpoch;
+  return run;
 }
 
 /** Test helper — clears the once-latch between cases. */
 export function resetEnsureSchemaLatch(): void {
-  ensureOnce = null;
+  ensureSucceeded = false;
+  inFlight = null;
+  inFlightEpoch = null;
 }

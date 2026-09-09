@@ -20,6 +20,7 @@ export {
   isCloudflareWorkerRuntime,
   postgresJsQueryable,
   postgresJsSslOption,
+  resolveStatementTimeoutMs,
   type DbDriver,
   type SqlQueryable,
 } from "./driver";
@@ -123,6 +124,11 @@ export function beginDbRequest<T>(fn?: () => T): number | T {
   globalRequestEpochCounter += 1;
   currentRequestEpoch = globalRequestEpochCounter;
   return currentRequestEpoch;
+}
+
+/** Request epoch used to isolate cached clients and in-flight schema ensure. */
+export function getDbRequestEpoch(): number {
+  return dbRequestContextStorage.getStore()?.epoch ?? currentRequestEpoch;
 }
 
 /** Test helper — the epoch the cached client was created in. */
@@ -299,15 +305,69 @@ export function resetDbClientsForTests(): void {
   resetPool();
 }
 
+/** Worker store/health queries must fail before the 20s wall timeout. */
+export const WORKER_DB_RETRY_ATTEMPTS = 2;
+export const WORKER_DB_OPERATION_TIMEOUT_MS = 5_000;
+
+export class DbOperationTimeoutError extends Error {
+  code = "ETIMEOUT";
+  constructor(ms: number) {
+    super(`Database operation aborted due to timeout after ${ms}ms`);
+    this.name = "DbOperationTimeoutError";
+  }
+}
+
+function resolveRetryOptions(options: {
+  attempts?: number;
+  timeoutMs?: number;
+}): { attempts: number; timeoutMs: number } {
+  const worker = isCloudflareWorkerRuntime();
+  const envTimeout = Number(process.env.PG_QUERY_TIMEOUT_MS);
+  return {
+    attempts: Math.max(
+      1,
+      options.attempts ?? (worker ? WORKER_DB_RETRY_ATTEMPTS : 3),
+    ),
+    timeoutMs:
+      options.timeoutMs ??
+      (Number.isFinite(envTimeout) && envTimeout >= 0
+        ? envTimeout
+        : worker
+          ? WORKER_DB_OPERATION_TIMEOUT_MS
+          : 0),
+  };
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return promise;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new DbOperationTimeoutError(timeoutMs)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function withTransientDbRetry<T>(
   operation: () => Promise<T>,
-  options: { attempts?: number } = {},
+  options: { attempts?: number; timeoutMs?: number } = {},
 ): Promise<T> {
-  const attempts = Math.max(1, options.attempts ?? 3);
+  const { attempts, timeoutMs } = resolveRetryOptions(options);
   let lastErr: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      return await operation();
+      return await withTimeout(operation(), timeoutMs);
     } catch (err) {
       lastErr = err;
       if (!isTransientDbError(err) || attempt === attempts) throw err;

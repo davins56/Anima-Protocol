@@ -38,10 +38,18 @@ export function getDbDriver(
   return isCloudflareWorkerRuntime() ? "postgres-js" : "node-pg";
 }
 
+export function resolveStatementTimeoutMs(
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const raw = Number(env.PG_STATEMENT_TIMEOUT_MS || env.PG_QUERY_TIMEOUT_MS || 8_000);
+  return Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : 8_000;
+}
+
 export function createNodePool(
   connectionString: string,
   ssl: false | { rejectUnauthorized: boolean },
 ): pg.Pool {
+  const statementTimeoutMs = resolveStatementTimeoutMs();
   return new pg.Pool({
     connectionString,
     ssl,
@@ -55,6 +63,7 @@ export function createNodePool(
     keepAlive: true,
     keepAliveInitialDelayMillis: 10_000,
     allowExitOnIdle: true,
+    options: `-c statement_timeout=${statementTimeoutMs}`,
   });
 }
 
@@ -78,6 +87,7 @@ export function createPostgresJsSql(
 ): Sql {
   const timeoutMs = Number(process.env.PG_CONNECTION_TIMEOUT_MS || 8_000);
   const idleMs = Number(process.env.PG_IDLE_TIMEOUT_MS || 20_000);
+  const statementTimeoutMs = resolveStatementTimeoutMs();
   return postgres(connectionString, {
     max: Number(process.env.PG_POOL_MAX || 1),
     // Workers + Hyperdrive / PgBouncer: skip OID prefetch and prepared statements.
@@ -86,6 +96,9 @@ export function createPostgresJsSql(
     connect_timeout: Math.max(1, Math.round(timeoutMs / 1000)),
     idle_timeout: Math.max(1, Math.round(idleMs / 1000)),
     ssl: postgresJsSslOption(rawUrl, ssl),
+    connection: {
+      statement_timeout: String(statementTimeoutMs),
+    },
   });
 }
 
