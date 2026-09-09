@@ -18,23 +18,24 @@ export async function loadCustomiseAnimaCompanions({
   let token = null;
   let authWaitError = null;
 
-  await Promise.all([
-    whenBootstrapReady().catch(() => undefined),
-    waitForStoreAuth(STORE_AUTH_WAIT_MS)
-      .then((value) => {
-        token = value;
-        return value;
-      })
-      .catch((err) => {
-        authWaitError = err;
-        return null;
-      }),
-  ]);
+  try {
+    await whenBootstrapReady();
+  } catch {
+    /* bootstrap is fail-open — still try the companion list */
+  }
+  try {
+    token = await waitForStoreAuth(STORE_AUTH_WAIT_MS);
+  } catch (err) {
+    authWaitError = err;
+  }
 
-  const [me, list] = await Promise.all([
-    base44.auth.me().catch(() => meFallback || null),
-    listPersonalAnimas(limit),
-  ]);
+  let me = meFallback || null;
+  try {
+    me = (await base44.auth.me()) || meFallback || null;
+  } catch {
+    me = meFallback || null;
+  }
+  const list = await listPersonalAnimas(limit);
 
   const rows = Array.isArray(list) ? list : [];
   if (rows.length) {

@@ -70,8 +70,10 @@ vi.mock("@clerk/react", () => ({
   }),
 }));
 
-vi.mock("@/lib/syncBootstrap", () => ({
-  whenBootstrapReady: vi.fn().mockResolvedValue(undefined),
+const loadCompanionsMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@/lib/loadCustomiseAnimaCompanions", () => ({
+  loadCustomiseAnimaCompanions: (...args) => loadCompanionsMock(...args),
 }));
 
 vi.mock("@/api/base44Client", () => ({
@@ -186,6 +188,13 @@ describe("Settings custom chat background upload", () => {
     });
     listMock.mockResolvedValue([]);
     updateMeMock.mockResolvedValue({});
+    loadCompanionsMock.mockReset().mockResolvedValue({
+      rows: [],
+      me: null,
+      token: "token",
+      kind: "empty",
+      message: "",
+    });
   });
 
   afterEach(() => {
@@ -302,6 +311,13 @@ describe("Settings account identity after Clerk login", () => {
     toastErrorMock.mockReset();
     listMock.mockResolvedValue([]);
     updateMeMock.mockResolvedValue({});
+    loadCompanionsMock.mockReset().mockResolvedValue({
+      rows: [],
+      me: null,
+      token: "token",
+      kind: "empty",
+      message: "",
+    });
     authState.isAuthenticated = true;
     authState.user = {
       id: "user_2github",
@@ -430,18 +446,24 @@ describe("Settings account identity after Clerk login", () => {
   });
 
   it("lists Serenity and Aelynd on Settings → Customise Anima", async () => {
-    listMock.mockImplementation(async () => [
-      {
-        id: "anima-1",
-        name: "Serenity",
-        created_date: "2026-01-01T00:00:00.000Z",
-      },
-      {
-        id: "char-aelynd",
-        name: "Aelynd",
-        created_date: "2026-03-01T00:00:00.000Z",
-      },
-    ]);
+    loadCompanionsMock.mockResolvedValue({
+      rows: [
+        {
+          id: "anima-1",
+          name: "Serenity",
+          created_date: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          id: "char-aelynd",
+          name: "Aelynd",
+          created_date: "2026-03-01T00:00:00.000Z",
+        },
+      ],
+      me: { email: "davins56@hotmail.com" },
+      token: "token",
+      kind: "",
+      message: "",
+    });
     const { container } = renderPage();
     await act(async () => {
       await Promise.resolve();

@@ -155,10 +155,11 @@ export default function Settings() {
     });
   }, [authUser?.id, authUser?.email, authUser?.full_name, authUser?.display_name, authUser?.role, clerkIdentity?.id, clerkIdentity?.email, clerkIdentity?.full_name]);
 
+  const sectionFromUrl = searchParams.get("section");
   useEffect(() => {
-    const fromUrl = normalizeSettingsSection(searchParams.get("section"));
+    const fromUrl = normalizeSettingsSection(sectionFromUrl);
     setSectionState((prev) => (prev === fromUrl ? prev : fromUrl));
-  }, [searchParams]);
+  }, [sectionFromUrl]);
 
   useEffect(() => {
     loadUser();
