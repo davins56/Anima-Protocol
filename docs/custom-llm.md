@@ -11,7 +11,7 @@
 | DPO/ORPO preference pairs (Unsloth) | Sharpen character fidelity after SFT — corrects specific bad habits |
 | `ANIMA_LLM_PROVIDER=custom` | Api-server talks **only** to your model — no cloud chat BYOK |
 
-The React app still calls `POST /api/chat/messages`. The preferred backend is the self-hosted Anima LLM when configured, followed by MiniMax when `MINIMAX_API_KEY` or `ANIMA_MINIMAX_API_KEY` is present. MiniMax uses the OpenAI-compatible `https://api.minimax.io/v1` endpoint and defaults to `MiniMax-M2.7`; override it with `ANIMA_MINIMAX_BASE_URL` and `ANIMA_MINIMAX_MODEL`. OpenRouter remains a separate fallback only when MiniMax is not configured. Set `ANIMA_LLM_PROVIDER=custom` to refuse all cloud providers.
+The React app still calls `POST /api/chat/messages`. The preferred backend is the self-hosted Anima LLM (`anima-chat`) whenever `ANIMA_LOCAL_LLM_BASE_URL` is a usable public HTTPS `/v1` URL — including on the production Worker, even if the Workers AI DeepSeek binding is present. OpenRouter may hop only when `ANIMA_OPENROUTER_FALLBACK` is on (down custom host). MiniMax / OpenAI / DeepSeek APIs are not the custom LLM. Set `ANIMA_LLM_PROVIDER=custom` (production default).
 
 ---
 
