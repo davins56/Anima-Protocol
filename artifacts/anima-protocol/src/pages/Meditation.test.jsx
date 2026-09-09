@@ -191,7 +191,7 @@ describe("Meditation affirmations", () => {
     expect(screen.queryByText(AFFIRMATION_LOAD_TIMEOUT)).toBeNull();
     expect(screen.queryByText("I am healthy, wealthy, and wise.")).toBeNull();
     expect(affirmationMocks.filter).toHaveBeenCalledTimes(1);
-    expect(affirmationMocks.filter.mock.calls[0][1]).toMatchObject({
+    expect(affirmationMocks.filter.mock.calls[0][3]).toMatchObject({
       waitForAuth: false,
     });
   });
