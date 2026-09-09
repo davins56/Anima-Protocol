@@ -89,6 +89,47 @@ describe("store auth", () => {
     const res = await call(null, "GET", "/Character");
     expect(res.status).toBe(401);
   });
+
+  it("returns 401 JSON well before the Worker 20s store wall", async () => {
+    const t0 = Date.now();
+    const res = await call(null, "GET", "/Character?sort=-created_date&limit=100");
+    expect(res.status).toBe(401);
+    expect(res.json).toMatchObject({ error: "Unauthorized" });
+    expect(Date.now() - t0).toBeLessThan(500);
+  });
+});
+
+describe("authed store lists stay under the Worker wall timeout", () => {
+  const U = user("fast_list");
+
+  it("returns Character.list, Affirmation.filter, and profile in well under 2s", async () => {
+    await call(U, "POST", "/Character", { name: "Serenity", universe: "Anima" });
+    await call(U, "POST", "/Affirmation", {
+      text: "I am here",
+      is_active: true,
+    });
+
+    const t0 = Date.now();
+    const [characters, affirmations, profile] = await Promise.all([
+      call(U, "GET", "/Character?sort=-created_date&limit=100"),
+      call(
+        U,
+        "GET",
+        `/Affirmation?filters=${encodeURIComponent(JSON.stringify({ is_active: true }))}`,
+      ),
+      call(U, "GET", "/profile"),
+    ]);
+    const elapsed = Date.now() - t0;
+
+    expect(characters.status).toBe(200);
+    expect(Array.isArray(characters.json)).toBe(true);
+    expect((characters.json as Json[]).some((c) => c.name === "Serenity")).toBe(
+      true,
+    );
+    expect(affirmations.status).toBe(200);
+    expect(profile.status).toBe(200);
+    expect(elapsed).toBeLessThan(2000);
+  });
 });
 
 describe("progress persists per account (account A)", () => {
