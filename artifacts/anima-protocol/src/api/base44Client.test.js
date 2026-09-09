@@ -476,22 +476,33 @@ describe("Character.list HTML failures", () => {
     });
   });
 
-  it("does not treat a missing Clerk token as an empty Character roster", async () => {
-    vi.useFakeTimers();
-    setAuthTokenGetter(() => null);
-    global.fetch = vi.fn();
+  it("waits for a late Clerk mint before listing characters", async () => {
+    let token = null;
+    setAuthTokenGetter(() => token);
+    global.fetch = vi.fn(async () =>
+      Response.json([{ id: "char_custom", name: "Aelynd" }]),
+    );
 
     const pending = base44.entities.Character.list("-created_date", 100, {
       _bootstrapInternal: true,
     });
-    const expectReject = expect(pending).rejects.toMatchObject({
-      status: 401,
-      message: expect.stringMatching(/sign out|sign back in/i),
-    });
-    await vi.advanceTimersByTimeAsync(STORE_FETCH_TIMEOUT_MS + 200);
-    await expectReject;
+    await new Promise((r) => setTimeout(r, 40));
+    token = "late-jwt";
+    await expect(pending).resolves.toEqual([
+      { id: "char_custom", name: "Aelynd" },
+    ]);
+    expect(global.fetch).toHaveBeenCalled();
+  });
+
+  it("returns [] after the auth wait when signed out so Customise Anima can classify", async () => {
+    clearAuthTokenGetter();
+    global.fetch = vi.fn();
+    await expect(
+      base44.entities.Character.list("-created_date", 100, {
+        _bootstrapInternal: true,
+      }),
+    ).resolves.toEqual([]);
     expect(global.fetch).not.toHaveBeenCalled();
-    vi.useRealTimers();
   });
 
   it("unwraps a wrapped Character list so custom rows are not dropped", async () => {

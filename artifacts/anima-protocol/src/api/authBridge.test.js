@@ -4,6 +4,7 @@ import {
   clearAuthTokenGetter,
   getToken,
   hasAuthTokenGetter,
+  awaitCompanionStoreAuth,
   resolveStoreToken,
   setAuthTokenGetter,
   waitForStoreAuth,
@@ -95,5 +96,10 @@ describe("authBridge getToken", () => {
 
   it("resolveStoreToken returns null when no getter is registered", async () => {
     await expect(resolveStoreToken(20)).resolves.toBeNull();
+  });
+
+  it("awaitCompanionStoreAuth is fail-open when getToken never settles", async () => {
+    setAuthTokenGetter(() => new Promise(() => {}));
+    await expect(awaitCompanionStoreAuth(80)).resolves.toBeNull();
   });
 });

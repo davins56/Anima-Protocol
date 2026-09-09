@@ -4,7 +4,7 @@ const {
   characterList,
   animaList,
   notifyStoreChanged,
-  waitForStoreAuth,
+  awaitCompanionStoreAuth,
   retryStarterSeed,
   getStarterRoster,
   whenBootstrapReady,
@@ -12,7 +12,7 @@ const {
   characterList: vi.fn(),
   animaList: vi.fn(),
   notifyStoreChanged: vi.fn(),
-  waitForStoreAuth: vi.fn().mockResolvedValue("token"),
+  awaitCompanionStoreAuth: vi.fn().mockResolvedValue("token"),
   retryStarterSeed: vi.fn(),
   getStarterRoster: vi.fn(() => [
     {
@@ -37,7 +37,10 @@ vi.mock("@/api/base44Client", () => ({
     },
   },
   notifyStoreChanged,
-  waitForStoreAuth,
+}));
+
+vi.mock("@/lib/listPersonalAnimas", () => ({
+  awaitCompanionStoreAuth,
 }));
 
 vi.mock("@/lib/seedCharacters", () => ({
@@ -58,7 +61,7 @@ beforeEach(() => {
   characterList.mockReset();
   animaList.mockReset().mockResolvedValue([]);
   notifyStoreChanged.mockReset();
-  waitForStoreAuth.mockReset().mockResolvedValue("token");
+  awaitCompanionStoreAuth.mockReset().mockResolvedValue("token");
   retryStarterSeed.mockReset();
   getStarterRoster.mockClear();
   whenBootstrapReady.mockReset().mockResolvedValue(undefined);
@@ -74,7 +77,7 @@ describe("loadRosterCharacters", () => {
     const result = await loadRosterCharacters();
 
     expect(whenBootstrapReady).toHaveBeenCalled();
-    expect(waitForStoreAuth).toHaveBeenCalled();
+    expect(awaitCompanionStoreAuth).toHaveBeenCalled();
     expect(retryStarterSeed).not.toHaveBeenCalled();
     expect(result.characters.map((c) => c.name)).toContain("Korra");
     expect(result.usingBundledSeed).toBe(false);

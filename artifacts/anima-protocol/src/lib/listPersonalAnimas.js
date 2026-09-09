@@ -1,9 +1,11 @@
-import { base44 } from "@/api/base44Client";
+import { awaitCompanionStoreAuth, base44 } from "@/api/base44Client";
 import {
   isKnownPersonalAnimaName,
   isPersonalAnimaRecord,
   PERSONAL_ANIMA_NAME_ALIASES,
 } from "@/lib/personalAnimaRecord";
+
+export { awaitCompanionStoreAuth };
 
 export {
   isKnownPersonalAnimaName,
@@ -109,6 +111,9 @@ async function listByNameSearch(entity, name, limit) {
  * Also query `creation_method` and known name aliases across the whole store.
  */
 export async function listPersonalAnimas(limit = 500) {
+  // queryEntity returns [] when the token is not ready. Wait here so
+  // Settings → Customise Anima shares the same Clerk mint wait as chat roster.
+  await awaitCompanionStoreAuth();
   // Primary Anima.list must throw so Customise Anima can classify
   // timeout / database / misconfigured failures. Recovery queries are
   // best-effort and must not hide that error.

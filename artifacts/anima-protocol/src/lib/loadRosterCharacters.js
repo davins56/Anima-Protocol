@@ -3,10 +3,10 @@
 // when the roster is still empty — same recovery path Characters.jsx uses so
 // preloaded starters are available to chat after sign-in.
 
+import { awaitCompanionStoreAuth } from "@/lib/listPersonalAnimas";
 import {
   base44,
   notifyStoreChanged,
-  waitForStoreAuth,
 } from "@/api/base44Client";
 import { matchCharacterByIdentity } from "@/lib/createInitSession";
 import { getStarterRoster, retryStarterSeed } from "@/lib/seedCharacters";
@@ -80,17 +80,16 @@ export async function loadRosterCharacters({
     await whenBootstrapReady();
   }
 
-  // Character.list returns [] (no throw) when the Clerk token getter is not
-  // ready yet — wait briefly so we don't treat "auth still loading" as an
-  // empty account.
-  let authError = null;
-  try {
-    await waitForStoreAuth(STORE_AUTH_WAIT_MS);
-  } catch (err) {
-    authError = err;
+  // Same fail-open Clerk wait Customise Anima uses. Character.list still
+  // returns [] when getToken() is minting — do not treat that as empty.
+  const token = await awaitCompanionStoreAuth(STORE_AUTH_WAIT_MS);
+  const authError = token
+    ? null
+    : new Error("Store auth token not available");
+  if (authError) {
     console.warn(
       "[Anima] Store auth not ready for roster load:",
-      err?.message || err,
+      authError.message,
     );
   }
 

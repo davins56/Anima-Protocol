@@ -3,7 +3,8 @@ import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { X, Search, Check, Plus } from "lucide-react";
 import { toast } from "sonner";
-import { base44, waitForStoreAuth } from "@/api/base44Client";
+import { awaitCompanionStoreAuth } from "@/lib/listPersonalAnimas";
+import { base44 } from "@/api/base44Client";
 import StoryTemplateBrowser from "@/components/templates/StoryTemplateBrowser";
 import CanonicalStoriesBrowser from "@/components/stories/CanonicalStoriesBrowser";
 import StoryCharacterChooser from "@/components/stories/StoryCharacterChooser";
@@ -182,7 +183,7 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
     setCreating(true);
     setLoadError(null);
     try {
-      await waitForStoreAuth();
+      await awaitCompanionStoreAuth();
     } catch {
       // createInitChatSession / storeFetch still surface a sign-in error.
     }

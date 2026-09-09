@@ -82,15 +82,23 @@ export async function waitForStoreAuth(timeoutMs = STORE_AUTH_WAIT_MS) {
  * Safari after the proxy handshake), wait the store-auth budget instead of
  * treating "not ready yet" as an empty roster / missing chat.
  */
-export async function resolveStoreToken(timeoutMs = STORE_AUTH_WAIT_MS) {
-  const immediate = await getToken();
-  if (immediate) return immediate;
-  if (!hasAuthTokenGetter()) return null;
+/**
+ * Fail-open Clerk wait used by roster, chat-open, and Customise Anima lists.
+ * Returns the token, or null if minting does not finish in time.
+ */
+export async function awaitCompanionStoreAuth(timeoutMs = STORE_AUTH_WAIT_MS) {
   try {
     return await waitForStoreAuth(timeoutMs);
   } catch {
     return null;
   }
+}
+
+export async function resolveStoreToken(timeoutMs = STORE_AUTH_WAIT_MS) {
+  const immediate = await getToken();
+  if (immediate) return immediate;
+  if (!hasAuthTokenGetter()) return null;
+  return awaitCompanionStoreAuth(timeoutMs);
 }
 
 export function publicOriginHeaders() {
