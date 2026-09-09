@@ -91,6 +91,16 @@ describe("store fail-fast budget", () => {
       "settleRosterList(rawChars, rosterTimeoutMs)",
     );
 
+    const rosterLoader = readFileSync(
+      join(srcRoot, "lib/loadRosterCharacters.js"),
+      "utf8",
+    );
+    expect(rosterLoader).toContain("withStoreTimeout");
+    expect(rosterLoader).toContain("STORE_LIST_TIMEOUT_MS");
+    expect(rosterLoader).toContain("_bootstrapInternal: true");
+    expect(rosterLoader).toMatch(/confirmedEmpty/);
+    expect(rosterLoader).toContain("recoverPersonalCompanionRows");
+
     expect(client).toContain("LONG_LIST_ENTITIES");
     expect(client).toMatch(/LONG_LIST_ENTITIES[\s\S]*Affirmation/);
     expect(client).toContain("peekMe");
