@@ -10,8 +10,20 @@ export const WORKERS_AI_CHAT_MODEL =
 /** wrangler.jsonc `ai.gateway.id` — documented here so healthz stays secret-free. */
 export const WORKERS_AI_GATEWAY_ID = "deepseek-gateway";
 
+/** Cloudflare Workers AI error when the free-plan 10k neurons/day cap is hit. */
+export const WORKERS_AI_FREE_QUOTA_CODE = 4006;
+
+/** Free-plan neuron budget advertised in the 4006 error body. */
+export const WORKERS_AI_FREE_PLAN_NEURONS_PER_DAY = 10_000;
+
+export const WORKERS_AI_FREE_QUOTA_HINT =
+  "Workers AI daily free quota exhausted — enable Workers Paid or temporarily allow OpenRouter failover";
+
 export const WORKERS_AI_USER_HINT =
   "DeepSeek on Workers AI failed to reply. Confirm the AI binding uses @cf/deepseek-ai/deepseek-r1-distill-qwen-32b via AI Gateway deepseek-gateway, then retry.";
+
+const WORKERS_AI_FREE_QUOTA_RE =
+  /\b4006\b|10[, ]?000 neurons|daily free (?:allocation|quota)|used up your daily free/i;
 
 export class WorkersAiRequestError extends Error {
   constructor(message: string) {
@@ -36,7 +48,69 @@ export function workersAiMessages(
   }));
 }
 
+function workersAiErrorHaystack(value: unknown, depth = 0): string {
+  if (value == null || depth > 3) return "";
+  if (typeof value === "number" || typeof value === "string") return String(value);
+  if (typeof value !== "object") return "";
+  const rec = value as Record<string, unknown>;
+  const parts: unknown[] = [rec.code, rec.message, rec.error, rec.detail];
+  if (Array.isArray(rec.errors)) {
+    for (const item of rec.errors) {
+      parts.push(workersAiErrorHaystack(item, depth + 1));
+    }
+  }
+  if (rec.cause != null) parts.push(workersAiErrorHaystack(rec.cause, depth + 1));
+  return parts.map((part) => (part == null ? "" : String(part))).join(" ");
+}
+
+/** True for Workers AI error 4006 (free-plan 10k neurons/day exhausted). */
+export function isWorkersAiFreeQuotaError(err: unknown): boolean {
+  if (err == null) return false;
+  if (typeof err === "object") {
+    const rec = err as { code?: unknown; errors?: unknown };
+    if (rec.code === WORKERS_AI_FREE_QUOTA_CODE || rec.code === "4006") {
+      return true;
+    }
+    if (Array.isArray(rec.errors)) {
+      for (const item of rec.errors) {
+        if (
+          item &&
+          typeof item === "object" &&
+          ((item as { code?: unknown }).code === WORKERS_AI_FREE_QUOTA_CODE ||
+            (item as { code?: unknown }).code === "4006")
+        ) {
+          return true;
+        }
+      }
+    }
+  }
+  return WORKERS_AI_FREE_QUOTA_RE.test(workersAiErrorHaystack(err));
+}
+
+export type WorkersAiHttpFailure = {
+  status: number;
+  error: string;
+  code: string;
+};
+
+/** Map a Workers AI binding failure to the /api/ai/chat JSON body. */
+export function workersAiHttpFailure(err: unknown): WorkersAiHttpFailure {
+  if (isWorkersAiFreeQuotaError(err)) {
+    return {
+      status: 429,
+      error: WORKERS_AI_FREE_QUOTA_HINT,
+      code: "workersai_free_quota_exhausted",
+    };
+  }
+  return {
+    status: 502,
+    error: "The AI service is temporarily unavailable.",
+    code: "ai_request_failed",
+  };
+}
+
 export function formatWorkersAiError(err: unknown): string {
+  if (isWorkersAiFreeQuotaError(err)) return WORKERS_AI_FREE_QUOTA_HINT;
   if (err instanceof WorkersAiRequestError) return err.message;
   const detail =
     err instanceof Error
@@ -45,6 +119,7 @@ export function formatWorkersAiError(err: unknown): string {
         ? err.trim()
         : "";
   if (!detail) return WORKERS_AI_USER_HINT;
+  if (isWorkersAiFreeQuotaError(detail)) return WORKERS_AI_FREE_QUOTA_HINT;
   if (/deepseek on workers ai/i.test(detail)) return detail;
   return `DeepSeek on Workers AI failed: ${detail}`;
 }
@@ -69,6 +144,9 @@ export function workersAiErrorMessage(response: unknown): string | null {
 }
 
 function throwIfWorkersAiError(response: unknown): void {
+  if (isWorkersAiFreeQuotaError(response)) {
+    throw new WorkersAiRequestError(WORKERS_AI_FREE_QUOTA_HINT);
+  }
   const message = workersAiErrorMessage(response);
   if (message) {
     throw new WorkersAiRequestError(formatWorkersAiError(message));

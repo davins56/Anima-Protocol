@@ -58,8 +58,12 @@ import {
   completeWorkersAi,
   formatWorkersAiError,
   hasWorkersAiBinding,
+  isWorkersAiFreeQuotaError,
   streamWorkersAi,
   WORKERS_AI_CHAT_MODEL,
+  WORKERS_AI_FREE_PLAN_NEURONS_PER_DAY,
+  WORKERS_AI_FREE_QUOTA_CODE,
+  WORKERS_AI_FREE_QUOTA_HINT,
   WORKERS_AI_GATEWAY_ID,
   WorkersAiRequestError,
 } from "./workersAi";
@@ -136,6 +140,10 @@ export interface LlmRoutingStatus {
     configured: boolean;
     model: string;
     gateway: string;
+    /** Cloudflare Workers AI error when the free-plan neuron cap is hit. */
+    quotaCode: number;
+    freePlanNeuronsPerDay: number;
+    quotaHint: string;
   };
   /** Ordered provider chain for this process. */
   chain: LlmProviderId[];
@@ -592,6 +600,7 @@ export function isProviderAuthError(err: unknown): boolean {
 
 /** True when a provider reported quota / rate / billing exhaustion. */
 export function isProviderQuotaError(err: unknown): boolean {
+  if (isWorkersAiFreeQuotaError(err)) return true;
   if (!err || typeof err !== "object") return false;
   const e = err as { status?: number; code?: unknown; type?: unknown; message?: unknown };
   // 402 = OpenRouter "Insufficient credits" / payment required.
@@ -1152,6 +1161,11 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
         `Cloudflare Workers AI model=${WORKERS_AI_CHAT_MODEL} via AI Gateway ${WORKERS_AI_GATEWAY_ID}. ` +
           "Production chat does not use Fly.io Ollama or the named tunnel.",
       );
+      noteParts.push(
+        `Free Workers AI is ${WORKERS_AI_FREE_PLAN_NEURONS_PER_DAY} neurons/day (error ${WORKERS_AI_FREE_QUOTA_CODE} when exhausted). ` +
+          "Enable Workers Paid, or with Dàvīn approval temporarily allow OpenRouter failover. " +
+          "Preferred provider stays workersai.",
+      );
       if (localSummary.configured) {
         noteParts.push(
           `Self-hosted URL at host=${localSummary.host ?? "?"} is bound but unused while the Workers AI binding is present.`,
@@ -1249,6 +1263,9 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       configured: hasWorkersAiBinding(),
       model: WORKERS_AI_CHAT_MODEL,
       gateway: WORKERS_AI_GATEWAY_ID,
+      quotaCode: WORKERS_AI_FREE_QUOTA_CODE,
+      freePlanNeuronsPerDay: WORKERS_AI_FREE_PLAN_NEURONS_PER_DAY,
+      quotaHint: WORKERS_AI_FREE_QUOTA_HINT,
     },
     chain,
     customOnly,
@@ -1382,7 +1399,7 @@ async function probeOneProvider(
         ok: false,
         status: Number.isFinite(status) ? status : undefined,
         errorKind: auth ? "auth" : connection ? "connection" : quota ? "quota" : "other",
-        message: summarizeError(err),
+        message: formatWorkersAiError(err),
         model: WORKERS_AI_CHAT_MODEL,
         configuredModel: WORKERS_AI_CHAT_MODEL,
         latencyMs: Date.now() - started,

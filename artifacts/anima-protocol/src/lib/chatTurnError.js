@@ -8,6 +8,11 @@ const GENERIC_HTTP_STATUS_RE =
 const UNAUTHORIZED_RE = /^(?:unauthorized|not signed in)\b/i;
 const SESSION_MISSING_RE = /session not found/i;
 const WORKERS_AI_RE = /workers ai|deepseek/i;
+const WORKERS_AI_4006_RE =
+  /\b4006\b|10[, ]?000 neurons|daily free (?:allocation|quota)|used up your daily free/i;
+
+const WORKERS_AI_FREE_QUOTA_HINT =
+  "Workers AI daily free quota exhausted — enable Workers Paid or temporarily allow OpenRouter failover";
 
 const OPENROUTER_ZDR_PRIVACY_HINT =
   "OpenRouter blocked this model because of your account's Zero Data Retention (ZDR) settings. " +
@@ -47,6 +52,9 @@ export function chatTurnErrorMessage(err) {
   }
   if (SESSION_MISSING_RE.test(raw)) {
     return "This conversation could not be found. Go back and start the session again.";
+  }
+  if (WORKERS_AI_4006_RE.test(raw)) {
+    return WORKERS_AI_FREE_QUOTA_HINT;
   }
   if (WORKERS_AI_RE.test(raw)) {
     return raw;
