@@ -15,6 +15,9 @@
  * can run ensureSchemaOnce() under the fetch budget. Do not raise
  * STORE_FETCH_TIMEOUT_MS — use STORE_LIST_TIMEOUT_MS. Auth wait must finish
  * before either budget starts (storeFetch waits, then arms a fresh abort).
+ *
+ * Sacred Space Affirmation.filter uses the same rule: awaitCompanionStoreAuth
+ * first, then a fresh STORE_FETCH_TIMEOUT_MS (see loadSacredSpaceSnapshot).
  */
 export const STORE_FETCH_TIMEOUT_MS = 8000;
 export const STORE_AUTH_WAIT_MS = 8000;

@@ -4,6 +4,7 @@ import {
   AFFIRMATION_AUTH_REQUIRED,
   AFFIRMATION_EMPTY_TEXT,
   AFFIRMATION_LOAD_FAILED,
+  AFFIRMATION_LOAD_TIMEOUT,
   AFFIRMATION_SEED_FAILED,
   LOCAL_AFFIRMATION_ID_PREFIX,
   affirmationErrorMessage,
@@ -11,6 +12,7 @@ import {
   createUserAffirmation,
   loadAffirmations,
   loadAndSeedAffirmations,
+  loadSacredSpaceSnapshot,
   seedDefaultAffirmations,
   validateAddAffirmation,
 } from "./affirmationStore";
@@ -248,5 +250,118 @@ describe("loadAndSeedAffirmations", () => {
       defaults,
     });
     expect(result).toEqual(asLocalAffirmations(defaults));
+  });
+});
+
+describe("loadSacredSpaceSnapshot", () => {
+  const user = { email: "a@b.c" };
+  const accountRows = [{ id: "mine", text: "My affirmation", category: "healing" }];
+
+  it("waits for store auth before arming the list timeout", async () => {
+    const events = [];
+    const waitForAuth = vi.fn(async () => {
+      events.push("auth");
+      return "token";
+    });
+    const filter = vi.fn(async () => {
+      events.push("filter");
+      return accountRows;
+    });
+
+    const result = await loadSacredSpaceSnapshot({
+      loadUser: async () => {
+        events.push("me");
+        return user;
+      },
+      filter,
+      waitForAuth,
+      listTimeoutMs: 50,
+    });
+
+    expect(events).toEqual(["auth", "me", "filter"]);
+    expect(result.existing).toEqual(accountRows);
+    expect(waitForAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not treat a slow auth wait as a list timeout", async () => {
+    let authDone = false;
+    const waitForAuth = vi.fn(async () => {
+      await new Promise((r) => setTimeout(r, 40));
+      authDone = true;
+      return "token";
+    });
+    const filter = vi.fn(async () => {
+      expect(authDone).toBe(true);
+      return accountRows;
+    });
+
+    await expect(
+      loadSacredSpaceSnapshot({
+        loadUser: async () => user,
+        filter,
+        waitForAuth,
+        // Shorter than the auth wait — must not cover minting.
+        listTimeoutMs: 25,
+      }),
+    ).resolves.toMatchObject({ existing: accountRows });
+    expect(waitForAuth).toHaveBeenCalledTimes(1);
+    expect(filter).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries once after auth settles when the first list times out", async () => {
+    const timeout = Object.assign(
+      new Error("The server took too long to respond. Check your connection."),
+      { code: "timeout" },
+    );
+    const waitForAuth = vi.fn().mockResolvedValue("token");
+    const filter = vi
+      .fn()
+      .mockRejectedValueOnce(timeout)
+      .mockResolvedValueOnce(accountRows);
+
+    const result = await loadSacredSpaceSnapshot({
+      loadUser: async () => user,
+      filter,
+      waitForAuth,
+      listTimeoutMs: 80,
+    });
+
+    expect(waitForAuth).toHaveBeenCalledTimes(2);
+    expect(filter).toHaveBeenCalledTimes(2);
+    expect(result.existing).toEqual(accountRows);
+  });
+
+  it("throws the timeout banner only after the retry also times out", async () => {
+    const waitForAuth = vi.fn().mockResolvedValue("token");
+    const filter = vi.fn().mockReturnValue(new Promise(() => {}));
+
+    await expect(
+      loadSacredSpaceSnapshot({
+        loadUser: async () => user,
+        filter,
+        waitForAuth,
+        listTimeoutMs: 20,
+      }),
+    ).rejects.toMatchObject({
+      message: AFFIRMATION_LOAD_TIMEOUT,
+      code: "timeout",
+    });
+    expect(waitForAuth).toHaveBeenCalledTimes(2);
+    expect(filter).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry non-timeout store failures", async () => {
+    const waitForAuth = vi.fn().mockResolvedValue("token");
+    const filter = vi.fn().mockRejectedValue(new Error("Database host unreachable"));
+
+    await expect(
+      loadSacredSpaceSnapshot({
+        loadUser: async () => user,
+        filter,
+        waitForAuth,
+      }),
+    ).rejects.toThrow("Database host unreachable");
+    expect(filter).toHaveBeenCalledTimes(1);
+    expect(waitForAuth).toHaveBeenCalledTimes(1);
   });
 });

@@ -38,7 +38,12 @@ vi.mock("@/api/base44Client", () => ({
 
 vi.mock("@/lib/storeTimeouts", async (importOriginal) => {
   const actual = await importOriginal();
-  return { ...actual, BOOTSTRAP_UI_TIMEOUT_MS: 50 };
+  return {
+    ...actual,
+    STORE_FETCH_TIMEOUT_MS: 50,
+    STORE_AUTH_WAIT_MS: 20,
+    BOOTSTRAP_UI_TIMEOUT_MS: 50,
+  };
 });
 
 import Meditation from "./Meditation";
@@ -114,7 +119,45 @@ describe("Meditation affirmations", () => {
     );
     expect(screen.getByText("I am healthy, wealthy, and wise.")).toBeTruthy();
     expect(screen.getByRole("button", { name: /Ritual/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Retry$/i })).toBeTruthy();
     expect(affirmationMocks.create).not.toHaveBeenCalled();
+  });
+
+  it("loads account affirmations after a first list timeout once auth settles", async () => {
+    const timeout = Object.assign(
+      new Error("The server took too long to respond. Check your connection."),
+      { code: "timeout" },
+    );
+    affirmationMocks.filter
+      .mockRejectedValueOnce(timeout)
+      .mockResolvedValueOnce([
+        { id: "acct-1", text: "I keep my own vow.", category: "healing" },
+      ]);
+    renderPage();
+
+    expect(await screen.findByText("I keep my own vow.")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(AFFIRMATION_LOAD_TIMEOUT)).toBeNull();
+    expect(screen.queryByText("I am healthy, wealthy, and wise.")).toBeNull();
+    expect(affirmationMocks.filter).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries Sacred Space after a timeout instead of leaving sticky defaults", async () => {
+    affirmationMocks.filter
+      .mockReturnValueOnce(new Promise(() => {}))
+      .mockReturnValueOnce(new Promise(() => {}))
+      .mockResolvedValueOnce([
+        { id: "acct-2", text: "I return after sync.", category: "clarity" },
+      ]);
+    renderPage();
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      AFFIRMATION_LOAD_TIMEOUT,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^Retry$/i }));
+    expect(await screen.findByText("I return after sync.")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(AFFIRMATION_LOAD_TIMEOUT)).toBeNull();
   });
 
   it("keeps the Add form open and shows why create failed", async () => {
