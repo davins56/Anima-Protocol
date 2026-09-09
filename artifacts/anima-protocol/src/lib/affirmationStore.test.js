@@ -517,7 +517,7 @@ describe("loadSacredSpaceSnapshot", () => {
   it("does not paint AFFIRMATION_LOAD_TIMEOUT when filter outlasts one list abort", async () => {
     const waitForAuth = vi.fn().mockResolvedValue("sacred-bearer");
     const filter = vi.fn(async (query, opts) => {
-      expect(query).toEqual({ is_active: true });
+      expect(query).toEqual({ is_active: true, user_email: "a@b.c" });
       expect(opts).toMatchObject({ token: "sacred-bearer", waitForAuth: false });
       await new Promise((r) => setTimeout(r, 70));
       return accountRows;
