@@ -5,6 +5,7 @@ export const CUSTOMISE_ANIMA_TABS = [
   "soulprint",
   "expression",
   "voice",
+  "intimacy",
   "permissions",
 ];
 

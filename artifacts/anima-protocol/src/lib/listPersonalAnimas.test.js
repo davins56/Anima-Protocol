@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   listAnima: vi.fn(),
   listCharacter: vi.fn(),
   filterCharacter: vi.fn(),
+  waitForStoreAuth: vi.fn(),
 }));
 
 vi.mock("@/api/base44Client", () => ({
@@ -13,6 +14,7 @@ vi.mock("@/api/base44Client", () => ({
       Character: { list: mocks.listCharacter, filter: mocks.filterCharacter },
     },
   },
+  waitForStoreAuth: mocks.waitForStoreAuth,
 }));
 
 import {
@@ -161,6 +163,35 @@ describe("listPersonalAnimas", () => {
     mocks.listAnima.mockReset().mockResolvedValue([]);
     mocks.listCharacter.mockReset().mockResolvedValue([]);
     mocks.filterCharacter.mockReset().mockResolvedValue([]);
+    mocks.waitForStoreAuth.mockReset().mockResolvedValue("token");
+  });
+
+  it("waits for a store token before Anima.list so an empty token is not an empty roster", async () => {
+    let listed = false;
+    mocks.waitForStoreAuth.mockImplementation(async () => {
+      expect(listed).toBe(false);
+      return "token";
+    });
+    mocks.listAnima.mockImplementation(async () => {
+      listed = true;
+      return [{ id: "anima-1", name: "Serenity" }];
+    });
+
+    const rows = await listPersonalAnimas(100);
+    expect(mocks.waitForStoreAuth).toHaveBeenCalled();
+    expect(rows.map((row) => row.name)).toEqual(["Serenity"]);
+  });
+
+  it("still lists companions when the Clerk token wait times out", async () => {
+    mocks.waitForStoreAuth.mockRejectedValue(
+      new Error("Store auth token not available"),
+    );
+    mocks.listAnima.mockResolvedValue([
+      { id: "anima-1", name: "Serenity" },
+    ]);
+
+    const rows = await listPersonalAnimas(100);
+    expect(rows.map((row) => row.name)).toEqual(["Serenity"]);
   });
 
   it("recovers Aelynd from a name search when she is past the newest-100 roster", async () => {
