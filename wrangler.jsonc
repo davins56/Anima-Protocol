@@ -106,14 +106,16 @@
     "ANIMA_LLM_PROVIDER": "custom",
     "ANIMA_LOCAL_LLM_BACKEND": "ollama",
     "ANIMA_OLLAMA_MODEL_STANDARD": "anima-chat",
-    // Unused for chat (fail-closed). Harmless leftover for image / other
-    // paths that still read OpenRouter. Optional follow-up: drop this var.
+    // Temporary until Workers Paid / quota recovers; DeepSeek stays preferred.
+    // ANIMA_OPENROUTER_FALLBACK appends OpenRouter after Workers AI only
+    // (error 4006 / neuron quota hop). Does not switch preferred provider.
+    "ANIMA_OPENROUTER_FALLBACK": "true",
     "ANIMA_OPENROUTER_FREE": "true"
   },
   // Secrets Store bindings — names and store_id only, never values.
   // Dashboard-only bindings are dropped on `wrangler deploy` because this
   // file is the source of truth. Keep CLERK_* + DATABASE_URL +
-  // OPENROUTER_API_KEY (image / leftover paths; unused for chat).
+  // OPENROUTER_API_KEY (chat failover after Workers AI 4006 + image paths).
   //
   // ORDERED RUNBOOK — do this BEFORE merging or deploying this file:
   // 1. In Secrets Store a31e40473ef34db896b5bc1e6c1c4b86 create these
@@ -163,9 +165,9 @@
     }
   ],
   // Free plan: 10k neurons/day. Exhaustion is Workers AI error 4006 — the
-  // AI binding is still present (healthz/llm configured:true). Do not fail
-  // over to OpenRouter without Dàvīn approval. Enable Workers Paid to keep
-  // DeepSeek as the preferred production provider.
+  // AI binding is still present (healthz/llm configured:true). Dàvīn approved
+  // temporary OpenRouter failover via ANIMA_OPENROUTER_FALLBACK=true.
+  // DeepSeek stays preferred. Enable Workers Paid to drop the hop.
   "ai": {
     "binding": "AI",
     "gateway": {
