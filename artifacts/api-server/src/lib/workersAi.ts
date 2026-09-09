@@ -150,7 +150,45 @@ export function workersAiErrorMessage(response: unknown): string | null {
   return null;
 }
 
+<<<<<<< HEAD
 /** Alias kept for failover hop tests — same detector as isWorkersAiFreeQuotaError. */
+=======
+function collectWorkersAiErrorText(err: unknown): string {
+  const parts: string[] = [];
+  const seen = new Set<unknown>();
+  const walk = (value: unknown, depth: number) => {
+    if (value == null || depth > 5 || seen.has(value)) return;
+    if (typeof value === "string" || typeof value === "number") {
+      parts.push(String(value));
+      return;
+    }
+    if (typeof value !== "object") return;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item, depth + 1);
+      return;
+    }
+    if (value instanceof Error) {
+      parts.push(value.name, value.message);
+      walk((value as { cause?: unknown }).cause, depth + 1);
+      walk((value as { code?: unknown }).code, depth + 1);
+      return;
+    }
+    const rec = value as Record<string, unknown>;
+    for (const key of ["code", "message", "detail", "error", "errors", "cause"]) {
+      if (key in rec) walk(rec[key], depth + 1);
+    }
+  };
+  walk(err, 0);
+  return parts.join(" ").toLowerCase();
+}
+
+/**
+ * Workers AI error 4006 — daily free neuron allocation exhausted.
+ * Temporary OpenRouter hops target this quota class (and the same wording
+ * without a numeric code).
+ */
+>>>>>>> 1583eaf7 (fix: remirror OpenRouter fallback and detect 4006 in errors[])
 export function isWorkersAiNeuronQuotaError(err: unknown): boolean {
   return isWorkersAiFreeQuotaError(err);
 }
