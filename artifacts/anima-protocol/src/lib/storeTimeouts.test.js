@@ -79,10 +79,10 @@ describe("store fail-fast budget", () => {
     );
     expect(affirmationStore).not.toContain("fetchSnapshot()");
     expect(affirmationStore).toContain(
-      "settleRosterList(listAnimas, rosterTimeoutMs)",
+      "settleRosterList(rawAnima, rosterTimeoutMs)",
     );
     expect(affirmationStore).toContain(
-      "settleRosterList(listCharacters, rosterTimeoutMs)",
+      "settleRosterList(rawChars, rosterTimeoutMs)",
     );
 
     expect(client).toContain("LONG_LIST_ENTITIES");

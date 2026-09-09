@@ -199,7 +199,7 @@ describe("Meditation affirmations", () => {
     expect(
       await screen.findByText("Companions cannot starve this vow."),
     ).toBeTruthy();
-    expect(await screen.findByText(/Serenity/)).toBeTruthy();
+    expect(await screen.findByText(/Serenity · Wellness Protocol/)).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.queryByText(AFFIRMATION_LOAD_TIMEOUT)).toBeNull();
   });

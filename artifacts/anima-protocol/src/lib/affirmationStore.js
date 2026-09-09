@@ -169,9 +169,9 @@ function safeRosterList(listFn) {
  * Companions list gets its own AbortSignal / wall-clock. A timeout here must
  * not become AFFIRMATION_LOAD_TIMEOUT, and must not share the filter budget.
  */
-async function settleRosterList(listFn, timeoutMs) {
+async function settleRosterList(listPromise, timeoutMs) {
   try {
-    return await withStoreTimeout(safeRosterList(listFn), timeoutMs, () => {
+    return await withStoreTimeout(listPromise, timeoutMs, () => {
       const err = new Error("roster timeout");
       err.code = "timeout";
       return err;
@@ -271,17 +271,18 @@ export async function loadSacredSpaceSnapshot({
     () => loadAffirmations({ user: me, filter }),
     { waitForAuth, authWaitMs, timeoutMs: listTimeoutMs },
   );
-  const animaPromise = settleRosterList(listAnimas, rosterTimeoutMs);
-  const charsPromise = settleRosterList(listCharacters, rosterTimeoutMs);
-  const rosterPromise = Promise.all([animaPromise, charsPromise]);
+  const rawAnima = safeRosterList(listAnimas);
+  const rawChars = safeRosterList(listCharacters);
+  const animaPromise = settleRosterList(rawAnima, rosterTimeoutMs);
+  const charsPromise = settleRosterList(rawChars, rosterTimeoutMs);
   if (typeof onRoster === "function") {
-    void rosterPromise.then(([animas, chars]) => {
+    void Promise.all([rawAnima, rawChars]).then(([animas, chars]) => {
       onRoster({ me, animas, chars });
     });
   }
 
   const existing = await existingPromise;
-  const [animas, chars] = await rosterPromise;
+  const [animas, chars] = await Promise.all([animaPromise, charsPromise]);
 
   return {
     me,
