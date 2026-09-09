@@ -65,12 +65,23 @@ describe("store fail-fast budget", () => {
     expect(bootstrap).toContain("BOOTSTRAP_UI_TIMEOUT_MS");
     expect(state).toContain("BOOTSTRAP_UI_TIMEOUT_MS");
 
+    const affirmationStore = readFileSync(
+      join(srcRoot, "lib/affirmationStore.js"),
+      "utf8",
+    );
+    expect(affirmationStore).toContain("awaitCompanionStoreAuth");
+    expect(affirmationStore).toContain("STORE_FETCH_TIMEOUT_MS");
+    expect(affirmationStore).toContain("withStoreTimeout");
+    expect(affirmationStore).toContain("isStoreTimeoutError");
+    expect(affirmationStore).toMatch(
+      /await waitForAuth\(authWaitMs\);[\s\S]*withStoreTimeout\(fetchSnapshot\(\), listTimeoutMs/,
+    );
+
     const meditation = readFileSync(join(srcRoot, "pages/Meditation.jsx"), "utf8");
-    expect(meditation).toContain("BOOTSTRAP_UI_TIMEOUT_MS");
-    expect(meditation).toContain("withStoreTimeout");
-    expect(meditation).toContain("loadAffirmations");
+    expect(meditation).toContain("loadSacredSpaceSnapshot");
     expect(meditation).toContain("seedDefaultAffirmations");
     expect(meditation).not.toContain("loadAndSeedAffirmations");
+    expect(meditation).not.toContain("BOOTSTRAP_UI_TIMEOUT_MS");
   });
 
   it("rejects a hung promise at the wall-clock budget", async () => {
