@@ -1455,7 +1455,13 @@ async function loadProfile(force) {
     // right after sign-in. A 2s empty TTL made Settings look signed-out.
     return profileCache || {};
   }
-  const res = await storeFetch('/profile');
+  // First authed GET runs ensureSchemaOnce(). Use the list budget + retry,
+  // not the 8s write cap — Sacred Space used to abort /profile and paint
+  // AFFIRMATION_LOAD_TIMEOUT before Affirmation.filter could start.
+  const res = await storeFetch('/profile', {
+    retryOnTimeout: true,
+    timeoutMs: STORE_LIST_TIMEOUT_MS,
+  });
   if (!res.ok) {
     profileCache = profileCache || {};
     return profileCache;
@@ -1508,6 +1514,10 @@ export const base44 = {
       const profile = await loadProfile(false);
       return mergedUser(profile);
     },
+
+    // Sync identity + cached profile only — no /profile GET. Sacred Space
+    // uses this so a hung ensureSchemaOnce() cannot own AFFIRMATION_LOAD_TIMEOUT.
+    peekMe: () => mergedUser(profileCache || {}),
 
     // Merge Clerk identity (id, email, name) into the in-memory identity used
     // by me(). Called by AuthContext when a Clerk session becomes available.

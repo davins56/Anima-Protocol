@@ -14,6 +14,7 @@ import {
 
 const affirmationMocks = vi.hoisted(() => ({
   me: vi.fn(),
+  peekMe: vi.fn(),
   filter: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
@@ -23,7 +24,7 @@ const affirmationMocks = vi.hoisted(() => ({
 
 vi.mock("@/api/base44Client", () => ({
   base44: {
-    auth: { me: affirmationMocks.me },
+    auth: { me: affirmationMocks.me, peekMe: affirmationMocks.peekMe },
     entities: {
       Affirmation: {
         filter: affirmationMocks.filter,
@@ -43,6 +44,7 @@ vi.mock("@/lib/storeTimeouts", async (importOriginal) => {
     STORE_FETCH_TIMEOUT_MS: 50,
     STORE_LIST_TIMEOUT_MS: 50,
     STORE_AUTH_WAIT_MS: 20,
+    STORE_TOKEN_TIMEOUT_MS: 0,
     BOOTSTRAP_UI_TIMEOUT_MS: 50,
   };
 });
@@ -69,6 +71,7 @@ describe("Meditation affirmations", () => {
       value: { cancel: vi.fn(), speak: vi.fn(), getVoices: () => [] },
     });
     affirmationMocks.me.mockResolvedValue({ email: "operator@example.com" });
+    affirmationMocks.peekMe.mockReturnValue({ email: "operator@example.com" });
     affirmationMocks.filter.mockResolvedValue([]);
     affirmationMocks.create.mockResolvedValue({
       id: "seed-1",
@@ -93,18 +96,56 @@ describe("Meditation affirmations", () => {
     expect(screen.queryByText(/Attuning frequency/i)).toBeNull();
   });
 
-  it("clears Attuning when auth.me never settles and shows defaults", async () => {
+  it("loads account affirmations once peekMe hydrates email while auth.me hangs", async () => {
     affirmationMocks.me.mockReturnValue(new Promise(() => {}));
+    let peekCalls = 0;
+    affirmationMocks.peekMe.mockImplementation(() => {
+      peekCalls += 1;
+      return peekCalls < 2 ? {} : { email: "operator@example.com" };
+    });
+    affirmationMocks.filter.mockResolvedValue([
+      { id: "acct-7", text: "Hydrated email keeps this vow.", category: "love" },
+    ]);
     renderPage();
 
     expect(screen.getByText(/Attuning frequency/i)).toBeTruthy();
-    expect(await screen.findByText("Sacred Space")).toBeTruthy();
+    expect(await screen.findByText("Hydrated email keeps this vow.")).toBeTruthy();
+    expect(screen.queryByText(AFFIRMATION_LOAD_TIMEOUT)).toBeNull();
+    expect(screen.queryByText("I am healthy, wealthy, and wise.")).toBeNull();
+    expect(affirmationMocks.filter).toHaveBeenCalled();
+  });
+
+  it("loads account affirmations when auth.me never settles but peek has email", async () => {
+    affirmationMocks.me.mockReturnValue(new Promise(() => {}));
+    affirmationMocks.filter.mockResolvedValue([
+      { id: "acct-6", text: "Profile GET cannot own this vow.", category: "healing" },
+    ]);
+    renderPage();
+
+    expect(screen.getByText(/Attuning frequency/i)).toBeTruthy();
+    expect(await screen.findByText("Profile GET cannot own this vow.")).toBeTruthy();
     expect(screen.queryByText(/Attuning frequency/i)).toBeNull();
-    expect((await screen.findByRole("alert")).textContent).toBe(
-      AFFIRMATION_LOAD_TIMEOUT,
-    );
-    expect(screen.getByText("I am healthy, wealthy, and wise.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Affirmations/i })).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(AFFIRMATION_LOAD_TIMEOUT)).toBeNull();
+    expect(screen.queryByText("I am healthy, wealthy, and wise.")).toBeNull();
+    expect(affirmationMocks.filter).toHaveBeenCalled();
+    expect(affirmationMocks.create).not.toHaveBeenCalled();
+  });
+
+  it("loads account affirmations when peek has no email and auth.me hangs", async () => {
+    affirmationMocks.me.mockReturnValue(new Promise(() => {}));
+    affirmationMocks.peekMe.mockReturnValue({});
+    affirmationMocks.filter.mockResolvedValue([
+      { id: "acct-8", text: "Email hydration cannot own this vow.", category: "clarity" },
+    ]);
+    renderPage();
+
+    expect(screen.getByText(/Attuning frequency/i)).toBeTruthy();
+    expect(await screen.findByText("Email hydration cannot own this vow.")).toBeTruthy();
+    expect(screen.queryByText(/Attuning frequency/i)).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(AFFIRMATION_LOAD_TIMEOUT)).toBeNull();
+    expect(affirmationMocks.filter).toHaveBeenCalled();
     expect(affirmationMocks.create).not.toHaveBeenCalled();
   });
 
@@ -141,6 +182,18 @@ describe("Meditation affirmations", () => {
     expect(screen.queryByText(AFFIRMATION_LOAD_TIMEOUT)).toBeNull();
     expect(screen.queryByText("I am healthy, wealthy, and wise.")).toBeNull();
     expect(affirmationMocks.filter).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows in-memory defaults without the timeout banner when filter is empty", async () => {
+    affirmationMocks.filter.mockResolvedValue([]);
+    affirmationMocks.create.mockReturnValue(new Promise(() => {}));
+    renderPage();
+
+    expect(await screen.findByText("Sacred Space")).toBeTruthy();
+    expect(screen.getByText("I am healthy, wealthy, and wise.")).toBeTruthy();
+    expect(screen.queryByText(AFFIRMATION_LOAD_TIMEOUT)).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(affirmationMocks.filter).toHaveBeenCalled();
   });
 
   it("loads account affirmations when auth.me is slow but filter is ready", async () => {
@@ -263,12 +316,12 @@ describe("Meditation affirmations", () => {
   it("shows a sign-in error when Add is clicked without a session", async () => {
     const unauthorized = new Error("Unauthorized");
     unauthorized.status = 401;
+    affirmationMocks.peekMe.mockReturnValue({});
     affirmationMocks.me.mockRejectedValue(unauthorized);
     renderPage();
 
-    expect((await screen.findByRole("alert")).textContent).toMatch(
-      AFFIRMATION_AUTH_REQUIRED,
-    );
+    expect(await screen.findByText("Sacred Space")).toBeTruthy();
+    expect(screen.queryByText(AFFIRMATION_LOAD_TIMEOUT)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /Add Affirmation/i }));
     fireEvent.change(screen.getByPlaceholderText("Write your affirmation..."), {
       target: { value: "I am safe." },

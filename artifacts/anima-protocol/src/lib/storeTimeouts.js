@@ -16,10 +16,12 @@
  * STORE_FETCH_TIMEOUT_MS — use STORE_LIST_TIMEOUT_MS. Auth wait must finish
  * before either budget starts (storeFetch waits, then arms a fresh abort).
  *
- * Sacred Space: awaitCompanionStoreAuth, then auth.me(), Affirmation.filter,
- * and Anima/Character.list each arm their own AbortSignal. #434 waited for
- * OTP then still Promise.all'd filter + companions under one STORE_FETCH
- * window — that client budget is the iPad sticky defaults + empty Anima.
+ * Sacred Space: awaitCompanionStoreAuth, then Affirmation.filter and
+ * Anima/Character.list each arm their own AbortSignal. #436 split those
+ * list clocks but still gated filter on auth.me() under STORE_FETCH (8s).
+ * /profile pays ensureSchemaOnce() on the first authed hit — that leftover
+ * 8s race is the post-#436 iPad AFFIRMATION_LOAD_TIMEOUT banner. Peek the
+ * Clerk email and start filter without waiting for the profile GET.
  */
 export const STORE_FETCH_TIMEOUT_MS = 8000;
 export const STORE_AUTH_WAIT_MS = 8000;
