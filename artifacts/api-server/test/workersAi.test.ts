@@ -10,6 +10,7 @@ import {
   WORKERS_AI_CHAT_MODEL,
   WORKERS_AI_FREE_QUOTA_HINT,
   WorkersAiRequestError,
+  isWorkersAiNeuronQuotaError,
   workersAiErrorMessage,
   workersAiHttpFailure,
   workersAiMessages,
@@ -278,6 +279,46 @@ describe("workersAi helpers", () => {
         maxTokens: 16,
       }),
     ).resolves.toBe("I hear you.");
+  });
+
+  it("includes the numeric code on Workers AI error objects", () => {
+    expect(
+      workersAiErrorMessage({
+        success: false,
+        errors: [
+          {
+            code: 4006,
+            message: "You have used up your daily free allocation of 10,000 neurons",
+          },
+        ],
+      }),
+    ).toBe("4006: You have used up your daily free allocation of 10,000 neurons");
+    expect(
+      isWorkersAiNeuronQuotaError({
+        success: false,
+        errors: [{ code: 4006, message: "daily free allocation" }],
+      }),
+    ).toBe(true);
+  });
+
+  it("throws at stream-open on a 4006 error object so failover can hop", async () => {
+    setAiBinding({
+      run: async () => ({
+        success: false,
+        errors: [
+          {
+            code: 4006,
+            message: "You have used up your daily free allocation of 10,000 neurons",
+          },
+        ],
+      }),
+    });
+    await expect(
+      streamWorkersAi({
+        messages: [{ role: "user", content: "hi" }],
+        maxTokens: 16,
+      }),
+    ).rejects.toThrow(WORKERS_AI_FREE_QUOTA_HINT);
   });
 
   it("throws a clear Workers AI error when completion is empty", async () => {
