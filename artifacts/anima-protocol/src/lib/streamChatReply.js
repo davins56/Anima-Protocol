@@ -1,3 +1,5 @@
+import { createVisibleReplyFilter, visibleAssistantReply } from "./visibleAssistantReply";
+
 /**
  * Consume a chat SSE async-iterable and surface tokens as they arrive.
  *
@@ -18,6 +20,7 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus 
   let sawFirst = false;
   let pending = null;
   let rafId = null;
+  const replyFilter = createVisibleReplyFilter();
   const hasRaf = typeof requestAnimationFrame === "function";
 
   const flush = () => {
@@ -52,7 +55,9 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus 
         onStatus?.(event);
       }
       if (event?.content) {
-        content += event.content;
+        const visibleDelta = replyFilter.push(event.content);
+        if (!visibleDelta) continue;
+        content += visibleDelta;
         if (!sawFirst) {
           sawFirst = true;
           onFirstToken?.(content);
@@ -77,6 +82,13 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus 
     if (pending != null) flush();
     else if (content && onDelta) onDelta(content);
   }
+
+  const finished = replyFilter.finish();
+  if (finished.emitted) {
+    content += finished.emitted;
+    if (onDelta) onDelta(content);
+  }
+  content = finished.visible || visibleAssistantReply(content) || content;
 
   return { content, ...(doneEvent || {}) };
 }

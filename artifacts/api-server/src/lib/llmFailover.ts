@@ -55,10 +55,12 @@ import {
 import { getOpenWeightChatModel, resolveModelSpec } from "@workspace/llm";
 import {
   completeWorkersAi,
+  formatWorkersAiError,
   hasWorkersAiBinding,
   streamWorkersAi,
   WORKERS_AI_CHAT_MODEL,
   WORKERS_AI_GATEWAY_ID,
+  WorkersAiRequestError,
 } from "./workersAi";
 
 const CLOUD_FLAGSHIP_SETUP_HINT =
@@ -1073,6 +1075,10 @@ function enrichError(
     return new Error(
       `Deepshi chat failed. Check DEEPSHI_API_KEY / ANIMA_DEEPSHI_API_KEY and ANIMA_DEEPSHI_MODEL, then retry.`,
     );
+  }
+  if (provider === "workersai") {
+    if (err instanceof WorkersAiRequestError) return err;
+    return new Error(formatWorkersAiError(err));
   }
   const base = err instanceof Error ? err : new Error(String(err));
   return remapGenericProviderError(base);

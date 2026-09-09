@@ -7,6 +7,7 @@ import { createRateLimit } from "../../lib/rateLimit";
 import { notifyUser } from "../../lib/storeEvents";
 import { resolveModel } from "../../lib/modelRouter";
 import { createChatCompletionWithFailover } from "../../lib/llmFailover";
+import { visibleAssistantReply } from "../../lib/visibleAssistantReply";
 import { getOpenAIClient, hasOpenAIKey, hasOpenRouterKey } from "../../lib/openaiClient";
 import { searchMemoriesSemantically } from "../../lib/memoryEmbeddings";
 import { writeCompanionFactsToSupermemory } from "../../lib/supermemory";
@@ -46,7 +47,7 @@ async function llm(systemPrompt: string, userPrompt: string, maxTokens = 1024): 
       { role: "user", content: userPrompt },
     ],
   });
-  return result.content;
+  return visibleAssistantReply(result.content);
 }
 
 // Web search grounding is an OpenAI Responses API feature and chat never
