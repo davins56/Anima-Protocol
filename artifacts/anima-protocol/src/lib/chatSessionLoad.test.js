@@ -2,6 +2,7 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 import {
   beginOpenSession,
   loadOpenChatSession,
+  mergeOpenedSession,
   rememberCreatedSession,
   resolveOpenSessionFetch,
   takeCreatedSession,
@@ -233,5 +234,61 @@ describe("primed Init session across remount", () => {
       status: "loading",
       primed: null,
     });
+  });
+});
+
+describe("mergeOpenedSession", () => {
+  it("keeps an in-flight thinking tail when Init GET returns a shorter snapshot", () => {
+    const current = {
+      id: "sess-new",
+      title: "T'Challa",
+      messages: [
+        { id: "turn_1:user", role: "user", content: "hi" },
+        { role: "assistant", character_name: "__thinking__", content: "..." },
+      ],
+    };
+    const incoming = { id: "sess-new", title: "T'Challa", messages: [] };
+    const merged = mergeOpenedSession(current, incoming);
+    expect(merged.messages).toEqual(current.messages);
+    expect(merged.messages.some((m) => m.character_name === "__thinking__")).toBe(
+      true,
+    );
+  });
+
+  it("keeps a streaming assistant bubble over a stale remote list", () => {
+    const current = {
+      id: "sess-new",
+      messages: [
+        { id: "turn_1:user", role: "user", content: "hi" },
+        {
+          role: "assistant",
+          character_name: "Serenity",
+          content: "Stay close.",
+          is_streaming: true,
+        },
+      ],
+    };
+    const incoming = {
+      id: "sess-new",
+      messages: [{ id: "old", role: "assistant", content: "The stage is set." }],
+    };
+    expect(mergeOpenedSession(current, incoming).messages).toEqual(
+      current.messages,
+    );
+  });
+
+  it("applies a remote snapshot when the local thread is idle", () => {
+    const current = {
+      id: "sess-new",
+      messages: [{ id: "m1", role: "user", content: "hi" }],
+    };
+    const incoming = {
+      id: "sess-new",
+      messages: [
+        { id: "m1", role: "user", content: "hi" },
+        { id: "m2", role: "assistant", content: "hello" },
+      ],
+    };
+    expect(mergeOpenedSession(current, incoming)).toEqual(incoming);
   });
 });

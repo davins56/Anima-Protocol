@@ -1,6 +1,7 @@
 /**
- * DeepSeek R1 wraps chain-of-thought in `<think>…</think>`. Stripping those
- * tags without a fallback turns a think-only completion into an empty bubble.
+ * DeepSeek R1 wraps chain-of-thought in `<think>…</think>`. Production often
+ * returns unclosed `<think>`-only text with no post-think answer. Waiting for
+ * `</think>` hides the only usable tokens and leaves an empty bubble.
  */
 
 const CLOSED_THINK_RE = /<think(?:ing)?\b[^>]*>[\s\S]*?<\/think(?:ing)?>/gi;
@@ -28,14 +29,31 @@ export function visibleAssistantReply(raw, opts = {}) {
   return inners.join("\n\n");
 }
 
+/** Canonical visible text for a finished turn. Never waits for `</think>`. */
+export function finalizeAssistantReply(...parts) {
+  for (const part of parts) {
+    const visible = visibleAssistantReply(part || "", {
+      allowThinkFallback: true,
+    }).trim();
+    if (visible) return visible;
+  }
+  return "";
+}
+
 export function createVisibleReplyFilter() {
   let raw = "";
   let emittedVisible = "";
 
-  const peek = () => visibleAssistantReply(raw, { allowThinkFallback: false });
+  // Unclosed `<think>` is the production DeepSeek reply. Surface inner text
+  // as it arrives — do not wait for a closing tag that never comes.
+  const peek = () => visibleAssistantReply(raw, { allowThinkFallback: true });
+  const peekAnswer = () =>
+    visibleAssistantReply(raw, { allowThinkFallback: false });
 
   return {
     peek,
+    peekAnswer,
+    hasPostThinkAnswer: () => peekAnswer().trim().length > 0,
     push(delta) {
       raw += String(delta ?? "");
       const next = peek();
@@ -44,10 +62,13 @@ export function createVisibleReplyFilter() {
         emittedVisible = next;
         return extra;
       }
+      // Remainder replaced think-fallback once `</think>` + answer arrived.
+      // Do not emit a non-prefix extra — SSE clients concatenate chunks.
+      // finish() / done.content carry the replacement.
       return "";
     },
     finish() {
-      const next = visibleAssistantReply(raw, { allowThinkFallback: true });
+      const next = finalizeAssistantReply(raw);
       let extra = "";
       if (next.startsWith(emittedVisible)) {
         extra = next.slice(emittedVisible.length);
@@ -57,7 +78,7 @@ export function createVisibleReplyFilter() {
         extra = next;
       }
       emittedVisible = next;
-      return { visible: next.trim(), emitted: extra };
+      return { visible: next, emitted: extra };
     },
   };
 }

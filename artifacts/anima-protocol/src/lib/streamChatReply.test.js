@@ -107,6 +107,33 @@ describe("streamChatReply", () => {
     expect(result.content).toBe("I hear you.");
   });
 
+  it("paints unclosed think inner text during the stream", async () => {
+    const onDelta = vi.fn();
+    const result = await streamChatReply(
+      fromEvents([{ content: "<think>Stay with me. I hear you." }, { done: true }]),
+      { onDelta },
+    );
+    expect(result.content).toBe("Stay with me. I hear you.");
+    expect(onDelta.mock.calls.at(-1)[0]).toBe("Stay with me. I hear you.");
+  });
+
+  it("uses done.visible when Safari dropped the last content frame", async () => {
+    const onDelta = vi.fn();
+    const result = await streamChatReply(
+      fromEvents([
+        {
+          done: true,
+          visible: "<think>I hear you. Stay close.",
+          model: "deepseek",
+        },
+      ]),
+      { onDelta },
+    );
+    expect(result.content).toBe("I hear you. Stay close.");
+    expect(result.model).toBe("deepseek");
+    expect(onDelta).toHaveBeenCalledWith("I hear you. Stay close.");
+  });
+
   it("resolves when done arrives even if the iterable never closes", async () => {
     async function* hangAfterDone() {
       yield { content: "Hi" };

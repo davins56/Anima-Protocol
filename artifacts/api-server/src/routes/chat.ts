@@ -105,7 +105,7 @@ import {
   crisisResourceForCountry,
 } from "../lib/therapySafety";
 import { ChatPipelineTelemetry } from "../lib/chatTelemetry";
-import { visibleAssistantReply } from "../lib/visibleAssistantReply";
+import { finalizeAssistantReply } from "../lib/visibleAssistantReply";
 import {
   beginChatTurn,
   checkpointGeneratedTurn,
@@ -1332,6 +1332,7 @@ router.post("/messages", async (req, res) => {
       writeSse(res, { content: turnStart.turn.assistantContent });
       writeSse(res, {
         done: true,
+        visible: turnStart.turn.assistantContent,
         turn_id: turnId,
         persistence_status: turnStart.turn.status,
         replayed: true,
@@ -1724,7 +1725,7 @@ router.post("/messages", async (req, res) => {
         // Only one mind produced anything usable — nothing to combine.
         usedModel = drafts[0]!.model;
         usedBrand = "anima";
-        fullResponse = visibleAssistantReply(drafts[0]!.content);
+        fullResponse = finalizeAssistantReply(drafts[0]!.content);
         telemetry.markFirstToken();
         writeSse(res, { content: fullResponse });
       } else {
@@ -1778,12 +1779,12 @@ router.post("/messages", async (req, res) => {
         onDelta: emitDelta,
         onReasoning: emitReasoning,
       });
-      fullResponse = visibleAssistantReply(streamed.content);
+      fullResponse = finalizeAssistantReply(streamed.content);
     }
 
     // An empty completion used to look like a successful turn on the client
     // (thinking/typing cleared, no visible reply). Fail loudly instead.
-    // Think-only DeepSeek R1 output is recovered by visibleAssistantReply.
+    // Unclosed / think-only DeepSeek R1 output is recovered by finalizeAssistantReply.
     if (!String(fullResponse).trim()) {
       throw new Error("The companion returned an empty reply. Please try again.");
     }
@@ -1820,6 +1821,7 @@ router.post("/messages", async (req, res) => {
     // until those finished (or hung).
     writeSse(res, {
       done: true,
+      visible: fullResponse,
       model: usedModel,
       tier: usedTier,
       provider: usedProvider,

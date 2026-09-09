@@ -224,6 +224,19 @@ describe("workersAi helpers", () => {
     ).resolves.toBe("Stay close.");
   });
 
+  it("keeps a long unclosed <think> completion instead of returning empty", async () => {
+    const inner = `${"I hear you. ".repeat(80)}Stay close.`;
+    setAiBinding({
+      run: async () => ({ response: `<think>${inner}` }),
+    });
+    await expect(
+      completeWorkersAi({
+        messages: [{ role: "user", content: "hi" }],
+        maxTokens: 16,
+      }),
+    ).resolves.toBe(inner.trim());
+  });
+
   it("uses reasoning text when the response field is empty", async () => {
     setAiBinding({
       run: async () => ({ response: "", reasoning: "I hear you." }),

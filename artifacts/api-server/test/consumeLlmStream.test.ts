@@ -174,4 +174,16 @@ describe("consumeLlmStream", () => {
     expect(result.content).toBe("Stay close.");
     expect(reasoning).toBe(1);
   });
+
+  it("emits unclosed think inner text without waiting for </think>", async () => {
+    const inner = `${"Stay close. ".repeat(60)}I hear you.`;
+    const deltas: string[] = [];
+    const result = await consumeLlmStream(
+      fromChunks([{ content: `<think>${inner}` }]),
+      { onDelta: (d) => deltas.push(d) },
+    );
+    expect(result.content).toBe(inner.trim());
+    expect(deltas.join("")).toBe(inner.trim());
+    expect(result.timedOut).toBe(false);
+  });
 });
