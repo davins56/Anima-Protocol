@@ -87,6 +87,31 @@ describe("ensureSchema recovers a blank database", () => {
     expect(rows[0]?.name).toBe("Korra");
   });
 
+  it("returns immediately without CREATE/ALTER/INDEX when inspect reports ok", async () => {
+    resetEnsureSchemaLatch();
+    const primed = await ensureSchema(pool);
+    expect(primed.ok).toBe(true);
+    expect(primed.missingBefore).toEqual([]);
+
+    const statements: string[] = [];
+    const wrapped: SqlQueryable = {
+      async query(queryText, values) {
+        statements.push(queryText);
+        return pool.query(queryText, values);
+      },
+    };
+    const result = await ensureSchema(wrapped);
+    expect(result.ok).toBe(true);
+    expect(result.createdTables).toEqual([]);
+    expect(result.missingBefore).toEqual([]);
+    expect(statements.some((sql) => /information_schema\.tables/i.test(sql))).toBe(
+      true,
+    );
+    expect(
+      statements.filter((sql) => /^\s*(CREATE|ALTER|DROP)\b/i.test(sql)),
+    ).toEqual([]);
+  });
+
   it("still creates tables when the first inspect query throws", async () => {
     resetEnsureSchemaLatch();
     const blankName = `ensure_schema_fail_${Date.now()}_${Math.random()
@@ -142,6 +167,59 @@ describe("ensureSchema recovers a blank database", () => {
         await cleanup.end();
       }
     }
+  });
+});
+
+describe("ensureSchema skips DDL when the schema is already complete", () => {
+  it("does not emit CREATE/ALTER/INDEX after inspect reports ok", async () => {
+    const statements: string[] = [];
+    const queryable: SqlQueryable = {
+      async query(queryText) {
+        statements.push(queryText);
+        if (/information_schema\.tables/i.test(queryText)) {
+          return {
+            rows: REQUIRED_TABLES.map((table_name) => ({ table_name })),
+          };
+        }
+        if (/pg_extension/i.test(queryText)) {
+          return { rows: [{ exists: true }] };
+        }
+        throw new Error(`DDL should not run: ${queryText.slice(0, 80)}`);
+      },
+    };
+
+    const result = await ensureSchema(queryable);
+    expect(result.ok).toBe(true);
+    expect(result.createdTables).toEqual([]);
+    expect(result.missingBefore).toEqual([]);
+    expect(
+      statements.filter((sql) => /^\s*(CREATE|ALTER|DROP)\b/i.test(sql)),
+    ).toEqual([]);
+    expect(statements.some((sql) => /information_schema\.tables/i.test(sql))).toBe(
+      true,
+    );
+  });
+
+  it("still emits CREATE TABLE when required tables are missing", async () => {
+    const statements: string[] = [];
+    const queryable: SqlQueryable = {
+      async query(queryText) {
+        statements.push(queryText);
+        if (/information_schema\.tables/i.test(queryText)) {
+          return { rows: [] };
+        }
+        if (/pg_extension/i.test(queryText)) {
+          return { rows: [{ exists: false }] };
+        }
+        return { rows: [] };
+      },
+    };
+    await ensureSchema(queryable);
+    expect(
+      statements.some((sql) =>
+        /CREATE TABLE IF NOT EXISTS "user_entities"/i.test(sql),
+      ),
+    ).toBe(true);
   });
 });
 
