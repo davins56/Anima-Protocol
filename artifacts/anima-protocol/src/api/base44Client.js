@@ -74,7 +74,10 @@ function storeTimeoutError(timeoutMessage) {
 }
 
 async function storeFetch(path, options = {}) {
-  const token = await getToken();
+  let token = await getToken();
+  if (!token && hasAuthTokenGetter()) {
+    token = await resolveStoreToken();
+  }
   if (!token) {
     const err = new Error(
       'Not signed in — your session may have expired. Sign out and sign in again, then retry.',
@@ -972,7 +975,9 @@ async function queryEntity(entityName, opts) {
     // think seeding succeeded when the store was never reachable. After bootstrap
     // settles, surface 401 so the UI can prompt re-sign-in instead of "0 indexed".
     if (res.status === 401) {
-      if (ROSTER_ENTITIES.has(entityName) && isBootstrapSettled()) {
+      // A signed-in getter + 401 is not an empty account. Returning [] here
+      // hid custom characters after OTP while bootstrap was still running.
+      if (ROSTER_ENTITIES.has(entityName) && hasAuthTokenGetter()) {
         throw storeError(
           res,
           'Session not recognized by the server — sign out, sign back in, and try again.',
