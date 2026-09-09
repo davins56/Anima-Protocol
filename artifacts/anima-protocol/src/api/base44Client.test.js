@@ -762,6 +762,47 @@ describe("auth.me Clerk identity", () => {
     expect(me.email).toBe("ada@example.com");
     expect(me.full_name).toBe("Ada Lovelace");
   });
+
+  it("peekMe returns synced identity without fetching /profile", async () => {
+    setAuthTokenGetter(() => "test-token");
+    global.fetch = vi.fn(async () => Response.json({ display_name: "Ada" }));
+    base44.auth.syncIdentity({
+      id: "user_abc",
+      email: "ada@example.com",
+      full_name: "Ada Lovelace",
+    });
+
+    const peeked = base44.auth.peekMe();
+    expect(peeked.email).toBe("ada@example.com");
+    expect(peeked.id).toBe("user_abc");
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("uses the long list budget for GET /profile, not the 8s write cap", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      controller.signal.budgetMs = ms;
+      return controller.signal;
+    });
+    setAuthTokenGetter(() => "test-token");
+    base44.auth.syncIdentity({
+      id: "user_abc",
+      email: "ada@example.com",
+    });
+    global.fetch = vi.fn(async (url) => {
+      const { pathname } = new URL(String(url), "http://localhost");
+      if (pathname === "/api/store/profile") {
+        return Response.json({ display_name: "Ada" });
+      }
+      return Response.json({});
+    });
+
+    const me = await base44.auth.me();
+    expect(me.display_name).toBe("Ada");
+    expect(timeoutSpy).toHaveBeenCalledWith(STORE_LIST_TIMEOUT_MS);
+    expect(STORE_LIST_TIMEOUT_MS).toBe(20000);
+    expect(STORE_FETCH_TIMEOUT_MS).toBe(8000);
+  });
 });
 
 describe("auth.updateMe profile persist", () => {

@@ -79,6 +79,7 @@ export interface Base44Auth {
   isAuthenticated(): Promise<boolean>;
   redirectToLogin(): void;
   me(): Promise<any>;
+  peekMe(): any;
   syncIdentity(identity: Record<string, unknown>): any;
   clearSession(): void;
   updateMe(data: Record<string, unknown>): Promise<any>;

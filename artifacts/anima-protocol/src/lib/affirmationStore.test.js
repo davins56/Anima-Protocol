@@ -283,6 +283,125 @@ describe("loadSacredSpaceSnapshot", () => {
     expect(waitForAuth).toHaveBeenCalledTimes(1);
   });
 
+  it("starts Affirmation.filter from peek email without waiting for auth.me", async () => {
+    const events = [];
+    const waitForAuth = vi.fn(async () => {
+      events.push("auth");
+      return "token";
+    });
+    let resolveMe;
+    const loadUser = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveMe = resolve;
+          events.push("me-started");
+        }),
+    );
+    const filter = vi.fn(async () => {
+      events.push("filter");
+      return accountRows;
+    });
+
+    const result = await loadSacredSpaceSnapshot({
+      loadUser,
+      peekUser: () => {
+        events.push("peek");
+        return user;
+      },
+      filter,
+      waitForAuth,
+      listTimeoutMs: 50,
+      userTimeoutMs: 20,
+    });
+
+    expect(events).toEqual(["auth", "peek", "me-started", "filter"]);
+    expect(result.existing).toEqual(accountRows);
+    expect(result.me).toEqual(user);
+    expect(filter).toHaveBeenCalledTimes(1);
+    resolveMe?.({ email: "late@b.c" });
+  });
+
+  it("waits for Clerk email on peek instead of timing out a hung auth.me", async () => {
+    let email = "";
+    const waitForAuth = vi.fn().mockResolvedValue("token");
+    const peekUser = vi.fn(() => (email ? { email } : {}));
+    const loadUser = vi.fn(() => new Promise(() => {}));
+    const filter = vi.fn(async () => accountRows);
+
+    const pending = loadSacredSpaceSnapshot({
+      loadUser,
+      peekUser,
+      filter,
+      waitForAuth,
+      authWaitMs: 80,
+      userTimeoutMs: 15,
+      listTimeoutMs: 50,
+    });
+    await new Promise((r) => setTimeout(r, 30));
+    email = user.email;
+    await expect(pending).resolves.toMatchObject({
+      existing: accountRows,
+      me: { email: user.email },
+    });
+    expect(filter).toHaveBeenCalledTimes(1);
+    expect(loadUser).toHaveBeenCalled();
+  });
+
+  it("does not paint AFFIRMATION_LOAD_TIMEOUT when auth.me hangs after peek", async () => {
+    const waitForAuth = vi.fn().mockResolvedValue("token");
+    const loadUser = vi.fn(() => new Promise(() => {}));
+    const filter = vi.fn(async () => accountRows);
+
+    await expect(
+      loadSacredSpaceSnapshot({
+        loadUser,
+        peekUser: () => user,
+        filter,
+        waitForAuth,
+        listTimeoutMs: 50,
+        userTimeoutMs: 15,
+      }),
+    ).resolves.toMatchObject({ existing: accountRows, me: user });
+    expect(filter).toHaveBeenCalledTimes(1);
+    expect(waitForAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a filter that outlasts listTimeoutMs when slack covers token work", async () => {
+    const waitForAuth = vi.fn().mockResolvedValue("token");
+    const filter = vi.fn(async () => {
+      await new Promise((r) => setTimeout(r, 30));
+      return accountRows;
+    });
+
+    await expect(
+      loadSacredSpaceSnapshot({
+        loadUser: async () => user,
+        peekUser: () => user,
+        filter,
+        waitForAuth,
+        listTimeoutMs: 20,
+        listTimeoutSlackMs: 25,
+      }),
+    ).resolves.toMatchObject({ existing: accountRows });
+    expect(filter).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not classify an empty signed-in filter as a timeout", async () => {
+    const waitForAuth = vi.fn().mockResolvedValue("token");
+    const filter = vi.fn(async () => []);
+
+    await expect(
+      loadSacredSpaceSnapshot({
+        loadUser: async () => user,
+        peekUser: () => user,
+        filter,
+        waitForAuth,
+        listTimeoutMs: 50,
+      }),
+    ).resolves.toMatchObject({ existing: [], me: user });
+    expect(filter).toHaveBeenCalledTimes(1);
+  });
+
   it("does not treat a slow auth wait as a list timeout", async () => {
     let authDone = false;
     const waitForAuth = vi.fn(async () => {

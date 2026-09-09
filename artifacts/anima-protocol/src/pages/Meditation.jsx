@@ -19,6 +19,7 @@ import {
   loadSacredSpaceSnapshot,
   seedDefaultAffirmations,
 } from "@/lib/affirmationStore";
+import { STORE_TOKEN_TIMEOUT_MS } from "@/lib/storeTimeouts";
 
 const CATEGORY_CONFIG = {
   abundance: { label: "Abundance", glyph: "✦", color: "#FBBF24", gradient: "from-yellow-500/20 to-amber-500/10" },
@@ -110,15 +111,17 @@ export default function Meditation() {
     setLoading(true);
     setStoreError("");
     try {
-      // After auth, Affirmation.filter and Anima.list each get a fresh
-      // STORE_LIST budget. A shared Promise.all STORE_FETCH window was
-      // the post-#434 iPad banner and empty Anima header.
+      // Peek Clerk email so Affirmation.filter does not wait on auth.me()
+      // /profile (STORE_FETCH 8s + ensureSchemaOnce). That leftover gate is
+      // why #436 still painted AFFIRMATION_LOAD_TIMEOUT on iPad.
       const { me, existing, animas, chars } = await loadSacredSpaceSnapshot({
         loadUser: () => base44.auth.me(),
+        peekUser: () => base44.auth.peekMe(),
         filter: (query) => base44.entities.Affirmation.filter(query),
         listAnimas: () => base44.entities.Anima.list("-created_date", 10),
         listCharacters: () =>
           base44.entities.Character.list("-created_date", 100),
+        listTimeoutSlackMs: STORE_TOKEN_TIMEOUT_MS,
         onRoster: ({ me: rosterUser, animas: nextAnimas, chars: nextChars }) => {
           if (gen !== initGen.current) return;
           setCharacters(nextChars || []);

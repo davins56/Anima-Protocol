@@ -74,6 +74,9 @@ describe("store fail-fast budget", () => {
     expect(affirmationStore).toContain("STORE_LIST_TIMEOUT_MS");
     expect(affirmationStore).toContain("withStoreTimeout");
     expect(affirmationStore).toContain("isStoreTimeoutError");
+    expect(affirmationStore).toContain("peekUser");
+    expect(affirmationStore).toContain("readPeekUser");
+    expect(affirmationStore).toContain("waitForPeekUser");
     expect(affirmationStore).toMatch(
       /await waitForAuth\(authWaitMs\);[\s\S]*loadAffirmations\(\{ user: me, filter \}/,
     );
@@ -87,9 +90,15 @@ describe("store fail-fast budget", () => {
 
     expect(client).toContain("LONG_LIST_ENTITIES");
     expect(client).toMatch(/LONG_LIST_ENTITIES[\s\S]*Affirmation/);
+    expect(client).toContain("peekMe");
+    expect(client).toMatch(
+      /storeFetch\('\/profile'[\s\S]*timeoutMs: STORE_LIST_TIMEOUT_MS/,
+    );
 
     const meditation = readFileSync(join(srcRoot, "pages/Meditation.jsx"), "utf8");
     expect(meditation).toContain("loadSacredSpaceSnapshot");
+    expect(meditation).toContain("peekUser");
+    expect(meditation).toContain("peekMe");
     expect(meditation).toContain("seedDefaultAffirmations");
     expect(meditation).not.toContain("loadAndSeedAffirmations");
     expect(meditation).not.toContain("BOOTSTRAP_UI_TIMEOUT_MS");
