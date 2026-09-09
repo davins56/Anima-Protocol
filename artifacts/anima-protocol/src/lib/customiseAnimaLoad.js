@@ -95,6 +95,15 @@ export function classifyCustomiseAnimaLoadError(err) {
   return "unknown";
 }
 
+/**
+ * queryEntity returns [] when Clerk getToken is still minting. That is not
+ * an empty companion roster — treat it as unsigned so Settings / the hub
+ * show Retry + Sign in instead of "Forge Anima".
+ */
+export function classifyEmptyCustomiseAnimaLoad({ token } = {}) {
+  return token ? "empty" : "unsigned";
+}
+
 export function customiseAnimaLoadCopy(kind, rawMessage = "") {
   switch (kind) {
     case "misconfigured":

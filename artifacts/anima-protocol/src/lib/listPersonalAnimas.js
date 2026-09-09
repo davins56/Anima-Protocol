@@ -1,11 +1,10 @@
-import { awaitCompanionStoreAuth, base44 } from "@/api/base44Client";
+import { base44, waitForStoreAuth } from "@/api/base44Client";
+import { STORE_AUTH_WAIT_MS } from "@/lib/storeTimeouts";
 import {
   isKnownPersonalAnimaName,
   isPersonalAnimaRecord,
   PERSONAL_ANIMA_NAME_ALIASES,
 } from "@/lib/personalAnimaRecord";
-
-export { awaitCompanionStoreAuth };
 
 export {
   isKnownPersonalAnimaName,
@@ -104,6 +103,21 @@ async function listByNameSearch(entity, name, limit) {
 }
 
 /**
+ * Wait for a Clerk store token before companion lists.
+ *
+ * Shared root for Customise Anima and chat roster: queryEntity returns []
+ * when getToken() is still minting. loadRosterCharacters / Init also call
+ * this before Character.list so a late Clerk mint is not an empty account.
+ */
+export async function awaitCompanionStoreAuth() {
+  try {
+    return await waitForStoreAuth(STORE_AUTH_WAIT_MS);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Load personal companions from Anima + Character.
  *
  * Character.list(limit) is newest-first. A second Anima stored as an older
@@ -111,8 +125,8 @@ async function listByNameSearch(entity, name, limit) {
  * Also query `creation_method` and known name aliases across the whole store.
  */
 export async function listPersonalAnimas(limit = 500) {
-  // queryEntity returns [] when the token is not ready. Wait here so
-  // Settings → Customise Anima shares the same Clerk mint wait as chat roster.
+  // Shared Clerk mint wait for Customise Anima and chat roster. queryEntity
+  // still returns [] when getToken() is not ready — do not skip this wait.
   await awaitCompanionStoreAuth();
   // Primary Anima.list must throw so Customise Anima can classify
   // timeout / database / misconfigured failures. Recovery queries are

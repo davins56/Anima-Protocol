@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { base44, waitForStoreAuth } from "@/api/base44Client";
-import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import { useAuth } from "@/lib/AuthContext";
 import AnimaCustomizer from "@/components/anima/AnimaCustomizer";
 import AnimaPersonalityPanel from "@/components/anima/AnimaPersonalityPanel";
@@ -26,9 +24,9 @@ import {
   Swords,
   UserCircle,
 } from "lucide-react";
-import { STORE_AUTH_WAIT_MS } from "@/lib/storeTimeouts";
 import { normalizeCustomiseAnimaTab } from "@/lib/customiseAnimaTabs";
-import { listPersonalAnimas, selectPersonalAnima } from "@/lib/listPersonalAnimas";
+import { selectPersonalAnima } from "@/lib/listPersonalAnimas";
+import { loadCustomiseAnimaCompanions } from "@/lib/loadCustomiseAnimaCompanions";
 import {
   classifyCustomiseAnimaLoadError,
   customiseAnimaLoadCopy,
@@ -95,32 +93,20 @@ export default function CustomiseAnima() {
           return;
         }
 
-        try {
-          await Promise.all([
-            whenBootstrapReady(),
-            waitForStoreAuth(STORE_AUTH_WAIT_MS),
-          ]);
-        } catch (authErr) {
-          if (!cancelled) {
-            setLoadKind("unsigned");
-            setLoadMessage(authErr?.message || "");
-          }
-          return;
-        }
-
-        const [me, list] = await Promise.all([
-          base44.auth.me().catch(() => user || null),
-          listPersonalAnimas(100),
-        ]);
+        const result = await loadCustomiseAnimaCompanions({
+          meFallback: user,
+          limit: 500,
+        });
         if (cancelled) return;
 
-        const rows = list || [];
+        const rows = result.rows || [];
         setAnimas(rows);
 
-        const selected = selectPersonalAnima(rows, requestedId, me);
+        const selected = selectPersonalAnima(rows, requestedId, result.me);
         setAnima(selected);
         if (!selected) {
-          setLoadKind("empty");
+          setLoadKind(result.kind || "empty");
+          setLoadMessage(result.message || "");
         }
       } catch (err) {
         if (!cancelled) {
@@ -136,7 +122,7 @@ export default function CustomiseAnima() {
     return () => {
       cancelled = true;
     };
-  }, [requestedId, isAuthenticated, isLoadingAuth, reloadNonce, user]);
+  }, [requestedId, isAuthenticated, isLoadingAuth, reloadNonce, user?.id]);
 
   const setTab = (tabId) => {
     const next = new URLSearchParams(searchParams);

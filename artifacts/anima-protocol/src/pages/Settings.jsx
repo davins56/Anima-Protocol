@@ -4,6 +4,16 @@ import { useUser } from "@clerk/react";
 import { base44, exportData } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import {
+  classifyCustomiseAnimaLoadError,
+  customiseAnimaLoadCopy,
+} from "@/lib/customiseAnimaLoad";
+import { loadCustomiseAnimaCompanions } from "@/lib/loadCustomiseAnimaCompanions";
+import {
+  companionLookHref,
+  listPersonalAnimas,
+  selectPersonalAnima,
+} from "@/lib/listPersonalAnimas";
+import {
   displayNameFromAccount,
   mergeAccountIdentity,
 } from "@/lib/accountIdentity";
@@ -34,7 +44,7 @@ import {
   uploadChatBackgroundImage,
 } from "@/lib/settingsChatBackground";
 
-const SECTION = {
+export const SECTION = {
   ACCOUNT: "account",
   CUSTOMISE_ANIMA: "customise-anima",
   BACKGROUND: "background",
@@ -43,6 +53,11 @@ const SECTION = {
   DATA: "data",
   LEGAL: "legal",
 };
+
+export function normalizeSettingsSection(raw) {
+  const id = String(raw || "").toLowerCase();
+  return Object.values(SECTION).includes(id) ? id : SECTION.ACCOUNT;
+}
 
 const defaultPrefs = {
   ai_creativity: 0.7,
@@ -65,10 +80,26 @@ const defaultPrefs = {
 
 export default function Settings() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { logout, user: authUser, isAuthenticated } = useAuth();
   const { user: clerkUser } = useUser();
   const clerkIdentity = clerkIdentityFromUser(clerkUser);
-  const [section, setSection] = useState(SECTION.ACCOUNT);
+  const [section, setSectionState] = useState(() =>
+    normalizeSettingsSection(searchParams.get("section")),
+  );
+  const [companions, setCompanions] = useState([]);
+  const [companionsLoading, setCompanionsLoading] = useState(false);
+  const [companionsKind, setCompanionsKind] = useState("");
+  const [companionsMessage, setCompanionsMessage] = useState("");
+
+  const setSection = (id) => {
+    const nextId = normalizeSettingsSection(id);
+    setSectionState(nextId);
+    const next = new URLSearchParams(searchParams);
+    if (nextId === SECTION.ACCOUNT) next.delete("section");
+    else next.set("section", nextId);
+    setSearchParams(next, { replace: true });
+  };
   const [user, setUser] = useState(
     mergeAccountIdentity(clerkIdentity, authUser) || null,
   );
@@ -124,10 +155,52 @@ export default function Settings() {
     });
   }, [authUser?.id, authUser?.email, authUser?.full_name, authUser?.display_name, authUser?.role, clerkIdentity?.id, clerkIdentity?.email, clerkIdentity?.full_name]);
 
+  const sectionFromUrl = searchParams.get("section");
+  useEffect(() => {
+    const fromUrl = normalizeSettingsSection(sectionFromUrl);
+    setSectionState((prev) => (prev === fromUrl ? prev : fromUrl));
+  }, [sectionFromUrl]);
+
   useEffect(() => {
     loadUser();
     loadStats();
   }, [authUser?.id, authUser?.email, isAuthenticated, clerkIdentity?.id, clerkIdentity?.email]);
+
+  useEffect(() => {
+    if (section !== SECTION.CUSTOMISE_ANIMA) return;
+    if (!isAuthenticated) {
+      setCompanions([]);
+      setCompanionsKind("unsigned");
+      setCompanionsMessage("");
+      setCompanionsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setCompanionsLoading(true);
+      setCompanionsKind("");
+      setCompanionsMessage("");
+      try {
+        const result = await loadCustomiseAnimaCompanions({
+          meFallback: mergeAccountIdentity(clerkIdentity, authUser),
+        });
+        if (cancelled) return;
+        setCompanions(result.rows || []);
+        setCompanionsKind(result.kind || "");
+        setCompanionsMessage(result.message || "");
+      } catch (err) {
+        if (cancelled) return;
+        setCompanions([]);
+        setCompanionsKind(classifyCustomiseAnimaLoadError(err));
+        setCompanionsMessage(err?.message || "");
+      } finally {
+        if (!cancelled) setCompanionsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [section, isAuthenticated, authUser?.id, clerkIdentity?.id]);
 
   const loadUser = async () => {
     const me = await base44.auth.me();
@@ -153,11 +226,8 @@ export default function Settings() {
       if (display) setPrefs((p) => ({ ...p, display_name: p.display_name || display }));
     }
     try {
-      const animas = await base44.entities.Anima.list("-created_date", 20);
-      const selected = me?.email
-        ? animas.find((a) => a.assigned_user === me.email) || animas[0]
-        : animas[0];
-      setAnima(selected || null);
+      const animas = await listPersonalAnimas(500);
+      setAnima(selectPersonalAnima(animas, null, me) || null);
     } catch {
       setAnima(null);
     }
@@ -565,6 +635,63 @@ export default function Settings() {
                     </p>
                   </div>
                 </div>
+                {companionsLoading ? (
+                  <div
+                    role="status"
+                    className="flex items-center gap-2 border-t border-primary/10 pt-4 font-mono text-[10px] text-primary/40 tracking-widest uppercase"
+                  >
+                    <Loader className="w-3.5 h-3.5 animate-spin" />
+                    Loading companions...
+                  </div>
+                ) : companions.length > 0 ? (
+                  <div className="border-t border-primary/10 pt-4 space-y-2">
+                    <p className="font-mono text-[9px] text-primary/40 tracking-[0.25em] uppercase">
+                      Your Animas
+                    </p>
+                    <div className="flex flex-col gap-2" role="list" aria-label="Your Animas">
+                      {companions.map((row) => (
+                        <button
+                          key={row.id}
+                          type="button"
+                          role="listitem"
+                          aria-label={`Customise ${row.name || "Anima"}`}
+                          onClick={() => navigate(companionLookHref(row.id))}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 border border-primary/15 bg-black/30 hover:border-primary/40 text-left transition-colors"
+                        >
+                          <span className="w-8 h-8 border border-primary/25 overflow-hidden flex-shrink-0 bg-primary/5">
+                            {row.avatar_url ? (
+                              <img
+                                src={row.avatar_url}
+                                alt=""
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <span className="w-full h-full flex items-center justify-center font-mono text-[10px] text-primary/50">
+                                {(row.name || "?")[0]}
+                              </span>
+                            )}
+                          </span>
+                          <span className="font-mono text-sm text-primary/80 tracking-wider truncate">
+                            {row.name || "Anima"}
+                          </span>
+                          <span className="ml-auto text-primary/35 font-mono text-xs">→</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    role="status"
+                    className="border-t border-primary/10 pt-4 space-y-2"
+                  >
+                    <p className="font-mono text-sm text-primary/70 tracking-wider">
+                      {customiseAnimaLoadCopy(companionsKind || "empty", companionsMessage).headline}
+                    </p>
+                    <p className="font-mono text-[10px] text-primary/40 tracking-widest leading-relaxed">
+                      {customiseAnimaLoadCopy(companionsKind || "empty", companionsMessage).body}
+                    </p>
+                  </div>
+                )}
                 <ul className="text-[10px] font-mono text-primary/45 space-y-1.5 border-t border-primary/10 pt-4">
                   <li>• Look — skin, hair, outfit, eyes; generate or upload a portrait</li>
                   <li>• Personality — name, archetype, traits, speaking style</li>
