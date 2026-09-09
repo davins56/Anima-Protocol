@@ -127,13 +127,33 @@ describe("consumeLlmStream", () => {
     }
 
     const started = Date.now();
-    await expect(
-      consumeLlmStream(reasoningThenHang(), {
-        firstChunkMs: 70,
-        stallMs: 20,
-        totalMs: 200,
-      }),
-    ).rejects.toBeInstanceOf(LlmStreamTimeoutError);
+    const result = await consumeLlmStream(reasoningThenHang(), {
+      firstChunkMs: 70,
+      stallMs: 20,
+      totalMs: 200,
+    });
     expect(Date.now() - started).toBeGreaterThanOrEqual(60);
+    expect(result.content).toBe("still thinking");
+    expect(result.timedOut).toBe(true);
+  });
+
+  it("strips DeepSeek think tags and keeps the answer", async () => {
+    const result = await consumeLlmStream(
+      fromChunks([
+        { content: "<think>plan" },
+        { content: " it</think>\n\nStay close." },
+      ]),
+    );
+    expect(result.content).toBe("Stay close.");
+  });
+
+  it("does not persist an empty reply when the model returned think-only", async () => {
+    const deltas: string[] = [];
+    const result = await consumeLlmStream(
+      fromChunks([{ content: "<think>I hear you. Stay close.</think>" }]),
+      { onDelta: (d) => deltas.push(d) },
+    );
+    expect(result.content).toBe("I hear you. Stay close.");
+    expect(deltas.join("")).toBe("I hear you. Stay close.");
   });
 });

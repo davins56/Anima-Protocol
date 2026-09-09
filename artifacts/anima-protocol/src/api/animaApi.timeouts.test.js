@@ -19,6 +19,7 @@ describe("chat stream client abort", () => {
     const animaApi = readFileSync(join(srcRoot, "api/animaApi.js"), "utf8");
     expect(animaApi).toContain("export const CHAT_STREAM_TIMEOUT_MS = 115_000");
     expect(animaApi).toContain("setTimeout(() => controller.abort(), CHAT_STREAM_TIMEOUT_MS)");
+    expect(animaApi).toContain("requireChatAuthHeaders");
   });
 
   it("matches the api-server documented client budget", () => {

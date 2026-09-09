@@ -64,4 +64,19 @@ describe("chatTurnErrorMessage", () => {
       "The companion service encountered an issue. Please try again in a moment.",
     );
   });
+
+  it("keeps Workers AI / DeepSeek failures visible instead of a generic toast", () => {
+    expect(
+      chatTurnErrorMessage(
+        new Error("DeepSeek on Workers AI failed: model overloaded"),
+      ),
+    ).toMatch(/DeepSeek on Workers AI failed: model overloaded/);
+  });
+
+  it("remaps unauthorized and missing-session send failures", () => {
+    expect(chatTurnErrorMessage(new Error("Unauthorized"))).toMatch(/Not signed in/);
+    expect(chatTurnErrorMessage(new Error("Session not found"))).toMatch(
+      /conversation could not be found/i,
+    );
+  });
 });

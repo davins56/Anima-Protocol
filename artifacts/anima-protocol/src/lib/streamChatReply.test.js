@@ -87,6 +87,26 @@ describe("streamChatReply", () => {
     expect(caught.partialContent).toBe("Hello");
   });
 
+  it("keeps the answer after DeepSeek think tags and does not return empty", async () => {
+    const onDelta = vi.fn();
+    const result = await streamChatReply(
+      fromEvents([
+        { content: "<think>plan the beat</think>\n\nStay close." },
+        { done: true },
+      ]),
+      { onDelta },
+    );
+    expect(result.content).toBe("Stay close.");
+    expect(onDelta.mock.calls.at(-1)[0]).toBe("Stay close.");
+  });
+
+  it("surfaces a think-only model reply instead of an empty bubble", async () => {
+    const result = await streamChatReply(
+      fromEvents([{ content: "<think>I hear you.</think>" }, { done: true }]),
+    );
+    expect(result.content).toBe("I hear you.");
+  });
+
   it("resolves when done arrives even if the iterable never closes", async () => {
     async function* hangAfterDone() {
       yield { content: "Hi" };
