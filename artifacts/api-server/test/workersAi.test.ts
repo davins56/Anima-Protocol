@@ -5,10 +5,13 @@ import {
   extractWorkersAiReasoning,
   extractWorkersAiText,
   formatWorkersAiError,
+  isWorkersAiFreeQuotaError,
   streamWorkersAi,
   WORKERS_AI_CHAT_MODEL,
+  WORKERS_AI_FREE_QUOTA_HINT,
   WorkersAiRequestError,
   workersAiErrorMessage,
+  workersAiHttpFailure,
   workersAiMessages,
 } from "../src/lib/workersAi";
 
@@ -81,6 +84,34 @@ describe("workersAi helpers", () => {
     expect(formatWorkersAiError(new Error("3006: inference failed"))).toMatch(
       /DeepSeek on Workers AI failed: 3006: inference failed/,
     );
+  });
+
+  it("maps Workers AI error 4006 to the free-quota hint", () => {
+    const cf = new Error(
+      "4006: you have used up your daily free allocation of 10,000 neurons, please upgrade to Cloudflare's Workers Paid plan if",
+    );
+    expect(isWorkersAiFreeQuotaError(cf)).toBe(true);
+    expect(isWorkersAiFreeQuotaError({ code: 4006 })).toBe(true);
+    expect(
+      isWorkersAiFreeQuotaError({
+        success: false,
+        errors: [{ code: 4006, message: "neuron cap" }],
+      }),
+    ).toBe(true);
+    expect(isWorkersAiFreeQuotaError(new Error("3006: inference failed"))).toBe(
+      false,
+    );
+    expect(formatWorkersAiError(cf)).toBe(WORKERS_AI_FREE_QUOTA_HINT);
+    expect(workersAiHttpFailure(cf)).toEqual({
+      status: 429,
+      error: WORKERS_AI_FREE_QUOTA_HINT,
+      code: "workersai_free_quota_exhausted",
+    });
+    expect(workersAiHttpFailure(new Error("gateway timeout"))).toEqual({
+      status: 502,
+      error: "The AI service is temporarily unavailable.",
+      code: "ai_request_failed",
+    });
   });
 
   it("stringifies non-text message content for the binding", () => {

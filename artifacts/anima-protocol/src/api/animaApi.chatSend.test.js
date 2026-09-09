@@ -46,6 +46,18 @@ describe("chat send auth and HTTP errors", () => {
     ).toMatch(/DeepSeek on Workers AI failed: rate limited/);
   });
 
+  it("remaps Workers AI error 4006 to the free-quota hint", () => {
+    const err = chatHttpError(
+      {
+        error:
+          "4006: you have used up your daily free allocation of 10,000 neurons, please upgrade to Cloudflare's Workers Paid plan if",
+      },
+      502,
+    );
+    expect(err.message).toMatch(/Workers AI daily free quota exhausted/);
+    expect(err.code).toBe("workersai_free_quota_exhausted");
+  });
+
   it("attaches Authorization before POST /chat/messages and retries a 401", async () => {
     authHeaders
       .mockResolvedValueOnce({
