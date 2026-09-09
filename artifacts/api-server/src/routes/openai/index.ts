@@ -5,6 +5,7 @@ import { getAuth } from "@clerk/express";
 import { createRateLimit } from "../../lib/rateLimit";
 import { routeModel } from "../../lib/modelRouter";
 import { createChatStreamWithFailover } from "../../lib/llmFailover";
+import { createVisibleReplyFilter } from "../../lib/visibleAssistantReply";
 
 const router = Router();
 
@@ -113,6 +114,7 @@ router.post("/conversations/:id/messages", async (req, res) => {
   res.setHeader("Connection", "keep-alive");
 
   let fullResponse = "";
+  const replyFilter = createVisibleReplyFilter();
 
   try {
     // Pick the model from the latest message's stakes plus per-conversation
@@ -137,9 +139,21 @@ router.post("/conversations/:id/messages", async (req, res) => {
     for await (const chunk of completion.stream) {
       const delta = chunk.choices[0]?.delta?.content;
       if (delta) {
-        fullResponse += delta;
-        res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
+        const visible = replyFilter.push(delta);
+        if (visible) {
+          fullResponse += visible;
+          res.write(`data: ${JSON.stringify({ content: visible })}\n\n`);
+        }
       }
+    }
+    const finished = replyFilter.finish();
+    if (finished.emitted) {
+      fullResponse += finished.emitted;
+      res.write(`data: ${JSON.stringify({ content: finished.emitted })}\n\n`);
+    }
+    fullResponse = finished.visible || fullResponse;
+    if (!String(fullResponse).trim()) {
+      throw new Error("The companion returned an empty reply. Please try again.");
     }
 
     await db.insert(messages).values({ conversationId: id, role: "assistant", content: fullResponse });
