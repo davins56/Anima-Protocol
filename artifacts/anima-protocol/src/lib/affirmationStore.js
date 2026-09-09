@@ -2,7 +2,19 @@
  * Sacred Space / Therapy Mode affirmation persistence.
  * Store/auth failures must surface as copy the operator can see — never a
  * silent no-op on Add or the initial seed.
+ *
+ * Sacred Space init must wait for Clerk mint before arming the list timeout.
+ * Sharing one AbortSignal / withStoreTimeout across OTP getToken() and
+ * Affirmation.filter is the iPad Safari sticky "default affirmations" banner.
  */
+
+import { awaitCompanionStoreAuth } from "@/api/authBridge";
+import { isStoreTimeoutError } from "@/lib/storeErrorSignals";
+import {
+  STORE_AUTH_WAIT_MS,
+  STORE_FETCH_TIMEOUT_MS,
+  withStoreTimeout,
+} from "@/lib/storeTimeouts";
 
 export const AFFIRMATION_AUTH_REQUIRED = "Sign in to save affirmations.";
 export const AFFIRMATION_EMPTY_TEXT = "Write an affirmation before adding.";
@@ -128,10 +140,81 @@ export async function loadAffirmations({ user, filter }) {
       affirmationErrorMessage(err, AFFIRMATION_LOAD_FAILED),
     );
     wrapped.status = err?.status;
+    wrapped.code = err?.code;
     wrapped.cause = err;
     throw wrapped;
   }
   return Array.isArray(existing) ? existing : [];
+}
+
+/**
+ * Sacred Space first paint: mint the store token, then list with a fresh
+ * STORE_FETCH budget. A late OTP mint must not consume the list timeout.
+ * One timeout retries after auth settles — do not treat that as sticky
+ * default/offline affirmations.
+ *
+ * @param {{
+ *   loadUser: () => Promise<{ email?: string } | null>,
+ *   filter: (query: Record<string, unknown>) => Promise<unknown[]>,
+ *   listAnimas?: () => Promise<unknown[]>,
+ *   listCharacters?: () => Promise<unknown[]>,
+ *   waitForAuth?: (timeoutMs?: number) => Promise<unknown>,
+ *   listTimeoutMs?: number,
+ *   authWaitMs?: number,
+ * }} input
+ * @returns {Promise<{
+ *   me: { email?: string } | null,
+ *   existing: unknown[],
+ *   animas: unknown[],
+ *   chars: unknown[],
+ * }>}
+ */
+export async function loadSacredSpaceSnapshot({
+  loadUser,
+  filter,
+  listAnimas,
+  listCharacters,
+  waitForAuth = (timeoutMs) => awaitCompanionStoreAuth(timeoutMs),
+  listTimeoutMs = STORE_FETCH_TIMEOUT_MS,
+  authWaitMs = STORE_AUTH_WAIT_MS,
+} = {}) {
+  const timeoutError = () => {
+    const err = new Error(AFFIRMATION_LOAD_TIMEOUT);
+    err.code = "timeout";
+    return err;
+  };
+
+  const fetchSnapshot = async () => {
+    const me = await loadUser();
+    const [existing, animas, chars] = await Promise.all([
+      loadAffirmations({ user: me, filter }),
+      typeof listAnimas === "function"
+        ? Promise.resolve().then(listAnimas).catch(() => [])
+        : Promise.resolve([]),
+      typeof listCharacters === "function"
+        ? Promise.resolve().then(listCharacters).catch(() => [])
+        : Promise.resolve([]),
+    ]);
+    return {
+      me,
+      existing: Array.isArray(existing) ? existing : [],
+      animas: Array.isArray(animas) ? animas : [],
+      chars: Array.isArray(chars) ? chars : [],
+    };
+  };
+
+  // Auth wait is NOT covered by the list timeout. After OTP, Clerk mint
+  // can take seconds — if that wait shares STORE_FETCH, Sacred Space
+  // paints defaults before Affirmation.filter can run.
+  await waitForAuth(authWaitMs);
+
+  try {
+    return await withStoreTimeout(fetchSnapshot(), listTimeoutMs, timeoutError);
+  } catch (err) {
+    if (!isStoreTimeoutError(err)) throw err;
+    await waitForAuth(authWaitMs);
+    return await withStoreTimeout(fetchSnapshot(), listTimeoutMs, timeoutError);
+  }
 }
 
 /**

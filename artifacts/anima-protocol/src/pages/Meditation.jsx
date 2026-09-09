@@ -11,16 +11,14 @@ import SacredSpaceSession from "@/components/meditation/SacredSpaceSession";
 import {
   AFFIRMATION_ADD_FAILED,
   AFFIRMATION_LOAD_FAILED,
-  AFFIRMATION_LOAD_TIMEOUT,
   AFFIRMATION_SEED_FAILED,
   affirmationErrorMessage,
   asLocalAffirmations,
   createUserAffirmation,
   isLocalAffirmationId,
-  loadAffirmations,
+  loadSacredSpaceSnapshot,
   seedDefaultAffirmations,
 } from "@/lib/affirmationStore";
-import { BOOTSTRAP_UI_TIMEOUT_MS, withStoreTimeout } from "@/lib/storeTimeouts";
 
 const CATEGORY_CONFIG = {
   abundance: { label: "Abundance", glyph: "✦", color: "#FBBF24", gradient: "from-yellow-500/20 to-amber-500/10" },
@@ -104,31 +102,16 @@ export default function Meditation() {
     setLoading(true);
     setStoreError("");
     try {
-      const snapshot = await withStoreTimeout(
-        (async () => {
-          const me = await base44.auth.me();
-          setUser(me);
-
-          const [existing, animas, chars] = await Promise.all([
-            loadAffirmations({
-              user: me,
-              filter: (query) => base44.entities.Affirmation.filter(query),
-            }),
-            base44.entities.Anima.list("-created_date", 10).catch(() => []),
-            base44.entities.Character.list("-created_date", 100).catch(() => []),
-          ]);
-
-          return { me, existing, animas, chars };
-        })(),
-        BOOTSTRAP_UI_TIMEOUT_MS,
-        () => {
-          const err = new Error(AFFIRMATION_LOAD_TIMEOUT);
-          err.code = "timeout";
-          return err;
-        },
-      );
-
-      const { me, existing, animas, chars } = snapshot;
+      // Token mint finishes before Affirmation.filter arms STORE_FETCH.
+      // A shared timeout here was the iPad OTP sticky-defaults banner.
+      const { me, existing, animas, chars } = await loadSacredSpaceSnapshot({
+        loadUser: () => base44.auth.me(),
+        filter: (query) => base44.entities.Affirmation.filter(query),
+        listAnimas: () => base44.entities.Anima.list("-created_date", 10),
+        listCharacters: () =>
+          base44.entities.Character.list("-created_date", 100),
+      });
+      setUser(me);
       setCharacters(chars || []);
       const userAnima =
         animas?.find((a) => a.assigned_user === me.email) || animas?.[0] || null;
@@ -255,13 +238,32 @@ export default function Meditation() {
             <motion.div key="affirm" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
 
               {storeError && (
-                <p
-                  role="alert"
-                  className="font-mono text-[10px] leading-relaxed px-3 py-2 border"
-                  style={{ borderColor: "rgba(248,113,113,0.35)", color: "#FCA5A5", background: "rgba(127,29,29,0.2)" }}
+                <div
+                  className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-3 py-2 border"
+                  style={{ borderColor: "rgba(248,113,113,0.35)", background: "rgba(127,29,29,0.2)" }}
                 >
-                  {storeError}
-                </p>
+                  <p
+                    role="alert"
+                    className="font-mono text-[10px] leading-relaxed"
+                    style={{ color: "#FCA5A5" }}
+                  >
+                    {storeError}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void init();
+                    }}
+                    className="shrink-0 px-3 py-1.5 font-mono text-[9px] tracking-widest uppercase transition-all"
+                    style={{
+                      border: "1px solid rgba(167,139,250,0.45)",
+                      color: "#C084FC",
+                      background: "rgba(124,58,237,0.15)",
+                    }}
+                  >
+                    Retry
+                  </button>
+                </div>
               )}
 
               {/* Player */}
