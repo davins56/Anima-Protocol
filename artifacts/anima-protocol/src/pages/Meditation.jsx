@@ -111,13 +111,15 @@ export default function Meditation() {
     setLoading(true);
     setStoreError("");
     try {
-      // After the token wait, Affirmation.filter starts even if peek email
-      // is still "" and auth.me() / Anima.list are hung. Those must not use
-      // AFFIRMATION_LOAD_TIMEOUT — that leftover helper is the iPad banner.
+      // After the token wait, Affirmation.filter starts with that Bearer even
+      // if peek email is still "" and auth.me() / Anima.list are hung. Do not
+      // race filter with AFFIRMATION_LOAD_TIMEOUT — #437's leftover helper
+      // ignored a late signed-in GET. Late rows still clear a hang-cap banner.
       const { me, existing, animas, chars } = await loadSacredSpaceSnapshot({
         loadUser: () => base44.auth.me(),
         peekUser: () => base44.auth.peekMe(),
-        filter: (query) => base44.entities.Affirmation.filter(query),
+        filter: (query, opts) =>
+          base44.entities.Affirmation.filter(query, undefined, undefined, opts),
         listAnimas: () => base44.entities.Anima.list("-created_date", 10),
         listCharacters: () =>
           base44.entities.Character.list("-created_date", 100),
@@ -126,6 +128,21 @@ export default function Meditation() {
           if (gen !== initGen.current) return;
           setCharacters(nextChars || []);
           applyAnima(rosterUser, nextAnimas);
+        },
+        onExisting: ({ existing: rows, me: rosterUser }) => {
+          if (gen !== initGen.current) return;
+          if (Array.isArray(rows) && rows.length > 0) {
+            setStoreError("");
+            setAffirmations(rows);
+            return;
+          }
+          if (Array.isArray(rows) && rows.length === 0) {
+            setStoreError("");
+            setAffirmations((prev) =>
+              prev.length > 0 ? prev : asLocalAffirmations(DEFAULT_AFFIRMATIONS),
+            );
+            startBackgroundSeed(rosterUser);
+          }
         },
       });
       if (gen !== initGen.current) return;
