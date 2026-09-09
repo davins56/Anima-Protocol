@@ -37,6 +37,19 @@ describe("Cloudflare wrangler config", () => {
     );
   });
 
+  it("enables Workers Logs so Observability ingests invocation events", () => {
+    expect(config.observability).toEqual({
+      enabled: true,
+      logs: {
+        invocation_logs: true,
+        head_sampling_rate: 1,
+      },
+    });
+    const source = readFileSync(path.join(repoRoot, "wrangler.jsonc"), "utf8");
+    expect(source).toMatch(/Workers Logs/);
+    expect(source).toMatch(/API HTML\/5xx/);
+  });
+
   it("serves the SPA from the root pnpm build output with an ASSETS binding", () => {
     expect(assets.directory).toBe("./dist");
     expect(assets.binding).toBe("ASSETS");
