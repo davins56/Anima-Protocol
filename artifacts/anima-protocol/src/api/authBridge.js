@@ -111,7 +111,17 @@ export function publicOriginHeaders() {
 }
 
 export async function authHeaders(extra, options = {}) {
-  const token = await getToken(options);
+  const { timeoutMs, ...getterOptions } = options;
+  let token = await getToken({ ...getterOptions, timeoutMs });
+  // After OTP / Clerk proxy handshake, getToken() is often null for a few
+  // seconds while isSignedIn is already true. Wait so store + chat requests
+  // send Authorization instead of a silent unauthenticated 401.
+  if (!token && hasAuthTokenGetter()) {
+    token = await resolveStoreToken(timeoutMs);
+    if (getterOptions.skipCache) {
+      token = (await getToken({ ...getterOptions, timeoutMs })) || token;
+    }
+  }
   const headers = {
     'Content-Type': 'application/json',
     ...publicOriginHeaders(),

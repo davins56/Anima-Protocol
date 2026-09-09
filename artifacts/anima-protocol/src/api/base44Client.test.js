@@ -494,6 +494,25 @@ describe("Character.list HTML failures", () => {
     expect(global.fetch).toHaveBeenCalled();
   });
 
+  it("does not treat a store 401 as an empty Character roster when signed in", async () => {
+    setAuthTokenGetter(() => "stale-jwt");
+    global.fetch = vi.fn(async () =>
+      Response.json({ error: "Unauthorized" }, { status: 401 }),
+    );
+
+    await expect(
+      base44.entities.Character.list("-created_date", 100, {
+        _bootstrapInternal: true,
+      }),
+    ).rejects.toMatchObject({
+      status: 401,
+      message: expect.stringMatching(/sign out|sign back in/i),
+    });
+    expect(global.fetch).toHaveBeenCalled();
+    const [, options] = global.fetch.mock.calls[0];
+    expect(options.headers.Authorization).toBe("Bearer stale-jwt");
+  });
+
   it("returns [] after the auth wait when signed out so Customise Anima can classify", async () => {
     clearAuthTokenGetter();
     global.fetch = vi.fn();

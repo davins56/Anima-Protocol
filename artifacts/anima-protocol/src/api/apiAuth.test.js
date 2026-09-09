@@ -82,8 +82,8 @@ describe('API auth bridge', () => {
     expect(String(options.headers.Authorization)).not.toContain('async');
   });
 
-  it('omits Authorization when the getter returns a non-string', async () => {
-    setAuthTokenGetter(() => ({ not: 'a-token' }));
+  it('omits Authorization when no getter is registered', async () => {
+    clearAuthTokenGetter();
 
     await base44.functions.invoke('debugApp', {});
 
