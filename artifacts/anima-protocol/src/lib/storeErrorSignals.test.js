@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  classifyRosterFallback,
   isRetryableStoreWriteError,
   isStoreDatabaseError,
+  isStoreOfflineError,
   isStoreReadUnavailable,
+  isStoreTimeoutError,
+  rosterFallbackLabel,
+  rosterFallbackMessage,
 } from "./storeErrorSignals";
 import {
   STORE_UNREACHABLE_MESSAGE,
@@ -129,6 +134,39 @@ describe("isStoreReadUnavailable", () => {
   it("ignores ordinary client errors", () => {
     expect(isStoreReadUnavailable({ status: 400 })).toBe(false);
     expect(isStoreReadUnavailable({ status: 404 })).toBe(false);
+  });
+});
+
+describe("timeout vs offline signaling", () => {
+  it("recognizes abort, TimeoutError, code=timeout, and the generic store toast", () => {
+    expect(isStoreTimeoutError({ code: "timeout" })).toBe(true);
+    expect(isStoreTimeoutError({ name: "TimeoutError" })).toBe(true);
+    expect(isStoreTimeoutError({ name: "AbortError" })).toBe(true);
+    expect(isStoreTimeoutError(clientTimeout())).toBe(true);
+    expect(isStoreTimeoutError({ message: "nope" })).toBe(false);
+  });
+
+  it("does not treat a store timeout as offline just because copy mentions connection", () => {
+    expect(isStoreOfflineError(clientTimeout())).toBe(false);
+    expect(classifyRosterFallback(clientTimeout())).toBe("timeout");
+    expect(rosterFallbackLabel(43, "timeout")).toBe(
+      "43 bundled starters (sync delayed)",
+    );
+    expect(rosterFallbackLabel(43, "timeout")).not.toMatch(/offline/i);
+    expect(rosterFallbackMessage(clientTimeout(), "timeout", 43)).toMatch(
+      /not offline/i,
+    );
+  });
+
+  it("labels a true network-down failure as offline", () => {
+    const offline = Object.assign(new Error("Network request failed."), {
+      code: "network",
+    });
+    expect(isStoreOfflineError(offline)).toBe(true);
+    expect(classifyRosterFallback(offline)).toBe("offline");
+    expect(rosterFallbackLabel(43, "offline")).toBe(
+      "43 bundled starters (offline)",
+    );
   });
 });
 

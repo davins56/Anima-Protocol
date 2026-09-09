@@ -1,5 +1,5 @@
-import { base44 } from "@/api/base44Client";
-import { isRetryableStoreWriteError } from "@/lib/storeErrorSignals";
+import { awaitCompanionStoreAuth, base44 } from "@/api/base44Client";
+import { isRetryableStoreWriteError, isStoreTimeoutError } from "@/lib/storeErrorSignals";
 import { STORE_SESSION_CREATE_RETRY_LIMIT } from "@/lib/storeTimeouts";
 import { isTherapySession, therapyOpeningMessage } from "@/lib/therapyManuals";
 
@@ -11,14 +11,7 @@ import { isTherapySession, therapyOpeningMessage } from "@/lib/therapyManuals";
 export const INIT_SESSION_TIMEOUT_MESSAGE =
   "Starting the session timed out. The store is reachable — tap Init to try again.";
 
-export function isStoreTimeoutError(err) {
-  if (!err) return false;
-  if (err.code === "timeout") return true;
-  if (err.name === "TimeoutError" || err.name === "AbortError") return true;
-  // upsertCharacters used to wrap storeFetch timeouts as a plain Error and
-  // drop `code`, so Init showed DEFAULT_STORE_TIMEOUT_MESSAGE verbatim.
-  return /took too long to respond/i.test(String(err.message || ""));
-}
+export { isStoreTimeoutError } from "@/lib/storeErrorSignals";
 
 export const INIT_SESSION_MISSING_ID_MESSAGE =
   "The store created a session but did not return an id. Tap Init to try again.";
@@ -332,8 +325,12 @@ export async function createInitChatSession(
     persistMessages = (sessionId, messages) =>
       base44.messages.replace(sessionId, messages),
     retryLimit = STORE_SESSION_CREATE_RETRY_LIMIT,
+    waitForAuth = () => awaitCompanionStoreAuth(),
   } = {},
 ) {
+  // Mint must finish before ChatSession.create arms its 20s abort. Sharing
+  // that signal with Clerk getToken() is the iPad ~20s Init hang.
+  await waitForAuth();
   const messages = Array.isArray(payload?.messages) ? payload.messages : [];
   const sessionFields = { ...(payload || {}) };
   delete sessionFields.messages;
