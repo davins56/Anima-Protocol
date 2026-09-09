@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getPool,
   isTransientDbError,
@@ -8,6 +8,7 @@ import {
 
 afterEach(() => {
   resetPool();
+  vi.unstubAllGlobals();
 });
 
 describe("isTransientDbError", () => {
@@ -123,6 +124,34 @@ describe("withTransientDbRetry", () => {
       ),
     ).rejects.toMatchObject({ code: "ECONNRESET" });
     expect(calls).toBe(2);
+  });
+
+  it("aborts a hung operation so the Worker store path can fail fast", async () => {
+    const { DbOperationTimeoutError } = await import("../src/client");
+    const started = Date.now();
+    await expect(
+      withTransientDbRetry(() => new Promise(() => {}), {
+        attempts: 2,
+        timeoutMs: 40,
+      }),
+    ).rejects.toBeInstanceOf(DbOperationTimeoutError);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it("uses two attempts on the Worker runtime so retries finish before the 20s wall", async () => {
+    vi.stubGlobal("navigator", { userAgent: "Cloudflare-Workers" });
+    let calls = 0;
+    await expect(
+      withTransientDbRetry(
+        async () => {
+          calls += 1;
+          throw Object.assign(new Error("ETIMEOUT"), { code: "ETIMEOUT" });
+        },
+        { timeoutMs: 0 },
+      ),
+    ).rejects.toMatchObject({ code: "ETIMEOUT" });
+    expect(calls).toBe(2);
+    vi.unstubAllGlobals();
   });
 });
 
