@@ -1399,7 +1399,7 @@ async function probeOneProvider(
         ok: false,
         status: Number.isFinite(status) ? status : undefined,
         errorKind: auth ? "auth" : connection ? "connection" : quota ? "quota" : "other",
-        message: summarizeError(err),
+        message: formatWorkersAiError(err),
         model: WORKERS_AI_CHAT_MODEL,
         configuredModel: WORKERS_AI_CHAT_MODEL,
         latencyMs: Date.now() - started,
