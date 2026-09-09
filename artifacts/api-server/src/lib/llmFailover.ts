@@ -1,9 +1,10 @@
-// Chat completion: Cloudflare Workers AI (DeepSeek via AI Gateway) when the
-// Worker AI binding is present; otherwise the self-hosted Anima LLM
-// (vLLM / Ollama / llama.cpp, OpenAI-compatible). MiniMax / Deepshi stay
-// out of the chat chain. OpenRouter may follow Workers AI only when
-// ANIMA_OPENROUTER_FALLBACK is explicitly truthy (temporary hop for
-// Workers AI 4006 / neuron quota). Fly.io Ollama is not required.
+// Chat completion: the self-hosted Anima LLM (vLLM / Ollama / llama.cpp,
+// OpenAI-compatible) whenever ANIMA_LOCAL_LLM_BASE_URL is a usable custom
+// host. That is anima-chat — not DeepSeek, not OpenAI. Workers AI (DeepSeek
+// via AI Gateway) is only used when no custom host is configured.
+// MiniMax / Deepshi stay out of the chat chain. OpenRouter may follow the
+// preferred provider when ANIMA_OPENROUTER_FALLBACK is explicitly truthy
+// (custom-host connection failures, or Workers AI 4006 / neuron quota).
 //
 // Local endpoint: ANIMA_LOCAL_LLM_BASE_URL (or VLLM_BASE_URL / OLLAMA_BASE_URL).
 // Image generate/edit may still use Gemini / OpenAI on separate routes.
@@ -160,9 +161,9 @@ export interface LlmRoutingStatus {
   customOnly: boolean;
   /**
    * True when ANIMA_OPENROUTER_FALLBACK is 1|true|yes. Production may then
-   * append OpenRouter after Workers AI (DeepSeek stays preferred). Local-only
-   * chains stay local — this flag does not reopen MiniMax/Deepshi or skip
-   * a configured custom LLM.
+   * append OpenRouter after the preferred provider (custom Anima LLM
+   * connection failures, or Workers AI 4006 when no custom host is set).
+   * This flag does not reopen MiniMax/Deepshi or skip a configured custom LLM.
    */
   openRouterFallback: boolean;
   note: string;
@@ -372,15 +373,21 @@ function localUsable(): boolean {
 }
 
 /**
- * Ordered chat providers. Production Worker chat is Workers AI (DeepSeek
- * via `deepseek-gateway`) whenever `env.AI` is bound. When
- * ANIMA_OPENROUTER_FALLBACK is truthy and an OpenRouter key is present,
- * OpenRouter is appended after Workers AI so hoppable DeepSeek failures
- * (especially error 4006 / neuron quota) can fail over. Local Ollama/vLLM
- * is only used when that binding is missing (Node/dev). MiniMax / Deepshi
- * never fill the gap. Do not set up Fly.io Ollama for production chat.
+ * Ordered chat providers. A usable self-hosted Anima LLM
+ * (`ANIMA_LOCAL_LLM_BASE_URL`, model anima-chat) is preferred over Workers
+ * AI DeepSeek and over OpenAI. When ANIMA_OPENROUTER_FALLBACK is truthy and
+ * a key is present, OpenRouter is appended so a down custom host (or
+ * hoppable DeepSeek 4006 when no custom host is set) can fail over.
+ * MiniMax / Deepshi never fill the gap.
  */
 export function getProviderChain(): LlmProviderId[] {
+  if (localUsable()) {
+    const chain: LlmProviderId[] = ["local"];
+    if (allowOpenRouterFallback() && hasOpenRouterKey()) {
+      chain.push("openrouter");
+    }
+    return chain;
+  }
   if (hasWorkersAiBinding()) {
     const chain: LlmProviderId[] = ["workersai"];
     if (allowOpenRouterFallback() && hasOpenRouterKey()) {
@@ -388,7 +395,6 @@ export function getProviderChain(): LlmProviderId[] {
     }
     return chain;
   }
-  if (localUsable()) return ["local"];
   return [];
 }
 
@@ -1165,8 +1171,8 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
     noteParts.push(
       "ANIMA_LOCAL_LLM_BASE_URL points at localhost/loopback, which this serverless runtime cannot reach " +
         "(Cloudflare Workers reject isolate fetch to localhost with error 1003). " +
-        "Production chat uses Cloudflare Workers AI (DeepSeek via AI Gateway), not Fly.io Ollama. " +
-        "Confirm wrangler.jsonc binds AI through gateway deepseek-gateway.",
+        "This serverless runtime cannot reach localhost. " +
+        "Set ANIMA_LOCAL_LLM_BASE_URL to a public HTTPS OpenAI-compatible URL (…/v1) for anima-chat.",
     );
   }
   if (chain.length === 0) {
@@ -1192,19 +1198,13 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
   } else {
     if (chain.includes("workersai")) {
       noteParts.push(
-        `Cloudflare Workers AI model=${WORKERS_AI_CHAT_MODEL} via AI Gateway ${WORKERS_AI_GATEWAY_ID}. ` +
-          "Production chat does not use Fly.io Ollama or the named tunnel.",
+        `Cloudflare Workers AI model=${WORKERS_AI_CHAT_MODEL} via AI Gateway ${WORKERS_AI_GATEWAY_ID} ` +
+          "(used only because no usable ANIMA_LOCAL_LLM_BASE_URL is set).",
       );
       noteParts.push(
         `Free Workers AI is ${WORKERS_AI_FREE_PLAN_NEURONS_PER_DAY} neurons/day (error ${WORKERS_AI_FREE_QUOTA_CODE} when exhausted). ` +
-          "Enable Workers Paid, or with Dàvīn approval temporarily allow OpenRouter failover. " +
-          "Preferred provider stays workersai.",
+          "Point chat at the self-hosted Anima LLM (anima-chat) instead of DeepSeek.",
       );
-      if (localSummary.configured) {
-        noteParts.push(
-          `Self-hosted URL at host=${localSummary.host ?? "?"} is bound but unused while the Workers AI binding is present.`,
-        );
-      }
       if (openRouterFallback && !chain.includes("openrouter")) {
         noteParts.push(
           "ANIMA_OPENROUTER_FALLBACK is on but OPENROUTER_API_KEY is missing — cannot hop after Workers AI.",

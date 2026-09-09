@@ -458,8 +458,8 @@ describe("Cloudflare wrangler config", () => {
     expect(workerSource).toContain("setAiBinding(env.AI)");
     expect(workerSource).not.toMatch(/console\.log\(["']AI BINDING/);
     const source = readFileSync(path.join(repoRoot, "wrangler.jsonc"), "utf8");
-    expect(source).toMatch(/Do not set up/);
-    expect(source).toMatch(/Fly\.io Ollama/);
+    expect(source).toMatch(/self-hosted Anima LLM \(anima-chat\)/);
+    expect(source).toMatch(/Workers AI DeepSeek is only/);
     expect(source).toMatch(/deepseek-gateway/);
   });
 
