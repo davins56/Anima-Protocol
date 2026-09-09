@@ -1,0 +1,37 @@
+# Cloud Build for the Cloud Run staging image. Substitutions only — no secrets.
+#   gcloud builds submit --config deploy/gcp/cloudbuild.yaml \
+#     --substitutions=_REGION=us-central1,_AR_REPO=anima-protocol,_IMAGE_TAG=manual
+#
+# Pass the Clerk publishable key as a substitution, never a Secret Manager
+# value inside this file. Do not add a deploy step that targets production
+# Cloudflare or anima-protocol.com DNS.
+
+substitutions:
+  _REGION: us-central1
+  _AR_REPO: anima-protocol
+  _IMAGE_TAG: staging
+  _VITE_CLERK_PUBLISHABLE_KEY: pk_test_placeholder
+  _VITE_CLERK_PROXY_URL: ""
+  _VITE_API_ORIGIN: ""
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - deploy/gcp/Dockerfile
+      - --build-arg
+      - VITE_CLERK_PUBLISHABLE_KEY=${_VITE_CLERK_PUBLISHABLE_KEY}
+      - --build-arg
+      - VITE_CLERK_PROXY_URL=${_VITE_CLERK_PROXY_URL}
+      - --build-arg
+      - VITE_API_ORIGIN=${_VITE_API_ORIGIN}
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/anima-protocol-staging:${_IMAGE_TAG}
+      - .
+
+images:
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/anima-protocol-staging:${_IMAGE_TAG}
+
+options:
+  logging: CLOUD_LOGGING_ONLY

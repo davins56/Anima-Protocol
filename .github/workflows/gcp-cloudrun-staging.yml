@@ -1,0 +1,141 @@
+# Manual Cloud Run staging/backup deploy.
+# Never runs on push or pull_request. Never touches Cloudflare Workers or DNS.
+name: GCP Cloud Run staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type deploy-staging to proceed. Never production.
+        required: true
+        type: string
+      project_id:
+        description: GCP project ID (billing enabled). Empty uses secret GCP_PROJECT_ID.
+        required: false
+        type: string
+      region:
+        description: Cloud Run / Artifact Registry region
+        required: false
+        type: string
+        default: us-central1
+      service_name:
+        description: Cloud Run service name (staging only)
+        required: false
+        type: string
+        default: anima-protocol-staging
+      artifact_repository:
+        description: Artifact Registry repository name
+        required: false
+        type: string
+        default: anima-protocol
+      skip_deploy:
+        description: Build and push the image only (no gcloud run deploy)
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gcp-cloudrun-staging
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse unless explicitly confirmed
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [ "$CONFIRM" != "deploy-staging" ]; then
+            echo "Refusing. Type deploy-staging. This workflow does not deploy production or change DNS."
+            exit 1
+          fi
+          echo "Confirmed staging/backup deploy. Cloudflare Worker is out of scope."
+
+  deploy:
+    needs: guard
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      PROJECT_ID: ${{ inputs.project_id || secrets.GCP_PROJECT_ID }}
+      REGION: ${{ inputs.region }}
+      SERVICE: ${{ inputs.service_name }}
+      AR_REPO: ${{ inputs.artifact_repository }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Require GCP project and WIF
+        run: |
+          if [ -z "$PROJECT_ID" ]; then
+            echo "GCP_PROJECT_ID is missing. Add the GitHub secret or pass project_id."
+            exit 1
+          fi
+          if [ -z "${{ secrets.GCP_WIF_PROVIDER }}" ] || [ -z "${{ secrets.GCP_WIF_SERVICE_ACCOUNT }}" ]; then
+            echo "Set GitHub secrets GCP_WIF_PROVIDER and GCP_WIF_SERVICE_ACCOUNT (Workload Identity). Do not use a JSON key."
+            exit 1
+          fi
+          if [ -z "${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}" ]; then
+            echo "Set GitHub secret VITE_CLERK_PUBLISHABLE_KEY (public pk_ identifier for the Vite build)."
+            exit 1
+          fi
+
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Artifact Registry
+        run: |
+          gcloud config set project "$PROJECT_ID"
+          gcloud services enable run.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com iamcredentials.googleapis.com cloudbuild.googleapis.com --project "$PROJECT_ID"
+          gcloud artifacts repositories describe "$AR_REPO" --location="$REGION" --project="$PROJECT_ID" \
+            || gcloud artifacts repositories create "$AR_REPO" \
+              --repository-format=docker \
+              --location="$REGION" \
+              --description="Anima Protocol Cloud Run staging images" \
+              --project="$PROJECT_ID"
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Build and push image
+        env:
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
+        run: |
+          IMAGE_TAG="${GITHUB_SHA::12}"
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/anima-protocol-staging:${IMAGE_TAG}"
+          echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
+          gcloud builds submit \
+            --config deploy/gcp/cloudbuild.yaml \
+            --project "$PROJECT_ID" \
+            --substitutions="_REGION=${REGION},_AR_REPO=${AR_REPO},_IMAGE_TAG=${IMAGE_TAG},_VITE_CLERK_PUBLISHABLE_KEY=${VITE_CLERK_PUBLISHABLE_KEY},_VITE_CLERK_PROXY_URL=,_VITE_API_ORIGIN="
+
+      - name: Deploy Cloud Run (scale-to-zero staging)
+        if: ${{ inputs.skip_deploy == false }}
+        run: |
+          gcloud run deploy "$SERVICE" \
+            --project "$PROJECT_ID" \
+            --region "$REGION" \
+            --image "$IMAGE" \
+            --platform managed \
+            --port 8080 \
+            --cpu 1 \
+            --memory 1Gi \
+            --min-instances 0 \
+            --max-instances 2 \
+            --concurrency 80 \
+            --timeout 60 \
+            --cpu-boost \
+            --execution-environment gen2 \
+            --set-env-vars "NODE_ENV=production,ANIMA_RUNTIME=cloudrun,ANIMA_LLM_PROVIDER=custom,ANIMA_STATIC_DIR=/app/public" \
+            --set-secrets "DATABASE_URL=DATABASE_URL:latest,CLERK_SECRET_KEY=CLERK_SECRET_KEY:latest,CLERK_PUBLISHABLE_KEY=CLERK_PUBLISHABLE_KEY:latest" \
+            --allow-unauthenticated
+          echo "Health: $(gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.url)')/api/healthz"
