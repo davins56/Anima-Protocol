@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   characterList,
+  characterFilter,
   animaList,
   notifyStoreChanged,
   awaitCompanionStoreAuth,
@@ -10,6 +11,7 @@ const {
   whenBootstrapReady,
 } = vi.hoisted(() => ({
   characterList: vi.fn(),
+  characterFilter: vi.fn(),
   animaList: vi.fn(),
   notifyStoreChanged: vi.fn(),
   awaitCompanionStoreAuth: vi.fn().mockResolvedValue("token"),
@@ -32,7 +34,7 @@ const {
 vi.mock("@/api/base44Client", () => ({
   base44: {
     entities: {
-      Character: { list: characterList },
+      Character: { list: characterList, filter: characterFilter },
       Anima: { list: animaList },
     },
   },
@@ -52,6 +54,24 @@ vi.mock("@/lib/syncBootstrap", () => ({
   whenBootstrapReady,
 }));
 
+function stubCharacterLists({ main = [], search = [] } = {}) {
+  characterList.mockImplementation(async (_sort, _limit, opts) => {
+    if (opts?.search?.name) {
+      return typeof search === "function" ? search(opts.search.name) : search;
+    }
+    return typeof main === "function" ? main() : main;
+  });
+}
+
+function stubAnimaLists({ main = [], search = [] } = {}) {
+  animaList.mockImplementation(async (_sort, _limit, opts) => {
+    if (opts?.search?.name) {
+      return typeof search === "function" ? search(opts.search.name) : search;
+    }
+    return typeof main === "function" ? main() : main;
+  });
+}
+
 async function loadModule() {
   vi.resetModules();
   return import("@/lib/loadRosterCharacters");
@@ -59,7 +79,9 @@ async function loadModule() {
 
 beforeEach(() => {
   characterList.mockReset();
-  animaList.mockReset().mockResolvedValue([]);
+  characterFilter.mockReset().mockResolvedValue([]);
+  animaList.mockReset();
+  stubAnimaLists({ main: [] });
   notifyStoreChanged.mockReset();
   awaitCompanionStoreAuth.mockReset().mockResolvedValue("token");
   retryStarterSeed.mockReset();
@@ -69,9 +91,9 @@ beforeEach(() => {
 
 describe("loadRosterCharacters", () => {
   it("returns characters after bootstrap without retrying when the roster is populated", async () => {
-    characterList.mockResolvedValue([
-      { id: "seed_avatar-legend-of-korra-korra", name: "Korra" },
-    ]);
+    stubCharacterLists({
+      main: [{ id: "seed_avatar-legend-of-korra-korra", name: "Korra" }],
+    });
     const { loadRosterCharacters } = await loadModule();
 
     const result = await loadRosterCharacters();
@@ -85,11 +107,14 @@ describe("loadRosterCharacters", () => {
   });
 
   it("retries starter seeding when the character roster is empty", async () => {
-    characterList
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
-        { id: "seed_avatar-legend-of-korra-korra", name: "Korra" },
-      ]);
+    let mains = 0;
+    stubCharacterLists({
+      main: () => {
+        mains += 1;
+        if (mains === 1) return [];
+        return [{ id: "seed_avatar-legend-of-korra-korra", name: "Korra" }];
+      },
+    });
     retryStarterSeed.mockResolvedValue(1);
     const { loadRosterCharacters } = await loadModule();
 
@@ -100,11 +125,23 @@ describe("loadRosterCharacters", () => {
     expect(result.usingBundledSeed).toBe(false);
   });
 
+  it("does not treat an empty-token [] as a finished empty account", async () => {
+    awaitCompanionStoreAuth.mockResolvedValue(null);
+    stubCharacterLists({ main: [] });
+    retryStarterSeed.mockResolvedValue(1);
+    const { loadRosterCharacters } = await loadModule();
+
+    const result = await loadRosterCharacters({ retrySeed: true });
+
+    expect(retryStarterSeed).not.toHaveBeenCalled();
+    expect(result.usingBundledSeed).toBe(true);
+    expect(result.error?.message).toMatch(/auth token/i);
+    expect(result.characters.length).toBeGreaterThan(0);
+    expect(result.characters.every((c) => c._bundled)).toBe(true);
+  });
+
   it("keeps bundled starters on store-sync refetches with retrySeed false", async () => {
-    // This is the race that left Select Character on NO RESULTS FOUND:
-    // initial load showed bundled starters, then useStoreSync reloaded with
-    // retrySeed:false and wiped them because the store was still empty.
-    characterList.mockResolvedValue([]);
+    stubCharacterLists({ main: [] });
     const { loadRosterCharacters } = await loadModule();
 
     const result = await loadRosterCharacters({
@@ -119,12 +156,12 @@ describe("loadRosterCharacters", () => {
   });
 
   it("merges Anima rows into the chat roster", async () => {
-    characterList.mockResolvedValue([
-      { id: "seed_marvel-spider-man", name: "Spider-Man" },
-    ]);
-    animaList.mockResolvedValue([
-      { id: "anima_1", name: "Serenity", archetype: "guardian" },
-    ]);
+    stubCharacterLists({
+      main: [{ id: "seed_marvel-spider-man", name: "Spider-Man" }],
+    });
+    stubAnimaLists({
+      main: [{ id: "anima_1", name: "Serenity", archetype: "guardian" }],
+    });
     const { loadRosterCharacters } = await loadModule();
 
     const result = await loadRosterCharacters({ retrySeed: false });
@@ -138,16 +175,67 @@ describe("loadRosterCharacters", () => {
     expect(result.characters.length).toBeGreaterThan(2);
   });
 
-  it("falls back to bundled starters when store DB is down after seed retry", async () => {
+  it("clears usingBundledSeed when only Anima rows exist", async () => {
+    stubCharacterLists({ main: [] });
+    stubAnimaLists({
+      main: [{ id: "anima_1", name: "Serenity", archetype: "guardian" }],
+    });
+    const { loadRosterCharacters } = await loadModule();
+
+    const result = await loadRosterCharacters({ retrySeed: false });
+
+    expect(result.usingBundledSeed).toBe(false);
+    expect(result.fallbackKind).toBeNull();
+    expect(result.characters.map((c) => c.name)).toContain("Serenity");
+    expect(result.characters.some((c) => c._bundled)).toBe(true);
+  });
+
+  it("recovers Aelynd from a name search when she is missing from the newest list", async () => {
+    stubCharacterLists({
+      main: [{ id: "seed_1", name: "Korra", universe: "Avatar: Legend of Korra" }],
+      search: (name) =>
+        name === "aelynd"
+          ? [{ id: "char_aelynd", name: "Aelynd", universe: "Original" }]
+          : [],
+    });
+    const { loadRosterCharacters } = await loadModule();
+
+    const result = await loadRosterCharacters({ retrySeed: false });
+
+    expect(result.usingBundledSeed).toBe(false);
+    expect(result.characters.map((c) => c.name)).toEqual(
+      expect.arrayContaining(["Aelynd", "Korra"]),
+    );
+  });
+
+  it("returns Serenity from Anima.list even when Character.list never settles", async () => {
+    stubCharacterLists({ main: () => new Promise(() => {}) });
+    stubAnimaLists({
+      main: [{ id: "anima_1", name: "Serenity", archetype: "guardian" }],
+    });
+    const { loadRosterCharacters } = await loadModule();
+
+    const result = await loadRosterCharacters({
+      retrySeed: false,
+      listTimeoutMs: 25,
+    });
+
+    expect(result.usingBundledSeed).toBe(false);
+    expect(result.characters.map((c) => c.name)).toContain("Serenity");
+    expect(result.error?.code).toBe("timeout");
+  });
+
+  it("falls back to bundled starters when store DB is down", async () => {
     const err = Object.assign(new Error("Database unavailable"), {
       status: 503,
     });
-    characterList.mockRejectedValue(err);
+    stubCharacterLists({ main: () => Promise.reject(err) });
     retryStarterSeed.mockRejectedValue(err);
     const { loadRosterCharacters } = await loadModule();
 
     const result = await loadRosterCharacters({ retrySeed: true });
 
+    expect(retryStarterSeed).not.toHaveBeenCalled();
     expect(result.usingBundledSeed).toBe(true);
     expect(result.error).toBe(err);
     expect(result.characters.length).toBeGreaterThan(0);
@@ -156,7 +244,7 @@ describe("loadRosterCharacters", () => {
   });
 
   it("falls back to bundled starters when auth/seed fails so Select Character is never blank", async () => {
-    characterList.mockResolvedValue([]);
+    stubCharacterLists({ main: [] });
     retryStarterSeed.mockRejectedValue(
       Object.assign(new Error("Store auth token not available"), {
         status: 401,
@@ -173,9 +261,16 @@ describe("loadRosterCharacters", () => {
   });
 
   it("keeps custom store rows and fills missing bundled starters", async () => {
-    characterList.mockResolvedValue([
-      { id: "char_custom", name: "Aelynd", universe: "Original", creation_method: "ai_prompt" },
-    ]);
+    stubCharacterLists({
+      main: [
+        {
+          id: "char_custom",
+          name: "Aelynd",
+          universe: "Original",
+          creation_method: "ai_prompt",
+        },
+      ],
+    });
     const { loadRosterCharacters, mergeRosterWithBundled, getBundledStarterRoster } =
       await loadModule();
 
@@ -201,17 +296,19 @@ describe("loadRosterCharacters", () => {
       ),
       { code: "timeout" },
     );
-    characterList
-      .mockRejectedValueOnce(timeout)
-      .mockResolvedValueOnce([
-        { id: "char_store", name: "Aelynd", universe: "Original" },
-      ]);
+    let mains = 0;
+    stubCharacterLists({
+      main: () => {
+        mains += 1;
+        if (mains === 1) return Promise.reject(timeout);
+        return [{ id: "char_store", name: "Aelynd", universe: "Original" }];
+      },
+    });
     const { loadRosterCharacters } = await loadModule();
 
     const result = await loadRosterCharacters({ retrySeed: false });
 
     expect(awaitCompanionStoreAuth).toHaveBeenCalledTimes(2);
-    expect(characterList).toHaveBeenCalledTimes(2);
     expect(result.usingBundledSeed).toBe(false);
     expect(result.fallbackKind).toBeNull();
     expect(result.characters.map((c) => c.id)).toContain("char_store");
@@ -224,7 +321,7 @@ describe("loadRosterCharacters", () => {
       ),
       { code: "timeout" },
     );
-    characterList.mockRejectedValue(timeout);
+    stubCharacterLists({ main: () => Promise.reject(timeout) });
     const { loadRosterCharacters } = await loadModule();
 
     const result = await loadRosterCharacters({ retrySeed: false });
@@ -236,9 +333,13 @@ describe("loadRosterCharacters", () => {
   });
 
   it("exposes getBundledStarterRoster for immediate modal paint", async () => {
-    const { getBundledStarterRoster } = await loadModule();
+    const { getBundledStarterRoster, hasAccountRosterRows } = await loadModule();
     const roster = getBundledStarterRoster();
     expect(roster.length).toBeGreaterThan(0);
     expect(roster.every((c) => c._bundled && c.id && c.name)).toBe(true);
+    expect(hasAccountRosterRows(roster)).toBe(false);
+    expect(
+      hasAccountRosterRows([{ id: "anima_1", name: "Serenity" }]),
+    ).toBe(true);
   });
 });

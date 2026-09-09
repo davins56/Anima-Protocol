@@ -13,6 +13,7 @@ import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import { useStoreSync } from "@/lib/useStoreSync";
 import {
   getBundledStarterRoster,
+  hasAccountRosterRows,
   loadRosterCharacters,
 } from "@/lib/loadRosterCharacters";
 import { rosterFallbackMessage } from "@/lib/storeErrorSignals";
@@ -25,6 +26,9 @@ import {
 import { rememberCreatedSession } from "@/lib/chatSessionLoad";
 import { STORE_SESSION_CREATE_TIMEOUT_MS } from "@/lib/storeTimeouts";
 
+export const ACCOUNT_CHARACTERS_LOADING_MESSAGE =
+  "Loading account characters — starters are shown until sync finishes.";
+
 export default function NewSessionModal({ mode, onClose, onCreate }) {
   const navigate = useNavigate();
   const { createBranchForSession } = useTimelineBranching();
@@ -36,9 +40,7 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [seeding, setSeeding] = useState(false);
-  const [loadError, setLoadError] = useState(
-    "Loading account characters — starters are shown until sync finishes.",
-  );
+  const [loadError, setLoadError] = useState(ACCOUNT_CHARACTERS_LOADING_MESSAGE);
   const [usingBundledSeed, setUsingBundledSeed] = useState(true);
   const [creating, setCreating] = useState(false);
   const [view, setView] = useState("characters"); // "characters", "templates", "stories", "canonical"
@@ -50,50 +52,69 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
     mountedRef.current = false;
   }, []);
 
+  const applyRoster = useCallback((rosterResult) => {
+    const nextChars = rosterResult?.characters || [];
+    setCharacters((prev) => {
+      if (!nextChars.length) {
+        return prev.length ? prev : getBundledStarterRoster();
+      }
+      // Keep store/Anima rows if a later sync is bundled-only (token flicker).
+      if (
+        rosterResult?.usingBundledSeed &&
+        prev.some((c) => c?.id && !c._bundled)
+      ) {
+        const keep = prev.filter((c) => c && !c._bundled);
+        const keepIds = new Set(keep.map((c) => c.id));
+        return [
+          ...keep,
+          ...nextChars.filter((c) => c?.id && !keepIds.has(c.id)),
+        ];
+      }
+      return nextChars;
+    });
+    const hasAccountRows =
+      hasAccountRosterRows(nextChars) || !rosterResult?.usingBundledSeed;
+    setUsingBundledSeed(!hasAccountRows);
+    if (hasAccountRows) {
+      setLoadError(null);
+      return;
+    }
+    if (rosterResult?.usingBundledSeed || !nextChars.length) {
+      const kind = rosterResult?.fallbackKind;
+      setLoadError(
+        rosterResult?.error
+          ? rosterFallbackMessage(rosterResult.error, kind, nextChars.length)
+          : "Showing starter characters — starting a chat saves them to your account.",
+      );
+      return;
+    }
+    setLoadError(null);
+  }, []);
+
   const loadData = useCallback(async ({ retrySeed = false } = {}) => {
     // Keep current roster visible while refreshing — never blank the grid.
     if (retrySeed) setSeeding(true);
     else setLoading(true);
     try {
-      // Load roster and groups independently — a CharacterGroup failure must not
-      // wipe a successful character roster (Promise.all rejection used to).
+      // Roster first — CharacterGroup must not hold the loading banner.
       const rosterResult = await loadRosterCharacters({
         retrySeed,
         waitBootstrap: false,
         allowBundledFallback: true,
       });
-      let grps = [];
+      applyRoster(rosterResult);
       try {
-        grps = await base44.entities.CharacterGroup.list("-created_date", 100);
+        const grps = await base44.entities.CharacterGroup.list(
+          "-created_date",
+          100,
+        );
+        setGroups(grps || []);
       } catch (groupErr) {
         console.warn(
           "[Anima] CharacterGroup list failed:",
           groupErr?.message || groupErr,
         );
-        grps = [];
-      }
-      const nextChars = rosterResult?.characters || [];
-      // Never replace a visible roster with [] — store-sync races used to wipe
-      // bundled starters right after they appeared.
-      if (nextChars.length) {
-        setCharacters(nextChars);
-        setUsingBundledSeed(!!rosterResult?.usingBundledSeed);
-      } else {
-        setCharacters((prev) =>
-          prev.length ? prev : getBundledStarterRoster(),
-        );
-        setUsingBundledSeed(true);
-      }
-      setGroups(grps || []);
-      if (rosterResult?.usingBundledSeed || !nextChars.length) {
-        const kind = rosterResult?.fallbackKind;
-        setLoadError(
-          rosterResult?.error
-            ? rosterFallbackMessage(rosterResult.error, kind, nextChars.length)
-            : "Showing starter characters — starting a chat saves them to your account.",
-        );
-      } else {
-        setLoadError(null);
+        setGroups([]);
       }
     } catch (err) {
       console.error('Error loading characters:', err);
@@ -106,13 +127,14 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
       setSeeding(false);
       setLoading(false);
     }
-  }, []);
+  }, [applyRoster]);
 
   useEffect(() => {
     let cancelled = false;
+    // Do not wait for bootstrap before the first store list — whenBootstrapReady
+    // used to delay loadData while the yellow loading banner stayed stuck.
+    loadData({ retrySeed: false });
     whenBootstrapReady().then(() => {
-      // Retry starter seed if the roster is still empty so New Session can
-      // offer preloaded characters immediately after sign-in.
       if (!cancelled) loadData({ retrySeed: true });
     });
     return () => {
