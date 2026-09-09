@@ -414,6 +414,17 @@ describe("isProviderQuotaError", () => {
     expect(isProviderQuotaError({ code: 429, type: "rate_limit_error" })).toBe(true);
     expect(isProviderQuotaError({ code: 500, type: {} })).toBe(false);
   });
+
+  it("detects Workers AI error 4006 (free-plan neurons) as quota", () => {
+    expect(isProviderQuotaError({ code: 4006 })).toBe(true);
+    expect(
+      isProviderQuotaError({
+        message:
+          "4006: you have used up your daily free allocation of 10,000 neurons, please upgrade to Cloudflare's Workers Paid plan if",
+      }),
+    ).toBe(true);
+    expect(isProviderQuotaError({ message: "3006: inference failed" })).toBe(false);
+  });
 });
 
 describe("isOpenRouterFreeDailyLimitError", () => {
@@ -1023,11 +1034,21 @@ describe("getLlmRoutingStatus", () => {
       configured: true,
       model: WORKERS_AI_CHAT_MODEL,
       gateway: WORKERS_AI_GATEWAY_ID,
+      quotaCode: 4006,
+      freePlanNeuronsPerDay: 10_000,
+      quotaHint:
+        "Workers AI daily free quota exhausted — enable Workers Paid or temporarily allow OpenRouter failover",
     });
     expect(status.note).toMatch(/Workers AI/i);
     expect(status.note).toMatch(/deepseek-gateway/i);
     expect(status.note).toMatch(/does not use Fly\.io Ollama/i);
     expect(status.note).toMatch(/unused while the Workers AI binding is present/i);
+    expect(status.note).toMatch(/10(?:000|,000) neurons\/day/i);
+    expect(status.note).toMatch(/4006/);
+    expect(status.note).toMatch(/Preferred provider stays workersai/i);
+    expect(status.preferred).toBe("workersai");
+    expect(status.customOnly).toBe(true);
+    expect(status.openRouterFallback).toBe(false);
   });
 });
 
@@ -1420,6 +1441,28 @@ describe("createChatStreamWithFailover", () => {
     ).rejects.toThrow(/DeepSeek on Workers AI failed: 3006 inference failed/);
     expect(createMock).not.toHaveBeenCalled();
   });
+
+  it("surfaces the Workers AI 4006 free-quota hint instead of a generic DeepSeek wrap", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    setAiBinding({
+      run: async () => {
+        throw new Error(
+          "4006: you have used up your daily free allocation of 10,000 neurons, please upgrade to Cloudflare's Workers Paid plan if",
+        );
+      },
+    });
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 32,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    ).rejects.toThrow(
+      /Workers AI daily free quota exhausted — enable Workers Paid or temporarily allow OpenRouter failover/,
+    );
+    expect(createMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("createChatCompletionWithFailover", () => {
@@ -1584,5 +1627,29 @@ describe("probeLlmProviders", () => {
     });
     expect(createMock).not.toHaveBeenCalled();
     expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("classifies a Workers AI 4006 probe as quota with the free-quota hint", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    setAiBinding({
+      run: async () => {
+        throw Object.assign(
+          new Error(
+            "4006: you have used up your daily free allocation of 10,000 neurons, please upgrade to Cloudflare's Workers Paid plan if",
+          ),
+          { code: 4006 },
+        );
+      },
+    });
+    const probes = await probeLlmProviders();
+    expect(probes).toHaveLength(1);
+    expect(probes[0]).toMatchObject({
+      provider: "workersai",
+      configured: true,
+      ok: false,
+      errorKind: "quota",
+      message: expect.stringMatching(/Workers AI daily free quota exhausted/),
+    });
+    expect(createMock).not.toHaveBeenCalled();
   });
 });

@@ -9,7 +9,11 @@ const express: any = require("express");
 
 import { runWithDbRequestScope } from "@workspace/db";
 import { aiBinding } from "./lib/aiBinding";
-import { WORKERS_AI_CHAT_MODEL } from "./lib/workersAi";
+import {
+  WORKERS_AI_CHAT_MODEL,
+  isWorkersAiFreeQuotaError,
+  workersAiHttpFailure,
+} from "./lib/workersAi";
 import { syncCloudflareRuntimeEnvMiddleware } from "./lib/cloudflareEnv";
 import {
   CLERK_PROXY_PATH,
@@ -123,10 +127,22 @@ app.post("/api/ai/chat", async (req: Request, res: Response) => {
     const response = await aiBinding.run(WORKERS_AI_CHAT_MODEL, {
       messages: chatMessages,
     });
+    if (isWorkersAiFreeQuotaError(response)) {
+      const failure = workersAiHttpFailure(response);
+      res.status(failure.status).json({
+        error: failure.error,
+        code: failure.code,
+      });
+      return;
+    }
     res.json(response);
   } catch (err) {
     logger.error({ err }, "DeepSeek AI request failed");
-    res.status(502).json({ error: "The AI service is temporarily unavailable.", code: "ai_request_failed" });
+    const failure = workersAiHttpFailure(err);
+    res.status(failure.status).json({
+      error: failure.error,
+      code: failure.code,
+    });
   }
 });
 

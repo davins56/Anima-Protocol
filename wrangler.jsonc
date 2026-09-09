@@ -162,6 +162,10 @@
       "secret_name": "ANIMA_LOCAL_LLM_API_KEY"
     }
   ],
+  // Free plan: 10k neurons/day. Exhaustion is Workers AI error 4006 — the
+  // AI binding is still present (healthz/llm configured:true). Do not fail
+  // over to OpenRouter without Dàvīn approval. Enable Workers Paid to keep
+  // DeepSeek as the preferred production provider.
   "ai": {
     "binding": "AI",
     "gateway": {
