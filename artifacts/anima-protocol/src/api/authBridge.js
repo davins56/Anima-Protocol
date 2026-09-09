@@ -111,12 +111,23 @@ export function publicOriginHeaders() {
 }
 
 export async function authHeaders(extra, options = {}) {
-  const { timeoutMs, ...getterOptions } = options;
-  let token = await getToken({ ...getterOptions, timeoutMs });
+  const {
+    timeoutMs,
+    // storeFetch waits for Clerk first, then arms AbortSignal.timeout.
+    // A second mint wait here would share that budget and abort Init at ~20s.
+    waitForAuth = true,
+    token: providedToken,
+    ...getterOptions
+  } = options;
+  let token =
+    typeof providedToken === "string" && providedToken.length > 0
+      ? providedToken
+      : await getToken({ ...getterOptions, timeoutMs });
   // After OTP / Clerk proxy handshake, getToken() is often null for a few
   // seconds while isSignedIn is already true. Wait so store + chat requests
-  // send Authorization instead of a silent unauthenticated 401.
-  if (!token && hasAuthTokenGetter()) {
+  // send Authorization instead of a silent unauthenticated 401 — but only
+  // when the caller has not already completed an auth wait.
+  if (!token && waitForAuth && hasAuthTokenGetter()) {
     token = await resolveStoreToken(timeoutMs);
     if (getterOptions.skipCache) {
       token = (await getToken({ ...getterOptions, timeoutMs })) || token;

@@ -7,6 +7,7 @@ import {
   STORE_AUTH_WAIT_MS,
   STORE_FETCH_TIMEOUT_MS,
   STORE_LIST_RETRY_LIMIT,
+  STORE_LIST_TIMEOUT_MS,
   STORE_SESSION_CREATE_RETRY_LIMIT,
   STORE_SESSION_CREATE_TIMEOUT_MS,
   STORE_TOKEN_TIMEOUT_MS,
@@ -42,6 +43,7 @@ describe("store fail-fast budget", () => {
     expect(client).toContain("STORE_FETCH_TIMEOUT_MS");
     expect(client).toContain("STORE_SESSION_CREATE_TIMEOUT_MS");
     expect(client).toContain("STORE_COMPANION_CREATE_TIMEOUT_MS");
+    expect(client).toContain("STORE_LIST_TIMEOUT_MS");
     expect(client).toMatch(
       /export \{[\s\S]*STORE_LIST_RETRY_LIMIT[\s\S]*STORE_SESSION_CREATE_TIMEOUT_MS/,
     );
@@ -51,6 +53,8 @@ describe("store fail-fast budget", () => {
     expect(client).toContain("isRetryableStoreReset");
     expect(client).toContain("retryOnTimeout: true");
     expect(client).toContain("STORE_LIST_RETRY_LIMIT");
+    expect(client).toContain("waitForAuth: false");
+    expect(client).toMatch(/Auth wait is NOT covered by AbortSignal\.timeout/);
     expect(topicCreate).toContain("STORE_TOPIC_CREATE_TIMEOUT_MS");
     expect(companionCreate).toContain("STORE_COMPANION_CREATE_TIMEOUT_MS");
     expect(therapyPage).toContain("createTherapyTopic(");
@@ -85,9 +89,11 @@ describe("store fail-fast budget", () => {
     expect(STORE_SESSION_CREATE_TIMEOUT_MS).toBeGreaterThan(STORE_FETCH_TIMEOUT_MS);
   });
 
-  it("retries companion list once on abort instead of raising the 8s budget", () => {
+  it("keeps the global 8s fetch cap and a longer roster list budget", () => {
     expect(STORE_LIST_RETRY_LIMIT).toBe(1);
     expect(STORE_FETCH_TIMEOUT_MS).toBe(8000);
+    expect(STORE_LIST_TIMEOUT_MS).toBe(20000);
+    expect(STORE_LIST_TIMEOUT_MS).toBe(STORE_SESSION_CREATE_TIMEOUT_MS);
     expect(STORE_SESSION_CREATE_TIMEOUT_MS).toBeGreaterThan(STORE_FETCH_TIMEOUT_MS);
   });
 });

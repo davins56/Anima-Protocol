@@ -15,6 +15,7 @@ import {
   getBundledStarterRoster,
   loadRosterCharacters,
 } from "@/lib/loadRosterCharacters";
+import { rosterFallbackMessage } from "@/lib/storeErrorSignals";
 import { upsertCharacters } from "@/lib/seedCharacters";
 import {
   beginBundledStarterUpsert,
@@ -85,10 +86,10 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
       }
       setGroups(grps || []);
       if (rosterResult?.usingBundledSeed || !nextChars.length) {
-        const reason = rosterResult?.error?.message;
+        const kind = rosterResult?.fallbackKind;
         setLoadError(
-          reason
-            ? `${reason}. Showing starter characters — starting a chat saves them to your account.`
+          rosterResult?.error
+            ? rosterFallbackMessage(rosterResult.error, kind, nextChars.length)
             : "Showing starter characters — starting a chat saves them to your account.",
         );
       } else {

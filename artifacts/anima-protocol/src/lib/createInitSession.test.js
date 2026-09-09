@@ -81,8 +81,13 @@ describe("createInitChatSession", () => {
     const create = vi.fn().mockResolvedValue({ id: "sess-1", title: "T'Challa" });
     const payload = { mode: "solo", character_id: "char-1", title: "T'Challa" };
 
-    const session = await createInitChatSession(payload, { create });
+    const waitForAuth = vi.fn().mockResolvedValue("tok");
+    const session = await createInitChatSession(payload, { create, waitForAuth });
 
+    expect(waitForAuth).toHaveBeenCalledTimes(1);
+    expect(waitForAuth.mock.invocationCallOrder[0]).toBeLessThan(
+      create.mock.invocationCallOrder[0],
+    );
     expect(create).toHaveBeenCalledTimes(1);
     expect(create).toHaveBeenCalledWith(payload);
     expect(session).toEqual({ id: "sess-1", title: "T'Challa" });
@@ -305,7 +310,10 @@ describe("applyIdentityFallback", () => {
 describe("Chat Init wiring", () => {
   it("awaits createInitChatSession and does not rewrite messages after create", () => {
     const chat = readFileSync(join(srcRoot, "pages/Chat.jsx"), "utf8");
+    const init = readFileSync(join(srcRoot, "lib/createInitSession.js"), "utf8");
     expect(chat).toContain("await createInitChatSession(payload)");
+    expect(init).toContain("await waitForAuth()");
+    expect(init).toContain("awaitCompanionStoreAuth");
     expect(chat).toContain("rememberCreatedSession(primedSession)");
     expect(chat).toContain("navigate(`/chat/${primedSession.id}`, { state: { primedSession } })");
     expect(chat).toContain("justCreatedSessionIdRef.current = primedSession.id");
@@ -328,6 +336,17 @@ describe("Chat Init wiring", () => {
     expect(chatPaths).toEqual(["/chat/:sessionId?"]);
     expect(protocol).not.toMatch(/pages\/NewChat/);
     expect(protocol).not.toMatch(/const NewChat = lazy/);
+  });
+
+  it("New Session Init waits for Clerk before onCreate / ChatSession.create", () => {
+    const modal = readFileSync(
+      join(srcRoot, "components/chat/NewSessionModal.jsx"),
+      "utf8",
+    );
+    expect(modal).toContain("await awaitCompanionStoreAuth()");
+    expect(modal).toMatch(
+      /await awaitCompanionStoreAuth\(\);[\s\S]*const newSession = await onCreate\(sessionData\)/,
+    );
   });
 
   it("Story Chooser creates via createInitChatSession so /messages/replace cannot block", () => {
