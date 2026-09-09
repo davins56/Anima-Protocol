@@ -1399,6 +1399,24 @@ describe("createChatStreamWithFailover", () => {
     }
     expect(chunks.some((chunk) => chunk.choices?.[0]?.delta?.content === "from workersai")).toBe(true);
   });
+
+  it("surfaces a clear DeepSeek error when Workers AI run fails", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    setAiBinding({
+      run: async () => {
+        throw new Error("3006 inference failed");
+      },
+    });
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 32,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    ).rejects.toThrow(/DeepSeek on Workers AI failed: 3006 inference failed/);
+    expect(createMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("createChatCompletionWithFailover", () => {

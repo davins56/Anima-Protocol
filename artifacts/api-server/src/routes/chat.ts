@@ -105,6 +105,7 @@ import {
   crisisResourceForCountry,
 } from "../lib/therapySafety";
 import { ChatPipelineTelemetry } from "../lib/chatTelemetry";
+import { visibleAssistantReply } from "../lib/visibleAssistantReply";
 import {
   beginChatTurn,
   checkpointGeneratedTurn,
@@ -210,6 +211,9 @@ function streamErrorMessage(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
   if (/aborted|abort/i.test(raw)) {
     return "The companion took too long to reply. Please try again.";
+  }
+  if (/workers ai|deepseek/i.test(raw)) {
+    return raw;
   }
   return raw;
 }
@@ -1720,7 +1724,7 @@ router.post("/messages", async (req, res) => {
         // Only one mind produced anything usable — nothing to combine.
         usedModel = drafts[0]!.model;
         usedBrand = "anima";
-        fullResponse = drafts[0]!.content;
+        fullResponse = visibleAssistantReply(drafts[0]!.content);
         telemetry.markFirstToken();
         writeSse(res, { content: fullResponse });
       } else {
@@ -1774,11 +1778,12 @@ router.post("/messages", async (req, res) => {
         onDelta: emitDelta,
         onReasoning: emitReasoning,
       });
-      fullResponse = streamed.content;
+      fullResponse = visibleAssistantReply(streamed.content);
     }
 
     // An empty completion used to look like a successful turn on the client
     // (thinking/typing cleared, no visible reply). Fail loudly instead.
+    // Think-only DeepSeek R1 output is recovered by visibleAssistantReply.
     if (!String(fullResponse).trim()) {
       throw new Error("The companion returned an empty reply. Please try again.");
     }

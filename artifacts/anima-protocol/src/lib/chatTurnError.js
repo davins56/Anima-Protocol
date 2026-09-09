@@ -5,6 +5,9 @@ const GENERIC_HTTP_400_RE =
   /(?:backend\s+request\s+failed|request\s+failed\s+with(?:\s+status\s+code|\s+error)?\s*400|^API\s+error:\s*400$|^HTTP\s*400$|400\s+Bad\s+Request)/i;
 const GENERIC_HTTP_STATUS_RE =
   /^(?:API\s+error:\s*\d{3}|HTTP\s*\d{3}|Request\s+failed\s+with\s+status\s+code\s+\d{3})$/i;
+const UNAUTHORIZED_RE = /^(?:unauthorized|not signed in)\b/i;
+const SESSION_MISSING_RE = /session not found/i;
+const WORKERS_AI_RE = /workers ai|deepseek/i;
 
 const OPENROUTER_ZDR_PRIVACY_HINT =
   "OpenRouter blocked this model because of your account's Zero Data Retention (ZDR) settings. " +
@@ -38,6 +41,15 @@ export function chatTurnErrorMessage(err) {
       "The OpenRouter free-tier model is temporarily unavailable. " +
       "Retry shortly, or add credits at https://openrouter.ai/settings/credits for paid models."
     );
+  }
+  if (UNAUTHORIZED_RE.test(raw)) {
+    return "Not signed in — your session may have expired. Sign out and sign in again, then retry.";
+  }
+  if (SESSION_MISSING_RE.test(raw)) {
+    return "This conversation could not be found. Go back and start the session again.";
+  }
+  if (WORKERS_AI_RE.test(raw)) {
+    return raw;
   }
   // Generic 400 / backend request failures must show friendly user copy.
   if (GENERIC_HTTP_400_RE.test(raw)) {

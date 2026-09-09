@@ -19,6 +19,7 @@ import {
   LLM_STREAM_STALL_MS,
   LLM_STREAM_TOTAL_MS,
 } from "./chatTimeouts";
+import { createVisibleReplyFilter, visibleAssistantReply } from "./visibleAssistantReply";
 
 export {
   LLM_STREAM_FIRST_CHUNK_MS,
@@ -95,16 +96,31 @@ export async function consumeLlmStream(
   const stallMs = opts.stallMs ?? LLM_STREAM_STALL_MS;
   const totalMs = opts.totalMs ?? LLM_STREAM_TOTAL_MS;
 
-  let content = "";
+  let rawContent = "";
+  let reasoning = "";
   let sawReasoning = false;
+  const filter = createVisibleReplyFilter();
   const started = Date.now();
   let lastActivity = started;
   const iterator = stream[Symbol.asyncIterator]();
+  const hasVisible = () => filter.peek().trim().length > 0;
+
+  const finalize = (timedOut: boolean): ConsumeLlmStreamResult => {
+    const finished = filter.finish();
+    let visible = finished.visible;
+    if (!visible && reasoning.trim()) {
+      visible = visibleAssistantReply(reasoning, { allowThinkFallback: true }).trim();
+      if (visible) opts.onDelta?.(visible);
+    } else if (finished.emitted) {
+      opts.onDelta?.(finished.emitted);
+    }
+    return { content: visible, timedOut };
+  };
 
   const nextWithDeadline = async (): Promise<WaitResult> => {
     const elapsed = Date.now() - started;
     const sinceActivity = Date.now() - lastActivity;
-    const stallBudget = content.trim() ? stallMs : firstChunkMs;
+    const stallBudget = hasVisible() ? stallMs : firstChunkMs;
     const wait = Math.max(
       1,
       Math.min(stallBudget - sinceActivity, totalMs - elapsed),
@@ -126,31 +142,40 @@ export async function consumeLlmStream(
     while (true) {
       const elapsed = Date.now() - started;
       const sinceActivity = Date.now() - lastActivity;
-      const stallBudget = content.trim() ? stallMs : firstChunkMs;
+      const stallBudget = hasVisible() ? stallMs : firstChunkMs;
       if (elapsed >= totalMs || sinceActivity >= stallBudget) {
-        if (content.trim()) return { content, timedOut: true };
-        throw timeoutError(content);
+        const result = finalize(true);
+        if (result.content) return result;
+        throw timeoutError(rawContent);
       }
 
       const waited = await nextWithDeadline();
       if (waited.kind === "timeout") {
-        if (content.trim()) return { content, timedOut: true };
-        throw timeoutError(content);
+        const result = finalize(true);
+        if (result.content) return result;
+        throw timeoutError(rawContent);
       }
       if (waited.result.done) {
-        return { content, timedOut: false };
+        return finalize(false);
       }
 
       lastActivity = Date.now();
       const chunk = waited.result.value;
-      if (chunkIsReasoning(chunk) && !sawReasoning) {
-        sawReasoning = true;
-        opts.onReasoning?.();
+      if (chunkIsReasoning(chunk)) {
+        const think =
+          chunk.choices?.[0]?.delta?.reasoning ??
+          chunk.choices?.[0]?.delta?.reasoning_content;
+        if (typeof think === "string" && think) reasoning += think;
+        if (!sawReasoning) {
+          sawReasoning = true;
+          opts.onReasoning?.();
+        }
       }
       const delta = chunkTextDelta(chunk);
       if (delta) {
-        content += delta;
-        opts.onDelta?.(delta);
+        rawContent += delta;
+        const extra = filter.push(delta);
+        if (extra) opts.onDelta?.(extra);
       }
     }
   } finally {

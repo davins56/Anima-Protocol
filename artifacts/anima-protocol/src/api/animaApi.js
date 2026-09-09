@@ -2,6 +2,42 @@ import { apiUrl } from '@/lib/apiOrigin';
 import { authHeaders } from './authBridge';
 import { readSseJsonStream } from '@/lib/readSseJsonStream';
 
+export function chatAuthRequiredError() {
+  const err = new Error(
+    "Not signed in — your session may have expired. Sign out and sign in again, then retry.",
+  );
+  err.status = 401;
+  return err;
+}
+
+export function chatHttpError(err, status) {
+  const raw = String(err?.error || err?.message || "").trim();
+  if (status === 401 || /unauthorized/i.test(raw)) {
+    return chatAuthRequiredError();
+  }
+  if (status === 404 || /session not found/i.test(raw)) {
+    const missing = new Error(
+      "This conversation could not be found. Go back and start the session again.",
+    );
+    missing.status = 404;
+    return missing;
+  }
+  if (/workers ai|deepseek/i.test(raw)) {
+    const aiErr = new Error(raw);
+    aiErr.status = status;
+    return aiErr;
+  }
+  return new Error(raw || err?.error || `API error: ${status}`);
+}
+
+async function requireChatAuthHeaders(extra, options = {}) {
+  const headers = await authHeaders(extra, options);
+  if (!headers.Authorization) {
+    throw chatAuthRequiredError();
+  }
+  return headers;
+}
+
 /**
  * Cap a hung SSE body so Chat cannot sit on "Processing..." forever.
  * Must stay above the Worker free-tier open budget (80s) plus first-chunk
@@ -131,38 +167,48 @@ export const animaApi = {
       metadata,
       region,
     }) {
+      // Resolve Clerk before arming the stream abort — a late OTP mint must
+      // not consume the 115s reply budget (same isolation as ChatSession create).
+      let headers = await requireChatAuthHeaders();
+      const body = JSON.stringify({
+        session_id: sessionId,
+        content,
+        character_id: characterId,
+        character_ids: characterIds,
+        assistant_character_id: assistantCharacterId,
+        assistant_character_name: assistantCharacterName,
+        force_character_id: forceCharacterId || null,
+        eligible_character_ids: eligibleCharacterIds,
+        use_scene_mind: useSceneMind,
+        is_continue: !!isContinue,
+        mode,
+        system_prompt: systemPrompt,
+        deep_mode: !!deepMode,
+        persist,
+        turn_id: turnId,
+        persistence_owner: persistenceOwner,
+        metadata,
+        region,
+      });
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), CHAT_STREAM_TIMEOUT_MS);
       try {
-        const res = await fetch(apiUrl('/chat/messages'), {
-          method: "POST",
-          headers: await authHeaders(),
-          credentials: 'same-origin',
-          signal: controller.signal,
-          body: JSON.stringify({
-            session_id: sessionId,
-            content,
-            character_id: characterId,
-            character_ids: characterIds,
-            assistant_character_id: assistantCharacterId,
-            assistant_character_name: assistantCharacterName,
-            force_character_id: forceCharacterId || null,
-            eligible_character_ids: eligibleCharacterIds,
-            use_scene_mind: useSceneMind,
-            is_continue: !!isContinue,
-            mode,
-            system_prompt: systemPrompt,
-            deep_mode: !!deepMode,
-            persist,
-            turn_id: turnId,
-            persistence_owner: persistenceOwner,
-            metadata,
-            region,
-          }),
-        });
+        const postOnce = (requestHeaders) =>
+          fetch(apiUrl("/chat/messages"), {
+            method: "POST",
+            headers: requestHeaders,
+            credentials: "same-origin",
+            signal: controller.signal,
+            body,
+          });
+        let res = await postOnce(headers);
+        if (res.status === 401) {
+          headers = await requireChatAuthHeaders(undefined, { skipCache: true });
+          res = await postOnce(headers);
+        }
         if (!res.ok) {
           const err = await res.json().catch(() => ({ error: res.statusText }));
-          throw new Error(err.error || err.message || res.statusText || `API error: ${res.status}`);
+          throw chatHttpError(err, res.status);
         }
         yield* readSseJsonStream(res.body);
       } catch (err) {

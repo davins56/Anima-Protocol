@@ -129,6 +129,7 @@ import TherapySessionBanner from "@/components/chat/TherapySessionBanner";
 import { parseGroupResponse } from "@/lib/parseGroupResponse";
 import { buildGroupPrompt } from "@/lib/buildGroupPrompt";
 import { streamChatReply } from "@/lib/streamChatReply";
+import { visibleAssistantReply } from "@/lib/visibleAssistantReply";
 import {
   assessLewdTiming,
   buildContentRatingInstruction,
@@ -1838,7 +1839,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           onStatus: streamUi.showStatus,
         },
       );
-      const result = resultPayload.content || "";
+      const result = visibleAssistantReply(resultPayload.content || "");
       // An empty "success" used to replace the thinking/typing bubble with a
       // blank assistant row (or nothing visible). Treat it as a failed turn so
       // the catch path can surface an error instead of silently vanishing.
