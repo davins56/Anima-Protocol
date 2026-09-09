@@ -8,7 +8,12 @@
 // functions) is kept identical to the old localStorage implementation so the
 // hundreds of call sites across the app are untouched.
 
-import { animaApi } from './animaApi';
+import {
+  animaApi,
+  chatHttpError,
+  requireChatAuthHeaders,
+} from './animaApi';
+import { visibleAssistantReply } from '@/lib/visibleAssistantReply';
 import { downscaleDataUrl } from '@/lib/downscaleImage';
 import { apiUrl } from '@/lib/apiOrigin';
 import {
@@ -1584,29 +1589,24 @@ export const base44 = {
         response_json_schema,
         max_tokens,
       }) => {
-        // Create/reuse a conversation for LLM calls — routes through the
-        // api-server (api/index.mjs on Vercel) with auth + provider failover.
-        let convId = sessionStorage.getItem('anima_llm_conv_id');
-        if (!convId) {
-          const conv = await animaApi.conversations.create('LLM session');
-          convId = String(conv.id);
-          sessionStorage.setItem('anima_llm_conv_id', convId);
-        }
-
+        // Signed-in OpenAI completions — not the unauthenticated /api/ai/chat probe.
         let result = '';
-        for await (const chunk of animaApi.sendMessage(
-          Number(convId),
-          prompt,
-          systemPrompt || system_prompt || '',
-          !!deepMode,
-          response_json_schema,
-          typeof max_tokens === 'number' ? max_tokens : undefined,
-        )) {
+        for await (const chunk of animaApi.chatCompletions({
+          content: prompt,
+          systemPrompt: systemPrompt || system_prompt || '',
+          deepMode: !!deepMode,
+          responseJsonSchema: response_json_schema,
+          maxTokens: typeof max_tokens === 'number' ? max_tokens : undefined,
+        })) {
           if (chunk.done) break;
           if (chunk.error) throw new Error(chunk.error);
           if (chunk.content) result += chunk.content;
         }
 
+        result = visibleAssistantReply(result);
+        if (!String(result).trim()) {
+          throw new Error("The companion returned an empty reply. Please try again.");
+        }
         if (!response_json_schema) return result;
         return parseLLMJsonResponse(result);
       },
@@ -1671,19 +1671,24 @@ export const base44 = {
           const realName = fnName === 'invoke' ? nameOrData : fnName;
           const payload = fnName === 'invoke' ? data : nameOrData;
           try {
-            const res = await fetch(
-              apiUrl(`/openai/invoke/${realName}`),
-              {
+            let headers = await requireChatAuthHeaders();
+            const postOnce = (requestHeaders) =>
+              fetch(apiUrl(`/openai/invoke/${realName}`), {
                 method: 'POST',
-                headers: await authHeaders(),
+                headers: requestHeaders,
+                credentials: 'same-origin',
                 body: JSON.stringify(payload || {}),
-              },
-            );
+              });
+            let res = await postOnce(headers);
+            if (res.status === 401) {
+              headers = await requireChatAuthHeaders(undefined, { skipCache: true });
+              res = await postOnce(headers);
+            }
             if (!res.ok) {
               const err = await res
                 .json()
                 .catch(() => ({ error: res.statusText }));
-              throw new Error(err.error || err.message || res.statusText || `Request failed with status ${res.status}`);
+              throw chatHttpError(err, res.status);
             }
             const json = await res.json();
             return json.result;

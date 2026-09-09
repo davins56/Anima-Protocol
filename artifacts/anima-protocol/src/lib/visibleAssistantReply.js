@@ -8,6 +8,10 @@ const UNCLOSED_THINK_RE = /<think(?:ing)?\b[^>]*>[\s\S]*$/i;
 const INNER_THINK_RE = /<think(?:ing)?\b[^>]*>([\s\S]*?)(?:<\/think(?:ing)?>|$)/gi;
 const HAS_THINK_RE = /<think(?:ing)?\b/i;
 
+export function hasThinkMarkup(raw) {
+  return HAS_THINK_RE.test(String(raw ?? ""));
+}
+
 export function visibleAssistantReply(raw, opts = {}) {
   const text = String(raw ?? "");
   if (!HAS_THINK_RE.test(text)) return text;
