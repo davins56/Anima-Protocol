@@ -4,10 +4,11 @@
  * silent no-op on Add or the initial seed.
  *
  * Sacred Space init must wait for Clerk mint before arming the list timeout.
- * #436 split Affirmation vs Anima STORE_LIST clocks, then still ran auth.me()
- * through the affirmation timeout helper (STORE_FETCH 8s). Peek+profile
- * fallback still waited for clerkUser.email (often "" on iPad) and reused
- * that helper — filter never started. List immediately after the token wait.
+ * #437 started Affirmation.filter immediately after that wait, but still
+ * wrapped it in withStoreTimeout (list + token slack). A late resolve is
+ * ignored, and that clock is shorter than mint-inside-filter + storeFetch
+ * abort + retry — iPad sticky AFFIRMATION_LOAD_TIMEOUT. Pass the minted
+ * Bearer; do not race filter with a second wall-clock.
  */
 
 import { awaitCompanionStoreAuth } from "@/api/authBridge";
@@ -15,6 +16,7 @@ import { isStoreTimeoutError } from "@/lib/storeErrorSignals";
 import {
   STORE_AUTH_WAIT_MS,
   STORE_FETCH_TIMEOUT_MS,
+  STORE_LIST_RETRY_LIMIT,
   STORE_LIST_TIMEOUT_MS,
   withStoreTimeout,
 } from "@/lib/storeTimeouts";
@@ -210,45 +212,61 @@ async function settleRosterList(listPromise, timeoutMs) {
 }
 
 /**
- * Filter-only wall-clock. Do not use this for auth.me() / profile — that
- * leftover helper is why #436 painted AFFIRMATION_LOAD_TIMEOUT on iPad
- * before Affirmation.filter started.
- *
- * @template T
- * @param {() => Promise<T>} run
- * @param {{
- *   waitForAuth: (timeoutMs?: number) => Promise<unknown>,
- *   authWaitMs: number,
- *   timeoutMs: number,
- * }} opts
- * @returns {Promise<T>}
+ * Last-resort hang cap for a filter that never settles (tests, missing abort).
+ * Must cover storeFetch abort + retry — not one STORE_LIST window. #437's
+ * list+slack race fired during ensureSchemaOnce() and ignored the late GET.
  */
-async function runAffirmationListStep(run, { waitForAuth, authWaitMs, timeoutMs }) {
+function affirmationListHangCapMs(listTimeoutMs, listTimeoutSlackMs) {
+  const attemptMs = Math.max(0, Number(listTimeoutMs) || 0);
+  const slackMs = Math.max(0, Number(listTimeoutSlackMs) || 0);
+  return attemptMs * (STORE_LIST_RETRY_LIMIT + 1) + slackMs;
+}
+
+function callAffirmationFilter(filter, query, token) {
+  if (typeof filter !== "function") return [];
+  const opts =
+    typeof token === "string" && token.length > 0
+      ? { token, waitForAuth: false }
+      : { waitForAuth: false };
+  return filter(query, opts);
+}
+
+async function awaitAffirmationList(filterPromise, hangCapMs) {
   try {
-    return await withStoreTimeout(run(), timeoutMs, affirmationLoadTimeoutError);
+    return await withStoreTimeout(
+      filterPromise,
+      hangCapMs,
+      affirmationLoadTimeoutError,
+    );
   } catch (err) {
-    if (!isStoreTimeoutError(err)) throw err;
-    await waitForAuth(authWaitMs);
-    return await withStoreTimeout(run(), timeoutMs, affirmationLoadTimeoutError);
+    if (isStoreTimeoutError(err)) {
+      throw err?.message === AFFIRMATION_LOAD_TIMEOUT
+        ? err
+        : affirmationLoadTimeoutError();
+    }
+    throw err;
   }
 }
 
 /**
  * Sacred Space first paint: wait for the store token, then list affirmations.
- * #436 split list clocks but still ran auth.me() through the affirmation
- * timeout helper. Peek-then-profile fallback still burned authWaitMs waiting
- * for clerkUser.email, then used that same helper — iPad provisional identity
- * has email "" so filter never started.
+ * #437 started filter immediately but still raced it with withStoreTimeout
+ * (list + token slack). That leftover helper paints AFFIRMATION_LOAD_TIMEOUT
+ * and ignores a late Affirmation.filter — the iPad sticky banner after #437.
  *
- * After waitForAuth, Affirmation.filter runs immediately (email optional;
- * store is user_id scoped). auth.me() / Anima.list never throw
- * AFFIRMATION_LOAD_TIMEOUT and never hold Attuning. Empty filter (`[]`) is
- * not a timeout.
+ * After waitForAuth, pass that Bearer into Affirmation.filter (email optional;
+ * store is user_id scoped). storeFetch owns abort + retry. The hang cap only
+ * covers a filter that never settles, and late rows still reach onExisting.
+ * auth.me() / Anima.list never throw AFFIRMATION_LOAD_TIMEOUT. Empty `[]`
+ * is not a timeout. A 401 is not this banner.
  *
  * @param {{
  *   loadUser: () => Promise<{ email?: string } | null>,
  *   peekUser?: () => { email?: string } | null | Promise<{ email?: string } | null>,
- *   filter: (query: Record<string, unknown>) => Promise<unknown[]>,
+ *   filter: (
+ *     query: Record<string, unknown>,
+ *     opts?: { token?: string, waitForAuth?: boolean },
+ *   ) => Promise<unknown[]>,
  *   listAnimas?: () => Promise<unknown[]>,
  *   listCharacters?: () => Promise<unknown[]>,
  *   waitForAuth?: (timeoutMs?: number) => Promise<unknown>,
@@ -261,6 +279,10 @@ async function runAffirmationListStep(run, { waitForAuth, authWaitMs, timeoutMs 
  *     me: { email?: string } | null,
  *     animas: unknown[],
  *     chars: unknown[],
+ *   }) => void,
+ *   onExisting?: (result: {
+ *     me: { email?: string } | null,
+ *     existing: unknown[],
  *   }) => void,
  * }} input
  * @returns {Promise<{
@@ -283,11 +305,13 @@ export async function loadSacredSpaceSnapshot({
   rosterTimeoutMs = STORE_LIST_TIMEOUT_MS,
   authWaitMs = STORE_AUTH_WAIT_MS,
   onRoster,
+  onExisting,
 } = {}) {
+  void userTimeoutMs;
   // Auth wait is NOT covered by any fetch AbortSignal. After OTP, Clerk mint
   // can take seconds — if that wait shares the list budget, Sacred Space
   // paints defaults before Affirmation.filter can run.
-  await waitForAuth(authWaitMs);
+  const token = await waitForAuth(authWaitMs);
 
   // Immediate peek only — do not poll for email. iPad often has isSignedIn
   // with email "" for seconds; that wait used to own this banner.
@@ -300,22 +324,29 @@ export async function loadSacredSpaceSnapshot({
           .catch(() => null)
       : Promise.resolve(null);
 
-  // Slack covers getToken() inside storeFetch after this clock starts, so the
-  // outer withStoreTimeout cannot beat Affirmation.filter's own 20s abort.
-  const filterBudget =
-    Number(listTimeoutMs) + Math.max(0, Number(listTimeoutSlackMs) || 0);
-
-  // Filter starts now. Email is optional. Profile GET / Anima.list are not
-  // on this clock and cannot throw AFFIRMATION_LOAD_TIMEOUT.
-  const existingPromise = runAffirmationListStep(
-    () =>
+  // Filter starts now with the minted Bearer. Do not wrap it in #437's
+  // list+slack race — storeFetch abort+retry is longer, and a late GET
+  // must still replace sticky defaults.
+  const filterPromise = Promise.resolve()
+    .then(() =>
       loadAffirmations({
         user: peeked,
-        filter,
+        filter: (query) => callAffirmationFilter(filter, query, token),
         requireEmail: false,
       }),
-    { waitForAuth, authWaitMs, timeoutMs: filterBudget },
-  );
+    )
+    .then((rows) => (Array.isArray(rows) ? rows : []));
+
+  let releasedEarly = false;
+  if (typeof onExisting === "function") {
+    void filterPromise
+      .then((rows) => {
+        if (!releasedEarly) return;
+        onExisting({ me: peeked, existing: rows });
+      })
+      .catch(() => {});
+  }
+
   const rawAnima = safeRosterList(listAnimas);
   const rawChars = safeRosterList(listCharacters);
   const animaPromise = settleRosterList(rawAnima, rosterTimeoutMs);
@@ -328,7 +359,16 @@ export async function loadSacredSpaceSnapshot({
     );
   }
 
-  const existing = await existingPromise;
+  let existing;
+  try {
+    existing = await awaitAffirmationList(
+      filterPromise,
+      affirmationListHangCapMs(listTimeoutMs, listTimeoutSlackMs),
+    );
+  } catch (err) {
+    releasedEarly = true;
+    throw err;
+  }
   // Do not hold Attuning for /profile or a hung Anima/Character list.
   const me = (await takeIfSettled(userPromise, peeked)) || peeked;
   const animas = await takeIfSettled(animaPromise, []);
