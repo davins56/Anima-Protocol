@@ -98,4 +98,17 @@ describe("chatTurnErrorMessage", () => {
       /conversation could not be found/i,
     );
   });
+
+  it("does not toast store-unreachable HTML during send", () => {
+    const storeToast =
+      "The companion store is unreachable — the server sent an unexpected response. Retry in a moment.";
+    expect(chatTurnErrorMessage(new Error(storeToast))).toBe(
+      "The companion could not reply. Please try again.",
+    );
+    const transport = Object.assign(new Error(storeToast), { transport: true });
+    expect(chatTurnErrorMessage(transport)).toBe(
+      "The companion could not reply. Please try again.",
+    );
+    expect(chatTurnErrorMessage(new Error(storeToast))).not.toMatch(/companion store/i);
+  });
 });

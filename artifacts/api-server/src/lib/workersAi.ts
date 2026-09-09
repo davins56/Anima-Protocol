@@ -36,6 +36,21 @@ export function hasWorkersAiBinding(): boolean {
   return typeof aiBinding?.run === "function";
 }
 
+/** Isolate-local: after 4006, later turns skip DeepSeek and hop OpenRouter immediately. */
+let workersAiQuotaExhaustedThisIsolate = false;
+
+export function markWorkersAiQuotaExhausted(): void {
+  workersAiQuotaExhaustedThisIsolate = true;
+}
+
+export function isWorkersAiQuotaExhaustedThisIsolate(): boolean {
+  return workersAiQuotaExhaustedThisIsolate;
+}
+
+export function resetWorkersAiQuotaSkipForTests(): void {
+  workersAiQuotaExhaustedThisIsolate = false;
+}
+
 export function workersAiMessages(
   messages: ChatCompletionMessageParam[],
 ): Array<{ role: string; content: string }> {
@@ -96,6 +111,7 @@ export type WorkersAiHttpFailure = {
 /** Map a Workers AI binding failure to the /api/ai/chat JSON body. */
 export function workersAiHttpFailure(err: unknown): WorkersAiHttpFailure {
   if (isWorkersAiFreeQuotaError(err)) {
+    markWorkersAiQuotaExhausted();
     return {
       status: 429,
       error: WORKERS_AI_FREE_QUOTA_HINT,
@@ -110,7 +126,10 @@ export function workersAiHttpFailure(err: unknown): WorkersAiHttpFailure {
 }
 
 export function formatWorkersAiError(err: unknown): string {
-  if (isWorkersAiFreeQuotaError(err)) return WORKERS_AI_FREE_QUOTA_HINT;
+  if (isWorkersAiFreeQuotaError(err)) {
+    markWorkersAiQuotaExhausted();
+    return WORKERS_AI_FREE_QUOTA_HINT;
+  }
   if (err instanceof WorkersAiRequestError) return err.message;
   const detail =
     err instanceof Error
@@ -534,6 +553,10 @@ export async function streamWorkersAi(opts: {
   } catch (err) {
     if (err instanceof WorkersAiRequestError) throw err;
     if (isWorkersAiFreeQuotaError(err)) {
+      markWorkersAiQuotaExhausted();
+      throw new WorkersAiRequestError(WORKERS_AI_FREE_QUOTA_HINT);
+    }
+    if (isWorkersAiQuotaExhaustedThisIsolate()) {
       throw new WorkersAiRequestError(WORKERS_AI_FREE_QUOTA_HINT);
     }
     const text = await completeWorkersAi(opts).catch(() => "");
