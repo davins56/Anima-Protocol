@@ -135,6 +135,9 @@ export declare const STORE_FETCH_TIMEOUT_MS: number;
 export declare const STORE_LIST_RETRY_LIMIT: number;
 export declare const STORE_SESSION_CREATE_TIMEOUT_MS: number;
 export declare function waitForStoreAuth(timeoutMs?: number): Promise<string>;
+export declare function awaitCompanionStoreAuth(
+  timeoutMs?: number,
+): Promise<string | null>;
 export declare function notifyStoreChanged(): void;
 
 export declare const base44: Base44Client;

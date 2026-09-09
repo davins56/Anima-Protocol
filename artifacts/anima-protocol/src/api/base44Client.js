@@ -26,13 +26,22 @@ import {
   clearAuthTokenGetter,
   getToken,
   hasAuthTokenGetter,
+  awaitCompanionStoreAuth,
+  resolveStoreToken,
   setAuthTokenGetter,
   waitForStoreAuth,
 } from './authBridge';
+import { hydrateStoreList, hydrateStoreRecord } from '@/lib/storeRecords';
 
 const STORE_BASE = () => apiUrl('/store');
 
-export { clearAuthTokenGetter, hasAuthTokenGetter, setAuthTokenGetter, waitForStoreAuth };
+export {
+  awaitCompanionStoreAuth,
+  clearAuthTokenGetter,
+  hasAuthTokenGetter,
+  setAuthTokenGetter,
+  waitForStoreAuth,
+};
 export {
   STORE_COMPANION_CREATE_TIMEOUT_MS,
   STORE_FETCH_TIMEOUT_MS,
@@ -65,7 +74,10 @@ function storeTimeoutError(timeoutMessage) {
 }
 
 async function storeFetch(path, options = {}) {
-  const token = await getToken();
+  let token = await getToken();
+  if (!token && hasAuthTokenGetter()) {
+    token = await resolveStoreToken();
+  }
   if (!token) {
     const err = new Error(
       'Not signed in — your session may have expired. Sign out and sign in again, then retry.',
@@ -250,6 +262,16 @@ function storeError(res, detail) {
   if (info.code) e.code = info.code;
   if (typeof info.dbError === 'boolean') e.dbError = info.dbError;
   return e;
+}
+
+function missingStoreTokenError() {
+  return storeError(
+    { status: 401 },
+    {
+      message:
+        'Session not recognized by the server — sign out, sign back in, and try again.',
+    },
+  );
 }
 
 // Shared helper for image API calls (edit / generate). Surfaces abort vs
@@ -937,8 +959,14 @@ async function queryEntity(entityName, opts) {
   if (inflight.has(key)) return inflight.get(key);
 
   const promise = (async () => {
-    const token = await getToken();
-    if (!token) return [];
+    const token = await resolveStoreToken();
+    if (!token) {
+      // Shared store-level wait already ran. Keep the [] contract so
+      // Customise Anima (#428) can classify empty+no-token as unsigned.
+      // Roster / chat-open call awaitCompanionStoreAuth() first so a late
+      // Clerk mint is not treated as an empty account.
+      return [];
+    }
     const res = await storeFetch(
       `/${encodeURIComponent(entityName)}${qs ? `?${qs}` : ''}`,
       { retryOnTimeout: true },
@@ -947,7 +975,9 @@ async function queryEntity(entityName, opts) {
     // think seeding succeeded when the store was never reachable. After bootstrap
     // settles, surface 401 so the UI can prompt re-sign-in instead of "0 indexed".
     if (res.status === 401) {
-      if (ROSTER_ENTITIES.has(entityName) && isBootstrapSettled()) {
+      // A signed-in getter + 401 is not an empty account. Returning [] here
+      // hid custom characters after OTP while bootstrap was still running.
+      if (ROSTER_ENTITIES.has(entityName) && hasAuthTokenGetter()) {
         throw storeError(
           res,
           'Session not recognized by the server — sign out, sign back in, and try again.',
@@ -965,15 +995,16 @@ async function queryEntity(entityName, opts) {
         { message: STORE_UNREACHABLE_MESSAGE, transport: true },
       );
     }
-    let data;
+    let parsed;
     try {
-      data = JSON.parse(text);
+      parsed = JSON.parse(text);
     } catch {
       throw storeError(
         { status: 503 },
         { message: STORE_UNREACHABLE_MESSAGE, transport: true },
       );
     }
+    const data = opts?.count ? parsed : hydrateStoreList(parsed);
     // Don't cache an empty roster while bootstrap may still be seeding — pages
     // that fetched too early would otherwise keep [] for the TTL window.
     const skipEmptyRosterCache =
@@ -1015,14 +1046,17 @@ async function throwErr(res) {
 // is the whole history; limit/beforeSeq page it (see the server contract).
 async function listMessages(sessionId, { limit, beforeSeq } = {}) {
   if (!sessionId) return [];
-  const token = await getToken();
-  if (!token) return [];
+  const token = await resolveStoreToken();
+  if (!token) {
+    if (hasAuthTokenGetter()) throw missingStoreTokenError();
+    return [];
+  }
   const params = new URLSearchParams();
   params.set('session_id', sessionId);
   if (typeof limit === 'number' && limit >= 0) params.set('limit', String(limit));
   if (typeof beforeSeq === 'number') params.set('before_seq', String(beforeSeq));
   const res = await storeFetch(`/messages?${params.toString()}`);
-  if (res.status === 401) return [];
+  if (res.status === 401) throw missingStoreTokenError();
   if (!res.ok) await throwErr(res);
   return res.json();
 }
@@ -1060,7 +1094,7 @@ async function replaceMessages(sessionId, messages) {
 async function messagesBySessions(ids) {
   const list = Array.isArray(ids) ? ids.filter(Boolean) : [];
   if (list.length === 0) return {};
-  const token = await getToken();
+  const token = await resolveStoreToken();
   if (!token) return {};
   const res = await storeFetch('/messages/by-sessions', {
     method: 'POST',
@@ -1156,17 +1190,21 @@ function entityStore(entityName) {
     },
 
     async get(id, opts) {
-      const token = await getToken();
-      if (!token) return null;
+      const token = await resolveStoreToken();
+      if (!token) {
+        if (hasAuthTokenGetter()) throw missingStoreTokenError();
+        return null;
+      }
       const res = await storeFetch(
         `/${encodeURIComponent(entityName)}/${encodeURIComponent(id)}`,
       );
-      if (res.status === 401 || res.status === 404) return null;
+      if (res.status === 401) throw missingStoreTokenError();
+      if (res.status === 404) return null;
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
         throw new Error(err.error || res.statusText);
       }
-      return res.json();
+      return hydrateStoreRecord(await res.json(), id);
     },
 
     async create(data, opts = {}) {

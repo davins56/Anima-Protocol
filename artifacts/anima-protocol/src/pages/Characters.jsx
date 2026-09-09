@@ -7,11 +7,10 @@ import { useStoreSync } from "@/lib/useStoreSync";
 import { Plus, X, Edit2, Trash2, Volume2, BookOpen, Loader, ImagePlus, Library } from "lucide-react";
 import {
   autoAssignCharacterPhoto,
-  getStarterRoster,
   photoNeedsLookup,
-  retryStarterSeed,
   shouldAutoAssignCharacterPhoto,
 } from "@/lib/seedCharacters";
+import { loadRosterCharacters } from "@/lib/loadRosterCharacters";
 import VoicePicker from "@/components/voice/VoicePicker";
 import VoiceCloneManager from "@/components/characters/VoiceCloneManager";
 import { Link } from "react-router-dom";
@@ -20,7 +19,6 @@ import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/lib/ConfirmDialog";
 import { deleteWithUndo, deleteAllWithUndo } from "@/lib/undoableDelete";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
-import { notifyStoreChanged } from "@/api/base44Client";
 import AddSeriesCharactersModal from "@/components/characters/AddSeriesCharactersModal";
 import CharacterBioSheet from "@/components/character/CharacterBioSheet";
 import AvatarUploadField from "@/components/anima/AvatarUploadField";
@@ -30,10 +28,7 @@ import {
   companionCreateErrorMessage,
   createCompanionRecord,
 } from "@/lib/createCompanion";
-import {
-  isStoreDatabaseError,
-  isStoreReadUnavailable,
-} from "@/lib/storeErrorSignals";
+import { isStoreDatabaseError } from "@/lib/storeErrorSignals";
 
 const CATEGORIES = ["companion", "warrior", "mystic", "scientist", "villain", "hero", "other"];
 const STATUSES = ["online", "standby", "offline"];
@@ -103,43 +98,41 @@ export default function Characters() {
     setLoadError(null);
     setUsingBundledSeed(false);
     setLoading(true);
+    if (retrySeed) setSeeding(true);
     try {
-      let data = await base44.entities.Character.list("-created_date", 100);
-      if (!data?.length && retrySeed) {
-        setSeeding(true);
-        try {
-          await retryStarterSeed();
-          notifyStoreChanged();
-          data = await base44.entities.Character.list("-created_date", 100);
-        } finally {
-          setSeeding(false);
+      const roster = await loadRosterCharacters({
+        retrySeed,
+        waitBootstrap: false,
+        allowBundledFallback: true,
+        characterLimit: 500,
+      });
+      const next = roster.characters || [];
+      setCharacters((prev) => {
+        if (!next.length) return prev;
+        if (roster.usingBundledSeed && prev.some((c) => c?.id && !c._bundled)) {
+          const keep = prev.filter((c) => c && !c._bundled);
+          const keepIds = new Set(keep.map((c) => c.id));
+          return [...keep, ...next.filter((c) => c?.id && !keepIds.has(c.id))];
         }
-      }
-      setCharacters(data || []);
-    } catch (err) {
-      const message = err?.message || "Could not load characters.";
-      // Fall back for *any* failed read, but only blame the database when the
-      // server actually said so — a timeout or a Cloudflare edge page is not a
-      // database outage.
-      if (isStoreReadUnavailable(err)) {
-        // seedCharacters.js (package root) seeds Supabase and is NOT read by the
-        // UI. The live roster is src/lib/seedCharacters.js → /api/store → Postgres.
-        // When the store cannot be read, surface that bundled roster so the list
-        // is not empty.
-        const bundled = getStarterRoster();
-        setCharacters(bundled);
-        setUsingBundledSeed(true);
-        const recovery = isStoreDatabaseError(err)
+        return next;
+      });
+      setUsingBundledSeed(!!roster.usingBundledSeed && !next.some((c) => !c._bundled));
+      if (roster.usingBundledSeed || roster.error) {
+        const err = roster.error;
+        const message = err?.message || "Could not load account characters.";
+        const recovery = err && isStoreDatabaseError(err)
           ? "not saved to your account until the database is reachable"
           : "not saved to your account until the store can be reached again";
         setLoadError(
-          `${message}. Showing the bundled starter roster (${bundled.length}) — ${recovery}.`,
+          `${message}. Showing starter characters — ${recovery}.`,
         );
-      } else {
-        setLoadError(message);
-        setCharacters([]);
       }
+    } catch (err) {
+      const message = err?.message || "Could not load characters.";
+      setLoadError(message);
+      setCharacters((prev) => (prev.length ? prev : []));
     } finally {
+      setSeeding(false);
       setLoading(false);
     }
   };
