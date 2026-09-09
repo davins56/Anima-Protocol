@@ -105,9 +105,9 @@ async function listByNameSearch(entity, name, limit) {
 /**
  * Wait for a Clerk store token before companion lists.
  *
- * Shared root (also used by chat roster via Character.list): queryEntity
- * returns [] when getToken() is still minting. This helper is the Customise /
- * Animas wait only — chat-open / loadRosterCharacters stays on Upgrade's lane.
+ * Shared root for Customise Anima and chat roster: queryEntity returns []
+ * when getToken() is still minting. loadRosterCharacters / Init also call
+ * this before Character.list so a late Clerk mint is not an empty account.
  */
 export async function awaitCompanionStoreAuth() {
   try {
@@ -125,9 +125,8 @@ export async function awaitCompanionStoreAuth() {
  * Also query `creation_method` and known name aliases across the whole store.
  */
 export async function listPersonalAnimas(limit = 500) {
-  // queryEntity returns [] when the token is not ready. Wait here so Settings
-  // → Customise Anima and Animas do not look empty on iPad Safari hydration.
-  // Chat-open still uses Character.list / loadRosterCharacters (Upgrade lane).
+  // Shared Clerk mint wait for Customise Anima and chat roster. queryEntity
+  // still returns [] when getToken() is not ready — do not skip this wait.
   await awaitCompanionStoreAuth();
   // Primary Anima.list must throw so Customise Anima can classify
   // timeout / database / misconfigured failures. Recovery queries are

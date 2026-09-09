@@ -4,6 +4,9 @@ import {
   clearAuthTokenGetter,
   getToken,
   hasAuthTokenGetter,
+  authHeaders,
+  awaitCompanionStoreAuth,
+  resolveStoreToken,
   setAuthTokenGetter,
   waitForStoreAuth,
 } from "./authBridge";
@@ -81,5 +84,39 @@ describe("authBridge getToken", () => {
     await expect(waitForStoreAuth(80)).rejects.toThrow(
       "Store auth token not available",
     );
+  });
+
+  it("resolveStoreToken waits for a late Clerk mint instead of returning empty", async () => {
+    let token = null;
+    setAuthTokenGetter(() => token);
+    const pending = resolveStoreToken(200);
+    await new Promise((r) => setTimeout(r, 40));
+    token = "late-jwt";
+    await expect(pending).resolves.toBe("late-jwt");
+  });
+
+  it("resolveStoreToken returns null when no getter is registered", async () => {
+    await expect(resolveStoreToken(20)).resolves.toBeNull();
+  });
+
+  it("awaitCompanionStoreAuth is fail-open when getToken never settles", async () => {
+    setAuthTokenGetter(() => new Promise(() => {}));
+    await expect(awaitCompanionStoreAuth(80)).resolves.toBeNull();
+  });
+
+  it("authHeaders waits for a late Clerk mint then attaches Bearer", async () => {
+    let token = null;
+    setAuthTokenGetter(() => token);
+    const pending = authHeaders({}, { timeoutMs: 200 });
+    await new Promise((r) => setTimeout(r, 40));
+    token = "late-jwt";
+    await expect(pending).resolves.toMatchObject({
+      Authorization: "Bearer late-jwt",
+    });
+  });
+
+  it("authHeaders omits Authorization when signed out", async () => {
+    const headers = await authHeaders({}, { timeoutMs: 20 });
+    expect(headers.Authorization).toBeUndefined();
   });
 });

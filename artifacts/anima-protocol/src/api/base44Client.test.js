@@ -419,6 +419,7 @@ describe("Character.list HTML failures", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     clearAuthTokenGetter();
     vi.restoreAllMocks();
     delete global.fetch;
@@ -473,6 +474,67 @@ describe("Character.list HTML failures", () => {
       status: 503,
       message: expect.stringMatching(/unreachable|database/i),
     });
+  });
+
+  it("waits for a late Clerk mint before listing characters", async () => {
+    let token = null;
+    setAuthTokenGetter(() => token);
+    global.fetch = vi.fn(async () =>
+      Response.json([{ id: "char_custom", name: "Aelynd" }]),
+    );
+
+    const pending = base44.entities.Character.list("-created_date", 100, {
+      _bootstrapInternal: true,
+    });
+    await new Promise((r) => setTimeout(r, 40));
+    token = "late-jwt";
+    await expect(pending).resolves.toEqual([
+      { id: "char_custom", name: "Aelynd" },
+    ]);
+    expect(global.fetch).toHaveBeenCalled();
+  });
+
+  it("does not treat a store 401 as an empty Character roster when signed in", async () => {
+    setAuthTokenGetter(() => "stale-jwt");
+    global.fetch = vi.fn(async () =>
+      Response.json({ error: "Unauthorized" }, { status: 401 }),
+    );
+
+    await expect(
+      base44.entities.Character.list("-created_date", 100, {
+        _bootstrapInternal: true,
+      }),
+    ).rejects.toMatchObject({
+      status: 401,
+      message: expect.stringMatching(/sign out|sign back in/i),
+    });
+    expect(global.fetch).toHaveBeenCalled();
+    const [, options] = global.fetch.mock.calls[0];
+    expect(options.headers.Authorization).toBe("Bearer stale-jwt");
+  });
+
+  it("returns [] after the auth wait when signed out so Customise Anima can classify", async () => {
+    clearAuthTokenGetter();
+    global.fetch = vi.fn();
+    await expect(
+      base44.entities.Character.list("-created_date", 100, {
+        _bootstrapInternal: true,
+      }),
+    ).resolves.toEqual([]);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("unwraps a wrapped Character list so custom rows are not dropped", async () => {
+    global.fetch = vi.fn(async () =>
+      Response.json({
+        items: [{ id: "char_custom", name: "Aelynd" }],
+      }),
+    );
+
+    const rows = await base44.entities.Character.list("-created_date", 100, {
+      _bootstrapInternal: true,
+    });
+    expect(rows).toEqual([{ id: "char_custom", name: "Aelynd" }]);
   });
 });
 

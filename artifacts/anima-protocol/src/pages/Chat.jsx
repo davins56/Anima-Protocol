@@ -3,7 +3,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { base44, uploadDataUrl } from "@/api/base44Client";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
-import { loadRosterCharacters } from "@/lib/loadRosterCharacters";
+import {
+  getBundledStarterRoster,
+  loadRosterCharacters,
+} from "@/lib/loadRosterCharacters";
 import { animaApi } from "@/api/animaApi";
 import { usePaginatedEntities } from "@/hooks/usePaginatedEntities";
 import { useStoreSync } from "@/lib/useStoreSync";
@@ -729,16 +732,27 @@ export default function Chat() {
   );
 
   const loadCharacters = async ({ retrySeed = false } = {}) => {
-    const { characters: roster, animaAsChars } = await loadRosterCharacters({
-      retrySeed,
-      waitBootstrap: false,
-    });
+    const { characters: roster, animaAsChars, usingBundledSeed } =
+      await loadRosterCharacters({
+        retrySeed,
+        waitBootstrap: false,
+      });
 
     // Find Serenity anima specifically to use as the ambient companion
     const serenityAnima =
       animaAsChars.find((a) => a.name?.toLowerCase() === "serenity") || null;
     setSerenity(serenityAnima);
-    setCharacters(roster);
+    // Never replace a store roster (custom + seeded) with a bundled-only
+    // refetch — store-sync during an iPad token flicker used to hide customs.
+    setCharacters((prev) => {
+      if (!roster.length) return prev;
+      if (usingBundledSeed && prev.some((c) => c?.id && !c._bundled)) {
+        const keep = prev.filter((c) => c && !c._bundled);
+        const keepIds = new Set(keep.map((c) => c.id));
+        return [...keep, ...roster.filter((c) => c?.id && !keepIds.has(c.id))];
+      }
+      return roster;
+    });
 
     // Auto-assign voice profiles in background (non-blocking)
     base44.functions.invoke("autoAssignCharacterVoices", {}).catch(() => {});
@@ -781,6 +795,13 @@ export default function Chat() {
     } catch (err) {
       console.warn("[Anima] Character resolve failed:", err?.message || err);
     }
+    const bundled = getBundledStarterRoster().find((c) => c.id === id);
+    if (bundled) {
+      setCharacters((prev) =>
+        prev.some((c) => c.id === bundled.id) ? prev : [...prev, bundled],
+      );
+      return bundled;
+    }
     return null;
   };
 
@@ -804,6 +825,20 @@ export default function Chat() {
       loadCharacterMemories(session.character_id, id);
       loadInventory(session.character_id, id);
     }
+    const participantIds = [
+      session.character_id,
+      ...(Array.isArray(session.group_character_ids)
+        ? session.group_character_ids
+        : []),
+    ].filter(Boolean);
+    participantIds.forEach((participantId) => {
+      resolveCharacterById(participantId, characters).then((char) => {
+        if (!char || !stillOpen(id)) return;
+        setCharacters((prev) =>
+          prev.some((c) => c.id === char.id) ? prev : [...prev, char],
+        );
+      });
+    });
   };
 
   const loadRelationships = async (sid) => {
@@ -873,7 +908,6 @@ export default function Chat() {
   );
 
   const syncFromRemote = useCallback(() => {
-    loadCharacters();
     loadCharacters({ retrySeed: false });
     handleRemoteSync({
       isLoading,

@@ -3,12 +3,14 @@
 // when the roster is still empty — same recovery path Characters.jsx uses so
 // preloaded starters are available to chat after sign-in.
 
+import { awaitCompanionStoreAuth } from "@/lib/listPersonalAnimas";
 import {
   base44,
   notifyStoreChanged,
-  waitForStoreAuth,
 } from "@/api/base44Client";
+import { matchCharacterByIdentity } from "@/lib/createInitSession";
 import { getStarterRoster, retryStarterSeed } from "@/lib/seedCharacters";
+import { normalizeStoreList } from "@/lib/storeRecords";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import { STORE_AUTH_WAIT_MS } from "@/lib/storeTimeouts";
 import {
@@ -35,6 +37,29 @@ export function getBundledStarterRoster() {
 }
 
 /**
+ * Keep store rows (custom + seeded) and fill any missing starters from the
+ * bundled roster. A failed/empty auth read must not hide custom characters
+ * that were already on screen, and a custom-only store list must still offer
+ * preloaded starters.
+ */
+export function mergeRosterWithBundled(storeChars, bundledChars) {
+  const store = normalizeStoreList(storeChars);
+  const bundled = Array.isArray(bundledChars) ? bundledChars : [];
+  const seenIds = new Set(
+    store.map((c) => c?.id).filter((id) => typeof id === "string" && id),
+  );
+  const out = [...store];
+  for (const starter of bundled) {
+    if (!starter) continue;
+    if (starter.id && seenIds.has(starter.id)) continue;
+    if (matchCharacterByIdentity(starter, store)) continue;
+    out.push({ ...starter, _bundled: true });
+    if (starter.id) seenIds.add(starter.id);
+  }
+  return out;
+}
+
+/**
  * Load Character + Anima rows for chat pickers.
  * @param {{ retrySeed?: boolean, characterLimit?: number, animaLimit?: number, waitBootstrap?: boolean, allowBundledFallback?: boolean, notifyOnSeed?: boolean }} [opts]
  * @returns {Promise<{ characters: object[], rawCharacters: object[], animas: object[], animaAsChars: object[], error: Error|null, usingBundledSeed: boolean }>}
@@ -55,26 +80,25 @@ export async function loadRosterCharacters({
     await whenBootstrapReady();
   }
 
-  // Character.list returns [] (no throw) when the Clerk token getter is not
-  // ready yet — wait briefly so we don't treat "auth still loading" as an
-  // empty account.
-  let authError = null;
-  try {
-    await waitForStoreAuth(STORE_AUTH_WAIT_MS);
-  } catch (err) {
-    authError = err;
+  // Same fail-open Clerk wait Customise Anima uses. Character.list still
+  // returns [] when getToken() is minting — do not treat that as empty.
+  const token = await awaitCompanionStoreAuth(STORE_AUTH_WAIT_MS);
+  const authError = token
+    ? null
+    : new Error("Store auth token not available");
+  if (authError) {
     console.warn(
       "[Anima] Store auth not ready for roster load:",
-      err?.message || err,
+      authError.message,
     );
   }
 
   let rawCharacters = [];
   let listError = null;
   try {
-    rawCharacters =
-      (await base44.entities.Character.list("-created_date", characterLimit)) ||
-      [];
+    rawCharacters = normalizeStoreList(
+      await base44.entities.Character.list("-created_date", characterLimit),
+    );
   } catch (err) {
     listError = err;
     console.warn("[Anima] Character roster load failed:", err?.message || err);
@@ -89,11 +113,12 @@ export async function loadRosterCharacters({
       if (notifyOnSeed && seededCount > 0) {
         notifyStoreChanged();
       }
-      rawCharacters =
-        (await base44.entities.Character.list(
+      rawCharacters = normalizeStoreList(
+        await base44.entities.Character.list(
           "-created_date",
           characterLimit,
-        )) || [];
+        ),
+      );
     } catch (err) {
       seedError = err;
       console.warn(
@@ -113,13 +138,17 @@ export async function loadRosterCharacters({
   }
 
   const storeError = listError || seedError || authError;
+  const storeCharacters = rawCharacters;
   let usingBundledSeed = false;
-  // Any empty store result for a chat picker must surface starters — including
-  // useStoreSync refetches with retrySeed:false, which previously wiped the
-  // bundled list and left Select Character on "NO RESULTS FOUND".
-  if (allowBundledFallback && !rawCharacters.length) {
-    rawCharacters = getBundledStarterRoster();
-    usingBundledSeed = true;
+  // Always merge missing starters onto a successful store list so custom
+  // characters stay visible and preloaded seeds remain pickable. An empty or
+  // failed read still paints the bundled roster instead of a blank picker.
+  if (allowBundledFallback) {
+    rawCharacters = mergeRosterWithBundled(
+      storeCharacters,
+      getBundledStarterRoster(),
+    );
+    usingBundledSeed = storeCharacters.length === 0;
   }
 
   const animaAsChars = asAnimaChars(animas);

@@ -43,6 +43,17 @@ vi.mock("@/lib/seedCharacters", () => ({
   shouldAutoAssignCharacterPhoto: () => false,
 }));
 
+vi.mock("@/lib/loadRosterCharacters", () => ({
+  loadRosterCharacters: async () => ({
+    characters: [],
+    rawCharacters: [],
+    animas: [],
+    animaAsChars: [],
+    error: null,
+    usingBundledSeed: false,
+  }),
+}));
+
 vi.mock("@/components/voice/VoicePicker", () => ({
   default: () => null,
 }));

@@ -22,6 +22,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/api/base44Client", () => ({
+  awaitCompanionStoreAuth: vi.fn().mockResolvedValue("token"),
+  waitForStoreAuth: vi.fn().mockResolvedValue("token"),
   base44: {
     auth: { me: mocks.me },
     entities: {
