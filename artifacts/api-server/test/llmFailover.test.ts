@@ -336,6 +336,7 @@ import {
   resetOpenRouterCreditFallbackForTests,
   resolveLocalModel,
   resolveOpenRouterModel,
+  chatCompletionHttpFailure,
 } from "../src/lib/llmFailover";
 
 function fakeStream(label = "ok") {
@@ -2017,5 +2018,36 @@ describe("probeLlmProviders", () => {
       message: expect.stringMatching(/Workers AI daily free quota exhausted/),
     });
     expect(createMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("chatCompletionHttpFailure", () => {
+  it("maps local Ollama setup hints to 503 llm_not_configured", () => {
+    const failure = chatCompletionHttpFailure(
+      new Error(
+        "ANIMA_LLM_PROVIDER=custom requires a self-hosted Anima LLM. On local Node: install Ollama",
+      ),
+    );
+    expect(failure).toEqual({
+      status: 503,
+      error: expect.stringMatching(/ANIMA_LLM_PROVIDER=custom/),
+      code: "llm_not_configured",
+    });
+  });
+
+  it("keeps a generic provider failure as 502 with the enriched message", () => {
+    expect(chatCompletionHttpFailure(new Error("connection refused"))).toEqual({
+      status: 502,
+      error: "connection refused",
+      code: "ai_request_failed",
+    });
+  });
+
+  it("maps abort / timeout to the signed-in chat took-too-long hint", () => {
+    expect(chatCompletionHttpFailure(new Error("Request was aborted."))).toEqual({
+      status: 502,
+      error: "The companion took too long to reply. Please try again.",
+      code: "ai_timeout",
+    });
   });
 });

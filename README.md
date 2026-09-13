@@ -181,6 +181,47 @@ pnpm --filter @workspace/db run push
 
 Then start the api-server / frontend as usual (below) — they connect to this stack via `DATABASE_URL` and `ANIMA_LOCAL_LLM_BASE_URL=http://localhost:11434/v1` (the `.env.example` defaults already point here). `pnpm dev:infra:down` tears it down. GPU vLLM serving is a separate opt-in file: `scripts/llm/docker-compose.vllm.yml` (see `docs/custom-llm.md`). Deploying this to production with a public HTTPS endpoint: `docs/llm-deploy.md`.
 
+### Local Ollama chat (no cloud API)
+
+Chat talks to a self-hosted OpenAI-compatible endpoint. On local Node the default is **Ollama** at `http://localhost:11434/v1`. No cloud LLM key is required.
+
+1. Install Ollama from https://ollama.com and start it (`ollama serve` if it is not already running).
+2. Pull a small model and create the Anima tag:
+
+   ```bash
+   ollama pull qwen2.5:3b
+   pnpm llm:up          # creates anima-chat from that base, then smoke-tests
+   ```
+
+   Or skip the branded tag and use the pulled model directly:
+
+   ```bash
+   export ANIMA_OLLAMA_MODEL_STANDARD=qwen2.5:3b
+   ```
+
+3. Point the API at it (these are the `.env.example` defaults):
+
+   ```bash
+   export ANIMA_LLM_PROVIDER=custom
+   export ANIMA_LOCAL_LLM_BACKEND=ollama
+   export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:11434/v1
+   export ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
+   ```
+
+   A local Ollama daemon does not need an API key. Set `ANIMA_LOCAL_LLM_API_KEY` only if you put a bearer proxy in front of the host.
+
+4. Start the API on port 8080, then:
+
+   ```bash
+   curl -s http://localhost:8080/api/healthz/llm | jq '{status,preferred,localEndpoint}'
+   curl -s http://localhost:8080/api/ai/chat \
+     -H 'Content-Type: application/json' \
+     -d '{"prompt":"Who are you?"}'
+   # {"response":"…","provider":"local","model":"anima-chat","failed_over":false}
+   ```
+
+The React app uses the same path: `animaApi.aiChat({ prompt })` for this probe. Signed-in companion turns go through `/api/chat/messages` and `/api/openai/v1/chat/completions` — both share `createChatCompletionWithFailover` on the API. Fine-tune and production hosting: [docs/custom-llm.md](docs/custom-llm.md).
+
 ## Running Services
 
 Start the API:

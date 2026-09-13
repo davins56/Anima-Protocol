@@ -8,9 +8,13 @@ type NextFunction = any;
 const express: any = require("express");
 
 import { runWithDbRequestScope } from "@workspace/db";
-import { aiBinding } from "./lib/aiBinding";
-import { createChatCompletionWithFailover } from "./lib/llmFailover";
-import { workersAiHttpFailure } from "./lib/workersAi";
+import {
+  chatCompletionHttpFailure,
+  createChatCompletionWithFailover,
+  usesFreeTierOpenBudget,
+} from "./lib/llmFailover";
+import { llmOpenTimeoutMs, openStreamAbort } from "./lib/chatTimeouts";
+import { visibleAssistantReply } from "./lib/visibleAssistantReply";
 import { syncCloudflareRuntimeEnvMiddleware } from "./lib/cloudflareEnv";
 import {
   CLERK_PROXY_PATH,
@@ -104,48 +108,59 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// Verify Clerk JWTs before hitting any protected routes; populates req.auth for
-// the @clerk/express helpers used downstream. Wrapped so a bad/missing
-// CLERK_PUBLISHABLE_KEY cannot 500 every character/store request.
-app.use(safeClerkMiddleware());
-
-// Upgrade / operator probe. Same provider chain as signed-in chat
-// (`createChatCompletionWithFailover`): custom Anima LLM first when
-// configured, OpenRouter after hoppable failures when
-// ANIMA_OPENROUTER_FALLBACK is on. Do not call `aiBinding.run` here —
-// that is what made the probe return instant 429 while healthz already
-// listed the failover chain.
+// Local / operator chat probe. Public like /api/healthz so a missing Clerk
+// key cannot hide an otherwise-working Ollama host. Same provider chain as
+// signed-in chat (`createChatCompletionWithFailover`). Do not require the
+// Workers AI binding — local Node has none.
 app.post("/api/ai/chat", async (req: Request, res: Response) => {
-  if (!aiBinding) {
-    res.status(503).json({ error: "AI binding not available" });
-    return;
-  }
   const { prompt, messages } = req.body ?? {};
-  const chatMessages =
-    messages ??
-    [{ role: "system", content: "You are a helpful assistant." },
-     { role: "user", content: prompt ?? "Hello!" }];
+  const chatMessages = Array.isArray(messages)
+    ? messages
+    : [
+        { role: "system", content: "You are a helpful assistant." },
+        { role: "user", content: prompt ?? "Hello!" },
+      ];
+  // Same open budget as signed-in chat. ANIMA_LLM_OPEN_TIMEOUT_MS is a
+  // test/ops override so a hung Ollama cannot sit past the armed abort.
+  const configuredOpenMs = Number(process.env.ANIMA_LLM_OPEN_TIMEOUT_MS);
+  const open = openStreamAbort(
+    Number.isFinite(configuredOpenMs) && configuredOpenMs > 0
+      ? configuredOpenMs
+      : llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() }),
+  );
   try {
     const result = await createChatCompletionWithFailover({
       tier: "standard",
       maxTokens: 256,
       messages: chatMessages,
+      signal: open.signal,
     });
+    const content = visibleAssistantReply(result.content);
+    if (!String(content).trim()) {
+      throw new Error("The companion returned an empty reply. Please try again.");
+    }
     res.json({
-      response: result.content,
+      response: content,
       provider: result.provider,
       model: result.model,
       failed_over: result.failedOver,
     });
   } catch (err) {
-    logger.error({ err }, "DeepSeek AI request failed");
-    const failure = workersAiHttpFailure(err);
+    logger.error({ err }, "Chat LLM request failed");
+    const failure = chatCompletionHttpFailure(err);
     res.status(failure.status).json({
       error: failure.error,
       code: failure.code,
     });
+  } finally {
+    open.cancel();
   }
 });
+
+// Verify Clerk JWTs before hitting any protected routes; populates req.auth for
+// the @clerk/express helpers used downstream. Wrapped so a bad/missing
+// CLERK_PUBLISHABLE_KEY cannot 500 every character/store request.
+app.use(safeClerkMiddleware());
 
 // Application API routes (store, chat, openai, storage, admin, character image,
 // battle models, elevenlabs, placeholder image).
