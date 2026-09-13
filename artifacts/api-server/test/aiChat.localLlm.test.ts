@@ -14,7 +14,9 @@ describe("POST /api/ai/chat — local Ollama path", () => {
   let stub: Server;
   let stubBase: string;
   let received: Array<{ model: string; messages: unknown[] }> = [];
-  let replyText = "Hello from the local stub.";
+  let replyText: string | null = "Hello from the local stub.";
+  let hangNext = false;
+  let missingContent = false;
 
   let app: Express;
   let api: Server;
@@ -43,6 +45,12 @@ describe("POST /api/ai/chat — local Ollama path", () => {
       req.on("end", () => {
         const body = JSON.parse(raw || "{}");
         received.push({ model: body.model, messages: body.messages });
+        if (hangNext) {
+          return;
+        }
+        const message = missingContent
+          ? { role: "assistant" }
+          : { role: "assistant", content: replyText };
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
@@ -50,13 +58,7 @@ describe("POST /api/ai/chat — local Ollama path", () => {
             object: "chat.completion",
             created: Math.floor(Date.now() / 1000),
             model: body.model,
-            choices: [
-              {
-                index: 0,
-                message: { role: "assistant", content: replyText },
-                finish_reason: "stop",
-              },
-            ],
+            choices: [{ index: 0, message, finish_reason: "stop" }],
           }),
         );
       });
@@ -117,6 +119,9 @@ describe("POST /api/ai/chat — local Ollama path", () => {
     delete process.env.ANIMA_OPENROUTER_FALLBACK;
     received = [];
     replyText = "Hello from the local stub.";
+    hangNext = false;
+    missingContent = false;
+    delete process.env.ANIMA_LLM_OPEN_TIMEOUT_MS;
     resetAiBindingForTests();
     resetLlmClientsForTests();
     resetLocalModelCatalogForTests();
@@ -168,5 +173,54 @@ describe("POST /api/ai/chat — local Ollama path", () => {
     expect(body.code).toBe("llm_not_configured");
     expect(body.error).toMatch(/ANIMA_LLM_PROVIDER=custom requires a self-hosted Anima LLM/i);
     expect(received).toHaveLength(0);
+  });
+
+  it("returns 502 when Ollama answers with empty content", async () => {
+    replyText = "";
+
+    const response = await fetch(`${apiBase}/api/ai/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "Hello" }),
+    });
+
+    expect(response.status).toBe(502);
+    const body = await response.json();
+    expect(body.code).toBe("ai_request_failed");
+    expect(body.error).toMatch(/empty reply/i);
+    expect(body).not.toHaveProperty("response", "");
+  });
+
+  it("returns 502 when the completion has no message content", async () => {
+    missingContent = true;
+
+    const response = await fetch(`${apiBase}/api/ai/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "Hello" }),
+    });
+
+    expect(response.status).toBe(502);
+    const body = await response.json();
+    expect(body.code).toBe("ai_request_failed");
+    expect(body.error).toMatch(/empty reply/i);
+  });
+
+  it("aborts a hung Ollama host instead of sitting forever", async () => {
+    hangNext = true;
+    process.env.ANIMA_LLM_OPEN_TIMEOUT_MS = "250";
+    resetLlmClientsForTests();
+
+    const response = await fetch(`${apiBase}/api/ai/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "Hello" }),
+    });
+
+    expect(response.status).toBe(502);
+    const body = await response.json();
+    expect(body.code).toBe("ai_timeout");
+    expect(body.error).toMatch(/took too long to reply/i);
+    expect(received).toHaveLength(1);
   });
 });

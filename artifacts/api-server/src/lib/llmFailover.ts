@@ -56,6 +56,7 @@ import {
   rememberModelSubstitution,
 } from "./localModelCatalog";
 import { getOpenWeightChatModel, resolveModelSpec } from "@workspace/llm";
+import { LlmStreamTimeoutError } from "./consumeLlmStream";
 import {
   completeWorkersAi,
   formatWorkersAiError,
@@ -91,6 +92,13 @@ export function chatCompletionHttpFailure(err: unknown): {
   }
   const message =
     err instanceof Error ? err.message.trim() : String(err ?? "").trim();
+  if (err instanceof LlmStreamTimeoutError || /aborted|abort/i.test(message)) {
+    return {
+      status: 502,
+      error: "The companion took too long to reply. Please try again.",
+      code: "ai_timeout",
+    };
+  }
   if (
     /ANIMA_LOCAL_LLM|ANIMA_LLM_PROVIDER|ANIMA_OLLAMA_MODEL|does not serve a model named|Anima LLM authentication failed|cloud chat API/i.test(
       message,

@@ -11,7 +11,10 @@ import { runWithDbRequestScope } from "@workspace/db";
 import {
   chatCompletionHttpFailure,
   createChatCompletionWithFailover,
+  usesFreeTierOpenBudget,
 } from "./lib/llmFailover";
+import { llmOpenTimeoutMs, openStreamAbort } from "./lib/chatTimeouts";
+import { visibleAssistantReply } from "./lib/visibleAssistantReply";
 import { syncCloudflareRuntimeEnvMiddleware } from "./lib/cloudflareEnv";
 import {
   CLERK_PROXY_PATH,
@@ -117,14 +120,27 @@ app.post("/api/ai/chat", async (req: Request, res: Response) => {
         { role: "system", content: "You are a helpful assistant." },
         { role: "user", content: prompt ?? "Hello!" },
       ];
+  // Same open budget as signed-in chat. ANIMA_LLM_OPEN_TIMEOUT_MS is a
+  // test/ops override so a hung Ollama cannot sit past the armed abort.
+  const configuredOpenMs = Number(process.env.ANIMA_LLM_OPEN_TIMEOUT_MS);
+  const open = openStreamAbort(
+    Number.isFinite(configuredOpenMs) && configuredOpenMs > 0
+      ? configuredOpenMs
+      : llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() }),
+  );
   try {
     const result = await createChatCompletionWithFailover({
       tier: "standard",
       maxTokens: 256,
       messages: chatMessages,
+      signal: open.signal,
     });
+    const content = visibleAssistantReply(result.content);
+    if (!String(content).trim()) {
+      throw new Error("The companion returned an empty reply. Please try again.");
+    }
     res.json({
-      response: result.content,
+      response: content,
       provider: result.provider,
       model: result.model,
       failed_over: result.failedOver,
@@ -136,6 +152,8 @@ app.post("/api/ai/chat", async (req: Request, res: Response) => {
       error: failure.error,
       code: failure.code,
     });
+  } finally {
+    open.cancel();
   }
 });
 
