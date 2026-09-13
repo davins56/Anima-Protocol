@@ -2042,4 +2042,12 @@ describe("chatCompletionHttpFailure", () => {
       code: "ai_request_failed",
     });
   });
+
+  it("maps abort / timeout to the signed-in chat took-too-long hint", () => {
+    expect(chatCompletionHttpFailure(new Error("Request was aborted."))).toEqual({
+      status: 502,
+      error: "The companion took too long to reply. Please try again.",
+      code: "ai_timeout",
+    });
+  });
 });
