@@ -105,15 +105,10 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// Verify Clerk JWTs before hitting any protected routes; populates req.auth for
-// the @clerk/express helpers used downstream. Wrapped so a bad/missing
-// CLERK_PUBLISHABLE_KEY cannot 500 every character/store request.
-app.use(safeClerkMiddleware());
-
-// Upgrade / operator / local-dev chat probe. Same provider chain as
-// signed-in chat (`createChatCompletionWithFailover`): local Ollama/vLLM
-// first when configured. Do not require the Workers AI binding — local
-// Node has none, and that gate made this route 503 even when Ollama was up.
+// Local / operator chat probe. Public like /api/healthz so a missing Clerk
+// key cannot hide an otherwise-working Ollama host. Same provider chain as
+// signed-in chat (`createChatCompletionWithFailover`). Do not require the
+// Workers AI binding — local Node has none.
 app.post("/api/ai/chat", async (req: Request, res: Response) => {
   const { prompt, messages } = req.body ?? {};
   const chatMessages = Array.isArray(messages)
@@ -143,6 +138,11 @@ app.post("/api/ai/chat", async (req: Request, res: Response) => {
     });
   }
 });
+
+// Verify Clerk JWTs before hitting any protected routes; populates req.auth for
+// the @clerk/express helpers used downstream. Wrapped so a bad/missing
+// CLERK_PUBLISHABLE_KEY cannot 500 every character/store request.
+app.use(safeClerkMiddleware());
 
 // Application API routes (store, chat, openai, storage, admin, character image,
 // battle models, elevenlabs, placeholder image).
