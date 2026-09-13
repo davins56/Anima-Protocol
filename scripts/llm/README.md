@@ -22,6 +22,14 @@ export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:11434/v1
 export ANIMA_OLLAMA_MODEL_STANDARD=anima-chat
 ```
 
+Hit the API probe (no cloud key, no Workers AI binding):
+
+```bash
+curl -s http://localhost:8080/api/ai/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"Who are you?"}'
+```
+
 ### Uncensored (local Dolphin or OpenRouter Venice)
 
 ```bash

@@ -8,9 +8,10 @@ type NextFunction = any;
 const express: any = require("express");
 
 import { runWithDbRequestScope } from "@workspace/db";
-import { aiBinding } from "./lib/aiBinding";
-import { createChatCompletionWithFailover } from "./lib/llmFailover";
-import { workersAiHttpFailure } from "./lib/workersAi";
+import {
+  chatCompletionHttpFailure,
+  createChatCompletionWithFailover,
+} from "./lib/llmFailover";
 import { syncCloudflareRuntimeEnvMiddleware } from "./lib/cloudflareEnv";
 import {
   CLERK_PROXY_PATH,
@@ -109,22 +110,18 @@ app.get("/api/health", (_req, res) => {
 // CLERK_PUBLISHABLE_KEY cannot 500 every character/store request.
 app.use(safeClerkMiddleware());
 
-// Upgrade / operator probe. Same provider chain as signed-in chat
-// (`createChatCompletionWithFailover`): custom Anima LLM first when
-// configured, OpenRouter after hoppable failures when
-// ANIMA_OPENROUTER_FALLBACK is on. Do not call `aiBinding.run` here —
-// that is what made the probe return instant 429 while healthz already
-// listed the failover chain.
+// Upgrade / operator / local-dev chat probe. Same provider chain as
+// signed-in chat (`createChatCompletionWithFailover`): local Ollama/vLLM
+// first when configured. Do not require the Workers AI binding — local
+// Node has none, and that gate made this route 503 even when Ollama was up.
 app.post("/api/ai/chat", async (req: Request, res: Response) => {
-  if (!aiBinding) {
-    res.status(503).json({ error: "AI binding not available" });
-    return;
-  }
   const { prompt, messages } = req.body ?? {};
-  const chatMessages =
-    messages ??
-    [{ role: "system", content: "You are a helpful assistant." },
-     { role: "user", content: prompt ?? "Hello!" }];
+  const chatMessages = Array.isArray(messages)
+    ? messages
+    : [
+        { role: "system", content: "You are a helpful assistant." },
+        { role: "user", content: prompt ?? "Hello!" },
+      ];
   try {
     const result = await createChatCompletionWithFailover({
       tier: "standard",
@@ -138,8 +135,8 @@ app.post("/api/ai/chat", async (req: Request, res: Response) => {
       failed_over: result.failedOver,
     });
   } catch (err) {
-    logger.error({ err }, "DeepSeek AI request failed");
-    const failure = workersAiHttpFailure(err);
+    logger.error({ err }, "Chat LLM request failed");
+    const failure = chatCompletionHttpFailure(err);
     res.status(failure.status).json({
       error: failure.error,
       code: failure.code,
