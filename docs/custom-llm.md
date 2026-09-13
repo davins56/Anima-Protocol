@@ -40,7 +40,14 @@ Verify:
 ```bash
 curl -s http://localhost:8080/api/healthz/llm | jq
 # expect: "status":"ok", "preferred":"local", "brand":"anima"
+
+curl -s http://localhost:8080/api/ai/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"Who are you?"}'
+# {"response":"…","provider":"local","model":"anima-chat","failed_over":false}
 ```
+
+From the React app, `animaApi.aiChat({ prompt })` hits that same probe. Signed-in companion chat uses `/api/chat/messages` and still talks to this local endpoint.
 
 ---
 

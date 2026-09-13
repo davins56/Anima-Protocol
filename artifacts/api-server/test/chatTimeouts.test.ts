@@ -83,6 +83,17 @@ describe("client/server budget lockstep", () => {
     expect(chatRoute).not.toMatch(/const LLM_OPEN_TIMEOUT_MS = 35_000/);
   });
 
+  it("arms the same open abort on the unauthenticated /api/ai/chat probe", () => {
+    const appRoute = readFileSync(
+      join(repoRoot, "artifacts/api-server/src/app.ts"),
+      "utf8",
+    );
+    expect(appRoute).toContain("llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() })");
+    expect(appRoute).toContain("openStreamAbort(");
+    expect(appRoute).toContain("signal: open.signal");
+    expect(appRoute).toContain("The companion returned an empty reply. Please try again.");
+  });
+
   it("keeps the browser fetch abort equal to the documented client budget", () => {
     const animaApi = readFileSync(
       join(repoRoot, "artifacts/anima-protocol/src/api/animaApi.js"),

@@ -154,6 +154,25 @@ export const animaApi = {
   },
 
   /**
+   * Unauthenticated chat probe — POST /api/ai/chat.
+   * Uses the same provider chain as signed-in turns (local Ollama/vLLM first).
+   * Companion conversations should use chat.sendMessage or chatCompletions.
+   *
+   * @param {{ prompt?: string, messages?: Array<{ role: string, content: string }> }} [args]
+   * @returns {Promise<{ response: string, provider: string, model: string, failed_over?: boolean }>}
+   */
+  aiChat: async ({ prompt, messages } = {}) => {
+    const res = await request("/ai/chat", {
+      method: "POST",
+      body: JSON.stringify({
+        ...(typeof prompt === "string" ? { prompt } : {}),
+        ...(Array.isArray(messages) ? { messages } : {}),
+      }),
+    });
+    return res.json();
+  },
+
+  /**
    * Signed-in OpenAI chat completions (Clerk Bearer). Used by InvokeLLM.
    * Do not confuse with unauthenticated POST /api/ai/chat.
    */

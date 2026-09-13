@@ -56,6 +56,7 @@ import {
   rememberModelSubstitution,
 } from "./localModelCatalog";
 import { getOpenWeightChatModel, resolveModelSpec } from "@workspace/llm";
+import { LlmStreamTimeoutError } from "./consumeLlmStream";
 import {
   completeWorkersAi,
   formatWorkersAiError,
@@ -65,6 +66,7 @@ import {
   isWorkersAiQuotaExhaustedThisIsolate,
   markWorkersAiQuotaExhausted,
   streamWorkersAi,
+  workersAiHttpFailure,
   WORKERS_AI_CHAT_MODEL,
   WORKERS_AI_FREE_PLAN_NEURONS_PER_DAY,
   WORKERS_AI_FREE_QUOTA_CODE,
@@ -75,6 +77,49 @@ import {
 
 export { isWorkersAiNeuronQuotaError } from "./workersAi";
 
+/**
+ * Map a chat-completion failure to the JSON body for POST /api/ai/chat.
+ * Workers AI quota stays 429; missing/misconfigured local Ollama is 503
+ * with the setup hint; other provider errors keep their enriched message.
+ */
+export function chatCompletionHttpFailure(err: unknown): {
+  status: number;
+  error: string;
+  code: string;
+} {
+  if (isWorkersAiFreeQuotaError(err)) {
+    return workersAiHttpFailure(err);
+  }
+  const message =
+    err instanceof Error ? err.message.trim() : String(err ?? "").trim();
+  if (err instanceof LlmStreamTimeoutError || /aborted|abort/i.test(message)) {
+    return {
+      status: 502,
+      error: "The companion took too long to reply. Please try again.",
+      code: "ai_timeout",
+    };
+  }
+  if (
+    /ANIMA_LOCAL_LLM|ANIMA_LLM_PROVIDER|ANIMA_OLLAMA_MODEL|does not serve a model named|Anima LLM authentication failed|cloud chat API/i.test(
+      message,
+    )
+  ) {
+    return {
+      status: 503,
+      error: message,
+      code: "llm_not_configured",
+    };
+  }
+  if (message) {
+    return {
+      status: 502,
+      error: message,
+      code: "ai_request_failed",
+    };
+  }
+  return workersAiHttpFailure(err);
+}
+
 const CLOUD_FLAGSHIP_SETUP_HINT =
   "ANIMA_LOCAL_LLM_BASE_URL points at a cloud chat API (e.g. api.openai.com), not a self-hosted Anima LLM. " +
   "Deploy Ollama/vLLM with the anima-chat model, set " +
@@ -83,10 +128,10 @@ const CLOUD_FLAGSHIP_SETUP_HINT =
 
 const LOCAL_LLM_SETUP_HINT =
   "ANIMA_LLM_PROVIDER=custom requires a self-hosted Anima LLM. " +
-  "Set ANIMA_LOCAL_LLM_BASE_URL=https://<your-ollama-or-vllm-host>/v1 and " +
-  "ANIMA_OLLAMA_MODEL_STANDARD=anima-chat, then redeploy. " +
-  "MiniMax, Deepshi, and OpenRouter are intentionally not used for chat. " +
-  "See scripts/llm/public-v1/README.md.";
+  "On local Node: install Ollama (https://ollama.com), run `ollama pull qwen2.5:3b` or `pnpm llm:up`, then set " +
+  "ANIMA_LOCAL_LLM_BASE_URL=http://localhost:11434/v1 and ANIMA_OLLAMA_MODEL_STANDARD=anima-chat. " +
+  "On the Cloudflare Worker / Vercel, localhost is unreachable — set a public HTTPS …/v1 URL instead. " +
+  "See docs/custom-llm.md.";
 
 /** Self-hosted Anima LLM, or OpenRouter open-weight models (not flagship BYOK). */
 export type LlmProviderId = "local" | "minimax" | "deepshi" | "openrouter" | "workersai";
