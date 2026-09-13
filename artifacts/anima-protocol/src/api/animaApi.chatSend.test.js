@@ -174,4 +174,31 @@ describe("chat send auth and HTTP errors", () => {
     );
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("POSTs a prompt to /api/ai/chat and returns the local reply", async () => {
+    authHeaders.mockResolvedValue({ "Content-Type": "application/json" });
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        response: "Hello from local",
+        provider: "local",
+        model: "anima-chat",
+        failed_over: false,
+      }),
+    });
+
+    const { animaApi } = await import("./animaApi.js");
+    const result = await animaApi.aiChat({ prompt: "Hi" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe("https://example.test/api/ai/chat");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ prompt: "Hi" });
+    expect(result).toEqual({
+      response: "Hello from local",
+      provider: "local",
+      model: "anima-chat",
+      failed_over: false,
+    });
+  });
 });
