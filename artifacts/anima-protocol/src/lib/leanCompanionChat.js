@@ -16,9 +16,34 @@ function trimBlock(value) {
   return String(value || "").trim();
 }
 
+function packLeanBlocks(leading, trailing, max) {
+  const trail = trailing.map(trimBlock).filter(Boolean);
+  const trailText = trail.join("\n\n");
+  const reserved = trailText ? trailText.length + (trail.length ? 2 : 0) : 0;
+  const leadBudget = Math.max(0, max - reserved);
+  const lead = [];
+  let used = 0;
+  for (const raw of leading) {
+    const block = trimBlock(raw);
+    if (!block) continue;
+    const sep = lead.length ? 2 : 0;
+    if (used + sep + block.length <= leadBudget) {
+      lead.push(block);
+      used += sep + block.length;
+      continue;
+    }
+    const remain = leadBudget - used - sep;
+    if (remain > 24) lead.push(`${block.slice(0, remain - 1)}…`);
+    break;
+  }
+  return [...lead, ...trail].filter(Boolean).join("\n\n");
+}
+
 /**
  * Compact untrusted extras for POST /chat/messages `system_prompt`.
  * Empty string = server uses CORE_BEHAVIOR + CHARACTER from the store.
+ * Trailing length / image / Continue lines are reserved so a fat lore or
+ * behavior block cannot slice them off at the 2k cap.
  */
 export function buildLeanSoloClientContext({
   companionModeInstruction = "",
@@ -26,6 +51,7 @@ export function buildLeanSoloClientContext({
   adultInstruction = "",
   intimatePlayAlong = "",
   matrixSafetyClause = "",
+  userProfileContext = "",
   injectedMemoryContext = "",
   loreContext = "",
   calendarContext = "",
@@ -40,27 +66,23 @@ export function buildLeanSoloClientContext({
     isContinue && characterName
       ? `The user tapped Continue — keep the scene moving as ${characterName}. Take the next natural beat, then stop at a clear pause point so they can react.`
       : "";
-  const joined = [
-    companionModeInstruction,
-    behaviorInstructions,
-    adultInstruction,
-    intimatePlayAlong,
-    matrixSafetyClause,
-    injectedMemoryContext,
-    loreContext,
-    calendarContext,
-    fragmentContext,
-    vesselContext,
-    lengthGuide,
-    imageInstruction,
-    continueLine,
-  ]
-    .map(trimBlock)
-    .filter(Boolean)
-    .join("\n\n");
-  if (!joined) return "";
-  if (joined.length <= LEAN_SOLO_CLIENT_CONTEXT_MAX) return joined;
-  return `${joined.slice(0, LEAN_SOLO_CLIENT_CONTEXT_MAX - 1)}…`;
+  return packLeanBlocks(
+    [
+      companionModeInstruction,
+      behaviorInstructions,
+      adultInstruction,
+      intimatePlayAlong,
+      matrixSafetyClause,
+      userProfileContext,
+      injectedMemoryContext,
+      loreContext,
+      calendarContext,
+      fragmentContext,
+      vesselContext,
+    ],
+    [lengthGuide, imageInstruction, continueLine],
+    LEAN_SOLO_CLIENT_CONTEXT_MAX,
+  );
 }
 
 /** Deep mode is an explicit session toggle — not "what is" / "explain" regex. */
