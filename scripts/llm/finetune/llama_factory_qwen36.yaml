@@ -2,9 +2,7 @@
 ### LLaMA-Factory config for Anima Qwen3.6-27B QLoRA SFT
 ###
 ### Install: https://github.com/hiyouga/LLaMA-Factory
-### Data: run `pnpm llm:prepare-finetune` then copy/symlink
-###   scripts/llm/output/finetune-sharegpt.jsonl into LLaMA-Factory's data dir
-###   (or set dataset_dir below).
+### Data: run `pnpm llm:dataset` from the **repo root** so dataset_dir resolves.
 ###
 ### Train:
 ###   llamafactory-cli train scripts/llm/finetune/llama_factory_qwen36.yaml

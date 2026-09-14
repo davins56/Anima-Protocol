@@ -5,3 +5,6 @@ export * from "./preferences";
 export * from "./transcripts";
 export * from "./clean";
 export * from "./import";
+export * from "./characters";
+export * from "./sources";
+export * from "./split";
