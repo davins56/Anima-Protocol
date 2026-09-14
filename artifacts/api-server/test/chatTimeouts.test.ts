@@ -10,6 +10,7 @@ import {
   LLM_OPEN_TIMEOUT_MS,
   LLM_STREAM_FIRST_CHUNK_MS,
   llmAiChatOpenTimeoutMs,
+  llmChatMessagesOpenTimeoutMs,
   llmOpenTimeoutMs,
   openStreamAbort,
 } from "../src/lib/chatTimeouts";
@@ -45,6 +46,27 @@ describe("llmOpenTimeoutMs", () => {
       expect(llmAiChatOpenTimeoutMs()).toBe(LLM_OPEN_TIMEOUT_AI_CHAT_MS);
       process.env.ANIMA_LLM_OPEN_TIMEOUT_MS = "250";
       expect(llmAiChatOpenTimeoutMs()).toBe(250);
+    } finally {
+      if (previous === undefined) delete process.env.ANIMA_LLM_OPEN_TIMEOUT_MS;
+      else process.env.ANIMA_LLM_OPEN_TIMEOUT_MS = previous;
+    }
+  });
+
+  it("keeps /api/chat/messages on the 18s-class open budget, not the 80s cascade", () => {
+    expect(llmChatMessagesOpenTimeoutMs()).toBe(LLM_OPEN_TIMEOUT_AI_CHAT_MS);
+    expect(llmChatMessagesOpenTimeoutMs()).toBe(18_000);
+    expect(llmChatMessagesOpenTimeoutMs()).toBeLessThan(LLM_OPEN_TIMEOUT_MS);
+    expect(llmChatMessagesOpenTimeoutMs()).toBeLessThan(LLM_OPEN_TIMEOUT_FREE_TIER_MS);
+    expect(LLM_LOCAL_FAILOVER_ATTEMPT_MS).toBeLessThan(llmChatMessagesOpenTimeoutMs());
+  });
+
+  it("does not let the 80s free-tier budget stretch /api/chat/messages", () => {
+    const previous = process.env.ANIMA_LLM_OPEN_TIMEOUT_MS;
+    try {
+      process.env.ANIMA_LLM_OPEN_TIMEOUT_MS = String(LLM_OPEN_TIMEOUT_FREE_TIER_MS);
+      expect(llmChatMessagesOpenTimeoutMs()).toBe(LLM_OPEN_TIMEOUT_AI_CHAT_MS);
+      process.env.ANIMA_LLM_OPEN_TIMEOUT_MS = "250";
+      expect(llmChatMessagesOpenTimeoutMs()).toBe(250);
     } finally {
       if (previous === undefined) delete process.env.ANIMA_LLM_OPEN_TIMEOUT_MS;
       else process.env.ANIMA_LLM_OPEN_TIMEOUT_MS = previous;
@@ -93,6 +115,16 @@ describe("openStreamAbort", () => {
     cancel();
   });
 
+  it("aborts the /api/chat/messages open budget at 18s", () => {
+    vi.useFakeTimers();
+    const { signal, cancel } = openStreamAbort(llmChatMessagesOpenTimeoutMs());
+    vi.advanceTimersByTime(17_999);
+    expect(signal.aborted).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(signal.aborted).toBe(true);
+    cancel();
+  });
+
   it("lets a free-tier cascade keep working past the old 35s abort", () => {
     vi.useFakeTimers();
     const { signal, cancel } = openStreamAbort(
@@ -109,14 +141,20 @@ describe("openStreamAbort", () => {
 });
 
 describe("client/server budget lockstep", () => {
-  it("wires the free-tier open budget into the chat route", () => {
+  it("wires the 18s-class open budget into /api/chat/messages, not the 80s cascade", () => {
     const chatRoute = readFileSync(
       join(repoRoot, "artifacts/api-server/src/routes/chat.ts"),
       "utf8",
     );
-    expect(chatRoute).toContain("llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() })");
+    expect(chatRoute).toContain("llmChatMessagesOpenTimeoutMs()");
     expect(chatRoute).toContain("openStreamAbort(");
+    expect(chatRoute).toContain("clampChatMessagesMaxTokens(routed.maxTokens)");
+    expect(chatRoute).not.toContain(
+      "llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() })",
+    );
+    expect(chatRoute).not.toContain("usesFreeTierOpenBudget()");
     expect(chatRoute).not.toMatch(/const LLM_OPEN_TIMEOUT_MS = 35_000/);
+    expect(chatRoute).not.toMatch(/maxTokens: routed\.maxTokens/);
   });
 
   it("arms a Worker-safe open abort on the unauthenticated /api/ai/chat probe", () => {

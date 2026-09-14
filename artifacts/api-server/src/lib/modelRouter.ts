@@ -64,6 +64,19 @@ const MAX_TOKENS: Record<ModelTier, number> = {
   heavy: 8192,
 };
 
+/**
+ * Generation cap for companion SSE on POST `/api/chat/messages`.
+ * `routeModel` still assigns 4096/8192 by tier for other callers; Chat.jsx
+ * already asks for 2–4 sentences, so honoring 8k `max_tokens` stretches E2E.
+ */
+export const CHAT_MESSAGES_MAX_TOKENS = 1024;
+
+export function clampChatMessagesMaxTokens(routedMaxTokens: number): number {
+  const n = Number(routedMaxTokens);
+  if (!Number.isFinite(n) || n <= 0) return CHAT_MESSAGES_MAX_TOKENS;
+  return Math.min(Math.floor(n), CHAT_MESSAGES_MAX_TOKENS);
+}
+
 const ENV_KEYS: Record<ModelTier, string> = {
   light: "ANIMA_MODEL_LIGHT",
   standard: "ANIMA_MODEL_STANDARD",
