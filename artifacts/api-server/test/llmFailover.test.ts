@@ -1256,6 +1256,20 @@ describe("createChatStreamWithFailover", () => {
     });
   });
 
+  it("honors the caller maxTokens cap on the local stream", async () => {
+    createMock.mockResolvedValueOnce(fakeStream("anima"));
+    await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 1024,
+      messages: [{ role: "user", content: "hello" }],
+    });
+    expect(createMock.mock.calls[0]?.[0]).toMatchObject({
+      stream: true,
+      max_tokens: 1024,
+    });
+  });
+
   it("throws a local-only setup error when the self-hosted LLM is missing", async () => {
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
@@ -1848,6 +1862,18 @@ describe("createChatCompletionWithFailover", () => {
     expect(result.content).toBe("anima reply");
     expect(result.provider).toBe("local");
     expect(result.brand).toBe("anima");
+  });
+
+  it("honors the caller maxTokens cap on the local completion", async () => {
+    createMock.mockResolvedValueOnce(fakeCompletion("anima reply"));
+    await createChatCompletionWithFailover({
+      tier: "standard",
+      maxTokens: 1024,
+      messages: [{ role: "system", content: "You are Serenity." }],
+    });
+    expect(createMock.mock.calls[0]?.[0]).toMatchObject({
+      max_tokens: 1024,
+    });
   });
 
   it("refuses OpenRouter and MiniMax for non-streaming completions when local is unset", async () => {
