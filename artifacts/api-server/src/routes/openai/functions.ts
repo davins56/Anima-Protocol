@@ -54,11 +54,57 @@ async function llm(systemPrompt: string, userPrompt: string, maxTokens = 1024): 
   return visible;
 }
 
-// Web search grounding is an OpenAI Responses API feature and chat never
-// calls OpenAI (the self-hosted Anima LLM has no equivalent tool), so this
-// always resolves to the plain model call.
+type WebSearchResult = {
+  title?: string;
+  url?: string;
+  content?: string;
+};
+
+async function searchPublicWeb(query: string): Promise<string> {
+  const apiKey = process.env.TAVILY_API_KEY?.trim();
+  if (!apiKey) return "";
+
+  try {
+    const response = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        api_key: apiKey,
+        query: query.slice(0, 400),
+        search_depth: "basic",
+        max_results: 5,
+        include_answer: false,
+      }),
+      signal: AbortSignal.timeout(8_000),
+    });
+
+    if (!response.ok) {
+      logger.warn({ status: response.status }, "Public web search failed");
+      return "";
+    }
+
+    const payload = (await response.json()) as { results?: WebSearchResult[] };
+    return (payload.results ?? [])
+      .filter((result) => result.title && result.url && result.content)
+      .map(
+        (result, index) =>
+          `[${index + 1}] ${result.title}\nURL: ${result.url}\n${String(result.content).slice(0, 1200)}`,
+      )
+      .join("\n\n");
+  } catch (error) {
+    logger.warn({ error }, "Public web search unavailable");
+    return "";
+  }
+}
+
 async function webSearchLLM(systemPrompt: string, userPrompt: string): Promise<string> {
-  return llm(systemPrompt, userPrompt);
+  const searchContext = await searchPublicWeb(userPrompt);
+  const groundedPrompt = searchContext
+    ? `${userPrompt}\n\nPUBLIC WEB SOURCES (use as leads, verify conflicts, and do not infer private or sensitive personal information):\n${searchContext}`
+    : `${userPrompt}\n\nNo public web search results were available. Do not invent sources or claim current facts are verified.`;
+  return llm(systemPrompt, groundedPrompt);
 }
 
 function parseTraits(raw: string): { personality: string; backstory: string; speaking_style: string } {
