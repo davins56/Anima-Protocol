@@ -469,6 +469,51 @@ describe("buildCompanionPrompt", () => {
     expect(prompt).toContain("harbor lanterns");
   });
 
+  it("keeps CORE_BEHAVIOR when lean client extras are present", () => {
+    const prompt = buildCompanionPrompt({
+      clientContext:
+        "Keep it conversational — 2-4 sentences.\n\nIMAGE GENERATION: emit [IMAGE: …] when asked to draw.",
+      characters: [baseCharacter],
+      activeCharacter: baseCharacter,
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "Hi",
+    });
+    expect(prompt).toContain("CRITICAL AUTONOMY RULES");
+    expect(prompt).toContain("full participant with agency");
+    expect(prompt).toContain("CLIENT-PROVIDED SCENE CONTEXT");
+    expect(prompt).toContain("2-4 sentences");
+    expect(prompt.indexOf("CRITICAL AUTONOMY RULES")).toBeLessThan(
+      prompt.indexOf("CLIENT-PROVIDED SCENE CONTEXT"),
+    );
+  });
+
+  it("includes Anima soulprint and evolution path in CHARACTER", () => {
+    const anima = {
+      ...baseCharacter,
+      _isAnima: true,
+      soulprint: {
+        id: "AR-7E2A",
+        primary_trait: "Compassion",
+        secondary_trait: "Protection",
+        core_drive: "Keep them safe",
+      },
+      evolution_path: "Guardian",
+    };
+    const prompt = buildCompanionPrompt({
+      characters: [anima],
+      activeCharacter: anima,
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "Hi",
+    });
+    expect(prompt).toContain("Soulprint AR-7E2A");
+    expect(prompt).toContain("Compassion");
+    expect(prompt).toContain("Evolution path: Guardian");
+  });
+
   it("keeps repository knowledge out of the client-scene wrap", () => {
     const prompt = composePrompt({
       clientContext: "You are Serenity.\nStory so far:\nYou: hi\nSerenity: hello",
