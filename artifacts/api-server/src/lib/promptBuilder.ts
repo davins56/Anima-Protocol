@@ -194,6 +194,40 @@ function clientOwnsTranscript(systemPrompt?: string): boolean {
  */
 export const CLIENT_SCENE_CONTEXT_MAX = 2_000;
 
+const CLIENT_TRANSCRIPT_MARKER_RE =
+  /(?:^|\n)\s*(?:Story so far:|CONVERSATION CONTEXT:)\s*/i;
+
+/**
+ * Split a Chat.jsx / buildGroupPrompt system prompt at the transcript.
+ * History is `\n`-joined `Speaker: line` rows; unique contracts
+ * (`INTELLIGENCE_GUIDANCE`, `[EMOTION]`/`[LOCATION]`/`[IMAGE]`, length,
+ * Continue) come after the first blank line. Do not discard that suffix.
+ */
+export function splitClientTranscript(value: string): {
+  prefix: string;
+  suffix: string;
+} {
+  const text = String(value || "");
+  const match = CLIENT_TRANSCRIPT_MARKER_RE.exec(text);
+  if (!match || match.index == null) {
+    return { prefix: text, suffix: "" };
+  }
+  const prefix = text.slice(0, match.index).trimEnd();
+  const after = text.slice(match.index + match[0].length);
+  const blank = /\n[ \t]*\n/.exec(after);
+  if (!blank || blank.index == null) {
+    return { prefix, suffix: "" };
+  }
+  return { prefix, suffix: after.slice(blank.index).trim() };
+}
+
+function capSceneBudget(text: string): string {
+  const value = String(text || "").trim();
+  if (!value) return "";
+  if (value.length <= CLIENT_SCENE_CONTEXT_MAX) return value;
+  return `${value.slice(0, CLIENT_SCENE_CONTEXT_MAX - 1)}…`;
+}
+
 export function isDuplicativeClientPrompt(text: string): boolean {
   const value = String(text || "");
   if (!value) return false;
@@ -205,24 +239,34 @@ export function isDuplicativeClientPrompt(text: string): boolean {
 }
 
 /**
- * Scene-only excerpt from an untrusted client prompt. Transcript tails are
- * stripped (store history is added separately) and the remainder is capped so
- * a 24k Chat.jsx systemPrompt is not re-wrapped on top of CHARACTER / CORE.
+ * Scene-only excerpt from an untrusted client prompt. The transcript is
+ * stripped (store history is added separately). Post-transcript contracts
+ * are kept and preferred when capping so a 24k identity sheet cannot push
+ * `[IMAGE]` / `[EMOTION]` / `[LOCATION]` out of the 2k budget.
  * Empty = use CORE_BEHAVIOR.
  */
 export function clientSceneExcerpt(supplied: string): string {
   const value = String(supplied || "").trim();
   if (!value) return "";
-  const withoutTranscript = value
-    .replace(
-      /(?:^|\n)\s*(?:Story so far:|CONVERSATION CONTEXT:)\s*[\s\S]*$/i,
-      "",
-    )
-    .trim();
-  if (!withoutTranscript) return "";
-  return withoutTranscript.length > CLIENT_SCENE_CONTEXT_MAX
-    ? `${withoutTranscript.slice(0, CLIENT_SCENE_CONTEXT_MAX - 1)}…`
-    : withoutTranscript;
+  const { prefix, suffix } = splitClientTranscript(value);
+  const unique = suffix.trim();
+  const identity = prefix.trim();
+  if (unique) {
+    if (unique.length >= CLIENT_SCENE_CONTEXT_MAX) {
+      // Tags and length-guide live at the end of the Chat.jsx prompt.
+      // INTELLIGENCE / loyalty at the front are already in CORE_BEHAVIOR.
+      return `…${unique.slice(-(CLIENT_SCENE_CONTEXT_MAX - 1))}`;
+    }
+    if (!identity) return unique;
+    const leftover = CLIENT_SCENE_CONTEXT_MAX - unique.length - 2;
+    if (leftover <= 0) return unique;
+    const identityBit =
+      identity.length > leftover
+        ? `${identity.slice(0, leftover - 1)}…`
+        : identity;
+    return `${identityBit}\n\n${unique}`;
+  }
+  return capSceneBudget(identity);
 }
 
 /** Instruct-style chat models (Qwen2.5 / anima-chat) require a user turn. */
