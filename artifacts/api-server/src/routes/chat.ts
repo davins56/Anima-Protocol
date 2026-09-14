@@ -529,6 +529,8 @@ function adaptCharacters(characters: MsgData[]): CharacterData[] {
     tagline: c.tagline ? String(c.tagline) : undefined,
     system_prompt: c.system_prompt ? String(c.system_prompt) : undefined,
     expression_spectrum: c.expression_spectrum,
+    soulprint: c.soulprint,
+    evolution_path: c.evolution_path ? String(c.evolution_path) : undefined,
     _isAnima: Boolean(c._isAnima),
   }));
 }
