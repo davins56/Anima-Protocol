@@ -415,6 +415,63 @@ describe("buildCompanionPrompt", () => {
     expect(excerpt).not.toContain("paragraph one");
   });
 
+  it("keeps group CRITICAL INSTRUCTIONS after Story so far", () => {
+    const groupPrompt = [
+      "You are Korra in an immersive collaborative story.",
+      "",
+      "CHARACTER IDENTITY LOCK:",
+      "- Speak ONLY as Korra.",
+      "",
+      "Story so far:",
+      "Serenity: Hello.",
+      "User: Hi everyone.",
+      "",
+      "CRITICAL INSTRUCTIONS:",
+      "1. YOU ARE ONLY KORRA THIS TURN.",
+      "If the user is mid-sentence, interrupt.",
+      "Intimate talk only when timing and who else is present make it feel true.",
+      "OUTPUT FORMAT:",
+      "**Korra:** [Your authentic response]",
+      "INTELLIGENCE: Stay sharp.",
+    ].join("\n");
+    const split = splitClientTranscript(groupPrompt);
+    expect(split.suffix).toContain("CRITICAL INSTRUCTIONS:");
+    expect(split.suffix).toContain("If the user is mid-sentence, interrupt.");
+    expect(split.suffix).toContain("OUTPUT FORMAT:");
+    expect(split.suffix).toContain("INTELLIGENCE: Stay sharp.");
+    expect(split.suffix).not.toContain("User: Hi everyone.");
+    expect(split.prefix).toContain("CHARACTER IDENTITY LOCK:");
+
+    const excerpt = clientSceneExcerpt(groupPrompt);
+    expect(excerpt).toContain("CRITICAL INSTRUCTIONS:");
+    expect(excerpt).toContain("If the user is mid-sentence, interrupt.");
+    expect(excerpt).not.toContain("User: Hi everyone.");
+  });
+
+  it("does not treat [EMOTION:] inside a history line as the contract boundary", () => {
+    const prompt = [
+      "You are Serenity.",
+      "",
+      "Story so far:",
+      "Serenity: [EMOTION: warm] Hello from last turn.",
+      "Asuka: [LOCATION: Nerv HQ] Still here.",
+      "User: Draw the garden.",
+      "",
+      "INTELLIGENCE: Stay sharp.",
+      "[IMAGE: night street]",
+    ].join("\n");
+    const split = splitClientTranscript(prompt);
+    expect(split.suffix).toContain("INTELLIGENCE: Stay sharp.");
+    expect(split.suffix).toContain("[IMAGE: night street]");
+    expect(split.suffix).not.toContain("Hello from last turn.");
+    expect(split.suffix).not.toContain("Still here.");
+
+    const excerpt = clientSceneExcerpt(prompt);
+    expect(excerpt).toContain("INTELLIGENCE: Stay sharp.");
+    expect(excerpt).toContain("[IMAGE: night street]");
+    expect(excerpt).not.toContain("Hello from last turn.");
+  });
+
   it("uses a stored companion brief when personality fields are empty", () => {
     const prompt = buildCompanionPrompt({
       characters: [
