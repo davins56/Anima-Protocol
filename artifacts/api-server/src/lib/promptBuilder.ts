@@ -255,20 +255,34 @@ function capSceneBudget(text: string): string {
  * block at the front, then the tail (image tags, loyalty). INTELLIGENCE
  * in the middle is already in CORE_BEHAVIOR.
  */
+const GROUP_CONTRACT_TAIL_RESERVE = 400;
+
+function clipGroupContractHead(head: string, budget: number): string {
+  if (head.length <= budget) return head;
+  const outputIdx = head.search(/\nOUTPUT FORMAT:/i);
+  if (outputIdx > 0) {
+    const footer = head.slice(outputIdx);
+    const room = budget - footer.length - 1;
+    if (room > 80) {
+      return `${head.slice(0, room - 1)}…${footer}`;
+    }
+  }
+  return `${head.slice(0, budget - 1)}…`;
+}
+
 function capUniqueContracts(unique: string): string {
   const value = unique.trim();
   if (value.length <= CLIENT_SCENE_CONTEXT_MAX) return value;
   const headMatch = GROUP_CONTRACT_HEAD_RE.exec(value);
   const head = headMatch?.[0]?.trim() ?? "";
   const headBudget = head
-    ? Math.min(head.length, Math.max(480, CLIENT_SCENE_CONTEXT_MAX - 900))
+    ? Math.min(
+        head.length,
+        Math.max(480, CLIENT_SCENE_CONTEXT_MAX - GROUP_CONTRACT_TAIL_RESERVE),
+      )
     : 0;
   const headBit =
-    headBudget <= 0
-      ? ""
-      : head.length > headBudget
-        ? `${head.slice(0, headBudget - 1)}…`
-        : head;
+    headBudget <= 0 ? "" : clipGroupContractHead(head, headBudget);
   const rest = headMatch ? value.slice(headMatch[0].length).trim() : value;
   const leftover = CLIENT_SCENE_CONTEXT_MAX - (headBit ? headBit.length + 2 : 0);
   const tail =

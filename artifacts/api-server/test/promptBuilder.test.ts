@@ -516,6 +516,31 @@ describe("buildCompanionPrompt", () => {
     expect(excerpt).not.toContain("User: Hi.");
   });
 
+  it("keeps OUTPUT FORMAT when the group contract is longer than the old 1100 head cap", () => {
+    const intimacy = `Intimate talk only when timing and who else is present make it feel true. ${"y".repeat(900)}`;
+    const intelligence = `INTELLIGENCE: ${"x".repeat(2500)}`;
+    const groupPrompt = [
+      "You are Korra.",
+      "Story so far:",
+      "User: Hi.",
+      "",
+      "CRITICAL INSTRUCTIONS:",
+      "1. YOU ARE ONLY KORRA THIS TURN.",
+      "If the user is mid-sentence, interrupt.",
+      intimacy,
+      "OUTPUT FORMAT:",
+      "**Korra:** [Your authentic response]",
+      intelligence,
+      "IMAGE GENERATION: emit [IMAGE: scene].",
+      "HIGHEST-PRIORITY RULE: never harm the real person.",
+    ].join("\n");
+    const excerpt = clientSceneExcerpt(groupPrompt);
+    expect(excerpt.length).toBeLessThanOrEqual(CLIENT_SCENE_CONTEXT_MAX);
+    expect(excerpt).toContain("YOU ARE ONLY KORRA THIS TURN");
+    expect(excerpt).toContain("OUTPUT FORMAT:");
+    expect(excerpt).toContain("If the user is mid-sentence, interrupt.");
+  });
+
   it("uses a stored companion brief when personality fields are empty", () => {
     const prompt = buildCompanionPrompt({
       characters: [
