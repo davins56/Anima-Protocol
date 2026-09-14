@@ -102,6 +102,10 @@ import LivingPresenceStage from "@/components/chat/LivingPresenceStage";
 import ResonanceField from "@/components/chat/ResonanceField";
 import { resolvePresenceCast, highlightedCastId, lastSpokenLine } from "@/lib/livingPresence";
 import { useResonance, resonancePromptGuidance } from "@/hooks/useResonance";
+import {
+  characterEmotionFromAffect,
+  parseCompanionAffectSnapshot,
+} from "@/lib/companionAffect";
 import { determineEvolution, resonanceDelta, formatResonance, resonanceMood, getPathMeta } from "@/lib/soulprint";
 import { expressionPromptBlock } from "@/lib/animaExpressions";
 import { toast } from "sonner";
@@ -228,6 +232,7 @@ export default function Chat() {
   const [relationships, setRelationships] = useState({}); // keyed by character_id
   const [loreEntries, setLoreEntries] = useState([]); // WorldState entries for active session
   const [currentMood, setCurrentMood] = useState("neutral");
+  const [companionAffect, setCompanionAffect] = useState(null);
   const [characterMemories, setCharacterMemories] = useState([]); // cross-session memories
   const [inventoryItems, setInventoryItems] = useState([]);
   const [showInventory, setShowInventory] = useState(false);
@@ -359,6 +364,7 @@ export default function Chat() {
     messageCount: activeSession?.messages?.length || 0,
     relationship: activeCharId ? relationships[activeCharId] : null,
     emotion: activeCharEmotion,
+    synchroStrength: companionAffect?.synchro_strength,
   });
   const isCompanionSpeaking = tts.isSpeaking || elTTS.isSpeaking || emotionalTTS.isSpeaking;
   const presenceCast = resolvePresenceCast(activeSession, characters).map((c) => ({
@@ -814,11 +820,12 @@ export default function Chat() {
     setActiveSession((prev) => mergeOpenedSession(prev, session));
     setMode(session.mode || "solo");
     setCurrentMood("neutral");
+    setCompanionAffect(null);
     setCharacterMemories([]);
     setInventoryItems([]);
     loadRelationships(id);
     loadLore(id);
-    loadCharacterEmotions(id);
+    loadCharacterEmotions(id, session.character_id);
     base44.entities.Calendar.filter({ session_id: id }).then((cals) => {
       if (!stillOpen(id)) return;
       if (cals?.length > 0) setCalendar(cals[0]);
@@ -869,7 +876,7 @@ export default function Chat() {
     setInventoryItems(data || []);
   };
 
-  const loadCharacterEmotions = async (sid) => {
+  const loadCharacterEmotions = async (sid, characterId) => {
     const states = await base44.entities.CharacterEmotionalState.filter({ session_id: sid, is_current: true }, "-created_date", 50);
     const map = {};
     (states || []).forEach((s) => {
@@ -885,6 +892,26 @@ export default function Chat() {
     });
     if (!stillOpen(sid)) return;
     setCharacterEmotions(map);
+
+    const characterIdForAffect = characterId || activeSessionRef.current?.character_id;
+    if (!characterIdForAffect) return;
+    try {
+      const payload = await animaApi.chat.companionMemory(characterIdForAffect);
+      if (!stillOpen(sid)) return;
+      const snapshot = parseCompanionAffectSnapshot(payload?.companion_affect);
+      if (!snapshot) return;
+      setCompanionAffect(snapshot);
+      setCurrentMood(snapshot.primary);
+      const fromAffect = characterEmotionFromAffect(snapshot);
+      if (fromAffect) {
+        setCharacterEmotions((prev) => ({
+          ...prev,
+          [characterIdForAffect]: { ...(prev[characterIdForAffect] || {}), ...fromAffect },
+        }));
+      }
+    } catch {
+      // Store-backed CharacterEmotionalState is enough until the next turn.
+    }
   };
 
   // ── Cross-device live sync ───────────────────────────────────────────────
@@ -1946,8 +1973,21 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         });
       }
 
-      // Detect mood from the AI response
-      setCurrentMood(detectMood(result));
+      // Felt state from the server is authoritative; keyword detectMood is fallback.
+      const affectSnapshot = parseCompanionAffectSnapshot(resultPayload.companion_affect);
+      if (affectSnapshot) {
+        setCompanionAffect(affectSnapshot);
+        setCurrentMood(affectSnapshot.primary);
+        const fromAffect = characterEmotionFromAffect(affectSnapshot);
+        if (fromAffect && activeChar?.id) {
+          setCharacterEmotions((prev) => ({
+            ...prev,
+            [activeChar.id]: { ...(prev[activeChar.id] || {}), ...fromAffect },
+          }));
+        }
+      } else {
+        setCurrentMood(detectMood(result));
+      }
 
       // In group mode, parse multi-character **Name:** format into separate bubbles
       let newAiMessages;
@@ -2646,6 +2686,7 @@ Return JSON:
               activeSession={activeSession}
               characters={characters}
               currentMood={currentMood}
+              moodIntensity={companionAffect?.intensity}
               characterEmotions={characterEmotions}
               inventoryItems={inventoryItems}
               serenity={serenity}
@@ -2793,7 +2834,7 @@ Return JSON:
                         Resonance: {Math.round(resonance.value)}%
                       </span>
                       <span className="font-mono text-[11px] text-primary/50">
-                        Mood: {currentMood}
+                        Mood: {companionAffect?.mood || currentMood}
                       </span>
                     </div>
                   </div>

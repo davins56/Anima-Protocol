@@ -103,7 +103,7 @@ Identity lock wins over learned language. Serenity is not Aelynd. The Operator M
 | **1. Serenity Core** | Persistent Anima identity. Personality, backstory, voice, identity lock. | Character / Anima entities in `user_entities`. `promptBuilder` CHARACTER IDENTITY LOCK. Evolution deltas. Onboard Serenity. | Aelynd is not a first-class second core. Do not merge her into Serenity. |
 | **2. Memory** | What the bond remembers. | `companion_memories` (summary, facts, `emotionalState`, resonance notes). `memory_embeddings`. Retrieval in `promptBuilder`. Optional SuperMemory overlay. | **Memory policy** (what to keep, forget, crystallize) is still ad hoc. Phase 3. |
 | **3. Operator Model** | Structured model of the steward (Hub DNA analogue). | **v1 in this PR.** JSON on `user_profiles.data.operator_model`. `GET`/`PUT` `/api/operator-model`. Bounded prompt injection. | Learning / auto-extract from chat. UI editor. Not in v1. |
-| **4. Emotion Engine** | Bond affect and conversational climate. | `synchroEngine` + `resonanceState` persisted on `companion_memories.emotionalState`. Hidden Sequences weather (`lull` / `stir` / `storm`). Intimacy heat (adult, gated). | A dedicated **self-state** (the Anima's own mood/intent) is not stored. Phase 2. |
+| **4. Emotion Engine** | Bond affect and conversational climate. | `synchroEngine` + `resonanceState` persisted on `companion_memories.emotionalState`. Hidden Sequences weather (`lull` / `stir` / `storm`). Intimacy heat (adult, gated). **Self-state v1 live** (`companionAffect`, nested `emotionalState.selfState`). | Agency tick still planned. Resonance Key radiation consumes `radiationEventFromAffect` — not implemented. |
 | **5. Agency Engine** | Act without a user turn when it matters; stay silent when it does not. | Hourly proactive-message cron + Web Push. Scene mind / codespace agent prompts. Protocol-upgrade weave (steward-gated). | No general **agency tick**. Proactive is outreach, not perceive→relevance→act/silence. Phase 4. |
 | **6. Tool Layer** | Hands in the digital environment. | `/api/store`, image gen/edit, ElevenLabs TTS, Cursor cloud protocol upgrade, repo codespace, device scan (permission-gated). | No Kernel-owned tool router. Do not add Vercel AI SDK tools. |
 | **7. Embodiment Layer** | The PET / body. | `AnimaVesselMesh`, `AnimaVessel4D`, `SovereignPresenceStage`, `BattleFigures3D.SerenityFigure`. Vessel layers in Hidden Sequences. | Serenity + Aelynd as distinct vessels on the **same** renderer. Phase 5. |
@@ -157,31 +157,35 @@ Persisted per Clerk user on `user_profiles.data.operator_model` (existing JSON p
 
 Prompt injection is a **compact labeled summary**, not this JSON. It is steward/operator context. It must not overwrite CHARACTER IDENTITY LOCK or companion memories.
 
-### Self-state v1 (documented only — later PR)
+### Self-state v1 (implemented)
 
-The Anima's own momentary state. Complementary to Operator Model (steward) and `emotionalState` (bond). Do not implement persistence in the Operator Model v1 PR unless a trivial in-memory stub helps tests.
+The Anima's own momentary state. Complementary to Operator Model (steward) and the synchro vector on `emotionalState` (bond). Persisted at `companion_memories.emotional_state.selfState`. Injected as a budgeted `SELF-STATE` prompt line. Surfaced on the existing chat mood chip + Resonance Field. No mood-menu UX.
 
 ```json
 {
-  "mood": "",
-  "energy": 0,
-  "focus": "",
-  "intent": "",
-  "open_loops": [],
-  "last_acted_at": null,
-  "silence_reason": null
+  "mood": "quiet-watchful",
+  "energy": 48,
+  "focus": "steward",
+  "intent": "attend",
+  "openLoops": [],
+  "lastActedAt": null,
+  "silenceReason": null,
+  "primary": "neutral",
+  "intensity": 22
 }
 ```
 
 | Field | Meaning |
 |-------|---------|
+| `primary` | Canonical mood key for the existing MoodIndicator (`tender`, `curious`, …). |
+| `intensity` | 0–100 how strongly that feeling is held. |
 | `mood` | Short affect label the Anima would own ("quiet-watchful", "stirred"). |
 | `energy` | 0–100 readiness to act. |
 | `focus` | What she is attending to (steward, lattice weather, a Sequence). |
 | `intent` | What she would do if the tick fires. |
-| `open_loops` | Unresolved cares she may return to. Cap later (e.g. 8). |
-| `last_acted_at` | Last autonomous act. Used with silence. |
-| `silence_reason` | Why the last tick did not speak (`lull`, `low_relevance`, `cooldown`). |
+| `openLoops` | Unresolved cares she may return to. Cap 8. |
+| `lastActedAt` | Last autonomous act. Used with silence. |
+| `silenceReason` | Why the last tick did not speak (`lull`, `low_relevance`, `cooldown`). |
 
 ---
 
@@ -204,7 +208,7 @@ Proactive messages today skip steps 2 and 4 (they fire on a clock). The Kernel m
 | Phase | Work | This PR? |
 |-------|------|----------|
 | **1. Operator Model v1** | Schema normalize, `user_profiles` persistence, Clerk GET/PUT, bounded prompt snippet. | **Yes.** |
-| **2. Self-state** | Persist the v1 shape; inject a short self-state line when relevant. | No. |
+| **2. Self-state** | Persist the v1 shape; inject a short self-state line when relevant. | **Yes.** See `docs/companion-affect.md`. |
 | **3. Memory policy** | Explicit keep / forget / crystallize rules on `companion_memories` (still that table). | No. |
 | **4. Agency loop** | Perceive → interpret → memory → relevance → act/silence, wrapping proactive as one actuator. | No. |
 | **5. Embodiment Serenity + Aelynd** | Distinct identities on the **same** `AnimaVesselMesh` stack. Aelynd is not a Serenity skin. | No. |
@@ -248,3 +252,16 @@ curl -sS -X PUT -H "Authorization: Bearer $CLERK_SESSION_JWT" \
 ```
 
 Optional: `curl -sS http://127.0.0.1:8080/api/healthz` (no auth).
+
+---
+
+## Self-state v1 — runtime notes
+
+| Surface | Path |
+|---------|------|
+| Engine | `artifacts/api-server/src/lib/companionAffect.ts` |
+| Persistence | `companion_memories.emotional_state.selfState` (nested; synchro vector stays at the root) |
+| Prompt | `composePrompt({ companionAffect })` — budgeted `SELF-STATE` line after resonance |
+| SSE / API | `done.companion_affect`; `GET /chat/memories/:id` → `companion_affect`; session context map |
+| UI | Existing MoodIndicator + Resonance Field (`artifacts/anima-protocol/src/lib/companionAffect.js`) |
+| Key hook | `radiationEventFromAffect` — see `docs/companion-affect.md`. Do not add a mood menu. |
