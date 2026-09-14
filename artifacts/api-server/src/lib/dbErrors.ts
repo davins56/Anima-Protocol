@@ -97,6 +97,17 @@ function collectErrorSignals(err: unknown): {
   };
 }
 
+/**
+ * Worker 20s wall (`WorkerApiTimeoutError`), not a Postgres/Hyperdrive failure.
+ * Same `code` (`ETIMEOUT`) as `DbOperationTimeoutError` — distinguish by name
+ * and the "API request aborted…" message so DB operation timeouts still classify.
+ */
+export function isWorkerApiTimeoutError(err: unknown): boolean {
+  const { message, name } = collectErrorSignals(err);
+  if (name === "WorkerApiTimeoutError") return true;
+  return /API request aborted due to timeout/i.test(message);
+}
+
 /** Operator-facing snippet: name + code + scrubbed message. Never a URL. */
 export function secretFreeErrorSignal(err: unknown): {
   code?: string;
@@ -120,6 +131,18 @@ export function classifyDbError(err: unknown): DbErrorInfo {
   const { message, code, name } = collectErrorSignals(err);
   const signal = secretFreeErrorSignal(err).signal;
   const blob = `${name} ${code} ${message}`;
+
+  // Worker wall-clock timeout shares ETIMEOUT / "aborted due to timeout" with
+  // real DB timeouts. Do not report it as database-unavailable.
+  if (isWorkerApiTimeoutError(err)) {
+    return {
+      isDbError: false,
+      reason: "internal",
+      safeMessage: "Internal server error",
+      code: code || "ETIMEOUT",
+      signal,
+    };
+  }
 
   const looksLikeDb =
     code.startsWith("28") || // invalid auth
