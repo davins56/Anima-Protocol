@@ -440,6 +440,20 @@ describe("shouldTryNextProvider Workers AI 4006", () => {
     expect(shouldTryNextProvider("local", abortErr, true)).toBe(true);
     expect(shouldTryNextProvider("local", abortErr, false)).toBe(false);
     expect(isLlmAbortOrTimeoutError(new Error("connect ECONNREFUSED"))).toBe(false);
+
+    const timedOut = Object.assign(new Error("Request timed out."), {
+      name: "APIConnectionTimeoutError",
+    });
+    expect(isLlmAbortOrTimeoutError(timedOut)).toBe(true);
+    expect(shouldTryNextProvider("local", timedOut, true)).toBe(true);
+
+    const wrapped = new Error("Failed query");
+    (wrapped as Error & { cause?: unknown }).cause = Object.assign(
+      new Error("Request was aborted."),
+      { name: "APIUserAbortError" },
+    );
+    expect(isLlmAbortOrTimeoutError(wrapped)).toBe(true);
+    expect(shouldTryNextProvider("local", wrapped, true)).toBe(true);
   });
 });
 

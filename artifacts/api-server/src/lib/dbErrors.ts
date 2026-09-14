@@ -125,8 +125,8 @@ export function isWorkerApiTimeoutError(err: unknown): boolean {
         ? (current as { cause?: unknown }).cause
         : undefined;
   }
-  return /(?:^|\n)API request aborted due to timeout after \d+ms(?:\n|$)/i.test(
-    messages.join("\n"),
+  return messages.some((message) =>
+    /^API request aborted due to timeout after \d+ms$/i.test(message),
   );
 }
 
