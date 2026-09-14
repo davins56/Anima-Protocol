@@ -1,7 +1,7 @@
 # Chat latency + identity-loop audit
 
-**Date:** 2026-09-14 (updated: #471 group-contract OUTPUT FORMAT head)  
-**Baseline:** `main` @ `bfc75a3c` (`#471`) / `15b8c782` (`#470`)  
+**Date:** 2026-09-14 (updated: #474 same-body turn replay)  
+**Baseline:** `main` @ `447ab86d` (`#474`) / `c86bee80` (`#472`)  
 **Owner priority:** AI response speed — **TTFT**, then end-to-end chat latency. Identity loop and Worker timeout/CI stay in this document, below latency.
 
 Findings only. No runtime code in this PR.
@@ -21,7 +21,10 @@ User-perceived timeline for `POST /api/chat/messages` (production Chat.jsx, post
   client builds lean extras (solo) or fat group prompt
   POST /chat/messages
     ensureSchemaOnce
-    beginChatTurn + 409/replay                    ← DB, before any SSE
+    beginChatTurn                                 ← DB, before any SSE
+      same-body generated → replay SSE            ← #474
+      same-body in-flight → 409 turn_in_flight
+      mismatch → mint new turn_id and generate
     writeHead SSE + heartbeat                     ← first network byte (#453)
     leftover repair unawaited                     ← #458, not on TTFT
     load characters, memories, stored embeddings
@@ -56,7 +59,7 @@ Telemetry (`ChatPipelineTelemetry`) records `context_load_ms` and `ttft_ms`, but
 
 ### P0-L1 — First SSE byte before context load (TTFT) — **shipped in #453**
 
-**Shipped:** `openChatSse` runs after `beginChatTurn` + replay/409, before leftover repair / memories / embeddings / world-knowledge peek / RAG / `composePrompt`. Duplicate `turn_id`s still get replay SSE or 409 JSON, not a second live stream. Do not reopen this ordering.
+**Shipped:** `openChatSse` runs after `beginChatTurn` + replay/409, before leftover repair / memories / embeddings / world-knowledge peek / RAG / `composePrompt`. Duplicate `turn_id`s: same-body generated/committed **replay**; same-body in-flight **409** `turn_in_flight`; different content **mints a new id** and generates ([#474](https://github.com/davins56/Anima-Protocol/pull/474)). Client retries once on `replayed` / 409 (`streamChatReplyWithTurnRetry`). Do not reopen the SSE-before-context ordering.
 
 ### P0-L2 — Stop double-prefill (TTFT + E2E) — **server wrap #453; solo lean #458; group still fat**
 
@@ -126,6 +129,8 @@ memory   upsertTurnMemory / recordTurnContinuity → companion_memories
 
 | Item | Status |
 |------|--------|
+| [#474](https://github.com/davins56/Anima-Protocol/pull/474) Stop turn-2 replay of prior assistant text | **Merged** `447ab86d` (2026-09-14). `classifyChatTurnReuse`: replay only when `userContent` matches; mismatch mints a new `turn_id`; same-body in-flight is 409 `turn_in_flight`. Client `streamChatReplyWithTurnRetry` + `sendingRef`. Does **not** reopen Slice 1 SSE order. |
+| [#472](https://github.com/davins56/Anima-Protocol/pull/472) Audit docs (#471 + #458 hot-path claims) | **Merged** `c86bee80` (2026-09-14). |
 | [#471](https://github.com/davins56/Anima-Protocol/pull/471) Keep `OUTPUT FORMAT` when the group contract is long | **Merged** `bfc75a3c` (2026-09-14). Follow-up to #467: `GROUP_CONTRACT_TAIL_RESERVE` 400; head up to 1600; `clipGroupContractHead` keeps the `OUTPUT FORMAT` footer. Do **not** start a fourth contract-split PR. Leftover: 400-char end-slice can drop production `IMAGE GENERATION:` / `[IMAGE:` (server does not re-add the tag contract). |
 | [#470](https://github.com/davins56/Anima-Protocol/pull/470) Audit docs (#467/#468 collide table) | **Merged** `15b8c782` (2026-09-14). |
 | [#468](https://github.com/davins56/Anima-Protocol/pull/468) Synchro snapshot bond-strength contract | **Merged** `93c3db58` (2026-09-14). Same `synchroStrength` reader for serialize / snapshot / Key radiation stub. |
@@ -140,7 +145,7 @@ memory   upsertTurnMemory / recordTurnContinuity → companion_memories
 | [#456](https://github.com/davins56/Anima-Protocol/pull/456) Keep IMAGE/EMOTION after `Story so far:` | **Merged** `f9db61c7` (2026-09-14). Still needed for group `buildGroupPrompt` until that path is thinned. |
 | [#455](https://github.com/davins56/Anima-Protocol/pull/455) Slice 2 E2E — 1024 clamp helper + 18s open | **Merged** `2af82b82` (2026-09-14). `clampChatMessagesMaxTokens` + `llmChatMessagesOpenTimeoutMs()`. Production `/chat/messages` applies `chatReplyMaxTokens` (#458): 1024 ordinary solo only. |
 | [#454](https://github.com/davins56/Anima-Protocol/pull/454) Audit docs (Slice 1 shipped) | **Merged** `95283f32` (2026-09-14). |
-| [#453](https://github.com/davins56/Anima-Protocol/pull/453) Slice 1 TTFT — SSE before context load | **Merged** `651670a6` (2026-09-14). `beginChatTurn` + replay/409 still run **before** `openChatSse`. Context load after headers is inside the generation `try/catch` (SSE `{ error }`, heartbeat stopped, turn marked failed). Default repo RAG gated; client wrap capped at 2k. Do **not** start a second Slice 1 PR. |
+| [#453](https://github.com/davins56/Anima-Protocol/pull/453) Slice 1 TTFT — SSE before context load | **Merged** `651670a6` (2026-09-14). `beginChatTurn` + replay/409 still run **before** `openChatSse`. Context load after headers is inside the generation `try/catch` (SSE `{ error }`, heartbeat stopped, turn marked failed). Default repo RAG gated; client wrap capped at 2k. Reuse classify is **#474**. Do **not** start a second Slice 1 PR. |
 | [#450](https://github.com/davins56/Anima-Protocol/pull/450) Worker ETIMEOUT ≠ DB; `/api/ai/chat` 18s; **12s `localAttemptSignal` in shared failover**; probe 45s | **Merged** `f4a7010a` (2026-09-14). Do not re-open classification. Do **not** recommend another 12s hop on `/chat/messages`. |
 | Rate-limit | Merged #125. User-keyed. Leave it. |
 | `main` CI `api-tests` | Ensemble OpenRouter exclusion shipped in #458 `17da2ef6`. |
@@ -161,6 +166,7 @@ Do not duplicate. Next is identity Slice A — seed `companion_memories` on crea
 ### Explicitly not the first PR
 
 - Another Slice 1 TTFT PR (SSE / repo RAG / 24k wrap) — **shipped in [#453](https://github.com/davins56/Anima-Protocol/pull/453)**.
+- Another turn-id replay PR — **shipped in [#474](https://github.com/davins56/Anima-Protocol/pull/474)** (same-body only; mismatch mints a new id).
 - Another Slice 2 token-cap / 18s open PR — **shipped in [#455](https://github.com/davins56/Anima-Protocol/pull/455)** / [#457](https://github.com/davins56/Anima-Protocol/pull/457).
 - Another lean 1:1 Chat.jsx PR — **shipped in [#458](https://github.com/davins56/Anima-Protocol/pull/458)**.
 - Another contract-split / 2k wrap PR — **shipped in [#463](https://github.com/davins56/Anima-Protocol/pull/463)** / [#467](https://github.com/davins56/Anima-Protocol/pull/467) / [#471](https://github.com/davins56/Anima-Protocol/pull/471). Known leftover: group image-tag contract vs 400-char tail — do not start a fourth split unless asked.
@@ -181,6 +187,7 @@ Do not duplicate. Next is identity Slice A — seed `companion_memories` on crea
 | Claim | Evidence |
 |-------|----------|
 | SSE after `beginChatTurn`, before context load | #453 `openChatSse` after replay/409; `chatTtft.test.ts` |
+| Same-body `turn_id` replay only | #474 `classifyChatTurnReuse`; mismatch mints a new id; client `streamChatReplyWithTurnRetry` |
 | Chat exempt from 20s wall | `workerApiGuard.ts` `isLongLivedApiPath` matches `/api/chat` |
 | Client wrap ≤2k after stripping transcript | `promptBuilder.ts` `clientSceneExcerpt` / `CLIENT_SCENE_CONTEXT_MAX`; #456 keeps IMAGE/EMOTION; #461 splits at contract markers; #463 line-anchors headings; #467 `capUniqueContracts` keeps group `CRITICAL INSTRUCTIONS:`; #471 `clipGroupContractHead` keeps `OUTPUT FORMAT`. Production group image-tag prose can still miss the 400-char tail. |
 | Solo Chat.jsx lean extras | #458 `buildLeanSoloClientContext` / `LEAN_SOLO_CLIENT_CONTEXT_MAX` |
