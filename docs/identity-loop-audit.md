@@ -1,12 +1,12 @@
 # Chat latency + identity-loop audit
 
-**Date:** 2026-09-14 (updated: latency first)  
-**Baseline:** `main` @ `f005e052`  
+**Date:** 2026-09-14 (updated: latency first; #450 merged)  
+**Baseline:** `main` @ `f4a7010a` (`fix(worker): do not classify Worker ETIMEOUT as a database timeout` / #450)  
 **Owner priority:** AI response speed — **TTFT**, then end-to-end chat latency. Identity loop and Worker timeout/CI stay in this document, below latency.
 
 Findings only. No runtime code in this PR.
 
-Complements `docs/upgrade-audit.md` (#389, LLM/security). Do **not** duplicate open [#450](https://github.com/davins56/Anima-Protocol/pull/450) (Worker ETIMEOUT ≠ DB).
+Complements `docs/upgrade-audit.md` (#389, LLM/security). **[#450](https://github.com/davins56/Anima-Protocol/pull/450) merged** (Worker ETIMEOUT ≠ DB; `/api/ai/chat` 18s open). Chat.jsx speed work is still a follow-up — that PR did not change `/api/chat/messages`.
 
 ---
 
@@ -45,8 +45,8 @@ Telemetry (`ChatPipelineTelemetry`) records `context_load_ms` and `ttft_ms`, but
 |------------|---------|
 | Waiting on full replies instead of streaming | **Mostly false.** Main path streams. Exceptions: opt-in `ANIMA_LOCAL_LLM_ENSEMBLE` (off by default, waits for N full drafts); image gen after the reply; `max_tokens` 4–8k so E2E stays long even when TTFT is fine. |
 | Oversize context / memory retrieval | **True, and worse than memory alone.** Client prompt (up to 24k chars) is wrapped *again* by `composePrompt`, which then adds character def, memories, resonance, CORE_BEHAVIOR. Prefill dominates small local models. |
-| Worker ~20s wall | **Does not race `/api/chat`.** `isLongLivedApiPath` exempts `/api/openai` and `/api/chat`. The 20s wall is store/healthz. Cold Ollama still sits behind a **35s** (or **80s** if OpenRouter is on the chain) *stream-open* budget. [#450](https://github.com/davins56/Anima-Protocol/pull/450) caps **`/api/ai/chat`** at 18s — **Chat.jsx does not use that route.** |
-| Cold Ollama | **True, ops + retries.** `ANIMA_LOCAL_LLM_MAX_RETRIES` defaults to **2**. Home-box first load can eat most of the open budget. `wrangler.jsonc` has `ANIMA_OPENROUTER_FALLBACK=true` + `ANIMA_OPENROUTER_FREE=true`, so `usesFreeTierOpenBudget()` is true whenever OpenRouter is on the chain → **80s** open wait on `/chat/messages` before abort. |
+| Worker ~20s wall | **Does not race `/api/chat`.** `isLongLivedApiPath` exempts `/api/openai` and `/api/chat`. The 20s wall is store/healthz. **#450 merged:** Worker `ETIMEOUT` is no longer classified as a DB timeout; live `?probe=1` uses a **45s** bound; **`POST /api/ai/chat`** opens in **18s** (local hop **12s**). **Chat.jsx still uses `/api/chat/messages`**, which is long-lived and still has a **35s** (or **80s** if OpenRouter is on the chain) stream-open budget. |
+| Cold Ollama | **True, ops + retries.** `ANIMA_LOCAL_LLM_MAX_RETRIES` defaults to **2**. Home-box first load can eat most of the open budget. `wrangler.jsonc` has `ANIMA_OPENROUTER_FALLBACK=true` + `ANIMA_OPENROUTER_FREE=true`, so `usesFreeTierOpenBudget()` is true whenever OpenRouter is on the chain → **80s** open wait on `/chat/messages` before abort. #450’s 12s local hop applies to `/api/ai/chat`, not this SSE path. |
 
 ---
 
@@ -62,7 +62,7 @@ Telemetry (`ChatPipelineTelemetry`) records `context_load_ms` and `ttft_ms`, but
 
 **Approach:** `writeHead` + heartbeat immediately after auth + session 404 check. Run context load while the client already has an open stream (`status: "loading"`). Do not wait on repository RAG or weather to *start* the LLM; inject them only if they finish before `createChatStreamWithFailover`, else skip.
 
-**Effort:** S–M. Stay off `workerApiGuard.ts` / `dbErrors.ts` (#450).
+**Effort:** S–M. #450 already owns `workerApiGuard.ts` / `dbErrors.ts` — don’t reopen classification. This slice is `chat.ts` writeHead ordering.
 
 ### P0-L2 — Stop double-prefill (TTFT + E2E)
 
@@ -88,9 +88,9 @@ Telemetry (`ChatPipelineTelemetry`) records `context_load_ms` and `ttft_ms`, but
 
 **Why it matters:** Even a fast first token feels slow if the model is allowed 8k tokens. Cold local + 80s open is “chat is broken,” not “chat is generating.”
 
-**Approach (avoid #450 file fights):** In `chat.ts` only: pass `freeTierCascade: false` so `/chat/messages` uses 35s (or a dedicated 12–18s local-open if you add a constant in chat.ts without rewriting `chatTimeouts.ts`). Cap `maxTokens` for this route (e.g. `Math.min(routed.maxTokens, 1024)`). Lower Chat.jsx length guide is already short — the server budget is what Ollama honors.
+**Approach:** #450 already added `LLM_OPEN_TIMEOUT_AI_CHAT_MS` (18s) and `LLM_LOCAL_FAILOVER_ATTEMPT_MS` (12s) for `/api/ai/chat`. Reuse them on `/chat/messages` (or at least pass `freeTierCascade: false` so this route uses 35s, not 80s). Cap `maxTokens` for this route (e.g. `Math.min(routed.maxTokens, 1024)`). The Chat.jsx length guide is already short — the server `max_tokens` is what Ollama honors.
 
-**#450 overlap:** that PR changes `chatTimeouts.ts` / `llmFailover.ts` for `/api/ai/chat`. Rebase after it merges; do not copy those edits here. Chat.jsx speed is `/api/chat/messages`.
+Do not re-litigate Worker ETIMEOUT classification or the healthz probe bound — those shipped in #450.
 
 **Ops (not a code PR):** keep Ollama loaded (`keep_alive`, a 1-token warmup cron against `llm.anima-protocol.com`). `ANIMA_LOCAL_LLM_MAX_RETRIES=0` on a single-slot box.
 
@@ -139,7 +139,7 @@ memory   transcript crumbs in companion_memories
 
 | Item | Status |
 |------|--------|
-| [#450](https://github.com/davins56/Anima-Protocol/pull/450) Worker ETIMEOUT ≠ DB; `/api/ai/chat` 18s open | **Open.** Do not edit `dbErrors.ts`, `workerApiGuard.ts`, `chatTimeouts.ts`, `llmFailover.ts` until it lands. Chat speed PRs should live in `chat.ts` + Chat.jsx + `promptBuilder.ts`. |
+| [#450](https://github.com/davins56/Anima-Protocol/pull/450) Worker ETIMEOUT ≠ DB; `/api/ai/chat` 18s / local hop 12s; probe 45s | **Merged** `f4a7010a` (2026-09-14). Do not re-open classification. Chat.jsx still needs a follow-up on `/api/chat/messages` (35s/80s open, 8192 `max_tokens`, pre-SSE context load). |
 | Rate-limit | Merged #125. User-keyed. Leave it. |
 | `main` CI `api-tests` | `llmEnsemble.test.ts` vs OpenRouter in CI chain. Separate PR. |
 | Dependabot #449 | Ignore. |
@@ -156,21 +156,21 @@ memory   transcript crumbs in companion_memories
 2. Skip `retrieveRepositoryKnowledge` unless the turn is protocol/codespace (or default-off on Worker).
 3. Cap `CLIENT_SCENE_CONTEXT` far below 24k, or stop duplicating CHARACTER / history when `clientOwnsTranscript`.
 
-Do not touch #450 files. Tests: `chatLifecycle` still streams; add an assert that a status/heartbeat event can be written before mocked LLM open.
+Tests: `chatLifecycle` still streams; add an assert that a status/heartbeat event can be written before mocked LLM open.
 
 ### Slice 2 — E2E: token cap + honest open budget on `/chat/messages` (P0-L3)
 
-**Files:** `chat.ts` (only, until #450 merges).
+**Files:** `artifacts/api-server/src/routes/chat.ts` (primary). Optional: reuse #450 constants in `chatTimeouts.ts` rather than inventing a fourth budget.
 
 1. `maxTokens: Math.min(routed.maxTokens, 1024)` on this route (length guide is already 2–4 sentences).
-2. `llmOpenTimeoutMs({ freeTierCascade: false })` so Chat.jsx does not inherit the 80s :free cascade. Local still has 35s; after #450, consider aligning with 18s.
+2. Stop `usesFreeTierOpenBudget()` from stretching Chat.jsx to 80s. Minimum: `freeTierCascade: false` (35s). Better: apply `LLM_LOCAL_FAILOVER_ATTEMPT_MS` (12s) when OpenRouter is next in chain, same as `/api/ai/chat`.
 
 **After those:** identity Slice A (load `GET /chat/memories` on session open + seed on create). Speed first.
 
 ### Explicitly not the first PR
 
-- Worker 20s healthz classification (#450).
-- Ensemble / OpenRouter chain CI.
+- Worker ETIMEOUT / healthz probe classification (**done in #450**).
+- Ensemble / OpenRouter chain CI (`llmEnsemble.test.ts` still red on `main`).
 - Echo Key radiation, crossover pool recall, intimacy save-on-client-commit.
 - Ollama keep_alive (runbook / host, not app).
 
@@ -186,7 +186,8 @@ Do not touch #450 files. Tests: `chatLifecycle` still streams; add an assert tha
 | Chat.jsx streams deltas | `streamChatReply.js` `onDelta` per content event; `useChatStreaming` |
 | Ensemble off by default | `localEnsemble.ts` `ANIMA_LOCAL_LLM_ENSEMBLE` |
 | 80s open when OpenRouter on chain | `usesFreeTierOpenBudget` + wrangler `ANIMA_OPENROUTER_FALLBACK`/`FREE` + `chat.ts` `openStreamAbort` |
-| `/api/ai/chat` ≠ Chat.jsx | Chat.jsx → `animaApi.chat.sendMessage` → `/chat/messages` |
+| `/api/ai/chat` ≠ Chat.jsx | Chat.jsx → `animaApi.chat.sendMessage` → `/chat/messages`; #450 18s cap is `llmAiChatOpenTimeoutMs()` on `/api/ai/chat` only |
+| #450 merged | `origin/main` `f4a7010a`; `chat.ts` still `llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() })` |
 | 8192 max_tokens on typical turns | `modelRouter.ts` `text.length >= 200` → heavy; `MAX_TOKENS.heavy = 8192` |
 | Repo RAG every turn | `chat.ts` `retrieveRepositoryKnowledge(content)` when `content.trim()` |
 | Telemetry TTFT excludes context | `chatTelemetry.ts` `ttft_ms` from `generationStartedAt` |
