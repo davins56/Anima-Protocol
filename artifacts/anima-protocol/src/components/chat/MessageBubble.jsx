@@ -109,13 +109,22 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
               <span className="w-1 h-1 bg-primary/30 rounded-full animate-pulse" style={{ animationDelay: "0ms", animationDuration: "1.2s" }} />
               <span className="w-1 h-1 bg-primary/30 rounded-full animate-pulse" style={{ animationDelay: "400ms", animationDuration: "1.2s" }} />
               <span className="w-1 h-1 bg-primary/30 rounded-full animate-pulse" style={{ animationDelay: "800ms", animationDuration: "1.2s" }} />
-              <span className="font-mono text-[8px] text-primary/20 tracking-widest ml-1">thinking...</span>
+              <span className="font-mono text-[8px] text-primary/20 tracking-widest ml-1">
+                {message.content && message.content !== "..."
+                  ? message.content
+                  : "thinking..."}
+              </span>
             </span>
           ) : isTyping ? (
             <span className="flex items-center gap-0.5 text-primary/40">
               <span className="w-1 h-1 sm:w-1.5 sm:h-1.5 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
               <span className="w-1 h-1 sm:w-1.5 sm:h-1.5 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
               <span className="w-1 h-1 sm:w-1.5 sm:h-1.5 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+              {message.content && message.content !== "..." ? (
+                <span className="font-mono text-[8px] text-primary/35 tracking-widest ml-1.5">
+                  {message.content}
+                </span>
+              ) : null}
             </span>
           ) : isEditing ? (
             <div className="space-y-2 min-w-[180px]">

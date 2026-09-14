@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { animaApi } from "@/api/animaApi";
 import { collectRegionHints } from "@/lib/userRegion";
+import { chatStreamStatusCopy } from "@/lib/chatStreamStatusCopy";
 
 function createChatMessage(role, content, { characterName = null, attachments = [], type = undefined } = {}) {
   return {
@@ -81,6 +82,25 @@ export function useChatNucleus({ sessionId, initialMessages = [], characters = [
             throw new Error(event.error);
           }
 
+          if (event?.status && !assistantText) {
+            const copy = chatStreamStatusCopy(event);
+            if (copy) {
+              setMessages((prev) => {
+                const trimmed = prev.filter(
+                  (msg) =>
+                    msg.character_name !== "__typing__" &&
+                    msg.character_name !== "__thinking__",
+                );
+                return [
+                  ...trimmed,
+                  createChatMessage("assistant", copy, {
+                    characterName: "__thinking__",
+                  }),
+                ];
+              });
+            }
+          }
+
           if (event?.provider) {
             setProviderStatus(event.provider);
           }
@@ -88,7 +108,11 @@ export function useChatNucleus({ sessionId, initialMessages = [], characters = [
           if (typeof event?.content === "string") {
             assistantText += event.content;
             setMessages((prev) => {
-              const trimmed = prev.filter((msg) => msg.character_name !== "__typing__");
+              const trimmed = prev.filter(
+                (msg) =>
+                  msg.character_name !== "__typing__" &&
+                  msg.character_name !== "__thinking__",
+              );
               if (assistantMessageId && trimmed[trimmed.length - 1]?.id === assistantMessageId) {
                 return trimmed.map((msg) =>
                   msg.id === assistantMessageId ? { ...msg, content: assistantText } : msg,
@@ -110,7 +134,11 @@ export function useChatNucleus({ sessionId, initialMessages = [], characters = [
 
         if (!assistantText.trim()) {
           setMessages((prev) => {
-            const trimmed = prev.filter((msg) => msg.character_name !== "__typing__");
+            const trimmed = prev.filter(
+              (msg) =>
+                msg.character_name !== "__typing__" &&
+                msg.character_name !== "__thinking__",
+            );
             const assistantMessage = createChatMessage("assistant", "I’m not able to respond right now. Please try again in a moment.", {
               characterName: activeCharacter?.name ?? "Serenity",
             });
@@ -123,7 +151,11 @@ export function useChatNucleus({ sessionId, initialMessages = [], characters = [
         const messageText = err instanceof Error ? err.message : "Unable to send message right now.";
         setError(messageText);
         setMessages((prev) => {
-          const next = prev.filter((msg) => msg.character_name !== "__typing__");
+          const next = prev.filter(
+            (msg) =>
+              msg.character_name !== "__typing__" &&
+              msg.character_name !== "__thinking__",
+          );
           return [
             ...next,
             createChatMessage("assistant", `System: ${messageText}`, {

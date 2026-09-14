@@ -28,9 +28,16 @@ vi.mock("../src/lib/llmFailover", () => ({
   isOpenRouterAlreadyFreeTier: () => false,
   isOpenRouterGenericProviderError: () => false,
   isOpenRouterZdrOrDataPolicyError: () => false,
+  isLocalOnlyProviderChain: () => true,
+  localOnlyTimeoutMessage: () =>
+    "The self-hosted Anima LLM took too long to reply. The model may still be waking — wait a moment and send again. Chat does not fall through to OpenRouter.",
   OPENROUTER_FREE_PROVIDER_HINT: "OpenRouter free-tier hint",
   OPENROUTER_ZDR_PRIVACY_HINT: "OpenRouter ZDR privacy hint",
   remapGenericProviderError: (err: Error) => err,
+}));
+
+vi.mock("../src/lib/localLlmWarm", () => ({
+  hintLocalLlmWarm: vi.fn(),
 }));
 
 vi.mock("../src/lib/modelRouter", async (importOriginal) => {
@@ -52,6 +59,7 @@ vi.mock("../src/lib/localEnsemble", () => ({
 }));
 
 import chatRouter from "../src/routes/chat";
+import { beginChatTurn } from "../src/lib/chatTurnLedger";
 import {
   CHAT_MESSAGE,
   CHAT_SESSION,
@@ -233,6 +241,141 @@ describe("chat lifecycle", () => {
       persistence_status: "committed",
     });
     expect(llmMocks.createChatStreamWithFailover).toHaveBeenCalledTimes(1);
+  });
+
+  it("replays matching userContent and mints a new turn when content differs", async () => {
+    const isolatedTurn = `turn_${prefix}_collision`;
+    const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+
+    const first = await request("/chat/messages", {
+      method: "POST",
+      body: JSON.stringify({
+        turn_id: isolatedTurn,
+        session_id: sessionId,
+        content: "Match me",
+        character_id: characterId,
+        character_ids: [characterId],
+        assistant_character_id: characterId,
+        mode: "solo",
+        persist: true,
+        region: { share_region: false },
+      }),
+    });
+    expect(first.status).toBe(200);
+    const firstEvents = sseEvents(await first.text());
+    expect(
+      firstEvents
+        .filter((event) => typeof event.content === "string")
+        .map((event) => event.content)
+        .join(""),
+    ).toBe("Hello from Anima.");
+
+    const match = await request("/chat/messages", {
+      method: "POST",
+      body: JSON.stringify({
+        turn_id: isolatedTurn,
+        session_id: sessionId,
+        content: "Match me",
+        character_id: characterId,
+        mode: "solo",
+      }),
+    });
+    const matchEvents = sseEvents(await match.text());
+    expect(matchEvents.at(-1)).toMatchObject({
+      done: true,
+      replayed: true,
+      turn_id: isolatedTurn,
+    });
+    expect(matchEvents.some((event) => event.content === "Hello from Anima.")).toBe(
+      true,
+    );
+    expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(
+      callsBefore + 1,
+    );
+
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => ({
+      stream: (async function* () {
+        yield { choices: [{ delta: { content: "New beat." } }] };
+      })(),
+      model: "test-anima",
+      tier: "standard",
+      provider: "local",
+      brand: "anima",
+      failedOver: false,
+    }));
+
+    const mismatch = await request("/chat/messages", {
+      method: "POST",
+      body: JSON.stringify({
+        turn_id: isolatedTurn,
+        session_id: sessionId,
+        content: "A different user line",
+        character_id: characterId,
+        character_ids: [characterId],
+        assistant_character_id: characterId,
+        mode: "solo",
+        persist: true,
+        region: { share_region: false },
+      }),
+    });
+    expect(mismatch.status).toBe(200);
+    const mismatchEvents = sseEvents(await mismatch.text());
+    const mismatchText = mismatchEvents
+      .filter((event) => typeof event.content === "string" && !event.done)
+      .map((event) => event.content)
+      .join("");
+    expect(mismatchText).toBe("New beat.");
+    expect(mismatchText).not.toContain("Hello from Anima.");
+    expect(mismatchEvents.at(-1)).toMatchObject({ done: true });
+    expect(mismatchEvents.at(-1)?.replayed).toBeFalsy();
+    expect(mismatchEvents.at(-1)?.turn_id).not.toBe(isolatedTurn);
+    expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(
+      callsBefore + 2,
+    );
+
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => ({
+      stream: (async function* () {
+        yield { choices: [{ delta: { content: "Hello " } }] };
+        yield { choices: [{ delta: { content: "from Anima." } }] };
+      })(),
+      model: "test-anima",
+      tier: "standard",
+      provider: "local",
+      brand: "anima",
+      failedOver: false,
+    }));
+  });
+
+  it("returns 409 when the same turn is still pending", async () => {
+    const pendingId = `turn_${prefix}_pending`;
+    const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+    await beginChatTurn({
+      id: pendingId,
+      sessionId,
+      userId,
+      userContent: "Hello",
+      persistenceOwner: "server",
+    });
+    const res = await request("/chat/messages", {
+      method: "POST",
+      body: JSON.stringify({
+        turn_id: pendingId,
+        session_id: sessionId,
+        content: "Hello",
+        character_id: characterId,
+        mode: "solo",
+      }),
+    });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      error: "This chat turn is already being processed.",
+      code: "turn_in_flight",
+      turn_id: pendingId,
+      persistence_status: "pending",
+    });
+    expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(
+      callsBefore,
+    );
   });
 
   it("client commit writes companion memory without duplicating chat rows", async () => {

@@ -63,6 +63,7 @@ import {
   LLM_LOCAL_FAILOVER_ATTEMPT_MS,
   openStreamAbort,
 } from "./chatTimeouts";
+import { localChatKeepAliveFields } from "./localLlmWarm";
 import {
   completeWorkersAi,
   formatWorkersAiError,
@@ -98,10 +99,16 @@ export function chatCompletionHttpFailure(err: unknown): {
   }
   const message =
     err instanceof Error ? err.message.trim() : String(err ?? "").trim();
-  if (err instanceof LlmStreamTimeoutError || isLlmAbortOrTimeoutError(err)) {
+  if (
+    err instanceof LlmStreamTimeoutError ||
+    isLlmAbortOrTimeoutError(err) ||
+    /took too long to reply/i.test(message)
+  ) {
     return {
       status: 502,
-      error: "The companion took too long to reply. Please try again.",
+      error: /took too long to reply/i.test(message)
+        ? message
+        : localOnlyTimeoutMessage(),
       code: "ai_timeout",
     };
   }
@@ -648,6 +655,24 @@ export const LOCAL_LLM_CONNECTION_FIX_HINT =
   "Wake the home box / named Cloudflare Tunnel (scripts/llm/public-v1/README.md) " +
   "or check that ANIMA_LOCAL_LLM_BASE_URL is a public HTTPS …/v1 URL. " +
   "Chat does not fall through to OpenRouter or MiniMax.";
+
+/** Honest timeout when customOnly / local-only cannot hop to OpenRouter. */
+export const LOCAL_LLM_TIMEOUT_HINT =
+  "The self-hosted Anima LLM took too long to reply. " +
+  "The model may still be waking — wait a moment and send again. " +
+  "Chat does not fall through to OpenRouter.";
+
+export const COMPANION_TIMEOUT_HINT =
+  "The companion took too long to reply. Please try again.";
+
+export function isLocalOnlyProviderChain(): boolean {
+  const chain = getProviderChain();
+  return chain.length === 1 && chain[0] === "local";
+}
+
+export function localOnlyTimeoutMessage(): string {
+  return isLocalOnlyProviderChain() ? LOCAL_LLM_TIMEOUT_HINT : COMPANION_TIMEOUT_HINT;
+}
 
 const OPENROUTER_SETUP_HINT =
   "Set OPENROUTER_API_KEY (free at https://openrouter.ai/keys). " +
@@ -1260,6 +1285,9 @@ function enrichError(
     if (err instanceof WorkersAiRequestError) return err;
     return new Error(formatWorkersAiError(err));
   }
+  if (provider === "local" && isLlmAbortOrTimeoutError(err)) {
+    return new Error(LOCAL_LLM_TIMEOUT_HINT);
+  }
   const base = err instanceof Error ? err : new Error(String(err));
   return remapGenericProviderError(base);
 }
@@ -1663,6 +1691,7 @@ async function probeOneProvider(
           max_tokens: m.maxTokens,
           messages: [{ role: "user", content: "Reply with the single word: ok" }],
           temperature: 0,
+          ...localChatKeepAliveFields(),
         }),
     );
     const catalog = await listLocalModels(client);
@@ -2029,6 +2058,7 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
                 messages: req.messages,
                 stream: true,
                 ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
+                ...localChatKeepAliveFields(),
               },
               ...(attempt.signal ? [{ signal: attempt.signal }] : []),
             ),
@@ -2155,6 +2185,7 @@ export async function createChatCompletionWithFailover(
                 ...(req.tools && req.tools.length
                   ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" }
                   : {}),
+                ...localChatKeepAliveFields(),
               },
               ...(attempt.signal ? [{ signal: attempt.signal }] : []),
             ),

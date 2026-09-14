@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { chatStreamStatusCopy } from "@/lib/chatStreamStatusCopy";
 
 /**
  * Paint a streaming/thinking bubble onto the session that started the send.
@@ -14,6 +15,8 @@ export function applyStreamingMessage(session, { sessionId, prefixMessages, mess
 export function useChatStreaming(setActiveSession) {
   const createStreamUi = useCallback(
     ({ sessionId, updatedMessages, characterName, timestamp, onDelta }) => {
+      let paintedTokens = false;
+
       const replaceTransient = (message) => {
         setActiveSession((session) =>
           applyStreamingMessage(session, {
@@ -34,6 +37,7 @@ export function useChatStreaming(setActiveSession) {
       };
 
       const showStreamingPartial = (accumulated) => {
+        paintedTokens = true;
         onDelta?.(accumulated);
         replaceTransient({
           role: "assistant",
@@ -45,6 +49,7 @@ export function useChatStreaming(setActiveSession) {
       };
 
       const showStatus = (event) => {
+        if (paintedTokens && event?.status === "progress") return;
         if (event?.status === "thinking") {
           replaceTransient({
             role: "assistant",
@@ -54,19 +59,21 @@ export function useChatStreaming(setActiveSession) {
           });
           return;
         }
+        const copy = chatStreamStatusCopy(event);
+        if (!copy) return;
+        if (event?.status === "progress") {
+          replaceTransient({
+            role: "assistant",
+            content: copy,
+            character_name: "__thinking__",
+            timestamp,
+          });
+          return;
+        }
         if (event?.status !== "ensemble") return;
-        const minds = Array.isArray(event.minds)
-          ? event.minds.filter(Boolean).join(", ")
-          : "";
-        const content =
-          event.phase === "combining"
-            ? "Combining mind drafts…"
-            : minds
-              ? `Minds drafting: ${minds}…`
-              : "Minds drafting…";
         replaceTransient({
           role: "assistant",
-          content,
+          content: copy,
           character_name: "__typing__",
           timestamp,
         });
