@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  CHAT_MESSAGES_CONTEXT_SLACK_MS,
   CHAT_STREAM_TIMEOUT_MS,
   LLM_LOCAL_FAILOVER_ATTEMPT_MS,
   LLM_OPEN_TIMEOUT_AI_CHAT_MS,
@@ -10,8 +11,10 @@ import {
   LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS,
   LLM_OPEN_TIMEOUT_MS,
   LLM_STREAM_FIRST_CHUNK_MS,
+  LLM_STREAM_TOTAL_MS,
   llmAiChatOpenTimeoutMs,
   llmChatMessagesOpenTimeoutMs,
+  llmChatMessagesStreamTotalMs,
   llmOpenTimeoutMs,
   openStreamAbort,
   COMPANION_REPLY_MAX_TOKENS,
@@ -82,6 +85,19 @@ describe("llmOpenTimeoutMs", () => {
     expect(
       llmChatMessagesOpenTimeoutMs() + LLM_STREAM_FIRST_CHUNK_MS,
     ).toBeLessThan(CHAT_STREAM_TIMEOUT_MS);
+  });
+
+  it("fits later-turn consume under the 130s browser abort after a 45s local open", () => {
+    expect(llmChatMessagesStreamTotalMs()).toBe(75_000);
+    expect(llmChatMessagesStreamTotalMs()).toBeLessThan(LLM_STREAM_TOTAL_MS);
+    expect(llmChatMessagesStreamTotalMs()).toBeGreaterThanOrEqual(
+      LLM_STREAM_FIRST_CHUNK_MS,
+    );
+    expect(
+      llmChatMessagesOpenTimeoutMs() +
+        llmChatMessagesStreamTotalMs() +
+        CHAT_MESSAGES_CONTEXT_SLACK_MS,
+    ).toBeLessThanOrEqual(CHAT_STREAM_TIMEOUT_MS);
   });
 
   it("does not let the 80s free-tier budget stretch /api/chat/messages", () => {
@@ -171,6 +187,7 @@ describe("client/server budget lockstep", () => {
       "utf8",
     );
     expect(chatRoute).toContain("llmChatMessagesOpenTimeoutMs()");
+    expect(chatRoute).toContain("llmChatMessagesStreamTotalMs()");
     expect(chatRoute).toContain("chatReplyMaxTokens(");
     expect(chatRoute).toContain("scheduleLeftoverTurnRepair(");
     expect(chatRoute).toContain("attachStoredEmbeddings(userId, adapted).catch(");

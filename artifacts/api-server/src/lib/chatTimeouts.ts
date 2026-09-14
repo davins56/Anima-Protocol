@@ -77,6 +77,12 @@ export const LLM_STREAM_STALL_MS = 15_000;
 export const LLM_STREAM_TOTAL_MS = 90_000;
 
 /**
+ * Slack for `/chat/messages` context load + Clerk before LLM timers.
+ * Later turns grow this work slightly; keep it off the 45s open clock.
+ */
+export const CHAT_MESSAGES_CONTEXT_SLACK_MS = 10_000;
+
+/**
  * Browser `fetch` abort for `/chat/messages`.
  * Covers a full free-tier open plus a first-chunk wait so the UI does not
  * throw a generic abort while the Worker is still working.
@@ -148,6 +154,23 @@ export function llmAiChatOpenTimeoutMs(): number {
  */
 export function llmChatMessagesOpenTimeoutMs(): number {
   return cappedConfiguredOpenTimeoutMs(LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS);
+}
+
+/**
+ * Consume budget for POST `/api/chat/messages` after the stream is open.
+ *
+ * Must fit with the local-only open cap and context slack under the 130s
+ * browser abort. Later turns (longer prompt, prefill) use this window for
+ * first-chunk wait — not turn_id replay. Default `LLM_STREAM_TOTAL_MS` (90s)
+ * plus a 45s open would outlive the client fetch.
+ */
+export function llmChatMessagesStreamTotalMs(): number {
+  return Math.max(
+    LLM_STREAM_FIRST_CHUNK_MS,
+    CHAT_STREAM_TIMEOUT_MS -
+      llmChatMessagesOpenTimeoutMs() -
+      CHAT_MESSAGES_CONTEXT_SLACK_MS,
+  );
 }
 
 export {

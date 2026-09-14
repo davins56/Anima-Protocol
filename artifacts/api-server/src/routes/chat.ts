@@ -49,6 +49,7 @@ import {
 import {
   chatReplyMaxTokens,
   llmChatMessagesOpenTimeoutMs,
+  llmChatMessagesStreamTotalMs,
   openStreamAbort,
 } from "../lib/chatTimeouts";
 import { hintLocalLlmWarm } from "../lib/localLlmWarm";
@@ -1909,6 +1910,11 @@ router.post("/messages", async (req, res) => {
     writeSse(res, { content: delta });
   };
   const emitReasoning = () => writeSse(res, { status: "thinking" });
+  const consumeOpts = {
+    onDelta: emitDelta,
+    onReasoning: emitReasoning,
+    totalMs: llmChatMessagesStreamTotalMs(),
+  };
 
   telemetry.startGeneration();
     const messages = buildLlmChatMessages({
@@ -1954,10 +1960,7 @@ router.post("/messages", async (req, res) => {
         failedOver = completion.failedOver;
         ensembleCombined = true;
 
-        const streamed = await consumeLlmStream(completion.stream, {
-          onDelta: emitDelta,
-          onReasoning: emitReasoning,
-        });
+        const streamed = await consumeLlmStream(completion.stream, consumeOpts);
         fullResponse = streamed.content;
       }
     } else {
@@ -1983,10 +1986,7 @@ router.post("/messages", async (req, res) => {
       usedBrand = completion.brand;
       failedOver = completion.failedOver;
 
-      const streamed = await consumeLlmStream(completion.stream, {
-        onDelta: emitDelta,
-        onReasoning: emitReasoning,
-      });
+      const streamed = await consumeLlmStream(completion.stream, consumeOpts);
       fullResponse = finalizeAssistantReply(streamed.content);
     }
 
