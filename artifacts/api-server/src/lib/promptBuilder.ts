@@ -200,12 +200,14 @@ const CLIENT_TRANSCRIPT_MARKER_RE =
 /**
  * Split a Chat.jsx / buildGroupPrompt system prompt at the transcript.
  * History is `\n`-joined `Speaker: line` rows and may contain blank lines.
- * Unique contracts (`INTELLIGENCE`, `[EMOTION]`/`[LOCATION]`/`[IMAGE]`,
- * Continue) start at a known marker after that transcript — not at the
- * first blank line, which can sit inside a user message.
+ * Unique contracts start at a line of their own after that transcript —
+ * not at the first blank line (which can sit inside a user message) and
+ * not at a mid-line `[EMOTION:]` / `[IMAGE:]` tag inside a history row.
+ * Group prompts put `CRITICAL INSTRUCTIONS:` (speaker lock, interruption,
+ * intimacy, OUTPUT FORMAT) before `INTELLIGENCE:`; that block must stay.
  */
 const POST_TRANSCRIPT_CONTRACT_RE =
-  /(?:INTELLIGENCE\s*:|EMOTIONAL RESONANCE\s*:|ATTUNEMENT\s*:|IMAGE GENERATION\s*:|\[EMOTION:|\[LOCATION:|\[IMAGE:|HIGHEST-PRIORITY RULE|The user tapped Continue|Respond as |Respond with vivid)/i;
+  /(?:^|\n)[ \t]*(?:CRITICAL INSTRUCTIONS\s*:|INTELLIGENCE\s*:|EMOTIONAL RESONANCE\s*:|ATTUNEMENT\s*:|IMAGE GENERATION\s*:|\[EMOTION:|\[LOCATION:|\[IMAGE:|HIGHEST-PRIORITY RULE|The user tapped Continue|Respond as |Respond with vivid)/i;
 
 export function splitClientTranscript(value: string): {
   prefix: string;
