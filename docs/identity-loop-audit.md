@@ -127,6 +127,7 @@ memory   upsertTurnMemory / recordTurnContinuity → companion_memories
 
 | Item | Status |
 |------|--------|
+| [#458](https://github.com/davins56/Anima-Protocol/pull/458) Lean 1:1 Chat.jsx + TTFT caps | **Open.** Client solo extras (lore/calendar/image tags, no second sheet / `Story so far:`). Also re-does 1024 + local `honorCallerMaxTokens` + open abort — **conflicts with #455** on `chat.ts` / `llmFailover.ts` / `chatTimeouts.ts`. Rebase onto #455 instead of merging both. Lean payload **omits `[EMOTION]`/`[LOCATION]`** (image tags are kept). Drops client `CharacterMemory` without a distillation merge. Group path still uses fat `buildGroupPrompt`. |
 | [#457](https://github.com/davins56/Anima-Protocol/pull/457) Honor `req.maxTokens` on local Ollama | **Superseded.** #455 `262c275e` added the same local `Math.min(req.maxTokens, m.maxTokens)`. Do not merge both — they conflict on `llmFailover.ts`. |
 | [#456](https://github.com/davins56/Anima-Protocol/pull/456) Keep IMAGE/EMOTION after `Story so far:` | **Open.** Fixes #453 greedy excerpt. Different files from #455. |
 | [#455](https://github.com/davins56/Anima-Protocol/pull/455) Slice 2 E2E — 1024 clamp + 18s open **and** local `max_tokens` | **Open** (ready). After Codex, also honors `req.maxTokens` on the local Ollama path. 1024 on every companion turn is intentional: `routeModel` treats ≥200 chars as heavy/8192 while Chat.jsx already asks 2–4 sentences. |
@@ -142,7 +143,7 @@ memory   upsertTurnMemory / recordTurnContinuity → companion_memories
 
 ### Slice 1 — TTFT: open the stream, shrink prefill (P0-L1 + P0-L2) — **shipped in #453**
 
-Do not duplicate. Remaining Chat.jsx thinning is identity/P1, not another TTFT PR.
+Do not duplicate. Remaining Chat.jsx thinning is in [#458](https://github.com/davins56/Anima-Protocol/pull/458) — rebase that onto #455; do not start a third token-cap PR.
 
 ### Slice 2 — E2E: honor token cap on local Ollama; stop 80s OpenRouter cascade (P0-L3)
 
@@ -153,7 +154,7 @@ Do not duplicate. Remaining Chat.jsx thinning is identity/P1, not another TTFT P
 
 Do not invent a fourth timeout constant. Do **not** re-apply `LLM_LOCAL_FAILOVER_ATTEMPT_MS`.
 
-**After those:** identity Slice A — seed `companion_memories` on create, then **migrate** distilled `CharacterMemory` facts into that store (or the server prompt) **before** dropping the Chat.jsx block. Do **not** add `GET /chat/memories` to the client prompt. Speed first.
+**After #455:** identity Slice A — seed `companion_memories` on create, then **migrate** distilled `CharacterMemory` facts into that store (or the server prompt) **before** dropping the Chat.jsx block. [#458](https://github.com/davins56/Anima-Protocol/pull/458) already drops the client memory block on solo; restore EMOTION/LOCATION (or add them in `composePrompt`) if that PR lands. Do **not** add `GET /chat/memories` to the client prompt.
 
 ### Explicitly not the first PR
 
