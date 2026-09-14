@@ -122,6 +122,15 @@ describe("chatTurnErrorMessage", () => {
     expect(message).not.toMatch(/user_3Endj/);
   });
 
+  it("still remaps Failed query SQL when bind params mention deepseek", () => {
+    const sql =
+      'Failed query: select "id" from "companion_memories" where character_id in ($1) params: seed_deepseek-companion';
+    const message = chatTurnErrorMessage(new Error(sql));
+    expect(message).toBe("Couldn't load companion memory. Please try again.");
+    expect(message).not.toMatch(/Failed query|select "/i);
+    expect(message).not.toMatch(/deepseek/i);
+  });
+
   it("keeps local-only timeout copy so the HUD does not look like a silent hang", () => {
     const localTimeout =
       "The self-hosted Anima LLM took too long to reply. The model may still be waking — wait a moment and send again. Chat does not fall through to OpenRouter.";

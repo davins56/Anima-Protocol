@@ -29,16 +29,24 @@ const GENERIC_COMPANION_FAILURE =
   "The companion could not reply. Please try again.";
 
 function errorBlob(err: unknown): string {
-  if (err instanceof Error) {
-    const cause =
-      err.cause instanceof Error
-        ? err.cause.message
-        : typeof err.cause === "string"
-          ? err.cause
-          : "";
-    return `${err.message}\n${cause}`;
+  const parts: string[] = [];
+  const seen = new Set<unknown>();
+  let current: unknown = err;
+  for (let depth = 0; depth < 6 && current; depth += 1) {
+    if (seen.has(current)) break;
+    seen.add(current);
+    if (current instanceof Error) parts.push(current.message);
+    else if (typeof current === "string") parts.push(current);
+    else if (current && typeof current === "object" && "message" in current) {
+      const nested = (current as { message?: unknown }).message;
+      if (typeof nested === "string" && nested) parts.push(nested);
+    }
+    current =
+      current && typeof current === "object" && "cause" in current
+        ? (current as { cause?: unknown }).cause
+        : undefined;
   }
-  return String(err ?? "");
+  return parts.join("\n");
 }
 
 function looksLikeSqlLeak(message: string): boolean {

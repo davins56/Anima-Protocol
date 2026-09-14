@@ -202,6 +202,9 @@ describe("client/server budget lockstep", () => {
     expect(chatRoute).not.toMatch(/inArray\(companionMemories/);
     expect(chatRoute).toContain("resetEnsureSchemaLatch");
     expect(chatRoute).toContain("streamErrorMessage");
+    expect(chatRoute).toMatch(
+      /if \(!\/companion_memories\/i\.test\(blob\)\) return false;/,
+    );
   });
 
   it("arms a Worker-safe open abort on the unauthenticated /api/ai/chat probe", () => {
