@@ -7,6 +7,8 @@ export default defineConfig({
       "test/imageUploads.test.ts",
       "test/consumeLlmStream.test.ts",
       "test/localEnsemble.test.ts",
+      "test/chatStreamError.test.ts",
+      "test/localLlmWarm.test.ts",
       "test/llmFailover.test.ts",
       "test/wranglerConfig.test.ts",
       "test/localLlmLive.test.ts",
