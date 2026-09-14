@@ -1,18 +1,18 @@
 # Chat latency + identity-loop audit
 
-**Date:** 2026-09-14 (updated: #458 lean 1:1 + #464 fail-closed)  
-**Baseline:** `main` @ `245b5848` (`#464`) / `cfed7b3a` (`#458`)  
+**Date:** 2026-09-14 (updated: #458 lean 1:1 + #463 contracts + #464 fail-closed + #465 affect)  
+**Baseline:** `main` @ `a6eb6544` (`#463`) / `4e55b96d` (`#465`) / `245b5848` (`#464`)  
 **Owner priority:** AI response speed — **TTFT**, then end-to-end chat latency. Identity loop and Worker timeout/CI stay in this document, below latency.
 
 Findings only. No runtime code in this PR.
 
-Complements `docs/upgrade-audit.md` (#389, LLM/security). Slice 1 **[#453](https://github.com/davins56/Anima-Protocol/pull/453)** and Slice 2 **[#455](https://github.com/davins56/Anima-Protocol/pull/455)** (`2af82b82`: 1024 clamp + `llmChatMessagesOpenTimeoutMs()` 18s) are on `main`. Local Ollama honors `req.maxTokens` (**[#457](https://github.com/davins56/Anima-Protocol/pull/457)**). Solo 1:1 Chat.jsx sends lean extras (**[#458](https://github.com/davins56/Anima-Protocol/pull/458)** `cfed7b3a`). Fat-prompt IMAGE/EMOTION survive **[#456](https://github.com/davins56/Anima-Protocol/pull/456)** / **[#461](https://github.com/davins56/Anima-Protocol/pull/461)** (split at contract markers). Group still uses fat `buildGroupPrompt`. Line-anchored split + `CRITICAL INSTRUCTIONS:` is **[#463](https://github.com/davins56/Anima-Protocol/pull/463)**. Custom host is fail-closed local-only (**[#464](https://github.com/davins56/Anima-Protocol/pull/464)**).
+Complements `docs/upgrade-audit.md` (#389, LLM/security). Slice 1 **[#453](https://github.com/davins56/Anima-Protocol/pull/453)** and Slice 2 **[#455](https://github.com/davins56/Anima-Protocol/pull/455)** (`2af82b82`: 1024 clamp + `llmChatMessagesOpenTimeoutMs()` 18s) are on `main`. Local Ollama honors `req.maxTokens` (**[#457](https://github.com/davins56/Anima-Protocol/pull/457)**). Solo 1:1 Chat.jsx sends lean extras (**[#458](https://github.com/davins56/Anima-Protocol/pull/458)** `cfed7b3a`). Fat-prompt IMAGE/EMOTION survive **[#456](https://github.com/davins56/Anima-Protocol/pull/456)** / **[#461](https://github.com/davins56/Anima-Protocol/pull/461)** / **[#463](https://github.com/davins56/Anima-Protocol/pull/463)** (split at line-start contracts, including group `CRITICAL INSTRUCTIONS:`). Group still uses fat `buildGroupPrompt`. Custom host is fail-closed local-only (**[#464](https://github.com/davins56/Anima-Protocol/pull/464)**). Companion self-state is on the prompt + mood chrome (**[#465](https://github.com/davins56/Anima-Protocol/pull/465)**); Resonance Keys are still later.
 
 ---
 
 ## 0. Latency verdict (read this first)
 
-Chat **does stream**. The UI is not waiting for a full reply before painting tokens (`streamChatReply` + SSE deltas). After [#453](https://github.com/davins56/Anima-Protocol/pull/453), the **first SSE byte is a heartbeat after `beginChatTurn`**, not after context load. Companion turns cap at **1024** tokens (#455) and open in **18s** (`llmChatMessagesOpenTimeoutMs`) instead of the **80s** `:free` cascade. Local Ollama honors `req.maxTokens` (#457). Solo client `system_prompt` is lean extras (#458). Remaining slowness is **group fat `buildGroupPrompt`**, **server CHARACTER / memories / CORE prefill**, then **generation**. A usable custom host does **not** hop to OpenRouter (#464).
+Chat **does stream**. The UI is not waiting for a full reply before painting tokens (`streamChatReply` + SSE deltas). After [#453](https://github.com/davins56/Anima-Protocol/pull/453), the **first SSE byte is a heartbeat after `beginChatTurn`**, not after context load. Companion turns cap at **1024** tokens (#455) and open in **18s** (`llmChatMessagesOpenTimeoutMs`) on the default failover path — not the **80s** `:free` cascade. Opt-in `ANIMA_LOCAL_LLM_ENSEMBLE` gathers drafts **outside** that `openStreamAbort` (off by default; waits for N full drafts). Local Ollama honors `req.maxTokens` (#457). Solo client `system_prompt` is lean extras (#458). Remaining slowness is **group fat `buildGroupPrompt`**, **server CHARACTER / memories / CORE prefill**, then **generation**. A usable custom host does **not** hop to OpenRouter (#464).
 
 User-perceived timeline for `POST /api/chat/messages` (production Chat.jsx, post-#458):
 
@@ -44,7 +44,7 @@ Telemetry (`ChatPipelineTelemetry`) records `context_load_ms` and `ttft_ms`, but
 
 | Hypothesis | Verdict |
 |------------|---------|
-| Waiting on full replies instead of streaming | **Mostly false.** Main path streams. Exceptions: opt-in `ANIMA_LOCAL_LLM_ENSEMBLE` (off by default, waits for N full drafts); image gen after the reply. Companion turns cap at 1024 (#455); leftover E2E is prefill + model, not 4–8k decode. |
+| Waiting on full replies instead of streaming | **Mostly false.** Main path streams. Exceptions: opt-in `ANIMA_LOCAL_LLM_ENSEMBLE` (off by default, waits for N full drafts, **not** under the 18s `openStreamAbort`); image gen after the reply. Companion turns cap at 1024 (#455); leftover E2E is prefill + model, not 4–8k decode. |
 | Oversize context / memory retrieval | **Partly fixed.** Server strips `Story so far:` and caps the remainder at 2k (`clientSceneExcerpt`, #453). Solo Chat.jsx sends lean extras (#458). Group still *builds* fat `buildGroupPrompt` before POST. `composePrompt` still adds CHARACTER / memories / CORE. |
 | Worker ~20s wall | **Does not race `/api/chat`.** `isLongLivedApiPath` exempts `/api/openai` and `/api/chat`. The 20s wall is store/healthz. **#450 merged:** Worker `ETIMEOUT` is no longer classified as a DB timeout; live `?probe=1` uses a **45s** bound. **`POST /api/chat/messages`** and **`POST /api/ai/chat`** both open in **18s** (`llmChatMessagesOpenTimeoutMs` / `llmAiChatOpenTimeoutMs`). The **80s** `:free` outer abort applies only when OpenRouter is actually on the chain (no custom host + fallback). |
 | Cold Ollama | **True for ops; 12s hop only if a next provider exists.** `ANIMA_LOCAL_LLM_MAX_RETRIES` defaults to **2**. `localAttemptSignal` combines the caller abort with `LLM_LOCAL_FAILOVER_ATTEMPT_MS` (**12s**) whenever a next provider exists. **#464:** a usable custom host makes `getProviderChain()` `[local]` only — local connection/timeout returns `ai_timeout` / connection error, no OpenRouter hop. Do not set `ANIMA_OPENROUTER_FALLBACK` to paper over a down self-hosted host. |
@@ -61,7 +61,7 @@ Telemetry (`ChatPipelineTelemetry`) records `context_load_ms` and `ttft_ms`, but
 
 **Shipped:** `clientSceneExcerpt` strips `Story so far:` / `CONVERSATION CONTEXT:` and caps at `CLIENT_SCENE_CONTEXT_MAX` (2k). `shouldRetrieveRepositoryKnowledge` skips default RAG. Repository knowledge is its own prompt section.
 
-**Shipped (fat-prompt contracts):** [#456](https://github.com/davins56/Anima-Protocol/pull/456) `f9db61c7` keeps IMAGE/EMOTION/LOCATION after `Story so far:`. [#461](https://github.com/davins56/Anima-Protocol/pull/461) `55d75fb6` splits at contract markers (`INTELLIGENCE:`, `[IMAGE:`, …), not the first blank line inside a user message. Open follow-up **[#463](https://github.com/davins56/Anima-Protocol/pull/463)**: line-start anchors so `Speaker: [EMOTION: …]` is not a boundary, and keep group `CRITICAL INSTRUCTIONS:`.
+**Shipped (fat-prompt contracts):** [#456](https://github.com/davins56/Anima-Protocol/pull/456) `f9db61c7` keeps IMAGE/EMOTION/LOCATION after `Story so far:`. [#461](https://github.com/davins56/Anima-Protocol/pull/461) `55d75fb6` splits at contract markers, not the first blank line inside a user message. [#463](https://github.com/davins56/Anima-Protocol/pull/463) `a6eb6544` line-anchors those markers so `Speaker: [EMOTION: …]` is not a boundary, and keeps group `CRITICAL INSTRUCTIONS:`.
 
 **Shipped (solo client):** [#458](https://github.com/davins56/Anima-Protocol/pull/458) `cfed7b3a` — `buildLeanSoloClientContext` (≤2k extras; trailing matrix/length/image/Continue reserved). Server `composePrompt` owns identity, store history, memories, `CORE_BEHAVIOR`.
 
@@ -115,7 +115,7 @@ memory   upsertTurnMemory / recordTurnContinuity → companion_memories
 
 - Scene Mind heuristics already skip extra HTTP (Chat.jsx group path). Good for TTFT.
 - `promptBuilder` **filters memories to the speaker** despite a comment that crossover shares the pool.
-- Echo Keys: static lore blurb; synchro does **not** change Key radiation. (Draft [#465](https://github.com/davins56/Anima-Protocol/pull/465) is companion affect / a radiation stub — not the Key system.)
+- Echo Keys: static lore blurb; synchro does **not** change Key radiation. [#465](https://github.com/davins56/Anima-Protocol/pull/465) `4e55b96d` shipped durable companion self-state + mood chrome and a `radiationEventFromAffect` stub — not the Key system.
 - `resonance_memories` not in `ensure-schema` (fail-soft).
 - Hidden Sequences weather/jack-in live; no persisted dark-route field.
 
@@ -125,8 +125,9 @@ memory   upsertTurnMemory / recordTurnContinuity → companion_memories
 
 | Item | Status |
 |------|--------|
+| [#465](https://github.com/davins56/Anima-Protocol/pull/465) Companion self-state + visible mood | **Merged** `4e55b96d` (2026-09-14). `SELF-STATE` in `composePrompt`; SSE `companion_affect`. Key radiation still later. |
 | [#464](https://github.com/davins56/Anima-Protocol/pull/464) Fail-closed self-hosted chat | **Merged** `245b5848` (2026-09-14). Usable custom host → `[local]` only. Do not re-enable OpenRouter to paper over a down anima-chat host. |
-| [#463](https://github.com/davins56/Anima-Protocol/pull/463) Line-start transcript contracts | **Open** (draft). Follow-up to #461: keep group `CRITICAL INSTRUCTIONS:`; ignore mid-line `[EMOTION:` / `[LOCATION:` in history rows. |
+| [#463](https://github.com/davins56/Anima-Protocol/pull/463) Line-start transcript contracts | **Merged** `a6eb6544` (2026-09-14). Follow-up to #461: keep group `CRITICAL INSTRUCTIONS:`; ignore mid-line `[EMOTION:` / `[LOCATION:` in history rows. |
 | [#461](https://github.com/davins56/Anima-Protocol/pull/461) Split transcript at contract markers | **Merged** `55d75fb6` (2026-09-14). Follow-up to #456: do not treat a blank line inside a user message as the transcript end. |
 | [#458](https://github.com/davins56/Anima-Protocol/pull/458) Lean 1:1 Chat.jsx + TTFT caps | **Merged** `cfed7b3a` (2026-09-14). Solo extras via `buildLeanSoloClientContext`. Keeps `CORE_BEHAVIOR`, trailing lean extras, first-turn `AIBehaviorConfig`, user profile. Dropped client `CharacterMemory` without a distillation merge. Group path still fat. Ensemble minds keep OpenRouter out (`17da2ef6`). |
 | [#457](https://github.com/davins56/Anima-Protocol/pull/457) Honor `req.maxTokens` on local Ollama | **Merged** `b59c2db5` (2026-09-14). |
@@ -145,7 +146,7 @@ memory   upsertTurnMemory / recordTurnContinuity → companion_memories
 
 ### Slice 1 — TTFT: open the stream, shrink prefill (P0-L1 + P0-L2) — **shipped in #453 + solo #458**
 
-Do not duplicate. Remaining client fat prompt is **group** `buildGroupPrompt`. Do not start a third token-cap PR. [#463](https://github.com/davins56/Anima-Protocol/pull/463) is the #461 contract-split follow-up (not a new wrap cap).
+Do not duplicate. Remaining client fat prompt is **group** `buildGroupPrompt`. Do not start a third token-cap PR. Contract-split follow-up **[#463](https://github.com/davins56/Anima-Protocol/pull/463)** is on `main`.
 
 ### Slice 2 — E2E: honor token cap on local Ollama; stop 80s OpenRouter cascade (P0-L3) — **shipped in #455 + #457 + #464**
 
@@ -162,7 +163,8 @@ Do not duplicate. Next is identity Slice A — seed `companion_memories` on crea
 - Wiring `GET /chat/memories` into Chat.jsx `system_prompt` (would worsen double-prefill).
 - Treating `upsertTurnMemory` crumbs as a replacement for distilled `CharacterMemory`.
 - Ensemble / OpenRouter chain CI — **shipped in #458** `17da2ef6`.
-- Echo Key radiation, crossover pool recall, intimacy save-on-client-commit.
+- Putting the 18s `openStreamAbort` on opt-in `ANIMA_LOCAL_LLM_ENSEMBLE` gathering (off by default; not the production Chat path).
+- Echo Key radiation from `radiationEventFromAffect` (#465 stub only), crossover pool recall, intimacy save-on-client-commit.
 - Ollama keep_alive (runbook / host, not app).
 
 ---
@@ -173,12 +175,12 @@ Do not duplicate. Next is identity Slice A — seed `companion_memories` on crea
 |-------|----------|
 | SSE after `beginChatTurn`, before context load | #453 `openChatSse` after replay/409; `chatTtft.test.ts` |
 | Chat exempt from 20s wall | `workerApiGuard.ts` `isLongLivedApiPath` matches `/api/chat` |
-| Client wrap ≤2k after stripping transcript | `promptBuilder.ts` `clientSceneExcerpt` / `CLIENT_SCENE_CONTEXT_MAX`; #456 keeps IMAGE/EMOTION; #461 splits at contract markers; #463 line-anchors + `CRITICAL INSTRUCTIONS:` |
+| Client wrap ≤2k after stripping transcript | `promptBuilder.ts` `clientSceneExcerpt` / `CLIENT_SCENE_CONTEXT_MAX`; #456 keeps IMAGE/EMOTION; #461 splits at contract markers; #463 `a6eb6544` line-anchors + `CRITICAL INSTRUCTIONS:` |
 | Solo Chat.jsx lean extras | #458 `buildLeanSoloClientContext` / `LEAN_SOLO_CLIENT_CONTEXT_MAX` |
 | Local Ollama honors `req.maxTokens` | #457 `cappedLocalMaxTokens` on `main` `b59c2db5` (not only #455 `262c275e`) |
 | Chat.jsx streams deltas | `streamChatReply.js` `onDelta` per content event; `useChatStreaming` |
-| Ensemble off by default | `localEnsemble.ts` `ANIMA_LOCAL_LLM_ENSEMBLE` |
-| `/chat/messages` 18s open + 1024 cap | #455 `llmChatMessagesOpenTimeoutMs` + `clampChatMessagesMaxTokens`; `chat.ts` |
+| Ensemble off by default | `localEnsemble.ts` `ANIMA_LOCAL_LLM_ENSEMBLE`; gathering path in `chat.ts` skips `openStreamAbort` |
+| `/chat/messages` 18s open + 1024 cap | #455 `llmChatMessagesOpenTimeoutMs` + `clampChatMessagesMaxTokens`; default `createChatStreamWithFailover` path in `chat.ts` |
 | Custom host is local-only | #464 `getProviderChain()` `[local]` when custom URL is usable; `llmFailover.ts` |
 | 12s local hop already on `/chat/messages` | `llmFailover.ts` `localAttemptSignal` + `LLM_LOCAL_FAILOVER_ATTEMPT_MS`; only when a next provider exists |
 | `/api/ai/chat` ≠ Chat.jsx | Chat.jsx → `animaApi.chat.sendMessage` → `/chat/messages`; both routes now 18s (`llmAiChatOpenTimeoutMs` / `llmChatMessagesOpenTimeoutMs`) |
