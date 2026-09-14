@@ -12,6 +12,8 @@ const WORKERS_AI_4006_RE =
   /\b4006\b|10[, ]?000 neurons|daily free (?:allocation|quota)|used up your daily free/i;
 const STORE_UNREACHABLE_RE =
   /companion store is unreachable|server sent an unexpected response/i;
+const SQL_LEAK_RE =
+  /Failed query\b|from\s+"companion_memories"|select\s+"id"\s*,\s*"user_id"|params:\s*user_/i;
 
 const WORKERS_AI_FREE_QUOTA_HINT =
   "Workers AI daily free quota exhausted — enable Workers Paid or temporarily allow OpenRouter failover";
@@ -64,6 +66,12 @@ export function chatTurnErrorMessage(err) {
   // HTML/non-JSON store bodies during send must not mask the chat failure.
   if (err?.transport === true || STORE_UNREACHABLE_RE.test(raw)) {
     return "The companion could not reply. Please try again.";
+  }
+  // Drizzle "Failed query" / raw SQL must never become the HUD toast.
+  if (SQL_LEAK_RE.test(raw)) {
+    return /companion_memories/i.test(raw)
+      ? "Couldn't load companion memory. Please try again."
+      : "The companion could not reply. Please try again.";
   }
   // Generic 400 / backend request failures must show friendly user copy.
   if (GENERIC_HTTP_400_RE.test(raw)) {

@@ -38,6 +38,16 @@ describe("classifyDbError", () => {
     });
   });
 
+  it("classifies the production companion_memories Failed query as a DB error without leaking SQL in safeMessage", () => {
+    const err = new Error(
+      `Failed query: select "id", "user_id", "character_id" from "companion_memories" where ("companion_memories"."user_id" = $1 and "companion_memories"."character_id" in ($2)) order by "companion_memories"."updated_at" desc params: user_3EndjEBjft9MWRhD4dYFiX63sDU,seed_marvel-cinematic-universe-natasha-romanoff`,
+    );
+    const info = classifyDbError(err);
+    expect(info.isDbError).toBe(true);
+    expect(info.safeMessage).not.toMatch(/Failed query|select "|companion_memories|user_3Endj/i);
+    expect(info.safeMessage).toBe("Database unavailable");
+  });
+
   it("unwraps ENOTFOUND from Error.cause under a drizzle Failed query wrapper", () => {
     const cause = Object.assign(
       new Error("getaddrinfo ENOTFOUND db.example.com"),

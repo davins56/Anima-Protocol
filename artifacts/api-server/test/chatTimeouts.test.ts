@@ -198,6 +198,10 @@ describe("client/server budget lockstep", () => {
     expect(chatRoute).not.toContain("usesFreeTierOpenBudget()");
     expect(chatRoute).not.toMatch(/const LLM_OPEN_TIMEOUT_MS = 35_000/);
     expect(chatRoute).not.toMatch(/maxTokens: routed\.maxTokens/);
+    expect(chatRoute).toContain("queryCompanionMemories");
+    expect(chatRoute).not.toMatch(/inArray\(companionMemories/);
+    expect(chatRoute).toContain("resetEnsureSchemaLatch");
+    expect(chatRoute).toContain("streamErrorMessage");
   });
 
   it("arms a Worker-safe open abort on the unauthenticated /api/ai/chat probe", () => {
