@@ -3,6 +3,13 @@ import { classifyDbError, isWorkerApiTimeoutError } from "./dbErrors";
 /** Store / health probes — return JSON before Cloudflare HTML 524/1101. */
 export const WORKER_API_TIMEOUT_MS = 20_000;
 
+/**
+ * Live `/api/healthz/llm?probe=1` needs longer than the store wall (cold
+ * Ollama generate) but must stay bounded — unbounded probes can pin Worker
+ * capacity. Still well under Cloudflare HTML 524.
+ */
+export const WORKER_LLM_PROBE_TIMEOUT_MS = 45_000;
+
 export type WorkerFetchHandler = {
   fetch: (
     request: Request,
@@ -32,9 +39,9 @@ export function isStoreApiPath(pathname: string): boolean {
  * (SSE store push, chat completions). Store + healthz still time out so a
  * hung Hyperdrive query cannot become Cloudflare HTML.
  *
- * Live LLM probes (`/api/healthz/llm?probe=1`) are the same class of work as
- * chat completions and are exempt so a slow custom host is not cut at 20s
- * and misreported as a database timeout.
+ * Live LLM probes (`/api/healthz/llm?probe=1`) stay on the healthz timeout
+ * path but use a longer budget (`WORKER_LLM_PROBE_TIMEOUT_MS`) so a slow
+ * custom host is not cut at 20s and misreported as a database timeout.
  */
 export function isLongLivedApiPath(pathname: string): boolean {
   return (
@@ -43,7 +50,7 @@ export function isLongLivedApiPath(pathname: string): boolean {
   );
 }
 
-/** Live `?probe=1` against the custom LLM — same wall-clock class as chat. */
+/** Live `?probe=1` against the custom LLM. */
 export function isLlmHealthProbePath(pathname: string, search = ""): boolean {
   if (!/^\/api\/healthz\/llm\/?$/.test(pathname)) return false;
   const raw = search.startsWith("?") ? search.slice(1) : search;
@@ -55,9 +62,15 @@ export function shouldTimeoutApiPath(pathname: string, search = ""): boolean {
   return (
     isWorkerApiPath(pathname) &&
     !isLongLivedApiPath(pathname) &&
-    !isLlmHealthProbePath(pathname, search) &&
     /^\/api\/(?:store|healthz)(?:\/|$)/.test(pathname)
   );
+}
+
+/** Wall-clock budget for a timed `/api` path. Probes are longer, not unbounded. */
+export function workerApiTimeoutMs(pathname: string, search = ""): number {
+  return isLlmHealthProbePath(pathname, search)
+    ? WORKER_LLM_PROBE_TIMEOUT_MS
+    : WORKER_API_TIMEOUT_MS;
 }
 
 export function isJsonContentType(contentType: string | null | undefined): boolean {
@@ -240,7 +253,10 @@ export async function fetchApiThroughExpress(
   try {
     const pending = handler.fetch(request, env, ctx);
     const response = shouldTimeoutApiPath(pathname, url.search)
-      ? await withWorkerApiTimeout(pending, options.timeoutMs)
+      ? await withWorkerApiTimeout(
+          pending,
+          options.timeoutMs ?? workerApiTimeoutMs(pathname, url.search),
+        )
       : await pending;
     return await coerceApiResponseToJson(response, pathname);
   } catch (err) {

@@ -85,6 +85,28 @@ describe("classifyDbError", () => {
     expect(isWorkerApiTimeoutError(duckTyped)).toBe(true);
     expect(classifyDbError(duckTyped).isDbError).toBe(false);
     expect(classifyDbError(duckTyped).safeMessage).not.toMatch(/database/i);
+
+    const wrapped = new Error("Failed query: select 1");
+    wrapped.name = "DrizzleQueryError";
+    (wrapped as Error & { cause?: unknown }).cause = new WorkerApiTimeoutError(20_000);
+    expect(isWorkerApiTimeoutError(wrapped)).toBe(true);
+    expect(classifyDbError(wrapped).isDbError).toBe(false);
+  });
+
+  it("does not treat a Drizzle query that merely mentions the Worker phrase as a Worker timeout", () => {
+    const drizzle = new Error(
+      'Failed query: select * from logs where msg = \'API request aborted due to timeout\'\nparams:',
+    );
+    Object.assign(drizzle, {
+      code: "ETIMEOUT",
+      cause: Object.assign(new Error("timeout expired"), { code: "ETIMEDOUT" }),
+    });
+    expect(isWorkerApiTimeoutError(drizzle)).toBe(false);
+    expect(classifyDbError(drizzle)).toMatchObject({
+      isDbError: true,
+      reason: "timeout",
+      safeMessage: "Database connection timed out",
+    });
   });
 
   it("still classifies real database timeouts including DbOperationTimeoutError ETIMEOUT", () => {

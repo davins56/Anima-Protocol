@@ -100,12 +100,34 @@ function collectErrorSignals(err: unknown): {
 /**
  * Worker 20s wall (`WorkerApiTimeoutError`), not a Postgres/Hyperdrive failure.
  * Same `code` (`ETIMEOUT`) as `DbOperationTimeoutError` — distinguish by name
- * and the "API request aborted…" message so DB operation timeouts still classify.
+ * or the complete Worker message (a whole line), not an unbounded substring
+ * that could appear inside a Drizzle "Failed query" wrapper.
  */
 export function isWorkerApiTimeoutError(err: unknown): boolean {
-  const { message, name } = collectErrorSignals(err);
-  if (name === "WorkerApiTimeoutError") return true;
-  return /API request aborted due to timeout/i.test(message);
+  let current: unknown = err;
+  const seen = new Set<unknown>();
+  const messages: string[] = [];
+  for (let depth = 0; depth < 6 && current; depth += 1) {
+    if (seen.has(current)) break;
+    seen.add(current);
+    if (current instanceof Error) {
+      if (current.name === "WorkerApiTimeoutError") return true;
+      messages.push(current.message);
+    } else if (current && typeof current === "object") {
+      const obj = current as { name?: unknown; message?: unknown };
+      if (obj.name === "WorkerApiTimeoutError") return true;
+      if (typeof obj.message === "string" && obj.message) messages.push(obj.message);
+    } else if (typeof current === "string") {
+      messages.push(current);
+    }
+    current =
+      current && typeof current === "object" && "cause" in current
+        ? (current as { cause?: unknown }).cause
+        : undefined;
+  }
+  return /(?:^|\n)API request aborted due to timeout after \d+ms(?:\n|$)/i.test(
+    messages.join("\n"),
+  );
 }
 
 /** Operator-facing snippet: name + code + scrubbed message. Never a URL. */
