@@ -1,6 +1,8 @@
 /**
  * Display labels for the chat LLM backend returned by the API.
- * Primary: self-hosted Anima LLM, then MiniMax. OpenRouter remains optional.
+ * A usable self-hosted Anima LLM is fail-closed (customOnly); MiniMax is
+ * not a chat fallback. OpenRouter hops only after Workers AI when no
+ * custom host is configured.
  */
 
 /** @param {string | null | undefined} provider */
@@ -110,19 +112,19 @@ export const CONFIGURED_LLM_PROVIDERS = [
     id: "workersai",
     label: "DeepSeek (Workers AI)",
     env: "AI",
-    note: "Production chat on anima-protocol.com. Cloudflare Workers AI DeepSeek R1 distill via AI Gateway deepseek-gateway. No Fly.io Ollama required.",
+    note: "Used only when no usable ANIMA_LOCAL_LLM_BASE_URL is set. Cloudflare Workers AI DeepSeek R1 distill via AI Gateway deepseek-gateway.",
   },
   {
     id: "minimax",
     label: "MiniMax",
     env: "MINIMAX_API_KEY",
-    note: "Preferred cloud chat provider when configured. Defaults to MiniMax-M2.7 via the MiniMax Global OpenAI-compatible API.",
+    note: "Not used for companion chat while a custom/local LLM is preferred. MiniMax stays out of the failover chain.",
   },
   {
     id: "deepshi",
     label: "Deepshi",
     env: "DEEPSHI_API_KEY",
-    note: "OpenAI-compatible Deepshi gateway (https://api.deepshi.ai/v1). Defaults to deepshi-3.0. Used when no local LLM is reachable, or after MiniMax when ANIMA_OPENROUTER_FALLBACK=true. Set ANIMA_LLM_PROVIDER=deepshi to pin it.",
+    note: "Not used for companion chat. MiniMax and Deepshi never fill a down custom host.",
   },
   {
     id: "local",
