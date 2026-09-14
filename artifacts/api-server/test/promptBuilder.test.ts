@@ -8,6 +8,7 @@ import {
   CLIENT_SCENE_CONTEXT_MAX,
   clientSceneExcerpt,
   isDuplicativeClientPrompt,
+  splitClientTranscript,
 } from "../src/lib/promptBuilder";
 import { CHAT_MODE_REGISTRY } from "../src/lib/chatModeRegistry";
 import { assessTherapySafety, crisisResourceForCountry } from "../src/lib/therapySafety";
@@ -387,6 +388,30 @@ describe("buildCompanionPrompt", () => {
     const wrap = prompt.split("<<<CLIENT_SCENE_CONTEXT>>>")[1]?.split("<<<END_CLIENT_SCENE_CONTEXT>>>")[0] ?? "";
     expect(wrap).not.toContain("Story so far:");
     expect(wrap).toContain("[IMAGE:");
+  });
+
+  it("does not treat a blank line inside the transcript as the contract boundary", () => {
+    const chatJsxPrompt = `You are Serenity.
+
+          Story so far:
+          You: paragraph one
+
+          still the same user turn
+          Serenity: I heard both beats.
+
+          INTELLIGENCE: You are brilliant.
+          IMAGE GENERATION: emit [IMAGE: scene].
+          HIGHEST-PRIORITY RULE: never harm the real person.`;
+
+    const split = splitClientTranscript(chatJsxPrompt);
+    expect(split.suffix).toContain("INTELLIGENCE:");
+    expect(split.suffix).toContain("[IMAGE:");
+    expect(split.suffix).not.toContain("still the same user turn");
+
+    const excerpt = clientSceneExcerpt(chatJsxPrompt);
+    expect(excerpt).toContain("[IMAGE:");
+    expect(excerpt).not.toContain("still the same user turn");
+    expect(excerpt).not.toContain("paragraph one");
   });
 
   it("keeps repository knowledge out of the client-scene wrap", () => {
