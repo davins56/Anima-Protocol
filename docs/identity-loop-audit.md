@@ -60,7 +60,7 @@ Telemetry (`ChatPipelineTelemetry`) records `context_load_ms` and `ttft_ms`, but
 
 ### P0-L1 — First SSE byte before context load (TTFT) — **shipped in #453**
 
-**Shipped:** `openChatSse` runs after `beginChatTurn` + replay/409, before leftover repair / memories / embeddings / world-knowledge peek / RAG / `composePrompt`. Duplicate `turn_id`s: same-body generated/committed **replay**; same-body in-flight **409** `turn_in_flight`; different content **mints a new id** and generates ([#474](https://github.com/davins56/Anima-Protocol/pull/474)). Client retries once on `replayed` / 409 (`streamChatReplyWithTurnRetry`). [#476](https://github.com/davins56/Anima-Protocol/pull/476) adds JSON progress (`preparing` / `waking` / `generating`) on open, phase change, and the 8s heartbeat until first token — comment keepalives remain for proxies. Do not reopen the SSE-before-context ordering.
+**Shipped:** `openChatSse` runs after `beginChatTurn` + replay/409, before leftover repair / memories / embeddings / world-knowledge peek / RAG / `composePrompt`. Duplicate `turn_id`s: same-body generated/committed **replay**; same-body in-flight **409** `turn_in_flight`; different content **mints a new id** and generates ([#474](https://github.com/davins56/Anima-Protocol/pull/474)). Replay key is **`userContent` only** (`chatTurnUserContentMatches`) — same `turn_id` with a changed mode/cast/prompt can still replay. Client `streamChatReplyWithTurnRetry` retries once on `replayed` / 409 with a **fresh** turn id, so Safari same-body retry still **regenerates**; it does not accept the ledger reply. Server replay is therefore not end-to-end idempotency. That is the intended contract, not a missing follow-up unless asked. [#476](https://github.com/davins56/Anima-Protocol/pull/476) adds JSON progress (`preparing` / `waking` / `generating`) on open, phase change, and the 8s heartbeat until first token — comment keepalives remain for proxies. Do not reopen the SSE-before-context ordering.
 
 ### P0-L2 — Stop double-prefill (TTFT + E2E) — **server wrap #453; solo lean #458; group still fat**
 
@@ -79,7 +79,7 @@ Telemetry (`ChatPipelineTelemetry`) records `context_load_ms` and `ttft_ms`, but
 1. [#457](https://github.com/davins56/Anima-Protocol/pull/457) `cappedLocalMaxTokens` so a caller cap reaches Ollama.
 2. [#455](https://github.com/davins56/Anima-Protocol/pull/455) `2af82b82` adds `clampChatMessagesMaxTokens` (1024) and `llmChatMessagesOpenTimeoutMs()`. Production `/chat/messages` uses `chatReplyMaxTokens` (#458 `chat.ts`): **1024 for ordinary solo**; **group and `deep_mode` keep the routed budget**. Do not start a third token-cap PR.
 3. [#464](https://github.com/davins56/Anima-Protocol/pull/464) `245b5848` — usable `ANIMA_LOCAL_LLM_BASE_URL` → chain `[local]` only. Local failure does not hop to OpenRouter. `ANIMA_OPENROUTER_FALLBACK` remains opt-in after Workers AI when **no** custom host is set.
-4. [#476](https://github.com/davins56/Anima-Protocol/pull/476) `a495cd07` — local-only `/chat/messages` open is **45s** (`LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS`). **`/api/ai/chat` stays 18s.** JSON progress SSE; Ollama `keep_alive: "10m"`; consume budget stays under the 130s browser abort (`llmChatMessagesStreamTotalMs`). Never the **80s** cascade. Never `llmOpenTimeoutMs({ freeTierCascade: false })` (**35s**) on Chat.jsx.
+4. [#476](https://github.com/davins56/Anima-Protocol/pull/476) `a495cd07` — local-only `/chat/messages` open is **45s** (`LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS`). **`/api/ai/chat` stays 18s.** JSON progress SSE; Ollama `keep_alive: "10m"`. Consume after open is **`llmChatMessagesStreamTotalMs()` = 75s** (130s browser abort − 45s open − 10s context slack). That 75s vs 130s gap is the helper, not a bug — do not raise consume to `LLM_STREAM_TOTAL_MS` (90s) or the client fetch dies first. Never the **80s** cascade. Never `llmOpenTimeoutMs({ freeTierCascade: false })` (**35s**) on Chat.jsx. Ignore other-agent notes to surface raw System errors, raise consume to match the 130s abort, or skip `writeSse` after disconnect.
 
 Do **not** re-apply `LLM_LOCAL_FAILOVER_ATTEMPT_MS`. Do not invent another open-budget constant. Optionally lower `LLM_STREAM_FIRST_CHUNK_MS` for anima-chat (50s is R1 `<think>`). Browser abort is still **130s**.
 
@@ -131,9 +131,9 @@ memory   upsertTurnMemory / recordTurnContinuity → companion_memories
 
 | Item | Status |
 |------|--------|
-| [#476](https://github.com/davins56/Anima-Protocol/pull/476) Local-only cold-start progress (45s `/chat/messages` open) | **Merged** `a495cd07` (2026-09-14). `LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS` 45s; `/api/ai/chat` stays 18s. JSON progress SSE; Ollama `keep_alive: "10m"`; does **not** undo #464. Do **not** start a competing timeout / keep_alive PR. |
-| [#475](https://github.com/davins56/Anima-Protocol/pull/475) Audit docs (#474 same-body replay) | **Merged** `56ec608a` (2026-09-14). |
-| [#474](https://github.com/davins56/Anima-Protocol/pull/474) Stop turn-2 replay of prior assistant text | **Merged** `447ab86d` (2026-09-14). `classifyChatTurnReuse`: replay only when `userContent` matches; mismatch mints a new `turn_id`; same-body in-flight is 409 `turn_in_flight`. Client `streamChatReplyWithTurnRetry` + `sendingRef`. Does **not** reopen Slice 1 SSE order. |
+| [#476](https://github.com/davins56/Anima-Protocol/pull/476) Local-only cold-start progress (45s `/chat/messages` open) | **Merged** `a495cd07` (2026-09-14). `LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS` 45s; `/api/ai/chat` stays 18s. JSON progress SSE; Ollama `keep_alive: "10m"`; `llmChatMessagesStreamTotalMs()` **75s** so 45+75+10 stays under the 130s browser abort. Does **not** undo #464. Do **not** start a competing timeout / keep_alive PR. |
+| [#475](https://github.com/davins56/Anima-Protocol/pull/475) Audit docs (#474 same-body replay) | **Merged** `56ec608a` (2026-09-14). Post-merge reviews: replay key is `userContent` only; client regenerates on `replayed` rather than accept-ledger. Documented here — **do not** start a second replay PR unless asked. |
+| [#474](https://github.com/davins56/Anima-Protocol/pull/474) Stop turn-2 replay of prior assistant text | **Merged** `447ab86d` (2026-09-14). `classifyChatTurnReuse`: replay only when `userContent` matches (not mode/cast/prompt); mismatch mints a new `turn_id`; same-body in-flight is 409 `turn_in_flight`. Client `streamChatReplyWithTurnRetry` + `sendingRef` mints a fresh id on `replayed` / 409 so Safari retry **regenerates**. Does **not** reopen Slice 1 SSE order. |
 | [#472](https://github.com/davins56/Anima-Protocol/pull/472) Audit docs (#471 + #458 hot-path claims) | **Merged** `c86bee80` (2026-09-14). |
 | [#471](https://github.com/davins56/Anima-Protocol/pull/471) Keep `OUTPUT FORMAT` when the group contract is long | **Merged** `bfc75a3c` (2026-09-14). Follow-up to #467: `GROUP_CONTRACT_TAIL_RESERVE` 400; head up to 1600; `clipGroupContractHead` keeps the `OUTPUT FORMAT` footer. Do **not** start a fourth contract-split PR. Leftover: 400-char end-slice can drop production `IMAGE GENERATION:` / `[IMAGE:` (server does not re-add the tag contract). |
 | [#470](https://github.com/davins56/Anima-Protocol/pull/470) Audit docs (#467/#468 collide table) | **Merged** `15b8c782` (2026-09-14). |
@@ -170,8 +170,8 @@ Do not duplicate. Next is identity Slice A — seed `companion_memories` on crea
 ### Explicitly not the first PR
 
 - Another Slice 1 TTFT PR (SSE / repo RAG / 24k wrap) — **shipped in [#453](https://github.com/davins56/Anima-Protocol/pull/453)**.
-- Another turn-id replay PR — **shipped in [#474](https://github.com/davins56/Anima-Protocol/pull/474)** (same-body only; mismatch mints a new id).
-- A competing local-only open-budget / keep_alive PR — **shipped in [#476](https://github.com/davins56/Anima-Protocol/pull/476)**.
+- Another turn-id replay PR — **shipped in [#474](https://github.com/davins56/Anima-Protocol/pull/474)** (same-body `userContent` only; mismatch mints a new id; client regenerates on `replayed` / 409). Do not expand the replay key to mode/cast/prompt unless asked.
+- A competing local-only open-budget / keep_alive PR — **shipped in [#476](https://github.com/davins56/Anima-Protocol/pull/476)**. Consume helper is already **75s**; do not raise it to the 130s client abort or to `LLM_STREAM_TOTAL_MS` (90s).
 - Another Slice 2 token-cap / 18s `/api/ai/chat` open PR — **shipped in [#455](https://github.com/davins56/Anima-Protocol/pull/455)** / [#457](https://github.com/davins56/Anima-Protocol/pull/457). Chat.jsx local-only open is **#476** (45s).
 - Another lean 1:1 Chat.jsx PR — **shipped in [#458](https://github.com/davins56/Anima-Protocol/pull/458)**.
 - Another contract-split / 2k wrap PR — **shipped in [#463](https://github.com/davins56/Anima-Protocol/pull/463)** / [#467](https://github.com/davins56/Anima-Protocol/pull/467) / [#471](https://github.com/davins56/Anima-Protocol/pull/471). Known leftover: group image-tag contract vs 400-char tail — do not start a fourth split unless asked.
@@ -191,7 +191,7 @@ Do not duplicate. Next is identity Slice A — seed `companion_memories` on crea
 | Claim | Evidence |
 |-------|----------|
 | SSE after `beginChatTurn`, before context load | #453 `openChatSse` after replay/409; `chatTtft.test.ts` |
-| Same-body `turn_id` replay only | #474 `classifyChatTurnReuse`; mismatch mints a new id; client `streamChatReplyWithTurnRetry` |
+| Same-body `turn_id` replay only | #474 `classifyChatTurnReuse` / `chatTurnUserContentMatches` (`userContent` only); mismatch mints a new id; client `streamChatReplyWithTurnRetry` regenerates on `replayed` / 409 |
 | Chat exempt from 20s wall | `workerApiGuard.ts` `isLongLivedApiPath` matches `/api/chat` |
 | Client wrap ≤2k after stripping transcript | `promptBuilder.ts` `clientSceneExcerpt` / `CLIENT_SCENE_CONTEXT_MAX`; #456 keeps IMAGE/EMOTION; #461 splits at contract markers; #463 line-anchors headings; #467 `capUniqueContracts` keeps group `CRITICAL INSTRUCTIONS:`; #471 `clipGroupContractHead` keeps `OUTPUT FORMAT`. Production group image-tag prose can still miss the 400-char tail. |
 | Solo Chat.jsx lean extras | #458 `buildLeanSoloClientContext` / `LEAN_SOLO_CLIENT_CONTEXT_MAX` |
@@ -203,7 +203,7 @@ Do not duplicate. Next is identity Slice A — seed `companion_memories` on crea
 | 12s local hop already on `/chat/messages` | `llmFailover.ts` `localAttemptSignal` + `LLM_LOCAL_FAILOVER_ATTEMPT_MS`; only when a next provider exists |
 | `/api/ai/chat` ≠ Chat.jsx | Chat.jsx → `animaApi.chat.sendMessage` → `/chat/messages` (45s local-only #476); `/api/ai/chat` stays 18s (`llmAiChatOpenTimeoutMs`) |
 | #450 merged | `origin/main` `f4a7010a`; `/api/ai/chat` still `llmAiChatOpenTimeoutMs()` (18s); `/chat/messages` `llmChatMessagesOpenTimeoutMs()` is 45s after #476 |
-| Progress SSE + keep_alive | #476 JSON `{ status: "progress", phase }`; Ollama `keep_alive: "10m"`; `llmChatMessagesStreamTotalMs` under 130s browser abort |
+| Progress SSE + keep_alive | #476 JSON `{ status: "progress", phase }`; Ollama `keep_alive: "10m"`; `llmChatMessagesStreamTotalMs()` **75s** (130 − 45 − 10). Client abort is `CHAT_STREAM_TIMEOUT_MS` 130s in `animaApi.js`. |
 | Companion clamp 1024 | `chatReplyMaxTokens` for ordinary solo; group / `deep_mode` keep `routeModel` 4–8k. Heavy 8192 is not what ordinary 1:1 `/chat/messages` sends. |
 | Leftover repair unawaited | #458 `scheduleLeftoverTurnRepair` after SSE heartbeat; must not delay TTFT |
 | World knowledge peek | `peekRegionalWorldKnowledge` on hot path; `void fetchRegionalWorldKnowledge` warms cache |
