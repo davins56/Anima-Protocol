@@ -4,17 +4,18 @@
  * Production chat is local-only (`chain: ["local"]`). Signed-in
  * `/api/openai` may still use the 35s single-model open budget (or 80s
  * when `usesFreeTierOpenBudget()` is true). Chat.jsx does not: POST
- * `/api/chat/messages` uses the 18s-class open cap below so a cold local
- * Ollama does not inherit the free-tier cascade wait.
+ * `/api/chat/messages` uses the local-only SSE open cap below so a cold
+ * anima-chat load can finish without inheriting the free-tier cascade wait
+ * and without the 18s `/api/ai/chat` wall (that cap existed so local could
+ * hop — after customOnly there is no hop).
  *
  * POST `/api/ai/chat` is NOT long-lived. An 80s (or even 35s) open abort
  * outlives the Worker ~20s wall, so the client sees 0 bytes instead of
  * JSON. Cap that path under the wall (`LLM_OPEN_TIMEOUT_AI_CHAT_MS`).
- * `/api/chat/messages` is wall-exempt (SSE) but reuses the same 18s open
- * budget; after the upstream stream opens, `open.cancel()` runs and
- * `consumeLlmStream` owns first-chunk / stall — this cap does not truncate
- * an in-flight reply. Local hop still uses `LLM_LOCAL_FAILOVER_ATTEMPT_MS`
- * (12s) when a next provider exists.
+ * `/api/chat/messages` is wall-exempt (SSE). After the upstream stream
+ * opens, `open.cancel()` runs and `consumeLlmStream` owns first-chunk /
+ * stall — this cap does not truncate an in-flight reply. Local hop still
+ * uses `LLM_LOCAL_FAILOVER_ATTEMPT_MS` (12s) when a next provider exists.
  *
  * Historical free-tier OpenRouter chat (`ANIMA_OPENROUTER_FREE=true`) hops
  * m2.7:free → m3:free → Gemma 4 on 400/429/5xx. Those hops plus the last
@@ -43,6 +44,14 @@ export const LLM_OPEN_TIMEOUT_FREE_TIER_MS = 80_000;
  * generate returns JSON `ai_timeout` instead of a 0-byte cut.
  */
 export const LLM_OPEN_TIMEOUT_AI_CHAT_MS = 18_000;
+
+/**
+ * SSE `/api/chat/messages` open budget when the chain is local-only.
+ * Cold Ollama (weights off RAM, tunnel handshake) routinely exceeds the
+ * 18s `/api/ai/chat` wall. This path is wall-exempt; 45s still fails
+ * clearly before the 130s browser abort, without waiting the 80s cascade.
+ */
+export const LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS = 45_000;
 
 /**
  * Local-provider attempt when a next hop exists. Shorter than the `/api/ai/chat`
@@ -130,14 +139,15 @@ export function llmAiChatOpenTimeoutMs(): number {
 /**
  * Open budget for Chat.jsx POST `/api/chat/messages`.
  *
- * Never the 80s free-tier cascade (`freeTierCascade: true`). Reuses the
- * 18s-class cap from `/api/ai/chat` so cold local Ollama fails over (12s
- * hop) or surfaces timeout instead of hanging. Streaming after open is
+ * Never the 80s free-tier cascade (`freeTierCascade: true`). Uses the
+ * 45s local-only SSE cap so a cold anima-chat load can open; the 18s
+ * `/api/ai/chat` wall stays on that JSON probe. Streaming after open is
  * unchanged — this abort is cancelled once `createChatStreamWithFailover`
- * returns.
+ * returns. When a next provider exists, `LLM_LOCAL_FAILOVER_ATTEMPT_MS`
+ * (12s) still aborts the local attempt first.
  */
 export function llmChatMessagesOpenTimeoutMs(): number {
-  return cappedConfiguredOpenTimeoutMs(LLM_OPEN_TIMEOUT_AI_CHAT_MS);
+  return cappedConfiguredOpenTimeoutMs(LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS);
 }
 
 export {

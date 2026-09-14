@@ -327,6 +327,7 @@ import {
   isOpenRouterTransientGatewayError,
   isOpenRouterZdrOrDataPolicyError,
   LOCAL_LLM_CONNECTION_FIX_HINT,
+  LOCAL_LLM_TIMEOUT_HINT,
   OPENROUTER_FREE_PROVIDER_HINT,
   OPENROUTER_ZDR_PRIVACY_HINT,
   shouldTryNextOpenRouterFreeModel,
@@ -1275,6 +1276,32 @@ describe("createChatStreamWithFailover", () => {
     });
   });
 
+  it("sends Ollama keep_alive on the local stream so weights stay resident", async () => {
+    createMock.mockResolvedValueOnce(fakeStream("anima"));
+    await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 1024,
+      messages: [{ role: "user", content: "hello" }],
+    });
+    expect(createMock.mock.calls[0]?.[0]).toMatchObject({
+      stream: true,
+      keep_alive: "10m",
+    });
+  });
+
+  it("does not send keep_alive when the backend is vllm", async () => {
+    process.env.ANIMA_LOCAL_LLM_BACKEND = "vllm";
+    createMock.mockResolvedValueOnce(fakeStream("anima"));
+    await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 1024,
+      messages: [{ role: "user", content: "hello" }],
+    });
+    expect(createMock.mock.calls[0]?.[0].keep_alive).toBeUndefined();
+  });
+
   it("clamps a fractional caller max_tokens to at least 1", () => {
     expect(honorCallerMaxTokens(0.7, 8192)).toBe(1);
     expect(honorCallerMaxTokens(1024.9, 8192)).toBe(1024);
@@ -1600,6 +1627,28 @@ describe("createChatStreamWithFailover", () => {
         messages: [{ role: "user", content: "hello" }],
       }),
     ).rejects.toThrow(/Anima LLM connection failed/i);
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not hop to OpenRouter when local stream-open times out even if fallback is on", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
+    process.env.ANIMA_LLM_PROVIDER = "custom";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
+    const abortErr = Object.assign(new Error("Request was aborted."), {
+      name: "APIUserAbortError",
+    });
+    createMock.mockRejectedValueOnce(abortErr);
+    createMock.mockResolvedValueOnce(fakeStream("openrouter-after-local"));
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 32,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    ).rejects.toThrow(LOCAL_LLM_TIMEOUT_HINT);
     expect(createMock).toHaveBeenCalledTimes(1);
   });
 
@@ -1974,7 +2023,7 @@ describe("createChatCompletionWithFailover", () => {
         maxTokens: 256,
         messages: [{ role: "user", content: "hello" }],
       }),
-    ).rejects.toMatchObject({ name: "APIUserAbortError" });
+    ).rejects.toThrow(LOCAL_LLM_TIMEOUT_HINT);
     expect(createMock).toHaveBeenCalledTimes(1);
   });
 
@@ -1989,7 +2038,7 @@ describe("createChatCompletionWithFailover", () => {
         maxTokens: 256,
         messages: [{ role: "user", content: "hello" }],
       }),
-    ).rejects.toMatchObject({ name: "APIUserAbortError" });
+    ).rejects.toThrow(LOCAL_LLM_TIMEOUT_HINT);
     expect(createMock).toHaveBeenCalledTimes(1);
   });
 });
@@ -2154,10 +2203,24 @@ describe("chatCompletionHttpFailure", () => {
   });
 
   it("maps abort / timeout to the signed-in chat took-too-long hint", () => {
-    expect(chatCompletionHttpFailure(new Error("Request was aborted."))).toEqual({
-      status: 502,
-      error: "The companion took too long to reply. Please try again.",
-      code: "ai_timeout",
-    });
+    const failure = chatCompletionHttpFailure(new Error("Request was aborted."));
+    expect(failure.status).toBe(502);
+    expect(failure.code).toBe("ai_timeout");
+    expect(failure.error).toMatch(/took too long/i);
+  });
+
+  it("uses the local-only timeout hint when the chain is customOnly", () => {
+    const previous = process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:11434/v1";
+    try {
+      expect(chatCompletionHttpFailure(new Error("Request was aborted."))).toEqual({
+        status: 502,
+        error: LOCAL_LLM_TIMEOUT_HINT,
+        code: "ai_timeout",
+      });
+    } finally {
+      if (previous === undefined) delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+      else process.env.ANIMA_LOCAL_LLM_BASE_URL = previous;
+    }
   });
 });
