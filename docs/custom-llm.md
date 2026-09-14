@@ -11,7 +11,7 @@
 | DPO/ORPO preference pairs (Unsloth) | Sharpen character fidelity after SFT — corrects specific bad habits |
 | `ANIMA_LLM_PROVIDER=custom` | Api-server talks **only** to your model — no cloud chat BYOK |
 
-The React app still calls `POST /api/chat/messages`. The preferred backend is the self-hosted Anima LLM (`anima-chat`) whenever `ANIMA_LOCAL_LLM_BASE_URL` is a usable public HTTPS `/v1` URL — including on the production Worker, even if the Workers AI DeepSeek binding is present. OpenRouter may hop only when `ANIMA_OPENROUTER_FALLBACK` is on (down custom host). MiniMax / OpenAI / DeepSeek APIs are not the custom LLM. Set `ANIMA_LLM_PROVIDER=custom` (production default).
+The React app still calls `POST /api/chat/messages`. The preferred backend is the self-hosted Anima LLM (`anima-chat`) whenever `ANIMA_LOCAL_LLM_BASE_URL` is a usable public HTTPS `/v1` URL — including on the production Worker, even if the Workers AI DeepSeek binding is present. That path is fail-closed (`customOnly`): OpenRouter is **not** appended after a usable custom host, even when `ANIMA_OPENROUTER_FALLBACK` and an OpenRouter key are set. `ANIMA_OPENROUTER_FALLBACK` only hops after Workers AI when no custom host is configured. MiniMax / OpenAI / DeepSeek APIs are not the custom LLM. Set `ANIMA_LLM_PROVIDER=custom` (production default).
 
 ---
 
@@ -156,7 +156,14 @@ Chat supports the self-hosted Anima LLM through `ANIMA_LOCAL_LLM_BASE_URL` (Open
 
 `OPENAI_API_KEY` still exists as an env var, but only for image generation/edit (`/api/openai/functions` image routes) — it is never read for chat.
 
-If the local endpoint is unavailable, the turn fails with a clear setup error instead of silently switching to a different model. OpenRouter can be enabled as an explicit connection-error fallback by setting `ANIMA_OPENROUTER_FALLBACK=true` and providing an OpenRouter key; leave it `false` for custom-only operation.
+If the local endpoint is unavailable, the turn fails with a clear setup / connection / `ai_timeout` error instead of silently switching to a different model. `ANIMA_OPENROUTER_FALLBACK=true` plus an OpenRouter key is **opt-in for the no-host Workers AI path only** — it does not hop after a preferred custom/local LLM (`customOnly`). Leave the flag `false` (or omit it) for custom-only operation. To re-enable a cloud hop after Workers AI when no custom host is set:
+
+```bash
+ANIMA_OPENROUTER_FALLBACK=true
+OPENROUTER_API_KEY=sk-or-…
+```
+
+Do not set `ANIMA_OPENROUTER_FALLBACK=true` to paper over a down self-hosted host — fail the turn and wake that host. Restoring a local→OpenRouter hop is not supported while customOnly is on.
 
 More detail on the fine-tune pipeline and self-hosted stack: [`docs/llm-build.md`](./llm-build.md).
 
