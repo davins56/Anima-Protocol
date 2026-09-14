@@ -69,7 +69,7 @@ Telemetry (`ChatPipelineTelemetry`) records `context_load_ms` and `ttft_ms`, but
 **What’s wrong:**
 
 1. `routeModel` → `maxTokens` 4096 (light) / **8192** (standard/heavy). `classifyComplexity` treats **≥200 characters or ≥30 words as heavy**. Ordinary companion turns hit 8192 `max_tokens`. Length guide already asks for 2–4 sentences.
-2. **Local cap shipped in [#457](https://github.com/davins56/Anima-Protocol/pull/457)** `b59c2db5`: `cappedLocalMaxTokens(req.maxTokens, m.maxTokens)`. A `chat.ts`-only 1024 clamp now reaches Ollama. Do not land a second local-min helper from #455 without rebasing.
+2. **Local cap shipped in [#457](https://github.com/davins56/Anima-Protocol/pull/457)** `b59c2db5`: `cappedLocalMaxTokens(req.maxTokens, m.maxTokens)`. Routed turns on `main` are still 4096/8192 until [#455](https://github.com/davins56/Anima-Protocol/pull/455) clamps `/chat/messages` to 1024; that clamp will now reach Ollama. Do not land a second local-min helper from #455 without rebasing.
 3. Production `wrangler.jsonc`: `ANIMA_OPENROUTER_FALLBACK=true` + `ANIMA_OPENROUTER_FREE=true`. `/chat/messages` uses `llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() })` → **80s outer** abort. That leftover budget is the **OpenRouter cascade**, not cold local: #450 already applied the **12s** `localAttemptSignal` hop inside `createChatStreamWithFailover`. Browser abort is **130s** (`CHAT_STREAM_TIMEOUT_MS`). First-chunk wait is **50s** (`LLM_STREAM_FIRST_CHUNK_MS`) — sized for DeepSeek R1 think, not anima-chat.
 4. Local SDK retries default **2** (`openaiClient.ts` `localLlmMaxRetries`).
 
@@ -77,7 +77,7 @@ Telemetry (`ChatPipelineTelemetry`) records `context_load_ms` and `ttft_ms`, but
 
 **Why it matters:** Even a fast first token feels slow if the model is allowed 8k tokens. After local hops in 12s, an 80s OpenRouter cascade still looks like “chat is broken.”
 
-**Approach:** Local cap is on `main` (#457). Remaining Slice 2 in [#455](https://github.com/davins56/Anima-Protocol/pull/455): pass `Math.min(routed.maxTokens, 1024)` from `/chat/messages` and drop the 80s `:free` outer abort (`freeTierCascade: false`). Rebase #455 onto `main` — do **not** re-apply `cappedLocalMaxTokens` / `LLM_LOCAL_FAILOVER_ATTEMPT_MS`. Optionally lower `LLM_STREAM_FIRST_CHUNK_MS` for anima-chat (50s is R1 `<think>`).
+**Approach:** Local cap is on `main` (#457). Remaining Slice 2 in [#455](https://github.com/davins56/Anima-Protocol/pull/455): pass `Math.min(routed.maxTokens, 1024)` from `/chat/messages` and open the companion stream with `llmChatMessagesOpenTimeoutMs()` (**18s**, same helper as `/api/ai/chat` — not `llmOpenTimeoutMs({ freeTierCascade: false })`, which is **35s**). Rebase #455 onto `main` — do **not** re-apply `cappedLocalMaxTokens` / `LLM_LOCAL_FAILOVER_ATTEMPT_MS`. Optionally lower `LLM_STREAM_FIRST_CHUNK_MS` for anima-chat (50s is R1 `<think>`).
 
 Do not re-litigate Worker ETIMEOUT classification or the healthz probe bound — those shipped in #450.
 
@@ -152,7 +152,7 @@ Do not duplicate. Remaining Chat.jsx thinning is in [#458](https://github.com/da
 
 **Local cap shipped in #457.** Remaining:
 
-- [#455](https://github.com/davins56/Anima-Protocol/pull/455) — rebase onto `main`, keep the 1024 clamp + 18s open, drop overlapping `llmFailover.ts` local-min hunks.
+- [#455](https://github.com/davins56/Anima-Protocol/pull/455) — rebase onto `main`, keep the 1024 clamp + `llmChatMessagesOpenTimeoutMs()` (18s), drop overlapping `llmFailover.ts` local-min hunks.
 - [#457](https://github.com/davins56/Anima-Protocol/pull/457) — **merged** `b59c2db5`. Done.
 
 Do not invent a fourth timeout constant. Do **not** re-apply `LLM_LOCAL_FAILOVER_ATTEMPT_MS`.
