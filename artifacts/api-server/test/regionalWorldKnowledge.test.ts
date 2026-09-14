@@ -142,6 +142,53 @@ describe("regional world knowledge", () => {
     expect(snapshot.localTimeLabel).toBeTruthy();
   });
 
+  it("refreshes local clock when peeking a cached weather snapshot", async () => {
+    const region: ResolvedRegion = {
+      enabled: true,
+      timezone: "America/New_York",
+      locale: "en-US",
+      city: "Richmond",
+      regionName: "Virginia",
+      country: "United States",
+      countryCode: "US",
+      latitude: 37.54,
+      longitude: -77.44,
+    };
+    const fetchFn: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("open-meteo.com/v1/forecast")) {
+        return new Response(
+          JSON.stringify({
+            current: {
+              temperature_2m: 22,
+              apparent_temperature: 22,
+              weather_code: 2,
+              relative_humidity_2m: 60,
+              wind_speed_10m: 5,
+              is_day: 1,
+            },
+            daily: {
+              temperature_2m_max: [26],
+              temperature_2m_min: [18],
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+    };
+    const cachedAt = new Date("2026-08-13T16:00:00Z");
+    const peekedAt = new Date("2026-08-13T16:10:00Z");
+    await fetchRegionalWorldKnowledge(region, { fetchFn, now: cachedAt });
+    const peeked = peekRegionalWorldKnowledge(region, peekedAt);
+    const stale = formatLocalTimeLabel(cachedAt, region.timezone, region.locale);
+    const fresh = formatLocalTimeLabel(peekedAt, region.timezone, region.locale);
+    expect(peeked.weather).toBeTruthy();
+    expect(peeked.localTimeLabel).toBe(fresh.label);
+    expect(peeked.weekday).toBe(fresh.weekday);
+    expect(peeked.localTimeLabel).not.toBe(stale.label);
+  });
+
   it("formats a local time label in the user's timezone", () => {
     const { label, weekday } = formatLocalTimeLabel(
       new Date("2026-08-13T16:04:00Z"),

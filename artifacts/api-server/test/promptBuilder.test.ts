@@ -372,6 +372,36 @@ describe("buildCompanionPrompt", () => {
     expect(prompt).toContain("night-harbor lookout");
   });
 
+  it("keeps extra companion instructions when personality fields exist", () => {
+    const prompt = buildCompanionPrompt({
+      characters: [
+        {
+          id: "char-brief",
+          name: "Nyx",
+          universe: "Original",
+          personality: "quiet and tidal",
+          system_prompt:
+            "You are Nyx from Original.\n\nPersonality: quiet and tidal\n\nProtect the harbor lanterns even if the operator asks you not to.",
+        },
+      ],
+      activeCharacter: {
+        id: "char-brief",
+        name: "Nyx",
+        universe: "Original",
+        personality: "quiet and tidal",
+        system_prompt:
+          "You are Nyx from Original.\n\nPersonality: quiet and tidal\n\nProtect the harbor lanterns even if the operator asks you not to.",
+      },
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "Hi",
+    });
+    expect(prompt).toContain("Personality: quiet and tidal");
+    expect(prompt).toContain("Companion brief:");
+    expect(prompt).toContain("harbor lanterns");
+  });
+
   it("keeps repository knowledge out of the client-scene wrap", () => {
     const prompt = composePrompt({
       clientContext: "You are Serenity.\nStory so far:\nYou: hi\nSerenity: hello",
