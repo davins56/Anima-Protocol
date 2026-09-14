@@ -66,7 +66,7 @@ Telemetry (`ChatPipelineTelemetry`) records `context_load_ms` and `ttft_ms`, but
 
 **Shipped (solo client):** [#458](https://github.com/davins56/Anima-Protocol/pull/458) `cfed7b3a` — `buildLeanSoloClientContext` (≤2k extras; trailing matrix/length/image/Continue reserved). Server `composePrompt` owns identity, store history, memories, `CORE_BEHAVIOR`.
 
-**Still open:** Group still concatenates sheets + transcript + `CRITICAL INSTRUCTIONS` via `buildGroupPrompt`. Solo dropped client `CharacterMemory` without a distillation merge into `companion_memories` (identity P1, not a speed PR).
+**Still open:** Group still concatenates sheets + transcript + `CRITICAL INSTRUCTIONS` via `buildGroupPrompt`. After [#471](https://github.com/davins56/Anima-Protocol/pull/471), a long unique suffix keeps a 1600-char head (`OUTPUT FORMAT` footer) and a **400-char end-slice**. Production `IMAGE GENERATION` (~479) + loyalty (~641) do not fit that slice, so the wrap can drop `[IMAGE:` while `composePrompt` re-adds `TURN_TAKING` / `LOYALTY_GUARDRAIL` but **not** the image-tag contract. Solo already reserves `imageInstruction` in `buildLeanSoloClientContext`. Do **not** start a fourth contract-split PR unless asked — this is a leftover, not a new split. Solo also dropped client `CharacterMemory` without a distillation merge into `companion_memories` (identity P1, not a speed PR).
 
 ### P0-L3 — Cap generation length; don’t use the 80s free-tier open budget on Chat.jsx — **shipped in #455 + #457 + #464**
 
@@ -126,7 +126,7 @@ memory   upsertTurnMemory / recordTurnContinuity → companion_memories
 
 | Item | Status |
 |------|--------|
-| [#471](https://github.com/davins56/Anima-Protocol/pull/471) Keep `OUTPUT FORMAT` when the group contract is long | **Merged** `bfc75a3c` (2026-09-14). Follow-up to #467: `GROUP_CONTRACT_TAIL_RESERVE` 400; head up to 1600; `clipGroupContractHead` keeps the `OUTPUT FORMAT` footer. Do **not** start a fourth contract-split PR. |
+| [#471](https://github.com/davins56/Anima-Protocol/pull/471) Keep `OUTPUT FORMAT` when the group contract is long | **Merged** `bfc75a3c` (2026-09-14). Follow-up to #467: `GROUP_CONTRACT_TAIL_RESERVE` 400; head up to 1600; `clipGroupContractHead` keeps the `OUTPUT FORMAT` footer. Do **not** start a fourth contract-split PR. Leftover: 400-char end-slice can drop production `IMAGE GENERATION:` / `[IMAGE:` (server does not re-add the tag contract). |
 | [#470](https://github.com/davins56/Anima-Protocol/pull/470) Audit docs (#467/#468 collide table) | **Merged** `15b8c782` (2026-09-14). |
 | [#468](https://github.com/davins56/Anima-Protocol/pull/468) Synchro snapshot bond-strength contract | **Merged** `93c3db58` (2026-09-14). Same `synchroStrength` reader for serialize / snapshot / Key radiation stub. |
 | [#467](https://github.com/davins56/Anima-Protocol/pull/467) Keep group `CRITICAL INSTRUCTIONS` under 2k wrap | **Merged** `fcf57dbc` (2026-09-14). Follow-up to #463: `capUniqueContracts` reserves the group head; headings-only split (no history `[IMAGE:]`). Head/OUTPUT FORMAT clip shipped in #471. |
@@ -163,7 +163,7 @@ Do not duplicate. Next is identity Slice A — seed `companion_memories` on crea
 - Another Slice 1 TTFT PR (SSE / repo RAG / 24k wrap) — **shipped in [#453](https://github.com/davins56/Anima-Protocol/pull/453)**.
 - Another Slice 2 token-cap / 18s open PR — **shipped in [#455](https://github.com/davins56/Anima-Protocol/pull/455)** / [#457](https://github.com/davins56/Anima-Protocol/pull/457).
 - Another lean 1:1 Chat.jsx PR — **shipped in [#458](https://github.com/davins56/Anima-Protocol/pull/458)**.
-- Another contract-split / 2k wrap PR — **shipped in [#463](https://github.com/davins56/Anima-Protocol/pull/463)** / [#467](https://github.com/davins56/Anima-Protocol/pull/467) / [#471](https://github.com/davins56/Anima-Protocol/pull/471).
+- Another contract-split / 2k wrap PR — **shipped in [#463](https://github.com/davins56/Anima-Protocol/pull/463)** / [#467](https://github.com/davins56/Anima-Protocol/pull/467) / [#471](https://github.com/davins56/Anima-Protocol/pull/471). Known leftover: group image-tag contract vs 400-char tail — do not start a fourth split unless asked.
 - Re-enable OpenRouter after a preferred local host — **#464 fail-closed**.
 - Worker ETIMEOUT / healthz probe classification (**done in #450**).
 - Another 12s local hop on `/chat/messages` (**already in #450** via `localAttemptSignal`).
@@ -182,7 +182,7 @@ Do not duplicate. Next is identity Slice A — seed `companion_memories` on crea
 |-------|----------|
 | SSE after `beginChatTurn`, before context load | #453 `openChatSse` after replay/409; `chatTtft.test.ts` |
 | Chat exempt from 20s wall | `workerApiGuard.ts` `isLongLivedApiPath` matches `/api/chat` |
-| Client wrap ≤2k after stripping transcript | `promptBuilder.ts` `clientSceneExcerpt` / `CLIENT_SCENE_CONTEXT_MAX`; #456 keeps IMAGE/EMOTION; #461 splits at contract markers; #463 line-anchors headings; #467 `capUniqueContracts` keeps group `CRITICAL INSTRUCTIONS:`; #471 `clipGroupContractHead` keeps `OUTPUT FORMAT` |
+| Client wrap ≤2k after stripping transcript | `promptBuilder.ts` `clientSceneExcerpt` / `CLIENT_SCENE_CONTEXT_MAX`; #456 keeps IMAGE/EMOTION; #461 splits at contract markers; #463 line-anchors headings; #467 `capUniqueContracts` keeps group `CRITICAL INSTRUCTIONS:`; #471 `clipGroupContractHead` keeps `OUTPUT FORMAT`. Production group image-tag prose can still miss the 400-char tail. |
 | Solo Chat.jsx lean extras | #458 `buildLeanSoloClientContext` / `LEAN_SOLO_CLIENT_CONTEXT_MAX` |
 | Local Ollama honors `req.maxTokens` | #457 `cappedLocalMaxTokens` on `main` `b59c2db5` (not only #455 `262c275e`) |
 | Chat.jsx streams deltas | `streamChatReply.js` `onDelta` per content event; `useChatStreaming` |
