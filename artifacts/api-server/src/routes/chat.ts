@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { getAuth } from "@clerk/express";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import {
   CHAT_MESSAGE,
   CHAT_SESSION,
@@ -11,6 +11,7 @@ import {
  memoryEmbeddings,
  db,
   ensureSchemaOnce,
+  resetEnsureSchemaLatch,
   withTransientDbRetry,
   makeId,
   migrateSessionMessages,
@@ -28,20 +29,9 @@ import {
 import { routeModel } from "../lib/modelRouter";
 import {
   createChatStreamWithFailover,
-  isLocalOnlyProviderChain,
-  isOpenRouterGenericProviderError,
-  isOpenRouterZdrOrDataPolicyError,
-  localOnlyTimeoutMessage,
-  OPENROUTER_FREE_PROVIDER_HINT,
-  OPENROUTER_ZDR_PRIVACY_HINT,
-  remapGenericProviderError,
   type LlmBrand,
   type LlmProviderId,
 } from "../lib/llmFailover";
-import {
-  WORKERS_AI_FREE_QUOTA_HINT,
-  isWorkersAiFreeQuotaError,
-} from "../lib/workersAi";
 import {
   consumeLlmStream,
   LlmStreamTimeoutError,
@@ -126,6 +116,8 @@ import {
   crisisResourceForCountry,
 } from "../lib/therapySafety";
 import { ChatPipelineTelemetry } from "../lib/chatTelemetry";
+import { streamErrorMessage } from "../lib/chatStreamError";
+import { classifyDbError } from "../lib/dbErrors";
 import { finalizeAssistantReply } from "../lib/visibleAssistantReply";
 import {
   beginChatTurn,
@@ -267,32 +259,36 @@ function openChatSse(res: Response): {
   };
 }
 
-function streamErrorMessage(err: unknown): string {
-  if (err instanceof LlmStreamTimeoutError) {
-    return typeof isLocalOnlyProviderChain === "function" && isLocalOnlyProviderChain()
-      ? localOnlyTimeoutMessage()
-      : err.message;
+function isMissingRelationError(err: unknown): boolean {
+  const info = classifyDbError(err);
+  if (info.reason === "schema" || info.code === "42P01") return true;
+  const blob = err instanceof Error
+    ? `${err.message}\n${err.cause instanceof Error ? err.cause.message : ""}`
+    : String(err ?? "");
+  return /does not exist/i.test(blob);
+}
+
+/** Scalar binds only — drizzle `inArray` emits `IN ($n)` with a JS array. */
+function matchCharacterIds(characterIds: string[]) {
+  if (characterIds.length === 1) {
+    return eq(companionMemories.characterId, characterIds[0]!);
   }
-  if (isWorkersAiFreeQuotaError(err)) {
-    return WORKERS_AI_FREE_QUOTA_HINT;
-  }
-  if (isOpenRouterZdrOrDataPolicyError(err)) {
-    return OPENROUTER_ZDR_PRIVACY_HINT;
-  }
-  if (isOpenRouterGenericProviderError(err)) {
-    const remapped = err instanceof Error ? remapGenericProviderError(err) : new Error(OPENROUTER_FREE_PROVIDER_HINT);
-    return remapped.message;
-  }
-  const raw = err instanceof Error ? err.message : String(err);
-  if (/aborted|abort/i.test(raw)) {
-    return typeof localOnlyTimeoutMessage === "function"
-      ? localOnlyTimeoutMessage()
-      : "The companion took too long to reply. Please try again.";
-  }
-  if (/workers ai|deepseek/i.test(raw)) {
-    return raw;
-  }
-  return raw;
+  return or(
+    ...characterIds.map((id) => eq(companionMemories.characterId, id)),
+  )!;
+}
+
+async function queryCompanionMemories(userId: string, characterIds: string[]) {
+  return db
+    .select()
+    .from(companionMemories)
+    .where(
+      and(
+        eq(companionMemories.userId, userId),
+        matchCharacterIds(characterIds),
+      ),
+    )
+    .orderBy(desc(companionMemories.updatedAt));
 }
 
 async function loadStoreSession(userId: string, sessionId: string) {
@@ -533,16 +529,22 @@ async function updateStoreSessionMetadata(
 
 async function loadMemories(userId: string, characterIds: string[]) {
   if (characterIds.length === 0) return [];
-  return db
-    .select()
-    .from(companionMemories)
-    .where(
-      and(
-        eq(companionMemories.userId, userId),
-        inArray(companionMemories.characterId, characterIds),
-      ),
-    )
-    .orderBy(desc(companionMemories.updatedAt));
+  try {
+    return await withTransientDbRetry(() =>
+      queryCompanionMemories(userId, characterIds),
+    );
+  } catch (err) {
+    if (!isMissingRelationError(err)) throw err;
+    logger.warn(
+      { err },
+      "companion_memories missing or out of date; re-running schema ensure",
+    );
+    resetEnsureSchemaLatch();
+    await withTransientDbRetry(() => ensureSchemaOnce());
+    return await withTransientDbRetry(() =>
+      queryCompanionMemories(userId, characterIds),
+    );
+  }
 }
 
 /**
@@ -605,16 +607,18 @@ async function upsertTurnMemory(params: {
     created_at: now.toISOString(),
   };
   for (const characterId of params.characterIds) {
-    const [existing] = await db
-      .select()
-      .from(companionMemories)
-      .where(
-        and(
-          eq(companionMemories.userId, params.userId),
-          eq(companionMemories.characterId, characterId),
-        ),
-      )
-      .limit(1);
+    const [existing] = await withTransientDbRetry(() =>
+      db
+        .select()
+        .from(companionMemories)
+        .where(
+          and(
+            eq(companionMemories.userId, params.userId),
+            eq(companionMemories.characterId, characterId),
+          ),
+        )
+        .limit(1),
+    );
     const facts = Array.isArray(existing?.facts) ? existing.facts.slice(-24) : [];
     if (
       params.turnId &&
@@ -628,27 +632,29 @@ async function upsertTurnMemory(params: {
       continue;
     }
     facts.push(fact);
-    await db
-      .insert(companionMemories)
-      .values({
-        userId: params.userId,
-        characterId,
-        summary: existing?.summary ?? "",
-        facts,
-        emotionalState: existing?.emotionalState ?? {},
-        resonanceNotes: existing?.resonanceNotes ?? "",
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [
-          companionMemories.userId,
-          companionMemories.characterId,
-        ],
-        set: {
+    await withTransientDbRetry(() =>
+      db
+        .insert(companionMemories)
+        .values({
+          userId: params.userId,
+          characterId,
+          summary: existing?.summary ?? "",
           facts,
+          emotionalState: existing?.emotionalState ?? {},
+          resonanceNotes: existing?.resonanceNotes ?? "",
           updatedAt: now,
-        },
-      });
+        })
+        .onConflictDoUpdate({
+          target: [
+            companionMemories.userId,
+            companionMemories.characterId,
+          ],
+          set: {
+            facts,
+            updatedAt: now,
+          },
+        }),
+    );
 
     // Index the new turn fact for hybrid semantic retrieval. Best-effort —
     // chat must not fail if the embedding endpoint / hash path errors.
@@ -849,21 +855,23 @@ async function applyRelationshipPostProcess(params: {
       : null;
     const now = new Date();
     for (const cid of characterIds) {
-      const [existing] = await db
-        .select({
-          summary: companionMemories.summary,
-          facts: companionMemories.facts,
-          emotionalState: companionMemories.emotionalState,
-          resonanceNotes: companionMemories.resonanceNotes,
-        })
-        .from(companionMemories)
-        .where(
-          and(
-            eq(companionMemories.userId, userId),
-            eq(companionMemories.characterId, cid),
-          ),
-        )
-        .limit(1);
+      const [existing] = await withTransientDbRetry(() =>
+        db
+          .select({
+            summary: companionMemories.summary,
+            facts: companionMemories.facts,
+            emotionalState: companionMemories.emotionalState,
+            resonanceNotes: companionMemories.resonanceNotes,
+          })
+          .from(companionMemories)
+          .where(
+            and(
+              eq(companionMemories.userId, userId),
+              eq(companionMemories.characterId, cid),
+            ),
+          )
+          .limit(1),
+      );
       const serialized = {
         ...((existing?.emotionalState as Record<string, unknown> | undefined) ??
           {}),
@@ -872,24 +880,26 @@ async function applyRelationshipPostProcess(params: {
           ? { selfState: serializeCompanionAffect(evolvedAffect) }
           : {}),
       };
-      await db
-        .insert(companionMemories)
-        .values({
-          userId,
-          characterId: cid,
-          summary: existing?.summary ?? "",
-          facts: Array.isArray(existing?.facts) ? existing.facts : [],
-          emotionalState: serialized,
-          resonanceNotes: existing?.resonanceNotes ?? "",
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [companionMemories.userId, companionMemories.characterId],
-          set: {
+      await withTransientDbRetry(() =>
+        db
+          .insert(companionMemories)
+          .values({
+            userId,
+            characterId: cid,
+            summary: existing?.summary ?? "",
+            facts: Array.isArray(existing?.facts) ? existing.facts : [],
             emotionalState: serialized,
+            resonanceNotes: existing?.resonanceNotes ?? "",
             updatedAt: now,
-          },
-        });
+          })
+          .onConflictDoUpdate({
+            target: [companionMemories.userId, companionMemories.characterId],
+            set: {
+              emotionalState: serialized,
+              updatedAt: now,
+            },
+          }),
+      );
     }
 
     try {
@@ -1138,16 +1148,18 @@ async function loadCharacterMemory(
   userId: string,
   characterId: string,
 ) {
-  const [memory] = await db
-    .select()
-    .from(companionMemories)
-    .where(
-      and(
-        eq(companionMemories.userId, userId),
-        eq(companionMemories.characterId, characterId),
-      ),
-    )
-    .limit(1);
+  const [memory] = await withTransientDbRetry(() =>
+    db
+      .select()
+      .from(companionMemories)
+      .where(
+        and(
+          eq(companionMemories.userId, userId),
+          eq(companionMemories.characterId, characterId),
+        ),
+      )
+      .limit(1),
+  );
 
   return memory ?? null;
 }
@@ -2076,6 +2088,7 @@ router.post("/messages", async (req, res) => {
       persistence_status: "generated",
     });
   } catch (err) {
+    logger.error({ err }, "Chat message stream failed");
     await markTurnFailed(turnId, userId, err).catch(() => {});
     writeSse(res, { error: streamErrorMessage(err) });
     telemetry.report("failed", {
