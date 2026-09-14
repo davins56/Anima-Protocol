@@ -271,7 +271,7 @@ export function honorCallerMaxTokens(
   if (typeof requested !== "number" || !Number.isFinite(requested) || requested <= 0) {
     return cap;
   }
-  return Math.min(Math.floor(requested), cap);
+  return Math.min(Math.max(Math.floor(requested), 1), cap);
 }
 
 export interface ChatStreamResult {
