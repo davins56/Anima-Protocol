@@ -67,6 +67,24 @@ describe("streamChatReply", () => {
     expect(onDelta.mock.calls.at(-1)[0]).toBe("Hi");
   });
 
+  it("forwards local-only progress status before the first token", async () => {
+    const onStatus = vi.fn();
+    const onDelta = vi.fn();
+    await streamChatReply(
+      fromEvents([
+        { status: "progress", phase: "preparing", elapsed_ms: 0 },
+        { status: "progress", phase: "waking", elapsed_ms: 1200 },
+        { content: "Hi" },
+        { done: true },
+      ]),
+      { onStatus, onDelta },
+    );
+    expect(onStatus).toHaveBeenCalledTimes(2);
+    expect(onStatus.mock.calls[0][0].phase).toBe("preparing");
+    expect(onStatus.mock.calls[1][0].phase).toBe("waking");
+    expect(onDelta.mock.calls.at(-1)[0]).toBe("Hi");
+  });
+
   it("throws when the stream reports an error", async () => {
     await expect(
       streamChatReply(fromEvents([{ error: "boom" }])),
