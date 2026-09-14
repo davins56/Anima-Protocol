@@ -97,6 +97,39 @@ function collectErrorSignals(err: unknown): {
   };
 }
 
+/**
+ * Worker 20s wall (`WorkerApiTimeoutError`), not a Postgres/Hyperdrive failure.
+ * Same `code` (`ETIMEOUT`) as `DbOperationTimeoutError` — distinguish by name
+ * or the complete Worker message (a whole line), not an unbounded substring
+ * that could appear inside a Drizzle "Failed query" wrapper.
+ */
+export function isWorkerApiTimeoutError(err: unknown): boolean {
+  let current: unknown = err;
+  const seen = new Set<unknown>();
+  const messages: string[] = [];
+  for (let depth = 0; depth < 6 && current; depth += 1) {
+    if (seen.has(current)) break;
+    seen.add(current);
+    if (current instanceof Error) {
+      if (current.name === "WorkerApiTimeoutError") return true;
+      messages.push(current.message);
+    } else if (current && typeof current === "object") {
+      const obj = current as { name?: unknown; message?: unknown };
+      if (obj.name === "WorkerApiTimeoutError") return true;
+      if (typeof obj.message === "string" && obj.message) messages.push(obj.message);
+    } else if (typeof current === "string") {
+      messages.push(current);
+    }
+    current =
+      current && typeof current === "object" && "cause" in current
+        ? (current as { cause?: unknown }).cause
+        : undefined;
+  }
+  return messages.some((message) =>
+    /^API request aborted due to timeout after \d+ms$/i.test(message),
+  );
+}
+
 /** Operator-facing snippet: name + code + scrubbed message. Never a URL. */
 export function secretFreeErrorSignal(err: unknown): {
   code?: string;
@@ -120,6 +153,18 @@ export function classifyDbError(err: unknown): DbErrorInfo {
   const { message, code, name } = collectErrorSignals(err);
   const signal = secretFreeErrorSignal(err).signal;
   const blob = `${name} ${code} ${message}`;
+
+  // Worker wall-clock timeout shares ETIMEOUT / "aborted due to timeout" with
+  // real DB timeouts. Do not report it as database-unavailable.
+  if (isWorkerApiTimeoutError(err)) {
+    return {
+      isDbError: false,
+      reason: "internal",
+      safeMessage: "Internal server error",
+      code: code || "ETIMEOUT",
+      signal,
+    };
+  }
 
   const looksLikeDb =
     code.startsWith("28") || // invalid auth

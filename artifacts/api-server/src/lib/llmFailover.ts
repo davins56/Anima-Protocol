@@ -58,6 +58,11 @@ import {
 import { getOpenWeightChatModel, resolveModelSpec } from "@workspace/llm";
 import { LlmStreamTimeoutError } from "./consumeLlmStream";
 import {
+  combineAbortSignals,
+  LLM_LOCAL_FAILOVER_ATTEMPT_MS,
+  openStreamAbort,
+} from "./chatTimeouts";
+import {
   completeWorkersAi,
   formatWorkersAiError,
   hasWorkersAiBinding,
@@ -92,7 +97,7 @@ export function chatCompletionHttpFailure(err: unknown): {
   }
   const message =
     err instanceof Error ? err.message.trim() : String(err ?? "").trim();
-  if (err instanceof LlmStreamTimeoutError || /aborted|abort/i.test(message)) {
+  if (err instanceof LlmStreamTimeoutError || isLlmAbortOrTimeoutError(err)) {
     return {
       status: 502,
       error: "The companion took too long to reply. Please try again.",
@@ -462,7 +467,9 @@ export function shouldTryNextProvider(
   hasNext: boolean,
 ): boolean {
   if (!hasNext) return false;
-  if (provider === "local" && !isProviderConnectionError(err)) return false;
+  if (provider === "local") {
+    return isProviderConnectionError(err) || isLlmAbortOrTimeoutError(err);
+  }
   if (provider === "workersai") {
     return isWorkersAiHoppableError(err);
   }
@@ -473,6 +480,66 @@ export function shouldTryNextProvider(
     return shouldTryNextOpenRouterFreeModel(err, model);
   }
   return true;
+}
+
+/** Caller abort / stream-open timeout — hoppable when a next provider exists. */
+export function isLlmAbortOrTimeoutError(err: unknown): boolean {
+  if (err instanceof LlmStreamTimeoutError) return true;
+  const seen = new Set<unknown>();
+  let current: unknown = err;
+  for (let depth = 0; depth < 6 && current; depth += 1) {
+    if (seen.has(current)) break;
+    seen.add(current);
+    if (typeof current === "string") {
+      if (/aborted|abort|timed?\s*out|timeout/i.test(current)) return true;
+    } else if (current && typeof current === "object") {
+      if (current instanceof LlmStreamTimeoutError) return true;
+      const name = errorFieldLower((current as { name?: unknown }).name);
+      const code = errorCodeLower(current as { code?: unknown });
+      const msg = errorFieldLower((current as { message?: unknown }).message);
+      if (name.includes("abort") || name.includes("timeout")) return true;
+      if (
+        code === "etimeout" ||
+        code === "etimedout" ||
+        code === "abort_err" ||
+        code === "und_err_connect_timeout"
+      ) {
+        return true;
+      }
+      if (
+        msg.includes("aborted") ||
+        msg.includes("abort") ||
+        msg.includes("timed out") ||
+        msg.includes("timeout")
+      ) {
+        return true;
+      }
+      current =
+        "cause" in current ? (current as { cause?: unknown }).cause : undefined;
+      continue;
+    }
+    break;
+  }
+  return false;
+}
+
+/**
+ * Local generate can stall past the Worker wall if it shares the caller's
+ * abort. When a next hop exists, abort the local attempt first so OpenRouter
+ * still has the parent signal.
+ */
+function localAttemptSignal(
+  parent: AbortSignal | undefined,
+  hasNext: boolean,
+): { signal?: AbortSignal; cancel: () => void } {
+  if (!hasNext || !parent || parent.aborted) {
+    return { signal: parent, cancel: () => {} };
+  }
+  const attempt = openStreamAbort(LLM_LOCAL_FAILOVER_ATTEMPT_MS);
+  return {
+    signal: combineAbortSignals(parent, attempt.signal),
+    cancel: attempt.cancel,
+  };
 }
 
 /** Workers AI failures that may hop to OpenRouter when it is next in chain. */
@@ -1931,26 +1998,32 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
         triedLocal = true;
         const client = requireLocalClient();
         const preferred = resolveLocalModel(req.tier);
-        const { value: stream, resolved } = await withModelFallback(client, preferred, (m) =>
-          client.chat.completions.create(
-            {
-              model: m.model,
-              max_tokens: m.maxTokens,
-              messages: req.messages,
-              stream: true,
-              ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
-            },
-            ...(req.signal ? [{ signal: req.signal }] : []),
-          ),
-        );
-        return {
-          stream,
-          provider: "local",
-          brand: "anima",
-          model: resolved.model,
-          tier: resolved.tier,
-          failedOver: false,
-        };
+        const hasNext = chain.indexOf(provider) < chain.length - 1;
+        const attempt = localAttemptSignal(req.signal, hasNext);
+        try {
+          const { value: stream, resolved } = await withModelFallback(client, preferred, (m) =>
+            client.chat.completions.create(
+              {
+                model: m.model,
+                max_tokens: m.maxTokens,
+                messages: req.messages,
+                stream: true,
+                ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
+              },
+              ...(attempt.signal ? [{ signal: attempt.signal }] : []),
+            ),
+          );
+          return {
+            stream,
+            provider: "local",
+            brand: "anima",
+            model: resolved.model,
+            tier: resolved.tier,
+            failedOver: false,
+          };
+        } finally {
+          attempt.cancel();
+        }
       }
 
       if (provider === "minimax") {
@@ -2049,30 +2122,36 @@ export async function createChatCompletionWithFailover(
         triedLocal = true;
         const client = requireLocalClient();
         const preferred = resolveLocalModel(req.tier);
-        const { value: completion, resolved } = await withModelFallback(client, preferred, (m) =>
-          client.chat.completions.create(
-            {
-              model: m.model,
-              max_tokens: m.maxTokens,
-              messages: req.messages,
-              ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
-              ...(req.tools && req.tools.length
-                ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" }
-                : {}),
-            },
-            req.signal ? { signal: req.signal } : undefined,
-          ),
-        );
-        const content = completion.choices?.[0]?.message?.content ?? "";
-        return {
-          content: typeof content === "string" ? content : "",
-          provider: "local",
-          brand: "anima",
-          model: resolved.model,
-          tier: resolved.tier,
-          failedOver: false,
-          toolCalls: completion.choices?.[0]?.message?.tool_calls ?? null,
-        };
+        const hasNext = chain.indexOf(provider) < chain.length - 1;
+        const attempt = localAttemptSignal(req.signal, hasNext);
+        try {
+          const { value: completion, resolved } = await withModelFallback(client, preferred, (m) =>
+            client.chat.completions.create(
+              {
+                model: m.model,
+                max_tokens: m.maxTokens,
+                messages: req.messages,
+                ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
+                ...(req.tools && req.tools.length
+                  ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" }
+                  : {}),
+              },
+              ...(attempt.signal ? [{ signal: attempt.signal }] : []),
+            ),
+          );
+          const content = completion.choices?.[0]?.message?.content ?? "";
+          return {
+            content: typeof content === "string" ? content : "",
+            provider: "local",
+            brand: "anima",
+            model: resolved.model,
+            tier: resolved.tier,
+            failedOver: false,
+            toolCalls: completion.choices?.[0]?.message?.tool_calls ?? null,
+          };
+        } finally {
+          attempt.cancel();
+        }
       }
 
       if (provider === "minimax") {

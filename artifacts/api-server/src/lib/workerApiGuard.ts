@@ -1,7 +1,14 @@
-import { classifyDbError } from "./dbErrors";
+import { classifyDbError, isWorkerApiTimeoutError } from "./dbErrors";
 
 /** Store / health probes — return JSON before Cloudflare HTML 524/1101. */
 export const WORKER_API_TIMEOUT_MS = 20_000;
+
+/**
+ * Live `/api/healthz/llm?probe=1` needs longer than the store wall (cold
+ * Ollama generate) but must stay bounded — unbounded probes can pin Worker
+ * capacity. Still well under Cloudflare HTML 524.
+ */
+export const WORKER_LLM_PROBE_TIMEOUT_MS = 45_000;
 
 export type WorkerFetchHandler = {
   fetch: (
@@ -31,6 +38,10 @@ export function isStoreApiPath(pathname: string): boolean {
  * Long-lived /api streams must not be raced against a wall-clock timeout
  * (SSE store push, chat completions). Store + healthz still time out so a
  * hung Hyperdrive query cannot become Cloudflare HTML.
+ *
+ * Live LLM probes (`/api/healthz/llm?probe=1`) stay on the healthz timeout
+ * path but use a longer budget (`WORKER_LLM_PROBE_TIMEOUT_MS`) so a slow
+ * custom host is not cut at 20s and misreported as a database timeout.
  */
 export function isLongLivedApiPath(pathname: string): boolean {
   return (
@@ -39,12 +50,27 @@ export function isLongLivedApiPath(pathname: string): boolean {
   );
 }
 
-export function shouldTimeoutApiPath(pathname: string): boolean {
+/** Live `?probe=1` against the custom LLM. */
+export function isLlmHealthProbePath(pathname: string, search = ""): boolean {
+  if (!/^\/api\/healthz\/llm\/?$/.test(pathname)) return false;
+  const raw = search.startsWith("?") ? search.slice(1) : search;
+  const probe = new URLSearchParams(raw).get("probe");
+  return probe === "1" || probe === "true" || probe === "yes";
+}
+
+export function shouldTimeoutApiPath(pathname: string, search = ""): boolean {
   return (
     isWorkerApiPath(pathname) &&
     !isLongLivedApiPath(pathname) &&
     /^\/api\/(?:store|healthz)(?:\/|$)/.test(pathname)
   );
+}
+
+/** Wall-clock budget for a timed `/api` path. Probes are longer, not unbounded. */
+export function workerApiTimeoutMs(pathname: string, search = ""): number {
+  return isLlmHealthProbePath(pathname, search)
+    ? WORKER_LLM_PROBE_TIMEOUT_MS
+    : WORKER_API_TIMEOUT_MS;
 }
 
 export function isJsonContentType(contentType: string | null | undefined): boolean {
@@ -106,6 +132,27 @@ export function jsonApiErrorResponse(
   status = 503,
   pathname = "",
 ): Response {
+  if (isWorkerApiTimeoutError(err) || err instanceof WorkerApiTimeoutError) {
+    const llmProbe = /^\/api\/healthz\/llm\/?$/.test(pathname);
+    return new Response(
+      JSON.stringify({
+        error: llmProbe
+          ? "LLM health probe timed out"
+          : "The API request timed out.",
+        dbError: false,
+        reason: "timeout",
+        code: "timeout",
+      }),
+      {
+        status: 503,
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": "no-store",
+        },
+      },
+    );
+  }
+
   const dbInfo = classifyDbError(err);
   const store = isStoreApiPath(pathname);
   const treatAsDb = dbInfo.isDbError || store;
@@ -114,16 +161,15 @@ export function jsonApiErrorResponse(
         error: dbInfo.isDbError
           ? dbInfo.safeMessage
           : "The companion store is unreachable.",
+        dbError: dbInfo.isDbError,
         reason: dbInfo.isDbError ? dbInfo.reason : "unavailable",
         code: dbInfo.code ?? (store ? "store_unavailable" : "database_unavailable"),
       }
     : {
         error: "The API is temporarily unavailable. Retry in a moment.",
+        dbError: false,
         reason: "unavailable" as const,
-        code:
-          err instanceof WorkerApiTimeoutError
-            ? "timeout"
-            : "worker_api_failure",
+        code: "worker_api_failure",
       };
   return new Response(JSON.stringify(payload), {
     status: treatAsDb ? 503 : status,
@@ -202,11 +248,15 @@ export async function fetchApiThroughExpress(
   handler: WorkerFetchHandler,
   options: { timeoutMs?: number } = {},
 ): Promise<Response> {
-  const pathname = new URL(request.url).pathname;
+  const url = new URL(request.url);
+  const pathname = url.pathname;
   try {
     const pending = handler.fetch(request, env, ctx);
-    const response = shouldTimeoutApiPath(pathname)
-      ? await withWorkerApiTimeout(pending, options.timeoutMs)
+    const response = shouldTimeoutApiPath(pathname, url.search)
+      ? await withWorkerApiTimeout(
+          pending,
+          options.timeoutMs ?? workerApiTimeoutMs(pathname, url.search),
+        )
       : await pending;
     return await coerceApiResponseToJson(response, pathname);
   } catch (err) {
