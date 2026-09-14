@@ -141,7 +141,8 @@ memory   upsertTurnMemory / recordTurnContinuity → companion_memories
 
 | Item | Status |
 |------|--------|
-| [#450](https://github.com/davins56/Anima-Protocol/pull/450) Worker ETIMEOUT ≠ DB; `/api/ai/chat` 18s; **12s `localAttemptSignal` in shared failover**; probe 45s | **Merged** `f4a7010a` (2026-09-14). Do not re-open classification. Do **not** recommend another 12s hop on `/chat/messages` — it already shares `createChatStreamWithFailover`. Remaining Chat.jsx work: pre-SSE context load, 24k wrap, local `max_tokens` ignoring `req.maxTokens`, 80s OpenRouter outer abort. |
+| [#450](https://github.com/davins56/Anima-Protocol/pull/450) Worker ETIMEOUT ≠ DB; `/api/ai/chat` 18s; **12s `localAttemptSignal` in shared failover**; probe 45s | **Merged** `f4a7010a` (2026-09-14). Do not re-open classification. Do **not** recommend another 12s hop on `/chat/messages` — it already shares `createChatStreamWithFailover`. Remaining Chat.jsx work after #453: local `max_tokens` ignoring `req.maxTokens`, 80s OpenRouter outer abort. |
+| [#453](https://github.com/davins56/Anima-Protocol/pull/453) Slice 1 TTFT — SSE before context load | **Open** (`cursor/chat-ttft-slice1-fba3`, ready for review). `beginChatTurn` + replay/409 still run **before** `openChatSse` (the CodeAnt order). Default repo RAG gated; client wrap capped at 2k after stripping `Story so far:`. Do **not** start a second Slice 1 PR. They left `llmFailover.ts` / `chatTimeouts.ts` untouched on purpose (Slice 2 + #450). Slice 2 still **must** edit `llmFailover.ts` for the local token cap — that is not a #450 collision. |
 | Rate-limit | Merged #125. User-keyed. Leave it. |
 | `main` CI `api-tests` | `llmEnsemble.test.ts` vs OpenRouter in CI chain. Separate PR. |
 | Dependabot #449 | Ignore. |
@@ -151,6 +152,8 @@ memory   upsertTurnMemory / recordTurnContinuity → companion_memories
 ## Recommended next 1–2 PRs (latency)
 
 ### Slice 1 — TTFT: open the stream, shrink prefill (P0-L1 + P0-L2)
+
+**Status:** in [#453](https://github.com/davins56/Anima-Protocol/pull/453) — do not duplicate.
 
 **Files:** `artifacts/api-server/src/routes/chat.ts`, `artifacts/api-server/src/lib/promptBuilder.ts` (optional cap), maybe `Chat.jsx` only if dropping fat history is in-scope.
 
@@ -162,7 +165,7 @@ Tests: `chatLifecycle` still streams; add an assert that a status/heartbeat even
 
 ### Slice 2 — E2E: honor token cap on local Ollama; stop 80s OpenRouter cascade (P0-L3)
 
-**Files:** `artifacts/api-server/src/lib/llmFailover.ts` (**required** for the cap to reach anima-chat), then `artifacts/api-server/src/routes/chat.ts`. Do not invent a fourth timeout constant.
+**Files:** `artifacts/api-server/src/lib/llmFailover.ts` (**required** for the cap to reach anima-chat), then `artifacts/api-server/src/routes/chat.ts`. Do not invent a fourth timeout constant. [#453](https://github.com/davins56/Anima-Protocol/pull/453) deferred this and treated `llmFailover.ts` as a #450 collision file — it is not, for the token cap.
 
 1. Local stream/complete in `createChatStreamWithFailover`: send `max_tokens: Math.min(req.maxTokens ?? m.maxTokens, m.maxTokens)` instead of `m.maxTokens`. Today OpenRouter honors the caller cap; local does not.
 2. Then `maxTokens: Math.min(routed.maxTokens, 1024)` on `/chat/messages` (length guide is already 2–4 sentences). `chat.ts` alone is a no-op on production Ollama.
@@ -172,6 +175,7 @@ Tests: `chatLifecycle` still streams; add an assert that a status/heartbeat even
 
 ### Explicitly not the first PR
 
+- Another Slice 1 TTFT PR (SSE / repo RAG / 24k wrap) — **[#453](https://github.com/davins56/Anima-Protocol/pull/453)** already has it.
 - Worker ETIMEOUT / healthz probe classification (**done in #450**).
 - Another 12s local hop on `/chat/messages` (**already in #450** via `localAttemptSignal`).
 - Wiring `GET /chat/memories` into Chat.jsx `system_prompt` (would worsen double-prefill).
