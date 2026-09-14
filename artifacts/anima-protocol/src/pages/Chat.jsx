@@ -1367,14 +1367,21 @@ export default function Chat() {
         !aiBehaviorConfig &&
         activeSession.mode === "solo" &&
         activeSession.character_id;
+      const behaviorConfigPromise = needsBehaviorConfig
+        ? base44.entities.AIBehaviorConfig.filter({
+            character_id: activeSession.character_id,
+          })
+            .then((rows) => (rows?.length ? rows[0] : null))
+            .catch(() => null)
+        : Promise.resolve(aiBehaviorConfig);
       const rosterSoloChar =
         activeSession.mode === "solo" && activeSession.character_id
           ? characters.find((c) => c.id === activeSession.character_id) || null
           : null;
-      const [user, , resolvedSoloChar, resolvedGroupChars] =
+      const [user, fetchedBehaviorConfig, resolvedSoloChar, resolvedGroupChars] =
         await Promise.all([
           authUser ? Promise.resolve(authUser) : base44.auth.me(),
-          Promise.resolve(null),
+          behaviorConfigPromise,
           rosterSoloChar
             ? Promise.resolve(rosterSoloChar)
             : activeSession.mode === "solo" && activeSession.character_id
@@ -1389,14 +1396,8 @@ export default function Chat() {
               ).then((chars) => chars.filter(Boolean))
             : Promise.resolve([]),
         ]);
-      if (needsBehaviorConfig) {
-        base44.entities.AIBehaviorConfig.filter({
-          character_id: activeSession.character_id,
-        })
-          .then((rows) => {
-            if (rows?.length > 0) setAIBehaviorConfig(rows[0]);
-          })
-          .catch(() => {});
+      if (needsBehaviorConfig && fetchedBehaviorConfig) {
+        setAIBehaviorConfig(fetchedBehaviorConfig);
       }
       const therapyActive = isTherapySession(activeSession, user, resolvedSoloChar);
       const modePolicy = resolveClientChatMode({
@@ -1406,7 +1407,7 @@ export default function Chat() {
           activeSession.mode === "group" && distinctUniverses >= 2,
       });
       const adultMode = modePolicy.adultAllowed;
-      const behaviorConfig = aiBehaviorConfig;
+      const behaviorConfig = fetchedBehaviorConfig || aiBehaviorConfig;
 
       // Account-default user profile (set in /profile). Surfaced to every
       // companion so they know who they're talking to. Wrapped in a delimited
@@ -1618,6 +1619,7 @@ ${lewdityGuide}`;
             adultInstruction: effectiveAdultInstruction,
             intimatePlayAlong,
             matrixSafetyClause,
+            userProfileContext,
             injectedMemoryContext: injectedMemCtx,
             loreContext: loreCtx,
             calendarContext: finalCalendarContext,

@@ -34,6 +34,20 @@ describe("buildLeanSoloClientContext", () => {
     expect(context.endsWith("…")).toBe(true);
   });
 
+  it("keeps length, image, and Continue extras when lore is oversized", () => {
+    const context = buildLeanSoloClientContext({
+      loreContext: "LORE: " + "x".repeat(LEAN_SOLO_CLIENT_CONTEXT_MAX + 400),
+      lengthGuide: "Keep it conversational — 2-4 sentences.",
+      imageInstruction: "IMAGE GENERATION: emit [IMAGE: …] when asked to draw.",
+      isContinue: true,
+      characterName: "Aria",
+    });
+    expect(context.length).toBeLessThanOrEqual(LEAN_SOLO_CLIENT_CONTEXT_MAX);
+    expect(context).toContain("2-4 sentences");
+    expect(context).toContain("IMAGE GENERATION");
+    expect(context).toMatch(/Continue — keep the scene moving as Aria/);
+  });
+
   it("adds a continue beat without a user transcript", () => {
     const context = buildLeanSoloClientContext({
       isContinue: true,
@@ -59,6 +73,8 @@ describe("Chat.jsx lean 1:1 wiring", () => {
 
   it("sends lean solo extras instead of a second identity + transcript prompt", () => {
     expect(chat).toContain("buildLeanSoloClientContext(");
+    expect(chat).toContain("userProfileContext,");
+    expect(chat).toContain("behaviorConfigPromise");
     expect(chat).toContain("companionChatDeepMode(activeSession)");
     expect(chat).not.toMatch(
       /prompt = `You are \$\{char\.name\}[\s\S]*CHARACTER IDENTITY LOCK/,
