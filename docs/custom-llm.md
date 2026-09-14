@@ -64,10 +64,18 @@ Accept the Mistral license on Hugging Face and set `HUGGING_FACE_HUB_TOKEN` if t
 ### 1. Prepare your dataset
 
 ```bash
-pnpm llm:prepare-finetune
+# Real logs: Settings → Export, then:
+pnpm llm:ingest -- --from ~/Downloads/anima-backup.json
+pnpm llm:dataset
+
+# Fixtures only (no personal logs):
+pnpm llm:dataset -- --rehearse
+
 # Seed + Postgres transcripts:
-pnpm llm:prepare-finetune -- --with-db --user <clerk_user_id>
+pnpm llm:prepare-finetune -- --with-db --user <clerk_user_id> --val-split 0.05
 ```
+
+Details and the CUDA checklist: [`docs/llm-build.md`](./llm-build.md).
 
 ### 2. Fine-tune with LoRA (QLoRA)
 
