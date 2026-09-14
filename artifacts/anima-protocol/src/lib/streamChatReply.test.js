@@ -134,6 +134,32 @@ describe("streamChatReply", () => {
     expect(onDelta).toHaveBeenCalledWith("I hear you. Stay close.");
   });
 
+  it("preserves companion_affect on the done payload for the mood UI contract", async () => {
+    const result = await streamChatReply(
+      fromEvents([
+        { content: "I am here." },
+        {
+          done: true,
+          visible: "I am here.",
+          companion_affect: {
+            version: 1,
+            primary: "tender",
+            intensity: 58,
+            mood: "tender-aching",
+            energy: 44,
+            synchro_strength: 61,
+          },
+        },
+      ]),
+    );
+    expect(result.companion_affect).toMatchObject({
+      primary: "tender",
+      intensity: 58,
+      synchro_strength: 61,
+    });
+    expect(result.content).toBe("I am here.");
+  });
+
   it("resolves when done arrives even if the iterable never closes", async () => {
     async function* hangAfterDone() {
       yield { content: "Hi" };

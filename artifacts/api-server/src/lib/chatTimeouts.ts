@@ -1,14 +1,20 @@
 /**
  * Chat LLM open / stream / client abort budgets.
  *
- * Production chat is local-only (`chain: ["local"]`). Signed-in SSE
- * (`/api/chat`, `/api/openai`) is long-lived and may use the 35s
- * single-model open budget. The unused OpenRouter :free key must not
- * stretch that wait to 80s (`usesFreeTierOpenBudget()`).
+ * Production chat is local-only (`chain: ["local"]`). Signed-in
+ * `/api/openai` may still use the 35s single-model open budget (or 80s
+ * when `usesFreeTierOpenBudget()` is true). Chat.jsx does not: POST
+ * `/api/chat/messages` uses the 18s-class open cap below so a cold local
+ * Ollama does not inherit the free-tier cascade wait.
  *
  * POST `/api/ai/chat` is NOT long-lived. An 80s (or even 35s) open abort
  * outlives the Worker ~20s wall, so the client sees 0 bytes instead of
  * JSON. Cap that path under the wall (`LLM_OPEN_TIMEOUT_AI_CHAT_MS`).
+ * `/api/chat/messages` is wall-exempt (SSE) but reuses the same 18s open
+ * budget; after the upstream stream opens, `open.cancel()` runs and
+ * `consumeLlmStream` owns first-chunk / stall — this cap does not truncate
+ * an in-flight reply. Local hop still uses `LLM_LOCAL_FAILOVER_ATTEMPT_MS`
+ * (12s) when a next provider exists.
  *
  * Historical free-tier OpenRouter chat (`ANIMA_OPENROUTER_FREE=true`) hops
  * m2.7:free → m3:free → Gemma 4 on 400/429/5xx. Those hops plus the last
@@ -27,7 +33,7 @@ export const LLM_OPEN_TIMEOUT_MS = 35_000;
 /**
  * Free-tier multi-candidate open budget. Two failed hops (m2.7 429/502,
  * m3 GMICloud 400) plus last-candidate retries must still be able to open.
- * Signed-in SSE only — never `/api/ai/chat`.
+ * Signed-in `/api/openai` only — never `/api/ai/chat` or `/api/chat/messages`.
  */
 export const LLM_OPEN_TIMEOUT_FREE_TIER_MS = 80_000;
 
@@ -69,8 +75,48 @@ export const LLM_STREAM_TOTAL_MS = 90_000;
 export const CHAT_STREAM_TIMEOUT_MS =
   LLM_OPEN_TIMEOUT_FREE_TIER_MS + LLM_STREAM_FIRST_CHUNK_MS;
 
+/**
+ * Companion turns are 2–4 sentences. Route tiers still advertise 4–8k
+ * max_tokens; honoring that on Ollama lets anima-chat keep generating long
+ * after the user already has a complete beat. Cap here, then honor the cap
+ * on the local request (`honorCallerMaxTokens` in llmFailover).
+ */
+export const COMPANION_REPLY_MAX_TOKENS = 1024;
+
+export function companionReplyMaxTokens(routedMax: number): number {
+  if (!Number.isFinite(routedMax) || routedMax <= 0) {
+    return COMPANION_REPLY_MAX_TOKENS;
+  }
+  return Math.min(Math.floor(routedMax), COMPANION_REPLY_MAX_TOKENS);
+}
+
+/**
+ * 1:1 companion turns stay capped for TTFT / stop-early. Group and explicit
+ * deep-mode keep the router budget so long-form sessions are not truncated.
+ */
+export function chatReplyMaxTokens(
+  routedMax: number,
+  opts: { mode?: string; deepMode?: boolean } = {},
+): number {
+  if (opts.mode === "group" || opts.deepMode) {
+    if (!Number.isFinite(routedMax) || routedMax <= 0) {
+      return COMPANION_REPLY_MAX_TOKENS;
+    }
+    return Math.floor(routedMax);
+  }
+  return companionReplyMaxTokens(routedMax);
+}
+
 export function llmOpenTimeoutMs(opts: { freeTierCascade?: boolean } = {}): number {
   return opts.freeTierCascade ? LLM_OPEN_TIMEOUT_FREE_TIER_MS : LLM_OPEN_TIMEOUT_MS;
+}
+
+function cappedConfiguredOpenTimeoutMs(cap: number): number {
+  const configured = Number(process.env.ANIMA_LLM_OPEN_TIMEOUT_MS);
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.min(configured, cap);
+  }
+  return cap;
 }
 
 /**
@@ -78,12 +124,26 @@ export function llmOpenTimeoutMs(opts: { freeTierCascade?: boolean } = {}): numb
  * tests/ops, but never exceeds the Worker-safe cap.
  */
 export function llmAiChatOpenTimeoutMs(): number {
-  const configured = Number(process.env.ANIMA_LLM_OPEN_TIMEOUT_MS);
-  if (Number.isFinite(configured) && configured > 0) {
-    return Math.min(configured, LLM_OPEN_TIMEOUT_AI_CHAT_MS);
-  }
-  return LLM_OPEN_TIMEOUT_AI_CHAT_MS;
+  return cappedConfiguredOpenTimeoutMs(LLM_OPEN_TIMEOUT_AI_CHAT_MS);
 }
+
+/**
+ * Open budget for Chat.jsx POST `/api/chat/messages`.
+ *
+ * Never the 80s free-tier cascade (`freeTierCascade: true`). Reuses the
+ * 18s-class cap from `/api/ai/chat` so cold local Ollama fails over (12s
+ * hop) or surfaces timeout instead of hanging. Streaming after open is
+ * unchanged — this abort is cancelled once `createChatStreamWithFailover`
+ * returns.
+ */
+export function llmChatMessagesOpenTimeoutMs(): number {
+  return cappedConfiguredOpenTimeoutMs(LLM_OPEN_TIMEOUT_AI_CHAT_MS);
+}
+
+export {
+  CHAT_MESSAGES_MAX_TOKENS,
+  clampChatMessagesMaxTokens,
+} from "./modelRouter";
 
 export function combineAbortSignals(...signals: AbortSignal[]): AbortSignal {
   const live = signals.filter(Boolean);

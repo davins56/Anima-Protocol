@@ -2,9 +2,10 @@
 // OpenAI-compatible) whenever ANIMA_LOCAL_LLM_BASE_URL is a usable custom
 // host. That is anima-chat — not DeepSeek, not OpenAI. Workers AI (DeepSeek
 // via AI Gateway) is only used when no custom host is configured.
-// MiniMax / Deepshi stay out of the chat chain. OpenRouter may follow the
-// preferred provider when ANIMA_OPENROUTER_FALLBACK is explicitly truthy
-// (custom-host connection failures, or Workers AI 4006 / neuron quota).
+// MiniMax / Deepshi stay out of the chat chain. A usable custom/local host is
+// fail-closed: OpenRouter is not appended even when ANIMA_OPENROUTER_FALLBACK
+// and a key are set. That flag only hops after Workers AI when no custom host
+// is configured (DeepSeek 4006 / neuron quota).
 //
 // Local endpoint: ANIMA_LOCAL_LLM_BASE_URL (or VLLM_BASE_URL / OLLAMA_BASE_URL).
 // Image generate/edit may still use Gemini / OpenAI on separate routes.
@@ -205,15 +206,15 @@ export interface LlmRoutingStatus {
   /** Ordered provider chain for this process. */
   chain: LlmProviderId[];
   /**
-   * True when ANIMA_LLM_PROVIDER is custom/local/anima — OpenRouter must not
-   * take over chat even if a key is present.
+   * True when chat is fail-closed to the self-hosted Anima LLM. OpenRouter
+   * must not take over even if a key and ANIMA_OPENROUTER_FALLBACK are set
+   * while a usable local host is preferred.
    */
   customOnly: boolean;
   /**
-   * True when ANIMA_OPENROUTER_FALLBACK is 1|true|yes. Production may then
-   * append OpenRouter after the preferred provider (custom Anima LLM
-   * connection failures, or Workers AI 4006 when no custom host is set).
-   * This flag does not reopen MiniMax/Deepshi or skip a configured custom LLM.
+   * True when ANIMA_OPENROUTER_FALLBACK is 1|true|yes. That hops after Workers
+   * AI (4006) only when no usable custom host is configured. It does not
+   * append OpenRouter after a preferred self-hosted LLM (customOnly).
    */
   openRouterFallback: boolean;
   note: string;
@@ -255,6 +256,23 @@ export interface ChatStreamRequest {
  */
 export function usesFreeTierOpenBudget(): boolean {
   return getProviderChain().includes("openrouter") && isOpenRouterAlreadyFreeTier();
+}
+
+/**
+ * Honor a caller cap on local Ollama/vLLM. OpenRouter already uses
+ * `Math.min(req.maxTokens, m.maxTokens)`; the local branch used to send
+ * `m.maxTokens` (4–8k) and ignore `/chat/messages`.
+ */
+export function honorCallerMaxTokens(
+  requested: number | undefined,
+  modelMax: number,
+): number {
+  const cap =
+    Number.isFinite(modelMax) && modelMax > 0 ? Math.floor(modelMax) : 1024;
+  if (typeof requested !== "number" || !Number.isFinite(requested) || requested <= 0) {
+    return cap;
+  }
+  return Math.min(Math.max(Math.floor(requested), 1), cap);
 }
 
 export interface ChatStreamResult {
@@ -318,7 +336,8 @@ export function preferDeepshiOnly(): boolean {
 
 /**
  * Temporary OpenRouter hop after Workers AI when ANIMA_OPENROUTER_FALLBACK
- * is 1|true|yes. Does not reopen MiniMax/Deepshi or skip a local-only chain.
+ * is 1|true|yes and no usable custom host is configured. Does not hop after
+ * a preferred self-hosted LLM (customOnly), even when the key is bound.
  */
 export function allowOpenRouterFallback(): boolean {
   const raw = (process.env.ANIMA_OPENROUTER_FALLBACK || "").trim().toLowerCase();
@@ -425,18 +444,15 @@ function localUsable(): boolean {
 /**
  * Ordered chat providers. A usable self-hosted Anima LLM
  * (`ANIMA_LOCAL_LLM_BASE_URL`, model anima-chat) is preferred over Workers
- * AI DeepSeek and over OpenAI. When ANIMA_OPENROUTER_FALLBACK is truthy and
- * a key is present, OpenRouter is appended so a down custom host (or
- * hoppable DeepSeek 4006 when no custom host is set) can fail over.
- * MiniMax / Deepshi never fill the gap.
+ * AI DeepSeek and over OpenAI. customOnly / local-preferred is fail-closed:
+ * OpenRouter is not appended even when ANIMA_OPENROUTER_FALLBACK and a key
+ * are set. That flag only hops after Workers AI when no custom host is
+ * configured (DeepSeek 4006). MiniMax / Deepshi never fill the gap.
  */
 export function getProviderChain(): LlmProviderId[] {
   if (localUsable()) {
-    const chain: LlmProviderId[] = ["local"];
-    if (allowOpenRouterFallback() && hasOpenRouterKey()) {
-      chain.push("openrouter");
-    }
-    return chain;
+    // Fail-closed: the self-hosted host is the only chat provider.
+    return ["local"];
   }
   if (hasWorkersAiBinding()) {
     const chain: LlmProviderId[] = ["workersai"];
@@ -449,12 +465,14 @@ export function getProviderChain(): LlmProviderId[] {
 }
 
 /**
- * OpenRouter may cover a down custom-LLM host, but auth / model / app errors
- * from that host must surface. Silently skipping them burns OpenRouter quota
- * and looks like the custom LLM was never tried.
+ * Auth / model / app errors from the custom host must surface. Connection
+ * and timeout failures hop only when a next provider exists — with
+ * customOnly that is never OpenRouter, so the turn returns ai_timeout /
+ * connection instead of silently calling cloud.
  *
  * Workers AI → OpenRouter on hoppable DeepSeek failures, especially error
- * 4006 / daily free neuron allocation. Local stays connection-only.
+ * 4006 / daily free neuron allocation, when fallback is on and no custom
+ * host is configured.
  *
  * OpenRouter → MiniMax on hoppable provider blips (400/429/5xx) and on
  * OpenRouter ZDR / data-policy / guardrail exclusion (those bind only the
@@ -1338,7 +1356,9 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       }
       if (hasOpenRouterKey() && !chain.includes("openrouter")) {
         noteParts.push(
-          "OpenRouter key is present but unused — chat is local-only (ANIMA_LLM_PROVIDER=custom).",
+          openRouterFallback
+            ? "ANIMA_OPENROUTER_FALLBACK is on but unused — customOnly keeps chat on the self-hosted Anima LLM (no OpenRouter hop after a usable local host)."
+            : "OpenRouter key is present but unused — chat is local-only (ANIMA_LLM_PROVIDER=custom).",
         );
       }
     }
@@ -2005,7 +2025,7 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
             client.chat.completions.create(
               {
                 model: m.model,
-                max_tokens: m.maxTokens,
+                max_tokens: honorCallerMaxTokens(req.maxTokens, m.maxTokens),
                 messages: req.messages,
                 stream: true,
                 ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
@@ -2129,7 +2149,7 @@ export async function createChatCompletionWithFailover(
             client.chat.completions.create(
               {
                 model: m.model,
-                max_tokens: m.maxTokens,
+                max_tokens: honorCallerMaxTokens(req.maxTokens, m.maxTokens),
                 messages: req.messages,
                 ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
                 ...(req.tools && req.tools.length

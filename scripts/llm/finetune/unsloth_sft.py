@@ -6,7 +6,8 @@ Install (CUDA machine, ~12–16 GB VRAM for QLoRA):
   pip install "unsloth[colab-new]" transformers datasets trl
 
 Prepare data first:
-  pnpm llm:prepare-finetune
+  pnpm llm:dataset
+  # or: pnpm llm:ingest -- --from ~/Downloads/anima-backup.json && pnpm llm:prepare-finetune -- --val-split 0.05
   # → scripts/llm/output/finetune-sharegpt.jsonl
 
 Run (defaults to Ministral 3 8B Base for fine-tuning):

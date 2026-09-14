@@ -173,7 +173,7 @@ async function getIndex(): Promise<RepositoryChunk[]> {
  * is actually about this repo / codebase.
  */
 const REPOSITORY_TURN_RE =
-  /\b(?:this repo(?:sitory)?|the repo(?:sitory)?|our repo(?:sitory)?|the codebase|source tree|monorepo|wrangler\.jsonc?|hyperdrive|ANIMA_LOCAL_LLM|artifacts\/(?:api-server|anima-protocol)|lib\/db|pnpm (?:build|install|test|typecheck)|cloudflare worker|repository (?:context|knowledge|rag)|anima-protocol\.com)\b/i;
+  /\b(?:this repo(?:sitory)?|the repo(?:sitory)?|our repo(?:sitory)?|the codebase|source tree|monorepo|wrangler\.jsonc?|ANIMA_LOCAL_LLM|artifacts\/(?:api-server|anima-protocol)|lib\/db|pnpm (?:build|install|test|typecheck)|repository (?:context|knowledge|rag)|anima-protocol\.com)\b/i;
 
 export function looksLikeRepositoryTurn(query: string): boolean {
   return REPOSITORY_TURN_RE.test(String(query || ""));
