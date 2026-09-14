@@ -11,6 +11,7 @@ import {
   formatLocalTimeLabel,
   formatRegionalWorldKnowledge,
   fetchRegionalWorldKnowledge,
+  peekRegionalWorldKnowledge,
   upsertRegionalWorldKnowledge,
   promptHasRegionalWorldKnowledge,
   resetRegionalWorldKnowledgeCacheForTests,
@@ -116,6 +117,29 @@ describe("regional world knowledge", () => {
       geo: { country: "US" },
     });
     expect(region.enabled).toBe(false);
+  });
+
+  it("peeks clock-only world knowledge without waiting on weather HTTP", () => {
+    const region: ResolvedRegion = {
+      enabled: true,
+      timezone: "America/New_York",
+      locale: "en-US",
+      city: "Richmond",
+      regionName: "Virginia",
+      country: "United States",
+      countryCode: "US",
+      latitude: null,
+      longitude: null,
+    };
+    const snapshot = peekRegionalWorldKnowledge(
+      region,
+      new Date("2026-08-13T16:04:00Z"),
+    );
+    expect(snapshot.enabled).toBe(true);
+    expect(snapshot.city).toBe("Richmond");
+    expect(snapshot.weather).toBeNull();
+    expect(snapshot.holidays).toEqual([]);
+    expect(snapshot.localTimeLabel).toBeTruthy();
   });
 
   it("formats a local time label in the user's timezone", () => {

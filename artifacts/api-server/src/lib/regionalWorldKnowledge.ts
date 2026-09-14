@@ -469,6 +469,23 @@ function cacheKey(region: ResolvedRegion): string {
   ].join("|");
 }
 
+/**
+ * Clock / location snapshot without waiting on weather or geocode HTTP.
+ * Uses a warm cache when a previous turn already fetched live weather.
+ * Companion chat should not block first token on Open-Meteo.
+ */
+export function peekRegionalWorldKnowledge(
+  region: ResolvedRegion,
+  now = new Date(),
+): RegionalSnapshot {
+  if (!region.enabled) {
+    return emptySnapshot({ ...region, enabled: false }, now);
+  }
+  const cached = snapshotCache.get(cacheKey(region));
+  if (cached && cached.expiresAt > now.getTime()) return cached.snapshot;
+  return emptySnapshot(region, now);
+}
+
 async function fetchJson(
   url: string,
   fetchFn: typeof fetch,
