@@ -197,6 +197,7 @@ function moodLabel(
   if (primary === "tender") return "tender";
   if (primary === "playful" && intensity >= 60) return "stirred";
   if (primary === "neutral" && energy < 35) return "quiet";
+  if (primary === "neutral") return "quiet-watchful";
   if (primary === "sad" && intensity >= 55) return "aching";
   if (primary === "hostile" && intensity >= 60) return "sharp";
   if (primary === "cold") return "withdrawn";
