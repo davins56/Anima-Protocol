@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { streamChatReply } from "./streamChatReply";
+import { streamChatReply, streamChatReplyWithTurnRetry } from "./streamChatReply";
 
 async function* fromEvents(events) {
   for (const event of events) yield event;
@@ -177,5 +177,89 @@ describe("streamChatReply", () => {
     expect(result.content).toBe("Hi");
     expect(result.done).toBe(true);
     expect(result.model).toBe("test");
+  });
+});
+
+describe("streamChatReplyWithTurnRetry", () => {
+  it("retries once with a new turn_id when the stream is replayed", async () => {
+    const mintTurnId = vi.fn(() => "turn_retry");
+    const onRetry = vi.fn();
+    const send = vi.fn((id) => {
+      if (id === "turn_old") {
+        return fromEvents([
+          { content: "Old reply" },
+          { done: true, replayed: true, turn_id: "turn_old" },
+        ]);
+      }
+      return fromEvents([
+        { content: "Fresh reply" },
+        { done: true, turn_id: id },
+      ]);
+    });
+
+    const result = await streamChatReplyWithTurnRetry({
+      send,
+      turnId: "turn_old",
+      mintTurnId,
+      onRetry,
+    });
+
+    expect(mintTurnId).toHaveBeenCalledTimes(1);
+    expect(onRetry).toHaveBeenCalledWith("turn_retry");
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send.mock.calls[1][0]).toBe("turn_retry");
+    expect(result.content).toBe("Fresh reply");
+    expect(result.replayed).toBeFalsy();
+    expect(result.turn_id).toBe("turn_retry");
+  });
+
+  it("retries once with a new turn_id on 409", async () => {
+    const err = Object.assign(
+      new Error("This chat turn is already being processed."),
+      { status: 409, code: "turn_in_flight" },
+    );
+    const send = vi.fn((id) => {
+      if (id === "turn_old") {
+        return (async function* () {
+          throw err;
+        })();
+      }
+      return fromEvents([{ content: "Go" }, { done: true, turn_id: id }]);
+    });
+
+    const result = await streamChatReplyWithTurnRetry({
+      send,
+      turnId: "turn_old",
+      mintTurnId: () => "turn_new",
+    });
+
+    expect(result.content).toBe("Go");
+    expect(result.turn_id).toBe("turn_new");
+    expect(send.mock.calls.map((call) => call[0])).toEqual([
+      "turn_old",
+      "turn_new",
+    ]);
+  });
+
+  it("does not retry a second 409", async () => {
+    const err = Object.assign(
+      new Error("This chat turn is already being processed."),
+      { status: 409 },
+    );
+    const send = vi.fn(
+      () =>
+        (async function* () {
+          throw err;
+        })(),
+    );
+
+    await expect(
+      streamChatReplyWithTurnRetry({
+        send,
+        turnId: "turn_old",
+        mintTurnId: () => "turn_new",
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(send).toHaveBeenCalledTimes(2);
   });
 });

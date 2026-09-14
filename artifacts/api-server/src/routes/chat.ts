@@ -126,6 +126,7 @@ import { finalizeAssistantReply } from "../lib/visibleAssistantReply";
 import {
   beginChatTurn,
   checkpointGeneratedTurn,
+  classifyChatTurnReuse,
   markTurnCommitted,
   markTurnFailed,
   normalizeTurnId,
@@ -1445,44 +1446,43 @@ router.post("/messages", async (req, res) => {
   ];
   const mode = body.mode || String(sessionData.mode || "solo");
   const content = String(body.content ?? "");
-  const turnId = normalizeTurnId(body.turn_id);
+  let turnId = normalizeTurnId(body.turn_id);
   const persistenceOwner: PersistenceOwner =
     body.persistence_owner === "client" || body.persist === false
       ? "client"
       : "server";
+  const turnMetadata = {
+    ...(body.metadata ?? {}),
+    mode,
+    character_ids: characterIds,
+  };
   const telemetry = new ChatPipelineTelemetry({
     turnId,
     sessionId,
     mode,
   });
-  const turnStart = await beginChatTurn({
+  let turnStart = await beginChatTurn({
     id: turnId,
     sessionId,
     userId,
     userContent: content,
     persistenceOwner,
-    metadata: {
-      ...(body.metadata ?? {}),
-      mode,
-      character_ids: characterIds,
-    },
+    metadata: turnMetadata,
   });
 
   if (!turnStart.created) {
-    if (
-      turnStart.turn.assistantContent &&
-      ["generated", "committed"].includes(turnStart.turn.status)
-    ) {
+    const reuse = classifyChatTurnReuse(turnStart.turn, content);
+    if (reuse === "replay") {
       res.writeHead(200, {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache, no-transform",
         Connection: "keep-alive",
         "X-Accel-Buffering": "no",
       });
-      writeSse(res, { content: turnStart.turn.assistantContent });
+      writeSse(res, { content: String(turnStart.turn.assistantContent || "") });
       writeSse(res, {
         done: true,
-        visible: turnStart.turn.assistantContent,
+        visible: String(turnStart.turn.assistantContent || ""),
         turn_id: turnId,
         persistence_status: turnStart.turn.status,
         replayed: true,
@@ -1490,12 +1490,27 @@ router.post("/messages", async (req, res) => {
       res.end();
       return;
     }
-    res.status(409).json({
-      error: "This chat turn is already being processed.",
-      turn_id: turnId,
-      persistence_status: turnStart.turn.status,
-    });
-    return;
+    if (reuse === "conflict") {
+      // Same turn_id, different user text — never stream the prior reply.
+      turnId = normalizeTurnId("");
+      turnStart = await beginChatTurn({
+        id: turnId,
+        sessionId,
+        userId,
+        userContent: content,
+        persistenceOwner,
+        metadata: turnMetadata,
+      });
+    }
+    if (!turnStart.created) {
+      res.status(409).json({
+        error: "This chat turn is already being processed.",
+        code: "turn_in_flight",
+        turn_id: turnId,
+        persistence_status: turnStart.turn.status,
+      });
+      return;
+    }
   }
 
   // First SSE byte / heartbeat before memories, embeddings, weather, RAG, or

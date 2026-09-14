@@ -133,7 +133,7 @@ import {
 import TherapySessionBanner from "@/components/chat/TherapySessionBanner";
 import { parseGroupResponse } from "@/lib/parseGroupResponse";
 import { buildGroupPrompt } from "@/lib/buildGroupPrompt";
-import { streamChatReply } from "@/lib/streamChatReply";
+import { streamChatReplyWithTurnRetry } from "@/lib/streamChatReply";
 import { finalizeAssistantReply } from "@/lib/visibleAssistantReply";
 import {
   buildLeanSoloClientContext,
@@ -180,6 +180,7 @@ import {
   useChatPersistence,
 } from "@/hooks/useChatPersistence";
 import { resolveClientChatMode } from "@/lib/chatModeRegistry";
+import { acquireChatSendLock, releaseChatSendLock } from "@/lib/chatSendLock";
 import {
   buildCalendarContext,
   buildInjectedMemoryContext,
@@ -220,6 +221,7 @@ export default function Chat() {
   const openSessionIdRef = useRef(sessionId || null);
   const prevOpenSessionIdRef = useRef(sessionId || null);
   const justCreatedSessionIdRef = useRef(null);
+  const sendingRef = useRef(false);
   /** Last LLM provider that served a reply: "openai" | "xai" | "gemini" | "kimi" | "gateway" */
   const [llmProvider, setLlmProvider] = useState(null);
   /** "anima" when the custom multi-model stack selected the backend */
@@ -460,6 +462,7 @@ export default function Chat() {
     // Do not clear on sessionLoadNonce retries of the same id.
     if (previousOpenId !== (sessionId || null)) {
       setIsLoading(false);
+      sendingRef.current = false;
       setPendingMessage("");
     }
     const opened = beginOpenSession({
@@ -1240,7 +1243,11 @@ export default function Chat() {
   };
 
   const handleSendMessage = async (message) => {
-    if (!activeSession || isLoading) return;
+    const sendLock = acquireChatSendLock(sendingRef, {
+      hasSession: Boolean(activeSession),
+      isLoading,
+    });
+    if (!sendLock) return;
     
     // Handle both string (legacy) and object (new with attachments) formats
     const messageData = typeof message === "string" ? { text: message, attachments: undefined } : message;
@@ -1250,8 +1257,11 @@ export default function Chat() {
     // Empty content = "continue" — keep the scene moving without a new user line.
     // Works in solo (character takes the next beat) and group (next speaker).
     const isContinue = !content.trim() && !attachments.length;
-    if (isContinue && activeSession.mode !== "group" && activeSession.mode !== "solo") return;
-    const turnId = createChatTurnId();
+    if (isContinue && activeSession.mode !== "group" && activeSession.mode !== "solo") {
+      releaseChatSendLock(sendingRef, sendLock);
+      return;
+    }
+    let turnId = createChatTurnId();
     const sendSessionId = activeSession.id;
     const applyIfSendSession = (updater) => {
       setActiveSession((prev) => {
@@ -1357,6 +1367,7 @@ export default function Chat() {
           }
           setPendingMessage("");
           setIsLoading(false);
+          releaseChatSendLock(sendingRef, sendLock);
           if (injectedMemories.length > 0) setInjectedMemories([]);
           return;
         }
@@ -1385,6 +1396,7 @@ export default function Chat() {
           }
           setPendingMessage("");
           setIsLoading(false);
+          releaseChatSendLock(sendingRef, sendLock);
           if (injectedMemories.length > 0) setInjectedMemories([]);
           return;
         }
@@ -1819,46 +1831,56 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // Brief typing affordance while waiting on first token (real network/model latency).
       streamUi.showTyping();
 
-      const resultPayload = await streamChatReply(
-        animaApi.chat.sendMessage({
-          sessionId: activeSession.id,
-          content: isContinue
-            ? `Continue as ${charName}. Make real decisions based on who you are.`
-            : content,
-          characterId: activeSession.character_id,
-          characterIds: activeSession.mode === "group"
-            ? activeSession.group_character_ids || []
-            : activeSession.character_id
-              ? [activeSession.character_id]
-              : [],
-          assistantCharacterId: activeChar?.id || activeSession.character_id || null,
-          assistantCharacterName: charName,
-          // Speaker already chosen by Scene Mind above; don't re-run on /messages.
-          useSceneMind: false,
-          isContinue,
-          mode: activeSession.mode || "solo",
-          systemPrompt: prompt,
-          deepMode: companionChatDeepMode(activeSession),
-          persist: false,
-          turnId,
-          persistenceOwner: "client",
-          region: regionHints,
-          metadata: {
-            has_attachment: attachments.length > 0,
-            is_continue: isContinue,
-            source: "chat_page",
-            scene_mind_speaker_id: activeChar?.id || null,
-            therapy_mode: therapyActive,
-            adult_mode: adultMode,
-            hidden_sequences: hiddenThread.hidden,
-            conversational_weather: hiddenThread.weather,
-          },
-        }),
-        {
-          onDelta: streamUi.showStreamingPartial,
-          onStatus: streamUi.showStatus,
+      const resultPayload = await streamChatReplyWithTurnRetry({
+        turnId,
+        mintTurnId: createChatTurnId,
+        send: (nextTurnId) =>
+          animaApi.chat.sendMessage({
+            sessionId: activeSession.id,
+            content: isContinue
+              ? `Continue as ${charName}. Make real decisions based on who you are.`
+              : content,
+            characterId: activeSession.character_id,
+            characterIds: activeSession.mode === "group"
+              ? activeSession.group_character_ids || []
+              : activeSession.character_id
+                ? [activeSession.character_id]
+                : [],
+            assistantCharacterId: activeChar?.id || activeSession.character_id || null,
+            assistantCharacterName: charName,
+            // Speaker already chosen by Scene Mind above; don't re-run on /messages.
+            useSceneMind: false,
+            isContinue,
+            mode: activeSession.mode || "solo",
+            systemPrompt: prompt,
+            deepMode: companionChatDeepMode(activeSession),
+            persist: false,
+            turnId: nextTurnId,
+            persistenceOwner: "client",
+            region: regionHints,
+            metadata: {
+              has_attachment: attachments.length > 0,
+              is_continue: isContinue,
+              source: "chat_page",
+              scene_mind_speaker_id: activeChar?.id || null,
+              therapy_mode: therapyActive,
+              adult_mode: adultMode,
+              hidden_sequences: hiddenThread.hidden,
+              conversational_weather: hiddenThread.weather,
+            },
+          }),
+        onRetry: () => {
+          streamedSoFar = "";
+          streamUi.showTyping();
         },
-      );
+        onDelta: streamUi.showStreamingPartial,
+        onStatus: streamUi.showStatus,
+      });
+      if (resultPayload.turn_id) {
+        turnId = resultPayload.turn_id;
+        userMessage.id = `${turnId}:user`;
+        userMessage.turn_id = turnId;
+      }
       const result = finalizeAssistantReply(
         resultPayload.content,
         streamedSoFar,
@@ -2029,6 +2051,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // Drop is_streaming immediately so the reply resolves even if persist is slow.
       applyIfSendSession((prev) => ({ ...prev, messages: [...priorHistory, ...newMessages] }));
       if (openSessionIdRef.current === sendSessionId) setIsLoading(false);
+      releaseChatSendLock(sendingRef, sendLock);
 
       const storedNew = [];
       let finalMessages = [...priorHistory, ...newMessages];
@@ -2600,6 +2623,7 @@ Return JSON:
 
     setPendingMessage("");
     if (openSessionIdRef.current === sendSessionId) setIsLoading(false);
+    releaseChatSendLock(sendingRef, sendLock);
     // Clear injected memories after they've been used
     if (injectedMemories.length > 0) setInjectedMemories([]);
     };

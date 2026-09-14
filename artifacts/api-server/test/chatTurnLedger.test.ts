@@ -4,6 +4,7 @@ import { chatTurns, db, ensureSchemaOnce } from "@workspace/db";
 import {
   beginChatTurn,
   checkpointGeneratedTurn,
+  classifyChatTurnReuse,
   markTurnCommitted,
   markTurnFailed,
   readChatTurn,
@@ -74,5 +75,33 @@ describe("chat turn ledger", () => {
       status: "committed",
       lastError: null,
     });
+  });
+
+  it("replays only when userContent matches a generated or committed turn", () => {
+    const generated = {
+      status: "generated" as const,
+      assistantContent: "prior reply",
+      userContent: "hello",
+    };
+    expect(classifyChatTurnReuse(generated, "hello")).toBe("replay");
+    expect(classifyChatTurnReuse(generated, "a different line")).toBe("conflict");
+    expect(
+      classifyChatTurnReuse(
+        { status: "committed", assistantContent: "prior reply", userContent: "hello" },
+        "hello",
+      ),
+    ).toBe("replay");
+    expect(
+      classifyChatTurnReuse(
+        { status: "pending", assistantContent: null, userContent: "hello" },
+        "hello",
+      ),
+    ).toBe("in_flight");
+    expect(
+      classifyChatTurnReuse(
+        { status: "pending", assistantContent: null, userContent: "hello" },
+        "second thought",
+      ),
+    ).toBe("conflict");
   });
 });
