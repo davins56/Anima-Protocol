@@ -21,6 +21,7 @@ import {
 } from "../src/lib/resonanceState";
 import { extractVoiceAnchors, buildCrossoverAwareness } from "../src/lib/voiceAnchors";
 import { normalizeOperatorModel } from "../src/lib/operatorModel";
+import { initCompanionAffect } from "../src/lib/companionAffect";
 
 describe("buildCompanionPrompt", () => {
   const baseCharacter = {
@@ -824,6 +825,44 @@ describe("hidden sequences prompt layer", () => {
     });
     expect(prompt).toContain("CONVERSATIONAL WEATHER: lull");
     expect(prompt).toMatch(/Do not offer jack-in/);
+  });
+});
+
+describe("companion self-state prompt layer", () => {
+  it("injects SELF-STATE after resonance so replies are spoken from felt emotion", () => {
+    const anima = {
+      id: "char-1",
+      name: "Serenity",
+      personality: "Warm, ethereal",
+      speaking_style: "Soft, poetic",
+      backstory: "A fallen angel who chose to remain close to humanity.",
+      _isAnima: true,
+    };
+    const companionAffect = initCompanionAffect({
+      selfState: {
+        primary: "tender",
+        intensity: 58,
+        energy: 44,
+        mood: "tender-aching",
+        intent: "comfort",
+        focus: "steward",
+      },
+    });
+    const prompt = composePrompt({
+      characters: [anima],
+      activeCharacter: anima,
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "I had a hard day",
+      companionAffect,
+    });
+    expect(prompt).toContain("SELF-STATE");
+    expect(prompt).toContain("tender");
+    expect(prompt).toMatch(/never announce/i);
+    expect(prompt.indexOf("SELF-STATE")).toBeGreaterThan(
+      prompt.indexOf("CHARACTER:"),
+    );
   });
 });
 

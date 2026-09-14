@@ -88,6 +88,15 @@ import {
   type SynchroState,
 } from "../lib/synchroEngine";
 import {
+  initCompanionAffect,
+  evolveCompanionAffectFromUser,
+  evolveCompanionAffectFromCompanion,
+  serializeCompanionAffect,
+  toCompanionAffectSnapshot,
+  type CompanionAffect,
+  type CompanionAffectSnapshot,
+} from "../lib/companionAffect";
+import {
   resolveActiveCharacterId,
   resolveActiveCharacterName,
 } from "../lib/chatParticipants";
@@ -513,6 +522,17 @@ function adaptMemories(
   }));
 }
 
+function companionAffectSnapshotFromEmotionalState(
+  emotionalState: Record<string, unknown> | null | undefined,
+): CompanionAffectSnapshot {
+  const affect = initCompanionAffect(emotionalState ?? null);
+  const synchro =
+    emotionalState && typeof emotionalState.synchroStrength === "number"
+      ? emotionalState.synchroStrength
+      : null;
+  return toCompanionAffectSnapshot(affect, synchro);
+}
+
 /**
  * Adapts raw DB character entity data into the CharacterData interface
  * expected by the central prompt builder.
@@ -739,6 +759,7 @@ async function applyRelationshipPostProcess(params: {
   isVoidTurn: boolean;
   significantExperienceCount: number;
   synchroState: SynchroState | null;
+  companionAffect?: CompanionAffect | null;
 }): Promise<void> {
   const {
     userId,
@@ -752,6 +773,7 @@ async function applyRelationshipPostProcess(params: {
     isVoidTurn,
     significantExperienceCount,
     synchroState,
+    companionAffect,
   } = params;
   if (characterIds.length > 0) {
     const historySummary = `User said: ${truncate(content, 420)}\nCompanion replied: ${truncate(assistantContent, 520)}`;
@@ -789,25 +811,60 @@ async function applyRelationshipPostProcess(params: {
       });
     }
   }
-  if (synchroState && assistantContent) {
-    const evolved = evolveSynchroFromCompanion(synchroState, assistantContent);
-    const serialized = serializeSynchroState(evolved);
+  if ((synchroState || companionAffect) && assistantContent) {
+    const evolved = synchroState
+      ? evolveSynchroFromCompanion(synchroState, assistantContent)
+      : null;
+    const evolvedAffect = companionAffect
+      ? evolveCompanionAffectFromCompanion(companionAffect, assistantContent)
+      : null;
+    const now = new Date();
     for (const cid of characterIds) {
-      await db
-        .update(companionMemories)
-        .set({
-          emotionalState: serialized,
-          updatedAt: new Date(),
+      const [existing] = await db
+        .select({
+          summary: companionMemories.summary,
+          facts: companionMemories.facts,
+          emotionalState: companionMemories.emotionalState,
+          resonanceNotes: companionMemories.resonanceNotes,
         })
+        .from(companionMemories)
         .where(
           and(
             eq(companionMemories.userId, userId),
             eq(companionMemories.characterId, cid),
           ),
-        );
+        )
+        .limit(1);
+      const serialized = {
+        ...((existing?.emotionalState as Record<string, unknown> | undefined) ??
+          {}),
+        ...(evolved ? serializeSynchroState(evolved) : {}),
+        ...(evolvedAffect
+          ? { selfState: serializeCompanionAffect(evolvedAffect) }
+          : {}),
+      };
+      await db
+        .insert(companionMemories)
+        .values({
+          userId,
+          characterId: cid,
+          summary: existing?.summary ?? "",
+          facts: Array.isArray(existing?.facts) ? existing.facts : [],
+          emotionalState: serialized,
+          resonanceNotes: existing?.resonanceNotes ?? "",
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [companionMemories.userId, companionMemories.characterId],
+          set: {
+            emotionalState: serialized,
+            updatedAt: now,
+          },
+        });
     }
 
     try {
+      if (evolved) {
       const intimacy = Number(evolved.vector?.intimacy ?? evolved.vector?.synchroStrength ?? 0);
       if (shouldCrystallize(intimacy, evolved.lastShift, content)) {
         const title =
@@ -847,6 +904,7 @@ async function applyRelationshipPostProcess(params: {
           });
         }
       }
+      }
     } catch (crystalErr) {
       logger.warn(
         { crystalErr, turnId, sessionId },
@@ -869,15 +927,27 @@ async function applyRelationshipPostProcessFromTurn(turn: ChatTurn): Promise<voi
     : 0;
   const memories = await loadMemories(turn.userId, characterIds);
   let synchroState: SynchroState | null = null;
-  if (activeCharacterId && memories.length > 0) {
+  let companionAffect: CompanionAffect | null = null;
+  if (activeCharacterId) {
     const memForChar = memories.find((m) => m.characterId === activeCharacterId);
-    synchroState = initSynchroState(
+    companionAffect = initCompanionAffect(
       (memForChar?.emotionalState as Record<string, unknown> | null) ?? null,
-      memForChar?.resonanceNotes ?? null,
-      null,
     );
     if (turn.userContent) {
-      synchroState = evolveSynchroFromUser(synchroState, turn.userContent);
+      companionAffect = evolveCompanionAffectFromUser(
+        companionAffect,
+        turn.userContent,
+      );
+    }
+    if (memories.length > 0) {
+      synchroState = initSynchroState(
+        (memForChar?.emotionalState as Record<string, unknown> | null) ?? null,
+        memForChar?.resonanceNotes ?? null,
+        null,
+      );
+      if (turn.userContent) {
+        synchroState = evolveSynchroFromUser(synchroState, turn.userContent);
+      }
     }
   }
   await applyRelationshipPostProcess({
@@ -892,6 +962,7 @@ async function applyRelationshipPostProcessFromTurn(turn: ChatTurn): Promise<voi
     isVoidTurn: mode === "void" || Boolean(metadata.deep_mode),
     significantExperienceCount: learnedLife,
     synchroState,
+    companionAffect,
   });
 }
 
@@ -976,6 +1047,14 @@ router.get("/sessions/:sessionId/context", async (req, res) => {
     characters,
     memories,
     recent_messages: recentMessages,
+    companion_affect: Object.fromEntries(
+      memories.map((row) => [
+        row.characterId,
+        companionAffectSnapshotFromEmotionalState(
+          row.emotionalState as Record<string, unknown>,
+        ),
+      ]),
+    ),
   });
 });
 
@@ -1066,6 +1145,7 @@ router.get("/memories/:characterId", async (req, res) => {
         emotionalState: {},
         resonanceNotes: "",
       },
+      companion_affect: companionAffectSnapshotFromEmotionalState({}),
     });
     return;
   }
@@ -1075,6 +1155,9 @@ router.get("/memories/:characterId", async (req, res) => {
       ...memory,
       facts: normalizeMemoryFacts(memory.facts),
     },
+    companion_affect: companionAffectSnapshotFromEmotionalState(
+      memory.emotionalState as Record<string, unknown>,
+    ),
   });
 });
 
@@ -1440,6 +1523,7 @@ router.post("/messages", async (req, res) => {
   let intimacyProfile: IntimacyProfile | null = null;
   let intimacyScene: IntimacyScene | null = null;
   let synchroState: SynchroState | null = null;
+  let companionAffect: CompanionAffect | null = null;
   let activeCharacterId: string | null = null;
   let isCrossover = false;
   let preStreamPersist: Promise<void> = Promise.resolve();
@@ -1632,17 +1716,26 @@ router.post("/messages", async (req, res) => {
             : Promise.resolve(null),
         ]);
   synchroState = null;
-  if (activeChar && memories.length > 0) {
+  companionAffect = null;
+  if (activeChar) {
     const memForChar = memories.find(
       (m) => m.characterId === String(activeChar.id || ""),
     );
-    synchroState = initSynchroState(
-      memForChar?.emotionalState as Record<string, unknown> | null,
-      memForChar?.resonanceNotes ?? null,
-      null,
+    companionAffect = initCompanionAffect(
+      (memForChar?.emotionalState as Record<string, unknown> | null) ?? null,
     );
     if (content) {
-      synchroState = evolveSynchroFromUser(synchroState, content);
+      companionAffect = evolveCompanionAffectFromUser(companionAffect, content);
+    }
+    if (memories.length > 0) {
+      synchroState = initSynchroState(
+        memForChar?.emotionalState as Record<string, unknown> | null,
+        memForChar?.resonanceNotes ?? null,
+        null,
+      );
+      if (content) {
+        synchroState = evolveSynchroFromUser(synchroState, content);
+      }
     }
   }
   const profileData = asObject(worldKnowledgeResult.profile);
@@ -1709,6 +1802,7 @@ router.post("/messages", async (req, res) => {
       content,
       isCrossover,
       synchroState,
+      companionAffect,
       evolutionDelta: activeEvolutionRow?.evolutionDelta,
       relationshipState: activeRelationshipState,
       arcState: activeArcState,
@@ -1916,6 +2010,12 @@ router.post("/messages", async (req, res) => {
       assistant_message_id: turnStart.turn.assistantMessageId,
       persistence_status: "generated",
       persistence_owner: persistenceOwner,
+      companion_affect: companionAffect
+        ? toCompanionAffectSnapshot(
+            evolveCompanionAffectFromCompanion(companionAffect, fullResponse),
+            synchroState?.vector.synchroStrength ?? null,
+          )
+        : null,
     });
     telemetry.report("completed", {
       provider: usedProvider,
@@ -2006,6 +2106,7 @@ router.post("/messages", async (req, res) => {
           ? hiddenLife.learned_life.length
           : 0,
         synchroState,
+        companionAffect,
       });
     } catch (postProcessError) {
       logger.warn(

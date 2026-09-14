@@ -35,19 +35,29 @@ export function resonanceTier(value) {
 }
 
 // Blend of: in-session depth, relationship continuity, recent emotional charge.
-export function useResonance({ messageCount = 0, relationship = null, emotion = null } = {}) {
+export function useResonance({
+  messageCount = 0,
+  relationship = null,
+  emotion = null,
+  synchroStrength = null,
+} = {}) {
   return useMemo(() => {
     const depth = Math.min(1, messageCount / 40) * 40; // 0..40
     const continuity = (relationshipScore(relationship) / 100) * 40; // 0..40
     const charge = Math.min(1, (emotion?.intensity || 0) / 10) * 20; // 0..20
 
-    const value = Math.round(
+    const computed = Math.round(
       Math.max(0, Math.min(100, depth + continuity + charge))
     );
+    const fromBond =
+      typeof synchroStrength === "number" && Number.isFinite(synchroStrength)
+        ? Math.round(Math.max(0, Math.min(100, synchroStrength)))
+        : null;
+    const value = fromBond ?? computed;
     const tier = resonanceTier(value);
 
     return { value, tier: tier.name, label: tier.label };
-  }, [messageCount, relationship, emotion]);
+  }, [messageCount, relationship, emotion, synchroStrength]);
 }
 
 // A short guidance line injected into the model prompt so the companion's
