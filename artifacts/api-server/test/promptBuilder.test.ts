@@ -347,6 +347,31 @@ describe("buildCompanionPrompt", () => {
     expect(clientSceneExcerpt(fatPrompt).length).toBeLessThanOrEqual(CLIENT_SCENE_CONTEXT_MAX);
   });
 
+  it("uses a stored companion brief when personality fields are empty", () => {
+    const prompt = buildCompanionPrompt({
+      characters: [
+        {
+          id: "char-brief",
+          name: "Nyx",
+          universe: "Original",
+          system_prompt: "You are Nyx, a quiet night-harbor lookout who speaks in short tides.",
+        },
+      ],
+      activeCharacter: {
+        id: "char-brief",
+        name: "Nyx",
+        universe: "Original",
+        system_prompt: "You are Nyx, a quiet night-harbor lookout who speaks in short tides.",
+      },
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "Hi",
+    });
+    expect(prompt).toContain("Companion brief:");
+    expect(prompt).toContain("night-harbor lookout");
+  });
+
   it("keeps repository knowledge out of the client-scene wrap", () => {
     const prompt = composePrompt({
       clientContext: "You are Serenity.\nStory so far:\nYou: hi\nSerenity: hello",

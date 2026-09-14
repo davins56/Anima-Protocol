@@ -69,6 +69,21 @@ export const LLM_STREAM_TOTAL_MS = 90_000;
 export const CHAT_STREAM_TIMEOUT_MS =
   LLM_OPEN_TIMEOUT_FREE_TIER_MS + LLM_STREAM_FIRST_CHUNK_MS;
 
+/**
+ * Companion turns are 2–4 sentences. Route tiers still advertise 4–8k
+ * max_tokens; honoring that on Ollama lets anima-chat keep generating long
+ * after the user already has a complete beat. Cap here, then honor the cap
+ * on the local request (`honorCallerMaxTokens` in llmFailover).
+ */
+export const COMPANION_REPLY_MAX_TOKENS = 1024;
+
+export function companionReplyMaxTokens(routedMax: number): number {
+  if (!Number.isFinite(routedMax) || routedMax <= 0) {
+    return COMPANION_REPLY_MAX_TOKENS;
+  }
+  return Math.min(Math.floor(routedMax), COMPANION_REPLY_MAX_TOKENS);
+}
+
 export function llmOpenTimeoutMs(opts: { freeTierCascade?: boolean } = {}): number {
   return opts.freeTierCascade ? LLM_OPEN_TIMEOUT_FREE_TIER_MS : LLM_OPEN_TIMEOUT_MS;
 }
