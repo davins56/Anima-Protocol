@@ -127,9 +127,9 @@ memory   upsertTurnMemory / recordTurnContinuity → companion_memories
 
 | Item | Status |
 |------|--------|
-| [#457](https://github.com/davins56/Anima-Protocol/pull/457) Honor `req.maxTokens` on local Ollama | **Open.** Unblocks #455’s 1024 clamp. `llmFailover.ts` is not a #450 collision for this change. |
+| [#457](https://github.com/davins56/Anima-Protocol/pull/457) Honor `req.maxTokens` on local Ollama | **Superseded.** #455 `262c275e` added the same local `Math.min(req.maxTokens, m.maxTokens)`. Do not merge both — they conflict on `llmFailover.ts`. |
 | [#456](https://github.com/davins56/Anima-Protocol/pull/456) Keep IMAGE/EMOTION after `Story so far:` | **Open.** Fixes #453 greedy excerpt. Different files from #455. |
-| [#455](https://github.com/davins56/Anima-Protocol/pull/455) Slice 2 E2E — 1024 clamp + 18s open | **Open** (ready). Clamps `/chat/messages` and drops the 80s `:free` outer abort. Does **not** edit `llmFailover.ts`, so the 1024 clamp does not reach anima-chat until #457. 1024 on every companion turn is intentional: `routeModel` treats ≥200 chars as heavy/8192 while Chat.jsx already asks 2–4 sentences. Therapy/long-form can keep routed budget later; do not block Slice 2 on that. |
+| [#455](https://github.com/davins56/Anima-Protocol/pull/455) Slice 2 E2E — 1024 clamp + 18s open **and** local `max_tokens` | **Open** (ready). After Codex, also honors `req.maxTokens` on the local Ollama path. 1024 on every companion turn is intentional: `routeModel` treats ≥200 chars as heavy/8192 while Chat.jsx already asks 2–4 sentences. |
 | [#453](https://github.com/davins56/Anima-Protocol/pull/453) Slice 1 TTFT — SSE before context load | **Merged** `651670a6` (2026-09-14). `beginChatTurn` + replay/409 still run **before** `openChatSse`. Context load after headers is inside the generation `try/catch` (SSE `{ error }`, heartbeat stopped, turn marked failed). Default repo RAG gated; client wrap capped at 2k. Do **not** start a second Slice 1 PR. |
 | [#450](https://github.com/davins56/Anima-Protocol/pull/450) Worker ETIMEOUT ≠ DB; `/api/ai/chat` 18s; **12s `localAttemptSignal` in shared failover**; probe 45s | **Merged** `f4a7010a` (2026-09-14). Do not re-open classification. Do **not** recommend another 12s hop on `/chat/messages` — it already shares `createChatStreamWithFailover`. Remaining Chat.jsx work: local `max_tokens` ignoring `req.maxTokens`, 80s OpenRouter outer abort. |
 | Rate-limit | Merged #125. User-keyed. Leave it. |
@@ -146,10 +146,10 @@ Do not duplicate. Remaining Chat.jsx thinning is identity/P1, not another TTFT P
 
 ### Slice 2 — E2E: honor token cap on local Ollama; stop 80s OpenRouter cascade (P0-L3)
 
-**Split across two PRs — both needed:**
+**Split, then #455 absorbed the local cap:**
 
-- [#455](https://github.com/davins56/Anima-Protocol/pull/455) — `clampChatMessagesMaxTokens(1024)` + `llmChatMessagesOpenTimeoutMs()` (18s, not 80s). Does not touch `llmFailover.ts`.
-- [#457](https://github.com/davins56/Anima-Protocol/pull/457) — local stream/complete sends `max_tokens: min(req.maxTokens, registry)`. Without this, #455 is a no-op on anima-chat.
+- [#455](https://github.com/davins56/Anima-Protocol/pull/455) — `clampChatMessagesMaxTokens(1024)` + 18s open **and** (as of `262c275e`) local `max_tokens: min(req.maxTokens, registry)`. This is now the complete Slice 2 PR.
+- [#457](https://github.com/davins56/Anima-Protocol/pull/457) — same local-path fix; **superseded**, do not merge alongside #455.
 
 Do not invent a fourth timeout constant. Do **not** re-apply `LLM_LOCAL_FAILOVER_ATTEMPT_MS`.
 
@@ -161,6 +161,7 @@ Do not invent a fourth timeout constant. Do **not** re-apply `LLM_LOCAL_FAILOVER
 - Worker ETIMEOUT / healthz probe classification (**done in #450**).
 - Another 12s local hop on `/chat/messages` (**already in #450** via `localAttemptSignal`).
 - Wiring `GET /chat/memories` into Chat.jsx `system_prompt` (would worsen double-prefill).
+- Dropping Chat.jsx `CharacterMemory` before a distillation merge into `companion_memories`.
 - Ensemble / OpenRouter chain CI (`llmEnsemble.test.ts` still red on `main`).
 - Echo Key radiation, crossover pool recall, intimacy save-on-client-commit.
 - Ollama keep_alive (runbook / host, not app).
@@ -178,7 +179,7 @@ Do not invent a fourth timeout constant. Do **not** re-apply `LLM_LOCAL_FAILOVER
 | Ensemble off by default | `localEnsemble.ts` `ANIMA_LOCAL_LLM_ENSEMBLE` |
 | 80s outer abort when OpenRouter on chain | `usesFreeTierOpenBudget` + wrangler `ANIMA_OPENROUTER_FALLBACK`/`FREE` + `chat.ts` `openStreamAbort`; leftover after local hop is :free cascade |
 | 12s local hop already on `/chat/messages` | `llmFailover.ts` `localAttemptSignal` + `LLM_LOCAL_FAILOVER_ATTEMPT_MS`; `chat.ts` passes `signal: open.signal` into `createChatStreamWithFailover` |
-| Local Ollama ignores `req.maxTokens` until #457 | `llmFailover.ts` local branch used `max_tokens: m.maxTokens`; #457 mins with `req.maxTokens` |
+| Local Ollama honors `req.maxTokens` in #455 | `llmFailover.ts` local branch `max_tokens: Math.min(req.maxTokens, m.maxTokens)` as of #455 `262c275e` |
 | `/api/ai/chat` ≠ Chat.jsx | Chat.jsx → `animaApi.chat.sendMessage` → `/chat/messages`; #450 18s cap is `llmAiChatOpenTimeoutMs()` on `/api/ai/chat` only |
 | #450 merged | `origin/main` `f4a7010a`; `chat.ts` still `llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() })` |
 | 8192 max_tokens on typical turns | `modelRouter.ts` `text.length >= 200` → heavy; `MAX_TOKENS.heavy = 8192` |
