@@ -44,6 +44,16 @@ describe("llmProviderLabel", () => {
     ]);
   });
 
+  it("does not advertise MiniMax or OpenRouter as a hop after a usable custom host", () => {
+    const local = CONFIGURED_LLM_PROVIDERS.find((p) => p.id === "local");
+    expect(local?.note).toMatch(/fail-closed/i);
+    expect(local?.note).not.toMatch(/MiniMax/i);
+    const openrouter = CONFIGURED_LLM_PROVIDERS.find((p) => p.id === "openrouter");
+    expect(openrouter?.note).toMatch(/never hops/i);
+    const minimax = CONFIGURED_LLM_PROVIDERS.find((p) => p.id === "minimax");
+    expect(minimax?.note).toMatch(/not used for companion chat/i);
+  });
+
   it("returns the Anima / OpenRouter badge class and title", () => {
     expect(llmProviderBadgeClass("anima")).toMatch(/rose/);
     expect(llmProviderBadgeClass("local")).toMatch(/rose/);
