@@ -210,14 +210,17 @@ const CLIENT_TRANSCRIPT_MARKER_RE =
 /**
  * Split a Chat.jsx / buildGroupPrompt system prompt at the transcript.
  * History is `\n`-joined `Speaker: line` rows and may contain blank lines.
- * Unique contracts start at a line of their own after that transcript —
- * not at the first blank line (which can sit inside a user message) and
- * not at a mid-line `[EMOTION:]` / `[IMAGE:]` tag inside a history row.
- * Group prompts put `CRITICAL INSTRUCTIONS:` (speaker lock, interruption,
- * intimacy, OUTPUT FORMAT) before `INTELLIGENCE:`; that block must stay.
+ * Unique contracts are *headings* at line start after that transcript —
+ * not the first blank line, not a mid-line tag, and not a companion
+ * `[IMAGE:]` / `[EMOTION:]` row inside history. Group prompts put
+ * `CRITICAL INSTRUCTIONS:` (speaker lock, interruption, intimacy,
+ * OUTPUT FORMAT) before `INTELLIGENCE:`; that block must stay.
  */
 const POST_TRANSCRIPT_CONTRACT_RE =
-  /(?:^|\n)[ \t]*(?:CRITICAL INSTRUCTIONS\s*:|INTELLIGENCE\s*:|EMOTIONAL RESONANCE\s*:|ATTUNEMENT\s*:|IMAGE GENERATION\s*:|\[EMOTION:|\[LOCATION:|\[IMAGE:|HIGHEST-PRIORITY RULE|The user tapped Continue|Respond as |Respond with vivid)/i;
+  /(?:^|\n)[ \t]*(?:CRITICAL INSTRUCTIONS\s*:|INTELLIGENCE\s*:|EMOTIONAL RESONANCE\s*:|ATTUNEMENT\s*:|IMAGE GENERATION\s*:|HIGHEST-PRIORITY RULE|The user tapped Continue|Respond as |Respond with vivid)/i;
+
+const GROUP_CONTRACT_HEAD_RE =
+  /^CRITICAL INSTRUCTIONS\s*:[\s\S]*?(?=\n(?:INTELLIGENCE\s*:|EMOTIONAL RESONANCE\s*:|ATTUNEMENT\s*:|IMAGE GENERATION\s*:|HIGHEST-PRIORITY RULE|TURN TAKING)|$)/i;
 
 export function splitClientTranscript(value: string): {
   prefix: string;
@@ -247,6 +250,38 @@ function capSceneBudget(text: string): string {
   return `${value.slice(0, CLIENT_SCENE_CONTEXT_MAX - 1)}…`;
 }
 
+/**
+ * 2k wrap: keep the group speaker-lock / interruption / OUTPUT FORMAT
+ * block at the front, then the tail (image tags, loyalty). INTELLIGENCE
+ * in the middle is already in CORE_BEHAVIOR.
+ */
+function capUniqueContracts(unique: string): string {
+  const value = unique.trim();
+  if (value.length <= CLIENT_SCENE_CONTEXT_MAX) return value;
+  const headMatch = GROUP_CONTRACT_HEAD_RE.exec(value);
+  const head = headMatch?.[0]?.trim() ?? "";
+  const headBudget = head
+    ? Math.min(head.length, Math.max(480, CLIENT_SCENE_CONTEXT_MAX - 900))
+    : 0;
+  const headBit =
+    headBudget <= 0
+      ? ""
+      : head.length > headBudget
+        ? `${head.slice(0, headBudget - 1)}…`
+        : head;
+  const rest = headMatch ? value.slice(headMatch[0].length).trim() : value;
+  const leftover = CLIENT_SCENE_CONTEXT_MAX - (headBit ? headBit.length + 2 : 0);
+  const tail =
+    leftover <= 0
+      ? ""
+      : rest.length > leftover
+        ? `…${rest.slice(-(leftover - 1))}`
+        : rest;
+  if (headBit && tail) return `${headBit}\n\n${tail}`;
+  if (headBit) return headBit;
+  return `…${value.slice(-(CLIENT_SCENE_CONTEXT_MAX - 1))}`;
+}
+
 export function isDuplicativeClientPrompt(text: string): boolean {
   const value = String(text || "");
   if (!value) return false;
@@ -273,9 +308,7 @@ export function clientSceneExcerpt(supplied: string): string {
   const identity = prefix.trim();
   if (unique) {
     if (unique.length >= CLIENT_SCENE_CONTEXT_MAX) {
-      // Tags and length-guide live at the end of the Chat.jsx prompt.
-      // INTELLIGENCE / loyalty at the front are already in CORE_BEHAVIOR.
-      return `…${unique.slice(-(CLIENT_SCENE_CONTEXT_MAX - 1))}`;
+      return capUniqueContracts(unique);
     }
     if (!identity) return unique;
     const leftover = CLIENT_SCENE_CONTEXT_MAX - unique.length - 2;
