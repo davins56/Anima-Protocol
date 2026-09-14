@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  CHAT_MESSAGES_MAX_TOKENS,
   classifyComplexity,
+  clampChatMessagesMaxTokens,
   errorCodeLower,
   errorFieldLower,
   isModelUnavailableError,
@@ -104,6 +106,27 @@ describe("resolveModel", () => {
     expect(resolveModel("light").maxTokens).toBeGreaterThan(0);
     expect(resolveModel("standard").maxTokens).toBeGreaterThan(0);
     expect(resolveModel("heavy").maxTokens).toBeGreaterThan(0);
+  });
+});
+
+describe("clampChatMessagesMaxTokens", () => {
+  it("caps routed 4k/8k companion turns at 1024", () => {
+    expect(CHAT_MESSAGES_MAX_TOKENS).toBe(1024);
+    expect(clampChatMessagesMaxTokens(resolveModel("light").maxTokens)).toBe(1024);
+    expect(clampChatMessagesMaxTokens(resolveModel("standard").maxTokens)).toBe(1024);
+    expect(clampChatMessagesMaxTokens(resolveModel("heavy").maxTokens)).toBe(1024);
+    expect(clampChatMessagesMaxTokens(8192)).toBe(1024);
+  });
+
+  it("keeps already-short routed budgets", () => {
+    expect(clampChatMessagesMaxTokens(200)).toBe(200);
+    expect(clampChatMessagesMaxTokens(1024)).toBe(1024);
+  });
+
+  it("falls back to the companion cap for empty or non-finite values", () => {
+    expect(clampChatMessagesMaxTokens(0)).toBe(1024);
+    expect(clampChatMessagesMaxTokens(-8)).toBe(1024);
+    expect(clampChatMessagesMaxTokens(Number.NaN)).toBe(1024);
   });
 });
 
