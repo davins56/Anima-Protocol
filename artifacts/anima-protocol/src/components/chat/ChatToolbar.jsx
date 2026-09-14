@@ -18,6 +18,7 @@ export default function ChatToolbar({
   activeSession,
   characters,
   currentMood,
+  moodIntensity,
   characterEmotions,
   inventoryItems,
   serenity,
@@ -74,6 +75,7 @@ export default function ChatToolbar({
             session={activeSession}
             characters={characters}
             mood={currentMood}
+            moodIntensity={moodIntensity}
             characterEmotions={characterEmotions}
             onToggleDeepMode={onToggleDeepMode}
             onAvatarClick={onAvatarClick}

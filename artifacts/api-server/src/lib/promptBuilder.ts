@@ -31,6 +31,10 @@ import {
   synchroToMemoryConfig,
   synchroToPromptGuidance,
 } from "./synchroEngine";
+import {
+  type CompanionAffect,
+  companionAffectToPromptGuidance,
+} from "./companionAffect";
 import type { RelationshipState } from "./relationshipEngine";
 import type { ArcState } from "./narrativeArcEngine";
 import { relationshipStateToPrompt, arcStateToPrompt } from "./arcAndBondPrompt";
@@ -131,6 +135,11 @@ export interface PromptBuilderParams {
   uncensoredMode?: boolean;
   /** Pre-computed synchro state (if provided, overrides internal resonance init) */
   synchroState?: SynchroState | null;
+  /**
+   * Companion-owned felt state (Kernel self-state). Injected as a short
+   * SELF-STATE line after resonance — never a mood menu.
+   */
+  companionAffect?: CompanionAffect | null;
 
   /**
    * Live regional world-knowledge block (local time, weather, holidays).
@@ -171,6 +180,7 @@ const BUDGET = {
   systemCore: 2000,
   characterDef: 3000,
   resonance: 800,
+  selfState: 480,
   memories: 2400,
   voiceAnchors: 600,
   crossover: 800,
@@ -542,6 +552,7 @@ export function composePrompt(params: PromptBuilderParams): string {
     isCrossover,
     uncensoredMode,
     synchroState,
+    companionAffect,
     relationshipState,
     arcState,
     worldKnowledge,
@@ -657,6 +668,10 @@ ${sceneExcerpt}
       resonanceBlock = resonanceToPromptGuidance(resonanceState);
     }
   }
+
+  const selfStateBlock = companionAffect
+    ? companionAffectToPromptGuidance(companionAffect, BUDGET.selfState)
+    : "";
 
   // 4. Smart memory retrieval (synchro-gated when available)
   const memConfig = synchroState
@@ -793,6 +808,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     operatorModelBlock,
     worldKnowledgeAlreadyInCore ? "" : worldKnowledgeBlock,
     resonanceBlock,
+    selfStateBlock,
     relationshipBlock,
     evolutionBlock,
     hiddenSequenceBlock,

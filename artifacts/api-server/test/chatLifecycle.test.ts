@@ -174,6 +174,13 @@ describe("chat lifecycle", () => {
       visible: "Hello from Anima.",
       turn_id: turnId,
       persistence_status: "generated",
+      companion_affect: {
+        version: 1,
+        primary: expect.any(String),
+        intensity: expect.any(Number),
+        mood: expect.any(String),
+        energy: expect.any(Number),
+      },
     });
     const sent = llmMocks.createChatStreamWithFailover.mock.calls[0]?.[0] as {
       messages?: Array<{ role: string; content: string }>;
