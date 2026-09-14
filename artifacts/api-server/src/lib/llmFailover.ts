@@ -485,23 +485,42 @@ export function shouldTryNextProvider(
 /** Caller abort / stream-open timeout — hoppable when a next provider exists. */
 export function isLlmAbortOrTimeoutError(err: unknown): boolean {
   if (err instanceof LlmStreamTimeoutError) return true;
-  if (typeof err === "string") {
-    return /aborted|abort/i.test(err);
+  const seen = new Set<unknown>();
+  let current: unknown = err;
+  for (let depth = 0; depth < 6 && current; depth += 1) {
+    if (seen.has(current)) break;
+    seen.add(current);
+    if (typeof current === "string") {
+      if (/aborted|abort|timed?\s*out|timeout/i.test(current)) return true;
+    } else if (current && typeof current === "object") {
+      if (current instanceof LlmStreamTimeoutError) return true;
+      const name = errorFieldLower((current as { name?: unknown }).name);
+      const code = errorCodeLower(current as { code?: unknown });
+      const msg = errorFieldLower((current as { message?: unknown }).message);
+      if (name.includes("abort") || name.includes("timeout")) return true;
+      if (
+        code === "etimeout" ||
+        code === "etimedout" ||
+        code === "abort_err" ||
+        code === "und_err_connect_timeout"
+      ) {
+        return true;
+      }
+      if (
+        msg.includes("aborted") ||
+        msg.includes("abort") ||
+        msg.includes("timed out") ||
+        msg.includes("timeout")
+      ) {
+        return true;
+      }
+      current =
+        "cause" in current ? (current as { cause?: unknown }).cause : undefined;
+      continue;
+    }
+    break;
   }
-  if (!err || typeof err !== "object") return false;
-  const name = errorFieldLower((err as { name?: unknown }).name);
-  const code = errorCodeLower(err as { code?: unknown });
-  const msg = errorFieldLower((err as { message?: unknown }).message);
-  if (name.includes("abort") || name.includes("timeout")) return true;
-  if (
-    code === "etimeout" ||
-    code === "etimedout" ||
-    code === "abort_err" ||
-    code === "und_err_connect_timeout"
-  ) {
-    return true;
-  }
-  return msg.includes("aborted") || msg.includes("abort");
+  return false;
 }
 
 /**

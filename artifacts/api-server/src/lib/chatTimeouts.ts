@@ -91,14 +91,21 @@ export function combineAbortSignals(...signals: AbortSignal[]): AbortSignal {
   if (live.length === 1) return live[0]!;
   if (typeof AbortSignal.any === "function") return AbortSignal.any(live);
   const controller = new AbortController();
+  const listeners = new Map<AbortSignal, () => void>();
   const onAbort = () => {
-    if (!controller.signal.aborted) controller.abort();
+    if (controller.signal.aborted) return;
+    controller.abort();
+    for (const [signal, listener] of listeners) {
+      signal.removeEventListener("abort", listener);
+    }
+    listeners.clear();
   };
   for (const signal of live) {
     if (signal.aborted) {
       onAbort();
       break;
     }
+    listeners.set(signal, onAbort);
     signal.addEventListener("abort", onAbort, { once: true });
   }
   return controller.signal;

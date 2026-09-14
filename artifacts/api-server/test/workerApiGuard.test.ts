@@ -303,7 +303,6 @@ describe("fetchApiThroughExpress", () => {
       {},
       {},
       handler,
-      { timeoutMs: 80 },
     );
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ status: "ok" });

@@ -107,6 +107,12 @@ describe("classifyDbError", () => {
       reason: "timeout",
       safeMessage: "Database connection timed out",
     });
+
+    const drizzleLine = new Error(
+      "Failed query: select 1\nAPI request aborted due to timeout after 20000ms\nparams:",
+    );
+    expect(isWorkerApiTimeoutError(drizzleLine)).toBe(false);
+    expect(classifyDbError(drizzleLine).isDbError).toBe(true);
   });
 
   it("still classifies real database timeouts including DbOperationTimeoutError ETIMEOUT", () => {
