@@ -2,6 +2,7 @@
 /**
  * Lightweight client-side mood detector.
  * Analyzes AI response text and maps it to a predefined mood.
+ * Server companion_affect is authoritative; this is the fallback.
  */
 
 export const MOODS = {
@@ -13,7 +14,9 @@ export const MOODS = {
   hostile:  { label: "Hostile",  color: "text-red-500",     dot: "bg-red-500",     glow: "shadow-red-500/40",     emoji: "◉" },
   fearful:  { label: "Fearful",  color: "text-orange-400",  dot: "bg-orange-400",  glow: "shadow-orange-400/40",  emoji: "◉" },
   curious:  { label: "Curious",  color: "text-cyan-400",    dot: "bg-cyan-400",    glow: "shadow-cyan-400/40",    emoji: "◉" },
-  cold:     { label: "Cold",     color: "text-slate-400",   dot: "bg-slate-400",   glow: "shadow-slate-400/40",   emoji: "◉" },
+  tender:   { label: "Tender",   color: "text-rose-300",    dot: "bg-rose-300",    glow: "shadow-rose-300/40",    emoji: "◉" },
+  watchful: { label: "Watchful", color: "text-teal-300",    dot: "bg-teal-300",    glow: "shadow-teal-300/40",    emoji: "◉" },
+  cold:     { label: "Cold",     color: "text-slate-400",   dot: "bg-slate-400",   glow: "shadow-slate-400/40",    emoji: "◉" },
   neutral:  { label: "Neutral",  color: "text-primary/60",  dot: "bg-primary/60",  glow: "",                      emoji: "◉" },
 };
 
@@ -27,6 +30,8 @@ const MOOD_PATTERNS = [
   { mood: "playful",  words: /\b(laugh|grin|tease|playful|joke|smirk|wink|giggle|mischief|banter|cheeky|spark|wit)\b/i },
   { mood: "happy",    words: /\b(happy|joy|smile|delight|excited|elated|bright|cheer|warm|wonderful|gleam|glee|wonderful|pleased)\b/i },
   { mood: "curious",  words: /\b(curious|wonder|fascinated|intrigued|ponder|question|discover|explore|study|examine|interest|why|how)\b/i },
+  { mood: "tender",   words: /\b(tender|gentle with you|i'?m here|sit with|hold that|softly)\b/i },
+  { mood: "watchful", words: /\b(watchful|watching over|quietly present|i see you|keeping watch)\b/i },
   { mood: "cold",     words: /\b(silence|distant|blank|expressionless|detached|flat|hollow|void|empty|indifferent|unmoved|stone)\b/i },
 ];
 
@@ -43,15 +48,16 @@ export function detectMood(text) {
   const emotionTag = text.match(/\[EMOTION:\s*([^\]]+)\]/i);
   if (emotionTag) {
     const raw = emotionTag[1].toLowerCase().trim();
-    // Map common emotion phrases to our mood keys
     if (/rage|fury|hostile|angry|anger|wrathful/.test(raw)) return "hostile";
     if (/fear|terror|horrified|dread|cower/.test(raw)) return "fearful";
     if (/anxious|nervous|tense|worry|apprehensive/.test(raw)) return "anxious";
     if (/sad|grief|sorrow|tears|mourn|despair|heartbreak/.test(raw)) return "sad";
-    if (/love|romantic|desire|tender|passion/.test(raw)) return "romantic";
+    if (/tender|careful|gentle-care/.test(raw)) return "tender";
+    if (/love|romantic|desire|passion/.test(raw)) return "romantic";
     if (/playful|tease|mischief|laugh|giggle/.test(raw)) return "playful";
     if (/happy|joy|smile|excited|elated|cheer/.test(raw)) return "happy";
-    if (/curious|wonder|fascinated|intrigued/.test(raw)) return "curious";
+    if (/curious|wonder|fascinated|intrigued|stirred/.test(raw)) return "curious";
+    if (/watchful|quiet-watchful|vigilant/.test(raw)) return "watchful";
     if (/cold|distant|detached|indifferent/.test(raw)) return "cold";
   }
 

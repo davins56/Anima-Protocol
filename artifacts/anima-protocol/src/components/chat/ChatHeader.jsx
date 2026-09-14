@@ -9,7 +9,7 @@ import {
   llmDisplayTitle,
 } from "@/lib/llmProviderLabel";
 
-export default function ChatHeader({ session, characters, mood, characterEmotions, onToggleDeepMode, onAvatarClick, llmProvider, llmBrand }) {
+export default function ChatHeader({ session, characters, mood, moodIntensity, characterEmotions, onToggleDeepMode, onAvatarClick, llmProvider, llmBrand }) {
   const navigate = useNavigate();
   const [summarizing, setSummarizing] = useState(false);
   const [summarized, setSummarized] = useState(false);
@@ -32,15 +32,26 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
   const getEmotionColor = (emotion) => {
     const colors = {
       joyful: "text-green-400",
+      happy: "text-yellow-400",
+      playful: "text-pink-400",
+      romantic: "text-rose-400",
+      tender: "text-rose-300",
+      curious: "text-cyan-400",
+      watchful: "text-teal-300",
       calm: "text-blue-400",
       sad: "text-cyan-300",
       angry: "text-red-400",
+      hostile: "text-red-400",
       afraid: "text-orange-300",
+      fearful: "text-orange-300",
+      anxious: "text-amber-400",
       disgusted: "text-purple-400",
       surprised: "text-yellow-400",
       hopeful: "text-lime-400",
       conflicted: "text-pink-400",
       desperate: "text-red-300",
+      cold: "text-slate-400",
+      neutral: "text-primary/60",
     };
     return colors[emotion] || "text-primary/60";
   };
@@ -149,7 +160,7 @@ export default function ChatHeader({ session, characters, mood, characterEmotion
               </div>
             </div>
           )}
-          {!isGroup && mood && <MoodIndicator mood={mood} />}
+          {!isGroup && mood && <MoodIndicator mood={mood} intensity={moodIntensity} />}
           {session?.therapy_mode && (
             <span
               title={session.therapy_topic || "Therapy mode"}

@@ -304,6 +304,13 @@ export const animaApi = {
         method: "POST",
         body: JSON.stringify({}),
       }).then((r) => r.json()),
+
+    /**
+     * Durable companion felt-state + memories for a character.
+     * `companion_affect` is the mood/resonance contract (not a mood menu).
+     */
+    companionMemory: (characterId) =>
+      request(`/chat/memories/${encodeURIComponent(characterId)}`).then((r) => r.json()),
   },
 
   /**
