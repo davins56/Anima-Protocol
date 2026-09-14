@@ -542,6 +542,12 @@ function localAttemptSignal(
   };
 }
 
+/** OpenRouter already mins the caller cap; local used to ignore `req.maxTokens`. */
+function cappedLocalMaxTokens(requested: number, registryMax: number): number {
+  if (!Number.isFinite(requested) || requested <= 0) return registryMax;
+  return Math.min(Math.floor(requested), registryMax);
+}
+
 /** Workers AI failures that may hop to OpenRouter when it is next in chain. */
 export function isWorkersAiHoppableError(err: unknown): boolean {
   if (isWorkersAiFreeQuotaError(err) || isWorkersAiNeuronQuotaError(err)) return true;
@@ -2005,7 +2011,7 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
             client.chat.completions.create(
               {
                 model: m.model,
-                max_tokens: m.maxTokens,
+                max_tokens: cappedLocalMaxTokens(req.maxTokens, m.maxTokens),
                 messages: req.messages,
                 stream: true,
                 ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
@@ -2129,7 +2135,7 @@ export async function createChatCompletionWithFailover(
             client.chat.completions.create(
               {
                 model: m.model,
-                max_tokens: m.maxTokens,
+                max_tokens: cappedLocalMaxTokens(req.maxTokens, m.maxTokens),
                 messages: req.messages,
                 ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
                 ...(req.tools && req.tools.length
