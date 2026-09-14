@@ -70,6 +70,10 @@ vi.mock("../src/lib/openaiClient", () => {
     getOpenAIClient: () => client,
     getLocalLlmClient: () => client,
     normalizeApiKey: (raw: string | undefined) => (raw ? raw.trim() || null : null),
+    isLoopbackLlmHost: (host: string | null | undefined) => {
+      const h = (host || "").trim().toLowerCase();
+      return h === "localhost" || h === "127.0.0.1" || h === "::1";
+    },
     localLlmMaxRetries: () => 2,
     openRouterMaxRetries: () => 2,
     openRouterCascadeMaxRetries: (remaining: number) => (remaining > 0 ? 0 : 2),

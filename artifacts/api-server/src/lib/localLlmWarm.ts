@@ -13,6 +13,7 @@
 
 import {
   hasLocalLlm,
+  isCloudflareWorkerRuntime,
   localLlmBaseUrl,
   normalizeApiKey,
 } from "./openaiClient";
@@ -67,12 +68,20 @@ function localLlmAuthHeader(env: NodeJS.ProcessEnv = process.env): string | null
 
 /**
  * Best-effort: start loading anima-chat into RAM (Ollama empty-prompt generate)
- * without awaiting. Safe to call on every `/chat/messages` turn.
+ * without awaiting. Safe to call on every `/chat/messages` turn on Node.
+ *
+ * Skipped on Cloudflare Workers: the warm fetch shares the invocation's
+ * subrequest budget with Hyperdrive and the actual `/v1/chat/completions`
+ * open. When Fly is slow/wedged that extra hop is what trips
+ * "Too many subrequests by single Worker invocation." keep_alive on the
+ * generate itself (localChatKeepAliveFields) still keeps weights resident.
  */
 export function hintLocalLlmWarm(
   env: NodeJS.ProcessEnv = process.env,
   fetchImpl: typeof fetch = fetch,
+  globalObj: typeof globalThis = globalThis,
 ): void {
+  if (isCloudflareWorkerRuntime(globalObj)) return;
   if (inFlightWarm) return;
   if (Date.now() - lastWarmAt < WARM_DEDUP_MS) return;
   if (!ollamaKeepAliveDuration(env)) return;

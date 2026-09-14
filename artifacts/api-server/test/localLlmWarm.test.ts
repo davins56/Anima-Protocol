@@ -64,6 +64,17 @@ describe("localLlmWarm", () => {
     );
   });
 
+  it("does not fire a warm fetch on Cloudflare Workers (same-invocation subrequest budget)", () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://anima-chat-llm.fly.dev/v1";
+    const fetchImpl = vi.fn(async () => new Response("{}", { status: 200 }));
+    const workerGlobal = {
+      navigator: { userAgent: "Cloudflare-Workers" },
+    } as unknown as typeof globalThis;
+
+    hintLocalLlmWarm(process.env, fetchImpl as unknown as typeof fetch, workerGlobal);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("swallows warm-up failures so they cannot fail a chat turn", async () => {
     process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
     const fetchImpl = vi.fn(async () => {
