@@ -545,6 +545,53 @@ export function mergeEmotionalStateWithAffect(
   };
 }
 
+/**
+ * Bond strength as `serializeSynchroState` writes it: root `synchroStrength`.
+ * Also accepts the wire key and a nested `vector` in case a raw SynchroState
+ * object was stored. Snapshot + Key radiation must share this reader.
+ */
+export function synchroStrengthFromEmotionalState(
+  emotionalState?: Record<string, unknown> | null,
+): number | null {
+  if (!emotionalState || typeof emotionalState !== "object") return null;
+  const nested =
+    emotionalState.vector && typeof emotionalState.vector === "object"
+      ? (emotionalState.vector as Record<string, unknown>)
+      : null;
+  const candidates = [
+    emotionalState.synchroStrength,
+    emotionalState.synchro_strength,
+    nested?.synchroStrength,
+    nested?.synchro_strength,
+  ];
+  for (const value of candidates) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return clamp(Math.round(value), 0, 100);
+    }
+  }
+  return null;
+}
+
+export function companionAffectSnapshotFromEmotionalState(
+  emotionalState?: Record<string, unknown> | null,
+): CompanionAffectSnapshot {
+  const affect = initCompanionAffect(emotionalState ?? null);
+  return toCompanionAffectSnapshot(
+    affect,
+    synchroStrengthFromEmotionalState(emotionalState),
+  );
+}
+
+export function radiationEventFromEmotionalState(
+  emotionalState?: Record<string, unknown> | null,
+): ResonanceKeyRadiationEventV1 {
+  const affect = initCompanionAffect(emotionalState ?? null);
+  return radiationEventFromAffect(
+    affect,
+    synchroStrengthFromEmotionalState(emotionalState),
+  );
+}
+
 export function toCompanionAffectSnapshot(
   state: CompanionAffect,
   synchroStrength: number | null = null,
