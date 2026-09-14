@@ -158,6 +158,7 @@ router.use(async (_req, _res, next) => {
   }
 });
 
+
 function requireUser(req: Request, res: Response): string | null {
   const { userId } = getAuth(req);
   if (!userId) {
@@ -1373,6 +1374,14 @@ router.post("/messages", async (req, res) => {
   }
 
   const memoriesPromise = loadMemories(userId, characterIds);
+   const repositoryKnowledgePromise = content.trim()
+    ? telemetry
+        .measure(
+          "repository_rag_ms",
+          retrieveRepositoryKnowledge(content),
+        )
+        .catch(() => "")
+    : Promise.resolve("");
   const worldKnowledgePromise = (async () => {
     try {
       const [profileRow] = await db
@@ -1426,6 +1435,7 @@ router.post("/messages", async (req, res) => {
     adaptedMemories,
     hintedState,
     worldKnowledgeResult,
+    repositoryKnowledge,
   ] = await telemetry.measure(
     "context_load_ms",
     Promise.all([
@@ -1455,10 +1465,11 @@ router.post("/messages", async (req, res) => {
       }),
       hintedStatePromise,
       worldKnowledgePromise,
+      repositoryKnowledgePromise,
     ]),
   );
   const worldKnowledge = worldKnowledgeResult.prompt;
-
+  
   const requestedAssistantId = body.assistant_character_id
     ? String(body.assistant_character_id)
     : null;
@@ -1617,7 +1628,9 @@ router.post("/messages", async (req, res) => {
 
   const prompt = telemetry.measureSync("prompt_build_ms", () =>
     composePrompt({
-      clientContext: body.system_prompt,
+      clientContext: [body.system_prompt, repositoryKnowledge]
+        .filter(Boolean)
+        .join("\n\n"),
       characters: adaptedChars,
       activeCharacter: activeChar,
       memories: adaptedMemories,
