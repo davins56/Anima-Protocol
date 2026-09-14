@@ -16,34 +16,45 @@ function trimBlock(value) {
   return String(value || "").trim();
 }
 
-function packLeanBlocks(leading, trailing, max) {
-  const trail = trailing.map(trimBlock).filter(Boolean);
-  const trailText = trail.join("\n\n");
-  const reserved = trailText ? trailText.length + (trail.length ? 2 : 0) : 0;
-  const leadBudget = Math.max(0, max - reserved);
-  const lead = [];
+function capBlock(text, max) {
+  if (text.length <= max) return text;
+  if (max <= 1) return "…";
+  return `${text.slice(0, max - 1)}…`;
+}
+
+function takeBlocks(blocks, max) {
+  const out = [];
   let used = 0;
-  for (const raw of leading) {
+  for (const raw of blocks) {
     const block = trimBlock(raw);
     if (!block) continue;
-    const sep = lead.length ? 2 : 0;
-    if (used + sep + block.length <= leadBudget) {
-      lead.push(block);
+    const sep = out.length ? 2 : 0;
+    if (used + sep + block.length <= max) {
+      out.push(block);
       used += sep + block.length;
       continue;
     }
-    const remain = leadBudget - used - sep;
-    if (remain > 24) lead.push(`${block.slice(0, remain - 1)}…`);
+    const remain = max - used - sep;
+    if (remain > 24) out.push(capBlock(block, remain));
     break;
   }
-  return [...lead, ...trail].filter(Boolean).join("\n\n");
+  return out;
+}
+
+function packLeanBlocks(leading, trailing, max) {
+  const trail = takeBlocks(trailing, max);
+  const trailText = trail.join("\n\n");
+  const reserved = trailText ? trailText.length + 2 : 0;
+  const lead = takeBlocks(leading, Math.max(0, max - reserved));
+  const packed = [...lead, ...trail].filter(Boolean).join("\n\n");
+  return packed.length <= max ? packed : capBlock(packed, max);
 }
 
 /**
  * Compact untrusted extras for POST /chat/messages `system_prompt`.
  * Empty string = server uses CORE_BEHAVIOR + CHARACTER from the store.
- * Trailing length / image / Continue lines are reserved so a fat lore or
- * behavior block cannot slice them off at the 2k cap.
+ * Trailing matrix-safety / length / image / Continue lines are reserved so a
+ * fat lore or behavior block cannot slice them off at the 2k cap.
  */
 export function buildLeanSoloClientContext({
   companionModeInstruction = "",
@@ -72,7 +83,6 @@ export function buildLeanSoloClientContext({
       behaviorInstructions,
       adultInstruction,
       intimatePlayAlong,
-      matrixSafetyClause,
       userProfileContext,
       injectedMemoryContext,
       loreContext,
@@ -80,7 +90,7 @@ export function buildLeanSoloClientContext({
       fragmentContext,
       vesselContext,
     ],
-    [lengthGuide, imageInstruction, continueLine],
+    [matrixSafetyClause, lengthGuide, imageInstruction, continueLine],
     LEAN_SOLO_CLIENT_CONTEXT_MAX,
   );
 }

@@ -55,6 +55,26 @@ describe("buildLeanSoloClientContext", () => {
     });
     expect(context).toMatch(/Continue — keep the scene moving as Aria/);
   });
+
+  it("caps an oversized trailing block instead of exceeding the budget", () => {
+    const context = buildLeanSoloClientContext({
+      imageInstruction: "IMAGE: " + "y".repeat(LEAN_SOLO_CLIENT_CONTEXT_MAX + 400),
+    });
+    expect(context.length).toBeLessThanOrEqual(LEAN_SOLO_CLIENT_CONTEXT_MAX);
+    expect(context.startsWith("IMAGE:")).toBe(true);
+    expect(context.endsWith("…")).toBe(true);
+  });
+
+  it("keeps the matrix safety clause when companion-mode text is oversized", () => {
+    const context = buildLeanSoloClientContext({
+      companionModeInstruction: "MODE: " + "z".repeat(LEAN_SOLO_CLIENT_CONTEXT_MAX),
+      matrixSafetyClause:
+        "HIGHEST-PRIORITY RULE (overrides everything above): In multi-aspect presence, keep it emotional only.",
+    });
+    expect(context.length).toBeLessThanOrEqual(LEAN_SOLO_CLIENT_CONTEXT_MAX);
+    expect(context).toContain("HIGHEST-PRIORITY RULE");
+    expect(context).toContain("emotional only");
+  });
 });
 
 describe("companionChatDeepMode", () => {

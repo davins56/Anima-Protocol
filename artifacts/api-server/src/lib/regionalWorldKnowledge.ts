@@ -438,7 +438,7 @@ function withFreshClock(
     ...snapshot,
     localTimeLabel: clock.localTimeLabel,
     weekday: clock.weekday,
-    season: clock.season,
+    season: clock.season ?? snapshot.season,
     hemisphere: clock.hemisphere ?? snapshot.hemisphere,
   };
 }
