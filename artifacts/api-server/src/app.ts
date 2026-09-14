@@ -11,9 +11,8 @@ import { runWithDbRequestScope } from "@workspace/db";
 import {
   chatCompletionHttpFailure,
   createChatCompletionWithFailover,
-  usesFreeTierOpenBudget,
 } from "./lib/llmFailover";
-import { llmOpenTimeoutMs, openStreamAbort } from "./lib/chatTimeouts";
+import { llmAiChatOpenTimeoutMs, openStreamAbort } from "./lib/chatTimeouts";
 import { visibleAssistantReply } from "./lib/visibleAssistantReply";
 import { syncCloudflareRuntimeEnvMiddleware } from "./lib/cloudflareEnv";
 import {
@@ -120,14 +119,10 @@ app.post("/api/ai/chat", async (req: Request, res: Response) => {
         { role: "system", content: "You are a helpful assistant." },
         { role: "user", content: prompt ?? "Hello!" },
       ];
-  // Same open budget as signed-in chat. ANIMA_LLM_OPEN_TIMEOUT_MS is a
-  // test/ops override so a hung Ollama cannot sit past the armed abort.
-  const configuredOpenMs = Number(process.env.ANIMA_LLM_OPEN_TIMEOUT_MS);
-  const open = openStreamAbort(
-    Number.isFinite(configuredOpenMs) && configuredOpenMs > 0
-      ? configuredOpenMs
-      : llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() }),
-  );
+  // Under the Worker ~20s wall so a hung Fly/Ollama generate returns JSON
+  // `ai_timeout` instead of a 0-byte cut. ANIMA_LLM_OPEN_TIMEOUT_MS is a
+  // test/ops override, still capped at LLM_OPEN_TIMEOUT_AI_CHAT_MS.
+  const open = openStreamAbort(llmAiChatOpenTimeoutMs());
   try {
     const result = await createChatCompletionWithFailover({
       tier: "standard",
