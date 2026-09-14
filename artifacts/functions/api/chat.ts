@@ -9,7 +9,7 @@ let input = "";
 let error = "";
 
 async function requestAnimaResponse(messages: ChatMessage[]) {
-  const response = await fetch("/api/chat", {
+  const response = await fetch("/api/ai/chat", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -23,8 +23,10 @@ async function requestAnimaResponse(messages: ChatMessage[]) {
     throw new Error(data.error ?? "The Anima failed to respond.");
   }
 
-  return data.message as string;
-}async function handleSend() {
+  return data.response as string;
+}
+
+async function handleSend() {
   const text = input.trim();
 
   if (!text || isLoading) return;
