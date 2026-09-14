@@ -11,6 +11,7 @@ import {
   beginBundledStarterUpsert,
   createdSessionId,
   createInitChatSession,
+  startSoloCompanionChatSession,
   initSessionErrorMessage,
   isStoreTimeoutError,
   isUsableSessionId,
@@ -91,6 +92,23 @@ describe("createInitChatSession", () => {
     expect(create).toHaveBeenCalledTimes(1);
     expect(create).toHaveBeenCalledWith(payload);
     expect(session).toEqual({ id: "sess-1", title: "T'Challa" });
+  });
+
+  it("opens a solo companion session from a created character", async () => {
+    const create = vi.fn().mockResolvedValue({ id: "sess-aria", title: "Aria" });
+    const waitForAuth = vi.fn().mockResolvedValue("tok");
+    const session = await startSoloCompanionChatSession(
+      { id: "char-aria", name: "Aria", universe: "Original" },
+      { create, waitForAuth },
+    );
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: "solo",
+        character_id: "char-aria",
+        title: "Aria",
+      }),
+    );
+    expect(session.id).toBe("sess-aria");
   });
 
   it("retries a stripped generic store toast then surfaces the Init timeout", async () => {

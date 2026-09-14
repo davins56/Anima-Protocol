@@ -45,7 +45,7 @@ import {
   LlmStreamTimeoutError,
 } from "../lib/consumeLlmStream.js";
 import {
-  clampChatMessagesMaxTokens,
+  chatReplyMaxTokens,
   llmChatMessagesOpenTimeoutMs,
   openStreamAbort,
 } from "../lib/chatTimeouts";
@@ -59,11 +59,6 @@ import {
   factIdFor,
   upsertMemoryEmbeddings,
 } from "../lib/memoryEmbeddings";
-import {
-  isSupermemoryEnabled,
-  mergeRemoteFactsIntoMemories,
-  searchCompanionFactsFromSupermemory,
-} from "../lib/supermemory";
 import {
   composePrompt,
   buildLlmChatMessages,
@@ -106,6 +101,7 @@ import {
   fetchRegionalWorldKnowledge,
   formatRegionalWorldKnowledge,
   geoFromRequest,
+  peekRegionalWorldKnowledge,
   regionHintsFromProfile,
   resolveUserRegion,
   type RegionHints,
@@ -531,7 +527,10 @@ function adaptCharacters(characters: MsgData[]): CharacterData[] {
     universe: c.universe ? String(c.universe) : undefined,
     archetype: c.archetype ? String(c.archetype) : undefined,
     tagline: c.tagline ? String(c.tagline) : undefined,
+    system_prompt: c.system_prompt ? String(c.system_prompt) : undefined,
     expression_spectrum: c.expression_spectrum,
+    soulprint: c.soulprint,
+    evolution_path: c.evolution_path ? String(c.evolution_path) : undefined,
     _isAnima: Boolean(c._isAnima),
   }));
 }
@@ -896,13 +895,58 @@ async function applyRelationshipPostProcessFromTurn(turn: ChatTurn): Promise<voi
   });
 }
 
+const leftoverTurnRepair = new Map<string, Promise<void>>();
+const turnPersistInFlight = new Map<string, Promise<void>>();
+
 async function retryTurnPersistence(turn: ChatTurn): Promise<void> {
-  try {
-    await persistLedgerTurn(turn);
-  } catch (error) {
-    await markTurnFailed(turn.id, turn.userId, error);
-    throw error;
-  }
+  const existing = turnPersistInFlight.get(turn.id);
+  if (existing) return existing;
+  const work = (async () => {
+    const latest = await readChatTurn(turn.id, turn.userId);
+    if (!latest || latest.status === "committed") return;
+    try {
+      await persistLedgerTurn(latest);
+    } catch (error) {
+      await markTurnFailed(latest.id, latest.userId, error);
+      throw error;
+    }
+  })().finally(() => {
+    if (turnPersistInFlight.get(turn.id) === work) turnPersistInFlight.delete(turn.id);
+  });
+  turnPersistInFlight.set(turn.id, work);
+  return work;
+}
+
+function scheduleLeftoverTurnRepair(
+  userId: string,
+  sessionId: string,
+  currentTurnId: string,
+): void {
+  const key = `${userId}:${sessionId}`;
+  if (leftoverTurnRepair.has(key)) return;
+  const work = (async () => {
+    try {
+      const retryable = await retryableChatTurns(userId, sessionId, 3);
+      if (retryable.length === 0) return;
+      const results = await Promise.allSettled(
+        retryable
+          .filter((turn) => turn.id !== currentTurnId)
+          .map((turn) => retryTurnPersistence(turn)),
+      );
+      const failures = results.filter((result) => result.status === "rejected").length;
+      if (failures > 0) {
+        logger.warn(
+          { sessionId, failures, attempted: results.length },
+          "Chat turn reconciliation left retryable failures",
+        );
+      }
+    } catch (error) {
+      logger.warn({ error, sessionId }, "Chat turn reconciliation failed");
+    }
+  })().finally(() => {
+    if (leftoverTurnRepair.get(key) === work) leftoverTurnRepair.delete(key);
+  });
+  leftoverTurnRepair.set(key, work);
 }
 
 router.get("/sessions/:sessionId/context", async (req, res) => {
@@ -1402,21 +1446,10 @@ router.post("/messages", async (req, res) => {
   const shouldPersist = body.persist !== false;
 
   try {
-  const retryable = await retryableChatTurns(userId, sessionId, 3);
-  if (retryable.length > 0) {
-    const results = await Promise.allSettled(
-      retryable
-        .filter((turn) => turn.id !== turnId)
-        .map((turn) => retryTurnPersistence(turn)),
-    );
-    const failures = results.filter((result) => result.status === "rejected").length;
-    if (failures > 0) {
-      logger.warn(
-        { sessionId, failures, attempted: results.length },
-        "Chat turn reconciliation left retryable failures",
-      );
-    }
-  }
+  // Leftover-turn repair must not delay first token. Heartbeat is already
+  // on the wire; reconcile in the background. One in-flight repair per
+  // session so a generated turn is not retried while persist is still running.
+  scheduleLeftoverTurnRepair(userId, sessionId, turnId);
 
   const memoriesPromise = loadMemories(userId, characterIds);
   const wantRepositoryKnowledge = shouldRetrieveRepositoryKnowledge(content, {
@@ -1448,7 +1481,10 @@ router.post("/messages", async (req, res) => {
           profile: profileRow?.data ?? null,
         };
       }
-      const snapshot = await fetchRegionalWorldKnowledge(region);
+      // Clock/location only on the hot path. Live weather/holidays wait on
+      // Open-Meteo (≤1.5s) — warm the cache for the next turn instead.
+      const snapshot = peekRegionalWorldKnowledge(region);
+      void fetchRegionalWorldKnowledge(region).catch(() => {});
       return {
         prompt: formatRegionalWorldKnowledge(snapshot),
         countryCode: snapshot.countryCode,
@@ -1491,24 +1527,11 @@ router.post("/messages", async (req, res) => {
       readRecentStoreMessages(userId, sessionId, 24, {
         skipMigrate: Boolean(sessionData.messages_migrated),
       }),
-      memoriesPromise.then(async (rows) => {
-        const adapted = await attachStoredEmbeddings(
-          userId,
-          adaptMemories(rows),
-        );
-        if (!isSupermemoryEnabled() || !content.trim()) return adapted;
-        try {
-          const speakerId = hintedCharId || characterIds[0];
-          const hits = await searchCompanionFactsFromSupermemory({
-            userId,
-            characterId: speakerId,
-            query: content,
-            limit: 8,
-          });
-          return mergeRemoteFactsIntoMemories(adapted, hits, speakerId);
-        } catch {
-          return adapted;
-        }
+      memoriesPromise.then((rows) => {
+        const adapted = adaptMemories(rows);
+        // Local companion_memories + stored vectors only. Remote supermemory
+        // search is a later-phase retrieval hop and must not delay first token.
+        return attachStoredEmbeddings(userId, adapted).catch(() => adapted);
       }),
       hintedStatePromise,
       worldKnowledgePromise,
@@ -1708,7 +1731,10 @@ router.post("/messages", async (req, res) => {
     deepMode: Boolean(body.deep_mode),
     conversationDepth: recentMessages.length,
   });
-  const maxTokens = clampChatMessagesMaxTokens(routed.maxTokens);
+  const replyMaxTokens = chatReplyMaxTokens(routed.maxTokens, {
+    mode,
+    deepMode: Boolean(body.deep_mode),
+  });
 
   preStreamPersist = (async () => {
     await syncTypedSession({
@@ -1761,7 +1787,7 @@ router.post("/messages", async (req, res) => {
       writeSse(res, { status: "ensemble", phase: "gathering", minds: [] });
       const drafts = await draftLocalMinds({
         tier: routed.tier,
-        maxTokens,
+        maxTokens: replyMaxTokens,
         messages,
       });
       if (!drafts.length) {
@@ -1785,7 +1811,7 @@ router.post("/messages", async (req, res) => {
         });
         const completion = await combineLocalDrafts(drafts, messages, {
           tier: routed.tier,
-          maxTokens,
+          maxTokens: replyMaxTokens,
         });
         usedModel = completion.model;
         usedTier = completion.tier;
@@ -1807,7 +1833,7 @@ router.post("/messages", async (req, res) => {
         completion = await createChatStreamWithFailover({
           tier: routed.tier,
           model: routed.model,
-          maxTokens,
+          maxTokens: replyMaxTokens,
           messages,
           temperature: 0.85,
           signal: open.signal,

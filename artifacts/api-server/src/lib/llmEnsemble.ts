@@ -79,8 +79,9 @@ export function getEnsembleMinds(tier: ModelTier = "standard"): LlmProviderId[] 
   const minds: LlmProviderId[] = [];
 
   for (const id of getProviderChain()) {
-    if (id === "openrouter" && hasOpenRouterKey()) minds.push(id);
-    else if (id === "local" && hasOpenAIKey() && !disableOpenAI) minds.push(id);
+    // Sequential OpenRouter failover is not a parallel ensemble mind.
+    if (id === "openrouter") continue;
+    if (id === "local" && hasOpenAIKey() && !disableOpenAI) minds.push(id);
   }
 
   return minds.slice(0, maxMinds());

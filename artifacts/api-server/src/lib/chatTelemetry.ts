@@ -62,6 +62,10 @@ export class ChatPipelineTelemetry {
         ttft_ms:
           this.firstTokenAt == null
             ? null
+            : Math.round(this.firstTokenAt - this.startedAt),
+        generation_ttft_ms:
+          this.firstTokenAt == null
+            ? null
             : Math.round(this.firstTokenAt - generationStart),
         generation_ms: Math.round(endedAt - generationStart),
         ...this.measurements,
