@@ -472,6 +472,50 @@ describe("buildCompanionPrompt", () => {
     expect(excerpt).not.toContain("Hello from last turn.");
   });
 
+  it("does not treat a standalone [IMAGE:] history line as the contract boundary", () => {
+    const prompt = [
+      "You are Serenity.",
+      "",
+      "Story so far:",
+      "Serenity: Here is the garden.",
+      "[IMAGE: moonlit garden]",
+      "User: pretty",
+      "",
+      "INTELLIGENCE: Stay sharp.",
+      "IMAGE GENERATION: emit [IMAGE: scene].",
+    ].join("\n");
+    const split = splitClientTranscript(prompt);
+    expect(split.suffix).toContain("INTELLIGENCE: Stay sharp.");
+    expect(split.suffix).toContain("IMAGE GENERATION:");
+    expect(split.suffix).not.toContain("moonlit garden");
+    expect(split.suffix).not.toContain("User: pretty");
+  });
+
+  it("keeps CRITICAL INSTRUCTIONS when the post-transcript suffix exceeds 2k", () => {
+    const intelligence = `INTELLIGENCE: ${"x".repeat(2500)}`;
+    const groupPrompt = [
+      "You are Korra.",
+      "Story so far:",
+      "User: Hi.",
+      "",
+      "CRITICAL INSTRUCTIONS:",
+      "1. YOU ARE ONLY KORRA THIS TURN.",
+      "If the user is mid-sentence, interrupt.",
+      "OUTPUT FORMAT:",
+      "**Korra:** [Your authentic response]",
+      intelligence,
+      "IMAGE GENERATION: emit [IMAGE: scene].",
+      "HIGHEST-PRIORITY RULE: never harm the real person.",
+    ].join("\n");
+    const excerpt = clientSceneExcerpt(groupPrompt);
+    expect(excerpt.length).toBeLessThanOrEqual(CLIENT_SCENE_CONTEXT_MAX);
+    expect(excerpt).toContain("CRITICAL INSTRUCTIONS:");
+    expect(excerpt).toContain("YOU ARE ONLY KORRA THIS TURN");
+    expect(excerpt).toContain("If the user is mid-sentence, interrupt.");
+    expect(excerpt).toContain("HIGHEST-PRIORITY RULE");
+    expect(excerpt).not.toContain("User: Hi.");
+  });
+
   it("uses a stored companion brief when personality fields are empty", () => {
     const prompt = buildCompanionPrompt({
       characters: [
