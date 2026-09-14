@@ -66,7 +66,7 @@ Swap the mock's URL for a real Ollama/vLLM endpoint once you have GPU/hosting
 
 ```bash
 # Settings → Export, or rehearse with committed fixtures:
-pnpm llm:curate-novels                    # novels + brief-gold → raw/
+pnpm llm:curate-novels                    # novel scenes → raw/; brief-gold stays in seeds
 pnpm llm:ingest -- --from ~/Downloads/anima-backup.json
 pnpm llm:dataset                          # curate + seed + raw → ShareGPT JSONL + DPO pairs
 # pnpm llm:dataset -- --rehearse          # no real logs / no shared-box novels

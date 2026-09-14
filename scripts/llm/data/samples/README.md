@@ -21,7 +21,7 @@ Real exports are personal and stay gitignored under
 
 ```bash
 pnpm llm:dataset -- --rehearse
-# curate samples/novels + brief-gold → scripts/llm/data/raw/curated-novels-and-brief.jsonl
+# curate samples/novels → scripts/llm/data/raw/curated-novels.jsonl (brief-gold stays in seeds)
 # ingest chat samples → scripts/llm/data/raw/imported-samples.jsonl
 # prepare-finetune (seed + logs, val split 0.05, register weights)
 # prepare-dpo

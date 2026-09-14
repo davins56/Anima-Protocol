@@ -3,11 +3,13 @@
  * stage TrainingExample JSONL into curated/ (inspect) and raw/ (train merge).
  *
  * Full novels stay out of git. Brief-gold (original voice turns) is always
- * mixed in unless --no-brief-gold.
+ * mixed in unless --no-brief-gold. Brief-gold is written to curated/ for
+ * inspection but is NOT copied into raw/ — prepare-finetune already loads it
+ * via listSeedExamples, and a second copy would 8× after the 4× gold weight.
  */
 
 import { execFile } from "node:child_process";
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -192,8 +194,15 @@ export async function writeCuratedBundle(opts: {
   let rawCopy: string | undefined;
   if (opts.rawDir) {
     await mkdir(opts.rawDir, { recursive: true });
-    rawCopy = join(opts.rawDir, "curated-novels-and-brief.jsonl");
-    await writeFile(rawCopy, toJsonlRows(opts.examples));
+    rawCopy = join(opts.rawDir, "curated-novels.jsonl");
+    await writeFile(rawCopy, toJsonlRows(novels));
+    // Previous builds staged brief-gold here too; remove so prepare-finetune
+    // cannot mix a second copy with listSeedExamples.
+    try {
+      await unlink(join(opts.rawDir, "curated-novels-and-brief.jsonl"));
+    } catch {
+      // missing is fine
+    }
   }
 
   return {

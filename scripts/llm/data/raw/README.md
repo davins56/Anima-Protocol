@@ -19,7 +19,8 @@ source (Settings export / transcripts / samples / novels)
 # 1. Settings → Export → anima-backup-*.json (not committed)
 pnpm llm:ingest -- --from ~/Downloads/anima-backup.json
 
-# 1b. Shared-box novels / brief-gold (weights in ../brief/serenity-anima-design.md)
+# 1b. Shared-box novels (weights in ../brief/serenity-anima-design.md)
+#     Brief-gold is already in the seed mix — not staged here.
 pnpm llm:curate-novels
 
 # 2. Seed + staged logs → ShareGPT JSONL + DPO pairs + stats

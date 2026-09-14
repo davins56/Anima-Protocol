@@ -146,6 +146,25 @@ function dedupeKey(example: TrainingExample): string {
     .join("|");
 }
 
+/** Drop later examples that share an id (e.g. brief-gold in seeds AND raw/). */
+export function canonicalExampleId(id: string): string {
+  return id.replace(/~w\d+$/i, "").replace(/__w\d+$/i, "").trim();
+}
+
+export function dedupeById(examples: TrainingExample[]): TrainingExample[] {
+  const seen = new Set<string>();
+  const out: TrainingExample[] = [];
+  for (const example of examples) {
+    const id = canonicalExampleId(example.id || "");
+    if (id) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+    }
+    out.push(example);
+  }
+  return out;
+}
+
 /** Drop exact/near-duplicate conversations, keeping the first occurrence. */
 export function dedupeExamples(examples: TrainingExample[]): TrainingExample[] {
   const seen = new Set<string>();

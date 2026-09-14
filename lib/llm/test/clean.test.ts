@@ -3,6 +3,7 @@ import {
   checkExampleQuality,
   cleanExample,
   cleanExamples,
+  dedupeById,
   dedupeExamples,
   hasDenylistedAssistantContent,
   normalizeTurns,
@@ -145,6 +146,20 @@ describe("cleanExample / cleanExamples", () => {
     const bad = example({ id: "bad", conversation: [{ role: "user", content: "hi" }] });
     const result = cleanExamples([good, bad]);
     expect(result.map((e) => e.id)).toEqual(["good"]);
+  });
+});
+
+describe("dedupeById", () => {
+  it("keeps the first example per id", () => {
+    const a = example({ id: "gold-porch-not-throne-001", source: "seed" });
+    const b = example({ id: "gold-porch-not-throne-001", source: "raw" });
+    expect(dedupeById([a, b]).map((e) => e.source)).toEqual(["seed"]);
+  });
+
+  it("treats weighted replica suffixes as the same id", () => {
+    const a = example({ id: "g" });
+    const b = example({ id: "g~w1" });
+    expect(dedupeById([a, b])).toHaveLength(1);
   });
 });
 

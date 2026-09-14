@@ -18,7 +18,7 @@ source                         raw (gitignored)              processed (gitignor
 Settings → Export JSON    ─┐
 plain User:/Serenity: txt ─┼─► scripts/llm/data/raw/    ─► scripts/llm/output/
 ShareGPT / ChatML JSON    ─┤   imported-*.jsonl              finetune-sharegpt.jsonl
-novel extracts + brief    ─┤   curated-novels-and-brief.jsonl finetune-sharegpt.val.jsonl
+novel extracts          ─┤   curated-novels.jsonl            finetune-sharegpt.val.jsonl
 Postgres --with-db        ─┘                                 dpo-pairs.jsonl
 committed samples/ (rehearse)
 ```
@@ -76,7 +76,8 @@ Drop extracts (preferred) or PDFs on the shared box:
 - `scripts/llm/data/novels/` (gitignored)
 
 ```bash
-pnpm llm:curate-novels          # → curated/ + scripts/llm/data/raw/curated-novels-and-brief.jsonl
+pnpm llm:curate-novels          # → curated/ + scripts/llm/data/raw/curated-novels.jsonl
+                                #   brief-gold stays in the seed mix (not copied to raw)
 pnpm llm:dataset                # curate + ShareGPT JSONL + DPO + stats
 ```
 

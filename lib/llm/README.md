@@ -16,7 +16,7 @@ pnpm --filter @workspace/llm run cli -- prepare-finetune --format sharegpt --val
 pnpm --filter @workspace/llm run cli -- dataset-stats --file scripts/llm/output/finetune-sharegpt.jsonl
 pnpm --filter @workspace/llm run cli -- import-logs               # preview scripts/llm/data/raw/*
 pnpm llm:ingest -- --from ~/Downloads/anima-backup.json          # Settings export → raw/
-pnpm llm:curate-novels                                           # novels + brief-gold → raw/
+pnpm llm:curate-novels                                           # novel scenes → raw/; brief-gold stays in seeds
 pnpm llm:dataset -- --rehearse                                   # samples → JSONL (no GPU)
 pnpm --filter @workspace/llm run cli -- prepare-finetune --format sharegpt --with-logs scripts/llm/data/raw
 pnpm --filter @workspace/llm run cli -- serve-hint
