@@ -903,6 +903,7 @@ describe("getProviderChain", () => {
     delete process.env.DEEPSHI_API_KEY;
     delete process.env.ANIMA_DEEPSHI_API_KEY;
     delete process.env.ANIMA_OPENROUTER_FALLBACK;
+    delete process.env.ANIMA_LOCAL_LLM_FALLBACK;
   });
 
   it("keeps chain [local] when customOnly even if OpenRouter fallback and key are set", () => {
@@ -924,6 +925,13 @@ describe("getProviderChain", () => {
     delete process.env.ANIMA_LLM_PROVIDER;
     expect(getProviderChain()).toEqual(["local"]);
     expect(preferCustomLlmOnly()).toBe(true);
+  });
+
+  it("appends OpenRouter after local when local fallback is explicitly enabled", () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:11434/v1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.ANIMA_LOCAL_LLM_FALLBACK = "true";
+    expect(getProviderChain()).toEqual(["local", "openrouter"]);
   });
 
   it("does not skip a usable local host when ANIMA_LLM_PROVIDER=minimax", () => {

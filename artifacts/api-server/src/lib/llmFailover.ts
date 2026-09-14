@@ -351,6 +351,12 @@ export function allowOpenRouterFallback(): boolean {
   return raw === "1" || raw === "true" || raw === "yes";
 }
 
+/** Allow a configured local Anima host to fail over to OpenRouter. */
+export function allowLocalLlmFallback(): boolean {
+  const raw = (process.env.ANIMA_LOCAL_LLM_FALLBACK || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
+}
+
 /** True when the first usable chat provider is the self-hosted Anima LLM. */
 export function isAnimaCustomMode(): boolean {
   const chain = getProviderChain();
@@ -458,8 +464,11 @@ function localUsable(): boolean {
  */
 export function getProviderChain(): LlmProviderId[] {
   if (localUsable()) {
-    // Fail-closed: the self-hosted host is the only chat provider.
-    return ["local"];
+    const chain: LlmProviderId[] = ["local"];
+    if (allowLocalLlmFallback() && hasOpenRouterKey()) {
+      chain.push("openrouter");
+    }
+    return chain;
   }
   if (hasWorkersAiBinding()) {
     const chain: LlmProviderId[] = ["workersai"];
