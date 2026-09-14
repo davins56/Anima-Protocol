@@ -21,6 +21,38 @@ export function turnMessageIds(turnId: string): {
   };
 }
 
+export function chatTurnUserContentMatches(
+  existing: { userContent?: string | null },
+  userContent: string,
+): boolean {
+  return String(existing.userContent ?? "") === String(userContent ?? "");
+}
+
+export type ChatTurnReuse = "replay" | "conflict" | "in_flight";
+
+/**
+ * How to treat a `turn_id` that already exists.
+ *
+ * Replay is only safe when this POST is the same user text (Safari / retry of
+ * the same body). A colliding id with different content must not stream the
+ * prior assistant reply.
+ */
+export function classifyChatTurnReuse(
+  existing: Pick<ChatTurn, "status" | "assistantContent" | "userContent">,
+  userContent: string,
+): ChatTurnReuse {
+  if (!chatTurnUserContentMatches(existing, userContent)) {
+    return "conflict";
+  }
+  if (
+    existing.assistantContent &&
+    (existing.status === "generated" || existing.status === "committed")
+  ) {
+    return "replay";
+  }
+  return "in_flight";
+}
+
 export async function beginChatTurn(input: {
   id: string;
   sessionId: string;

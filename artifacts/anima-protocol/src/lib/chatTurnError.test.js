@@ -111,4 +111,10 @@ describe("chatTurnErrorMessage", () => {
     );
     expect(chatTurnErrorMessage(new Error(storeToast))).not.toMatch(/companion store/i);
   });
+
+  it("keeps local-only timeout copy so the HUD does not look like a silent hang", () => {
+    const localTimeout =
+      "The self-hosted Anima LLM took too long to reply. The model may still be waking — wait a moment and send again. Chat does not fall through to OpenRouter.";
+    expect(chatTurnErrorMessage(new Error(localTimeout))).toBe(localTimeout);
+  });
 });

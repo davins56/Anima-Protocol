@@ -72,5 +72,6 @@ export function chatTurnErrorMessage(err) {
   if (GENERIC_HTTP_STATUS_RE.test(raw)) {
     return "The companion service encountered an issue. Please try again in a moment.";
   }
+  // Local-only timeout / connection copy from `/chat/messages` is already HUD-safe.
   return raw;
 }

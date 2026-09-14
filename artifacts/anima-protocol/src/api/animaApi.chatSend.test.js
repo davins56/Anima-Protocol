@@ -58,6 +58,19 @@ describe("chat send auth and HTTP errors", () => {
     expect(err.code).toBe("workersai_free_quota_exhausted");
   });
 
+  it("preserves HTTP status and conflict code on a 409 turn collision", () => {
+    const err = chatHttpError(
+      {
+        error: "This chat turn is already being processed.",
+        code: "turn_in_flight",
+      },
+      409,
+    );
+    expect(err.status).toBe(409);
+    expect(err.code).toBe("turn_in_flight");
+    expect(err.message).toMatch(/already being processed/);
+  });
+
   it("attaches Authorization before POST /chat/messages and retries a 401", async () => {
     authHeaders
       .mockResolvedValueOnce({
