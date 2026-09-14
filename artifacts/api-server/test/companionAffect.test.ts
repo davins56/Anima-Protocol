@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   COMPANION_AFFECT_SOURCE,
   COMPANION_AFFECT_VERSION,
+  companionAffectSnapshotFromEmotionalState,
   companionAffectToPromptGuidance,
   detectAffectCue,
   evolveCompanionAffectFromCompanion,
@@ -10,9 +11,12 @@ import {
   mergeEmotionalStateWithAffect,
   primaryFromLabel,
   radiationEventFromAffect,
+  radiationEventFromEmotionalState,
   serializeCompanionAffect,
+  synchroStrengthFromEmotionalState,
   toCompanionAffectSnapshot,
 } from "../src/lib/companionAffect";
+import { initSynchroState, serializeSynchroState } from "../src/lib/synchroEngine";
 
 describe("initCompanionAffect", () => {
   it("starts at a resting watchful-neutral floor, not an empty fake label", () => {
@@ -183,5 +187,52 @@ describe("reply conditioning + Key radiation hook", () => {
       energy: 29,
       synchro_strength: 41,
     });
+  });
+});
+
+describe("serializeSynchroState ↔ snapshot / Key radiation contract", () => {
+  it("reads the same root synchroStrength that serializeSynchroState writes", () => {
+    const synchro = initSynchroState(
+      {
+        intimacy: 70,
+        synchroStrength: 74,
+        lastInteraction: new Date().toISOString(),
+        totalTurns: 12,
+        selfState: { primary: "tender", intensity: 50, energy: 44 },
+      },
+      null,
+      null,
+    );
+    const serialized = serializeSynchroState(synchro);
+    expect(serialized.synchroStrength).toBe(synchro.vector.synchroStrength);
+    expect(serialized.vector).toBeUndefined();
+
+    const merged = mergeEmotionalStateWithAffect(
+      serialized,
+      initCompanionAffect(serialized),
+    );
+    expect(synchroStrengthFromEmotionalState(merged)).toBe(
+      serialized.synchroStrength,
+    );
+    expect(companionAffectSnapshotFromEmotionalState(merged).synchro_strength).toBe(
+      serialized.synchroStrength,
+    );
+    expect(radiationEventFromEmotionalState(merged).synchro_strength).toBe(
+      serialized.synchroStrength,
+    );
+  });
+
+  it("still finds bond strength if a nested vector was stored", () => {
+    expect(
+      synchroStrengthFromEmotionalState({
+        vector: { synchroStrength: 61 },
+      }),
+    ).toBe(61);
+    expect(
+      companionAffectSnapshotFromEmotionalState({
+        vector: { synchro_strength: 40 },
+        selfState: { primary: "curious", intensity: 30, energy: 50 },
+      }).synchro_strength,
+    ).toBe(40);
   });
 });

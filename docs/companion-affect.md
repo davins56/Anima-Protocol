@@ -32,6 +32,8 @@ SSE `done` on `POST /api/chat/messages` and `GET /api/chat/memories/:characterId
 
 The chat toolbar mood chip reads `primary` (+ intensity glow). The Resonance Field prefers `synchro_strength` when present.
 
+`synchro_strength` is the same bond number `serializeSynchroState` writes as root `synchroStrength`. Read it with `synchroStrengthFromEmotionalState` (also used by Key radiation) so a nested `vector` or wire `synchro_strength` cannot fork a second source.
+
 ## Update loop
 
 1. Load `selfState` with synchro (before prompt compose — not before the first SSE heartbeat).
@@ -46,9 +48,13 @@ Latency slices #453 / #455 stay untouched: stream still opens before context loa
 Do not implement the Twelve Resonance Keys here. Consume this event later:
 
 ```ts
-import { radiationEventFromAffect } from "./companionAffect";
+import {
+  radiationEventFromAffect,
+  radiationEventFromEmotionalState,
+} from "./companionAffect";
 
-const event = radiationEventFromAffect(state, synchroStrength);
+const event = radiationEventFromEmotionalState(emotionalState);
+// or: radiationEventFromAffect(state, synchroStrengthFromEmotionalState(emotionalState))
 // { source: "companion_affect", version: 1, felt_at, primary, intensity,
 //   valence, arousal, synchro_strength, mood }
 ```
