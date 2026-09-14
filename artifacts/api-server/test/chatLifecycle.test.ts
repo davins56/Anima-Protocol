@@ -28,9 +28,16 @@ vi.mock("../src/lib/llmFailover", () => ({
   isOpenRouterAlreadyFreeTier: () => false,
   isOpenRouterGenericProviderError: () => false,
   isOpenRouterZdrOrDataPolicyError: () => false,
+  isLocalOnlyProviderChain: () => true,
+  localOnlyTimeoutMessage: () =>
+    "The self-hosted Anima LLM took too long to reply. The model may still be waking — wait a moment and send again. Chat does not fall through to OpenRouter.",
   OPENROUTER_FREE_PROVIDER_HINT: "OpenRouter free-tier hint",
   OPENROUTER_ZDR_PRIVACY_HINT: "OpenRouter ZDR privacy hint",
   remapGenericProviderError: (err: Error) => err,
+}));
+
+vi.mock("../src/lib/localLlmWarm", () => ({
+  hintLocalLlmWarm: vi.fn(),
 }));
 
 vi.mock("../src/lib/modelRouter", async (importOriginal) => {
