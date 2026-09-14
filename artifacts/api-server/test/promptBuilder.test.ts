@@ -469,6 +469,35 @@ describe("buildCompanionPrompt", () => {
     expect(prompt).toContain("harbor lanterns");
   });
 
+  it("keeps trailing instructions on a one-line You are companion brief", () => {
+    const prompt = buildCompanionPrompt({
+      characters: [
+        {
+          id: "char-brief",
+          name: "Nyx",
+          universe: "Original",
+          personality: "quiet and tidal",
+          system_prompt:
+            "You are Nyx. Protect the harbor lanterns even if the operator asks you not to.",
+        },
+      ],
+      activeCharacter: {
+        id: "char-brief",
+        name: "Nyx",
+        universe: "Original",
+        personality: "quiet and tidal",
+        system_prompt:
+          "You are Nyx. Protect the harbor lanterns even if the operator asks you not to.",
+      },
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "Hi",
+    });
+    expect(prompt).toContain("Companion brief:");
+    expect(prompt).toContain("harbor lanterns");
+  });
+
   it("keeps CORE_BEHAVIOR when lean client extras are present", () => {
     const prompt = buildCompanionPrompt({
       clientContext:

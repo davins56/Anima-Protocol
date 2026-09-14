@@ -393,10 +393,19 @@ function storedCompanionBrief(character: CharacterData): string {
   );
   if (!hasStructured) return stored;
   const dropPrefixes = /^(you are\b|personality\s*:|backstory\s*:|voice\s*:)/i;
+  const structured = [character.personality, character.backstory, character.speaking_style]
+    .filter(Boolean)
+    .join("\n")
+    .toLowerCase();
   return stored
     .split(/\n+/)
-    .map((line) => line.trim())
-    .filter((line) => line && !dropPrefixes.test(line))
+    .map((line) => {
+      const stripped = line.trim().replace(dropPrefixes, "").trim();
+      if (!stripped) return "";
+      if (structured.includes(stripped.toLowerCase())) return "";
+      return stripped;
+    })
+    .filter(Boolean)
     .join("\n")
     .trim();
 }
