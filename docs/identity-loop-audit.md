@@ -190,5 +190,5 @@ Tests: `chatLifecycle` still streams; add an assert that a status/heartbeat even
 | #450 merged | `origin/main` `f4a7010a`; `chat.ts` still `llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() })` |
 | 8192 max_tokens on typical turns | `modelRouter.ts` `text.length >= 200` → heavy; `MAX_TOKENS.heavy = 8192` |
 | Repo RAG every turn | `chat.ts` `retrieveRepositoryKnowledge(content)` when `content.trim()` |
-| Telemetry TTFT excludes context | `chatTelemetry.ts` `ttft_ms` from `generationStartedAt` |
+| Telemetry | `ttft_ms` from `generationStartedAt`; `repository_rag_ms` is nested in `context_load_ms` (`chat.ts` + `chatTelemetry.ts`) |
 | Browser abort 130s | `animaApi.js` `CHAT_STREAM_TIMEOUT_MS = 130_000` |
