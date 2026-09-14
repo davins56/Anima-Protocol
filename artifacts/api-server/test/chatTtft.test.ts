@@ -227,6 +227,10 @@ describe("chat TTFT (Slice 1)", () => {
     expect(rest).toContain("Hello from Anima.");
     expect(embeddingMocks.finishedAt).toBeGreaterThan(0);
     expect(firstByteAt).toBeLessThan(embeddingMocks.finishedAt);
+    const sent = llmMocks.createChatStreamWithFailover.mock.calls.at(-1)?.[0] as {
+      maxTokens?: number;
+    };
+    expect(sent.maxTokens).toBeLessThanOrEqual(1024);
   });
 
   it("retrieves repository knowledge only for repo-shaped turns", async () => {

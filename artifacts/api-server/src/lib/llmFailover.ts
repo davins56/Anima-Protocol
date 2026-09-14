@@ -257,6 +257,23 @@ export function usesFreeTierOpenBudget(): boolean {
   return getProviderChain().includes("openrouter") && isOpenRouterAlreadyFreeTier();
 }
 
+/**
+ * Honor a caller cap on local Ollama/vLLM. OpenRouter already uses
+ * `Math.min(req.maxTokens, m.maxTokens)`; the local branch used to send
+ * `m.maxTokens` (4–8k) and ignore `/chat/messages`.
+ */
+export function honorCallerMaxTokens(
+  requested: number | undefined,
+  modelMax: number,
+): number {
+  const cap =
+    Number.isFinite(modelMax) && modelMax > 0 ? Math.floor(modelMax) : 1024;
+  if (typeof requested !== "number" || !Number.isFinite(requested) || requested <= 0) {
+    return cap;
+  }
+  return Math.min(Math.floor(requested), cap);
+}
+
 export interface ChatStreamResult {
   stream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>;
   provider: LlmProviderId;
@@ -540,12 +557,6 @@ function localAttemptSignal(
     signal: combineAbortSignals(parent, attempt.signal),
     cancel: attempt.cancel,
   };
-}
-
-/** OpenRouter already mins the caller cap; local used to ignore `req.maxTokens`. */
-function cappedLocalMaxTokens(requested: number, registryMax: number): number {
-  if (!Number.isFinite(requested) || requested <= 0) return registryMax;
-  return Math.min(Math.floor(requested), registryMax);
 }
 
 /** Workers AI failures that may hop to OpenRouter when it is next in chain. */
@@ -2011,7 +2022,7 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
             client.chat.completions.create(
               {
                 model: m.model,
-                max_tokens: cappedLocalMaxTokens(req.maxTokens, m.maxTokens),
+                max_tokens: honorCallerMaxTokens(req.maxTokens, m.maxTokens),
                 messages: req.messages,
                 stream: true,
                 ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
@@ -2135,7 +2146,7 @@ export async function createChatCompletionWithFailover(
             client.chat.completions.create(
               {
                 model: m.model,
-                max_tokens: cappedLocalMaxTokens(req.maxTokens, m.maxTokens),
+                max_tokens: honorCallerMaxTokens(req.maxTokens, m.maxTokens),
                 messages: req.messages,
                 ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
                 ...(req.tools && req.tools.length

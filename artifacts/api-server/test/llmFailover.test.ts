@@ -1256,7 +1256,7 @@ describe("createChatStreamWithFailover", () => {
     });
   });
 
-  it("honors the caller maxTokens cap on the local stream", async () => {
+  it("honors the caller max_tokens cap on the local stream", async () => {
     createMock.mockResolvedValueOnce(fakeStream("anima"));
     await createChatStreamWithFailover({
       tier: "standard",

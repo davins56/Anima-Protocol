@@ -368,3 +368,17 @@ export async function createInitChatSession(
   }
   throw lastErr;
 }
+
+/**
+ * After Companion Generator create, open a solo session so the 1:1 loop is
+ * create → chat rather than only Customise Look.
+ */
+export async function startSoloCompanionChatSession(character, options = {}) {
+  const { payload } = buildInitSessionPayload({
+    mode: "solo",
+    characterId: character?.id,
+    character,
+    authUser: options.authUser ?? null,
+  });
+  return createInitChatSession(payload, options);
+}
