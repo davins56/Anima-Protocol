@@ -33,6 +33,33 @@ export type CurateNovelsResult = {
 };
 
 const SOURCE_EXTENSIONS = new Set([".txt", ".md", ".pdf"]);
+const SKIP_DIR_NAMES = new Set(["node_modules", ".git", "checkpoints", "gguf"]);
+
+async function listSourceFiles(dir: string): Promise<string[]> {
+  const out: string[] = [];
+  async function walk(current: string): Promise<void> {
+    let entries;
+    try {
+      entries = await readdir(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of [...entries].sort((a, b) => a.name.localeCompare(b.name))) {
+      if (entry.name.startsWith(".")) continue;
+      const full = join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (SKIP_DIR_NAMES.has(entry.name)) continue;
+        await walk(full);
+        continue;
+      }
+      if (entry.name.toLowerCase() === "readme.md") continue;
+      if (!SOURCE_EXTENSIONS.has(extname(entry.name).toLowerCase())) continue;
+      out.push(full);
+    }
+  }
+  await walk(dir);
+  return out;
+}
 
 /** lib/llm/src/dataset → repo root (four levels). */
 export const REPO_ROOT_FROM_DATASET = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -56,22 +83,6 @@ async function pathExists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-async function listSourceFiles(dir: string): Promise<string[]> {
-  let names: string[];
-  try {
-    names = await readdir(dir);
-  } catch {
-    return [];
-  }
-  return names
-    .filter((n) => {
-      if (n.toLowerCase() === "readme.md") return false;
-      return SOURCE_EXTENSIONS.has(extname(n).toLowerCase());
-    })
-    .sort((a, b) => a.localeCompare(b))
-    .map((n) => join(dir, n));
 }
 
 async function textFromPdf(file: string): Promise<string> {
@@ -132,13 +143,16 @@ export async function curateNovels(opts: {
         continue;
       }
       const extracted = extractNovelExamples(text, spec);
-      seenBooks.add(spec.id);
       files.push({
         path: file,
         book: spec.id,
         register: spec.register,
         turns: extracted.length,
       });
+      // Unreadable / scene-less PDFs must not lock the book id — txt extracts
+      // in a later dir (llm-raw-source, serenity-extract) should still win.
+      if (!extracted.length) continue;
+      seenBooks.add(spec.id);
       examples.push(...extracted);
     }
   }

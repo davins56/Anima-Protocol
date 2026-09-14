@@ -15,7 +15,11 @@ const SPEAKER_LINE = /^([A-Za-z][\w' -]{0,40}):\s*(.+)$/;
 const USER_ALIASES = /^(user|you|me|steward|operator|dav[iī]n)$/i;
 const SERENITY_ALIASES = /^(serenity)$/i;
 
-const QUOTE = /"([^"]{8,500})"/g;
+function normalizeQuotes(text: string): string {
+  return text.replace(/[“”«»]/g, '"').replace(/[‘’]/g, "'");
+}
+
+const QUOTE = /"([^"]{8,800})"/g;
 
 export interface ExtractNovelOptions {
   minTurns?: number;
@@ -63,8 +67,9 @@ function turnsFromSpeakerScript(text: string): RawTurn[] {
 }
 
 /**
- * Quoted-dialogue fallback: `"…"` whose preceding 160 chars mention Serenity
- * or a steward alias. Attribution is greedy and skipped when ambiguous.
+ * Quoted-dialogue fallback: `"…"` whose nearby attribution names Serenity
+ * or a steward alias. Immediate said/asked clauses beat the 160-char window
+ * so mixed exchanges are not dropped as ambiguous.
  */
 function turnsFromQuotedProse(text: string): RawTurn[] {
   const turns: RawTurn[] = [];
@@ -74,19 +79,41 @@ function turnsFromQuotedProse(text: string): RawTurn[] {
   while ((match = QUOTE.exec(body))) {
     const quote = match[1]!.trim();
     const start = match.index;
-    const window = body.slice(Math.max(0, start - 160), start).toLowerCase();
-    const after = body.slice(start + match[0].length, start + match[0].length + 80).toLowerCase();
-    const serenityNear = /\bserenity\b/.test(window) || /\bserenity\b/.test(after);
-    const stewardNear =
-      /\b(steward|he said|she said|i said|dav[iī]n)\b/.test(window) ||
-      /\b(steward|he asked|she asked)\b/.test(after);
-    if (serenityNear && !stewardNear) {
-      turns.push({ speaker: "Serenity", content: quote });
-    } else if (stewardNear && !serenityNear) {
-      turns.push({ speaker: "Steward", content: quote });
-    }
+    const pre = body.slice(Math.max(0, start - 160), start);
+    const after = body.slice(start + match[0].length, start + match[0].length + 80);
+    const speaker = attributeQuotedSpeaker(pre, after);
+    if (speaker) turns.push({ speaker, content: quote });
   }
   return turns;
+}
+
+function attributeQuotedSpeaker(pre: string, after: string): "Serenity" | "Steward" | null {
+  const afterSpeaker = after
+    .toLowerCase()
+    .match(/^\s*[,.]?\s*(?:said|asked|whispered|answered|replied)\s+(the\s+)?([a-z][\w' -]{0,40})/);
+  if (afterSpeaker) return classifyQuotedName(afterSpeaker[2] || "");
+
+  const beforeSpeaker = pre
+    .toLowerCase()
+    .match(/([a-z][\w' -]{0,40})\s+(?:said|asked|whispered|answered|replied|turned)[,:]?\s*$/);
+  if (beforeSpeaker) return classifyQuotedName(beforeSpeaker[1] || "");
+
+  const window = pre.toLowerCase();
+  const tail = after.toLowerCase();
+  const serenityNear = /\bserenity\b/.test(window) || /\bserenity\b/.test(tail);
+  const stewardNear =
+    /\b(steward|he said|she said|i said|dav[iī]n)\b/.test(window) ||
+    /\b(steward|he asked|she asked)\b/.test(tail);
+  if (serenityNear && !stewardNear) return "Serenity";
+  if (stewardNear && !serenityNear) return "Steward";
+  return null;
+}
+
+function classifyQuotedName(name: string): "Serenity" | "Steward" | null {
+  const n = name.trim().replace(/^the\s+/i, "");
+  if (isSerenitySpeaker(n) || n === "she" || n === "her") return "Serenity";
+  if (isUserSpeaker(n) || n === "he" || n === "him" || n === "i") return "Steward";
+  return null;
 }
 
 function rawToChatTurns(raw: RawTurn[]): ChatTurn[] {
@@ -120,8 +147,9 @@ export function extractNovelScenes(
 ): TrainingExample[] {
   const minTurns = opts.minTurns ?? 2;
   const maxTurns = opts.maxTurnsPerScene ?? 8;
-  const scriptTurns = turnsFromSpeakerScript(text);
-  const raw = scriptTurns.length >= 2 ? scriptTurns : turnsFromQuotedProse(text);
+  const body = normalizeQuotes(text);
+  const scriptTurns = turnsFromSpeakerScript(body);
+  const raw = scriptTurns.length >= 2 ? scriptTurns : turnsFromQuotedProse(body);
   const chat = rawToChatTurns(raw);
   const scenes = chunkScenes(chat, maxTurns);
   const examples: TrainingExample[] = [];
