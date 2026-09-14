@@ -117,7 +117,7 @@ import {
 } from "../lib/therapySafety";
 import { ChatPipelineTelemetry } from "../lib/chatTelemetry";
 import { streamErrorMessage } from "../lib/chatStreamError";
-import { classifyDbError } from "../lib/dbErrors";
+import { classifyDbError, errorCauseBlob } from "../lib/dbErrors";
 import { finalizeAssistantReply } from "../lib/visibleAssistantReply";
 import {
   beginChatTurn,
@@ -260,7 +260,7 @@ function openChatSse(res: Response): {
 }
 
 function isMissingRelationError(err: unknown): boolean {
-  const blob = collectErrorBlob(err);
+  const blob = errorCauseBlob(err);
   if (!/companion_memories/i.test(blob)) return false;
   const info = classifyDbError(err);
   return (
@@ -270,27 +270,6 @@ function isMissingRelationError(err: unknown): boolean {
       blob,
     )
   );
-}
-
-function collectErrorBlob(err: unknown): string {
-  const parts: string[] = [];
-  const seen = new Set<unknown>();
-  let current: unknown = err;
-  for (let depth = 0; depth < 6 && current; depth += 1) {
-    if (seen.has(current)) break;
-    seen.add(current);
-    if (current instanceof Error) parts.push(current.message);
-    else if (typeof current === "string") parts.push(current);
-    else if (current && typeof current === "object" && "message" in current) {
-      const nested = (current as { message?: unknown }).message;
-      if (typeof nested === "string" && nested) parts.push(nested);
-    }
-    current =
-      current && typeof current === "object" && "cause" in current
-        ? (current as { cause?: unknown }).cause
-        : undefined;
-  }
-  return parts.join("\n");
 }
 
 /** Scalar binds only — drizzle `inArray` emits `IN ($n)` with a JS array. */
