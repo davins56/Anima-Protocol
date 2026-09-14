@@ -113,7 +113,10 @@ export function chatCompletionHttpFailure(err: unknown): {
       code: "ai_timeout",
     };
   }
-  if (isWorkerSubrequestLimitError(err)) {
+  if (
+    isWorkerSubrequestLimitError(err) ||
+    /chat service is busy/i.test(message)
+  ) {
     return {
       status: 503,
       error: LOCAL_LLM_SUBREQUEST_HINT,
