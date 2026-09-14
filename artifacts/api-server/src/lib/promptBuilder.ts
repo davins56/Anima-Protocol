@@ -199,10 +199,14 @@ const CLIENT_TRANSCRIPT_MARKER_RE =
 
 /**
  * Split a Chat.jsx / buildGroupPrompt system prompt at the transcript.
- * History is `\n`-joined `Speaker: line` rows; unique contracts
- * (`INTELLIGENCE_GUIDANCE`, `[EMOTION]`/`[LOCATION]`/`[IMAGE]`, length,
- * Continue) come after the first blank line. Do not discard that suffix.
+ * History is `\n`-joined `Speaker: line` rows and may contain blank lines.
+ * Unique contracts (`INTELLIGENCE`, `[EMOTION]`/`[LOCATION]`/`[IMAGE]`,
+ * Continue) start at a known marker after that transcript — not at the
+ * first blank line, which can sit inside a user message.
  */
+const POST_TRANSCRIPT_CONTRACT_RE =
+  /(?:INTELLIGENCE\s*:|EMOTIONAL RESONANCE\s*:|ATTUNEMENT\s*:|IMAGE GENERATION\s*:|\[EMOTION:|\[LOCATION:|\[IMAGE:|HIGHEST-PRIORITY RULE|The user tapped Continue|Respond as |Respond with vivid)/i;
+
 export function splitClientTranscript(value: string): {
   prefix: string;
   suffix: string;
@@ -214,11 +218,14 @@ export function splitClientTranscript(value: string): {
   }
   const prefix = text.slice(0, match.index).trimEnd();
   const after = text.slice(match.index + match[0].length);
-  const blank = /\n[ \t]*\n/.exec(after);
-  if (!blank || blank.index == null) {
+  const contract = POST_TRANSCRIPT_CONTRACT_RE.exec(after);
+  if (!contract || contract.index == null) {
     return { prefix, suffix: "" };
   }
-  return { prefix, suffix: after.slice(blank.index).trim() };
+  const beforeContract = after.slice(0, contract.index);
+  const blank = /\n[ \t]*\n[ \t]*$/.exec(beforeContract);
+  const suffixStart = blank ? contract.index - blank[0].length : contract.index;
+  return { prefix, suffix: after.slice(suffixStart).trim() };
 }
 
 function capSceneBudget(text: string): string {
