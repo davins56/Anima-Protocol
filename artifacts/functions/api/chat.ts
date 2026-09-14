@@ -65,7 +65,7 @@ function setIsLoading(arg0: boolean) {
   isLoading = arg0;
 }
 function setInput(arg0: string) {
-  input = arg0;
+ input = arg0;
 }
 
 function setError(arg0: string) {
