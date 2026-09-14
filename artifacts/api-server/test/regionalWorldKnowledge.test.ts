@@ -189,6 +189,49 @@ describe("regional world knowledge", () => {
     expect(peeked.localTimeLabel).not.toBe(stale.label);
   });
 
+  it("keeps a geocoded season when the fresh clock cannot infer hemisphere", async () => {
+    const region: ResolvedRegion = {
+      enabled: true,
+      timezone: "UTC",
+      locale: "en-US",
+      city: "Sydney",
+      regionName: null,
+      country: "Australia",
+      countryCode: "AU",
+      latitude: null,
+      longitude: null,
+    };
+    const fetchFn: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("geocoding-api.open-meteo.com")) {
+        return new Response(
+          JSON.stringify({
+            results: [
+              {
+                name: "Sydney",
+                admin1: "New South Wales",
+                country: "Australia",
+                country_code: "AU",
+                latitude: -33.87,
+                longitude: 151.21,
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+    };
+    const cachedAt = new Date("2026-08-13T16:00:00Z");
+    const peekedAt = new Date("2026-08-13T16:10:00Z");
+    const cached = await fetchRegionalWorldKnowledge(region, { fetchFn, now: cachedAt });
+    expect(cached.hemisphere).toBe("southern");
+    expect(cached.season).toContain("winter");
+    const peeked = peekRegionalWorldKnowledge(region, peekedAt);
+    expect(peeked.hemisphere).toBe("southern");
+    expect(peeked.season).toBe(cached.season);
+  });
+
   it("formats a local time label in the user's timezone", () => {
     const { label, weekday } = formatLocalTimeLabel(
       new Date("2026-08-13T16:04:00Z"),
