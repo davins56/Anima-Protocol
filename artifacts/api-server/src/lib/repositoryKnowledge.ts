@@ -167,6 +167,29 @@ async function getIndex(): Promise<RepositoryChunk[]> {
   return cachedIndex;
 }
 
+/**
+ * Ordinary companion turns must not walk the source tree. RAG is opt-in via
+ * `include_repository_knowledge`, ANIMA_REPOSITORY_RAG=true, or a turn that
+ * is actually about this repo / codebase.
+ */
+const REPOSITORY_TURN_RE =
+  /\b(?:this repo(?:sitory)?|the repo(?:sitory)?|our repo(?:sitory)?|the codebase|source tree|monorepo|wrangler\.jsonc?|hyperdrive|ANIMA_LOCAL_LLM|artifacts\/(?:api-server|anima-protocol)|lib\/db|pnpm (?:build|install|test|typecheck)|cloudflare worker|repository (?:context|knowledge|rag)|anima-protocol\.com)\b/i;
+
+export function looksLikeRepositoryTurn(query: string): boolean {
+  return REPOSITORY_TURN_RE.test(String(query || ""));
+}
+
+export function shouldRetrieveRepositoryKnowledge(
+  query: string,
+  options?: { explicit?: boolean | null },
+): boolean {
+  if (process.env.ANIMA_REPOSITORY_RAG === "false") return false;
+  if (!String(query || "").trim()) return false;
+  if (options?.explicit === true) return true;
+  if (process.env.ANIMA_REPOSITORY_RAG === "true") return true;
+  return looksLikeRepositoryTurn(query);
+}
+
 export async function retrieveRepositoryKnowledge(
   query: string,
   limit = 6,
