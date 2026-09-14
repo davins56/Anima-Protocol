@@ -108,6 +108,11 @@ export function llmChatMessagesOpenTimeoutMs(): number {
   return cappedConfiguredOpenTimeoutMs(LLM_OPEN_TIMEOUT_AI_CHAT_MS);
 }
 
+export {
+  CHAT_MESSAGES_MAX_TOKENS,
+  clampChatMessagesMaxTokens,
+} from "./modelRouter";
+
 export function combineAbortSignals(...signals: AbortSignal[]): AbortSignal {
   const live = signals.filter(Boolean);
   if (live.length === 0) return new AbortController().signal;
