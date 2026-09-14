@@ -4,6 +4,8 @@ import {
   isLocalOnlyProviderChain,
   isOpenRouterGenericProviderError,
   isOpenRouterZdrOrDataPolicyError,
+  isWorkerSubrequestLimitError,
+  LOCAL_LLM_SUBREQUEST_HINT,
   localOnlyTimeoutMessage,
   OPENROUTER_FREE_PROVIDER_HINT,
   OPENROUTER_ZDR_PRIVACY_HINT,
@@ -58,6 +60,12 @@ export function streamErrorMessage(err: unknown): string {
   }
   if (isWorkersAiFreeQuotaError(err)) {
     return WORKERS_AI_FREE_QUOTA_HINT;
+  }
+  if (
+    typeof isWorkerSubrequestLimitError === "function" &&
+    isWorkerSubrequestLimitError(err)
+  ) {
+    return LOCAL_LLM_SUBREQUEST_HINT;
   }
   if (isOpenRouterZdrOrDataPolicyError(err)) {
     return OPENROUTER_ZDR_PRIVACY_HINT;
