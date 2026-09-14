@@ -6,6 +6,7 @@ import {
 import {
   classifyDbError,
   databaseTargetHint,
+  errorCauseBlob,
   isWorkerApiTimeoutError,
   secretFreeErrorSignal,
 } from "../src/lib/dbErrors";
@@ -424,6 +425,19 @@ describe("classifyDbError Hyperdrive / postgres.js", () => {
       reason: "limit",
       code: "53300",
     });
+  });
+});
+
+describe("errorCauseBlob", () => {
+  it("joins messages through nested Error.cause", () => {
+    const leaf = new Error('relation "companion_memories" does not exist');
+    const mid = new Error("query failed");
+    (mid as Error & { cause?: unknown }).cause = leaf;
+    const wrapped = new Error("Failed query: select 1");
+    (wrapped as Error & { cause?: unknown }).cause = mid;
+    expect(errorCauseBlob(wrapped)).toMatch(/Failed query: select 1/);
+    expect(errorCauseBlob(wrapped)).toMatch(/query failed/);
+    expect(errorCauseBlob(wrapped)).toMatch(/companion_memories/);
   });
 });
 

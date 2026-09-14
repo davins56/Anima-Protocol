@@ -1,4 +1,4 @@
-import { classifyDbError, isWorkerApiTimeoutError } from "./dbErrors";
+import { classifyDbError, errorCauseBlob, isWorkerApiTimeoutError } from "./dbErrors";
 import { LlmStreamTimeoutError } from "./consumeLlmStream.js";
 import {
   isLocalOnlyProviderChain,
@@ -28,34 +28,13 @@ const COMPANION_MEMORY_GENERIC =
 const GENERIC_COMPANION_FAILURE =
   "The companion could not reply. Please try again.";
 
-function errorBlob(err: unknown): string {
-  const parts: string[] = [];
-  const seen = new Set<unknown>();
-  let current: unknown = err;
-  for (let depth = 0; depth < 6 && current; depth += 1) {
-    if (seen.has(current)) break;
-    seen.add(current);
-    if (current instanceof Error) parts.push(current.message);
-    else if (typeof current === "string") parts.push(current);
-    else if (current && typeof current === "object" && "message" in current) {
-      const nested = (current as { message?: unknown }).message;
-      if (typeof nested === "string" && nested) parts.push(nested);
-    }
-    current =
-      current && typeof current === "object" && "cause" in current
-        ? (current as { cause?: unknown }).cause
-        : undefined;
-  }
-  return parts.join("\n");
-}
-
 function looksLikeSqlLeak(message: string): boolean {
   return FAILED_QUERY_RE.test(message) || SQL_LEAK_RE.test(message);
 }
 
 function companionMemoryOrDbMessage(err: unknown): string {
   const dbInfo = classifyDbError(err);
-  const blob = errorBlob(err);
+  const blob = errorCauseBlob(err);
   if (COMPANION_MEMORIES_RE.test(blob)) {
     if (dbInfo.reason === "timeout") return COMPANION_MEMORY_TIMEOUT;
     if (dbInfo.reason === "schema") return COMPANION_MEMORY_SCHEMA;
