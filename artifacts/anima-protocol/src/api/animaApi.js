@@ -12,8 +12,14 @@ export function chatAuthRequiredError() {
 
 export function chatHttpError(err, status) {
   const raw = String(err?.error || err?.message || "").trim();
+  const withMeta = (error) => {
+    error.status = status ?? error.status;
+    if (err?.code && !error.code) error.code = err.code;
+    error.payload = err;
+    return error;
+  };
   if (status === 401 || /unauthorized/i.test(raw)) {
-    return chatAuthRequiredError();
+    return withMeta(chatAuthRequiredError());
   }
   if (status === 404 || /session not found|^not found$/i.test(raw)) {
     const missing = new Error(
@@ -39,7 +45,7 @@ export function chatHttpError(err, status) {
     aiErr.status = status;
     return aiErr;
   }
-  return new Error(raw || err?.error || `API error: ${status}`);
+  return withMeta(new Error(raw || err?.error || `API error: ${status}`));
 }
 
 export async function requireChatAuthHeaders(extra, options = {}) {
