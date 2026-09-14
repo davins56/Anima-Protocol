@@ -129,6 +129,7 @@ memory   upsertTurnMemory / recordTurnContinuity → companion_memories
 
 | Item | Status |
 |------|--------|
+| [#476](https://github.com/davins56/Anima-Protocol/pull/476) Local-only cold-start progress (45s `/chat/messages` open) | **Open draft.** Does not undo #464 (`[local]` only). `/api/ai/chat` stays 18s. Do **not** start a competing timeout / keep_alive PR. Do not rewrite this audit’s 18s `/chat/messages` line until #476 merges. |
 | [#474](https://github.com/davins56/Anima-Protocol/pull/474) Stop turn-2 replay of prior assistant text | **Merged** `447ab86d` (2026-09-14). `classifyChatTurnReuse`: replay only when `userContent` matches; mismatch mints a new `turn_id`; same-body in-flight is 409 `turn_in_flight`. Client `streamChatReplyWithTurnRetry` + `sendingRef`. Does **not** reopen Slice 1 SSE order. |
 | [#472](https://github.com/davins56/Anima-Protocol/pull/472) Audit docs (#471 + #458 hot-path claims) | **Merged** `c86bee80` (2026-09-14). |
 | [#471](https://github.com/davins56/Anima-Protocol/pull/471) Keep `OUTPUT FORMAT` when the group contract is long | **Merged** `bfc75a3c` (2026-09-14). Follow-up to #467: `GROUP_CONTRACT_TAIL_RESERVE` 400; head up to 1600; `clipGroupContractHead` keeps the `OUTPUT FORMAT` footer. Do **not** start a fourth contract-split PR. Leftover: 400-char end-slice can drop production `IMAGE GENERATION:` / `[IMAGE:` (server does not re-add the tag contract). |
@@ -167,6 +168,7 @@ Do not duplicate. Next is identity Slice A — seed `companion_memories` on crea
 
 - Another Slice 1 TTFT PR (SSE / repo RAG / 24k wrap) — **shipped in [#453](https://github.com/davins56/Anima-Protocol/pull/453)**.
 - Another turn-id replay PR — **shipped in [#474](https://github.com/davins56/Anima-Protocol/pull/474)** (same-body only; mismatch mints a new id).
+- A competing local-only open-budget / keep_alive PR while [#476](https://github.com/davins56/Anima-Protocol/pull/476) is in flight.
 - Another Slice 2 token-cap / 18s open PR — **shipped in [#455](https://github.com/davins56/Anima-Protocol/pull/455)** / [#457](https://github.com/davins56/Anima-Protocol/pull/457).
 - Another lean 1:1 Chat.jsx PR — **shipped in [#458](https://github.com/davins56/Anima-Protocol/pull/458)**.
 - Another contract-split / 2k wrap PR — **shipped in [#463](https://github.com/davins56/Anima-Protocol/pull/463)** / [#467](https://github.com/davins56/Anima-Protocol/pull/467) / [#471](https://github.com/davins56/Anima-Protocol/pull/471). Known leftover: group image-tag contract vs 400-char tail — do not start a fourth split unless asked.
