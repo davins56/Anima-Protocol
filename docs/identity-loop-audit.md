@@ -1,250 +1,178 @@
-# Identity-loop upgrade audit
+# Chat latency + identity-loop audit
 
-**Date:** 2026-09-14  
-**Baseline:** `main` @ `f005e052` (`Set up chatting function`)  
-**Scope:** companion create → memory-backed chat → stream → persist, then crossover / resonance on top.  
-**Not in scope:** more LLM plumbing. That layer is mostly done (`llmFailover`, local Ollama, Worker stream budgets). See `docs/upgrade-audit.md` (2026-09-07, #389) for the earlier LLM/security audit.
+**Date:** 2026-09-14 (updated: latency first)  
+**Baseline:** `main` @ `f005e052`  
+**Owner priority:** AI response speed — **TTFT**, then end-to-end chat latency. Identity loop and Worker timeout/CI stay in this document, below latency.
 
-This is findings only. No runtime code in this PR.
+Findings only. No runtime code in this PR.
 
----
-
-## 1. Current path — what works, what’s stubbed, what’s incomplete
-
-### End-to-end (production Chat page)
-
-```
-create companion          POST /api/store/Character|Anima   (user_entities)
-        │                 createCompanionRecord — timeout/retry hardened (#371)
-        │                 does NOT seed companion_memories
-        ▼
-open session              POST /api/store/ChatSession
-        │                 group sets is_crossover + shared_memory: []
-        │                 typed chat_sessions row appears only on first /chat/messages
-        ▼
-send turn (Chat.jsx)      client builds a large systemPrompt
-        │                 Scene Mind runs client-side; /messages gets useSceneMind:false
-        │                 POST /api/chat/messages  persist:false  persistence_owner:client
-        ▼
-server generate           beginChatTurn → load companion_memories + hash embeddings
-        │                 composePrompt wraps the client prompt as clientContext
-        │                 SSE stream → checkpointGeneratedTurn (chat_turns status=generated)
-        ▼
-client persist            store ChatMessage appends (user_entities) + ChatSession update
-        │                 then POST /chat/turns/:id/commit
-        ▼
-commit                    recordTurnContinuity → companion_memories + session.shared_memory
-                          synchro / evolution / relationship (best-effort)
-```
-
-| Step | Status | Notes |
-|------|--------|--------|
-| Companion create | **Works** | `artifacts/anima-protocol/src/lib/createCompanion.js` → generic store. Timeout/retry/recover landed in #371. No `companion_memories` row. |
-| Session create | **Works** | `createInitSession.js` / `NewSessionModal.jsx`. Group writes `is_crossover` + empty `shared_memory`. |
-| Stream | **Works** | `/api/chat/messages` SSE, heartbeat, `consumeLlmStream`, turn checkpoint before `done`. Worker 20s wall is a separate reliability track (see §3 / #450). |
-| Persist messages | **Works (client-owned)** | Production Chat always sends `persist: false`. Durable history is `user_entities` `ChatMessage` rows. Typed `chat_messages` is **not** written on this path. |
-| Persist memory | **Partial** | `commitTurn` writes a raw `User: … \| Companion: …` fact into `companion_memories.facts` (last 24). Extracted identity facts live in a **second** store (`CharacterMemory`) and only fire every 6 solo messages. |
-| Memory → next prompt | **Split / incomplete** | Server `composePrompt` reads `companion_memories`. Chat.jsx prompt reads `CharacterMemory` via `characterMemory` invoke. Frontend never calls `GET /api/chat/memories/:id` or `GET /api/chat/sessions/:id/context`. |
-| Crossover | **Hooks exist, recall is thin** | Scene Mind + `shared_memory` + `is_crossover` analytics work. Prompt scoring **filters to the speaker** (see §4). |
-| Resonance | **Emotion vector live; Key radiation greenfield** | Synchro persists on `companion_memories.emotionalState`. Echo Keys inject static lore. Crystallized `resonance_memories` is not in `ensure-schema` and swallows missing-table errors. |
-
-### Two chat clients, only one is production
-
-| Surface | Persist owner | Mounted? |
-|---------|---------------|----------|
-| `pages/Chat.jsx` | `client` / `persist: false` | **Yes — this is chat.** |
-| `hooks/useChatNucleus.js` + `ChatExperienceNucleus.jsx` | `persist: true` (server writes messages + memory) | **No.** Prototype / unused in `ProtocolApp`. |
-
-Do not “finish the nucleus” as a rewrite. Extend `Chat.jsx` + `/api/chat`. Kernel rule: `docs/ANIMA_KERNEL.md` — no second companion DB, no second chat runtime.
-
-### Two memory systems (the real identity-loop hole)
-
-| Store | Table / entity | Written by | Read by live prompt? |
-|-------|----------------|------------|----------------------|
-| Typed companion memory | `companion_memories` + `memory_embeddings` | `commitTurn` / server persist | **Server only** (`promptBuilder` / `retrieveRelevantMemories`) |
-| Extracted facts | `user_entities` `CharacterMemory` | `POST /openai/invoke/characterMemory` every **6** solo messages | **Client only** (`buildMemoryContext` in Chat.jsx) |
-| Session blob | `ChatSession.shared_memory` | commit, crossover turns only | Server `composePrompt` when `isCrossover` |
-| Relationship OS crystals | `resonance_memories` (api-server local schema) | `shouldCrystallize` after synchro | Relationship OS UI; **not** Chat.jsx; table **not** in `lib/db` `REQUIRED_TABLES` |
-
-`companion_memories.facts` today are transcript crumbs (`type: "turn"`), not durable identity facts. Embeddings default to `hash-bow-v1` unless `ANIMA_EMBEDDINGS_BASE_URL` is set (`lib/llm/src/embeddings.ts`).
-
-### Two message ledgers
-
-| Ledger | Written on production Chat? | Consumers |
-|--------|-----------------------------|-----------|
-| `user_entities` `ChatMessage` | **Yes** (client `persistTurn`) | Chat UI, `readRecentStoreMessages` |
-| `chat_messages` / `chat_sessions` | Session row: **yes** (pre-stream `syncTypedSession`). Message rows: **no** on client persist | `proactiveMessages.ts` reads **typed** `chat_messages` |
-
-So proactive check-ins can miss the conversation the user actually had, even when Chat UI history is fine.
+Complements `docs/upgrade-audit.md` (#389, LLM/security). Do **not** duplicate open [#450](https://github.com/davins56/Anima-Protocol/pull/450) (Worker ETIMEOUT ≠ DB).
 
 ---
 
-## 2. Prioritized upgrades
+## 0. Latency verdict (read this first)
 
-### P0 — identity loop (highest leverage)
+Chat **does stream**. The UI is not waiting for a full reply before painting tokens (`streamChatReply` + SSE deltas). It **feels** slow because **first SSE byte is late**, then **prefill is huge**, then **generation is allowed to run to 4–8k tokens**.
 
-#### P0-1 — Make `companion_memories` the live prompt source on Chat.jsx
+User-perceived timeline for `POST /api/chat/messages` (production Chat.jsx):
 
-**What’s wrong:** After a committed turn, the server remembers the transcript crumb, but the next Chat.jsx send builds LONG-TERM MEMORY from `CharacterMemory` (empty until message 6, solo-only). Server retrieval and client retrieval disagree.
+```
+[click send]
+  client builds a large systemPrompt (character sheet + 14 msgs + lore + memory…)
+  POST /chat/messages
+    ensureSchemaOnce
+    beginChatTurn + retry leftover turns          ← DB, before any SSE
+    load characters, memories, embeddings
+    supermemory HTTP (if enabled)
+    world-knowledge HTTP (≤1.5s, fail-open)
+    repository RAG (up to 400 files on Node)     ← every non-empty turn
+    evolution / relationship / arc / intimacy
+    composePrompt wraps ≤24k of client prompt
+                                              ← still no SSE byte
+    writeHead SSE + heartbeat                     ← first network byte
+    open local Ollama stream (budget 35s, or 80s
+      if chain includes OpenRouter :free)         ← cold load lives here
+    first content delta                           ← TTFT the user feels
+    …stream tokens…
+    done → client persist                         ← E2E “can send again”
+```
 
-**Where:** `artifacts/anima-protocol/src/pages/Chat.jsx` (`loadCharacterMemories`, `buildMemoryContext`); `artifacts/api-server/src/routes/chat.ts` `GET /memories/:characterId` (exists, unused); `lib/chatPromptContext.js`.
+Telemetry (`ChatPipelineTelemetry`) records `context_load_ms` and `ttft_ms`, but **`ttft_ms` starts at `startGeneration()`** — after context load. Logs understate user-perceived TTFT. Look at `context_load_ms + repository_rag_ms + prompt_build_ms + ttft_ms`.
 
-**Why it matters:** This is the identity loop. Create → chat → remember → next turn. Today “remember” is two half-implementations.
+### Teammate hypotheses — verified
 
-**Approach:** On session open / character select, `GET /api/chat/memories/:characterId` and inject those facts (plus summary / resonance notes) into the client prompt **or** stop sending a competing memory block and trust `composePrompt`. Keep `CharacterMemory` as the Memories UI until a merge PR.
+| Hypothesis | Verdict |
+|------------|---------|
+| Waiting on full replies instead of streaming | **Mostly false.** Main path streams. Exceptions: opt-in `ANIMA_LOCAL_LLM_ENSEMBLE` (off by default, waits for N full drafts); image gen after the reply; `max_tokens` 4–8k so E2E stays long even when TTFT is fine. |
+| Oversize context / memory retrieval | **True, and worse than memory alone.** Client prompt (up to 24k chars) is wrapped *again* by `composePrompt`, which then adds character def, memories, resonance, CORE_BEHAVIOR. Prefill dominates small local models. |
+| Worker ~20s wall | **Does not race `/api/chat`.** `isLongLivedApiPath` exempts `/api/openai` and `/api/chat`. The 20s wall is store/healthz. Cold Ollama still sits behind a **35s** (or **80s** if OpenRouter is on the chain) *stream-open* budget. [#450](https://github.com/davins56/Anima-Protocol/pull/450) caps **`/api/ai/chat`** at 18s — **Chat.jsx does not use that route.** |
+| Cold Ollama | **True, ops + retries.** `ANIMA_LOCAL_LLM_MAX_RETRIES` defaults to **2**. Home-box first load can eat most of the open budget. `wrangler.jsonc` has `ANIMA_OPENROUTER_FALLBACK=true` + `ANIMA_OPENROUTER_FREE=true`, so `usesFreeTierOpenBudget()` is true whenever OpenRouter is on the chain → **80s** open wait on `/chat/messages` before abort. |
 
-#### P0-2 — Seed memory on companion create; write typed messages on client commit
+---
+
+## P0 — chat speed (do these first)
+
+### P0-L1 — First SSE byte before context load (TTFT)
+
+**What’s wrong:** `chat.ts` `POST /messages` loads schema, turns, characters, memories, embeddings, optional supermemory, world weather, **repository RAG**, evolution/rel/arc, intimacy, then `composePrompt` — **then** `res.writeHead` SSE. The client shows typing with **zero tokens** for all of that.
+
+**Where:** `artifacts/api-server/src/routes/chat.ts` (~1360–1676). Contrast: `preStreamPersist` is already after `writeHead` (good). Context load is not.
+
+**Why it matters:** This is the only TTFT work entirely in app code. Cold Hyperdrive + RAG + weather can add seconds before Ollama is even called.
+
+**Approach:** `writeHead` + heartbeat immediately after auth + session 404 check. Run context load while the client already has an open stream (`status: "loading"`). Do not wait on repository RAG or weather to *start* the LLM; inject them only if they finish before `createChatStreamWithFailover`, else skip.
+
+**Effort:** S–M. Stay off `workerApiGuard.ts` / `dbErrors.ts` (#450).
+
+### P0-L2 — Stop double-prefill (TTFT + E2E)
+
+**What’s wrong:** Chat.jsx builds a full character sheet, 14×800-char history (`Story so far:`), lore, CharacterMemory, echo lore, behavior sliders. Server wraps that as `CLIENT_SCENE_CONTEXT` **sliced to 24,000 chars**, then adds `buildCharacterDefinition` (3k), memory block (2.4k), resonance, voice, CORE_BEHAVIOR again. `buildLlmChatMessages` skips store history when it sees `Story so far:` — so you still pay the client transcript *inside the system prompt*.
+
+**Where:** `artifacts/anima-protocol/src/pages/Chat.jsx` (~1428–1821); `artifacts/api-server/src/lib/promptBuilder.ts` `composePrompt` (`slice(0, 24_000)`), `BUDGET`, `clientOwnsTranscript`.
+
+**Why it matters:** Prefill time on Qwen/anima-chat 3B is the dominant TTFT once the stream is open. Duplicating identity + history is free latency.
+
+**Approach:** Send a **thin** client payload (speaker id, hidden-sequences, length guide) and let `composePrompt` own identity + last-N store messages. Or: if client already sent a sheet, do not wrap 24k and do not add a second CHARACTER block. Cap client `system_prompt` hard (e.g. 4k). Drop repository RAG from the default chat path (`ANIMA_REPOSITORY_RAG` is already skippable; today it runs on every non-empty turn in `chat.ts`).
+
+**Effort:** S for “don’t wrap 24k + skip repo RAG”; M to move Chat.jsx off the fat prompt.
+
+### P0-L3 — Cap generation length; don’t use the 80s free-tier open budget on Chat.jsx (E2E + hung typing)
 
 **What’s wrong:**
 
-1. `createCompanionRecord` never inserts `companion_memories`. First recall cannot exist until commit of turn 1.
-2. `commitTurn` records memory but does **not** `persistTypedMessage`. Production path therefore never fills `chat_messages`.
+1. `routeModel` → `maxTokens` 4096 (light) / **8192** (standard/heavy). `classifyComplexity` treats **≥200 characters or ≥30 words as heavy**. Ordinary companion turns hit 8192 `max_tokens`. Length guide already asks for 2–4 sentences.
+2. Production `wrangler.jsonc`: `ANIMA_OPENROUTER_FALLBACK=true` + `ANIMA_OPENROUTER_FREE=true`. Chat.jsx calls `llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() })` → **80s** stream-open if local is cold, then OpenRouter :free. Browser abort is **130s** (`CHAT_STREAM_TIMEOUT_MS`). First-chunk wait is **50s** (`LLM_STREAM_FIRST_CHUNK_MS`) — sized for DeepSeek R1 think, not anima-chat.
+3. Local SDK retries default **2** (`openaiClient.ts` `localLlmMaxRetries`).
 
-**Where:** `createCompanion.js`; `store.ts` `POST /:entity`; `chat.ts` `router.post("/turns/:turnId/commit")` vs `persistLedgerTurn`.
+**Where:** `modelRouter.ts` `MAX_TOKENS` / `isHighStakesMessage`; `chat.ts` `openStreamAbort`; `chatTimeouts.ts`; `animaApi.js` `CHAT_STREAM_TIMEOUT_MS=130_000`; `wrangler.jsonc` fallback/free vars.
 
-**Why it matters:** Create is not wired to memory. Proactive messages / any server reader of typed chat will see empty history for real users.
+**Why it matters:** Even a fast first token feels slow if the model is allowed 8k tokens. Cold local + 80s open is “chat is broken,” not “chat is generating.”
 
-**Approach:** On Character/Anima create (store hook or dedicated call), upsert `{ summary, facts: [], emotionalState: {}, resonanceNotes: "" }`. On `commitTurn`, call the same typed-message writes `persistLedgerTurn` already has (idempotent `onConflictDoNothing`).
+**Approach (avoid #450 file fights):** In `chat.ts` only: pass `freeTierCascade: false` so `/chat/messages` uses 35s (or a dedicated 12–18s local-open if you add a constant in chat.ts without rewriting `chatTimeouts.ts`). Cap `maxTokens` for this route (e.g. `Math.min(routed.maxTokens, 1024)`). Lower Chat.jsx length guide is already short — the server budget is what Ollama honors.
 
-#### P0-3 — Durable facts, not only transcript crumbs
+**#450 overlap:** that PR changes `chatTimeouts.ts` / `llmFailover.ts` for `/api/ai/chat`. Rebase after it merges; do not copy those edits here. Chat.jsx speed is `/api/chat/messages`.
 
-**What’s wrong:** `upsertTurnMemory` stores clipped User/Companion text. `characterMemory` invoke already distills 0–3 facts via LLM — into the *other* table, throttled, solo-only.
+**Ops (not a code PR):** keep Ollama loaded (`keep_alive`, a 1-token warmup cron against `llm.anima-protocol.com`). `ANIMA_LOCAL_LLM_MAX_RETRIES=0` on a single-slot box.
 
-**Where:** `chat.ts` `upsertTurnMemory`; `routes/openai/functions.ts` `saveCharacterMemories` / `extractCharacterMemories`; `lib/llm` `classifyFact`.
+### P0-L4 — Memory retrieval is not the first TTFT knob (but don’t grow it)
 
-**Why it matters:** Retrieval cannot recall “they take chamomile with honey” if the only facts are 240-char turn dumps.
-
-**Approach:** Run (or reuse) fact extraction **on commit** into `companion_memories.facts` with `type` / `fact_id`, then `upsertMemoryEmbeddings`. Do not add a third store. Optionally dual-write the same facts to `CharacterMemory` so the Memories UI stays in sync.
-
-### P1 — crossover / resonance on top of a working loop
-
-#### P1-1 — Crossover recall actually uses the participant pool
-
-**What’s wrong:** Comment in `promptBuilder.ts` says scoring across every companion’s memories lets speaker A recall speaker B’s facts. Code then **filters to the speaker** before `retrieveRelevantMemories`. Shared session memory is only appended when `mode === "group" && distinctUniverses >= 2`. Same-universe group gets Scene Mind but no `shared_memory`.
-
-**Where:** `artifacts/api-server/src/lib/promptBuilder.ts` (~507–535); `chat.ts` `isCrossover` and `recordTurnContinuity`; `sceneMind.ts` (works).
-
-**Why it matters:** Crossover is the stated value moment (`message_sent` + `is_crossover`). Director works; shared identity does not.
-
-#### P1-2 — Resonance Keys: emotion → how a Key radiates
-
-**What’s wrong:** Echo Keys are a real catalog (~800 + canon Resonance Keys in `echoKeys/canon.js`). Chat injects a **static** lore blurb when the universe/scene matches BN/Star Force (`echoKeyPromptBlock`). NetBattle uses folder/resonance **combat** rules. Nothing reads `companion_memories.emotionalState` / synchro vector to change Key color, intensity, or prompt radiation.
-
-**Where:** `artifacts/anima-protocol/src/lib/echoKeys/index.js` `echoKeyPromptBlock`; `rules.js` `ECHO_RESONANCE` / `drawResonanceHand`; `api-server/src/lib/synchroEngine.ts`; `resonanceState.ts`.
-
-**Why it matters:** Product direction is consciousness/emotion affecting Key radiation. Combat + lore hooks exist; the emotion → Key link is greenfield.
-
-**Do not:** add a second Codex or new recipes (`HIDDEN_SEQUENCES.md`).
-
-#### P1-3 — Persist resonance crystals for real
-
-**What’s wrong:** `crystallizeResonanceMemory` writes `resonance_memories`, but that table is **not** in `lib/db` `REQUIRED_TABLES` / `ensure-schema.ts`. Missing relation → return `null`. Relationship OS UI can look empty in production even when synchro says crystallize.
-
-**Where:** `api-server/src/db/schema.ts` `resonanceMemories`; `lib/resonanceMemories.ts`; `lib/db/src/ensure-schema.ts`.
-
-#### P1-4 — Virus / dark-route progression
-
-**What’s wrong:** Hidden Sequences already own weather (`lull` / `stir` / `storm`), jack-in gates, and virus silhouettes (`Halo.Vrs`, …). Chat passes `hidden_sequences` + weather into `composePrompt`. There is **no** campaign / dark-route skill tree, no persisted “route taken,” no virus that mutates with synchro.
-
-**Where:** `artifacts/anima-protocol/docs/HIDDEN_SEQUENCES.md`; `src/lib/hiddenSequences/*`; `api-server/src/lib/hiddenSequences.ts`; `battleModels.ts`.
-
-**Approach:** Persist weather + learned_life on the session (already in metadata) into `companion_memories` or session metadata as a first-class `route` field. Do not rebuild NetBattle.
-
-### P2 — do not confuse with the identity loop
-
-| ID | Item | Where | Why later |
-|----|------|-------|-----------|
-| P2-1 | Dual prompt (Chat.jsx sheet + `composePrompt`) | `Chat.jsx` ~1467+, `promptBuilder.ts` | Works; identity lock can fight. Shrink client prompt after P0-1. |
-| P2-2 | Hash embeddings | `lib/llm/src/embeddings.ts` | Fine until facts are durable. Then optional real embed host. |
-| P2-3 | Intimacy save skipped on client persist | `chat.ts` post-stream `if (persistenceOwner !== "server") return` | Adult-gated; commit does not save intimacy profile/scene. |
-| P2-4 | Unused `GET /chat/sessions/:id/context` | `chat.ts` | Wire or delete after P0-1. |
-| P2-5 | `ChatExperienceNucleus` unused | `components/chat/` | Do not promote to production. |
-| P2-6 | CORS / healthz fingerprints / steward grants / VoiceCloneManager | `docs/upgrade-audit.md` P1-4… | Still valid; not identity-loop. |
-
-LLM P0s from #389 (Secrets Store local URL, fail-closed chain, schema POST auth, Codespace terminal) were follow-up work from that audit — **do not re-open as this PR’s job.** Confirm in a later ops pass; they are not the identity loop.
+`retrieveRelevantMemories` is in-process scoring (topK 12, last 24 turn crumbs). `attachStoredEmbeddings` is a DB read of JSON vectors. That is cheaper than the 24k client wrap + repo RAG. **Do not** “fix speed” by deleting companion memory. Finish P0-L1/L2 first. Identity-loop P1 below still matters for *quality* of recall, not the first-token budget.
 
 ---
 
-## 3. Open PRs / branches — do not collide
+## P1 — identity loop (after a faster chat)
 
-### Open now (2026-09-14)
+Unchanged findings. Production Chat is client-persist; `companion_memories` is not what Chat.jsx prompts from.
 
-| PR | Branch | Topic | Collision |
-|----|--------|-------|-----------|
-| **[#450](https://github.com/davins56/Anima-Protocol/pull/450)** | `cursor/fix-worker-etimeout-db-misclass-9b3b` | Worker 20s wall misclassified as DB timeout; `/api/ai/chat` 18s open timeout; hop vs `ai_timeout` JSON | **Do not duplicate.** Touches `dbErrors.ts`, `workerApiGuard.ts`, `chatTimeouts.ts`, `llmFailover.ts`. Identity-loop PRs should avoid those files unless rebasing after merge. |
-| [#449](https://github.com/davins56/Anima-Protocol/pull/449) | Dependabot `sharp` in `/deepseek-llm` | Unrelated | Ignore |
+```
+create   POST /api/store/Character|Anima     no companion_memories row
+session  POST /api/store/ChatSession
+send     Chat.jsx fat systemPrompt
+         POST /api/chat/messages persist:false persistence_owner:client
+stream   composePrompt wraps it; SSE; chat_turns checkpoint
+persist  user_entities ChatMessage, then commitTurn
+memory   transcript crumbs in companion_memories
+         next Chat.jsx turn still uses CharacterMemory (every 6 solo msgs)
+```
 
-#450 CI: lint / typecheck / frontend-tests green; **`api-tests` red** on pre-existing `test/llmEnsemble.test.ts` (expects chain `["local"]`, CI has OpenRouter in chain). Same failure is on **`main`** (`Set up chatting function`, run `34803208690`).
-
-### Related, already merged (do not redo)
-
-| PR | What it already did |
-|----|---------------------|
-| #389 | Prior upgrade audit (LLM/security). `docs/upgrade-audit.md`. |
-| #330 | Chat turn races / client-commit continuity (`commitTurn` memory path). |
-| #382 | supermemory.ai dual-write (optional; Postgres remains source of truth). |
-| #371 / #372 / #357 / #318 | Companion create + store + Init timeouts. |
-| #125 | Chat rate-limit keyed by Clerk user, not shared proxy IP. **Still in code:** `rateLimit.ts` + `/messages` 60/min. Not an open hole. |
-| #340 / #440 | Store timeout classification / Worker list hang. |
-| #448 / #447 | Local Ollama `/api/ai/chat`; prefer anima-chat. |
-
-### Rate-limit / CI
-
-- **Rate-limit:** no open PR. #125 shipped. `/chat/messages` is isolated from context GETs. Leave it unless a new 429 shows up in prod.
-- **CI hardening (separate small PR, not identity):** `llmEnsemble.test.ts` vs CI `OPENROUTER_API_KEY` / `ANIMA_LLM_PROVIDER=custom` without a local URL. Also `gin_trgm_ops` missing in the CI Postgres service (logged, tests still reached ensemble asserts). **Do not fold this into #450** unless that PR’s author wants it; they already called ensemble failures pre-existing.
+| Gap | Where |
+|-----|--------|
+| `GET /chat/memories/:id` unused by SPA | `chat.ts`; Chat.jsx `loadCharacterMemories` → `characterMemory` invoke |
+| Create does not seed memory | `createCompanion.js` |
+| `commitTurn` skips typed `chat_messages` | `chat.ts` vs `persistLedgerTurn` — breaks `proactiveMessages` |
+| Facts are turn dumps, not distilled identity | `upsertTurnMemory` vs `extractCharacterMemories` |
+| `ChatExperienceNucleus` persist:true path unused | not mounted in ProtocolApp |
 
 ---
 
-## 4. Crossover + resonance vs schema/API
+## P2 — crossover / resonance (after identity)
 
-### Already in schema / API (hooks)
-
-| Capability | Schema / API | Used in live Chat? |
-|------------|--------------|--------------------|
-| Group + crossover flag | `ChatSession.is_crossover`, `chat_sessions.is_crossover` | Analytics + server `isCrossover` |
-| Shared session facts | `ChatSession.shared_memory` JSON | Written on crossover commit; injected if `isCrossover` |
-| Scene Mind | `POST /api/chat/scene-mind`; also inline in `/messages` | Chat.jsx runs its own picker, then disables server Scene Mind |
-| Per-companion memory | `companion_memories` unique `(user_id, character_id)` | Server prompt yes; Chat.jsx no |
-| Synchro / resonance vector | `emotionalState` JSON + `resonanceNotes` | Yes on generate + commit |
-| Mode registry | `chatModeRegistry.ts` `crossover` safety profile | Yes |
-| Echo / Resonance Key catalog | Frontend `echoKeys/*` | Combat + static lore prompt |
-| Virus / storm jack-in | Hidden Sequences | Yes, in-character weather |
-| Relationship OS crystals | `resonance_memories`, `/api/relationship-os/resonance-memories` | Side UI; table may not exist on Worker schema ensure |
-
-### Greenfield gaps (no schema yet, or unused)
-
-1. **Cross-companion fact recall** — code explicitly prevents it (`speakerMemories` filter). Need a retrieval mode: speaker facts + tagged shared facts, not a dump of every private memory.
-2. **Emotion → Echo Key radiation** — no column tying `emotionalState` / synchro level to a Key’s prompt or battle chip. Smallest hook: pass synchro vector into `echoKeyPromptBlock` (and later NetBattle `echoResonanceChip`).
-3. **`resonance_memories` not in `ensure-schema`** — crystallization is fail-soft.
-4. **Dark-route progression** — weather is ephemeral per turn metadata. No `route`, `corruption`, or virus-evolution field on companion or session.
-5. **No `PUT /chat/memories`** — Memories UI edits `CharacterMemory` only.
-
-Kernel constraint (`ANIMA_KERNEL.md`): identity lock wins; Operator Model must not overwrite `companion_memories`. Crossover must not smash Serenity into another companion’s voice (`chatParticipants` / group TURN RULES already exist).
+- Scene Mind heuristics already skip extra HTTP (Chat.jsx ~1650). Good for TTFT.
+- `promptBuilder` **filters memories to the speaker** despite a comment that crossover shares the pool.
+- Echo Keys: static lore blurb; synchro does **not** change Key radiation.
+- `resonance_memories` not in `ensure-schema` (fail-soft).
+- Hidden Sequences weather/jack-in live; no persisted dark-route field.
 
 ---
 
-## 5. Recommended next slices (one focused PR each)
+## Do not collide
 
-### Slice A — Live memory on the Chat page (P0-1 + seed from P0-2)
+| Item | Status |
+|------|--------|
+| [#450](https://github.com/davins56/Anima-Protocol/pull/450) Worker ETIMEOUT ≠ DB; `/api/ai/chat` 18s open | **Open.** Do not edit `dbErrors.ts`, `workerApiGuard.ts`, `chatTimeouts.ts`, `llmFailover.ts` until it lands. Chat speed PRs should live in `chat.ts` + Chat.jsx + `promptBuilder.ts`. |
+| Rate-limit | Merged #125. User-keyed. Leave it. |
+| `main` CI `api-tests` | `llmEnsemble.test.ts` vs OpenRouter in CI chain. Separate PR. |
+| Dependabot #449 | Ignore. |
 
-**PR size:** S–M. Frontend + a tiny store/chat hook.
+---
 
-1. After Character/Anima create, upsert empty `companion_memories`.
-2. Chat.jsx: `GET /api/chat/memories/:characterId` on session open (solo + each group member).
-3. Feed those facts into `buildMemoryContext` (or replace it) so turn 2 remembers turn 1 without waiting for the 6-message invoke.
-4. Tests: `createCompanion` / Chat load / `chatLifecycle`.
+## Recommended next 1–2 PRs (latency)
 
-**Out of slice:** fact extraction LLM, embeddings host, nucleus component, Worker timeout files.
+### Slice 1 — TTFT: open the stream, shrink prefill (P0-L1 + P0-L2)
 
-### Slice B — Client commit writes the typed ledger (rest of P0-2)
+**Files:** `artifacts/api-server/src/routes/chat.ts`, `artifacts/api-server/src/lib/promptBuilder.ts` (optional cap), maybe `Chat.jsx` only if dropping fat history is in-scope.
 
-**PR size:** S. `chat.ts` `commitTurn` only (+ tests).
+1. `writeHead` SSE + heartbeat **before** context `Promise.all`.
+2. Skip `retrieveRepositoryKnowledge` unless the turn is protocol/codespace (or default-off on Worker).
+3. Cap `CLIENT_SCENE_CONTEXT` far below 24k, or stop duplicating CHARACTER / history when `clientOwnsTranscript`.
 
-Call `persistTypedMessage` / `syncTypedSession` from the client-commit path (same helpers as `persistLedgerTurn`). Keep message-row writes idempotent. Unblocks proactive messages and any future server reader.
+Do not touch #450 files. Tests: `chatLifecycle` still streams; add an assert that a status/heartbeat event can be written before mocked LLM open.
 
-**After A+B:** Slice C (not this week’s first PR) = extract durable facts on commit into `companion_memories` (P0-3). Slice D = crossover pool recall (P1-1). Slice E = synchro → Echo Key prompt tint (P1-2).
+### Slice 2 — E2E: token cap + honest open budget on `/chat/messages` (P0-L3)
 
-**Do not start:** #450’s Worker ETIMEOUT work; `llmEnsemble` CI (unless a dedicated CI PR); Echo Key catalog expansion; NetBattle rewrite.
+**Files:** `chat.ts` (only, until #450 merges).
+
+1. `maxTokens: Math.min(routed.maxTokens, 1024)` on this route (length guide is already 2–4 sentences).
+2. `llmOpenTimeoutMs({ freeTierCascade: false })` so Chat.jsx does not inherit the 80s :free cascade. Local still has 35s; after #450, consider aligning with 18s.
+
+**After those:** identity Slice A (load `GET /chat/memories` on session open + seed on create). Speed first.
+
+### Explicitly not the first PR
+
+- Worker 20s healthz classification (#450).
+- Ensemble / OpenRouter chain CI.
+- Echo Key radiation, crossover pool recall, intimacy save-on-client-commit.
+- Ollama keep_alive (runbook / host, not app).
 
 ---
 
@@ -252,16 +180,14 @@ Call `persistTypedMessage` / `syncTypedSession` from the client-commit path (sam
 
 | Claim | Evidence |
 |-------|----------|
-| Production Chat is client-persist | `Chat.jsx` `persist: false`, `persistenceOwner: "client"` |
-| Nucleus unused | `ChatExperienceNucleus` has no `ProtocolApp` import |
-| `GET /memories` unused by SPA | repo grep: no frontend callers |
-| `GET /sessions/:id/context` unused | same |
-| Typed messages skipped on client commit | `commitTurn` → `recordTurnContinuity` only; `persistTypedMessage` is in `persistLedgerTurn` / pre-stream `shouldPersist` |
-| Memory facts are transcripts | `upsertTurnMemory` `type: "turn"` |
-| CharacterMemory every 6, solo | `Chat.jsx` `finalMessages.length % 6 === 0` + `mode === "solo"` |
-| Crossover scoring filtered to speaker | `promptBuilder.ts` `speakerMemories` filter vs comment |
-| Echo Key prompt is static lore | `echoKeyPromptBlock` returns `echoKeyLoreBlock()` or `""` |
-| `resonance_memories` not ensured | `REQUIRED_TABLES` in `lib/db/src/ensure-schema.ts` |
-| Open timeout PR | #450, updated 2026-09-14 |
-| Rate-limit already user-keyed | #125; `rateLimit.ts` `user:${userId}` |
-| Main CI api-tests | `llmEnsemble.test.ts` 3 fails; OpenRouter in chain |
+| SSE after context load | `chat.ts` `telemetry.measure("context_load_ms", Promise.all(…))` then `composePrompt` then `writeHead` |
+| Chat exempt from 20s wall | `workerApiGuard.ts` `isLongLivedApiPath` matches `/api/chat` |
+| Client wraps ≤24k | `promptBuilder.ts` `suppliedContext.slice(0, 24_000)` |
+| Chat.jsx streams deltas | `streamChatReply.js` `onDelta` per content event; `useChatStreaming` |
+| Ensemble off by default | `localEnsemble.ts` `ANIMA_LOCAL_LLM_ENSEMBLE` |
+| 80s open when OpenRouter on chain | `usesFreeTierOpenBudget` + wrangler `ANIMA_OPENROUTER_FALLBACK`/`FREE` + `chat.ts` `openStreamAbort` |
+| `/api/ai/chat` ≠ Chat.jsx | Chat.jsx → `animaApi.chat.sendMessage` → `/chat/messages` |
+| 8192 max_tokens on typical turns | `modelRouter.ts` `text.length >= 200` → heavy; `MAX_TOKENS.heavy = 8192` |
+| Repo RAG every turn | `chat.ts` `retrieveRepositoryKnowledge(content)` when `content.trim()` |
+| Telemetry TTFT excludes context | `chatTelemetry.ts` `ttft_ms` from `generationStartedAt` |
+| Browser abort 130s | `animaApi.js` `CHAT_STREAM_TIMEOUT_MS = 130_000` |
