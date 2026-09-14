@@ -128,12 +128,12 @@ export const CONFIGURED_LLM_PROVIDERS = [
     id: "local",
     label: "Anima LLM",
     env: "ANIMA_LOCAL_LLM_BASE_URL",
-    note: "Self-hosted open weights (Ollama/vLLM) — used for chat when ANIMA_LOCAL_LLM_BASE_URL is set. Set ANIMA_LLM_PROVIDER=custom to keep OpenRouter from taking over.",
+    note: "Self-hosted open weights (Ollama/vLLM) — used for chat when ANIMA_LOCAL_LLM_BASE_URL is set. customOnly is fail-closed: OpenRouter does not hop after this host, even if ANIMA_OPENROUTER_FALLBACK=true.",
   },
   {
     id: "openrouter",
     label: "Venice Uncensored",
     env: "OPENROUTER_API_KEY",
-    note: "Used only when the custom LLM URL is unset, or after a connection failure if ANIMA_OPENROUTER_FALLBACK=true. Free-tier daily caps cannot replace a configured custom LLM.",
+    note: "Used only when the custom LLM URL is unset (Workers AI hop via ANIMA_OPENROUTER_FALLBACK). A usable custom host never hops to OpenRouter. Free-tier daily caps cannot replace a configured custom LLM.",
   },
 ];
