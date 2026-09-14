@@ -313,6 +313,7 @@ import {
   isWorkersAiHoppableError,
   isWorkersAiNeuronQuotaError,
   shouldTryNextProvider,
+  isLlmAbortOrTimeoutError,
   isProviderAuthError,
   isProviderConnectionError,
   isProviderQuotaError,
@@ -429,6 +430,30 @@ describe("shouldTryNextProvider Workers AI 4006", () => {
   it("does not let local auth/quota errors hop even when fallback is configured", () => {
     expect(shouldTryNextProvider("local", { status: 401, message: "401" }, true)).toBe(false);
     expect(shouldTryNextProvider("local", { status: 429, message: "quota" }, true)).toBe(false);
+  });
+
+  it("hops from local to the next provider on abort / open timeout", () => {
+    const abortErr = Object.assign(new Error("Request was aborted."), {
+      name: "APIUserAbortError",
+    });
+    expect(isLlmAbortOrTimeoutError(abortErr)).toBe(true);
+    expect(shouldTryNextProvider("local", abortErr, true)).toBe(true);
+    expect(shouldTryNextProvider("local", abortErr, false)).toBe(false);
+    expect(isLlmAbortOrTimeoutError(new Error("connect ECONNREFUSED"))).toBe(false);
+
+    const timedOut = Object.assign(new Error("Request timed out."), {
+      name: "APIConnectionTimeoutError",
+    });
+    expect(isLlmAbortOrTimeoutError(timedOut)).toBe(true);
+    expect(shouldTryNextProvider("local", timedOut, true)).toBe(true);
+
+    const wrapped = new Error("Failed query");
+    (wrapped as Error & { cause?: unknown }).cause = Object.assign(
+      new Error("Request was aborted."),
+      { name: "APIUserAbortError" },
+    );
+    expect(isLlmAbortOrTimeoutError(wrapped)).toBe(true);
+    expect(shouldTryNextProvider("local", wrapped, true)).toBe(true);
   });
 });
 
@@ -1892,6 +1917,40 @@ describe("createChatCompletionWithFailover", () => {
     expect(result.provider).toBe("openrouter");
     expect(result.failedOver).toBe(true);
     expect(result.model).toBe("minimax/minimax-m2.7:free");
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("hops to OpenRouter when local times out and fallback is enabled", async () => {
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    const abortErr = Object.assign(new Error("Request was aborted."), {
+      name: "APIUserAbortError",
+    });
+    createMock.mockRejectedValueOnce(abortErr).mockResolvedValueOnce(fakeCompletion("openrouter reply"));
+    const result = await createChatCompletionWithFailover({
+      tier: "standard",
+      maxTokens: 256,
+      messages: [{ role: "user", content: "hello" }],
+    });
+    expect(result.content).toBe("openrouter reply");
+    expect(result.provider).toBe("openrouter");
+    expect(result.failedOver).toBe(true);
+    expect(createMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces a local timeout as-is when there is no next provider", async () => {
+    const abortErr = Object.assign(new Error("Request was aborted."), {
+      name: "APIUserAbortError",
+    });
+    createMock.mockRejectedValueOnce(abortErr);
+    await expect(
+      createChatCompletionWithFailover({
+        tier: "standard",
+        maxTokens: 256,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    ).rejects.toMatchObject({ name: "APIUserAbortError" });
     expect(createMock).toHaveBeenCalledTimes(1);
   });
 });
