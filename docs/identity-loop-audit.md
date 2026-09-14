@@ -159,6 +159,7 @@ Do not duplicate. Next is identity Slice A — seed `companion_memories` on crea
 
 - Another Slice 1 TTFT PR (SSE / repo RAG / 24k wrap) — **shipped in [#453](https://github.com/davins56/Anima-Protocol/pull/453)**.
 - Another Slice 2 token-cap / 18s open PR — **shipped in [#455](https://github.com/davins56/Anima-Protocol/pull/455)** / [#457](https://github.com/davins56/Anima-Protocol/pull/457).
+- Another lean 1:1 Chat.jsx PR — **shipped in [#458](https://github.com/davins56/Anima-Protocol/pull/458)**.
 - Another contract-split / 2k wrap PR — **shipped in [#463](https://github.com/davins56/Anima-Protocol/pull/463)** / [#467](https://github.com/davins56/Anima-Protocol/pull/467).
 - Re-enable OpenRouter after a preferred local host — **#464 fail-closed**.
 - Worker ETIMEOUT / healthz probe classification (**done in #450**).
