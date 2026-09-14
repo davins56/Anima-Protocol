@@ -4,12 +4,16 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   CHAT_STREAM_TIMEOUT_MS,
+  LLM_LOCAL_FAILOVER_ATTEMPT_MS,
+  LLM_OPEN_TIMEOUT_AI_CHAT_MS,
   LLM_OPEN_TIMEOUT_FREE_TIER_MS,
   LLM_OPEN_TIMEOUT_MS,
   LLM_STREAM_FIRST_CHUNK_MS,
+  llmAiChatOpenTimeoutMs,
   llmOpenTimeoutMs,
   openStreamAbort,
 } from "../src/lib/chatTimeouts";
+import { WORKER_API_TIMEOUT_MS } from "../src/lib/workerApiGuard";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -23,6 +27,28 @@ describe("llmOpenTimeoutMs", () => {
   it("gives free-tier multi-candidate failover an 80s open budget", () => {
     expect(LLM_OPEN_TIMEOUT_FREE_TIER_MS).toBe(80_000);
     expect(llmOpenTimeoutMs({ freeTierCascade: true })).toBe(80_000);
+  });
+
+  it("caps /api/ai/chat open timeout under the Worker wall", () => {
+    expect(LLM_OPEN_TIMEOUT_AI_CHAT_MS).toBe(18_000);
+    expect(LLM_OPEN_TIMEOUT_AI_CHAT_MS).toBeLessThanOrEqual(18_000);
+    expect(LLM_OPEN_TIMEOUT_AI_CHAT_MS).toBeLessThan(WORKER_API_TIMEOUT_MS);
+    expect(LLM_LOCAL_FAILOVER_ATTEMPT_MS).toBeLessThan(LLM_OPEN_TIMEOUT_AI_CHAT_MS);
+    expect(llmAiChatOpenTimeoutMs()).toBe(18_000);
+    expect(llmAiChatOpenTimeoutMs()).toBeLessThan(WORKER_API_TIMEOUT_MS);
+  });
+
+  it("does not let the 80s free-tier budget stretch /api/ai/chat", () => {
+    const previous = process.env.ANIMA_LLM_OPEN_TIMEOUT_MS;
+    try {
+      process.env.ANIMA_LLM_OPEN_TIMEOUT_MS = String(LLM_OPEN_TIMEOUT_FREE_TIER_MS);
+      expect(llmAiChatOpenTimeoutMs()).toBe(LLM_OPEN_TIMEOUT_AI_CHAT_MS);
+      process.env.ANIMA_LLM_OPEN_TIMEOUT_MS = "250";
+      expect(llmAiChatOpenTimeoutMs()).toBe(250);
+    } finally {
+      if (previous === undefined) delete process.env.ANIMA_LLM_OPEN_TIMEOUT_MS;
+      else process.env.ANIMA_LLM_OPEN_TIMEOUT_MS = previous;
+    }
   });
 
   it("covers two slow failed hops plus a last-candidate open", () => {
@@ -57,6 +83,16 @@ describe("openStreamAbort", () => {
     cancel();
   });
 
+  it("aborts the /api/ai/chat open budget at 18s", () => {
+    vi.useFakeTimers();
+    const { signal, cancel } = openStreamAbort(llmAiChatOpenTimeoutMs());
+    vi.advanceTimersByTime(17_999);
+    expect(signal.aborted).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(signal.aborted).toBe(true);
+    cancel();
+  });
+
   it("lets a free-tier cascade keep working past the old 35s abort", () => {
     vi.useFakeTimers();
     const { signal, cancel } = openStreamAbort(
@@ -83,14 +119,17 @@ describe("client/server budget lockstep", () => {
     expect(chatRoute).not.toMatch(/const LLM_OPEN_TIMEOUT_MS = 35_000/);
   });
 
-  it("arms the same open abort on the unauthenticated /api/ai/chat probe", () => {
+  it("arms a Worker-safe open abort on the unauthenticated /api/ai/chat probe", () => {
     const appRoute = readFileSync(
       join(repoRoot, "artifacts/api-server/src/app.ts"),
       "utf8",
     );
-    expect(appRoute).toContain("llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() })");
+    expect(appRoute).toContain("llmAiChatOpenTimeoutMs()");
     expect(appRoute).toContain("openStreamAbort(");
     expect(appRoute).toContain("signal: open.signal");
+    expect(appRoute).not.toContain(
+      "llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() })",
+    );
     expect(appRoute).toContain("The companion returned an empty reply. Please try again.");
   });
 
