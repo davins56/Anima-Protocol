@@ -21,6 +21,7 @@ import {
   type MsgData,
 } from "@workspace/db";
 import { createRateLimit } from "../lib/rateLimit";
+import { retrieveRepositoryKnowledge } from "../lib/repositoryKnowledge";
 import { routeModel } from "../lib/modelRouter";
 import {
   createChatStreamWithFailover,

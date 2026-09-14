@@ -186,7 +186,7 @@ export function errorCodeLower(err: { code?: unknown; type?: unknown }): string 
 // standard model within the same provider.
 //
 // Quota / rate-limit / billing errors are intentionally NOT matched here —
-// there is no other provider to fail over to (llmFailover.ts only talks to
+// there is no other provider to fail over to (\
 // the self-hosted Anima LLM), so a doomed retry would just repeat the failure.
 export function isModelUnavailableError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
