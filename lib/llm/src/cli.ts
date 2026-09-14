@@ -27,6 +27,7 @@ import {
   cleanExamples,
   characterSlug,
   curateNovels,
+  dedupeById,
   dedupeExamples,
   defaultCuratedDir,
   expandByWeight,
@@ -95,7 +96,7 @@ Examples:
   pnpm llm:up                               # bootstrap open-weight anima-chat
   pnpm llm:chat -- "Who are you?"
   pnpm llm:ingest -- --from ~/Downloads/anima-backup.json
-  pnpm llm:curate-novels                    # novels + brief-gold → raw/
+  pnpm llm:curate-novels                    # novel scenes → raw/; brief-gold stays in seeds
   pnpm llm:dataset -- --rehearse            # samples → JSONL (no GPU)
   pnpm --filter @workspace/llm run cli -- prepare-finetune --format sharegpt
 `);
@@ -273,6 +274,12 @@ async function cmdPrepareFinetune(args: string[]): Promise<void> {
       minTurns: Number(argValue(args, "--min-turns") || 4),
     });
     examples = [...examples, ...fromDb];
+  }
+
+  const beforeId = examples.length;
+  examples = dedupeById(examples);
+  if (examples.length < beforeId) {
+    console.log(`Deduped ${beforeId - examples.length} example(s) with duplicate ids (seed vs raw)`);
   }
 
   examples = applyQualityPipeline(examples, args);
@@ -535,7 +542,9 @@ async function cmdCurateNovels(args: string[]): Promise<void> {
   console.log(`Wrote ${written.counts.brief} brief-gold row(s) → ${path.relative(REPO_ROOT, written.briefJsonl)}`);
   console.log(`Wrote ${written.counts.novels} novel scene(s)  → ${path.relative(REPO_ROOT, written.novelsJsonl)}`);
   if (written.rawCopy) {
-    console.log(`Staged ${written.counts.all} TrainingExample row(s) → ${path.relative(REPO_ROOT, written.rawCopy)}`);
+    console.log(
+      `Staged ${written.counts.novels} novel scene(s) → ${path.relative(REPO_ROOT, written.rawCopy)} (brief-gold stays in the seed mix, not raw)`,
+    );
   }
   console.log("Next: pnpm llm:dataset   (or pnpm llm:prepare-finetune -- --val-split 0.05)");
 }

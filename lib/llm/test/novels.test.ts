@@ -11,6 +11,7 @@ import {
   replicaCount,
 } from "../src/dataset/catalog";
 import { curateNovels, writeCuratedBundle } from "../src/dataset/curate";
+import { dedupeById } from "../src/dataset/clean";
 import { extractNovelExamples } from "../src/dataset/novels";
 import { ANIMA_PREFERENCE_EXAMPLES } from "../src/dataset/preferences";
 import { listSeedExamples } from "../src/dataset/seed";
@@ -151,8 +152,34 @@ describe("brief gold + curator", () => {
       rawDir,
     });
     expect(written.counts.brief).toBe(BRIEF_GOLD_EXAMPLES.length);
+    const brief = await import("node:fs/promises").then((fs) =>
+      fs.readFile(written.briefJsonl, "utf8"),
+    );
+    expect(brief).toContain("gold-consent-ledger-001");
     const raw = await import("node:fs/promises").then((fs) => fs.readFile(written.rawCopy!, "utf8"));
-    expect(raw).toContain("gold-consent-ledger-001");
+    expect(raw).not.toContain("gold-consent-ledger-001");
+    expect(written.rawCopy).toMatch(/curated-novels\.jsonl$/);
+  });
+
+  it("removes a leftover combined raw file that mixed brief-gold into prepare-finetune", async () => {
+    const curatedDir = path.join(dir, "curated-legacy");
+    const rawDir = path.join(dir, "raw-legacy");
+    await import("node:fs/promises").then((fs) => fs.mkdir(rawDir, { recursive: true }));
+    const leftover = path.join(rawDir, "curated-novels-and-brief.jsonl");
+    await writeFile(leftover, JSON.stringify(BRIEF_GOLD_EXAMPLES[0]) + "\n");
+    await writeCuratedBundle({
+      examples: BRIEF_GOLD_EXAMPLES.slice(0, 1),
+      curatedDir,
+      rawDir,
+    });
+    await expect(import("node:fs/promises").then((fs) => fs.access(leftover))).rejects.toThrow();
+  });
+
+  it("does not 8× brief-gold when seeds and raw both carry the same ids", () => {
+    const gold = BRIEF_GOLD_EXAMPLES.find((e) => e.id === "gold-porch-not-throne-001")!;
+    const merged = dedupeById([...listSeedExamples(["brief-gold"]), gold, { ...gold }]);
+    expect(merged.filter((e) => e.id === gold.id)).toHaveLength(1);
+    expect(expandByWeight(merged.filter((e) => e.id === gold.id))).toHaveLength(4);
   });
 
   it("extracts a dropped anima-protocol.txt and does not ingest fallen-angel without includeLore", async () => {
