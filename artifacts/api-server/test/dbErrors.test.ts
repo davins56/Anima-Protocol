@@ -6,6 +6,7 @@ import {
 import {
   classifyDbError,
   databaseTargetHint,
+  errorCauseBlob,
   isWorkerApiTimeoutError,
   secretFreeErrorSignal,
 } from "../src/lib/dbErrors";
@@ -36,6 +37,16 @@ describe("classifyDbError", () => {
       reason: "unavailable",
       safeMessage: "Database unavailable",
     });
+  });
+
+  it("classifies the production companion_memories Failed query as a DB error without leaking SQL in safeMessage", () => {
+    const err = new Error(
+      `Failed query: select "id", "user_id", "character_id" from "companion_memories" where ("companion_memories"."user_id" = $1 and "companion_memories"."character_id" in ($2)) order by "companion_memories"."updated_at" desc params: user_3EndjEBjft9MWRhD4dYFiX63sDU,seed_marvel-cinematic-universe-natasha-romanoff`,
+    );
+    const info = classifyDbError(err);
+    expect(info.isDbError).toBe(true);
+    expect(info.safeMessage).not.toMatch(/Failed query|select "|companion_memories|user_3Endj/i);
+    expect(info.safeMessage).toBe("Database unavailable");
   });
 
   it("unwraps ENOTFOUND from Error.cause under a drizzle Failed query wrapper", () => {
@@ -414,6 +425,19 @@ describe("classifyDbError Hyperdrive / postgres.js", () => {
       reason: "limit",
       code: "53300",
     });
+  });
+});
+
+describe("errorCauseBlob", () => {
+  it("joins messages through nested Error.cause", () => {
+    const leaf = new Error('relation "companion_memories" does not exist');
+    const mid = new Error("query failed");
+    (mid as Error & { cause?: unknown }).cause = leaf;
+    const wrapped = new Error("Failed query: select 1");
+    (wrapped as Error & { cause?: unknown }).cause = mid;
+    expect(errorCauseBlob(wrapped)).toMatch(/Failed query: select 1/);
+    expect(errorCauseBlob(wrapped)).toMatch(/query failed/);
+    expect(errorCauseBlob(wrapped)).toMatch(/companion_memories/);
   });
 });
 

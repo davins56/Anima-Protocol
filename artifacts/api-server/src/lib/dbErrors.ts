@@ -97,6 +97,11 @@ function collectErrorSignals(err: unknown): {
   };
 }
 
+/** Joined Error.cause messages (depth 6). Shared by chat stream + schema self-heal. */
+export function errorCauseBlob(err: unknown): string {
+  return collectErrorSignals(err).message;
+}
+
 /**
  * Worker 20s wall (`WorkerApiTimeoutError`), not a Postgres/Hyperdrive failure.
  * Same `code` (`ETIMEOUT`) as `DbOperationTimeoutError` — distinguish by name
