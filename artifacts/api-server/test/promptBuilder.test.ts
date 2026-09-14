@@ -5,6 +5,9 @@ import {
   buildLlmChatMessages,
   composePrompt,
   CONTINUE_USER_TURN,
+  CLIENT_SCENE_CONTEXT_MAX,
+  clientSceneExcerpt,
+  isDuplicativeClientPrompt,
 } from "../src/lib/promptBuilder";
 import { CHAT_MODE_REGISTRY } from "../src/lib/chatModeRegistry";
 import { assessTherapySafety, crisisResourceForCountry } from "../src/lib/therapySafety";
@@ -277,7 +280,7 @@ describe("buildCompanionPrompt", () => {
     expect(prompt).toMatch(/Ascended/i);
   });
 
-  it("does not duplicate history when the client already sent Story so far", () => {
+  it("does not re-wrap a client Story so far transcript on top of store history", () => {
     const prompt = buildCompanionPrompt({
       systemPrompt: `You are Serenity.\n\nStory so far:\nYou: I miss the garden\nSerenity: I remember it with you.\n`,
       characters: [baseCharacter],
@@ -292,9 +295,73 @@ describe("buildCompanionPrompt", () => {
       content: "Take me back there.",
     });
 
-    expect(prompt).toContain("Story so far:");
-    expect(prompt).not.toContain("CONVERSATION CONTEXT:");
-    expect(prompt).not.toContain("LATEST USER MESSAGE:");
+    expect(prompt).toContain("You are Serenity.");
+    expect(prompt).not.toMatch(/Story so far:\s*\nYou: I miss the garden/);
+    expect(prompt).toContain("CONVERSATION CONTEXT:");
+    expect(prompt).toContain("I miss the garden");
+    expect(prompt).toContain("Take me back there.");
+  });
+
+  it("caps a fat Chat.jsx systemPrompt instead of wrapping 24k on top of CHARACTER", () => {
+    const fatPersonality = `warm and verbose ${"beloved ".repeat(4_000)}`;
+    const fatTranscript = Array.from({ length: 80 }, (_, i) => `You: line ${i}\nSerenity: reply ${i}`).join("\n");
+    const fatPrompt = `You are Serenity. This is an immersive collaborative story.
+
+          CHARACTER IDENTITY LOCK:
+          - Embody Serenity.
+
+          Personality: ${fatPersonality}
+
+          CRITICAL AUTONOMY RULES:
+          - You have your own goals.
+
+          Story so far:
+          ${fatTranscript}
+
+          HIGHEST-PRIORITY RULE: never harm the real person.`;
+
+    expect(isDuplicativeClientPrompt(fatPrompt)).toBe(true);
+    expect(fatPrompt.length).toBeGreaterThan(24_000);
+
+    const prompt = buildCompanionPrompt({
+      systemPrompt: fatPrompt,
+      characters: [baseCharacter],
+      activeCharacter: baseCharacter,
+      memories: [],
+      recentMessages: [
+        { role: "user", content: "Hello" },
+        { role: "assistant", content: "I am here.", character_name: "Serenity" },
+      ],
+      mode: "solo",
+      content: "Hello again.",
+    });
+
+    const wrap = prompt.split("<<<CLIENT_SCENE_CONTEXT>>>")[1]?.split("<<<END_CLIENT_SCENE_CONTEXT>>>")[0] ?? "";
+    expect(wrap.trim().length).toBeLessThanOrEqual(CLIENT_SCENE_CONTEXT_MAX);
+    expect(wrap).not.toContain("Story so far:");
+    expect(wrap).not.toContain(fatPersonality);
+    expect(prompt).toContain("CHARACTER:");
+    expect(prompt).toContain("CHARACTER IDENTITY LOCK");
+    expect(prompt).toContain("CONVERSATION CONTEXT:");
+    expect(prompt).not.toContain("beloved ".repeat(500));
+    expect(clientSceneExcerpt(fatPrompt).length).toBeLessThanOrEqual(CLIENT_SCENE_CONTEXT_MAX);
+  });
+
+  it("keeps repository knowledge out of the client-scene wrap", () => {
+    const prompt = composePrompt({
+      clientContext: "You are Serenity.\nStory so far:\nYou: hi\nSerenity: hello",
+      repositoryKnowledge:
+        "Repository context retrieved from the Anima Protocol source tree:\n[wrangler.jsonc]\nmain = worker.ts",
+      characters: [baseCharacter],
+      activeCharacter: baseCharacter,
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "Where is the worker main?",
+    });
+    expect(prompt).toContain("[wrangler.jsonc]");
+    const wrap = prompt.split("<<<CLIENT_SCENE_CONTEXT>>>")[1]?.split("<<<END_CLIENT_SCENE_CONTEXT>>>")[0] ?? "";
+    expect(wrap).not.toContain("wrangler.jsonc");
   });
 });
 
