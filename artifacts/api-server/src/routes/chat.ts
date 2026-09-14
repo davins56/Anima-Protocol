@@ -25,7 +25,7 @@ import {
   retrieveRepositoryKnowledge,
   shouldRetrieveRepositoryKnowledge,
 } from "../lib/repositoryKnowledge";
-import { clampChatMessagesMaxTokens, routeModel } from "../lib/modelRouter";
+import { routeModel } from "../lib/modelRouter";
 import {
   createChatStreamWithFailover,
   isOpenRouterGenericProviderError,
@@ -44,7 +44,11 @@ import {
   consumeLlmStream,
   LlmStreamTimeoutError,
 } from "../lib/consumeLlmStream.js";
-import { llmChatMessagesOpenTimeoutMs, openStreamAbort } from "../lib/chatTimeouts";
+import {
+  clampChatMessagesMaxTokens,
+  llmChatMessagesOpenTimeoutMs,
+  openStreamAbort,
+} from "../lib/chatTimeouts";
 import {
   combineLocalDrafts,
   draftLocalMinds,
