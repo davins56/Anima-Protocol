@@ -1,38 +1,38 @@
 # Chat latency + identity-loop audit
 
-**Date:** 2026-09-14 (updated: Codex review of merged #451 folded in)  
-**Baseline:** `main` @ `f4a7010a` (`fix(worker): do not classify Worker ETIMEOUT as a database timeout` / #450)  
+**Date:** 2026-09-14 (updated: Slice 1 TTFT shipped in #453)  
+**Baseline:** `main` @ `651670a6` (`fix(chat): send first SSE byte before context load` / #453) + `66c825b7` (audit #452)  
 **Owner priority:** AI response speed — **TTFT**, then end-to-end chat latency. Identity loop and Worker timeout/CI stay in this document, below latency.
 
 Findings only. No runtime code in this PR.
 
-Complements `docs/upgrade-audit.md` (#389, LLM/security). **[#450](https://github.com/davins56/Anima-Protocol/pull/450) merged** (Worker ETIMEOUT ≠ DB; `/api/ai/chat` 18s open; **12s local hop inside shared `createChatStreamWithFailover`**). Chat.jsx still uses `/api/chat/messages`. Slice 2 must not re-apply that hop.
+Complements `docs/upgrade-audit.md` (#389, LLM/security). **[#453](https://github.com/davins56/Anima-Protocol/pull/453) merged** Slice 1 (SSE after `beginChatTurn`, gated repo RAG, 2k client wrap). **[#450](https://github.com/davins56/Anima-Protocol/pull/450)** still owns Worker ETIMEOUT classification and the 12s `localAttemptSignal` hop. Remaining speed work is Slice 2 (local `max_tokens` + 80s `:free` cascade).
 
 ---
 
 ## 0. Latency verdict (read this first)
 
-Chat **does stream**. The UI is not waiting for a full reply before painting tokens (`streamChatReply` + SSE deltas). It **feels** slow because **first SSE byte is late**, then **prefill is huge**, then **generation is allowed to run to 4–8k tokens**.
+Chat **does stream**. The UI is not waiting for a full reply before painting tokens (`streamChatReply` + SSE deltas). After [#453](https://github.com/davins56/Anima-Protocol/pull/453), the **first SSE byte is a heartbeat after `beginChatTurn`**, not after context load. Remaining slowness is **client-side fat `systemPrompt` build**, **prefill still from CHARACTER / memories / CORE**, then **generation allowed to 4–8k tokens**, then an **80s OpenRouter `:free` cascade** if local hops.
 
-User-perceived timeline for `POST /api/chat/messages` (production Chat.jsx):
+User-perceived timeline for `POST /api/chat/messages` (production Chat.jsx, post-#453):
 
 ```
 [click send]
   client builds a large systemPrompt (character sheet + 14 msgs + lore + memory…)
   POST /chat/messages
     ensureSchemaOnce
-    beginChatTurn + retry leftover turns          ← DB, before any SSE
+    beginChatTurn + 409/replay                    ← DB, before any SSE
+    writeHead SSE + heartbeat                     ← first network byte (#453)
+    retry leftover turns
     load characters, memories, embeddings
     supermemory HTTP (if enabled)
     world-knowledge HTTP (≤1.5s, fail-open)
-    repository RAG (up to 400 files on Node)     ← every non-empty turn
+    repository RAG only if repo-shaped / explicit ← #453 gated
     evolution / relationship / arc / intimacy
-    composePrompt wraps ≤24k of client prompt
-                                              ← still no SSE byte
-    writeHead SSE + heartbeat                     ← first network byte
+    composePrompt: Story so far stripped, wrap ≤2k
     open local Ollama stream (12s hop if OpenRouter
       is next; outer abort 35s, or 80s :free)     ← leftover 80s is cascade
-    first content delta                           ← TTFT the user feels
+    first content delta                           ← visible TTFT
     …stream tokens…
     done → client persist                         ← E2E “can send again”
 ```
@@ -44,7 +44,7 @@ Telemetry (`ChatPipelineTelemetry`) records `context_load_ms` and `ttft_ms`, but
 | Hypothesis | Verdict |
 |------------|---------|
 | Waiting on full replies instead of streaming | **Mostly false.** Main path streams. Exceptions: opt-in `ANIMA_LOCAL_LLM_ENSEMBLE` (off by default, waits for N full drafts); image gen after the reply; `max_tokens` 4–8k so E2E stays long even when TTFT is fine. |
-| Oversize context / memory retrieval | **True, and worse than memory alone.** Client prompt (up to 24k chars) is wrapped *again* by `composePrompt`, which then adds character def, memories, resonance, CORE_BEHAVIOR. Prefill dominates small local models. |
+| Oversize context / memory retrieval | **Partly fixed in #453.** Server strips `Story so far:` and caps the remainder at 2k (`clientSceneExcerpt`). Chat.jsx still *builds* the fat prompt before POST; `composePrompt` still adds CHARACTER / memories / CORE. Prefill is smaller, not thin. |
 | Worker ~20s wall | **Does not race `/api/chat`.** `isLongLivedApiPath` exempts `/api/openai` and `/api/chat`. The 20s wall is store/healthz. **#450 merged:** Worker `ETIMEOUT` is no longer classified as a DB timeout; live `?probe=1` uses a **45s** bound; **`POST /api/ai/chat`** opens in **18s**. **Chat.jsx still uses `/api/chat/messages`**, which is long-lived and still has a **35s** (or **80s** if OpenRouter is on the chain) **outer** stream-open budget. |
 | Cold Ollama | **True for ops/retries; 12s hop already shipped.** `ANIMA_LOCAL_LLM_MAX_RETRIES` defaults to **2**. `localAttemptSignal` in `createChatStreamWithFailover` already combines the caller abort with `LLM_LOCAL_FAILOVER_ATTEMPT_MS` (**12s**) whenever a next provider exists — `/chat/messages` passes `signal: open.signal` into that function. Remaining hang after a cold local fail is the **OpenRouter :free cascade** sharing the **80s** `usesFreeTierOpenBudget()` outer abort, not a missing 12s hop. |
 
@@ -52,29 +52,15 @@ Telemetry (`ChatPipelineTelemetry`) records `context_load_ms` and `ttft_ms`, but
 
 ## P0 — chat speed (do these first)
 
-### P0-L1 — First SSE byte before context load (TTFT)
+### P0-L1 — First SSE byte before context load (TTFT) — **shipped in #453**
 
-**What’s wrong:** `chat.ts` `POST /messages` loads schema, turns, characters, memories, embeddings, optional supermemory, world weather, **repository RAG**, evolution/rel/arc, intimacy, then `composePrompt` — **then** `res.writeHead` SSE. The client shows typing with **zero tokens** for all of that.
+**Shipped:** `openChatSse` runs after `beginChatTurn` + replay/409, before memories / embeddings / weather / RAG / `composePrompt`. Duplicate `turn_id`s still get replay SSE or 409 JSON, not a second live stream. Do not reopen this ordering.
 
-**Where:** `artifacts/api-server/src/routes/chat.ts` (~1360–1676). Contrast: `preStreamPersist` is already after `writeHead` (good). Context load is not.
+### P0-L2 — Stop double-prefill (TTFT + E2E) — **server wrap shipped in #453; Chat.jsx still fat**
 
-**Why it matters:** This is the only TTFT work entirely in app code. Cold Hyperdrive + RAG + weather can add seconds before Ollama is even called.
+**Shipped:** `clientSceneExcerpt` strips `Story so far:` / `CONVERSATION CONTEXT:` and caps at `CLIENT_SCENE_CONTEXT_MAX` (2k). `shouldRetrieveRepositoryKnowledge` skips default RAG. Repository knowledge is its own prompt section.
 
-**Approach:** Keep `beginChatTurn` (and the existing replay / 409 JSON path) **before** `writeHead`. Opening SSE right after auth would skip that ledger and present duplicate `turn_id`s as a live stream. After the turn is created, heartbeat immediately and run the expensive context `Promise.all` while the client already has an open stream (`status: "loading"`). Do not wait on repository RAG or weather to *start* the LLM; inject them only if they finish before `createChatStreamWithFailover`, else skip.
-
-**Effort:** S–M. #450 already owns `workerApiGuard.ts` / `dbErrors.ts` — don’t reopen classification. This slice is `chat.ts` writeHead ordering.
-
-### P0-L2 — Stop double-prefill (TTFT + E2E)
-
-**What’s wrong:** Chat.jsx builds a full character sheet, 14×800-char history (`Story so far:`), lore, CharacterMemory, echo lore, behavior sliders. Server wraps that as `CLIENT_SCENE_CONTEXT` **sliced to 24,000 chars**, then adds `buildCharacterDefinition` (3k), memory block (2.4k), resonance, voice, CORE_BEHAVIOR again. `buildLlmChatMessages` skips store history when it sees `Story so far:` — so you still pay the client transcript *inside the system prompt*.
-
-**Where:** `artifacts/anima-protocol/src/pages/Chat.jsx` (~1428–1821); `artifacts/api-server/src/lib/promptBuilder.ts` `composePrompt` (`slice(0, 24_000)`), `BUDGET`, `clientOwnsTranscript`.
-
-**Why it matters:** Prefill time on Qwen/anima-chat 3B is the dominant TTFT once the stream is open. Duplicating identity + history is free latency.
-
-**Approach:** Send a **thin** client payload (speaker id, hidden-sequences, length guide) and let `composePrompt` own identity + last-N store messages. Or: if client already sent a sheet, do not wrap 24k and do not add a second CHARACTER block. Cap client `system_prompt` hard (e.g. 4k). Drop repository RAG from the default chat path (`ANIMA_REPOSITORY_RAG` is already skippable; today it runs on every non-empty turn in `chat.ts`).
-
-**Effort:** S for “don’t wrap 24k + skip repo RAG”; M to move Chat.jsx off the fat prompt.
+**Still open:** Chat.jsx still concatenates character sheet + 14×800 history + lore + CharacterMemory before POST. Thinning that payload is identity/P1 work (drop client memory from the prompt), not a second Slice 1.
 
 ### P0-L3 — Cap generation length; don’t use the 80s free-tier open budget on Chat.jsx (E2E + hung typing)
 
@@ -97,7 +83,7 @@ Do not re-litigate Worker ETIMEOUT classification or the healthz probe bound —
 
 ### P0-L4 — Memory retrieval is not the first TTFT knob (but don’t grow it)
 
-`retrieveRelevantMemories` is in-process scoring (topK 12, last 24 turn crumbs). `attachStoredEmbeddings` is a DB read of JSON vectors. That is cheaper than the 24k client wrap + repo RAG. **Do not** “fix speed” by deleting companion memory. Finish P0-L1/L2 first. Identity-loop P1 below still matters for *quality* of recall, not the first-token budget.
+`retrieveRelevantMemories` is in-process scoring (topK 12, last 24 turn crumbs). `attachStoredEmbeddings` is a DB read of JSON vectors. That is cheaper than the leftover Chat.jsx fat prompt + 4–8k generation. **Do not** “fix speed” by deleting companion memory. P0-L1/L2 server side shipped; next is P0-L3. Identity-loop P1 still matters for *quality* of recall, not the first-token budget.
 
 ---
 
@@ -141,7 +127,8 @@ memory   upsertTurnMemory / recordTurnContinuity → companion_memories
 
 | Item | Status |
 |------|--------|
-| [#450](https://github.com/davins56/Anima-Protocol/pull/450) Worker ETIMEOUT ≠ DB; `/api/ai/chat` 18s; **12s `localAttemptSignal` in shared failover**; probe 45s | **Merged** `f4a7010a` (2026-09-14). Do not re-open classification. Do **not** recommend another 12s hop on `/chat/messages` — it already shares `createChatStreamWithFailover`. Remaining Chat.jsx work: pre-SSE context load, 24k wrap, local `max_tokens` ignoring `req.maxTokens`, 80s OpenRouter outer abort. |
+| [#453](https://github.com/davins56/Anima-Protocol/pull/453) Slice 1 TTFT — SSE before context load | **Merged** `651670a6` (2026-09-14). `beginChatTurn` + replay/409 still run **before** `openChatSse`. Default repo RAG gated; client wrap capped at 2k after stripping `Story so far:`. Do **not** start a second Slice 1 PR. They left `llmFailover.ts` / `chatTimeouts.ts` untouched on purpose. Slice 2 still **must** edit `llmFailover.ts` for the local token cap — that is not a #450 collision. |
+| [#450](https://github.com/davins56/Anima-Protocol/pull/450) Worker ETIMEOUT ≠ DB; `/api/ai/chat` 18s; **12s `localAttemptSignal` in shared failover**; probe 45s | **Merged** `f4a7010a` (2026-09-14). Do not re-open classification. Do **not** recommend another 12s hop on `/chat/messages` — it already shares `createChatStreamWithFailover`. Remaining Chat.jsx work: local `max_tokens` ignoring `req.maxTokens`, 80s OpenRouter outer abort. |
 | Rate-limit | Merged #125. User-keyed. Leave it. |
 | `main` CI `api-tests` | `llmEnsemble.test.ts` vs OpenRouter in CI chain. Separate PR. |
 | Dependabot #449 | Ignore. |
@@ -150,19 +137,15 @@ memory   upsertTurnMemory / recordTurnContinuity → companion_memories
 
 ## Recommended next 1–2 PRs (latency)
 
-### Slice 1 — TTFT: open the stream, shrink prefill (P0-L1 + P0-L2)
+### Slice 1 — TTFT: open the stream, shrink prefill (P0-L1 + P0-L2) — **shipped in #453**
 
-**Files:** `artifacts/api-server/src/routes/chat.ts`, `artifacts/api-server/src/lib/promptBuilder.ts` (optional cap), maybe `Chat.jsx` only if dropping fat history is in-scope.
-
-1. `writeHead` SSE + heartbeat **after** `beginChatTurn` + duplicate 409/replay, **before** the expensive context `Promise.all`. Do not open SSE at auth-only.
-2. Skip `retrieveRepositoryKnowledge` unless the turn is protocol/codespace (or default-off on Worker).
-3. Cap `CLIENT_SCENE_CONTEXT` far below 24k, or stop duplicating CHARACTER / history when `clientOwnsTranscript`.
-
-Tests: `chatLifecycle` still streams; add an assert that a status/heartbeat event can be written before mocked LLM open.
+Do not duplicate. Remaining Chat.jsx thinning is identity/P1, not another TTFT PR.
 
 ### Slice 2 — E2E: honor token cap on local Ollama; stop 80s OpenRouter cascade (P0-L3)
 
-**Files:** `artifacts/api-server/src/lib/llmFailover.ts` (**required** for the cap to reach anima-chat), then `artifacts/api-server/src/routes/chat.ts`. Do not invent a fourth timeout constant.
+**This is the next latency PR.**
+
+**Files:** `artifacts/api-server/src/lib/llmFailover.ts` (**required** for the cap to reach anima-chat), then `artifacts/api-server/src/routes/chat.ts`. Do not invent a fourth timeout constant. #453 deferred this and treated `llmFailover.ts` as a #450 collision file — it is not, for the token cap.
 
 1. Local stream/complete in `createChatStreamWithFailover`: send `max_tokens: Math.min(req.maxTokens ?? m.maxTokens, m.maxTokens)` instead of `m.maxTokens`. Today OpenRouter honors the caller cap; local does not.
 2. Then `maxTokens: Math.min(routed.maxTokens, 1024)` on `/chat/messages` (length guide is already 2–4 sentences). `chat.ts` alone is a no-op on production Ollama.
@@ -172,6 +155,7 @@ Tests: `chatLifecycle` still streams; add an assert that a status/heartbeat even
 
 ### Explicitly not the first PR
 
+- Another Slice 1 TTFT PR (SSE / repo RAG / 24k wrap) — **shipped in [#453](https://github.com/davins56/Anima-Protocol/pull/453)**.
 - Worker ETIMEOUT / healthz probe classification (**done in #450**).
 - Another 12s local hop on `/chat/messages` (**already in #450** via `localAttemptSignal`).
 - Wiring `GET /chat/memories` into Chat.jsx `system_prompt` (would worsen double-prefill).
@@ -185,9 +169,9 @@ Tests: `chatLifecycle` still streams; add an assert that a status/heartbeat even
 
 | Claim | Evidence |
 |-------|----------|
-| SSE after context load | `chat.ts` `telemetry.measure("context_load_ms", Promise.all(…))` then `composePrompt` then `writeHead` |
+| SSE after `beginChatTurn`, before context load | #453 `openChatSse` after replay/409; `chatTtft.test.ts` |
 | Chat exempt from 20s wall | `workerApiGuard.ts` `isLongLivedApiPath` matches `/api/chat` |
-| Client wraps ≤24k | `promptBuilder.ts` `suppliedContext.slice(0, 24_000)` |
+| Client wrap ≤2k after stripping transcript | `promptBuilder.ts` `clientSceneExcerpt` / `CLIENT_SCENE_CONTEXT_MAX` |
 | Chat.jsx streams deltas | `streamChatReply.js` `onDelta` per content event; `useChatStreaming` |
 | Ensemble off by default | `localEnsemble.ts` `ANIMA_LOCAL_LLM_ENSEMBLE` |
 | 80s outer abort when OpenRouter on chain | `usesFreeTierOpenBudget` + wrangler `ANIMA_OPENROUTER_FALLBACK`/`FREE` + `chat.ts` `openStreamAbort`; leftover after local hop is :free cascade |
@@ -197,6 +181,6 @@ Tests: `chatLifecycle` still streams; add an assert that a status/heartbeat even
 | #450 merged | `origin/main` `f4a7010a`; `chat.ts` still `llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() })` |
 | 8192 max_tokens on typical turns | `modelRouter.ts` `text.length >= 200` → heavy; `MAX_TOKENS.heavy = 8192` |
 | Server memories already in prompt | `chat.ts` `loadMemories` → `composePrompt` `formatMemoriesForPrompt`; Chat.jsx also `buildMemoryContext(characterMemories)` |
-| Repo RAG every turn | `chat.ts` `retrieveRepositoryKnowledge(content)` when `content.trim()` |
+| Repo RAG gated | `shouldRetrieveRepositoryKnowledge` — ordinary turns skip; `ANIMA_REPOSITORY_RAG=false` still hard off |
 | Telemetry | `ttft_ms` from `generationStartedAt`; `repository_rag_ms` is nested in `context_load_ms` (`chat.ts` + `chatTelemetry.ts`) |
 | Browser abort 130s | `animaApi.js` `CHAT_STREAM_TIMEOUT_MS = 130_000` |
