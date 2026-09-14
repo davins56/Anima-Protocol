@@ -93,8 +93,9 @@ import {
   evolveCompanionAffectFromCompanion,
   serializeCompanionAffect,
   toCompanionAffectSnapshot,
+  companionAffectSnapshotFromEmotionalState,
+  synchroStrengthFromEmotionalState,
   type CompanionAffect,
-  type CompanionAffectSnapshot,
 } from "../lib/companionAffect";
 import {
   resolveActiveCharacterId,
@@ -520,17 +521,6 @@ function adaptMemories(
     resonanceNotes: m.resonanceNotes,
     updatedAt: m.updatedAt,
   }));
-}
-
-function companionAffectSnapshotFromEmotionalState(
-  emotionalState: Record<string, unknown> | null | undefined,
-): CompanionAffectSnapshot {
-  const affect = initCompanionAffect(emotionalState ?? null);
-  const synchro =
-    emotionalState && typeof emotionalState.synchroStrength === "number"
-      ? emotionalState.synchroStrength
-      : null;
-  return toCompanionAffectSnapshot(affect, synchro);
 }
 
 /**
@@ -2013,7 +2003,11 @@ router.post("/messages", async (req, res) => {
       companion_affect: companionAffect
         ? toCompanionAffectSnapshot(
             evolveCompanionAffectFromCompanion(companionAffect, fullResponse),
-            synchroState?.vector.synchroStrength ?? null,
+            synchroState
+              ? synchroStrengthFromEmotionalState(
+                  serializeSynchroState(synchroState),
+                )
+              : null,
           )
         : null,
     });
