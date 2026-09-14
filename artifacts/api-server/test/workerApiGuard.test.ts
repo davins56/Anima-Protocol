@@ -10,6 +10,9 @@ import {
   jsonApiErrorResponse,
   looksLikeHtmlBody,
   shouldTimeoutApiPath,
+  workerApiTimeoutMs,
+  WORKER_API_TIMEOUT_MS,
+  WORKER_LLM_PROBE_TIMEOUT_MS,
   WorkerApiTimeoutError,
   withWorkerApiTimeout,
 } from "../src/lib/workerApiGuard";
@@ -35,14 +38,21 @@ describe("worker API path helpers", () => {
     expect(isLongLivedApiPath("/api/store/events")).toBe(true);
   });
 
-  it("exempts live LLM health probes from the 20s wall", () => {
+  it("gives live LLM health probes a longer bounded wall, not an exemption", () => {
     expect(isLlmHealthProbePath("/api/healthz/llm", "?probe=1")).toBe(true);
     expect(isLlmHealthProbePath("/api/healthz/llm", "probe=true")).toBe(true);
     expect(isLlmHealthProbePath("/api/healthz/llm")).toBe(false);
     expect(isLlmHealthProbePath("/api/healthz/db", "?probe=1")).toBe(false);
-    expect(shouldTimeoutApiPath("/api/healthz/llm", "?probe=1")).toBe(false);
-    expect(shouldTimeoutApiPath("/api/healthz/llm", "?probe=yes")).toBe(false);
+    expect(shouldTimeoutApiPath("/api/healthz/llm", "?probe=1")).toBe(true);
+    expect(shouldTimeoutApiPath("/api/healthz/llm", "?probe=yes")).toBe(true);
     expect(shouldTimeoutApiPath("/api/healthz/db", "?probe=1")).toBe(true);
+    expect(workerApiTimeoutMs("/api/healthz/llm", "?probe=1")).toBe(
+      WORKER_LLM_PROBE_TIMEOUT_MS,
+    );
+    expect(workerApiTimeoutMs("/api/healthz/llm", "?probe=1")).toBeGreaterThan(
+      WORKER_API_TIMEOUT_MS,
+    );
+    expect(workerApiTimeoutMs("/api/healthz/db")).toBe(WORKER_API_TIMEOUT_MS);
   });
 });
 
@@ -281,7 +291,7 @@ describe("fetchApiThroughExpress", () => {
     expect(JSON.stringify(body)).not.toMatch(/<!DOCTYPE|lt IE 7/);
   });
 
-  it("does not wall-timeout a slow healthz LLM probe", async () => {
+  it("uses a longer bounded wall for a slow healthz LLM probe", async () => {
     const handler = {
       fetch: async () => {
         await new Promise((resolve) => setTimeout(resolve, 30));
@@ -293,7 +303,7 @@ describe("fetchApiThroughExpress", () => {
       {},
       {},
       handler,
-      { timeoutMs: 20 },
+      { timeoutMs: 80 },
     );
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ status: "ok" });
