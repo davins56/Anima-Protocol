@@ -209,6 +209,9 @@ describe("POST /api/ai/chat — local Ollama path", () => {
   it("aborts a hung Ollama host instead of sitting forever", async () => {
     hangNext = true;
     process.env.ANIMA_LLM_OPEN_TIMEOUT_MS = "250";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
     resetLlmClientsForTests();
 
     const response = await fetch(`${apiBase}/api/ai/chat`, {

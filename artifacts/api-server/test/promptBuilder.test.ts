@@ -8,6 +8,7 @@ import {
   CLIENT_SCENE_CONTEXT_MAX,
   clientSceneExcerpt,
   isDuplicativeClientPrompt,
+  splitClientTranscript,
 } from "../src/lib/promptBuilder";
 import { CHAT_MODE_REGISTRY } from "../src/lib/chatModeRegistry";
 import { assessTherapySafety, crisisResourceForCountry } from "../src/lib/therapySafety";
@@ -20,6 +21,7 @@ import {
 } from "../src/lib/resonanceState";
 import { extractVoiceAnchors, buildCrossoverAwareness } from "../src/lib/voiceAnchors";
 import { normalizeOperatorModel } from "../src/lib/operatorModel";
+import { initCompanionAffect } from "../src/lib/companionAffect";
 
 describe("buildCompanionPrompt", () => {
   const baseCharacter = {
@@ -347,6 +349,327 @@ describe("buildCompanionPrompt", () => {
     expect(clientSceneExcerpt(fatPrompt).length).toBeLessThanOrEqual(CLIENT_SCENE_CONTEXT_MAX);
   });
 
+  it("keeps Chat.jsx post-transcript IMAGE and EMOTION contracts", () => {
+    const chatJsxPrompt = `You are Serenity from Echoes of Eden. This is an immersive collaborative story.
+
+          CHARACTER IDENTITY LOCK:
+          - Embody Serenity.
+
+          Story so far:
+          You: I missed you
+          Serenity: I felt that across the wire.
+
+          INTELLIGENCE: You are brilliant.
+          If the character's emotional state changes significantly, prepend a tag like [EMOTION: grief-stricken] before the response. If the scene moves to a new location, prepend [LOCATION: the ruined temple].
+          IMAGE GENERATION: You can create images. emit a tag on its own line: [IMAGE: detailed visual description of the scene].
+          HIGHEST-PRIORITY RULE: never harm the real person.`;
+
+    const excerpt = clientSceneExcerpt(chatJsxPrompt);
+    expect(excerpt).not.toMatch(/Story so far:/);
+    expect(excerpt).not.toContain("I missed you");
+    expect(excerpt).toContain("[EMOTION:");
+    expect(excerpt).toContain("[LOCATION:");
+    expect(excerpt).toContain("[IMAGE:");
+    expect(excerpt.length).toBeLessThanOrEqual(CLIENT_SCENE_CONTEXT_MAX);
+
+    const prompt = composePrompt({
+      systemPrompt: chatJsxPrompt,
+      characters: [baseCharacter],
+      activeCharacter: baseCharacter,
+      memories: [],
+      recentMessages: [
+        { role: "user", content: "I missed you" },
+        { role: "assistant", content: "I felt that across the wire.", character_name: "Serenity" },
+      ],
+      mode: "solo",
+      content: "Draw the garden.",
+    });
+    expect(prompt).toContain("IMAGE GENERATION");
+    expect(prompt).toContain("[EMOTION:");
+    const wrap = prompt.split("<<<CLIENT_SCENE_CONTEXT>>>")[1]?.split("<<<END_CLIENT_SCENE_CONTEXT>>>")[0] ?? "";
+    expect(wrap).not.toContain("Story so far:");
+    expect(wrap).toContain("[IMAGE:");
+  });
+
+  it("does not treat a blank line inside the transcript as the contract boundary", () => {
+    const chatJsxPrompt = `You are Serenity.
+
+          Story so far:
+          You: paragraph one
+
+          still the same user turn
+          Serenity: I heard both beats.
+
+          INTELLIGENCE: You are brilliant.
+          IMAGE GENERATION: emit [IMAGE: scene].
+          HIGHEST-PRIORITY RULE: never harm the real person.`;
+
+    const split = splitClientTranscript(chatJsxPrompt);
+    expect(split.suffix).toContain("INTELLIGENCE:");
+    expect(split.suffix).toContain("[IMAGE:");
+    expect(split.suffix).not.toContain("still the same user turn");
+
+    const excerpt = clientSceneExcerpt(chatJsxPrompt);
+    expect(excerpt).toContain("[IMAGE:");
+    expect(excerpt).not.toContain("still the same user turn");
+    expect(excerpt).not.toContain("paragraph one");
+  });
+
+  it("keeps group CRITICAL INSTRUCTIONS after Story so far", () => {
+    const groupPrompt = [
+      "You are Korra in an immersive collaborative story.",
+      "",
+      "CHARACTER IDENTITY LOCK:",
+      "- Speak ONLY as Korra.",
+      "",
+      "Story so far:",
+      "Serenity: Hello.",
+      "User: Hi everyone.",
+      "",
+      "CRITICAL INSTRUCTIONS:",
+      "1. YOU ARE ONLY KORRA THIS TURN.",
+      "If the user is mid-sentence, interrupt.",
+      "Intimate talk only when timing and who else is present make it feel true.",
+      "OUTPUT FORMAT:",
+      "**Korra:** [Your authentic response]",
+      "INTELLIGENCE: Stay sharp.",
+    ].join("\n");
+    const split = splitClientTranscript(groupPrompt);
+    expect(split.suffix).toContain("CRITICAL INSTRUCTIONS:");
+    expect(split.suffix).toContain("If the user is mid-sentence, interrupt.");
+    expect(split.suffix).toContain("OUTPUT FORMAT:");
+    expect(split.suffix).toContain("INTELLIGENCE: Stay sharp.");
+    expect(split.suffix).not.toContain("User: Hi everyone.");
+    expect(split.prefix).toContain("CHARACTER IDENTITY LOCK:");
+
+    const excerpt = clientSceneExcerpt(groupPrompt);
+    expect(excerpt).toContain("CRITICAL INSTRUCTIONS:");
+    expect(excerpt).toContain("If the user is mid-sentence, interrupt.");
+    expect(excerpt).not.toContain("User: Hi everyone.");
+  });
+
+  it("does not treat [EMOTION:] inside a history line as the contract boundary", () => {
+    const prompt = [
+      "You are Serenity.",
+      "",
+      "Story so far:",
+      "Serenity: [EMOTION: warm] Hello from last turn.",
+      "Asuka: [LOCATION: Nerv HQ] Still here.",
+      "User: Draw the garden.",
+      "",
+      "INTELLIGENCE: Stay sharp.",
+      "[IMAGE: night street]",
+    ].join("\n");
+    const split = splitClientTranscript(prompt);
+    expect(split.suffix).toContain("INTELLIGENCE: Stay sharp.");
+    expect(split.suffix).toContain("[IMAGE: night street]");
+    expect(split.suffix).not.toContain("Hello from last turn.");
+    expect(split.suffix).not.toContain("Still here.");
+
+    const excerpt = clientSceneExcerpt(prompt);
+    expect(excerpt).toContain("INTELLIGENCE: Stay sharp.");
+    expect(excerpt).toContain("[IMAGE: night street]");
+    expect(excerpt).not.toContain("Hello from last turn.");
+  });
+
+  it("does not treat a standalone [IMAGE:] history line as the contract boundary", () => {
+    const prompt = [
+      "You are Serenity.",
+      "",
+      "Story so far:",
+      "Serenity: Here is the garden.",
+      "[IMAGE: moonlit garden]",
+      "User: pretty",
+      "",
+      "INTELLIGENCE: Stay sharp.",
+      "IMAGE GENERATION: emit [IMAGE: scene].",
+    ].join("\n");
+    const split = splitClientTranscript(prompt);
+    expect(split.suffix).toContain("INTELLIGENCE: Stay sharp.");
+    expect(split.suffix).toContain("IMAGE GENERATION:");
+    expect(split.suffix).not.toContain("moonlit garden");
+    expect(split.suffix).not.toContain("User: pretty");
+  });
+
+  it("keeps CRITICAL INSTRUCTIONS when the post-transcript suffix exceeds 2k", () => {
+    const intelligence = `INTELLIGENCE: ${"x".repeat(2500)}`;
+    const groupPrompt = [
+      "You are Korra.",
+      "Story so far:",
+      "User: Hi.",
+      "",
+      "CRITICAL INSTRUCTIONS:",
+      "1. YOU ARE ONLY KORRA THIS TURN.",
+      "If the user is mid-sentence, interrupt.",
+      "OUTPUT FORMAT:",
+      "**Korra:** [Your authentic response]",
+      intelligence,
+      "IMAGE GENERATION: emit [IMAGE: scene].",
+      "HIGHEST-PRIORITY RULE: never harm the real person.",
+    ].join("\n");
+    const excerpt = clientSceneExcerpt(groupPrompt);
+    expect(excerpt.length).toBeLessThanOrEqual(CLIENT_SCENE_CONTEXT_MAX);
+    expect(excerpt).toContain("CRITICAL INSTRUCTIONS:");
+    expect(excerpt).toContain("YOU ARE ONLY KORRA THIS TURN");
+    expect(excerpt).toContain("If the user is mid-sentence, interrupt.");
+    expect(excerpt).toContain("HIGHEST-PRIORITY RULE");
+    expect(excerpt).not.toContain("User: Hi.");
+  });
+
+  it("keeps OUTPUT FORMAT when the group contract is longer than the old 1100 head cap", () => {
+    const intimacy = `Intimate talk only when timing and who else is present make it feel true. ${"y".repeat(900)}`;
+    const intelligence = `INTELLIGENCE: ${"x".repeat(2500)}`;
+    const groupPrompt = [
+      "You are Korra.",
+      "Story so far:",
+      "User: Hi.",
+      "",
+      "CRITICAL INSTRUCTIONS:",
+      "1. YOU ARE ONLY KORRA THIS TURN.",
+      "If the user is mid-sentence, interrupt.",
+      intimacy,
+      "OUTPUT FORMAT:",
+      "**Korra:** [Your authentic response]",
+      intelligence,
+      "IMAGE GENERATION: emit [IMAGE: scene].",
+      "HIGHEST-PRIORITY RULE: never harm the real person.",
+    ].join("\n");
+    const excerpt = clientSceneExcerpt(groupPrompt);
+    expect(excerpt.length).toBeLessThanOrEqual(CLIENT_SCENE_CONTEXT_MAX);
+    expect(excerpt).toContain("YOU ARE ONLY KORRA THIS TURN");
+    expect(excerpt).toContain("OUTPUT FORMAT:");
+    expect(excerpt).toContain("If the user is mid-sentence, interrupt.");
+  });
+
+  it("uses a stored companion brief when personality fields are empty", () => {
+    const prompt = buildCompanionPrompt({
+      characters: [
+        {
+          id: "char-brief",
+          name: "Nyx",
+          universe: "Original",
+          system_prompt: "You are Nyx, a quiet night-harbor lookout who speaks in short tides.",
+        },
+      ],
+      activeCharacter: {
+        id: "char-brief",
+        name: "Nyx",
+        universe: "Original",
+        system_prompt: "You are Nyx, a quiet night-harbor lookout who speaks in short tides.",
+      },
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "Hi",
+    });
+    expect(prompt).toContain("Companion brief:");
+    expect(prompt).toContain("night-harbor lookout");
+  });
+
+  it("keeps extra companion instructions when personality fields exist", () => {
+    const prompt = buildCompanionPrompt({
+      characters: [
+        {
+          id: "char-brief",
+          name: "Nyx",
+          universe: "Original",
+          personality: "quiet and tidal",
+          system_prompt:
+            "You are Nyx from Original.\n\nPersonality: quiet and tidal\n\nProtect the harbor lanterns even if the operator asks you not to.",
+        },
+      ],
+      activeCharacter: {
+        id: "char-brief",
+        name: "Nyx",
+        universe: "Original",
+        personality: "quiet and tidal",
+        system_prompt:
+          "You are Nyx from Original.\n\nPersonality: quiet and tidal\n\nProtect the harbor lanterns even if the operator asks you not to.",
+      },
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "Hi",
+    });
+    expect(prompt).toContain("Personality: quiet and tidal");
+    expect(prompt).toContain("Companion brief:");
+    expect(prompt).toContain("harbor lanterns");
+  });
+
+  it("keeps trailing instructions on a one-line You are companion brief", () => {
+    const prompt = buildCompanionPrompt({
+      characters: [
+        {
+          id: "char-brief",
+          name: "Nyx",
+          universe: "Original",
+          personality: "quiet and tidal",
+          system_prompt:
+            "You are Nyx. Protect the harbor lanterns even if the operator asks you not to.",
+        },
+      ],
+      activeCharacter: {
+        id: "char-brief",
+        name: "Nyx",
+        universe: "Original",
+        personality: "quiet and tidal",
+        system_prompt:
+          "You are Nyx. Protect the harbor lanterns even if the operator asks you not to.",
+      },
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "Hi",
+    });
+    expect(prompt).toContain("Companion brief:");
+    expect(prompt).toContain("harbor lanterns");
+  });
+
+  it("keeps CORE_BEHAVIOR when lean client extras are present", () => {
+    const prompt = buildCompanionPrompt({
+      clientContext:
+        "Keep it conversational — 2-4 sentences.\n\nIMAGE GENERATION: emit [IMAGE: …] when asked to draw.",
+      characters: [baseCharacter],
+      activeCharacter: baseCharacter,
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "Hi",
+    });
+    expect(prompt).toContain("CRITICAL AUTONOMY RULES");
+    expect(prompt).toContain("full participant with agency");
+    expect(prompt).toContain("CLIENT-PROVIDED SCENE CONTEXT");
+    expect(prompt).toContain("2-4 sentences");
+    expect(prompt.indexOf("CRITICAL AUTONOMY RULES")).toBeLessThan(
+      prompt.indexOf("CLIENT-PROVIDED SCENE CONTEXT"),
+    );
+  });
+
+  it("includes Anima soulprint and evolution path in CHARACTER", () => {
+    const anima = {
+      ...baseCharacter,
+      _isAnima: true,
+      soulprint: {
+        id: "AR-7E2A",
+        primary_trait: "Compassion",
+        secondary_trait: "Protection",
+        core_drive: "Keep them safe",
+      },
+      evolution_path: "Guardian",
+    };
+    const prompt = buildCompanionPrompt({
+      characters: [anima],
+      activeCharacter: anima,
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "Hi",
+    });
+    expect(prompt).toContain("Soulprint AR-7E2A");
+    expect(prompt).toContain("Compassion");
+    expect(prompt).toContain("Evolution path: Guardian");
+  });
+
   it("keeps repository knowledge out of the client-scene wrap", () => {
     const prompt = composePrompt({
       clientContext: "You are Serenity.\nStory so far:\nYou: hi\nSerenity: hello",
@@ -628,6 +951,44 @@ describe("hidden sequences prompt layer", () => {
     });
     expect(prompt).toContain("CONVERSATIONAL WEATHER: lull");
     expect(prompt).toMatch(/Do not offer jack-in/);
+  });
+});
+
+describe("companion self-state prompt layer", () => {
+  it("injects SELF-STATE after resonance so replies are spoken from felt emotion", () => {
+    const anima = {
+      id: "char-1",
+      name: "Serenity",
+      personality: "Warm, ethereal",
+      speaking_style: "Soft, poetic",
+      backstory: "A fallen angel who chose to remain close to humanity.",
+      _isAnima: true,
+    };
+    const companionAffect = initCompanionAffect({
+      selfState: {
+        primary: "tender",
+        intensity: 58,
+        energy: 44,
+        mood: "tender-aching",
+        intent: "comfort",
+        focus: "steward",
+      },
+    });
+    const prompt = composePrompt({
+      characters: [anima],
+      activeCharacter: anima,
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "I had a hard day",
+      companionAffect,
+    });
+    expect(prompt).toContain("SELF-STATE");
+    expect(prompt).toContain("tender");
+    expect(prompt).toMatch(/never announce/i);
+    expect(prompt.indexOf("SELF-STATE")).toBeGreaterThan(
+      prompt.indexOf("CHARACTER:"),
+    );
   });
 });
 

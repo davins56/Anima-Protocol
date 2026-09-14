@@ -5,15 +5,28 @@
  * (or any companion transcripts) and it will normalize them alongside the
  * curated seed turns and Postgres exports. Per-file format is auto-detected:
  *
+ *  - Anima Settings backup (`anima-backup-*.json`) — ChatSession + ChatMessage
+ *    (+ Character / Anima / CharacterMemory). Defaults to Serenity + Fallen Angel.
  *  - TrainingExample JSON/JSONL — passed through as-is (id/source filled in
  *    if missing); malformed records are skipped
  *  - ShareGPT JSON: { conversations: [{ from: "human"|"gpt"|"system", value }], system? }
+ *  - ChatML JSON: { messages: [{ role, content }] }
  *  - Plain-text transcript: alternating "User: ..." / "<Character>: ..." lines
+ *
+ * Directories are walked recursively. README.md and dotfiles are skipped.
  */
 
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { ChatTurn, TrainingExample } from "./types";
+import { splitExampleByCharacters } from "./split";
+import {
+  fromAnimaBackup,
+  fromChatMl,
+  isAnimaBackup,
+  isChatMlShape,
+} from "./sources";
+import { characterNameFromSystem } from "./characters";
 
 export interface ImportLogsOptions {
   /**
@@ -24,6 +37,15 @@ export interface ImportLogsOptions {
    * character's own speech. Leave unset to keep the most-frequent speaker.
    */
   defaultCharacterName?: string;
+  /**
+   * Split imported conversations into one example per named companion.
+   * Anima Settings backups default to Serenity + Fallen Angel when this
+   * (and `defaultCharacterName`) is unset — pass `allCharacters: true` to
+   * keep every companion in the backup.
+   */
+  characterNames?: string[];
+  /** Do not default Anima backups to the Serenity / Fallen Angel filter. */
+  allCharacters?: boolean;
   /** Minimum non-system turns to keep an example (default 2). */
   minTurns?: number;
   tags?: string[];
@@ -68,7 +90,8 @@ function fromShareGpt(
   source: string,
   defaultCharacterName: string | undefined,
 ): TrainingExample {
-  const characterName = defaultCharacterName || "Companion";
+  const characterName =
+    defaultCharacterName || characterNameFromSystem(data.system) || "Companion";
   const conversation: ChatTurn[] = [];
   if (data.system?.trim()) conversation.push({ role: "system", content: data.system.trim() });
 
@@ -173,17 +196,43 @@ function fromTranscriptText(
   return { id, source, character: { name: characterName }, conversation };
 }
 
+function requestedNames(opts: ImportLogsOptions): string[] | undefined {
+  if (opts.characterNames?.length) return opts.characterNames;
+  if (opts.defaultCharacterName) return [opts.defaultCharacterName];
+  return undefined;
+}
+
+function applyCharacterSplit(
+  examples: TrainingExample[],
+  names: string[] | undefined,
+): TrainingExample[] {
+  if (!names?.length) return examples;
+  return examples.flatMap((ex) => splitExampleByCharacters(ex, names));
+}
+
 function normalizeParsed(
   parsed: unknown,
   id: string,
   source: string,
-  defaultCharacterName: string | undefined,
+  opts: ImportLogsOptions,
 ): TrainingExample[] {
+  if (isAnimaBackup(parsed)) {
+    return fromAnimaBackup(parsed, {
+      source,
+      defaultCharacterName: opts.defaultCharacterName,
+      characterNames: opts.characterNames,
+      allCharacters: opts.allCharacters,
+      minTurns: opts.minTurns,
+    });
+  }
   if (isTrainingExampleShape(parsed)) {
     return [{ ...parsed, id: parsed.id || id, source: parsed.source || source }];
   }
   if (isShareGptShape(parsed)) {
-    return [fromShareGpt(parsed, id, source, defaultCharacterName)];
+    return [fromShareGpt(parsed, id, source, opts.defaultCharacterName)];
+  }
+  if (isChatMlShape(parsed)) {
+    return [fromChatMl(parsed, id, source, opts.defaultCharacterName)];
   }
   return [];
 }
@@ -198,7 +247,8 @@ export async function importLogFile(
   const ext = path.extname(filePath).toLowerCase();
   const source = `import:${base}`;
   const minTurns = opts.minTurns ?? 2;
-  const results: TrainingExample[] = [];
+  let results: TrainingExample[] = [];
+  const names = requestedNames(opts);
 
   if (ext === ".jsonl") {
     let i = 0;
@@ -206,24 +256,35 @@ export async function importLogFile(
       if (!line.trim()) continue;
       i += 1;
       try {
-        results.push(...normalizeParsed(JSON.parse(line), `${base}-${i}`, source, opts.defaultCharacterName));
+        results.push(...normalizeParsed(JSON.parse(line), `${base}-${i}`, source, opts));
       } catch {
         console.warn(`[import] ${base}: skipping malformed JSONL line ${i}`);
       }
     }
+    results = applyCharacterSplit(results, names);
   } else if (ext === ".json") {
     try {
       const parsed = JSON.parse(raw);
-      const arr = Array.isArray(parsed) ? parsed : [parsed];
-      arr.forEach((item, i) => {
-        results.push(...normalizeParsed(item, `${base}-${i}`, source, opts.defaultCharacterName));
-      });
+      if (isAnimaBackup(parsed)) {
+        results.push(...normalizeParsed(parsed, base, source, opts));
+      } else {
+        const arr = Array.isArray(parsed) ? parsed : [parsed];
+        arr.forEach((item, i) => {
+          results.push(...normalizeParsed(item, `${base}-${i}`, source, opts));
+        });
+        results = applyCharacterSplit(results, names);
+      }
     } catch (err) {
       console.warn(`[import] skipping malformed JSON file ${base}: ${err instanceof Error ? err.message : err}`);
     }
   } else {
-    const example = fromTranscriptText(raw, base, source, opts.defaultCharacterName);
-    if (example) results.push(example);
+    if (names && names.length > 1) {
+      const example = fromTranscriptText(raw, base, source, undefined);
+      if (example) results.push(...splitExampleByCharacters(example, names));
+    } else {
+      const example = fromTranscriptText(raw, base, source, names?.[0] || opts.defaultCharacterName);
+      if (example) results.push(example);
+    }
   }
 
   return results
@@ -231,24 +292,41 @@ export async function importLogFile(
     .map((ex) => (opts.tags?.length ? { ...ex, tags: [...(ex.tags || []), ...opts.tags] } : ex));
 }
 
-/** Parse every supported file in a directory into TrainingExamples. Missing dir → []. */
-export async function importLogsDir(
-  dir: string,
-  opts: ImportLogsOptions = {},
-): Promise<TrainingExample[]> {
-  let entries: string[];
+const SKIP_DIR_NAMES = new Set(["node_modules", ".git", "checkpoints", "gguf"]);
+
+async function listSupportedFiles(dir: string): Promise<string[]> {
+  const out: string[] = [];
+  let entries;
   try {
-    entries = await readdir(dir);
+    entries = await readdir(dir, { withFileTypes: true });
   } catch (err) {
     if ((err as NodeJS.ErrnoException)?.code === "ENOENT") return [];
     throw err;
   }
+  for (const entry of [...entries].sort((a, b) => a.name.localeCompare(b.name))) {
+    if (entry.name.startsWith(".")) continue;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (SKIP_DIR_NAMES.has(entry.name)) continue;
+      out.push(...(await listSupportedFiles(full)));
+      continue;
+    }
+    if (entry.name.toLowerCase() === "readme.md") continue;
+    if (!SUPPORTED_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) continue;
+    out.push(full);
+  }
+  return out;
+}
 
+/** Parse every supported file in a directory (recursive) into TrainingExamples. Missing dir → []. */
+export async function importLogsDir(
+  dir: string,
+  opts: ImportLogsOptions = {},
+): Promise<TrainingExample[]> {
+  const files = await listSupportedFiles(dir);
   const examples: TrainingExample[] = [];
-  for (const entry of entries.sort()) {
-    if (entry.startsWith(".") || entry.toLowerCase() === "readme.md") continue;
-    if (!SUPPORTED_EXTENSIONS.has(path.extname(entry).toLowerCase())) continue;
-    examples.push(...(await importLogFile(path.join(dir, entry), opts)));
+  for (const file of files) {
+    examples.push(...(await importLogFile(file, opts)));
   }
   return examples;
 }

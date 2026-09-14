@@ -337,6 +337,7 @@ import {
   resetOpenRouterCreditFallbackForTests,
   resolveLocalModel,
   resolveOpenRouterModel,
+  honorCallerMaxTokens,
   chatCompletionHttpFailure,
 } from "../src/lib/llmFailover";
 
@@ -903,15 +904,15 @@ describe("getProviderChain", () => {
     delete process.env.ANIMA_OPENROUTER_FALLBACK;
   });
 
-  it("uses the custom LLM first and OpenRouter only as a connection hop when fallback is on", () => {
+  it("keeps chain [local] when customOnly even if OpenRouter fallback and key are set", () => {
     process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:8000/v1";
+    process.env.ANIMA_LLM_PROVIDER = "custom";
     process.env.OPENROUTER_API_KEY = "sk-or-test";
     process.env.ANIMA_OPENROUTER_FALLBACK = "true";
-    delete process.env.ANIMA_LLM_PROVIDER;
     expect(preferCustomLlmOnly()).toBe(true);
-    expect(getProviderChain()).toEqual(["local", "openrouter"]);
-    expect(getProviderChain()[0]).toBe("local");
     expect(allowOpenRouterFallback()).toBe(true);
+    expect(getProviderChain()).toEqual(["local"]);
+    expect(getProviderChain()).not.toContain("openrouter");
   });
 
   it("keeps local-only when ANIMA_LLM_PROVIDER is unset (durable default)", () => {
@@ -968,6 +969,7 @@ describe("getProviderChain", () => {
     process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
     process.env.OPENROUTER_API_KEY = "sk-or-test";
     process.env.ANIMA_OPENROUTER_FREE = "true";
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
     expect(getProviderChain()).toEqual(["local"]);
     expect(isOpenRouterAlreadyFreeTier()).toBe(true);
     expect(usesFreeTierOpenBudget()).toBe(false);
@@ -994,17 +996,18 @@ describe("getProviderChain", () => {
     expect(getProviderChain()).toEqual([]);
   });
 
-  it("appends OpenRouter after the custom Anima LLM when ANIMA_OPENROUTER_FALLBACK is truthy", () => {
+  it("does not append OpenRouter after a usable custom host even when ANIMA_OPENROUTER_FALLBACK is truthy", () => {
     process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    process.env.ANIMA_LLM_PROVIDER = "custom";
     process.env.OPENROUTER_API_KEY = "sk-or-test";
     process.env.ANIMA_OPENROUTER_FALLBACK = "true";
     process.env.ANIMA_OPENROUTER_FREE = "true";
     setAiBinding({
       run: async () => ({ response: "ok" }),
     });
+    expect(preferCustomLlmOnly()).toBe(true);
     expect(allowOpenRouterFallback()).toBe(true);
-    expect(getProviderChain()).toEqual(["local", "openrouter"]);
-    expect(getProviderChain()[0]).toBe("local");
+    expect(getProviderChain()).toEqual(["local"]);
   });
 
   it("appends OpenRouter after Workers AI when fallback is on and no custom host is set", () => {
@@ -1182,8 +1185,9 @@ describe("getLlmRoutingStatus", () => {
     expect(status.customOnly).toBe(true);
   });
 
-  it("reports openRouterFallback after the custom Anima LLM when fallback is on", () => {
+  it("reports customOnly local-only chain even when OpenRouter fallback flag and key are set", () => {
     process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    process.env.ANIMA_LLM_PROVIDER = "custom";
     process.env.OPENROUTER_API_KEY = "sk-or-test";
     process.env.ANIMA_OPENROUTER_FALLBACK = "true";
     process.env.ANIMA_OPENROUTER_FREE = "true";
@@ -1196,11 +1200,12 @@ describe("getLlmRoutingStatus", () => {
     expect(status.brand).toBe("anima");
     expect(status.customOnly).toBe(true);
     expect(status.openRouterFallback).toBe(true);
-    expect(status.chain).toEqual(["local", "openrouter"]);
+    expect(status.chain).toEqual(["local"]);
+    expect(status.openrouter.configured).toBe(true);
     expect(status.openrouter.isFreeTier).toBe(true);
     expect(status.note).toMatch(/Self-hosted Anima LLM/i);
-    expect(status.note).toMatch(/fallback after local connection failure/i);
-    expect(status.note).toMatch(/minimax\/minimax-m2\.7:free/i);
+    expect(status.note).toMatch(/ANIMA_OPENROUTER_FALLBACK is on but unused/i);
+    expect(status.note).not.toMatch(/fallback after local connection failure/i);
   });
 });
 
@@ -1254,6 +1259,26 @@ describe("createChatStreamWithFailover", () => {
       stream: true,
       temperature: 0.85,
     });
+  });
+
+  it("honors the caller max_tokens cap on the local stream", async () => {
+    createMock.mockResolvedValueOnce(fakeStream("anima"));
+    await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 1024,
+      messages: [{ role: "user", content: "hello" }],
+    });
+    expect(createMock.mock.calls[0]?.[0]).toMatchObject({
+      stream: true,
+      max_tokens: 1024,
+    });
+  });
+
+  it("clamps a fractional caller max_tokens to at least 1", () => {
+    expect(honorCallerMaxTokens(0.7, 8192)).toBe(1);
+    expect(honorCallerMaxTokens(1024.9, 8192)).toBe(1024);
+    expect(honorCallerMaxTokens(undefined, 8192)).toBe(8192);
   });
 
   it("throws a local-only setup error when the self-hosted LLM is missing", async () => {
@@ -1555,9 +1580,10 @@ describe("createChatStreamWithFailover", () => {
     expect(message).toMatch(/does not fall through to OpenRouter/i);
   });
 
-  it("hops to OpenRouter when the custom Anima LLM host is unreachable and fallback is on", async () => {
+  it("does not hop to OpenRouter when the custom Anima LLM host is unreachable even if fallback is on", async () => {
     process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
     process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
+    process.env.ANIMA_LLM_PROVIDER = "custom";
     process.env.OPENROUTER_API_KEY = "sk-or-test";
     process.env.ANIMA_OPENROUTER_FALLBACK = "true";
     process.env.ANIMA_OPENROUTER_FREE = "true";
@@ -1566,15 +1592,15 @@ describe("createChatStreamWithFailover", () => {
     });
     createMock.mockRejectedValueOnce(sdkErr);
     createMock.mockResolvedValueOnce(fakeStream("openrouter-after-local"));
-    const result = await createChatStreamWithFailover({
-      tier: "standard",
-      model: "anima-chat",
-      maxTokens: 32,
-      messages: [{ role: "user", content: "hello" }],
-    });
-    expect(result.provider).toBe("openrouter");
-    expect(result.failedOver).toBe(true);
-    expect(createMock).toHaveBeenCalled();
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 32,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    ).rejects.toThrow(/Anima LLM connection failed/i);
+    expect(createMock).toHaveBeenCalledTimes(1);
   });
 
   it("streams from the Anima LLM even when Workers AI is bound", async () => {
@@ -1848,6 +1874,19 @@ describe("createChatCompletionWithFailover", () => {
     expect(result.content).toBe("anima reply");
     expect(result.provider).toBe("local");
     expect(result.brand).toBe("anima");
+    expect(createMock.mock.calls[0]?.[0]).toMatchObject({ max_tokens: 1024 });
+  });
+
+  it("honors the caller maxTokens cap on the local completion", async () => {
+    createMock.mockResolvedValueOnce(fakeCompletion("anima reply"));
+    await createChatCompletionWithFailover({
+      tier: "standard",
+      maxTokens: 1024,
+      messages: [{ role: "system", content: "You are Serenity." }],
+    });
+    expect(createMock.mock.calls[0]?.[0]).toMatchObject({
+      max_tokens: 1024,
+    });
   });
 
   it("refuses OpenRouter and MiniMax for non-streaming completions when local is unset", async () => {
@@ -1920,7 +1959,8 @@ describe("createChatCompletionWithFailover", () => {
     expect(createMock).toHaveBeenCalledTimes(1);
   });
 
-  it("hops to OpenRouter when local times out and fallback is enabled", async () => {
+  it("does not hop to OpenRouter when local times out even if fallback is enabled", async () => {
+    process.env.ANIMA_LLM_PROVIDER = "custom";
     process.env.ANIMA_OPENROUTER_FALLBACK = "true";
     process.env.OPENROUTER_API_KEY = "sk-or-test";
     process.env.ANIMA_OPENROUTER_FREE = "true";
@@ -1928,15 +1968,14 @@ describe("createChatCompletionWithFailover", () => {
       name: "APIUserAbortError",
     });
     createMock.mockRejectedValueOnce(abortErr).mockResolvedValueOnce(fakeCompletion("openrouter reply"));
-    const result = await createChatCompletionWithFailover({
-      tier: "standard",
-      maxTokens: 256,
-      messages: [{ role: "user", content: "hello" }],
-    });
-    expect(result.content).toBe("openrouter reply");
-    expect(result.provider).toBe("openrouter");
-    expect(result.failedOver).toBe(true);
-    expect(createMock).toHaveBeenCalledTimes(2);
+    await expect(
+      createChatCompletionWithFailover({
+        tier: "standard",
+        maxTokens: 256,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    ).rejects.toMatchObject({ name: "APIUserAbortError" });
+    expect(createMock).toHaveBeenCalledTimes(1);
   });
 
   it("surfaces a local timeout as-is when there is no next provider", async () => {
@@ -2050,6 +2089,18 @@ describe("probeLlmProviders", () => {
     });
     expect(createMock).toHaveBeenCalledTimes(1);
     expect(run).not.toHaveBeenCalled();
+  });
+
+  it("does not probe OpenRouter when customOnly even if fallback and key are set", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    process.env.ANIMA_LLM_PROVIDER = "custom";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    createMock.mockResolvedValueOnce(fakeCompletion("ok"));
+    const probes = await probeLlmProviders();
+    expect(probes.map((p) => p.provider)).toEqual(["local"]);
+    expect(createMock).toHaveBeenCalledTimes(1);
   });
 
   it("classifies a Workers AI 4006 probe as quota with the free-quota hint", async () => {

@@ -67,10 +67,13 @@ scripts/llm/gguf/
 scripts/llm/output/*.jsonl
 !scripts/llm/output/dataset_info.json
 scripts/llm/output/eval-report.*
+scripts/llm/finetune/__pycache__/
 
 # Raw chat logs dropped in for fine-tune import — personal, never committed
 scripts/llm/data/raw/*
 !scripts/llm/data/raw/README.md
+scripts/llm/data/processed/*
+!scripts/llm/data/processed/README.md
 
 # OS and editor state
 .DS_Store

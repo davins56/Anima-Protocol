@@ -12,6 +12,7 @@ Install (CUDA machine, ~12-16 GB VRAM for QLoRA):
 Prepare data first:
   pnpm llm:prepare-dpo
   # -> scripts/llm/output/dpo-pairs.jsonl ({prompt, chosen, rejected, system} per line)
+  # After SFT. See docs/llm-build.md (CUDA host checklist).
 
 Run (defaults to the merged SFT adapter as the base):
   python scripts/llm/finetune/unsloth_dpo.py \\
@@ -113,6 +114,7 @@ def main() -> None:
 
     trainer = DPOTrainer(
         model=model,
+        ref_model=None,
         processing_class=tokenizer,
         train_dataset=dataset,
         args=DPOConfig(

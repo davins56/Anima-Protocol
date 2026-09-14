@@ -89,12 +89,19 @@ documentation.
 
 ## Still manual (GPU / data ops)
 
+- [x] Phase 1 (data + pipeline readiness): Settings-backup ingest, Serenity /
+      Fallen Angel filter + speaker split, committed samples, `pnpm llm:ingest` /
+      `pnpm llm:dataset`, restored `docs/llm-build.md` + CUDA pre-flight
+      (`pnpm llm:gpu-check`). Real personal logs are still gitignored — Dàvīn
+      drops an export and runs one command.
 - [ ] Clean and import highest-quality Serenity / Fallen Angel multi-turn logs
   (the pipeline above now auto-drops junk/dupes and reports stats, but curating
   which raw logs are worth including is still a human judgment call)
 - [ ] Run Unsloth or LLaMA-Factory QLoRA on a CUDA box
+  (`pnpm llm:gpu-check` then `unsloth_sft.py` — see `docs/llm-build.md`)
 - [ ] Run the DPO preference stage (`unsloth_dpo.py`, tooling now scaffolded above)
 - [ ] Quantize to Q4_K_M / Q5 and validate on internal evals
+  (`scripts/llm/finetune/quantize.sh` + `pnpm llm:eval`)
 - [x] Step 21: Deleted the cloud failover/ensemble chain entirely — `llmEnsemble.ts`,
       `geminiNative.ts`, and every Gemini/Groq/Kimi/xAI/OpenAI/Gateway chat code
       path, plus the `ANIMA_LLM_PROVIDER` mode switch and `ANIMA_ALLOW_CLOUD_LLM`

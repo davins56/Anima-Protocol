@@ -25,15 +25,18 @@ import {
 } from "./registry";
 import {
   cleanExamples,
+  characterSlug,
   dedupeExamples,
   hasDenylistedAssistantContent,
   listPreferenceExamples,
   listSeedExamples,
+  parseCharacterList,
   preferencesToJsonl,
   splitExamples,
   toJsonl,
   type ChatTurn,
   type ExportFormat,
+  type ImportLogsOptions,
   type TrainingExample,
 } from "./dataset";
 
@@ -52,11 +55,19 @@ Commands:
   list-open-models       Llama / Qwen / Mistral / Gemma / DeepSeek model ids
   export-turns [--out path] [--user <clerkUserId>] [--limit N] [--min-turns N]
                [--no-clean] [--min-assistant-chars N]
-  import-logs [--dir path] [--character name] [--tags a,b] [--out path] [--format …]
+  import-logs [--dir path] [--character name] [--characters a,b] [--all-characters]
+               [--tags a,b] [--out path] [--format …]
+  ingest [--from path] [--dir dest] [--characters a,b] [--all-characters]
+               [--tags a,b] [--dry-run]
+               Drop a Settings backup / transcript folder into scripts/llm/data/raw/
+  dataset [--from path] [--rehearse] [--characters a,b] [--val-split 0.05]
+               Ingest (optional) + prepare-finetune + prepare-dpo + dataset-stats
   prepare-finetune [--format sharegpt|chatml|alpaca|messages] [--out path] [--tags a,b]
                [--with-db] [--user <clerkUserId>] [--no-clean] [--no-dedupe]
                [--min-assistant-chars N] [--val-split 0.0-0.5]
-               [--with-logs dir] [--character name]
+               [--with-logs dir] [--no-logs] [--character name] [--characters a,b]
+               [--all-characters]
+               Raw logs in scripts/llm/data/raw/ are merged automatically unless --no-logs.
   dataset-stats [--file path]   Quality/shape report on an exported JSONL
   prepare-dpo [--out path] [--tags a,b]   Preference pairs for DPO/ORPO/SimPO
   chat [prompt…]          One-shot chat against local Anima LLM (Ollama/vLLM)
@@ -70,6 +81,8 @@ default. Pass --no-clean / --no-dedupe to skip either step.
 Examples:
   pnpm llm:up                               # bootstrap open-weight anima-chat
   pnpm llm:chat -- "Who are you?"
+  pnpm llm:ingest -- --from ~/Downloads/anima-backup.json
+  pnpm llm:dataset -- --rehearse            # samples → JSONL (no GPU)
   pnpm --filter @workspace/llm run cli -- prepare-finetune --format sharegpt
 `);
   process.exit(1);
@@ -93,6 +106,37 @@ function parseFormat(raw: string | undefined): ExportFormat {
     throw new Error(`Unsupported --format "${format}" (expected one of: ${SUPPORTED_FORMATS.join(", ")})`);
   }
   return format as ExportFormat;
+}
+
+const DEFAULT_RAW_DIR = path.join("scripts", "llm", "data", "raw");
+const DEFAULT_SAMPLES_DIR = path.join("scripts", "llm", "data", "samples");
+
+function importOptsFromArgs(args: string[]): ImportLogsOptions {
+  const allCharacters = hasFlag(args, "--all-characters");
+  const names = parseCharacterList(argValue(args, "--characters"));
+  const character = argValue(args, "--character");
+  const tagsRaw = argValue(args, "--tags");
+  const tags = tagsRaw ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean) : undefined;
+  return {
+    defaultCharacterName: character,
+    characterNames: names,
+    allCharacters,
+    tags,
+    minTurns: Number(argValue(args, "--min-turns") || 2),
+  };
+}
+
+function describeExamples(examples: TrainingExample[]): void {
+  const byCharacter = new Map<string, number>();
+  for (const ex of examples) {
+    const name = ex.character.name || "Companion";
+    byCharacter.set(name, (byCharacter.get(name) || 0) + 1);
+  }
+  const summary = [...byCharacter.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, n]) => `${name}=${n}`)
+    .join(", ");
+  if (summary) console.log(`  by character: ${summary}`);
 }
 
 async function cmdListModels(args: string[]): Promise<void> {
@@ -156,6 +200,12 @@ async function writeSplitJsonl(
 ): Promise<void> {
   await mkdir(path.dirname(out), { recursive: true });
   const { train, val } = splitExamples(examples, valRatio);
+  // Tiny sets can hash into "all train" at 5%. If the operator asked for a
+  // held-out file, keep at least one example there so Unsloth --eval-data
+  // is never an empty JSONL.
+  if (valRatio > 0 && val.length === 0 && train.length > 1) {
+    val.push(train.pop()!);
+  }
   await writeFile(out, toJsonl(train, format), "utf8");
   console.log(`Wrote ${train.length} train example(s) → ${out} (${format})`);
   if (valRatio > 0) {
@@ -177,15 +227,17 @@ async function cmdPrepareFinetune(args: string[]): Promise<void> {
 
   let examples: TrainingExample[] = listSeedExamples(tags);
 
-  // Optionally merge your own cleaned logs (Serenity / Fallen Angel arcs, …).
-  const logsDir = argValue(args, "--with-logs");
-  if (logsDir) {
+  // Merge dropped logs (Serenity / Fallen Angel arcs, Settings backups, …).
+  // Default: scripts/llm/data/raw/ when it has anything besides README.md.
+  const noLogs = hasFlag(args, "--no-logs");
+  const logsDir = argValue(args, "--with-logs") || (noLogs ? undefined : DEFAULT_RAW_DIR);
+  if (logsDir && !noLogs) {
     const { importLogsDir } = await import("./dataset/import");
-    const fromLogs = await importLogsDir(resolveOutPath(logsDir), {
-      tags,
-      defaultCharacterName: argValue(args, "--character"),
-    });
-    console.log(`Imported ${fromLogs.length} examples from ${logsDir}`);
+    const fromLogs = await importLogsDir(resolveOutPath(logsDir), importOptsFromArgs(args));
+    if (fromLogs.length || argValue(args, "--with-logs")) {
+      console.log(`Imported ${fromLogs.length} examples from ${logsDir}`);
+      describeExamples(fromLogs);
+    }
     examples = [...examples, ...fromLogs];
   }
 
@@ -321,21 +373,22 @@ async function cmdDatasetStats(args: string[]): Promise<void> {
 }
 
 async function cmdImportLogs(args: string[]): Promise<void> {
-  const dir = resolveOutPath(argValue(args, "--dir") || path.join("scripts", "llm", "data", "raw"));
+  const dir = resolveOutPath(argValue(args, "--dir") || DEFAULT_RAW_DIR);
   const { importLogsDir } = await import("./dataset/import");
-  const character = argValue(args, "--character");
-  const tagsRaw = argValue(args, "--tags");
-  const tags = tagsRaw ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean) : undefined;
+  const opts = importOptsFromArgs(args);
 
-  const examples = await importLogsDir(dir, { defaultCharacterName: character, tags });
+  const examples = await importLogsDir(dir, opts);
   console.log(`Parsed ${examples.length} training example(s) from ${dir}`);
+  describeExamples(examples);
   for (const ex of examples) {
     const turns = ex.conversation.filter((t) => t.role !== "system").length;
     console.log(`- ${ex.id} [${ex.character.name}] turns=${turns}`);
   }
   if (!examples.length) {
     console.log(
-      `No logs found. Drop .json (TrainingExample or ShareGPT) / .jsonl / .txt transcripts into ${dir} and re-run.`,
+      `No logs found. Drop an Anima Settings backup (.json), ShareGPT/ChatML JSON(L), or .txt transcripts into ${dir} and re-run.\n` +
+        `Or: pnpm llm:ingest -- --from ~/Downloads/anima-backup.json\n` +
+        `Rehearse with committed fixtures: pnpm llm:dataset -- --rehearse`,
     );
     return;
   }
@@ -348,8 +401,99 @@ async function cmdImportLogs(args: string[]): Promise<void> {
     await writeFile(outPath, toJsonl(examples, format), "utf8");
     console.log(`Wrote ${examples.length} examples → ${outPath} (${format})`);
   } else {
-    console.log(`Re-run with --out <path> to write these to JSONL, or use prepare-finetune --with-logs ${dir}.`);
+    console.log(`Re-run with --out <path> to write these to JSONL, or use prepare-finetune (raw logs merge by default).`);
   }
+}
+
+async function cmdIngest(args: string[]): Promise<TrainingExample[]> {
+  const fromRaw = hasFlag(args, "--rehearse")
+    ? DEFAULT_SAMPLES_DIR
+    : argValue(args, "--from");
+  if (!fromRaw) {
+    throw new Error(
+      "ingest requires --from <file-or-dir> (Settings backup or transcript folder).\n" +
+        "Rehearse with fixtures: pnpm llm:ingest -- --rehearse",
+    );
+  }
+  const fromPath = resolveOutPath(fromRaw);
+  const destDir = resolveOutPath(argValue(args, "--dir") || DEFAULT_RAW_DIR);
+  const opts = importOptsFromArgs(args);
+  const { importLogFile, importLogsDir } = await import("./dataset/import");
+
+  let fromIsFile = false;
+  try {
+    const { stat } = await import("node:fs/promises");
+    fromIsFile = (await stat(fromPath)).isFile();
+  } catch {
+    throw new Error(`ingest --from not found: ${fromPath}`);
+  }
+
+  const examples = fromIsFile
+    ? await importLogFile(fromPath, opts)
+    : await importLogsDir(fromPath, opts);
+
+  console.log(`Ingested ${examples.length} training example(s) from ${fromPath}`);
+  describeExamples(examples);
+  if (!examples.length) {
+    console.log(
+      "Nothing to stage. Check that the file is an Anima backup, ShareGPT/ChatML JSON, or a speaker transcript, and that --characters matches.",
+    );
+    return examples;
+  }
+
+  if (hasFlag(args, "--dry-run")) {
+    for (const ex of examples) {
+      const turns = ex.conversation.filter((t) => t.role !== "system").length;
+      console.log(`- ${ex.id} [${ex.character.name}] turns=${turns} source=${ex.source}`);
+    }
+    console.log("Dry run — not writing to scripts/llm/data/raw/");
+    return examples;
+  }
+
+  await mkdir(destDir, { recursive: true });
+  const stem = path.basename(fromPath, path.extname(fromPath)).replace(/[^\w.-]+/g, "-") || "import";
+  const outPath = path.join(destDir, `imported-${stem}.jsonl`);
+  const jsonl = examples.map((ex) => JSON.stringify(ex)).join("\n").concat("\n");
+  await writeFile(outPath, jsonl, "utf8");
+  const slugs = [...new Set(examples.map((ex) => characterSlug(ex.character.name)))];
+  console.log(`Wrote ${examples.length} TrainingExample row(s) → ${outPath}`);
+  console.log(`Characters staged: ${slugs.join(", ")}`);
+  console.log("Next: pnpm llm:prepare-finetune -- --val-split 0.05");
+  return examples;
+}
+
+async function cmdDataset(args: string[]): Promise<void> {
+  const shouldIngest = Boolean(argValue(args, "--from") || hasFlag(args, "--rehearse"));
+  if (shouldIngest) {
+    await cmdIngest(args);
+  } else {
+    console.log(`No --from / --rehearse — using logs already in ${DEFAULT_RAW_DIR} (if any) plus seed turns.`);
+  }
+  const valSplit = argValue(args, "--val-split") || "0.05";
+  const rest = args.filter((a, i, all) => {
+    if (a === "--from" || a === "--rehearse" || a === "--dry-run") return false;
+    if (all[i - 1] === "--from") return false;
+    return true;
+  });
+  if (!rest.includes("--val-split")) rest.push("--val-split", valSplit);
+  await cmdPrepareFinetune(rest);
+  await cmdPrepareDpo(rest);
+  await cmdDatasetStats(rest);
+  console.log(`
+Dataset ready for a CUDA host (do not run GPU training on a CPU sandbox):
+
+  python scripts/llm/finetune/unsloth_sft.py \\
+    --data scripts/llm/output/finetune-sharegpt.jsonl \\
+    --eval-data scripts/llm/output/finetune-sharegpt.val.jsonl \\
+    --base mistralai/Ministral-3-8B-Base-2512
+
+  python scripts/llm/finetune/unsloth_dpo.py \\
+    --data scripts/llm/output/dpo-pairs.jsonl \\
+    --base scripts/llm/checkpoints/anima-ministral8b-qlora
+
+  bash scripts/llm/finetune/check-gpu-ready.sh
+See docs/llm-build.md for the full CUDA checklist.
+`);
 }
 
 async function cmdChat(args: string[]): Promise<void> {
@@ -433,10 +577,17 @@ public open weights + local serving instead.
    ollama create ${ANIMA_OLLAMA_TAG} -f scripts/llm/Modelfile.anima-ministral8b
    export ANIMA_OLLAMA_MODEL_STANDARD=${ANIMA_OLLAMA_TAG}
 
-Fine-tune (LoRA on CUDA):
+Fine-tune (LoRA on CUDA — not this sandbox):
+  pnpm llm:dataset -- --rehearse          # or ingest a Settings backup first
+  pnpm llm:gpu-check
   python scripts/llm/finetune/unsloth_sft.py \\
     --data scripts/llm/output/finetune-sharegpt.jsonl \\
+    --eval-data scripts/llm/output/finetune-sharegpt.val.jsonl \\
     --base ${ANIMA_FINETUNE_BASE_MODEL}
+  python scripts/llm/finetune/unsloth_dpo.py \\
+    --data scripts/llm/output/dpo-pairs.jsonl \\
+    --base scripts/llm/checkpoints/anima-ministral8b-qlora
+  See docs/llm-build.md
 
 Chat has exactly one backend — ANIMA_LOCAL_LLM_BASE_URL above. There is no
 mode switch and no cloud fallback; ANIMA_LOCAL_LLM_BACKEND only picks which
@@ -479,6 +630,12 @@ async function main(): Promise<void> {
       break;
     case "import-logs":
       await cmdImportLogs(args.slice(1));
+      break;
+    case "ingest":
+      await cmdIngest(args.slice(1));
+      break;
+    case "dataset":
+      await cmdDataset(args.slice(1));
       break;
     case "serve-hint":
       await cmdServeHint();

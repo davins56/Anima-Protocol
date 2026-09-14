@@ -428,6 +428,21 @@ function formatTemp(celsius: number, imperial: boolean): string {
   return `${rounded}°C (${cToF(celsius)}°F)`;
 }
 
+function withFreshClock(
+  snapshot: RegionalSnapshot,
+  region: ResolvedRegion,
+  now: Date,
+): RegionalSnapshot {
+  const clock = emptySnapshot(region, now);
+  return {
+    ...snapshot,
+    localTimeLabel: clock.localTimeLabel,
+    weekday: clock.weekday,
+    season: clock.season ?? snapshot.season,
+    hemisphere: clock.hemisphere ?? snapshot.hemisphere,
+  };
+}
+
 function emptySnapshot(region: ResolvedRegion, now: Date): RegionalSnapshot {
   const { label, weekday } = formatLocalTimeLabel(now, region.timezone, region.locale);
   const hemisphere = hemisphereForLatitude(region.latitude, region.timezone);
@@ -467,6 +482,25 @@ function cacheKey(region: ResolvedRegion): string {
     region.latitude != null ? region.latitude.toFixed(2) : "",
     region.longitude != null ? region.longitude.toFixed(2) : "",
   ].join("|");
+}
+
+/**
+ * Clock / location snapshot without waiting on weather or geocode HTTP.
+ * Uses a warm cache when a previous turn already fetched live weather.
+ * Companion chat should not block first token on Open-Meteo.
+ */
+export function peekRegionalWorldKnowledge(
+  region: ResolvedRegion,
+  now = new Date(),
+): RegionalSnapshot {
+  if (!region.enabled) {
+    return emptySnapshot({ ...region, enabled: false }, now);
+  }
+  const cached = snapshotCache.get(cacheKey(region));
+  if (cached && cached.expiresAt > now.getTime()) {
+    return withFreshClock(cached.snapshot, region, now);
+  }
+  return emptySnapshot(region, now);
 }
 
 async function fetchJson(
@@ -578,7 +612,7 @@ export async function fetchRegionalWorldKnowledge(
   const key = cacheKey(region);
   const cached = snapshotCache.get(key);
   if (cached && cached.expiresAt > now.getTime()) {
-    return cached.snapshot;
+    return withFreshClock(cached.snapshot, region, now);
   }
 
   const fetchFn = deps.fetchFn ?? fetch;

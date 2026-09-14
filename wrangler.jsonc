@@ -103,9 +103,10 @@
     "ANIMA_LLM_PROVIDER": "custom",
     "ANIMA_LOCAL_LLM_BACKEND": "ollama",
     "ANIMA_OLLAMA_MODEL_STANDARD": "anima-chat",
-    // Temporary until Workers Paid / quota recovers. Hop after a down custom
-    // host (or Workers AI 4006 when no custom host is set). Does not make
-    // OpenRouter the preferred provider.
+    // Temporary until Workers Paid / quota recovers. Hop after Workers AI 4006
+    // when no custom host is set. Does not hop after a usable self-hosted LLM
+    // (customOnly), even when OPENROUTER_API_KEY is bound. Optional ops:
+    // set ANIMA_OPENROUTER_FALLBACK=false immediately to drop the Workers AI hop too.
     "ANIMA_OPENROUTER_FALLBACK": "true",
     "ANIMA_OPENROUTER_FREE": "true"
   },
@@ -164,8 +165,8 @@
   ],
   // Free plan: 10k neurons/day. Exhaustion is Workers AI error 4006 — the
   // AI binding is still present (healthz/llm configured:true). Dàvīn approved
-  // temporary OpenRouter failover via ANIMA_OPENROUTER_FALLBACK=true.
-  // Custom anima-chat stays preferred when ANIMA_LOCAL_LLM_BASE_URL is set.
+  // temporary OpenRouter failover via ANIMA_OPENROUTER_FALLBACK=true when no
+  // custom host is set. A usable anima-chat URL stays local-only (customOnly).
   "ai": {
     "binding": "AI",
     "gateway": {

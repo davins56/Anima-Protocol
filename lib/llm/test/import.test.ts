@@ -1,6 +1,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { importLogFile, importLogsDir } from "../src/dataset/import";
 
@@ -129,6 +130,43 @@ describe("dataset/import", () => {
 
     const examples = await importLogsDir(dir);
     expect(examples).toHaveLength(2);
+  });
+
+  it("walks nested folders", async () => {
+    const nested = path.join(dir, "serenity");
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(nested);
+    await writeFile(path.join(nested, "night.txt"), "User: hi\nSerenity: I am here with you tonight.");
+
+    const examples = await importLogsDir(dir);
+    expect(examples).toHaveLength(1);
+    expect(examples[0].character.name).toBe("Serenity");
+  });
+
+  it("imports an Anima Settings backup dropped in the folder", async () => {
+    const sample = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "../../../scripts/llm/data/samples/anima-backup.serenity-fallen-angel.json",
+    );
+    const { copyFile } = await import("node:fs/promises");
+    await copyFile(sample, path.join(dir, "anima-backup.json"));
+
+    const examples = await importLogsDir(dir);
+    expect(examples.some((e) => e.character.name === "Serenity")).toBe(true);
+    expect(examples.some((e) => e.character.name === "Fallen Angel")).toBe(true);
+    expect(examples.some((e) => e.character.name === "Korra")).toBe(false);
+  });
+
+  it("imports the committed samples directory as a rehearsal set", async () => {
+    const samples = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "../../../scripts/llm/data/samples",
+    );
+    const examples = await importLogsDir(samples);
+    expect(examples.length).toBeGreaterThanOrEqual(5);
+    expect(examples.some((e) => e.character.name === "Serenity")).toBe(true);
+    expect(examples.some((e) => e.character.name === "Fallen Angel")).toBe(true);
+    expect(examples.some((e) => e.character.name === "Korra")).toBe(false);
   });
 
   it("returns an empty array for a missing directory", async () => {
