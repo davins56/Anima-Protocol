@@ -44,9 +44,16 @@ vi.mock("../src/lib/llmFailover", () => ({
   isOpenRouterAlreadyFreeTier: () => false,
   isOpenRouterGenericProviderError: () => false,
   isOpenRouterZdrOrDataPolicyError: () => false,
+  isLocalOnlyProviderChain: () => true,
+  localOnlyTimeoutMessage: () =>
+    "The self-hosted Anima LLM took too long to reply. The model may still be waking — wait a moment and send again. Chat does not fall through to OpenRouter.",
   OPENROUTER_FREE_PROVIDER_HINT: "OpenRouter free-tier hint",
   OPENROUTER_ZDR_PRIVACY_HINT: "OpenRouter ZDR privacy hint",
   remapGenericProviderError: (err: Error) => err,
+}));
+
+vi.mock("../src/lib/localLlmWarm", () => ({
+  hintLocalLlmWarm: vi.fn(),
 }));
 
 vi.mock("../src/lib/modelRouter", async (importOriginal) => {
@@ -203,6 +210,8 @@ describe("chat TTFT (Slice 1)", () => {
     const firstByteAt = Date.now();
     const chunk = new TextDecoder().decode(first.value);
     expect(chunk).toMatch(/keepalive/);
+    expect(chunk).toMatch(/"status":"progress"/);
+    expect(chunk).toMatch(/"phase":"preparing"/);
     expect(embeddingMocks.finishedAt).toBe(0);
     expect(ragMocks.retrieveRepositoryKnowledge).not.toHaveBeenCalled();
 
@@ -256,5 +265,80 @@ describe("chat TTFT (Slice 1)", () => {
     const text = await res.text();
     expect(ragMocks.retrieveRepositoryKnowledge).toHaveBeenCalledTimes(1);
     expect(text).toContain("Hello from Anima.");
+  });
+
+  it("emits waking progress JSON while the local stream is still opening", async () => {
+    embeddingMocks.delayMs = 0;
+    llmMocks.createChatStreamWithFailover.mockImplementationOnce(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      return {
+        stream: (async function* () {
+          yield { choices: [{ delta: { content: "Hi." } }] };
+        })(),
+        model: "test-anima",
+        tier: "standard",
+        provider: "local",
+        brand: "anima",
+        failedOver: false,
+      };
+    });
+
+    const res = await request("/chat/messages", {
+      method: "POST",
+      body: JSON.stringify({
+        turn_id: `turn_${prefix}_waking`,
+        session_id: sessionId,
+        content: "Are you there?",
+        character_id: characterId,
+        character_ids: [characterId],
+        assistant_character_id: characterId,
+        mode: "solo",
+        persist: false,
+        persistence_owner: "client",
+        region: { share_region: false },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toMatch(/"status":"progress"/);
+    expect(text).toMatch(/"phase":"waking"/);
+    expect(text).toMatch(/"phase":"generating"/);
+    expect(text).toContain("Hi.");
+    const wakingAt = text.indexOf('"phase":"waking"');
+    const hiAt = text.indexOf("Hi.");
+    expect(wakingAt).toBeGreaterThanOrEqual(0);
+    expect(hiAt).toBeGreaterThan(wakingAt);
+  });
+
+  it("fails clearly on a local-only open abort instead of hanging", async () => {
+    embeddingMocks.delayMs = 0;
+    llmMocks.createChatStreamWithFailover.mockImplementationOnce(async () => {
+      const err = Object.assign(new Error("Request was aborted."), {
+        name: "AbortError",
+      });
+      throw err;
+    });
+
+    const res = await request("/chat/messages", {
+      method: "POST",
+      body: JSON.stringify({
+        turn_id: `turn_${prefix}_timeout`,
+        session_id: sessionId,
+        content: "Hello again.",
+        character_id: characterId,
+        character_ids: [characterId],
+        assistant_character_id: characterId,
+        mode: "solo",
+        persist: false,
+        persistence_owner: "client",
+        region: { share_region: false },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toMatch(/"status":"progress"/);
+    expect(text).toMatch(/took too long to reply/);
+    expect(text).toMatch(/does not fall through to OpenRouter/);
+    expect(text).not.toMatch(/"done":true/);
   });
 });

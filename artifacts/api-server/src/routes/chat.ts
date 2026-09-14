@@ -28,8 +28,10 @@ import {
 import { routeModel } from "../lib/modelRouter";
 import {
   createChatStreamWithFailover,
+  isLocalOnlyProviderChain,
   isOpenRouterGenericProviderError,
   isOpenRouterZdrOrDataPolicyError,
+  localOnlyTimeoutMessage,
   OPENROUTER_FREE_PROVIDER_HINT,
   OPENROUTER_ZDR_PRIVACY_HINT,
   remapGenericProviderError,
@@ -47,8 +49,10 @@ import {
 import {
   chatReplyMaxTokens,
   llmChatMessagesOpenTimeoutMs,
+  llmChatMessagesStreamTotalMs,
   openStreamAbort,
 } from "../lib/chatTimeouts";
+import { hintLocalLlmWarm } from "../lib/localLlmWarm";
 import {
   combineLocalDrafts,
   draftLocalMinds,
@@ -193,6 +197,8 @@ function truncate(value: unknown, max = 600): string {
 
 const SSE_HEARTBEAT_MS = 8_000;
 
+type ChatSsePhase = "preparing" | "waking" | "generating";
+
 function flushSse(res: Response) {
   const flushable = res as Response & { flush?: () => void };
   if (typeof flushable.flush === "function") flushable.flush();
@@ -214,8 +220,24 @@ function writeSseComment(res: Response, comment: string) {
   }
 }
 
+function writeProgressSse(
+  res: Response,
+  phase: ChatSsePhase,
+  startedAt: number,
+) {
+  writeSse(res, {
+    status: "progress",
+    phase,
+    elapsed_ms: Date.now() - startedAt,
+  });
+}
+
 /** Open SSE and send a heartbeat byte before any context work. */
-function openChatSse(res: Response): () => void {
+function openChatSse(res: Response): {
+  stop: () => void;
+  setPhase: (phase: ChatSsePhase) => void;
+  markStreaming: () => void;
+} {
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
@@ -223,20 +245,34 @@ function openChatSse(res: Response): () => void {
     "X-Accel-Buffering": "no",
   });
   if (typeof res.flushHeaders === "function") res.flushHeaders();
-  writeSseComment(res, `keepalive ${Date.now()}`);
-  return startSseHeartbeat(res);
-}
-
-function startSseHeartbeat(res: Response): () => void {
+  const startedAt = Date.now();
+  let phase: ChatSsePhase = "preparing";
+  let streaming = false;
+  writeSseComment(res, `keepalive ${startedAt}`);
+  writeProgressSse(res, phase, startedAt);
   const timer = setInterval(() => {
     writeSseComment(res, `keepalive ${Date.now()}`);
+    if (!streaming) writeProgressSse(res, phase, startedAt);
   }, SSE_HEARTBEAT_MS);
   timer.unref?.();
-  return () => clearInterval(timer);
+  return {
+    stop: () => clearInterval(timer),
+    setPhase: (next) => {
+      phase = next;
+      if (!streaming) writeProgressSse(res, phase, startedAt);
+    },
+    markStreaming: () => {
+      streaming = true;
+    },
+  };
 }
 
 function streamErrorMessage(err: unknown): string {
-  if (err instanceof LlmStreamTimeoutError) return err.message;
+  if (err instanceof LlmStreamTimeoutError) {
+    return typeof isLocalOnlyProviderChain === "function" && isLocalOnlyProviderChain()
+      ? localOnlyTimeoutMessage()
+      : err.message;
+  }
   if (isWorkersAiFreeQuotaError(err)) {
     return WORKERS_AI_FREE_QUOTA_HINT;
   }
@@ -249,7 +285,9 @@ function streamErrorMessage(err: unknown): string {
   }
   const raw = err instanceof Error ? err.message : String(err);
   if (/aborted|abort/i.test(raw)) {
-    return "The companion took too long to reply. Please try again.";
+    return typeof localOnlyTimeoutMessage === "function"
+      ? localOnlyTimeoutMessage()
+      : "The companion took too long to reply. Please try again.";
   }
   if (/workers ai|deepseek/i.test(raw)) {
     return raw;
@@ -1515,7 +1553,9 @@ router.post("/messages", async (req, res) => {
 
   // First SSE byte / heartbeat before memories, embeddings, weather, RAG, or
   // prompt compose. User-perceived TTFT used to include all of that work.
-  const stopHeartbeat = openChatSse(res);
+  const sse = openChatSse(res);
+  const stopHeartbeat = sse.stop;
+  hintLocalLlmWarm();
   let streamSucceeded = false;
   let fullResponse = "";
   let usedModel = "";
@@ -1871,9 +1911,15 @@ router.post("/messages", async (req, res) => {
 
   const emitDelta = (delta: string) => {
     telemetry.markFirstToken();
+    sse.markStreaming();
     writeSse(res, { content: delta });
   };
   const emitReasoning = () => writeSse(res, { status: "thinking" });
+  const consumeOpts = {
+    onDelta: emitDelta,
+    onReasoning: emitReasoning,
+    totalMs: llmChatMessagesStreamTotalMs(),
+  };
 
   telemetry.startGeneration();
     const messages = buildLlmChatMessages({
@@ -1919,13 +1965,11 @@ router.post("/messages", async (req, res) => {
         failedOver = completion.failedOver;
         ensembleCombined = true;
 
-        const streamed = await consumeLlmStream(completion.stream, {
-          onDelta: emitDelta,
-          onReasoning: emitReasoning,
-        });
+        const streamed = await consumeLlmStream(completion.stream, consumeOpts);
         fullResponse = streamed.content;
       }
     } else {
+      sse.setPhase("waking");
       const open = openStreamAbort(llmChatMessagesOpenTimeoutMs());
       let completion;
       try {
@@ -1940,16 +1984,14 @@ router.post("/messages", async (req, res) => {
       } finally {
         open.cancel();
       }
+      sse.setPhase("generating");
       usedModel = completion.model;
       usedTier = completion.tier;
       usedProvider = completion.provider;
       usedBrand = completion.brand;
       failedOver = completion.failedOver;
 
-      const streamed = await consumeLlmStream(completion.stream, {
-        onDelta: emitDelta,
-        onReasoning: emitReasoning,
-      });
+      const streamed = await consumeLlmStream(completion.stream, consumeOpts);
       fullResponse = finalizeAssistantReply(streamed.content);
     }
 
