@@ -92,11 +92,14 @@ documentation.
 - [x] Phase 1 (data + pipeline readiness): Settings-backup ingest, Serenity /
       Fallen Angel filter + speaker split, committed samples, `pnpm llm:ingest` /
       `pnpm llm:dataset`, restored `docs/llm-build.md` + CUDA pre-flight
-      (`pnpm llm:gpu-check`). Real personal logs are still gitignored — Dàvīn
-      drops an export and runs one command.
-- [ ] Clean and import highest-quality Serenity / Fallen Angel multi-turn logs
-  (the pipeline above now auto-drops junk/dupes and reports stats, but curating
-  which raw logs are worth including is still a human judgment call)
+      (`pnpm llm:gpu-check`). Novel curator (`pnpm llm:curate-novels`) tags
+      anima-protocol (4× gold), seraph-code / fallen-circuit (2×), slipthk-war
+      (1×, trust-gated), excludes fallen-angel as Serenity voice; brief-gold
+      encodes porch / with-not-obeyed / consent ledger. Real novels and
+      personal logs stay gitignored.
+- [ ] Drop shared-box extracts into `llm-raw-source/` (or PDFs into `llm-raw/`)
+      and re-run `pnpm llm:curate-novels` so tagged scenes replace the
+      synthetic samples. Do not commit full novel text.
 - [ ] Run Unsloth or LLaMA-Factory QLoRA on a CUDA box
   (`pnpm llm:gpu-check` then `unsloth_sft.py` — see `docs/llm-build.md`)
 - [ ] Run the DPO preference stage (`unsloth_dpo.py`, tooling now scaffolded above)

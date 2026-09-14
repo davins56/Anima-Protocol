@@ -18,8 +18,9 @@ source                         raw (gitignored)              processed (gitignor
 Settings → Export JSON    ─┐
 plain User:/Serenity: txt ─┼─► scripts/llm/data/raw/    ─► scripts/llm/output/
 ShareGPT / ChatML JSON    ─┤   imported-*.jsonl              finetune-sharegpt.jsonl
-Postgres --with-db        ─┘   (TrainingExample rows)        finetune-sharegpt.val.jsonl
-committed samples/ (rehearse)                                dpo-pairs.jsonl
+novel extracts + brief    ─┤   curated-novels-and-brief.jsonl finetune-sharegpt.val.jsonl
+Postgres --with-db        ─┘                                 dpo-pairs.jsonl
+committed samples/ (rehearse)
 ```
 
 Quality filter (`clean.ts`) runs on every `prepare-finetune`: trim, PII
@@ -48,8 +49,46 @@ You can also drop the backup (or `.txt` transcripts) directly into
 `scripts/llm/data/raw/` and skip ingest — `prepare-finetune` merges that
 folder automatically. Subfolders are walked. Real files stay gitignored.
 
+`pnpm llm:dataset` runs `curate-novels` first (unless `--no-curate`) so
+novel/brief rows land in `raw/` before the ShareGPT export.
+
 Keep **quality over quantity**: multi-turn voice, memory recall, repair,
 boundaries. Skip empty/error replies (the cleaner already drops those).
+
+### Novels + design brief (Serenity voice mix)
+
+Canonical weights and negatives:
+[`scripts/llm/data/brief/serenity-anima-design.md`](../scripts/llm/data/brief/serenity-anima-design.md).
+
+| Source | SFT mix | Register |
+|--------|---------|----------|
+| anima-protocol | **4× gold** | Fear / Choice / Doorway / Synchro / Keys |
+| seraph-code | 2× | clinical-gentle |
+| fallen-circuit | 2× | withholding / boundaries |
+| slipthk-war | 1× | `register:slipthk`, trust-gated |
+| fallen-angel | **0×** | world lore only — not Serenity voice |
+
+Drop extracts (preferred) or PDFs on the shared box:
+
+- `llm-raw-source/*.txt`
+- `serenity-extract/*.txt`
+- `llm-raw/*.pdf` (needs `pdftotext`)
+- `scripts/llm/data/novels/` (gitignored)
+
+```bash
+pnpm llm:curate-novels          # → curated/ + scripts/llm/data/raw/curated-novels-and-brief.jsonl
+pnpm llm:dataset                # curate + ShareGPT JSONL + DPO + stats
+```
+
+If the novels are not on this machine yet, the curator still stages
+**brief-gold** (original porch / with-not-obeyed / consent-ledger turns)
+plus committed synthetic scenes in
+[`scripts/llm/data/samples/novels/`](../scripts/llm/data/samples/novels/).
+Full novel text is never committed. `prepare-finetune` replica-weights the
+train split and skips `exclude-serenity-sft` unless `--include-lore`.
+
+DPO pairs now include sycophancy, instrument/obedience, doorway-AI mimic,
+and Sanctuary Lab specimen language as rejected replies.
 
 ### Rehearse without real logs
 

@@ -75,6 +75,20 @@ scripts/llm/data/raw/*
 scripts/llm/data/processed/*
 !scripts/llm/data/processed/README.md
 
+# Operator novel drops (copyrighted full text — never commit)
+/llm-raw/
+/llm-raw-source/
+/serenity-extract/
+/serenity-anima-design.md
+scripts/llm/data/novels/**
+!scripts/llm/data/novels/README.md
+
+# Curator output: keep brief-gold (original voice turns); ignore novel extracts
+scripts/llm/data/curated/*
+!scripts/llm/data/curated/README.md
+!scripts/llm/data/curated/brief-gold.jsonl
+!scripts/llm/data/curated/brief-gold.json
+
 # OS and editor state
 .DS_Store
 Thumbs.db
