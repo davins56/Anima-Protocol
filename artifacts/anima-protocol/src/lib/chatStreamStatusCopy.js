@@ -18,7 +18,7 @@ export function chatStreamStatusCopy(event) {
   }
   if (event.status === "progress") {
     if (event.phase === "preparing") return "Gathering your companion…";
-    if (event.phase === "waking") return "Waking the local Anima model…";
+    if (event.phase === "waking") return "Waiting on the local Anima model…";
     if (event.phase === "generating") return "Composing a reply…";
     return "Waiting on the local Anima model…";
   }

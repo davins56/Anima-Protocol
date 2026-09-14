@@ -7,7 +7,7 @@ describe("chatStreamStatusCopy", () => {
       "Gathering your companion…",
     );
     expect(chatStreamStatusCopy({ status: "progress", phase: "waking" })).toBe(
-      "Waking the local Anima model…",
+      "Waiting on the local Anima model…",
     );
     expect(chatStreamStatusCopy({ status: "progress", phase: "generating" })).toBe(
       "Composing a reply…",
