@@ -65,16 +65,30 @@ Swap the mock's URL for a real Ollama/vLLM endpoint once you have GPU/hosting
 ## GPU fine-tune path
 
 ```bash
-pnpm llm:prepare-finetune
+# Settings → Export, or rehearse with committed fixtures:
+pnpm llm:ingest -- --from ~/Downloads/anima-backup.json
+pnpm llm:dataset                          # seed + raw → ShareGPT JSONL + DPO pairs
+# pnpm llm:dataset -- --rehearse          # no real logs
 
 python scripts/llm/finetune/unsloth_sft.py \
   --data scripts/llm/output/finetune-sharegpt.jsonl \
+  --eval-data scripts/llm/output/finetune-sharegpt.val.jsonl \
   --base mistralai/Ministral-3-8B-Base-2512
+
+python scripts/llm/finetune/unsloth_dpo.py \
+  --data scripts/llm/output/dpo-pairs.jsonl \
+  --base scripts/llm/checkpoints/anima-ministral8b-qlora
+
+bash scripts/llm/finetune/quantize.sh --in scripts/llm/checkpoints/anima-ministral8b-dpo-merged
+pnpm llm:eval
 
 docker compose -f scripts/llm/docker-compose.vllm.yml up
 export ANIMA_LOCAL_LLM_BACKEND=vllm
 export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:8000/v1
 ```
+
+Run SFT/DPO only on a CUDA box (`pnpm llm:gpu-check` first). Full walkthrough:
+[`docs/llm-build.md`](../../docs/llm-build.md).
 
 Registry/CLI: [`lib/llm/README.md`](../../lib/llm/README.md) · Production host: [`deploy/ollama-fly/README.md`](../../deploy/ollama-fly/README.md).
 

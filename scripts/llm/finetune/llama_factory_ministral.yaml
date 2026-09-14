@@ -1,11 +1,8 @@
 ### LLaMA-Factory config for Anima Ministral 3 8B QLoRA SFT
 ###
 ### Install: https://github.com/hiyouga/LLaMA-Factory
-### Data: run `pnpm llm:prepare-finetune` then copy/symlink
-###   scripts/llm/output/finetune-sharegpt.jsonl into LLaMA-Factory's data dir
-###   (or set dataset_dir below).
-###
-### Train:
+### Data: run `pnpm llm:dataset` (or `pnpm llm:prepare-finetune -- --val-split 0.05`)
+### from the **repo root** so dataset_dir below resolves, then:
 ###   llamafactory-cli train scripts/llm/finetune/llama_factory_ministral.yaml
 ###
 ### Optional preference stage (DPO/ORPO/SimPO): swap stage/preference dataset
