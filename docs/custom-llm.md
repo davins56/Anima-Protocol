@@ -65,10 +65,11 @@ Accept the Mistral license on Hugging Face and set `HUGGING_FACE_HUB_TOKEN` if t
 
 ```bash
 # Real logs: Settings → Export, then:
+pnpm llm:curate-novels
 pnpm llm:ingest -- --from ~/Downloads/anima-backup.json
 pnpm llm:dataset
 
-# Fixtures only (no personal logs):
+# Fixtures only (no personal logs / no shared-box novels):
 pnpm llm:dataset -- --rehearse
 
 # Seed + Postgres transcripts:

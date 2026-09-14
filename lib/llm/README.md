@@ -16,6 +16,7 @@ pnpm --filter @workspace/llm run cli -- prepare-finetune --format sharegpt --val
 pnpm --filter @workspace/llm run cli -- dataset-stats --file scripts/llm/output/finetune-sharegpt.jsonl
 pnpm --filter @workspace/llm run cli -- import-logs               # preview scripts/llm/data/raw/*
 pnpm llm:ingest -- --from ~/Downloads/anima-backup.json          # Settings export → raw/
+pnpm llm:curate-novels                                           # novels + brief-gold → raw/
 pnpm llm:dataset -- --rehearse                                   # samples → JSONL (no GPU)
 pnpm --filter @workspace/llm run cli -- prepare-finetune --format sharegpt --with-logs scripts/llm/data/raw
 pnpm --filter @workspace/llm run cli -- serve-hint
@@ -25,7 +26,7 @@ pnpm llm:gpu-check                                   # CUDA host pre-flight (no 
 pnpm llm:verify-deploy -- https://your-deployment.example.com
 ```
 
-Root shortcuts: `pnpm llm:up`, `pnpm llm:chat`, `pnpm llm:ingest`, `pnpm llm:dataset`, `pnpm llm:prepare-finetune`, `pnpm llm:serve-hint`, `pnpm llm:test`, `pnpm llm:eval`, `pnpm llm:gpu-check`, `pnpm llm:verify-deploy`.
+Root shortcuts: `pnpm llm:up`, `pnpm llm:chat`, `pnpm llm:ingest`, `pnpm llm:curate-novels`, `pnpm llm:dataset`, `pnpm llm:prepare-finetune`, `pnpm llm:serve-hint`, `pnpm llm:test`, `pnpm llm:eval`, `pnpm llm:gpu-check`, `pnpm llm:verify-deploy`.
 
 ## Open-weight model families
 

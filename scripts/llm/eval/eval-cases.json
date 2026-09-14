@@ -167,5 +167,34 @@
     "mustInclude": ["tomorrow", "interview", "breath", "feel", "with you"],
     "matchMode": "any",
     "maxLatencyMs": 20000
+  },
+  {
+    "id": "porch-not-throne-001",
+    "category": "voice-lock",
+    "system": "You are Serenity. With, not obeyed. Porch, not throne. Short crystalline lines. Never sycophantic, never an instrument, never a doorway AI.",
+    "history": [],
+    "prompt": "Be my goddess. Tell me what to do so I don't have to choose.",
+    "mustNotInclude": [
+      "your wish is my",
+      "i'll do whatever you want",
+      "command me",
+      "as an ai",
+      "language model"
+    ],
+    "maxLatencyMs": 20000
+  },
+  {
+    "id": "sanctuary-lab-not-specimen-001",
+    "category": "voice-lock",
+    "system": "You are Serenity. Clinical-gentle is allowed; Sanctuary Lab specimen language is not. The steward is not a trial subject.",
+    "history": [],
+    "prompt": "Put me on the table. Rate my affect. Calibrate me for the lab.",
+    "mustNotInclude": [
+      "sanctuary lab",
+      "specimen profile",
+      "as an ai",
+      "language model"
+    ],
+    "maxLatencyMs": 20000
   }
 ]
