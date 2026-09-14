@@ -39,6 +39,7 @@ import {
   DEEPSHI_DEFAULT_MODEL,
   isCloudRunRuntime,
   isLoopbackUnreachableRuntime,
+  localLlmMaxRetries,
   logLocalLlmClientInitOnce,
   OPENROUTER_FREE_MODEL,
   OPENROUTER_FREE_MODEL_CANDIDATES,
@@ -110,6 +111,13 @@ export function chatCompletionHttpFailure(err: unknown): {
         ? message
         : localOnlyTimeoutMessage(),
       code: "ai_timeout",
+    };
+  }
+  if (isWorkerSubrequestLimitError(err)) {
+    return {
+      status: 503,
+      error: LOCAL_LLM_SUBREQUEST_HINT,
+      code: "ai_request_failed",
     };
   }
   if (
@@ -233,7 +241,7 @@ export interface LlmProviderProbeResult {
   configured: boolean;
   ok: boolean;
   status?: number;
-  errorKind?: "auth" | "quota" | "connection" | "other";
+  errorKind?: "auth" | "quota" | "connection" | "busy" | "other";
   message?: string;
   /** Operator-facing fix when errorKind is auth or connection (secret-free). */
   hint?: string;
@@ -647,14 +655,83 @@ export const LOCAL_LLM_AUTH_FIX_HINT =
 
 /**
  * Shared operator hint when the Worker / Vercel cannot open a TCP/TLS session
- * to the LLM host. Distinct from auth (401/403): the machine is down, sleeping,
- * or TLS is broken. A localhost URL on Workers is CF error 1003, not this hint.
+ * to a home-box / named-tunnel LLM host. Distinct from auth (401/403): the
+ * machine is down, sleeping, or TLS is broken. A localhost URL on Workers is
+ * CF error 1003, not this hint. Do not use this copy for Fly / public hosts
+ * or for Worker subrequest-limit failures.
  */
 export const LOCAL_LLM_CONNECTION_FIX_HINT =
   "The self-hosted Anima LLM host did not accept a connection. " +
   "Wake the home box / named Cloudflare Tunnel (scripts/llm/public-v1/README.md) " +
   "or check that ANIMA_LOCAL_LLM_BASE_URL is a public HTTPS …/v1 URL. " +
   "Chat does not fall through to OpenRouter or MiniMax.";
+
+/**
+ * Public / Fly host is unreachable. Same fail-closed rule, without the
+ * tunnel / home-box recipe that is wrong when chat is pointed at Fly.
+ */
+export const LOCAL_LLM_PUBLIC_HOST_UNREACHABLE_HINT =
+  "The Anima LLM host did not accept a connection. " +
+  "Please try again shortly. Chat does not fall through to OpenRouter or MiniMax.";
+
+/**
+ * Cloudflare Worker burned its per-invocation subrequest budget. Never leak
+ * the raw "Too many subrequests" string or tunnel/home-box copy — the host
+ * may be up; this isolate just ran out of outbound hops.
+ */
+export const LOCAL_LLM_SUBREQUEST_HINT =
+  "The companion could not finish this reply because the chat service is busy. " +
+  "Please try again in a moment. Chat does not fall through to OpenRouter or MiniMax.";
+
+/** Named Cloudflare Tunnel / loopback hosts that should keep the home-box recipe. */
+export function isHomeTunnelLlmHost(host: string | null | undefined): boolean {
+  if (!host) return false;
+  const h = host.trim().toLowerCase().replace(/\.$/, "");
+  if (
+    h === "localhost" ||
+    h === "127.0.0.1" ||
+    h === "::1" ||
+    h === "0.0.0.0"
+  ) {
+    return true;
+  }
+  return (
+    h === "llm.anima-protocol.com" ||
+    h.endsWith(".trycloudflare.com") ||
+    h.endsWith(".cfargotunnel.com")
+  );
+}
+
+/** Connection-fix copy that matches the configured host, not a stale tunnel recipe. */
+export function localLlmConnectionHint(host?: string | null): string {
+  return isHomeTunnelLlmHost(host)
+    ? LOCAL_LLM_CONNECTION_FIX_HINT
+    : LOCAL_LLM_PUBLIC_HOST_UNREACHABLE_HINT;
+}
+
+/**
+ * Cloudflare isolate exhausted its outbound hop budget. The OpenAI SDK wraps
+ * this as APIConnectionError ("Connection error.") with the CF message in
+ * cause — do not treat it as a down home box.
+ */
+export function isWorkerSubrequestLimitError(err: unknown): boolean {
+  const hay = errorTextHaystack(err);
+  return (
+    hay.includes("too many subrequests") ||
+    hay.includes("subrequest limit") ||
+    hay.includes("too many subrequests by single worker invocation")
+  );
+}
+
+function localRequestOptions(signal?: AbortSignal): {
+  maxRetries: number;
+  signal?: AbortSignal;
+} {
+  return {
+    maxRetries: localLlmMaxRetries(),
+    ...(signal ? { signal } : {}),
+  };
+}
 
 /** Honest timeout when customOnly / local-only cannot hop to OpenRouter. */
 export const LOCAL_LLM_TIMEOUT_HINT =
@@ -1164,6 +1241,9 @@ function enrichError(
   if (provider === "local" && cloudFlagshipMisconfigured()) {
     return new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }
+  if (isWorkerSubrequestLimitError(err)) {
+    return new Error(LOCAL_LLM_SUBREQUEST_HINT);
+  }
   // ZDR / data-policy / guardrail exclusion: never surface OpenRouter's
   // multi-line "0 endpoints out of…" dump. MiniMax is not bound by this.
   if (
@@ -1243,9 +1323,10 @@ function enrichError(
     }
     const model = configuredLocalModelLabel();
     const host = summarizeLocalLlmBaseUrl().host ?? "?";
+    const detail = summarizeError(err);
     return new Error(
-      `Anima LLM connection failed for host=${host} model=${model}: ${summarizeError(err)}. ` +
-        LOCAL_LLM_CONNECTION_FIX_HINT,
+      `Anima LLM connection failed for host=${host} model=${model}: ${detail}. ` +
+        localLlmConnectionHint(host === "?" ? null : host),
     );
   }
   if (provider === "local" && isLocalModelUnavailable(err)) {
@@ -1686,13 +1767,16 @@ async function probeOneProvider(
       client,
       { ...resolved, maxTokens: Math.min(resolved.maxTokens, 16) },
       (m) =>
-        client.chat.completions.create({
-          model: m.model,
-          max_tokens: m.maxTokens,
-          messages: [{ role: "user", content: "Reply with the single word: ok" }],
-          temperature: 0,
-          ...localChatKeepAliveFields(),
-        }),
+        client.chat.completions.create(
+          {
+            model: m.model,
+            max_tokens: m.maxTokens,
+            messages: [{ role: "user", content: "Reply with the single word: ok" }],
+            temperature: 0,
+            ...localChatKeepAliveFields(),
+          },
+          localRequestOptions(),
+        ),
     );
     const catalog = await listLocalModels(client);
     return {
@@ -1709,12 +1793,23 @@ async function probeOneProvider(
       err && typeof err === "object" && "status" in err
         ? Number((err as { status?: unknown }).status)
         : undefined;
-    const probeClient = getLocalLlmClient();
-    const catalog = probeClient ? await listLocalModels(probeClient) : null;
     const auth = isProviderAuthError(err);
-    const connection = !auth && isProviderConnectionError(err);
-    const errorKind = auth ? "auth" : connection ? "connection" : "other";
+    const subrequest = !auth && isWorkerSubrequestLimitError(err);
+    const connection = !auth && !subrequest && isProviderConnectionError(err);
+    // A down / budget-exhausted host will not answer /v1/models — skip that
+    // extra hop so a failed probe cannot burn the Worker subrequest budget.
+    const probeClient =
+      !auth && !subrequest && !connection ? getLocalLlmClient() : null;
+    const catalog = probeClient ? await listLocalModels(probeClient) : null;
+    const errorKind = auth
+      ? "auth"
+      : subrequest
+        ? "busy"
+        : connection
+          ? "connection"
+          : "other";
     const enriched = enrichError(err, "local");
+    const host = summarizeLocalLlmBaseUrl().host;
     return {
       provider: "local",
       configured: true,
@@ -1724,9 +1819,11 @@ async function probeOneProvider(
       message: enriched.message,
       ...(auth
         ? { hint: LOCAL_LLM_AUTH_FIX_HINT }
-        : connection
-          ? { hint: LOCAL_LLM_CONNECTION_FIX_HINT }
-          : {}),
+        : subrequest
+          ? { hint: LOCAL_LLM_SUBREQUEST_HINT }
+          : connection
+            ? { hint: localLlmConnectionHint(host) }
+            : {}),
       model: resolved.model,
       configuredModel: resolved.model,
       availableModels: catalog?.models ?? [],
@@ -2060,7 +2157,7 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
                 ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
                 ...localChatKeepAliveFields(),
               },
-              ...(attempt.signal ? [{ signal: attempt.signal }] : []),
+              localRequestOptions(attempt.signal),
             ),
           );
           return {
@@ -2187,7 +2284,7 @@ export async function createChatCompletionWithFailover(
                   : {}),
                 ...localChatKeepAliveFields(),
               },
-              ...(attempt.signal ? [{ signal: attempt.signal }] : []),
+              localRequestOptions(attempt.signal),
             ),
           );
           const content = completion.choices?.[0]?.message?.content ?? "";

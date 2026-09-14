@@ -131,6 +131,16 @@ describe("chatTurnErrorMessage", () => {
     expect(message).not.toMatch(/deepseek/i);
   });
 
+  it("remaps Worker subrequest-limit toasts without leaking CF or tunnel copy", () => {
+    const production =
+      "Anima LLM connection failed for host=anima-chat-llm.fly.dev model=anima-chat: Connection error. — Too many subrequests by single Worker invocation. The self-hosted Anima LLM host did not accept a connection. Wake the home box / named Cloudflare Tunnel (scripts/llm/public-v1/README.md)";
+    const message = chatTurnErrorMessage(new Error(production));
+    expect(message).toMatch(/chat service is busy/i);
+    expect(message).not.toMatch(/Too many subrequests/i);
+    expect(message).not.toMatch(/home box|Cloudflare Tunnel|public-v1/i);
+    expect(message).not.toMatch(/anima-chat-llm\.fly\.dev/i);
+  });
+
   it("keeps local-only timeout copy so the HUD does not look like a silent hang", () => {
     const localTimeout =
       "The self-hosted Anima LLM took too long to reply. The model may still be waking — wait a moment and send again. Chat does not fall through to OpenRouter.";
