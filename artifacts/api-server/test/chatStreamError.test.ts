@@ -45,6 +45,21 @@ describe("streamErrorMessage companion_memories", () => {
       "Database unavailable",
     );
   });
+
+  it("still names companion memory when the table is two cause levels down", () => {
+    const pg = Object.assign(
+      new Error('relation "companion_memories" does not exist'),
+      { code: "42P01", name: "PostgresError" },
+    );
+    const driver = new Error("query failed");
+    (driver as Error & { cause?: unknown }).cause = pg;
+    const wrapped = new Error("Failed query: select 1\nparams:");
+    (wrapped as Error & { cause?: unknown }).cause = driver;
+    expect(streamErrorMessage(wrapped)).toBe(
+      "Couldn't load companion memory — the database schema is missing or out of date.",
+    );
+    expect(streamErrorMessage(wrapped)).not.toMatch(/Failed query|select 1/i);
+  });
 });
 
 describe("streamErrorMessage does not regress LLM / Worker timeouts", () => {

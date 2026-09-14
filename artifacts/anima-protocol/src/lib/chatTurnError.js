@@ -57,6 +57,13 @@ export function chatTurnErrorMessage(err) {
   if (SESSION_MISSING_RE.test(raw)) {
     return "This conversation could not be found. Go back and start the session again.";
   }
+  // Drizzle "Failed query" / raw SQL must never become the HUD toast —
+  // including when bind params mention "deepseek" / "Workers AI".
+  if (SQL_LEAK_RE.test(raw)) {
+    return /companion_memories/i.test(raw)
+      ? "Couldn't load companion memory. Please try again."
+      : "The companion could not reply. Please try again.";
+  }
   if (WORKERS_AI_4006_RE.test(raw)) {
     return WORKERS_AI_FREE_QUOTA_HINT;
   }
@@ -66,12 +73,6 @@ export function chatTurnErrorMessage(err) {
   // HTML/non-JSON store bodies during send must not mask the chat failure.
   if (err?.transport === true || STORE_UNREACHABLE_RE.test(raw)) {
     return "The companion could not reply. Please try again.";
-  }
-  // Drizzle "Failed query" / raw SQL must never become the HUD toast.
-  if (SQL_LEAK_RE.test(raw)) {
-    return /companion_memories/i.test(raw)
-      ? "Couldn't load companion memory. Please try again."
-      : "The companion could not reply. Please try again.";
   }
   // Generic 400 / backend request failures must show friendly user copy.
   if (GENERIC_HTTP_400_RE.test(raw)) {
