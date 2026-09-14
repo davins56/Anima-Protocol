@@ -21,7 +21,10 @@ import {
   type MsgData,
 } from "@workspace/db";
 import { createRateLimit } from "../lib/rateLimit";
-import { retrieveRepositoryKnowledge } from "../lib/repositoryKnowledge";
+import {
+  retrieveRepositoryKnowledge,
+  shouldRetrieveRepositoryKnowledge,
+} from "../lib/repositoryKnowledge";
 import { routeModel } from "../lib/modelRouter";
 import {
   createChatStreamWithFailover,
@@ -191,15 +194,32 @@ function writeSse(res: Response, payload: unknown) {
   flushSse(res);
 }
 
+function writeSseComment(res: Response, comment: string) {
+  if (res.writableEnded) return;
+  try {
+    res.write(`: ${comment}\n\n`);
+    flushSse(res);
+  } catch {
+    // Client gone — the stream closer in `finally` will clean up.
+  }
+}
+
+/** Open SSE and send a heartbeat byte before any context work. */
+function openChatSse(res: Response): () => void {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  if (typeof res.flushHeaders === "function") res.flushHeaders();
+  writeSseComment(res, `keepalive ${Date.now()}`);
+  return startSseHeartbeat(res);
+}
+
 function startSseHeartbeat(res: Response): () => void {
   const timer = setInterval(() => {
-    if (res.writableEnded) return;
-    try {
-      res.write(`: keepalive ${Date.now()}\n\n`);
-      flushSse(res);
-    } catch {
-      // Client gone — the stream closer in `finally` will clean up.
-    }
+    writeSseComment(res, `keepalive ${Date.now()}`);
   }, SSE_HEARTBEAT_MS);
   timer.unref?.();
   return () => clearInterval(timer);
@@ -1271,6 +1291,7 @@ router.post("/messages", async (req, res) => {
     is_continue?: boolean;
     mode?: string;
     system_prompt?: string;
+    include_repository_knowledge?: boolean;
     deep_mode?: boolean;
     persist?: boolean;
     turn_id?: string;
@@ -1357,6 +1378,27 @@ router.post("/messages", async (req, res) => {
     return;
   }
 
+  // First SSE byte / heartbeat before memories, embeddings, weather, RAG, or
+  // prompt compose. User-perceived TTFT used to include all of that work.
+  const stopHeartbeat = openChatSse(res);
+  let streamSucceeded = false;
+  let fullResponse = "";
+  let usedModel = "";
+  let usedTier: string = "";
+  let usedProvider: LlmProviderId = "local";
+  let usedBrand: LlmBrand | undefined;
+  let failedOver = false;
+  let ensembleMinds: string[] | undefined;
+  let ensembleCombined = false;
+  let intimacyProfile: IntimacyProfile | null = null;
+  let intimacyScene: IntimacyScene | null = null;
+  let synchroState: SynchroState | null = null;
+  let activeCharacterId: string | null = null;
+  let isCrossover = false;
+  let preStreamPersist: Promise<void> = Promise.resolve();
+  const shouldPersist = body.persist !== false;
+
+  try {
   const retryable = await retryableChatTurns(userId, sessionId, 3);
   if (retryable.length > 0) {
     const results = await Promise.allSettled(
@@ -1374,12 +1416,14 @@ router.post("/messages", async (req, res) => {
   }
 
   const memoriesPromise = loadMemories(userId, characterIds);
-   const repositoryKnowledgePromise = content.trim()
+  const wantRepositoryKnowledge = shouldRetrieveRepositoryKnowledge(content, {
+    explicit:
+      body.include_repository_knowledge === true ||
+      body.metadata?.include_repository_knowledge === true,
+  });
+  const repositoryKnowledgePromise = wantRepositoryKnowledge
     ? telemetry
-        .measure(
-          "repository_rag_ms",
-          retrieveRepositoryKnowledge(content),
-        )
+        .measure("repository_rag_ms", retrieveRepositoryKnowledge(content))
         .catch(() => "")
     : Promise.resolve("");
   const worldKnowledgePromise = (async () => {
@@ -1480,7 +1524,7 @@ router.post("/messages", async (req, res) => {
   const distinctUniverses = new Set(
     characters.map((c) => c.universe).filter(Boolean).map(String),
   ).size;
-  const isCrossover = mode === "group" && distinctUniverses >= 2;
+  isCrossover = mode === "group" && distinctUniverses >= 2;
   // Embeddings were attached in parallel with session/character loads above.
   const adaptedChars = adaptCharacters(characters);
   // Prefer the client-selected speaker (id, then name). Do NOT fall back to
@@ -1539,7 +1583,7 @@ router.post("/messages", async (req, res) => {
         )
       : undefined) ||
     (adaptedChars.length === 1 ? adaptedChars[0] : undefined);
-  const activeCharacterId = activeChar?.id ? String(activeChar.id) : null;
+  activeCharacterId = activeChar?.id ? String(activeChar.id) : null;
   const activeCharacterName = resolveActiveCharacterName({
     requestedId: requestedParticipantId || sceneMindId,
     resolvedId: activeCharacterId,
@@ -1561,7 +1605,7 @@ router.post("/messages", async (req, res) => {
             ? loadArcState(activeCharacterId, userId)
             : Promise.resolve(null),
         ]);
-  let synchroState: SynchroState | null = null;
+  synchroState = null;
   if (activeChar && memories.length > 0) {
     const memForChar = memories.find(
       (m) => m.characterId === String(activeChar.id || ""),
@@ -1598,8 +1642,8 @@ router.post("/messages", async (req, res) => {
       ? assessTherapySafety({ content, recentMessages })
       : null;
 
-  let intimacyProfile: IntimacyProfile | null = null;
-  let intimacyScene: IntimacyScene | null = null;
+  intimacyProfile = null;
+  intimacyScene = null;
   let intimacyResult: IntimacyTurnResult | null = null;
 
   if (activeCharacterId && adultActive && !therapyActive) {
@@ -1628,9 +1672,8 @@ router.post("/messages", async (req, res) => {
 
   const prompt = telemetry.measureSync("prompt_build_ms", () =>
     composePrompt({
-      clientContext: [body.system_prompt, repositoryKnowledge]
-        .filter(Boolean)
-        .join("\n\n"),
+      clientContext: body.system_prompt,
+      repositoryKnowledge,
       characters: adaptedChars,
       activeCharacter: activeChar,
       memories: adaptedMemories,
@@ -1662,20 +1705,8 @@ router.post("/messages", async (req, res) => {
     deepMode: Boolean(body.deep_mode),
     conversationDepth: recentMessages.length,
   });
-  const shouldPersist = body.persist !== false;
 
-  // Open the SSE stream before session dual-write / user persist so first
-  // token is not blocked on those DB round-trips.
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache, no-transform",
-    Connection: "keep-alive",
-    "X-Accel-Buffering": "no",
-  });
-  if (typeof res.flushHeaders === "function") res.flushHeaders();
-  const stopHeartbeat = startSseHeartbeat(res);
-
-  const preStreamPersist = (async () => {
+  preStreamPersist = (async () => {
     await syncTypedSession({
       userId,
       sessionId,
@@ -1706,15 +1737,8 @@ router.post("/messages", async (req, res) => {
     }
   })();
 
-  let fullResponse = "";
-  let usedModel = routed.model;
-  let usedTier = routed.tier;
-  let usedProvider: LlmProviderId = "local";
-  let usedBrand: LlmBrand | undefined;
-  let failedOver = false;
-  let ensembleMinds: string[] | undefined;
-  let ensembleCombined = false;
-  let streamSucceeded = false;
+  usedModel = routed.model;
+  usedTier = routed.tier;
 
   const emitDelta = (delta: string) => {
     telemetry.markFirstToken();
@@ -1723,7 +1747,6 @@ router.post("/messages", async (req, res) => {
   const emitReasoning = () => writeSse(res, { status: "thinking" });
 
   telemetry.startGeneration();
-  try {
     const messages = buildLlmChatMessages({
       systemPrompt: prompt,
       recentMessages,
