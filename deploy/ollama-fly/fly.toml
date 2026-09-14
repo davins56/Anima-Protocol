@@ -10,7 +10,7 @@ app = "anima-chat-llm"
 primary_region = "iad"
 
 [build]
-  dockerfile = "deploy/ollama-fly/Dockerfile"
+  dockerfile = "Dockerfile"
 
 [env]
   OLLAMA_HOST = "0.0.0.0:11434"
@@ -20,11 +20,8 @@ primary_region = "iad"
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_start_machines = true
-  # Keep one machine warm. `auto_stop_machines = "stop"` / `"suspend"` (scale-to-zero)
-  # saves money but the first chat after idle waits for machine boot + Ollama
-  # load — often long enough that the Worker chat turn times out. See README.
   auto_stop_machines = "off"
+  auto_start_machines = true
   min_machines_running = 1
   processes = ["app"]
 
