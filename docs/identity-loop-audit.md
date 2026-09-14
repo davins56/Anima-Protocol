@@ -37,7 +37,7 @@ User-perceived timeline for `POST /api/chat/messages` (production Chat.jsx):
     done → client persist                         ← E2E “can send again”
 ```
 
-Telemetry (`ChatPipelineTelemetry`) records `context_load_ms` and `ttft_ms`, but **`ttft_ms` starts at `startGeneration()`** — after context load. Logs understate user-perceived TTFT. Look at `context_load_ms + repository_rag_ms + prompt_build_ms + ttft_ms`.
+Telemetry (`ChatPipelineTelemetry`) records `context_load_ms` and `ttft_ms`, but **`ttft_ms` starts at `startGeneration()`** — after context load. Logs understate user-perceived TTFT. Perceived wait ≈ `context_load_ms + prompt_build_ms + ttft_ms` (`repository_rag_ms` is already nested inside `context_load_ms`; do not add it again).
 
 ### Teammate hypotheses — verified
 
@@ -60,7 +60,7 @@ Telemetry (`ChatPipelineTelemetry`) records `context_load_ms` and `ttft_ms`, but
 
 **Why it matters:** This is the only TTFT work entirely in app code. Cold Hyperdrive + RAG + weather can add seconds before Ollama is even called.
 
-**Approach:** `writeHead` + heartbeat immediately after auth + session 404 check. Run context load while the client already has an open stream (`status: "loading"`). Do not wait on repository RAG or weather to *start* the LLM; inject them only if they finish before `createChatStreamWithFailover`, else skip.
+**Approach:** Keep `beginChatTurn` (and the existing replay / 409 JSON path) **before** `writeHead`. Opening SSE right after auth would skip that ledger and present duplicate `turn_id`s as a live stream. After the turn is created, heartbeat immediately and run the expensive context `Promise.all` while the client already has an open stream (`status: "loading"`). Do not wait on repository RAG or weather to *start* the LLM; inject them only if they finish before `createChatStreamWithFailover`, else skip.
 
 **Effort:** S–M. #450 already owns `workerApiGuard.ts` / `dbErrors.ts` — don’t reopen classification. This slice is `chat.ts` writeHead ordering.
 
@@ -152,7 +152,7 @@ memory   transcript crumbs in companion_memories
 
 **Files:** `artifacts/api-server/src/routes/chat.ts`, `artifacts/api-server/src/lib/promptBuilder.ts` (optional cap), maybe `Chat.jsx` only if dropping fat history is in-scope.
 
-1. `writeHead` SSE + heartbeat **before** context `Promise.all`.
+1. `writeHead` SSE + heartbeat **after** `beginChatTurn` + duplicate 409/replay, **before** the expensive context `Promise.all`. Do not open SSE at auth-only.
 2. Skip `retrieveRepositoryKnowledge` unless the turn is protocol/codespace (or default-off on Worker).
 3. Cap `CLIENT_SCENE_CONTEXT` far below 24k, or stop duplicating CHARACTER / history when `clientOwnsTranscript`.
 
