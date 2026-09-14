@@ -1525,7 +1525,11 @@ describe("createChatStreamWithFailover", () => {
 
     expect(result.model).toBe("qwen2.5:3b");
     expect(modelsListMock).toHaveBeenCalledTimes(1);
-    expect(createMock).toHaveBeenNthCalledWith(2, expect.objectContaining({ model: "qwen2.5:3b" }));
+    expect(createMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ model: "qwen2.5:3b" }),
+      expect.objectContaining({ maxRetries: 2 }),
+    );
   });
 
   it("reuses the discovered model on later turns instead of re-earning the 404", async () => {
@@ -1547,7 +1551,11 @@ describe("createChatStreamWithFailover", () => {
     expect(second.model).toBe("qwen2.5:3b");
     // Three calls total, not four: the second turn skipped the dead tag.
     expect(createMock).toHaveBeenCalledTimes(3);
-    expect(createMock).toHaveBeenNthCalledWith(3, expect.objectContaining({ model: "qwen2.5:3b" }));
+    expect(createMock).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ model: "qwen2.5:3b" }),
+      expect.objectContaining({ maxRetries: 2 }),
+    );
     // And discovery was not repeated either.
     expect(modelsListMock).toHaveBeenCalledTimes(1);
   });
