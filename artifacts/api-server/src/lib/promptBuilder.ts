@@ -380,6 +380,27 @@ function buildConversationContext(
 }
 
 /**
+ * Stored `system_prompt` extras. Personality/backstory/voice already cover the
+ * generated identity dump; keep remaining instructions (agency, relationship,
+ * user-edited guidance) so they are not dropped on the lean server prompt.
+ */
+function storedCompanionBrief(character: CharacterData): string {
+  const stored = String(character.system_prompt || "").trim();
+  if (!stored) return "";
+  const hasStructured = Boolean(
+    character.personality || character.backstory || character.speaking_style,
+  );
+  if (!hasStructured) return stored;
+  const dropPrefixes = /^(you are\b|personality\s*:|backstory\s*:|voice\s*:)/i;
+  return stored
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter((line) => line && !dropPrefixes.test(line))
+    .join("\n")
+    .trim();
+}
+
+/**
  * Build the character definition block with smart field selection.
  */
 function buildCharacterDefinition(
@@ -414,13 +435,16 @@ function buildCharacterDefinition(
   if (character.speaking_style) {
     parts.push(`Voice: ${truncate(character.speaking_style, Math.min(350, maxChars / 4))}`);
   }
-  const storedBrief =
-    !character.personality && !character.backstory && !character.speaking_style
-      ? String(character.system_prompt || "").trim()
-      : "";
+  const storedBrief = storedCompanionBrief(character);
+  const hasStructured = Boolean(
+    character.personality || character.backstory || character.speaking_style,
+  );
   if (storedBrief) {
-    parts.push(`Companion brief: ${truncate(storedBrief, Math.min(800, maxChars / 2))}`);
-  } else if (!character.personality && !character.backstory && !character.speaking_style) {
+    const cap = hasStructured
+      ? Math.min(400, maxChars / 4)
+      : Math.min(800, maxChars / 2);
+    parts.push(`Companion brief: ${truncate(storedBrief, cap)}`);
+  } else if (!hasStructured) {
     parts.push(
       `Stay vividly in character as ${character.name}; keep a distinct voice and do not invent a contradictory personality.`,
     );
