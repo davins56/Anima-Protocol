@@ -6,6 +6,7 @@
  * Expand with cleaned Serenity / Fallen Angel logs via the export CLI.
  */
 
+import { BRIEF_GOLD_EXAMPLES } from "./briefGold";
 import type { TrainingExample } from "./types";
 
 export const ANIMA_SEED_EXAMPLES: TrainingExample[] = [
@@ -281,9 +282,8 @@ export const ANIMA_SEED_EXAMPLES: TrainingExample[] = [
 ];
 
 export function listSeedExamples(tags?: string[]): TrainingExample[] {
-  if (!tags?.length) return ANIMA_SEED_EXAMPLES.slice();
+  const all = [...ANIMA_SEED_EXAMPLES, ...BRIEF_GOLD_EXAMPLES];
+  if (!tags?.length) return all.slice();
   const wanted = new Set(tags.map((t) => t.toLowerCase()));
-  return ANIMA_SEED_EXAMPLES.filter((ex) =>
-    (ex.tags || []).some((t) => wanted.has(t.toLowerCase())),
-  );
+  return all.filter((ex) => (ex.tags || []).some((t) => wanted.has(t.toLowerCase())));
 }

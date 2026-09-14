@@ -7,8 +7,8 @@ never get committed by accident.
 ## Pipeline
 
 ```
-source (Settings export / transcripts / samples)
-    →  ingest  →  scripts/llm/data/raw/*.jsonl     (TrainingExample JSONL)
+source (Settings export / transcripts / samples / novels)
+    →  curate-novels + ingest  →  scripts/llm/data/raw/*.jsonl
     →  prepare-finetune  →  scripts/llm/output/finetune-sharegpt.jsonl
     →  CUDA SFT / DPO / quantize / eval   (see docs/llm-build.md)
 ```
@@ -18,6 +18,9 @@ source (Settings export / transcripts / samples)
 ```bash
 # 1. Settings → Export → anima-backup-*.json (not committed)
 pnpm llm:ingest -- --from ~/Downloads/anima-backup.json
+
+# 1b. Shared-box novels / brief-gold (weights in ../brief/serenity-anima-design.md)
+pnpm llm:curate-novels
 
 # 2. Seed + staged logs → ShareGPT JSONL + DPO pairs + stats
 pnpm llm:dataset

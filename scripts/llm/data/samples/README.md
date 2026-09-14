@@ -15,13 +15,15 @@ Real exports are personal and stay gitignored under
 | `fallen-angel-voice.txt` | Plain transcript |
 | `sharegpt-serenity.json` | ShareGPT JSON |
 | `chatml-fallen-angel.json` | ChatML `{ messages }` JSON |
+| `novels/*.txt` | Synthetic Speaker: scenes tagged by book + register |
 
 ## Rehearse the pipeline (no GPU, no real logs)
 
 ```bash
 pnpm llm:dataset -- --rehearse
-# ingest samples → scripts/llm/data/raw/imported-samples.jsonl
-# prepare-finetune (seed + logs, val split 0.05)
+# curate samples/novels + brief-gold → scripts/llm/data/raw/curated-novels-and-brief.jsonl
+# ingest chat samples → scripts/llm/data/raw/imported-samples.jsonl
+# prepare-finetune (seed + logs, val split 0.05, register weights)
 # prepare-dpo
 # dataset-stats
 ```

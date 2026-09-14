@@ -292,7 +292,7 @@ export async function importLogFile(
     .map((ex) => (opts.tags?.length ? { ...ex, tags: [...(ex.tags || []), ...opts.tags] } : ex));
 }
 
-const SKIP_DIR_NAMES = new Set(["node_modules", ".git", "checkpoints", "gguf"]);
+const SKIP_DIR_NAMES = new Set(["node_modules", ".git", "checkpoints", "gguf", "novels"]);
 
 async function listSupportedFiles(dir: string): Promise<string[]> {
   const out: string[] = [];

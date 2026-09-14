@@ -26,7 +26,11 @@ import {
 import {
   cleanExamples,
   characterSlug,
+  curateNovels,
   dedupeExamples,
+  defaultCuratedDir,
+  expandByWeight,
+  filterSerenitySft,
   hasDenylistedAssistantContent,
   listPreferenceExamples,
   listSeedExamples,
@@ -34,6 +38,7 @@ import {
   preferencesToJsonl,
   splitExamples,
   toJsonl,
+  writeCuratedBundle,
   type ChatTurn,
   type ExportFormat,
   type ImportLogsOptions,
@@ -60,14 +65,22 @@ Commands:
   ingest [--from path] [--dir dest] [--characters a,b] [--all-characters]
                [--tags a,b] [--dry-run]
                Drop a Settings backup / transcript folder into scripts/llm/data/raw/
+  curate-novels [--search dir] [--curated-dir path] [--include-lore] [--no-brief-gold]
+               [--no-raw] [--rehearse]
+               Extract tagged scenes from llm-raw / llm-raw-source / samples/novels
+               into scripts/llm/data/curated/ and copy JSONL into scripts/llm/data/raw/
   dataset [--from path] [--rehearse] [--characters a,b] [--val-split 0.05]
-               Ingest (optional) + prepare-finetune + prepare-dpo + dataset-stats
+               [--no-curate] [--include-lore]
+               Curate novels (unless --no-curate) + ingest (optional) + prepare-finetune
+               + prepare-dpo + dataset-stats
   prepare-finetune [--format sharegpt|chatml|alpaca|messages] [--out path] [--tags a,b]
                [--with-db] [--user <clerkUserId>] [--no-clean] [--no-dedupe]
                [--min-assistant-chars N] [--val-split 0.0-0.5]
                [--with-logs dir] [--no-logs] [--character name] [--characters a,b]
-               [--all-characters]
+               [--all-characters] [--include-lore] [--no-weight]
                Raw logs in scripts/llm/data/raw/ are merged automatically unless --no-logs.
+               Brief-gold + seed turns are included. exclude-serenity-sft (fallen-angel
+               lore) is dropped unless --include-lore. Train split is replica-weighted.
   dataset-stats [--file path]   Quality/shape report on an exported JSONL
   prepare-dpo [--out path] [--tags a,b]   Preference pairs for DPO/ORPO/SimPO
   chat [prompt…]          One-shot chat against local Anima LLM (Ollama/vLLM)
@@ -82,6 +95,7 @@ Examples:
   pnpm llm:up                               # bootstrap open-weight anima-chat
   pnpm llm:chat -- "Who are you?"
   pnpm llm:ingest -- --from ~/Downloads/anima-backup.json
+  pnpm llm:curate-novels                    # novels + brief-gold → raw/
   pnpm llm:dataset -- --rehearse            # samples → JSONL (no GPU)
   pnpm --filter @workspace/llm run cli -- prepare-finetune --format sharegpt
 `);
@@ -197,6 +211,7 @@ async function writeSplitJsonl(
   examples: TrainingExample[],
   format: ExportFormat,
   valRatio: number,
+  opts: { expandTrain?: boolean } = {},
 ): Promise<void> {
   await mkdir(path.dirname(out), { recursive: true });
   const { train, val } = splitExamples(examples, valRatio);
@@ -206,8 +221,13 @@ async function writeSplitJsonl(
   if (valRatio > 0 && val.length === 0 && train.length > 1) {
     val.push(train.pop()!);
   }
-  await writeFile(out, toJsonl(train, format), "utf8");
-  console.log(`Wrote ${train.length} train example(s) → ${out} (${format})`);
+  const trainOut = opts.expandTrain ? expandByWeight(train) : train;
+  await writeFile(out, toJsonl(trainOut, format), "utf8");
+  const weightNote =
+    opts.expandTrain && trainOut.length !== train.length
+      ? ` (${train.length} unique, ${trainOut.length} after register weights)`
+      : "";
+  console.log(`Wrote ${trainOut.length} train example(s)${weightNote} → ${out} (${format})`);
   if (valRatio > 0) {
     const valOut = out.replace(/(\.jsonl)?$/, (m) => `.val${m || ".jsonl"}`);
     await writeFile(valOut, toJsonl(val, format), "utf8");
@@ -256,7 +276,10 @@ async function cmdPrepareFinetune(args: string[]): Promise<void> {
   }
 
   examples = applyQualityPipeline(examples, args);
-  await writeSplitJsonl(out, examples, format, valSplit);
+  examples = filterSerenitySft(examples, hasFlag(args, "--include-lore"));
+  await writeSplitJsonl(out, examples, format, valSplit, {
+    expandTrain: !hasFlag(args, "--no-weight"),
+  });
   console.log(`Fine-tune base: ${ANIMA_FINETUNE_BASE_MODEL}`);
   console.log(`Serve target:   ${ANIMA_PRIMARY_MODEL}`);
 }
@@ -367,8 +390,11 @@ async function cmdDatasetStats(args: string[]): Promise<void> {
   }
   console.log(`  flagged (denylist match): ${denylistHits}`);
   console.log(`  exact/near duplicates:    ${duplicates}`);
-  if (denylistHits || duplicates) {
-    console.log(`  → re-run with prepare-finetune/export-turns (cleaning is on by default) to drop these`);
+  if (duplicates) {
+    console.log(`  (register-weight replicas in the train JSONL look duplicate here — expected)`);
+  }
+  if (denylistHits) {
+    console.log(`  → re-run with prepare-finetune/export-turns (cleaning is on by default) to drop denylist hits`);
   }
 }
 
@@ -462,7 +488,71 @@ async function cmdIngest(args: string[]): Promise<TrainingExample[]> {
   return examples;
 }
 
+async function cmdCurateNovels(args: string[]): Promise<void> {
+  const extraDir = argValue(args, "--search") || argValue(args, "--dir");
+  const rehearse = hasFlag(args, "--rehearse");
+  const searchDirs = rehearse
+    ? ["scripts/llm/data/samples/novels"]
+    : extraDir
+      ? [extraDir, "llm-raw", "llm-raw-source", "serenity-extract", "scripts/llm/data/novels", "scripts/llm/data/samples/novels"]
+      : undefined;
+  const result = await curateNovels({
+    searchDirs,
+    repoRoot: REPO_ROOT,
+    includeLore: hasFlag(args, "--include-lore"),
+    includeBriefGold: !hasFlag(args, "--no-brief-gold"),
+  });
+
+  console.log(`Scanned ${result.scannedDirs.length} source dir(s)`);
+  for (const dir of result.scannedDirs) console.log(`  - ${dir}`);
+  if (result.missingSources.length) {
+    console.log(`Not on disk yet (${result.missingSources.length}):`);
+    for (const dir of result.missingSources.slice(0, 8)) console.log(`  - ${dir}`);
+  }
+  for (const file of result.files) {
+    console.log(
+      `  ${file.book} [${file.register}] turns=${file.turns} ← ${path.relative(REPO_ROOT, file.path) || file.path}`,
+    );
+  }
+  if (result.skippedBooks.length) {
+    console.log(
+      `Skipped as Serenity SFT (lore only): ${result.skippedBooks.join(", ")} (pass --include-lore to extract)`,
+    );
+  }
+  console.log(
+    `Examples: ${result.examples.length} (brief-gold ${result.usedBriefGold ? "on" : "off"})`,
+  );
+
+  const curatedDir = argValue(args, "--curated-dir")
+    ? resolveOutPath(argValue(args, "--curated-dir")!)
+    : defaultCuratedDir();
+  const rawDir = hasFlag(args, "--no-raw") ? undefined : resolveOutPath(DEFAULT_RAW_DIR);
+  const written = await writeCuratedBundle({
+    examples: result.examples,
+    curatedDir,
+    rawDir,
+  });
+  console.log(`Wrote ${written.counts.brief} brief-gold row(s) → ${path.relative(REPO_ROOT, written.briefJsonl)}`);
+  console.log(`Wrote ${written.counts.novels} novel scene(s)  → ${path.relative(REPO_ROOT, written.novelsJsonl)}`);
+  if (written.rawCopy) {
+    console.log(`Staged ${written.counts.all} TrainingExample row(s) → ${path.relative(REPO_ROOT, written.rawCopy)}`);
+  }
+  console.log("Next: pnpm llm:dataset   (or pnpm llm:prepare-finetune -- --val-split 0.05)");
+}
+
 async function cmdDataset(args: string[]): Promise<void> {
+  if (!hasFlag(args, "--no-curate")) {
+    const curateArgs = args.filter((a, i, all) => {
+      if (a === "--no-curate" || a === "--from" || a === "--out" || a === "--format" || a === "--val-split" || a === "--dir") {
+        return false;
+      }
+      if (all[i - 1] === "--from" || all[i - 1] === "--out" || all[i - 1] === "--format" || all[i - 1] === "--val-split" || all[i - 1] === "--dir") {
+        return false;
+      }
+      return true;
+    });
+    await cmdCurateNovels(curateArgs);
+  }
   const shouldIngest = Boolean(argValue(args, "--from") || hasFlag(args, "--rehearse"));
   if (shouldIngest) {
     await cmdIngest(args);
@@ -471,8 +561,19 @@ async function cmdDataset(args: string[]): Promise<void> {
   }
   const valSplit = argValue(args, "--val-split") || "0.05";
   const rest = args.filter((a, i, all) => {
-    if (a === "--from" || a === "--rehearse" || a === "--dry-run") return false;
-    if (all[i - 1] === "--from") return false;
+    if (
+      a === "--from" ||
+      a === "--rehearse" ||
+      a === "--dry-run" ||
+      a === "--no-curate" ||
+      a === "--no-brief-gold" ||
+      a === "--no-raw" ||
+      a === "--search" ||
+      a === "--curated-dir"
+    ) {
+      return false;
+    }
+    if (all[i - 1] === "--from" || all[i - 1] === "--search" || all[i - 1] === "--curated-dir") return false;
     return true;
   });
   if (!rest.includes("--val-split")) rest.push("--val-split", valSplit);
@@ -633,6 +734,9 @@ async function main(): Promise<void> {
       break;
     case "ingest":
       await cmdIngest(args.slice(1));
+      break;
+    case "curate-novels":
+      await cmdCurateNovels(args.slice(1));
       break;
     case "dataset":
       await cmdDataset(args.slice(1));
