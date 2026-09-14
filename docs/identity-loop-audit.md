@@ -37,7 +37,7 @@ User-perceived timeline for `POST /api/chat/messages` (production Chat.jsx, post
     done → client persist                         ← E2E “can send again”
 ```
 
-Telemetry (`ChatPipelineTelemetry`) records `context_load_ms` and `ttft_ms`, but **`ttft_ms` starts at `startGeneration()`** — after context load. Logs understate user-perceived TTFT. Perceived wait ≈ `context_load_ms + prompt_build_ms + ttft_ms` (`repository_rag_ms` is already nested inside `context_load_ms`; do not add it again).
+Telemetry (`ChatPipelineTelemetry`) records `context_load_ms` and `ttft_ms`, but **`ttft_ms` starts at `startGeneration()`** — after context load. After #453 the first *network* byte is a heartbeat; first *content* token still waits on context + prompt + model. Logs understate content TTFT. Perceived wait to first word ≈ `context_load_ms + prompt_build_ms + ttft_ms` (`repository_rag_ms` is nested inside `context_load_ms` when RAG runs; do not add it again).
 
 ### Teammate hypotheses — verified
 
