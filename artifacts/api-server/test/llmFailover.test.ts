@@ -1862,6 +1862,7 @@ describe("createChatCompletionWithFailover", () => {
     expect(result.content).toBe("anima reply");
     expect(result.provider).toBe("local");
     expect(result.brand).toBe("anima");
+    expect(createMock.mock.calls[0]?.[0]).toMatchObject({ max_tokens: 1024 });
   });
 
   it("honors the caller maxTokens cap on the local completion", async () => {

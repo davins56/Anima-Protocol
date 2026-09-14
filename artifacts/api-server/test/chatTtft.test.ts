@@ -49,13 +49,17 @@ vi.mock("../src/lib/llmFailover", () => ({
   remapGenericProviderError: (err: Error) => err,
 }));
 
-vi.mock("../src/lib/modelRouter", () => ({
-  routeModel: () => ({
-    model: "test-anima",
-    tier: "standard",
-    maxTokens: 200,
-  }),
-}));
+vi.mock("../src/lib/modelRouter", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/lib/modelRouter")>();
+  return {
+    ...actual,
+    routeModel: () => ({
+      model: "test-anima",
+      tier: "standard",
+      maxTokens: 200,
+    }),
+  };
+});
 
 vi.mock("../src/lib/localEnsemble", () => ({
   isLocalEnsembleEnabled: () => false,
