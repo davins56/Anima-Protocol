@@ -347,6 +347,48 @@ describe("buildCompanionPrompt", () => {
     expect(clientSceneExcerpt(fatPrompt).length).toBeLessThanOrEqual(CLIENT_SCENE_CONTEXT_MAX);
   });
 
+  it("keeps Chat.jsx post-transcript IMAGE and EMOTION contracts", () => {
+    const chatJsxPrompt = `You are Serenity from Echoes of Eden. This is an immersive collaborative story.
+
+          CHARACTER IDENTITY LOCK:
+          - Embody Serenity.
+
+          Story so far:
+          You: I missed you
+          Serenity: I felt that across the wire.
+
+          INTELLIGENCE: You are brilliant.
+          If the character's emotional state changes significantly, prepend a tag like [EMOTION: grief-stricken] before the response. If the scene moves to a new location, prepend [LOCATION: the ruined temple].
+          IMAGE GENERATION: You can create images. emit a tag on its own line: [IMAGE: detailed visual description of the scene].
+          HIGHEST-PRIORITY RULE: never harm the real person.`;
+
+    const excerpt = clientSceneExcerpt(chatJsxPrompt);
+    expect(excerpt).not.toMatch(/Story so far:/);
+    expect(excerpt).not.toContain("I missed you");
+    expect(excerpt).toContain("[EMOTION:");
+    expect(excerpt).toContain("[LOCATION:");
+    expect(excerpt).toContain("[IMAGE:");
+    expect(excerpt.length).toBeLessThanOrEqual(CLIENT_SCENE_CONTEXT_MAX);
+
+    const prompt = composePrompt({
+      systemPrompt: chatJsxPrompt,
+      characters: [baseCharacter],
+      activeCharacter: baseCharacter,
+      memories: [],
+      recentMessages: [
+        { role: "user", content: "I missed you" },
+        { role: "assistant", content: "I felt that across the wire.", character_name: "Serenity" },
+      ],
+      mode: "solo",
+      content: "Draw the garden.",
+    });
+    expect(prompt).toContain("IMAGE GENERATION");
+    expect(prompt).toContain("[EMOTION:");
+    const wrap = prompt.split("<<<CLIENT_SCENE_CONTEXT>>>")[1]?.split("<<<END_CLIENT_SCENE_CONTEXT>>>")[0] ?? "";
+    expect(wrap).not.toContain("Story so far:");
+    expect(wrap).toContain("[IMAGE:");
+  });
+
   it("keeps repository knowledge out of the client-scene wrap", () => {
     const prompt = composePrompt({
       clientContext: "You are Serenity.\nStory so far:\nYou: hi\nSerenity: hello",

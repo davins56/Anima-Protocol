@@ -19,6 +19,9 @@ describe("shouldRetrieveRepositoryKnowledge", () => {
       false,
     );
     expect(looksLikeRepositoryTurn("Tell me about your day")).toBe(false);
+    expect(
+      looksLikeRepositoryTurn("Jack into the hyperdrive and ride the Cloudflare worker."),
+    ).toBe(false);
   });
 
   it("runs when the turn is actually about this repo", () => {
