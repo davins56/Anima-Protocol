@@ -3,6 +3,7 @@ import {
   coerceApiResponseToJson,
   fetchApiThroughExpress,
   isHttpRedirectStatus,
+  isLlmHealthProbePath,
   isLongLivedApiPath,
   isScriptOrBinaryContentType,
   isWorkerApiPath,
@@ -27,10 +28,21 @@ describe("worker API path helpers", () => {
     expect(shouldTimeoutApiPath("/api/store/Character")).toBe(true);
     expect(shouldTimeoutApiPath("/api/store/ChatSession")).toBe(true);
     expect(shouldTimeoutApiPath("/api/healthz/db")).toBe(true);
+    expect(shouldTimeoutApiPath("/api/healthz/llm")).toBe(true);
     expect(shouldTimeoutApiPath("/api/store/events")).toBe(false);
     expect(shouldTimeoutApiPath("/api/chat")).toBe(false);
     expect(shouldTimeoutApiPath("/api/openai/invoke/x")).toBe(false);
     expect(isLongLivedApiPath("/api/store/events")).toBe(true);
+  });
+
+  it("exempts live LLM health probes from the 20s wall", () => {
+    expect(isLlmHealthProbePath("/api/healthz/llm", "?probe=1")).toBe(true);
+    expect(isLlmHealthProbePath("/api/healthz/llm", "probe=true")).toBe(true);
+    expect(isLlmHealthProbePath("/api/healthz/llm")).toBe(false);
+    expect(isLlmHealthProbePath("/api/healthz/db", "?probe=1")).toBe(false);
+    expect(shouldTimeoutApiPath("/api/healthz/llm", "?probe=1")).toBe(false);
+    expect(shouldTimeoutApiPath("/api/healthz/llm", "?probe=yes")).toBe(false);
+    expect(shouldTimeoutApiPath("/api/healthz/db", "?probe=1")).toBe(true);
   });
 });
 
@@ -45,6 +57,7 @@ describe("jsonApiErrorResponse", () => {
     const body = await response.json();
     expect(body).toMatchObject({
       error: "Database connection timed out",
+      dbError: true,
       reason: "timeout",
       code: "CONNECT_TIMEOUT",
     });
@@ -58,6 +71,36 @@ describe("jsonApiErrorResponse", () => {
     expect(body.error).toMatch(/unavailable/i);
     expect(body.code).toBe("worker_api_failure");
     expect(JSON.stringify(body)).not.toMatch(/<!DOCTYPE/);
+  });
+
+  it("does not classify WorkerApiTimeoutError as a database timeout", async () => {
+    const response = jsonApiErrorResponse(
+      new WorkerApiTimeoutError(20_000),
+      503,
+      "/api/healthz/llm",
+    );
+    expect(response.status).toBe(503);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      error: "LLM health probe timed out",
+      dbError: false,
+      reason: "timeout",
+      code: "timeout",
+    });
+    expect(JSON.stringify(body)).not.toMatch(/database/i);
+  });
+
+  it("reports a generic worker timeout off the LLM probe path", async () => {
+    const response = jsonApiErrorResponse(
+      new WorkerApiTimeoutError(20_000),
+      503,
+      "/api/store/Character",
+    );
+    const body = await response.json();
+    expect(body.error).toBe("The API request timed out.");
+    expect(body.dbError).toBe(false);
+    expect(body.code).toBe("timeout");
+    expect(body.error).not.toMatch(/database/i);
   });
 });
 
@@ -231,9 +274,50 @@ describe("fetchApiThroughExpress", () => {
     expect(response.headers.get("content-type")).toMatch(/application\/json/);
     expect(response.status).toBe(503);
     const body = await response.json();
-    expect(["timeout", "ETIMEOUT"]).toContain(body.code);
-    expect(body.error).toMatch(/unavailable|timeout|database/i);
+    expect(body.code).toBe("timeout");
+    expect(body.dbError).toBe(false);
+    expect(body.error).toMatch(/timed out/i);
+    expect(JSON.stringify(body)).not.toMatch(/database/i);
     expect(JSON.stringify(body)).not.toMatch(/<!DOCTYPE|lt IE 7/);
+  });
+
+  it("does not wall-timeout a slow healthz LLM probe", async () => {
+    const handler = {
+      fetch: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        return Response.json({ status: "ok", probes: [] });
+      },
+    };
+    const response = await fetchApiThroughExpress(
+      new Request("https://anima-protocol.com/api/healthz/llm?probe=1"),
+      {},
+      {},
+      handler,
+      { timeoutMs: 20 },
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ status: "ok" });
+  });
+
+  it("times out hung healthz/llm without probe as an LLM timeout, not a DB timeout", async () => {
+    const handler = {
+      fetch: () => new Promise<Response>(() => {}),
+    };
+    const response = await fetchApiThroughExpress(
+      new Request("https://anima-protocol.com/api/healthz/llm"),
+      {},
+      {},
+      handler,
+      { timeoutMs: 20 },
+    );
+    expect(response.status).toBe(503);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      error: "LLM health probe timed out",
+      dbError: false,
+      code: "timeout",
+    });
+    expect(JSON.stringify(body)).not.toMatch(/database/i);
   });
 
   it("does not rewrite a clerk-js 307 into worker_api_failure JSON", async () => {
