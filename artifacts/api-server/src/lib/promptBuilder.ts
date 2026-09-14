@@ -363,7 +363,13 @@ function buildCharacterDefinition(
   if (character.speaking_style) {
     parts.push(`Voice: ${truncate(character.speaking_style, Math.min(350, maxChars / 4))}`);
   }
-  if (!character.personality && !character.backstory && !character.speaking_style) {
+  const storedBrief =
+    !character.personality && !character.backstory && !character.speaking_style
+      ? String(character.system_prompt || "").trim()
+      : "";
+  if (storedBrief) {
+    parts.push(`Companion brief: ${truncate(storedBrief, Math.min(800, maxChars / 2))}`);
+  } else if (!character.personality && !character.backstory && !character.speaking_style) {
     parts.push(
       `Stay vividly in character as ${character.name}; keep a distinct voice and do not invent a contradictory personality.`,
     );

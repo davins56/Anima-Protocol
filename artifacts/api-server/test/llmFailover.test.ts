@@ -1256,6 +1256,20 @@ describe("createChatStreamWithFailover", () => {
     });
   });
 
+  it("honors the caller max_tokens cap on the local stream", async () => {
+    createMock.mockResolvedValueOnce(fakeStream("anima"));
+    await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 1024,
+      messages: [{ role: "user", content: "hello" }],
+    });
+    expect(createMock.mock.calls[0]?.[0]).toMatchObject({
+      stream: true,
+      max_tokens: 1024,
+    });
+  });
+
   it("throws a local-only setup error when the self-hosted LLM is missing", async () => {
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;

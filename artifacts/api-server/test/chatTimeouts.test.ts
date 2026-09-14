@@ -12,6 +12,8 @@ import {
   llmAiChatOpenTimeoutMs,
   llmOpenTimeoutMs,
   openStreamAbort,
+  COMPANION_REPLY_MAX_TOKENS,
+  companionReplyMaxTokens,
 } from "../src/lib/chatTimeouts";
 import { WORKER_API_TIMEOUT_MS } from "../src/lib/workerApiGuard";
 
@@ -22,6 +24,13 @@ describe("llmOpenTimeoutMs", () => {
     expect(LLM_OPEN_TIMEOUT_MS).toBe(35_000);
     expect(llmOpenTimeoutMs()).toBe(35_000);
     expect(llmOpenTimeoutMs({ freeTierCascade: false })).toBe(35_000);
+  });
+
+  it("caps companion replies below the routed 4–8k max_tokens", () => {
+    expect(COMPANION_REPLY_MAX_TOKENS).toBe(1024);
+    expect(companionReplyMaxTokens(8192)).toBe(1024);
+    expect(companionReplyMaxTokens(200)).toBe(200);
+    expect(companionReplyMaxTokens(0)).toBe(1024);
   });
 
   it("gives free-tier multi-candidate failover an 80s open budget", () => {
@@ -109,13 +118,17 @@ describe("openStreamAbort", () => {
 });
 
 describe("client/server budget lockstep", () => {
-  it("wires the free-tier open budget into the chat route", () => {
+  it("caps companion SSE opens at 35s and generation at 1024 tokens", () => {
     const chatRoute = readFileSync(
       join(repoRoot, "artifacts/api-server/src/routes/chat.ts"),
       "utf8",
     );
-    expect(chatRoute).toContain("llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() })");
+    expect(chatRoute).toContain("llmOpenTimeoutMs({ freeTierCascade: false })");
+    expect(chatRoute).toContain("companionReplyMaxTokens(");
     expect(chatRoute).toContain("openStreamAbort(");
+    expect(chatRoute).not.toContain(
+      "llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() })",
+    );
     expect(chatRoute).not.toMatch(/const LLM_OPEN_TIMEOUT_MS = 35_000/);
   });
 
