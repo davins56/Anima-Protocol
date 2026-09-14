@@ -33,13 +33,17 @@ vi.mock("../src/lib/llmFailover", () => ({
   remapGenericProviderError: (err: Error) => err,
 }));
 
-vi.mock("../src/lib/modelRouter", () => ({
-  routeModel: () => ({
-    model: "test-anima",
-    tier: "standard",
-    maxTokens: 200,
-  }),
-}));
+vi.mock("../src/lib/modelRouter", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/lib/modelRouter")>();
+  return {
+    ...actual,
+    routeModel: () => ({
+      model: "test-anima",
+      tier: "standard",
+      maxTokens: 8192,
+    }),
+  };
+});
 
 vi.mock("../src/lib/localEnsemble", () => ({
   isLocalEnsembleEnabled: () => false,
@@ -174,11 +178,15 @@ describe("chat lifecycle", () => {
     const sent = llmMocks.createChatStreamWithFailover.mock.calls[0]?.[0] as {
       messages?: Array<{ role: string; content: string }>;
       temperature?: number;
+      maxTokens?: number;
+      signal?: AbortSignal;
     };
     expect(sent.messages?.some((message) => message.role === "user" && message.content === "Hello")).toBe(
       true,
     );
     expect(sent.temperature).toBe(0.85);
+    expect(sent.maxTokens).toBe(1024);
+    expect(sent.signal).toBeInstanceOf(AbortSignal);
 
     const retry = await request(`/chat/turns/${turnId}/retry`, {
       method: "POST",

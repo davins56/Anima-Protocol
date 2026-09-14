@@ -28,7 +28,6 @@ import {
 import { routeModel } from "../lib/modelRouter";
 import {
   createChatStreamWithFailover,
-  usesFreeTierOpenBudget,
   isOpenRouterGenericProviderError,
   isOpenRouterZdrOrDataPolicyError,
   OPENROUTER_FREE_PROVIDER_HINT,
@@ -45,7 +44,11 @@ import {
   consumeLlmStream,
   LlmStreamTimeoutError,
 } from "../lib/consumeLlmStream.js";
-import { llmOpenTimeoutMs, openStreamAbort } from "../lib/chatTimeouts";
+import {
+  clampChatMessagesMaxTokens,
+  llmChatMessagesOpenTimeoutMs,
+  openStreamAbort,
+} from "../lib/chatTimeouts";
 import {
   combineLocalDrafts,
   draftLocalMinds,
@@ -1705,6 +1708,7 @@ router.post("/messages", async (req, res) => {
     deepMode: Boolean(body.deep_mode),
     conversationDepth: recentMessages.length,
   });
+  const maxTokens = clampChatMessagesMaxTokens(routed.maxTokens);
 
   preStreamPersist = (async () => {
     await syncTypedSession({
@@ -1757,7 +1761,7 @@ router.post("/messages", async (req, res) => {
       writeSse(res, { status: "ensemble", phase: "gathering", minds: [] });
       const drafts = await draftLocalMinds({
         tier: routed.tier,
-        maxTokens: routed.maxTokens,
+        maxTokens,
         messages,
       });
       if (!drafts.length) {
@@ -1781,7 +1785,7 @@ router.post("/messages", async (req, res) => {
         });
         const completion = await combineLocalDrafts(drafts, messages, {
           tier: routed.tier,
-          maxTokens: routed.maxTokens,
+          maxTokens,
         });
         usedModel = completion.model;
         usedTier = completion.tier;
@@ -1797,15 +1801,13 @@ router.post("/messages", async (req, res) => {
         fullResponse = streamed.content;
       }
     } else {
-      const open = openStreamAbort(
-        llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() }),
-      );
+      const open = openStreamAbort(llmChatMessagesOpenTimeoutMs());
       let completion;
       try {
         completion = await createChatStreamWithFailover({
           tier: routed.tier,
           model: routed.model,
-          maxTokens: routed.maxTokens,
+          maxTokens,
           messages,
           temperature: 0.85,
           signal: open.signal,
