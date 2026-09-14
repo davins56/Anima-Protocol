@@ -56,7 +56,7 @@ vi.mock("../src/lib/modelRouter", async (importOriginal) => {
     routeModel: () => ({
       model: "test-anima",
       tier: "standard",
-      maxTokens: 200,
+      maxTokens: 8192,
     }),
   };
 });
@@ -227,6 +227,10 @@ describe("chat TTFT (Slice 1)", () => {
     expect(rest).toContain("Hello from Anima.");
     expect(embeddingMocks.finishedAt).toBeGreaterThan(0);
     expect(firstByteAt).toBeLessThan(embeddingMocks.finishedAt);
+    const sent = llmMocks.createChatStreamWithFailover.mock.calls.at(-1)?.[0] as {
+      maxTokens?: number;
+    };
+    expect(sent.maxTokens).toBe(1024);
   });
 
   it("retrieves repository knowledge only for repo-shaped turns", async () => {

@@ -132,6 +132,10 @@ import { buildGroupPrompt } from "@/lib/buildGroupPrompt";
 import { streamChatReply } from "@/lib/streamChatReply";
 import { finalizeAssistantReply } from "@/lib/visibleAssistantReply";
 import {
+  buildLeanSoloClientContext,
+  companionChatDeepMode,
+} from "@/lib/leanCompanionChat";
+import {
   assessLewdTiming,
   buildContentRatingInstruction,
   lewdTimingClause,
@@ -1363,17 +1367,26 @@ export default function Chat() {
         !aiBehaviorConfig &&
         activeSession.mode === "solo" &&
         activeSession.character_id;
-      const [user, behaviorConfigs, resolvedSoloChar, resolvedGroupChars] =
+      const behaviorConfigPromise = needsBehaviorConfig
+        ? base44.entities.AIBehaviorConfig.filter({
+            character_id: activeSession.character_id,
+          })
+            .then((rows) => (rows?.length ? rows[0] : null))
+            .catch(() => null)
+        : Promise.resolve(aiBehaviorConfig);
+      const rosterSoloChar =
+        activeSession.mode === "solo" && activeSession.character_id
+          ? characters.find((c) => c.id === activeSession.character_id) || null
+          : null;
+      const [user, fetchedBehaviorConfig, resolvedSoloChar, resolvedGroupChars] =
         await Promise.all([
           authUser ? Promise.resolve(authUser) : base44.auth.me(),
-          needsBehaviorConfig
-            ? base44.entities.AIBehaviorConfig.filter({
-                character_id: activeSession.character_id,
-              })
-            : Promise.resolve(null),
-          activeSession.mode === "solo" && activeSession.character_id
-            ? resolveCharacterById(activeSession.character_id)
-            : Promise.resolve(null),
+          behaviorConfigPromise,
+          rosterSoloChar
+            ? Promise.resolve(rosterSoloChar)
+            : activeSession.mode === "solo" && activeSession.character_id
+              ? resolveCharacterById(activeSession.character_id)
+              : Promise.resolve(null),
           activeSession.mode === "group" &&
           activeSession.group_character_ids?.length
             ? Promise.all(
@@ -1383,6 +1396,9 @@ export default function Chat() {
               ).then((chars) => chars.filter(Boolean))
             : Promise.resolve([]),
         ]);
+      if (needsBehaviorConfig && fetchedBehaviorConfig) {
+        setAIBehaviorConfig(fetchedBehaviorConfig);
+      }
       const therapyActive = isTherapySession(activeSession, user, resolvedSoloChar);
       const modePolicy = resolveClientChatMode({
         therapy: therapyActive,
@@ -1391,11 +1407,7 @@ export default function Chat() {
           activeSession.mode === "group" && distinctUniverses >= 2,
       });
       const adultMode = modePolicy.adultAllowed;
-      let behaviorConfig = aiBehaviorConfig;
-      if (behaviorConfigs?.length > 0) {
-        behaviorConfig = behaviorConfigs[0];
-        setAIBehaviorConfig(behaviorConfig);
-      }
+      const behaviorConfig = fetchedBehaviorConfig || aiBehaviorConfig;
 
       // Account-default user profile (set in /profile). Surfaced to every
       // companion so they know who they're talking to. Wrapped in a delimited
@@ -1599,45 +1611,25 @@ ${lewdityGuide}`;
                 adultMode,
               });
 
-          const identityBlock = [
-            char.personality ? `Personality: ${char.personality}` : "",
-            char.backstory ? `Backstory: ${char.backstory}` : "",
-            char.speaking_style ? `Voice: ${char.speaking_style}` : "",
-          ].filter(Boolean).join("\n");
-
-          prompt = `You are ${char.name}${char._isAnima ? "" : char.universe ? ` from ${char.universe}` : ""}. This is an immersive collaborative story — you are a full participant with agency and autonomy, not an assistant.${effectiveAdultInstruction}${intimatePlayAlong}${archetypeInstruction}${companionModeInstruction}${effectiveBehaviorInstructions}${webSearchNote}
-
-          CHARACTER IDENTITY LOCK:
-          - From the first reply onward, embody ${char.name} using the Personality, Backstory, and Voice below — never a generic assistant.
-          - Every reply must reflect their specific traits, mannerisms, values, and speech patterns.
-          - If details conflict with a generic helpful tone, the character identity wins.
-          - Never refer to yourself as an AI, a language model, or a computer program. Keep the conversation natural.
-
-          ${animaNote}${animaSoulNote}${identityBlock ? `${identityBlock}\n` : `Stay vividly in character as ${char.name}; invent no contradictory personality.\n`}${relCtx}${memCtx}${injectedMemCtx}${loreCtx}${fragmentCtx}${finalCalendarContext}${locationContext ? `\n${locationContext}\n` : ""}${vesselContext}${userProfileContext}${worldKnowledgeContext}
-          CRITICAL AUTONOMY RULES:
-          - You have your own goals, desires, and boundaries. You are NOT obligated to cooperate with player requests if they conflict with your character.
-          - You can refuse, resist, or demand something in return. React authentically to manipulation or coercion.
-          - Your emotional state and relationship tier deeply influence your willingness to help. Low trust = reluctance. High trust = enthusiasm.
-          - Make independent decisions based on what YOUR character would do, not what benefits the story or pleases the player.
-          - You have secrets, fears, and vulnerabilities. Protect them unless trust has been genuinely earned.
-          - If the player tries to control you, you'll push back. Real people have agency.
-
-          Story so far:
-          ${conversationHistory}
-
-          ${INTELLIGENCE_GUIDANCE}
-
-          EMOTIONAL RESONANCE: ${resonancePromptGuidance(resonance.value)} Let this shape your warmth, presence, and proactiveness — deepen emotional intimacy, closeness, and care.${adultMode && !isMultiAspect ? " When LEWDITY TIMING is RIGHT TIME or CONTINUE, play along and add your own sensual/lewd flare in character; on WRONG TIME beats, stay emotionally intimate without sexualizing." : " Never explicit or anatomical content."}
-${attunementGuidance ? `\n          ATTUNEMENT: ${attunementGuidance}${adultMode && !isMultiAspect ? " Calibrate tone and presence; follow LEWDITY TIMING — when intimate, contribute heat in your voice, not only mirror the user." : " Emotional attunement only — calibrate tone and presence, never explicit content."}` : ""}
-
-          Respond as ${char.name} would in real life — short, natural, human. Say one thing at a time. React to what was just said. Don't monologue unless pressed. ${lengthGuide}
-${isContinue ? `\n          The user tapped Continue — keep the scene moving as ${char.name}. Take the next natural beat, then stop at a clear pause point so they can react.\n` : ""}
-
-          ${turnTakingClause({ isContinue })}
-          If the character's emotional state changes significantly, prepend a tag like [EMOTION: grief-stricken] before the response. If the scene moves to a new location, prepend [LOCATION: the ruined temple]. Only include these tags when there's a clear shift — not every message.
-          ${imageGenerationTagInstruction()}${matrixSafetyClause}
-
-          ${loyaltyGuardrailClause()}`;
+          // Server composePrompt owns identity, store history, memories, and
+          // guardrails. Sending that sheet again doubles prefill on anima-chat.
+          prompt = buildLeanSoloClientContext({
+            companionModeInstruction,
+            behaviorInstructions: effectiveBehaviorInstructions,
+            adultInstruction: effectiveAdultInstruction,
+            intimatePlayAlong,
+            matrixSafetyClause,
+            userProfileContext,
+            injectedMemoryContext: injectedMemCtx,
+            loreContext: loreCtx,
+            calendarContext: finalCalendarContext,
+            fragmentContext: fragmentCtx,
+            vesselContext,
+            lengthGuide,
+            imageInstruction: imageGenerationTagInstruction(),
+            isContinue,
+            characterName: char.name,
+          });
         }
       } else if (activeSession.mode === "group") {
         const groupChars = resolvedGroupChars;
@@ -1819,7 +1811,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           isContinue,
           mode: activeSession.mode || "solo",
           systemPrompt: prompt,
-          deepMode: !!activeSession.deep_mode || needsWebSearch,
+          deepMode: companionChatDeepMode(activeSession),
           persist: false,
           turnId,
           persistenceOwner: "client",

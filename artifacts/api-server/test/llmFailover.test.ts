@@ -337,6 +337,7 @@ import {
   resetOpenRouterCreditFallbackForTests,
   resolveLocalModel,
   resolveOpenRouterModel,
+  honorCallerMaxTokens,
   chatCompletionHttpFailure,
 } from "../src/lib/llmFailover";
 
@@ -1256,7 +1257,7 @@ describe("createChatStreamWithFailover", () => {
     });
   });
 
-  it("honors the caller maxTokens cap on the local stream", async () => {
+  it("honors the caller max_tokens cap on the local stream", async () => {
     createMock.mockResolvedValueOnce(fakeStream("anima"));
     await createChatStreamWithFailover({
       tier: "standard",
@@ -1268,6 +1269,12 @@ describe("createChatStreamWithFailover", () => {
       stream: true,
       max_tokens: 1024,
     });
+  });
+
+  it("clamps a fractional caller max_tokens to at least 1", () => {
+    expect(honorCallerMaxTokens(0.7, 8192)).toBe(1);
+    expect(honorCallerMaxTokens(1024.9, 8192)).toBe(1024);
+    expect(honorCallerMaxTokens(undefined, 8192)).toBe(8192);
   });
 
   it("throws a local-only setup error when the self-hosted LLM is missing", async () => {

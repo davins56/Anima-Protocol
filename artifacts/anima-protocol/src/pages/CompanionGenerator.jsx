@@ -10,6 +10,11 @@ import {
   companionCreateErrorMessage,
   createCompanionRecord,
 } from "@/lib/createCompanion";
+import {
+  isUsableSessionId,
+  startSoloCompanionChatSession,
+} from "@/lib/createInitSession";
+import { rememberCreatedSession } from "@/lib/chatSessionLoad";
 import { track } from "@/lib/analytics";
 import { Wand2, Copy, Check, AlertCircle, Loader, SlidersHorizontal } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -175,10 +180,33 @@ export default function CompanionGenerator() {
 
       setCompanion(null);
       setPrompt("");
-      toast.success(
-        `✨ ${companion.name} has been created. Opening Customise Anima so you can draft her look.`,
-      );
       if (newChar?.id) {
+        try {
+          const session = await startSoloCompanionChatSession(newChar);
+          if (isUsableSessionId(session?.id)) {
+            const primedSession = {
+              ...session,
+              messages: Array.isArray(session.messages) ? session.messages : [],
+            };
+            rememberCreatedSession(primedSession);
+            toast.success(`✨ ${companion.name} is ready. Opening chat.`, {
+              action: {
+                label: "Look",
+                onClick: () => navigate(companionLookHref(newChar.id)),
+              },
+            });
+            navigate(`/chat/${session.id}`, { state: { primedSession } });
+            return;
+          }
+        } catch (chatErr) {
+          console.warn(
+            "[Anima] Companion created, but opening chat failed:",
+            chatErr,
+          );
+        }
+        toast.success(
+          `✨ ${companion.name} has been created. Opening Customise Anima so you can draft her look.`,
+        );
         navigate(companionLookHref(newChar.id));
       }
     } catch (err) {

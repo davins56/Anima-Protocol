@@ -13,6 +13,9 @@ import {
   llmChatMessagesOpenTimeoutMs,
   llmOpenTimeoutMs,
   openStreamAbort,
+  COMPANION_REPLY_MAX_TOKENS,
+  companionReplyMaxTokens,
+  chatReplyMaxTokens,
 } from "../src/lib/chatTimeouts";
 import { WORKER_API_TIMEOUT_MS } from "../src/lib/workerApiGuard";
 
@@ -23,6 +26,21 @@ describe("llmOpenTimeoutMs", () => {
     expect(LLM_OPEN_TIMEOUT_MS).toBe(35_000);
     expect(llmOpenTimeoutMs()).toBe(35_000);
     expect(llmOpenTimeoutMs({ freeTierCascade: false })).toBe(35_000);
+  });
+
+  it("caps companion replies below the routed 4–8k max_tokens", () => {
+    expect(COMPANION_REPLY_MAX_TOKENS).toBe(1024);
+    expect(companionReplyMaxTokens(8192)).toBe(1024);
+    expect(companionReplyMaxTokens(200)).toBe(200);
+    expect(companionReplyMaxTokens(0)).toBe(1024);
+  });
+
+  it("keeps the router budget for group and deep-mode turns", () => {
+    expect(chatReplyMaxTokens(8192)).toBe(1024);
+    expect(chatReplyMaxTokens(8192, { mode: "solo" })).toBe(1024);
+    expect(chatReplyMaxTokens(8192, { mode: "group" })).toBe(8192);
+    expect(chatReplyMaxTokens(4096, { deepMode: true })).toBe(4096);
+    expect(chatReplyMaxTokens(0, { mode: "group" })).toBe(1024);
   });
 
   it("gives free-tier multi-candidate failover an 80s open budget", () => {
@@ -147,8 +165,10 @@ describe("client/server budget lockstep", () => {
       "utf8",
     );
     expect(chatRoute).toContain("llmChatMessagesOpenTimeoutMs()");
+    expect(chatRoute).toContain("chatReplyMaxTokens(");
+    expect(chatRoute).toContain("scheduleLeftoverTurnRepair(");
+    expect(chatRoute).toContain("attachStoredEmbeddings(userId, adapted).catch(");
     expect(chatRoute).toContain("openStreamAbort(");
-    expect(chatRoute).toContain("clampChatMessagesMaxTokens(routed.maxTokens)");
     expect(chatRoute).not.toContain(
       "llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() })",
     );

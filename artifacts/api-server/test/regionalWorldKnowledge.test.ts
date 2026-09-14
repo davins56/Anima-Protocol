@@ -11,6 +11,7 @@ import {
   formatLocalTimeLabel,
   formatRegionalWorldKnowledge,
   fetchRegionalWorldKnowledge,
+  peekRegionalWorldKnowledge,
   upsertRegionalWorldKnowledge,
   promptHasRegionalWorldKnowledge,
   resetRegionalWorldKnowledgeCacheForTests,
@@ -116,6 +117,119 @@ describe("regional world knowledge", () => {
       geo: { country: "US" },
     });
     expect(region.enabled).toBe(false);
+  });
+
+  it("peeks clock-only world knowledge without waiting on weather HTTP", () => {
+    const region: ResolvedRegion = {
+      enabled: true,
+      timezone: "America/New_York",
+      locale: "en-US",
+      city: "Richmond",
+      regionName: "Virginia",
+      country: "United States",
+      countryCode: "US",
+      latitude: null,
+      longitude: null,
+    };
+    const snapshot = peekRegionalWorldKnowledge(
+      region,
+      new Date("2026-08-13T16:04:00Z"),
+    );
+    expect(snapshot.enabled).toBe(true);
+    expect(snapshot.city).toBe("Richmond");
+    expect(snapshot.weather).toBeNull();
+    expect(snapshot.holidays).toEqual([]);
+    expect(snapshot.localTimeLabel).toBeTruthy();
+  });
+
+  it("refreshes local clock when peeking a cached weather snapshot", async () => {
+    const region: ResolvedRegion = {
+      enabled: true,
+      timezone: "America/New_York",
+      locale: "en-US",
+      city: "Richmond",
+      regionName: "Virginia",
+      country: "United States",
+      countryCode: "US",
+      latitude: 37.54,
+      longitude: -77.44,
+    };
+    const fetchFn: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("open-meteo.com/v1/forecast")) {
+        return new Response(
+          JSON.stringify({
+            current: {
+              temperature_2m: 22,
+              apparent_temperature: 22,
+              weather_code: 2,
+              relative_humidity_2m: 60,
+              wind_speed_10m: 5,
+              is_day: 1,
+            },
+            daily: {
+              temperature_2m_max: [26],
+              temperature_2m_min: [18],
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+    };
+    const cachedAt = new Date("2026-08-13T16:00:00Z");
+    const peekedAt = new Date("2026-08-13T16:10:00Z");
+    await fetchRegionalWorldKnowledge(region, { fetchFn, now: cachedAt });
+    const peeked = peekRegionalWorldKnowledge(region, peekedAt);
+    const stale = formatLocalTimeLabel(cachedAt, region.timezone, region.locale);
+    const fresh = formatLocalTimeLabel(peekedAt, region.timezone, region.locale);
+    expect(peeked.weather).toBeTruthy();
+    expect(peeked.localTimeLabel).toBe(fresh.label);
+    expect(peeked.weekday).toBe(fresh.weekday);
+    expect(peeked.localTimeLabel).not.toBe(stale.label);
+  });
+
+  it("keeps a geocoded season when the fresh clock cannot infer hemisphere", async () => {
+    const region: ResolvedRegion = {
+      enabled: true,
+      timezone: "UTC",
+      locale: "en-US",
+      city: "Sydney",
+      regionName: null,
+      country: "Australia",
+      countryCode: "AU",
+      latitude: null,
+      longitude: null,
+    };
+    const fetchFn: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("geocoding-api.open-meteo.com")) {
+        return new Response(
+          JSON.stringify({
+            results: [
+              {
+                name: "Sydney",
+                admin1: "New South Wales",
+                country: "Australia",
+                country_code: "AU",
+                latitude: -33.87,
+                longitude: 151.21,
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+    };
+    const cachedAt = new Date("2026-08-13T16:00:00Z");
+    const peekedAt = new Date("2026-08-13T16:10:00Z");
+    const cached = await fetchRegionalWorldKnowledge(region, { fetchFn, now: cachedAt });
+    expect(cached.hemisphere).toBe("southern");
+    expect(cached.season).toContain("winter");
+    const peeked = peekRegionalWorldKnowledge(region, peekedAt);
+    expect(peeked.hemisphere).toBe("southern");
+    expect(peeked.season).toBe(cached.season);
   });
 
   it("formats a local time label in the user's timezone", () => {
