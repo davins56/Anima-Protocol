@@ -70,9 +70,9 @@ Canonical weights and negatives:
 
 Drop extracts (preferred) or PDFs on the shared box:
 
-- `llm-raw-source/*.txt`
+- `llm-raw/*.pdf` (canonical Upgrade v2; nested folders walked; needs `pdftotext`)
+- `llm-raw-source/*.txt` (used when a PDF is missing or yields no scenes)
 - `serenity-extract/*.txt`
-- `llm-raw/*.pdf` (needs `pdftotext`)
 - `scripts/llm/data/novels/` (gitignored)
 
 ```bash

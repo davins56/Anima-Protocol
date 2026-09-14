@@ -494,7 +494,7 @@ async function cmdCurateNovels(args: string[]): Promise<void> {
   const searchDirs = rehearse
     ? ["scripts/llm/data/samples/novels"]
     : extraDir
-      ? [extraDir, "llm-raw-source", "serenity-extract", "llm-raw", "scripts/llm/data/novels", "scripts/llm/data/samples/novels"]
+      ? [extraDir, "llm-raw", "llm-raw-source", "serenity-extract", "scripts/llm/data/novels", "scripts/llm/data/samples/novels"]
       : undefined;
   const result = await curateNovels({
     searchDirs,

@@ -126,12 +126,14 @@ export function expandByWeight(examples: TrainingExample[]): TrainingExample[] {
 
 /**
  * Directories the curator walks, repo-root relative.
- * First file for a given book id wins (txt extracts beat later PDFs/samples).
+ * Upgrade v2 canonical order: llm-raw PDFs first, then staged txt extracts.
+ * A book id is only locked once a file actually yields scenes, so an
+ * unreadable PDF does not block llm-raw-source/*.txt.
  */
 export const DEFAULT_NOVEL_DIRS = [
+  "llm-raw",
   "llm-raw-source",
   "serenity-extract",
-  "llm-raw",
   "scripts/llm/data/novels",
   "scripts/llm/data/samples/novels",
 ];

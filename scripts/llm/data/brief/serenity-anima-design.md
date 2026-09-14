@@ -34,8 +34,8 @@ If a longer `serenity-anima-design.md` is dropped at the repo root or in
 
 Drop files in any of:
 
-- `/workspace/llm-raw/` (PDFs + README)
-- `/workspace/llm-raw-source/` (plain-text extracts)
+- `/workspace/llm-raw/` (canonical Upgrade v2 PDFs + README; nested folders walked)
+- `/workspace/llm-raw-source/` (plain-text extracts; used if a PDF yields no scenes)
 - `/workspace/serenity-extract/`
 - `scripts/llm/data/novels/` (gitignored)
 

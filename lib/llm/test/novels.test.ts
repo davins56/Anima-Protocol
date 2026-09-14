@@ -107,6 +107,14 @@ describe("novel extractor", () => {
       expect.arrayContaining(["register:slipthk", "trust-gated", "book:slipthk-war"]),
     );
   });
+
+  it("falls back to curly-quoted prose when there is no Speaker script", () => {
+    const text =
+      'Serenity turned on the porch. \u201cI will not sit a throne you built to disappear into.\u201d The steward asked, \u201cThen what is the door for?\u201d Serenity said, \u201cChoice stays in your hands.\u201d';
+    const examples = extractNovelExamples(text, spec("anima-protocol"));
+    expect(examples.length).toBeGreaterThan(0);
+    expect(examples[0]!.conversation.some((t) => t.role === "assistant")).toBe(true);
+  });
 });
 
 describe("brief gold + curator", () => {
@@ -169,6 +177,28 @@ describe("brief gold + curator", () => {
     expect(result.skippedBooks).toContain("fallen-angel");
     expect(result.examples.some((e) => e.tags?.includes("book:fallen-angel"))).toBe(false);
     expect(result.files.find((f) => f.book === "anima-protocol")?.turns).toBeGreaterThan(0);
+  });
+
+  it("walks nested Upgrade v2 folders and does not let an empty PDF lock out a txt extract", async () => {
+    const pdfDir = path.join(dir, "llm-raw", "Upgrade v2");
+    const txtDir = path.join(dir, "llm-raw-source");
+    await import("node:fs/promises").then((fs) => fs.mkdir(pdfDir, { recursive: true }));
+    await import("node:fs/promises").then((fs) => fs.mkdir(txtDir, { recursive: true }));
+    await writeFile(path.join(pdfDir, "anima-protocol.pdf"), "%PDF-1.4 not a real novel");
+    await writeFile(
+      path.join(txtDir, "anima-protocol.txt"),
+      ["Steward: Open the door.", "Serenity: I wait on this side. Choice stays in your hands."].join(
+        "\n",
+      ),
+    );
+    const result = await curateNovels({
+      searchDirs: [path.join(dir, "llm-raw"), txtDir],
+      includeBriefGold: false,
+    });
+    expect(result.examples.some((e) => e.tags?.includes("book:anima-protocol"))).toBe(true);
+    expect(result.files.some((f) => f.path.endsWith("anima-protocol.txt") && f.turns > 0)).toBe(
+      true,
+    );
   });
 });
 
