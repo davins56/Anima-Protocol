@@ -103,15 +103,21 @@ export async function attachStoredEmbeddings(
   const characterIds = [...new Set(memories.map((m) => m.characterId).filter(Boolean))];
   if (characterIds.length === 0) return memories;
 
-  const rows = await db
-    .select()
-    .from(memoryEmbeddings)
-    .where(
-      and(
-        eq(memoryEmbeddings.userId, userId),
-        inArray(memoryEmbeddings.characterId, characterIds),
-      ),
-    );
+  let rows;
+  try {
+    rows = await db
+      .select()
+      .from(memoryEmbeddings)
+      .where(
+        and(
+          eq(memoryEmbeddings.userId, userId),
+          inArray(memoryEmbeddings.characterId, characterIds),
+        ),
+      );
+  } catch {
+    // Enrichment only — un-embedded facts still retrieve by recency/text.
+    return memories;
+  }
 
   const byChar = new Map<string, Map<string, number[]>>();
   for (const row of rows) {

@@ -428,6 +428,21 @@ function formatTemp(celsius: number, imperial: boolean): string {
   return `${rounded}°C (${cToF(celsius)}°F)`;
 }
 
+function withFreshClock(
+  snapshot: RegionalSnapshot,
+  region: ResolvedRegion,
+  now: Date,
+): RegionalSnapshot {
+  const clock = emptySnapshot(region, now);
+  return {
+    ...snapshot,
+    localTimeLabel: clock.localTimeLabel,
+    weekday: clock.weekday,
+    season: clock.season,
+    hemisphere: clock.hemisphere ?? snapshot.hemisphere,
+  };
+}
+
 function emptySnapshot(region: ResolvedRegion, now: Date): RegionalSnapshot {
   const { label, weekday } = formatLocalTimeLabel(now, region.timezone, region.locale);
   const hemisphere = hemisphereForLatitude(region.latitude, region.timezone);
@@ -482,7 +497,9 @@ export function peekRegionalWorldKnowledge(
     return emptySnapshot({ ...region, enabled: false }, now);
   }
   const cached = snapshotCache.get(cacheKey(region));
-  if (cached && cached.expiresAt > now.getTime()) return cached.snapshot;
+  if (cached && cached.expiresAt > now.getTime()) {
+    return withFreshClock(cached.snapshot, region, now);
+  }
   return emptySnapshot(region, now);
 }
 
@@ -595,7 +612,7 @@ export async function fetchRegionalWorldKnowledge(
   const key = cacheKey(region);
   const cached = snapshotCache.get(key);
   if (cached && cached.expiresAt > now.getTime()) {
-    return cached.snapshot;
+    return withFreshClock(cached.snapshot, region, now);
   }
 
   const fetchFn = deps.fetchFn ?? fetch;

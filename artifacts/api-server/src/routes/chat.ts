@@ -45,7 +45,7 @@ import {
   LlmStreamTimeoutError,
 } from "../lib/consumeLlmStream.js";
 import {
-  companionReplyMaxTokens,
+  chatReplyMaxTokens,
   llmChatMessagesOpenTimeoutMs,
   openStreamAbort,
 } from "../lib/chatTimeouts";
@@ -893,13 +893,58 @@ async function applyRelationshipPostProcessFromTurn(turn: ChatTurn): Promise<voi
   });
 }
 
+const leftoverTurnRepair = new Map<string, Promise<void>>();
+const turnPersistInFlight = new Map<string, Promise<void>>();
+
 async function retryTurnPersistence(turn: ChatTurn): Promise<void> {
-  try {
-    await persistLedgerTurn(turn);
-  } catch (error) {
-    await markTurnFailed(turn.id, turn.userId, error);
-    throw error;
-  }
+  const existing = turnPersistInFlight.get(turn.id);
+  if (existing) return existing;
+  const work = (async () => {
+    const latest = await readChatTurn(turn.id, turn.userId);
+    if (!latest || latest.status === "committed") return;
+    try {
+      await persistLedgerTurn(latest);
+    } catch (error) {
+      await markTurnFailed(latest.id, latest.userId, error);
+      throw error;
+    }
+  })().finally(() => {
+    if (turnPersistInFlight.get(turn.id) === work) turnPersistInFlight.delete(turn.id);
+  });
+  turnPersistInFlight.set(turn.id, work);
+  return work;
+}
+
+function scheduleLeftoverTurnRepair(
+  userId: string,
+  sessionId: string,
+  currentTurnId: string,
+): void {
+  const key = `${userId}:${sessionId}`;
+  if (leftoverTurnRepair.has(key)) return;
+  const work = (async () => {
+    try {
+      const retryable = await retryableChatTurns(userId, sessionId, 3);
+      if (retryable.length === 0) return;
+      const results = await Promise.allSettled(
+        retryable
+          .filter((turn) => turn.id !== currentTurnId)
+          .map((turn) => retryTurnPersistence(turn)),
+      );
+      const failures = results.filter((result) => result.status === "rejected").length;
+      if (failures > 0) {
+        logger.warn(
+          { sessionId, failures, attempted: results.length },
+          "Chat turn reconciliation left retryable failures",
+        );
+      }
+    } catch (error) {
+      logger.warn({ error, sessionId }, "Chat turn reconciliation failed");
+    }
+  })().finally(() => {
+    if (leftoverTurnRepair.get(key) === work) leftoverTurnRepair.delete(key);
+  });
+  leftoverTurnRepair.set(key, work);
 }
 
 router.get("/sessions/:sessionId/context", async (req, res) => {
@@ -1400,27 +1445,9 @@ router.post("/messages", async (req, res) => {
 
   try {
   // Leftover-turn repair must not delay first token. Heartbeat is already
-  // on the wire; reconcile in the background.
-  void (async () => {
-    try {
-      const retryable = await retryableChatTurns(userId, sessionId, 3);
-      if (retryable.length === 0) return;
-      const results = await Promise.allSettled(
-        retryable
-          .filter((turn) => turn.id !== turnId)
-          .map((turn) => retryTurnPersistence(turn)),
-      );
-      const failures = results.filter((result) => result.status === "rejected").length;
-      if (failures > 0) {
-        logger.warn(
-          { sessionId, failures, attempted: results.length },
-          "Chat turn reconciliation left retryable failures",
-        );
-      }
-    } catch (error) {
-      logger.warn({ error, sessionId }, "Chat turn reconciliation failed");
-    }
-  })();
+  // on the wire; reconcile in the background. One in-flight repair per
+  // session so a generated turn is not retried while persist is still running.
+  scheduleLeftoverTurnRepair(userId, sessionId, turnId);
 
   const memoriesPromise = loadMemories(userId, characterIds);
   const wantRepositoryKnowledge = shouldRetrieveRepositoryKnowledge(content, {
@@ -1498,11 +1525,12 @@ router.post("/messages", async (req, res) => {
       readRecentStoreMessages(userId, sessionId, 24, {
         skipMigrate: Boolean(sessionData.messages_migrated),
       }),
-      memoriesPromise.then((rows) =>
+      memoriesPromise.then((rows) => {
+        const adapted = adaptMemories(rows);
         // Local companion_memories + stored vectors only. Remote supermemory
         // search is a later-phase retrieval hop and must not delay first token.
-        attachStoredEmbeddings(userId, adaptMemories(rows)),
-      ),
+        return attachStoredEmbeddings(userId, adapted).catch(() => adapted);
+      }),
       hintedStatePromise,
       worldKnowledgePromise,
       repositoryKnowledgePromise,
@@ -1701,7 +1729,10 @@ router.post("/messages", async (req, res) => {
     deepMode: Boolean(body.deep_mode),
     conversationDepth: recentMessages.length,
   });
-  const replyMaxTokens = companionReplyMaxTokens(routed.maxTokens);
+  const replyMaxTokens = chatReplyMaxTokens(routed.maxTokens, {
+    mode,
+    deepMode: Boolean(body.deep_mode),
+  });
 
   preStreamPersist = (async () => {
     await syncTypedSession({
