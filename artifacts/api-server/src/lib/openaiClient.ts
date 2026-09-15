@@ -297,10 +297,20 @@ export function isCloudFlagshipLlmHost(host: string | null | undefined): boolean
  * Transport-level retries for the self-hosted endpoint. Tunables via
  * ANIMA_LOCAL_LLM_MAX_RETRIES (0 disables) for hosts where a retry is more
  * expensive than a failed turn — e.g. a single-slot GPU box.
+ *
+ * Cloudflare Workers share one subrequest budget across Hyperdrive, Clerk,
+ * keep-alive warm, and the OpenAI SDK. Default 2 retries on a wedged Fly /
+ * tunnel origin burns that budget and surfaces as "Too many subrequests by
+ * single Worker invocation." The #476 45s stream-open budget already waits
+ * out a cold start on the first attempt, so Workers / Vercel default to 0.
  */
-export function localLlmMaxRetries(): number {
-  const raw = Number(process.env.ANIMA_LOCAL_LLM_MAX_RETRIES);
+export function localLlmMaxRetries(
+  env: NodeJS.ProcessEnv = process.env,
+  globalObj: typeof globalThis = globalThis,
+): number {
+  const raw = Number(env.ANIMA_LOCAL_LLM_MAX_RETRIES);
   if (Number.isFinite(raw) && raw >= 0) return Math.floor(raw);
+  if (isLoopbackUnreachableRuntime(env, globalObj)) return 0;
   return 2;
 }
 
@@ -482,7 +492,8 @@ export function getLocalLlmClient(): OpenAI | null {
     normalizeApiKey(process.env.ANIMA_LOCAL_LLM_API_KEY) ||
     normalizeApiKey(process.env.VLLM_API_KEY) ||
     "local";
-  const cacheKey = `${baseURL}::${apiKey}`;
+  const maxRetries = localLlmMaxRetries();
+  const cacheKey = `${baseURL}::${apiKey}::${maxRetries}`;
   if (!localLlmClient || localLlmClientKey !== cacheKey) {
     localLlmClient = new OpenAI({
       apiKey,
@@ -492,8 +503,9 @@ export function getLocalLlmClient(): OpenAI | null {
       // 502 is routine. With no retries every one of those killed a chat turn
       // outright. The SDK only retries connection errors and 408/409/429/5xx,
       // and only before a stream has started, so this cannot duplicate a
-      // partially-delivered reply.
-      maxRetries: localLlmMaxRetries(),
+      // partially-delivered reply. On Workers the default is 0 — see
+      // localLlmMaxRetries().
+      maxRetries,
     });
     localLlmClientKey = cacheKey;
     logLocalLlmClientInitOnce();

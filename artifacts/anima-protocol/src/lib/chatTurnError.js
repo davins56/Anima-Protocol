@@ -12,6 +12,10 @@ const WORKERS_AI_4006_RE =
   /\b4006\b|10[, ]?000 neurons|daily free (?:allocation|quota)|used up your daily free/i;
 const STORE_UNREACHABLE_RE =
   /companion store is unreachable|server sent an unexpected response/i;
+const WORKER_SUBREQUEST_RE =
+  /too many subrequests|subrequest limit/i;
+const SQL_LEAK_RE =
+  /Failed query\b|from\s+"companion_memories"|select\s+"id"\s*,\s*"user_id"|params:\s*user_/i;
 
 const WORKERS_AI_FREE_QUOTA_HINT =
   "Workers AI daily free quota exhausted — enable Workers Paid or temporarily allow OpenRouter failover";
@@ -55,8 +59,21 @@ export function chatTurnErrorMessage(err) {
   if (SESSION_MISSING_RE.test(raw)) {
     return "This conversation could not be found. Go back and start the session again.";
   }
+  // Drizzle "Failed query" / raw SQL must never become the HUD toast —
+  // including when bind params mention "deepseek" / "Workers AI".
+  if (SQL_LEAK_RE.test(raw)) {
+    return /companion_memories/i.test(raw)
+      ? "Couldn't load companion memory. Please try again."
+      : "The companion could not reply. Please try again.";
+  }
   if (WORKERS_AI_4006_RE.test(raw)) {
     return WORKERS_AI_FREE_QUOTA_HINT;
+  }
+  if (WORKER_SUBREQUEST_RE.test(raw)) {
+    return (
+      "The companion could not finish this reply because the chat service is busy. " +
+      "Please try again in a moment. Chat does not fall through to OpenRouter or MiniMax."
+    );
   }
   if (WORKERS_AI_RE.test(raw)) {
     return raw;

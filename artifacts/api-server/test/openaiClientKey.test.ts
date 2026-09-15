@@ -16,6 +16,7 @@ import {
   openRouterKeyFingerprint,
   openRouterCascadeMaxRetries,
   openRouterMaxRetries,
+  localLlmMaxRetries,
   resetLlmClientsForTests,
   getMinimaxApiKey,
   getMinimaxApiKeySource,
@@ -49,6 +50,38 @@ describe("OpenRouter catalog defaults", () => {
     expect(OPENROUTER_FREE_MODEL_CANDIDATES).not.toContain("google/gemma-3-12b-it:free");
     expect(OPENROUTER_FREE_MODEL_CANDIDATES).not.toContain("minimax/minimax-01:free");
     expect(OPENROUTER_FREE_MODEL_CANDIDATES.every((slug) => slug.endsWith(":free"))).toBe(true);
+  });
+});
+
+describe("localLlmMaxRetries", () => {
+  const SAVED = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...SAVED };
+    resetLlmClientsForTests();
+  });
+
+  it("defaults to 2 on local Node so a single dropped tunnel packet can retry", () => {
+    delete process.env.ANIMA_LOCAL_LLM_MAX_RETRIES;
+    delete process.env.ANIMA_RUNTIME;
+    delete process.env.VERCEL;
+    expect(localLlmMaxRetries()).toBe(2);
+  });
+
+  it("defaults to 0 on Cloudflare Workers so SDK retries cannot burn the subrequest budget", () => {
+    delete process.env.ANIMA_LOCAL_LLM_MAX_RETRIES;
+    const workerGlobal = {
+      navigator: { userAgent: "Cloudflare-Workers" },
+    } as unknown as typeof globalThis;
+    expect(localLlmMaxRetries(process.env, workerGlobal)).toBe(0);
+  });
+
+  it("honors ANIMA_LOCAL_LLM_MAX_RETRIES even on Workers", () => {
+    process.env.ANIMA_LOCAL_LLM_MAX_RETRIES = "1";
+    const workerGlobal = {
+      navigator: { userAgent: "Cloudflare-Workers" },
+    } as unknown as typeof globalThis;
+    expect(localLlmMaxRetries(process.env, workerGlobal)).toBe(1);
   });
 });
 

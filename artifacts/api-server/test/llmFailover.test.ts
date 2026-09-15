@@ -279,6 +279,10 @@ vi.mock("../src/lib/openaiClient", () => {
       return client;
     },
     normalizeApiKey: (raw: string | undefined) => (raw ? raw.trim() || null : null),
+    isLoopbackLlmHost: (host: string | null | undefined) => {
+      const h = (host || "").trim().toLowerCase();
+      return h === "localhost" || h === "127.0.0.1" || h === "::1";
+    },
     localLlmMaxRetries: () => 2,
     openRouterMaxRetries: () => {
       const raw = Number(process.env.ANIMA_OPENROUTER_MAX_RETRIES);
@@ -327,7 +331,12 @@ import {
   isOpenRouterTransientGatewayError,
   isOpenRouterZdrOrDataPolicyError,
   LOCAL_LLM_CONNECTION_FIX_HINT,
+  LOCAL_LLM_PUBLIC_HOST_UNREACHABLE_HINT,
+  LOCAL_LLM_SUBREQUEST_HINT,
   LOCAL_LLM_TIMEOUT_HINT,
+  isHomeTunnelLlmHost,
+  isWorkerSubrequestLimitError,
+  localLlmConnectionHint,
   OPENROUTER_FREE_PROVIDER_HINT,
   OPENROUTER_ZDR_PRIVACY_HINT,
   shouldTryNextOpenRouterFreeModel,
@@ -397,6 +406,35 @@ describe("isProviderConnectionError", () => {
   it("does not throw when code/type/message are non-strings", () => {
     expect(() => isProviderConnectionError({ code: -111, type: {}, message: { errno: -111 } })).not.toThrow();
     expect(isProviderConnectionError({ code: -111, type: {} })).toBe(false);
+  });
+});
+
+describe("Worker subrequest limit vs host connection hints", () => {
+  it("detects the production Cloudflare subrequest error under an SDK Connection error wrapper", () => {
+    const err = Object.assign(new Error("Connection error."), {
+      name: "APIConnectionError",
+      cause: new Error("Too many subrequests by single Worker invocation."),
+    });
+    expect(isWorkerSubrequestLimitError(err)).toBe(true);
+    expect(isProviderConnectionError(err)).toBe(true);
+  });
+
+  it("keeps tunnel copy for home-box hosts and Fly/public copy otherwise", () => {
+    expect(isHomeTunnelLlmHost("llm.anima-protocol.com")).toBe(true);
+    expect(isHomeTunnelLlmHost("localhost")).toBe(true);
+    expect(isHomeTunnelLlmHost("anima-chat-llm.fly.dev")).toBe(false);
+    expect(localLlmConnectionHint("llm.anima-protocol.com")).toBe(
+      LOCAL_LLM_CONNECTION_FIX_HINT,
+    );
+    expect(localLlmConnectionHint("anima-chat-llm.fly.dev")).toBe(
+      LOCAL_LLM_PUBLIC_HOST_UNREACHABLE_HINT,
+    );
+    expect(localLlmConnectionHint(null)).toBe(LOCAL_LLM_PUBLIC_HOST_UNREACHABLE_HINT);
+  });
+});
+
+describe("isProviderConnectionError numeric code", () => {
+  it("still detects string connect codes when type is non-string", () => {
     expect(isProviderConnectionError({ code: "ECONNREFUSED", type: 1 })).toBe(true);
   });
 });
@@ -1495,7 +1533,11 @@ describe("createChatStreamWithFailover", () => {
 
     expect(result.model).toBe("qwen2.5:3b");
     expect(modelsListMock).toHaveBeenCalledTimes(1);
-    expect(createMock).toHaveBeenNthCalledWith(2, expect.objectContaining({ model: "qwen2.5:3b" }));
+    expect(createMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ model: "qwen2.5:3b" }),
+      expect.objectContaining({ maxRetries: 2 }),
+    );
   });
 
   it("reuses the discovered model on later turns instead of re-earning the 404", async () => {
@@ -1517,7 +1559,11 @@ describe("createChatStreamWithFailover", () => {
     expect(second.model).toBe("qwen2.5:3b");
     // Three calls total, not four: the second turn skipped the dead tag.
     expect(createMock).toHaveBeenCalledTimes(3);
-    expect(createMock).toHaveBeenNthCalledWith(3, expect.objectContaining({ model: "qwen2.5:3b" }));
+    expect(createMock).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ model: "qwen2.5:3b" }),
+      expect.objectContaining({ maxRetries: 2 }),
+    );
     // And discovery was not repeated either.
     expect(modelsListMock).toHaveBeenCalledTimes(1);
   });
@@ -1613,6 +1659,73 @@ describe("createChatStreamWithFailover", () => {
     expect(message).toMatch(/Connection error/i);
     expect(message).toMatch(/SSL_ERROR_SYSCALL|ECONNRESET/i);
     expect(message).toMatch(/does not fall through to OpenRouter/i);
+    expect(message).toContain(LOCAL_LLM_PUBLIC_HOST_UNREACHABLE_HINT);
+    expect(message).not.toMatch(/home box|Cloudflare Tunnel|public-v1/i);
+  });
+
+  it("keeps the tunnel/home-box recipe only for named-tunnel hosts", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
+    const sdkErr = Object.assign(new Error("Connection error."), {
+      name: "APIConnectionError",
+    });
+    createMock.mockRejectedValueOnce(sdkErr);
+
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    ).rejects.toThrow(LOCAL_LLM_CONNECTION_FIX_HINT);
+  });
+
+  it("surfaces a HUD-safe busy message for Worker subrequest-limit failures", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://anima-chat-llm.fly.dev/v1";
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
+    const sdkErr = Object.assign(new Error("Connection error."), {
+      name: "APIConnectionError",
+      cause: new Error("Too many subrequests by single Worker invocation."),
+    });
+    createMock.mockRejectedValueOnce(sdkErr);
+
+    let thrown: unknown;
+    try {
+      await createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 8192,
+        messages: [{ role: "user", content: "hi" }],
+      });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(Error);
+    const message = (thrown as Error).message;
+    expect(message).toBe(LOCAL_LLM_SUBREQUEST_HINT);
+    expect(message).not.toMatch(/Too many subrequests/i);
+    expect(message).not.toMatch(/home box|Cloudflare Tunnel|public-v1/i);
+    expect(message).not.toMatch(/anima-chat-llm\.fly\.dev/i);
+    expect(chatCompletionHttpFailure(thrown)).toMatchObject({
+      status: 503,
+      error: LOCAL_LLM_SUBREQUEST_HINT,
+      code: "ai_request_failed",
+    });
+  });
+
+  it("caps local SDK retries on the generate call so a wedged host cannot fan out", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://anima-chat-llm.fly.dev/v1";
+    createMock.mockResolvedValueOnce(fakeStream("ok"));
+    await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 32,
+      messages: [{ role: "user", content: "hi" }],
+    });
+    expect(createMock).toHaveBeenCalledTimes(1);
+    const opts = createMock.mock.calls[0]?.[1] as { maxRetries?: number };
+    expect(opts?.maxRetries).toBe(2);
   });
 
   it("does not hop to OpenRouter when the custom Anima LLM host is unreachable even if fallback is on", async () => {
@@ -2108,10 +2221,33 @@ describe("probeLlmProviders", () => {
       configured: true,
       ok: false,
       errorKind: "connection",
-      hint: LOCAL_LLM_CONNECTION_FIX_HINT,
+      hint: LOCAL_LLM_PUBLIC_HOST_UNREACHABLE_HINT,
     });
     expect(probes[0]?.message).toMatch(/host=anima-chat-llm\.fly\.dev/i);
     expect(probes[0]?.message).toMatch(/model=anima-chat/i);
+    expect(probes[0]?.message).not.toMatch(/home box|Cloudflare Tunnel/i);
+  });
+
+  it("reports errorKind=busy without tunnel copy when the Worker hits the subrequest cap", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://anima-chat-llm.fly.dev/v1";
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
+    createMock.mockRejectedValueOnce(
+      Object.assign(new Error("Connection error."), {
+        name: "APIConnectionError",
+        cause: new Error("Too many subrequests by single Worker invocation."),
+      }),
+    );
+    const probes = await probeLlmProviders();
+    expect(probes).toHaveLength(1);
+    expect(probes[0]).toMatchObject({
+      provider: "local",
+      configured: true,
+      ok: false,
+      errorKind: "busy",
+      hint: LOCAL_LLM_SUBREQUEST_HINT,
+      message: LOCAL_LLM_SUBREQUEST_HINT,
+    });
+    expect(probes[0]?.message).not.toMatch(/Too many subrequests|home box|Cloudflare Tunnel/i);
   });
 
   it("does not probe OpenRouter when local is unset even if a key is present", async () => {
