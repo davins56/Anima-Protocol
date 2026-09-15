@@ -1,5 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { createChatCompletionWithFailover } from "./llmFailover";
+import { shouldSkipSidecarLlm } from "./sidecarLlm";
 import { db } from "../db/index";
 import { animaEvolution } from "../db/schema";
 
@@ -135,7 +136,7 @@ export async function maybeTriggerMilestoneEvolution(params: {
     alreadyMilestone: params.alreadyMilestone,
   });
   if (targetMilestone == null) return null;
-
+  if (shouldSkipSidecarLlm()) return null;
 
   const evolutionPrompt = `You are evolving an Anima companion personality over time.
 

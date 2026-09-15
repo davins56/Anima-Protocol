@@ -3,9 +3,13 @@ import {
   buildCompanionPrompt,
   buildGroupCompanionPrompt,
   buildLlmChatMessages,
+  capRecentMessagesForLlm,
+  composeCompanionChatMessages,
   composePrompt,
   CONTINUE_USER_TURN,
   CLIENT_SCENE_CONTEXT_MAX,
+  LLM_CHAT_HISTORY_MAX_CHARS,
+  LLM_CHAT_HISTORY_MAX_MESSAGES,
   clientSceneExcerpt,
   isDuplicativeClientPrompt,
   splitClientTranscript,
@@ -769,6 +773,88 @@ describe("buildLlmChatMessages", () => {
       content: "   ",
     });
     expect(messages.at(-1)).toEqual({ role: "user", content: CONTINUE_USER_TURN });
+  });
+
+  it("caps replayed history so later turns stay inside a small prefill budget", () => {
+    const recentMessages = Array.from({ length: 24 }, (_, i) => ({
+      role: i % 2 === 0 ? "user" : "assistant",
+      content: `turn ${i} ${"x".repeat(600)}`,
+      character_name: i % 2 === 0 ? undefined : "Serenity",
+    }));
+    const capped = capRecentMessagesForLlm(recentMessages);
+    expect(capped).toHaveLength(LLM_CHAT_HISTORY_MAX_MESSAGES);
+    expect(capped[0]?.content).toContain("turn 16");
+    expect(capped.every((message) => message.content.length <= LLM_CHAT_HISTORY_MAX_CHARS)).toBe(
+      true,
+    );
+
+    const messages = buildLlmChatMessages({
+      systemPrompt: "You are Serenity.",
+      recentMessages,
+      content: "What now?",
+    });
+    const history = messages.slice(1, -1);
+    expect(history).toHaveLength(LLM_CHAT_HISTORY_MAX_MESSAGES);
+    expect(messages.at(-1)).toEqual({ role: "user", content: "What now?" });
+  });
+});
+
+describe("composeCompanionChatMessages", () => {
+  const character = {
+    id: "char-1",
+    name: "Serenity",
+    personality: "Warm",
+    speaking_style: "Soft",
+    backstory: "A fallen angel.",
+    universe: "Echoes of Eden",
+  };
+
+  it("sends history once as chat turns, not again inside the system prompt", () => {
+    const recentMessages = [
+      { role: "user", content: "I miss the garden" },
+      {
+        role: "assistant",
+        content: "I remember it with you.",
+        character_name: "Serenity",
+      },
+    ];
+    const messages = composeCompanionChatMessages({
+      characters: [character],
+      activeCharacter: character,
+      memories: [],
+      recentMessages,
+      mode: "solo",
+      content: "Take me back there.",
+    });
+
+    expect(messages[0]?.role).toBe("system");
+    expect(messages[0]?.content).not.toContain("CONVERSATION CONTEXT:");
+    expect(messages[0]?.content).not.toContain("LATEST USER MESSAGE:");
+    expect(messages[0]?.content).not.toContain("I miss the garden");
+    expect(messages[0]?.content).not.toContain("Take me back there.");
+    expect(messages.slice(1)).toEqual([
+      { role: "user", content: "I miss the garden" },
+      { role: "assistant", content: "I remember it with you." },
+      { role: "user", content: "Take me back there." },
+    ]);
+  });
+
+  it("omits inlined history from composePrompt when asked", () => {
+    const prompt = composePrompt({
+      characters: [character],
+      activeCharacter: character,
+      memories: [],
+      recentMessages: [
+        { role: "user", content: "I miss the garden" },
+        { role: "assistant", content: "I remember it with you." },
+      ],
+      mode: "solo",
+      content: "Take me back there.",
+      omitConversationHistory: true,
+    });
+    expect(prompt).not.toContain("CONVERSATION CONTEXT:");
+    expect(prompt).not.toContain("LATEST USER MESSAGE:");
+    expect(prompt).not.toContain("I miss the garden");
   });
 });
 

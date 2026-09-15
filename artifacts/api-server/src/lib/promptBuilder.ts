@@ -173,6 +173,13 @@ export interface PromptBuilderParams {
    * Chat.jsx systemPrompt cannot crowd it out — and so ordinary turns can skip it.
    */
   repositoryKnowledge?: string | null;
+
+  /**
+   * When true, skip CONVERSATION CONTEXT and LATEST USER MESSAGE. Pair with
+   * `buildLlmChatMessages` so history is sent once as chat turns instead of
+   * being inlined here and replayed (double prefill toward num_ctx 8192).
+   */
+  omitConversationHistory?: boolean;
 }
 
 // Token budget allocation (approximate char counts at ~4 chars/token)
@@ -339,10 +346,44 @@ export function clientSceneExcerpt(supplied: string): string {
 /** Instruct-style chat models (Qwen2.5 / anima-chat) require a user turn. */
 export const CONTINUE_USER_TURN = "(Continue the scene naturally.)";
 
+/** Last N store turns replayed as chat messages (not the full 24-row load). */
+export const LLM_CHAT_HISTORY_MAX_MESSAGES = 8;
+/** Per-message cap for replayed history. */
+export const LLM_CHAT_HISTORY_MAX_CHARS = 400;
+
 export type LlmChatMessage = {
   role: "system" | "user" | "assistant";
   content: string;
 };
+
+/**
+ * Cap store history for the Ollama chat-template replay. Keeps later turns
+ * inside a sane prefill budget on num_ctx 8192.
+ */
+export function capRecentMessagesForLlm(
+  recentMessages: MsgData[] = [],
+): LlmChatMessage[] {
+  const out: LlmChatMessage[] = [];
+  for (const msg of recentMessages) {
+    const text = String(msg.content ?? "").trim();
+    if (!text) continue;
+    const name = String(msg.character_name || msg.characterName || "");
+    if (name === "__thinking__" || name === "__typing__") continue;
+    const role =
+      msg.role === "user" ? "user" : msg.role === "assistant" ? "assistant" : null;
+    if (!role) continue;
+    out.push({
+      role,
+      content:
+        text.length > LLM_CHAT_HISTORY_MAX_CHARS
+          ? `${text.slice(0, LLM_CHAT_HISTORY_MAX_CHARS - 1)}…`
+          : text,
+    });
+  }
+  return out.length > LLM_CHAT_HISTORY_MAX_MESSAGES
+    ? out.slice(-LLM_CHAT_HISTORY_MAX_MESSAGES)
+    : out;
+}
 
 /**
  * Build the OpenAI-compatible message list for a companion turn.
@@ -351,8 +392,9 @@ export type LlmChatMessage = {
  * templates then open an assistant turn with no user message, so Qwen2.5
  * 3B (`anima-chat`) emits the same generic greeting every send.
  *
- * Always end with a user turn. When the client already shipped
- * "Story so far:", skip store history here so we do not double-prefill.
+ * Always end with a user turn. When the system prompt already owns
+ * "Story so far:" / CONVERSATION CONTEXT, skip store history here so we
+ * do not double-prefill.
  */
 export function buildLlmChatMessages(params: {
   systemPrompt: string;
@@ -371,19 +413,7 @@ export function buildLlmChatMessages(params: {
   }
 
   if (includeHistory) {
-    for (const msg of params.recentMessages ?? []) {
-      const text = String(msg.content ?? "").trim();
-      if (!text) continue;
-      const name = String(msg.character_name || msg.characterName || "");
-      if (name === "__thinking__" || name === "__typing__") continue;
-      const role =
-        msg.role === "user" ? "user" : msg.role === "assistant" ? "assistant" : null;
-      if (!role) continue;
-      messages.push({
-        role,
-        content: text.length > 800 ? `${text.slice(0, 799)}…` : text,
-      });
-    }
+    messages.push(...capRecentMessagesForLlm(params.recentMessages));
   }
 
   const userTurn = content || CONTINUE_USER_TURN;
@@ -393,6 +423,25 @@ export function buildLlmChatMessages(params: {
   }
 
   return messages;
+}
+
+/**
+ * `/api/chat/messages` entry: system prompt without inlined transcript,
+ * history as capped chat turns, current user text once as the last user
+ * message. Proactive check-ins still use composePrompt alone.
+ */
+export function composeCompanionChatMessages(
+  params: PromptBuilderParams,
+): LlmChatMessage[] {
+  const systemPrompt = composePrompt({
+    ...params,
+    omitConversationHistory: true,
+  });
+  return buildLlmChatMessages({
+    systemPrompt,
+    recentMessages: params.recentMessages,
+    content: params.content,
+  });
 }
 
 function truncate(value: unknown, max = 600): string {
@@ -612,6 +661,7 @@ export function composePrompt(params: PromptBuilderParams): string {
     conversationalWeather,
     operatorModel,
     repositoryKnowledge,
+    omitConversationHistory,
   } = params;
 
   // Evolution delta (milestone-based)
@@ -759,10 +809,13 @@ ${sceneExcerpt}
   // 8. Conversation history (smart truncation).
   // Fat Chat.jsx prompts used to ship "Story so far:" inside a 24k wrap; that
   // excerpt is now dropped, so use store history unless the wrap still has it.
+  // `/api/chat/messages` omits this block and replays capped turns as
+  // messages so later exchanges do not double-prefill toward num_ctx.
   const clientTranscriptInWrap = clientOwnsTranscript(sceneExcerpt);
-  const historyBlock = clientTranscriptInWrap
-    ? ""
-    : buildConversationContext(recentMessages, BUDGET.history);
+  const historyBlock =
+    omitConversationHistory || clientTranscriptInWrap
+      ? ""
+      : buildConversationContext(recentMessages, BUDGET.history);
 
   // 9. Group mode instruction
   let groupInstruction = "";
@@ -873,7 +926,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     historyBlock ? `CONVERSATION CONTEXT:\n${historyBlock}` : "",
     groupInstruction,
     TURN_TAKING,
-    clientTranscriptInWrap
+    omitConversationHistory || clientTranscriptInWrap
       ? ""
       : content
         ? `LATEST USER MESSAGE:\n${content}`
