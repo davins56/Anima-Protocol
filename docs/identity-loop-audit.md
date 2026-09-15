@@ -1,7 +1,7 @@
 # Chat latency + identity-loop audit
 
-**Date:** 2026-09-14 (updated: #480 Worker subrequest HUD)  
-**Baseline:** `main` @ `19f280c8` (`#480`) / `f7d3d833` (`#478`)  
+**Date:** 2026-09-14 (updated: #479 docs + review accuracy)  
+**Baseline:** `main` @ `75480fb2` (`#479`) / `19f280c8` (`#480`)  
 **Owner priority:** AI response speed — **TTFT**, then end-to-end chat latency. Identity loop and Worker timeout/CI stay in this document, below latency.
 
 Findings only. No runtime code in this PR.
@@ -87,7 +87,7 @@ Do **not** re-apply `LLM_LOCAL_FAILOVER_ATTEMPT_MS`. Do not invent another open-
 
 ### P0-L4 — Memory retrieval is not the first TTFT knob (but don’t grow it)
 
-`retrieveRelevantMemories` is in-process scoring (topK 12, last 24 turn crumbs). `attachStoredEmbeddings` is a DB read of JSON vectors. That is cheaper than leftover group fat prompt. **Do not** “fix speed” by deleting companion memory. After [#478](https://github.com/davins56/Anima-Protocol/pull/478), `loadMemories` (and turn upserts) use `withTransientDbRetry` and scalar `eq` / `or(eq…)` instead of drizzle `inArray` on `companion_memories` — that runs **after** the SSE heartbeat (#453), so a Hyperdrive blip is not a first-byte problem. P0-L1/L2/L3 server + solo client shipped. Identity-loop P1 still matters for *quality* of recall, not the first-token budget.
+`retrieveRelevantMemories` is in-process scoring (topK 12, last 24 turn crumbs). `attachStoredEmbeddings` is a DB read of JSON vectors. That is cheaper than leftover group fat prompt. **Do not** “fix speed” by deleting companion memory. After [#478](https://github.com/davins56/Anima-Protocol/pull/478), `loadMemories` (and turn upserts) use `withTransientDbRetry` and scalar `eq` / `or(eq…)` instead of drizzle `inArray` on `companion_memories`. That query runs **after** `openChatSse` (#453). Router `ensureSchemaOnce`, `loadStoreSession`, and `beginChatTurn` still run **before** the first SSE byte — a stale Hyperdrive socket there can delay TTFT. Do not start a competing timeout PR for that leftover. P0-L1/L2/L3 server + solo client shipped. Identity-loop P1 still matters for *quality* of recall, not the first-token budget.
 
 ---
 
@@ -131,6 +131,7 @@ memory   upsertTurnMemory / recordTurnContinuity → companion_memories
 
 | Item | Status |
 |------|--------|
+| [#479](https://github.com/davins56/Anima-Protocol/pull/479) Audit docs (#478 SQL toast + #480 Worker subrequest HUD) | **Merged** `75480fb2` (2026-09-14). Post-merge reviews: `loadMemories` retry is after SSE; session/turn ledger can still delay first byte. Solo Chat.jsx still *calls* `buildMemoryContext` but does not inject it. |
 | [#480](https://github.com/davins56/Anima-Protocol/pull/480) Worker LLM subrequest burn + misleading tunnel toast | **Merged** `19f280c8` (2026-09-14). Skip `hintLocalLlmWarm` on Workers (keep `keep_alive` on generate). Local SDK retries default **0** on Workers / Vercel / Cloud Run, **2** on Node. Skip `/v1/models` after connection / subrequest failure. HUD: busy copy for CF subrequest limit (no internals, no tunnel recipe); Fly / public host connection failed without home-box copy. OpenRouter fallback stays off. Does **not** change the #476 45s open budget or #478 SQL sanitization. Do **not** start a competing warm / retry / timeout PR. |
 | [#478](https://github.com/davins56/Anima-Protocol/pull/478) Stop leaking `companion_memories` SQL toasts | **Merged** `f7d3d833` (2026-09-14). `loadMemories` / turn upserts: `withTransientDbRetry` + scalar `eq`/`or` (no `inArray` on `companion_memories`); missing-relation self-heal only when the blob names that table. HUD-safe `streamErrorMessage` + client `chatTurnErrorMessage`. Does **not** regress #450 Worker-wall copy or #476 local-only LLM timeout copy. Do **not** start a second SQL-toast / `inArray` PR. Not identity seed-on-create. |
 | [#477](https://github.com/davins56/Anima-Protocol/pull/477) Audit docs (#476 45s open + #474 replay key) | **Merged** `2a432a69` (2026-09-14). |
@@ -212,7 +213,7 @@ Do not duplicate. Next is identity Slice A — seed `companion_memories` on crea
 | Companion clamp 1024 | `chatReplyMaxTokens` for ordinary solo; group / `deep_mode` keep `routeModel` 4–8k. Heavy 8192 is not what ordinary 1:1 `/chat/messages` sends. |
 | Leftover repair unawaited | #458 `scheduleLeftoverTurnRepair` after SSE heartbeat; must not delay TTFT |
 | World knowledge peek | `peekRegionalWorldKnowledge` on hot path; `void fetchRegionalWorldKnowledge` warms cache |
-| Server memories already in prompt | `chat.ts` `loadMemories` → `composePrompt` `formatMemoriesForPrompt`; solo Chat.jsx no longer `buildMemoryContext` (#458). #478: retry + scalar character-id match; HUD-safe `streamErrorMessage` |
+| Server memories already in prompt | `chat.ts` `loadMemories` → `composePrompt` `formatMemoriesForPrompt`. Solo Chat.jsx still *calls* `buildMemoryContext(characterMemories)` on send but does **not** pass `memCtx` into `buildLeanSoloClientContext` (#458) — dead work, not dual-inject. #478: retry + scalar character-id match; HUD-safe `streamErrorMessage` |
 | `GET /chat/memories/:id` affect chrome | Chat.jsx `companionMemory` hydrates `companion_affect` / mood; **not** `system_prompt` |
 | Repo RAG gated | `shouldRetrieveRepositoryKnowledge` — ordinary turns skip; `ANIMA_REPOSITORY_RAG=false` still hard off |
 | Telemetry | `ttft_ms` from `generationStartedAt`; `repository_rag_ms` is nested in `context_load_ms` (`chat.ts` + `chatTelemetry.ts`) |
