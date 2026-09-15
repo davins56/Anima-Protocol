@@ -54,11 +54,11 @@ import {
   upsertMemoryEmbeddings,
 } from "../lib/memoryEmbeddings";
 import {
-  composePrompt,
-  buildLlmChatMessages,
+  composeCompanionChatMessages,
   type CompanionMemoryRecord,
   type CharacterData,
 } from "../lib/promptBuilder";
+import { beginCompanionLlmTurn } from "../lib/sidecarLlm";
 import { extractOperatorModelFromProfile } from "../lib/operatorModel";
 import {
   incrementConversationCount,
@@ -1850,8 +1850,8 @@ router.post("/messages", async (req, res) => {
     worldKnowledgeResult.profile,
   );
 
-  const prompt = telemetry.measureSync("prompt_build_ms", () =>
-    composePrompt({
+  const messages = telemetry.measureSync("prompt_build_ms", () =>
+    composeCompanionChatMessages({
       clientContext: body.system_prompt,
       repositoryKnowledge,
       characters: adaptedChars,
@@ -1938,12 +1938,8 @@ router.post("/messages", async (req, res) => {
   };
 
   telemetry.startGeneration();
-    const messages = buildLlmChatMessages({
-      systemPrompt: prompt,
-      recentMessages,
-      content,
-    });
-
+    const releaseCompanionLlm = beginCompanionLlmTurn();
+    try {
     if (isLocalEnsembleEnabled()) {
       writeSse(res, { status: "ensemble", phase: "gathering", minds: [] });
       const drafts = await draftLocalMinds({
@@ -2009,6 +2005,9 @@ router.post("/messages", async (req, res) => {
 
       const streamed = await consumeLlmStream(completion.stream, consumeOpts);
       fullResponse = finalizeAssistantReply(streamed.content);
+    }
+    } finally {
+      releaseCompanionLlm();
     }
 
     // An empty completion used to look like a successful turn on the client
