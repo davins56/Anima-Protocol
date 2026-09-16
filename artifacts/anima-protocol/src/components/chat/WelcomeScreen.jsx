@@ -1,12 +1,21 @@
-import { Zap, Users, LogIn, Heart, Pencil, Sparkles } from "lucide-react";
+import { Zap, Users, LogIn, Heart, Pencil, Sparkles, History } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import CreateCompanionModal from "./CreateCompanionModal";
+import RecentChats from "./RecentChats";
 import { companionLookHref } from "@/lib/listPersonalAnimas";
+import { RECENT_CHATS_LIMIT } from "@/lib/recentChats";
 
-export default function WelcomeScreen({ onNewSession, mode }) {
+export default function WelcomeScreen({
+  onNewSession,
+  mode,
+  sessions: sessionsProp,
+  characters: charactersProp,
+  sessionsLoading = false,
+  onOpenHistory,
+}) {
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [userName, setUserName] = useState("");
@@ -19,6 +28,8 @@ export default function WelcomeScreen({ onNewSession, mode }) {
   const [companionCreated, setCompanionCreated] = useState(false);
   const [dynamicGreeting, setDynamicGreeting] = useState("");
   const [modalInitialStep, setModalInitialStep] = useState("welcome");
+  const [fetchedSessions, setFetchedSessions] = useState([]);
+  const [fetchedLoading, setFetchedLoading] = useState(sessionsProp === undefined);
 
   useEffect(() => {
     let active = true;
@@ -74,6 +85,39 @@ Make it feel alive, personal, and slightly different every time — reference th
     };
   }, [isAuthenticated, companionCreated, userEmail, userName]);
 
+  useEffect(() => {
+    if (sessionsProp !== undefined) {
+      setFetchedLoading(false);
+      return undefined;
+    }
+    if (!isAuthenticated) {
+      setFetchedSessions([]);
+      setFetchedLoading(false);
+      return undefined;
+    }
+    let active = true;
+    setFetchedLoading(true);
+    base44.entities.ChatSession.list("-updated_date", RECENT_CHATS_LIMIT, {
+      withMessages: false,
+    })
+      .then((list) => {
+        if (active) setFetchedSessions(list || []);
+      })
+      .catch(() => {
+        if (active) setFetchedSessions([]);
+      })
+      .finally(() => {
+        if (active) setFetchedLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isAuthenticated, sessionsProp]);
+
+  const sessions = sessionsProp !== undefined ? sessionsProp : fetchedSessions;
+  const characters = Array.isArray(charactersProp) ? charactersProp : [];
+  const recentsLoading = sessionsProp !== undefined ? sessionsLoading : fetchedLoading;
+
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-6 sm:p-8 text-center relative overflow-hidden overflow-y-auto" style={{ paddingBottom: "calc(var(--tab-bar-height, 0px) + 1.5rem)" }}>
       <div className="absolute top-0 left-0 w-full h-px" style={{ background: `linear-gradient(to right, transparent, ${animaThemeColor}33, transparent)` }} />
@@ -108,7 +152,7 @@ Make it feel alive, personal, and slightly different every time — reference th
 
       {/* Title */}
       <h1 className="text-3xl sm:text-5xl font-mono mb-1 tracking-[0.15em] uppercase" style={{ color: animaThemeColor, textShadow: `0 0 10px ${animaThemeColor}, 0 0 20px ${animaThemeColor}80` }}>{animaName.toUpperCase()}.AI</h1>
-      <p className="text-[9px] sm:text-[10px] font-mono mb-8 tracking-[0.5em] uppercase" style={{ color: `${animaThemeColor}66` }}>
+      <p className="text-[9px] sm:text-[10px] font-mono mb-4 tracking-[0.5em] uppercase" style={{ color: `${animaThemeColor}66` }}>
         // AI COMPANION SYSTEM · <button onClick={() => navigate("/animas")} className="underline opacity-60 hover:opacity-100 transition-opacity">EDIT</button>
       </p>
 
@@ -127,18 +171,32 @@ Make it feel alive, personal, and slightly different every time — reference th
         </p>
       </div>
 
-      {/* Group sessions info box */}
-      <div className="max-w-md w-full p-3 sm:p-4 hud-corner backdrop-blur-sm mb-8 text-left" style={{ borderColor: `${animaThemeColor}32`, backgroundColor: "rgba(0,0,0,0.4)", boxShadow: `0 0 8px ${animaThemeColor}19, inset 0 0 8px ${animaThemeColor}05` }}>
-        <div className="flex items-center gap-1.5 sm:gap-2 mb-2">
-          <Users className="w-2.5 sm:w-3 h-2.5 sm:h-3" style={{ color: `${animaThemeColor}99` }} />
-          <span className="font-mono text-[8px] sm:text-[9px] tracking-[0.3em] uppercase" style={{ color: `${animaThemeColor}99` }}>Group Sessions</span>
+      {isAuthenticated && (
+        <div className="max-w-md w-full mb-5">
+          <RecentChats
+            sessions={sessions}
+            characters={characters}
+            loading={recentsLoading}
+            onNewSession={onNewSession}
+            onCreateCompanion={() => {
+              setModalInitialStep("details");
+              setShowCreateCompanion(true);
+            }}
+          />
+          {typeof onOpenHistory === "function" && (
+            <button
+              type="button"
+              onClick={onOpenHistory}
+              className="mt-2 w-full flex items-center justify-center gap-2 py-2 text-cyan-400/45 hover:text-cyan-300 font-mono text-[9px] tracking-[0.2em] uppercase"
+            >
+              <History className="w-3.5 h-3.5" />
+              All conversations
+            </button>
+          )}
         </div>
-        <p className="font-mono text-[9px] sm:text-[10px] leading-relaxed" style={{ color: `${animaThemeColor}80` }}>
-          Open the GROUP tab to convene up to 40 characters from any series or universe. The Narrator weaves their words into an unfolding story.
-        </p>
-      </div>
+      )}
 
-      <div className="flex flex-col sm:flex-row gap-3 items-center justify-center">
+      <div className="flex flex-col sm:flex-row gap-3 items-center justify-center mb-6">
         {!isAuthenticated ? (
           <button
             onClick={() => base44.auth.redirectToLogin(window.location.href)}
@@ -170,6 +228,17 @@ Make it feel alive, personal, and slightly different every time — reference th
             </button>
           </>
         )}
+      </div>
+
+      {/* Group sessions info box */}
+      <div className="max-w-md w-full p-3 sm:p-4 hud-corner backdrop-blur-sm mb-6 text-left" style={{ borderColor: `${animaThemeColor}32`, backgroundColor: "rgba(0,0,0,0.4)", boxShadow: `0 0 8px ${animaThemeColor}19, inset 0 0 8px ${animaThemeColor}05` }}>
+        <div className="flex items-center gap-1.5 sm:gap-2 mb-2">
+          <Users className="w-2.5 sm:w-3 h-2.5 sm:h-3" style={{ color: `${animaThemeColor}99` }} />
+          <span className="font-mono text-[8px] sm:text-[9px] tracking-[0.3em] uppercase" style={{ color: `${animaThemeColor}99` }}>Group Sessions</span>
+        </div>
+        <p className="font-mono text-[9px] sm:text-[10px] leading-relaxed" style={{ color: `${animaThemeColor}80` }}>
+          Open the GROUP tab to convene up to 40 characters from any series or universe. The Narrator weaves their words into an unfolding story.
+        </p>
       </div>
 
       {/* Footer */}

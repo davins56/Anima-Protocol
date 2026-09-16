@@ -203,4 +203,15 @@ describe("ChatToolbar Online actions panel", () => {
     expect(document.body.contains(nested)).toBe(true);
     expect(nested.textContent).toContain("Quest Log");
   });
+
+  it("opens the session list from the Chats button", async () => {
+    const onOpenHistory = vi.fn();
+    const { container } = renderToolbar({ onOpenHistory });
+    const chats = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.getAttribute("aria-label") === "Recent chats",
+    );
+    expect(chats).toBeTruthy();
+    await click(chats);
+    expect(onOpenHistory).toHaveBeenCalledTimes(1);
+  });
 });
