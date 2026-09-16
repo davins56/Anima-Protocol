@@ -42,6 +42,7 @@ export default function ChatToolbar({
   onAvatarClick,
   llmProvider,
   onOpenStage,
+  onOpenHistory,
 }) {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -84,6 +85,18 @@ export default function ChatToolbar({
         </div>
 
         <div className="ml-auto flex items-center gap-2 px-3 flex-shrink-0">
+          {typeof onOpenHistory === "function" && (
+            <button
+              type="button"
+              onClick={onOpenHistory}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-primary/30 text-primary/70 hover:text-primary hover:border-primary/50 font-mono text-[9px] tracking-widest uppercase transition-all"
+              title="Recent chats"
+              aria-label="Recent chats"
+            >
+              <History className="w-3 h-3" />
+              Chats
+            </button>
+          )}
           {onOpenStage && (
             <button
               type="button"
