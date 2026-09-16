@@ -214,4 +214,33 @@ describe("MainHome floor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Talk" }));
     expect(mocks.navigate).toHaveBeenCalledWith("/chat/sess-9");
   });
+
+  it("always shows Recents and resumes an existing session from the sheet", async () => {
+    mocks.listSessions.mockResolvedValue([
+      {
+        id: "sess-9",
+        title: "Lumen",
+        last_message: "Kept the lantern lit.",
+        updated_date: new Date().toISOString(),
+      },
+    ]);
+    renderHome();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Recents" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Recents" }));
+    fireEvent.click(screen.getByTestId("recent-chat-sess-9"));
+    expect(mocks.navigate).toHaveBeenCalledWith("/chat/sess-9");
+  });
+
+  it("shows an empty Recents state that points to create companion and start chat", async () => {
+    renderHome();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Recents" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Recents" }));
+    expect(screen.getByTestId("recent-chats-empty").textContent).toMatch(/No conversations yet/i);
+    fireEvent.click(screen.getByRole("button", { name: /Create companion/i }));
+    expect(mocks.navigate).toHaveBeenCalledWith("/characters?create=1");
+  });
 });

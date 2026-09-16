@@ -2661,12 +2661,7 @@ Return JSON:
         />
       </div>
 
-      {/* Mobile/Tablet Sidebar Overlay — now visible on all sizes */}
-      {/* Main Area */}
-      <main className="flex-1 flex flex-col relative overflow-hidden min-w-0">
-        {activeSession ? (
-          <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-            {/* Mobile Menu Overlay */}
+      {/* Session list overlay — available on the hub and inside a thread */}
       {showMobileMenu && (
         <motion.div
           initial={{ x: "-100%" }}
@@ -2697,6 +2692,10 @@ Return JSON:
         </motion.div>
       )}
 
+      {/* Main Area */}
+      <main className="flex-1 flex flex-col relative overflow-hidden min-w-0">
+        {activeSession ? (
+          <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
         {/* Desktop header toolbar */}
             <ChatToolbarSection
               activeSession={activeSession}
@@ -2727,6 +2726,7 @@ Return JSON:
               llmProvider={llmProvider}
               llmBrand={llmBrand}
               onOpenStage={presenceCast.length > 0 ? openPresenceStage : undefined}
+              onOpenHistory={() => setShowMobileMenu(true)}
             />
             {activeSession?.mode === "solo" && activeSession?.character_id && (
               <div className="px-3 py-1 flex items-center justify-between bg-black/40 border-b border-primary/10">
@@ -3061,7 +3061,13 @@ Return JSON:
             </div>
           </div>
         ) : (
-          <WelcomeScreen onNewSession={handleNewSession} mode={mode} />
+          <WelcomeScreen
+            onNewSession={handleNewSession}
+            mode={mode}
+            sessions={sessions}
+            characters={characters}
+            onOpenHistory={() => setShowMobileMenu(true)}
+          />
         )}
       </main>
 
