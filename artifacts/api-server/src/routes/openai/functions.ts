@@ -7,6 +7,10 @@ import { createRateLimit } from "../../lib/rateLimit";
 import { notifyUser } from "../../lib/storeEvents";
 import { resolveModel } from "../../lib/modelRouter";
 import { createChatCompletionWithFailover } from "../../lib/llmFailover";
+import {
+  isPostTurnSidecarFunction,
+  shouldSkipSidecarLlm,
+} from "../../lib/sidecarLlm";
 import { visibleAssistantReply } from "../../lib/visibleAssistantReply";
 import { getOpenAIClient, hasOpenAIKey, hasOpenRouterKey } from "../../lib/openaiClient";
 import { searchMemoriesSemantically } from "../../lib/memoryEmbeddings";
@@ -37,7 +41,15 @@ router.use((req, res, next) => {
   next();
 });
 
-async function llm(systemPrompt: string, userPrompt: string, maxTokens = 1024): Promise<string> {
+async function llm(
+  systemPrompt: string,
+  userPrompt: string,
+  maxTokens = 1024,
+  opts?: { sidecar?: boolean },
+): Promise<string> {
+  if (opts?.sidecar && shouldSkipSidecarLlm()) {
+    return "";
+  }
   const result = await createChatCompletionWithFailover({
     tier: "standard",
     model: "gpt-4o",
@@ -375,6 +387,7 @@ async function extractCharacterMemories(
       "ONLY the JSON array.",
     `EXISTING MEMORIES:\n${existingList}\n\nLATEST EXCHANGE:\nUser: ${clip(userMessage)}\nCharacter: ${clip(aiResponse)}`,
     512,
+    { sidecar: true },
   ).catch(() => "[]");
   let parsed: unknown;
   try {
@@ -626,6 +639,7 @@ async function extractInventoryEvents(
       "item name. If nothing changed hands, return []. Output ONLY the JSON array.",
     `CURRENT INVENTORY:\n${existingList}\n\nLATEST EXCHANGE:\nUser: ${clip(userMessage)}\nCharacter: ${clip(aiResponse)}`,
     512,
+    { sidecar: true },
   ).catch(() => "[]");
   return parseInventoryEvents(raw);
 }
@@ -897,7 +911,9 @@ router.post("/invoke/:fnName", async (req, res) => {
         const context = JSON.stringify(data);
         const raw = await llm(
           "You are a quest designer. Return a JSON array of 1-3 quest objects with fields: { title, description, objective, reward }. Output only valid JSON.",
-          `Generate quests from this context: ${context}`
+          `Generate quests from this context: ${context}`,
+          1024,
+          { sidecar: true },
         );
         try { result = JSON.parse(raw); } catch { result = []; }
         break;
@@ -907,7 +923,9 @@ router.post("/invoke/:fnName", async (req, res) => {
         const context = JSON.stringify(data);
         const raw = await llm(
           "You are a narrative game designer. Return a JSON array of 3 story choice strings the player could say next. Output only a JSON array of strings.",
-          `Context: ${context}`
+          `Context: ${context}`,
+          1024,
+          { sidecar: true },
         );
         try { result = JSON.parse(raw); } catch { result = []; }
         break;
@@ -917,7 +935,9 @@ router.post("/invoke/:fnName", async (req, res) => {
         const context = JSON.stringify(data);
         const raw = await llm(
           "Generate 3 short message suggestions the user could send next. Return a JSON array of strings.",
-          `Context: ${context}`
+          `Context: ${context}`,
+          1024,
+          { sidecar: true },
         );
         try { result = JSON.parse(raw); } catch { result = []; }
         break;
@@ -983,7 +1003,9 @@ router.post("/invoke/:fnName", async (req, res) => {
         const content = (data.content as string) || "";
         const raw = await llm(
           "Analyze this message and return a JSON object with: { emotion: string, intensity: number (1-5), tags: string[] }. Output only valid JSON.",
-          content
+          content,
+          1024,
+          { sidecar: true },
         );
         try { result = JSON.parse(raw); } catch { result = { emotion: "neutral", intensity: 2, tags: [] }; }
         break;
@@ -993,7 +1015,9 @@ router.post("/invoke/:fnName", async (req, res) => {
       case "analyzeEmotionalClimate": {
         result = await llm(
           "Briefly analyze the emotional and narrative tone of this session in 1-2 sentences.",
-          JSON.stringify(data)
+          JSON.stringify(data),
+          1024,
+          { sidecar: true },
         );
         break;
       }
@@ -1003,7 +1027,9 @@ router.post("/invoke/:fnName", async (req, res) => {
         const text = (data.text as string) || (data.content as string) || "";
         const raw = await llm(
           "Extract world lore facts from this text. Return a JSON array of { subject, fact } objects. Output only valid JSON.",
-          text.slice(0, 4000)
+          text.slice(0, 4000),
+          1024,
+          { sidecar: true },
         );
         try { result = JSON.parse(raw); } catch { result = []; }
         break;
@@ -1014,7 +1040,9 @@ router.post("/invoke/:fnName", async (req, res) => {
       case "analyzeCharacterForBehavior": {
         const raw = await llm(
           "You are a narrative behavioral analyst. Describe how this character has evolved based on recent events. Return a JSON object with: { evolved_personality: string, growth_areas: string[], updated_motivations: string[], new_vulnerabilities: string[] }. Output ONLY valid JSON.",
-          JSON.stringify(data)
+          JSON.stringify(data),
+          1024,
+          { sidecar: true },
         );
         try {
           result = { data: JSON.parse(raw) };
@@ -1043,7 +1071,9 @@ router.post("/invoke/:fnName", async (req, res) => {
       case "generateWorldEvent": {
         result = await llm(
           "Describe a subtle world state change in 1-2 sentences based on recent story events.",
-          JSON.stringify(data)
+          JSON.stringify(data),
+          1024,
+          { sidecar: true },
         );
         break;
       }
@@ -1144,7 +1174,9 @@ router.post("/invoke/:fnName", async (req, res) => {
         const context = JSON.stringify(data);
         result = await llm(
           "Write a brief group interaction between the characters in 2-3 sentences.",
-          context
+          context,
+          1024,
+          { sidecar: true },
         );
         break;
       }
@@ -1403,6 +1435,10 @@ router.post("/invoke/:fnName", async (req, res) => {
       }
 
       default: {
+        if (isPostTurnSidecarFunction(fnName) && shouldSkipSidecarLlm()) {
+          result = null;
+          break;
+        }
         const raw = await llm(
           `You are a helpful AI function handler named "${fnName}". Process the input and return a useful result. If returning structured data, output valid JSON.`,
           JSON.stringify(data)
