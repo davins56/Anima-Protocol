@@ -36,6 +36,7 @@ import { initializeColorScheme } from "@/lib/colorScheme";
 import PageNotFound from "./lib/PageNotFound";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import UserNotRegisteredError from "@/components/UserNotRegisteredError";
 import { ConfirmProvider } from "@/lib/ConfirmDialog";
 import BottomTabBar from "@/components/layout/BottomTabBar";
 import MobileHeader from "@/components/layout/MobileHeader";
@@ -94,6 +95,7 @@ const CustomiseAnima = lazy(() => import("./pages/CustomiseAnima"));
 const Meditation = lazy(() => import("./pages/Meditation"));
 const Therapy = lazy(() => import("./pages/Therapy"));
 const CompanionGenerator = lazy(() => import("./pages/CompanionGenerator"));
+const OnboardingFlow = lazy(() => import("./pages/OnboardingFlow"));
 const ExtraPage = lazy(() => import("./app/extraPages"));
 
 import { Navigate } from "react-router-dom";
@@ -883,9 +885,12 @@ const AuthenticatedApp = () => {
   }, [isLoadingAuth, authStalled, isAuthenticated, isGuest, location.pathname]);
 
   if (authError) {
-    if (authError.type === "user_not_registered") {
+    const errorType =
+      authError && typeof authError === "object" ? authError.type : null;
+    if (errorType === "user_not_registered") {
       return <UserNotRegisteredError />;
-    } else if (authError.type === "auth_required") {
+    }
+    if (errorType === "auth_required") {
       return <Landing />;
     }
   }

@@ -380,7 +380,14 @@ Return JSON with a single "${field}" string field.`,
             </div>
           </div>
         )}
-        {animas.length === 0 ? (
+        {loading && animas.length === 0 ? (
+          <div className="text-center py-24" role="status" aria-live="polite">
+            <Loader className="w-6 h-6 text-primary/60 animate-spin mx-auto mb-3" />
+            <p className="font-mono text-[10px] text-primary/40 tracking-widest uppercase">
+              Loading Animas...
+            </p>
+          </div>
+        ) : animas.length === 0 ? (
           <div className="text-center py-24">
             <div className="w-20 h-20 border border-primary/20 bg-primary/5 mx-auto flex items-center justify-center mb-6">
               <Sparkles className="w-8 h-8 text-primary/30" />
