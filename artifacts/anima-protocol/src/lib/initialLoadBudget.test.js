@@ -58,6 +58,8 @@ describe("initial module graph budget", () => {
     expect(shell).toContain(
       'import UserNotRegisteredError from "@/components/UserNotRegisteredError"',
     );
+    expect(shell).toContain("<ClerkLoaded>");
+    expect(shell).toContain("Sign-up could not load");
     expect(shell).toContain('lazy(() => import("./app/extraPages"))');
     expect(shell).not.toContain('import("./pages/ProgressDashboard")');
     expect(shell).not.toContain('import("./pages/StoryAnalyticsDashboard")');
