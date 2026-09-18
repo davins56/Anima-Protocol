@@ -27,7 +27,9 @@ export default function ProtectedRoute({ fallback = <DefaultFallback />, unauthe
   }
 
   if (authError) {
-    if (authError.type === 'user_not_registered') {
+    const errorType =
+      authError && typeof authError === "object" ? authError.type : null;
+    if (errorType === "user_not_registered") {
       return <UserNotRegisteredError />;
     }
     return unauthenticatedElement;

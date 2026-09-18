@@ -1,36 +1,33 @@
 // @ts-check
-import React from 'react';
+import { Link } from "react-router-dom";
 
 const UserNotRegisteredError = () => {
   return (
-    <div className="flex flex-col items-center justify-center min-h-0 h-full overflow-y-auto bg-gradient-to-b from-white to-slate-50">
-      <a
-        href="https://apps.apple.com"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="absolute top-4 right-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-full text-sm transition-colors"
-      >
-        Get app
-      </a>
-      <div className="max-w-md w-full p-8 bg-white rounded-lg shadow-lg border border-slate-100">
-        <div className="text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 mb-6 rounded-full bg-orange-100">
-            <svg className="w-8 h-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-          </div>
-          <h1 className="text-3xl font-bold text-slate-900 mb-4">Access Restricted</h1>
-          <p className="text-slate-600 mb-8">
-            You are not registered to use this application. Please contact the app administrator to request access.
-          </p>
-          <div className="p-4 bg-slate-50 rounded-md text-sm text-slate-600">
-            <p>If you believe this is an error, you can:</p>
-            <ul className="list-disc list-inside mt-2 space-y-1">
-              <li>Verify you are logged in with the correct account</li>
-              <li>Contact the app administrator for access</li>
-              <li>Try logging out and back in again</li>
-            </ul>
-          </div>
+    <div className="flex-1 min-h-0 overflow-y-auto flex items-center justify-center p-6 bg-background">
+      <div className="max-w-md w-full border border-primary/30 bg-[#090912] shadow-[0_0_30px_rgba(34,211,238,0.15)] p-8 text-center">
+        <div className="mx-auto mb-5 w-12 h-12 flex items-center justify-center border border-amber-400/40 rounded-full">
+          <span className="text-amber-300 text-xl font-mono">!</span>
+        </div>
+        <h1 className="font-mono text-xs tracking-[0.3em] uppercase text-primary/90 mb-3">
+          Access restricted
+        </h1>
+        <p className="font-mono text-[11px] leading-relaxed text-primary/50 mb-6">
+          This account is not registered to use Anima Protocol. Sign in with the
+          account that lives here, or return home.
+        </p>
+        <div className="flex items-center justify-center gap-2">
+          <Link
+            to="/sign-in"
+            className="font-mono text-[10px] tracking-[0.2em] uppercase bg-primary/15 text-primary border border-primary/40 px-5 py-2.5 hover:bg-primary/25 transition-colors"
+          >
+            Sign in
+          </Link>
+          <Link
+            to="/"
+            className="font-mono text-[10px] tracking-[0.2em] uppercase text-primary/60 border border-primary/20 px-5 py-2.5 hover:text-primary hover:border-primary/40 transition-colors"
+          >
+            Go Home
+          </Link>
         </div>
       </div>
     </div>
