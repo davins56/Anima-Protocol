@@ -323,6 +323,13 @@ describe("edge-to-edge fill contract (iOS 26 / notched iPhone)", () => {
     expect(htmlBlock).toMatch(/background-color:\s*hsl\(var\(--background\)\)/);
   });
 
+  it("keeps dark tokens unless the operator opts into .light", () => {
+    expect(css).toContain("color-scheme: dark");
+    expect(css).not.toMatch(
+      /@media\s*\(\s*prefers-color-scheme:\s*light\s*\)/,
+    );
+  });
+
   it("exposes a full-screen backdrop sized by --app-height-max", () => {
     expect(css).toContain(".app-viewport-backdrop {");
     const backdrop = css.slice(css.indexOf(".app-viewport-backdrop {"));
