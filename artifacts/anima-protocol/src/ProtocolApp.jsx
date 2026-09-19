@@ -36,6 +36,7 @@ import { initializeColorScheme } from "@/lib/colorScheme";
 import PageNotFound from "./lib/PageNotFound";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import UserNotRegisteredError from "@/components/UserNotRegisteredError";
 import { ConfirmProvider } from "@/lib/ConfirmDialog";
 import BottomTabBar from "@/components/layout/BottomTabBar";
 import MobileHeader from "@/components/layout/MobileHeader";
@@ -94,6 +95,7 @@ const CustomiseAnima = lazy(() => import("./pages/CustomiseAnima"));
 const Meditation = lazy(() => import("./pages/Meditation"));
 const Therapy = lazy(() => import("./pages/Therapy"));
 const CompanionGenerator = lazy(() => import("./pages/CompanionGenerator"));
+const OnboardingFlow = lazy(() => import("./pages/OnboardingFlow"));
 const ExtraPage = lazy(() => import("./app/extraPages"));
 
 import { Navigate } from "react-router-dom";
@@ -409,15 +411,30 @@ function SignUpPage() {
 
   return (
     <AuthFormShell mode="sign-up">
-      <SignUp
-        routing="path"
-        path={`${basePath}/sign-up`}
-        signInUrl={`${basePath}/sign-in`}
-        oauthFlow="redirect"
-        transferable
-        fallbackRedirectUrl={authRedirectCompleteUrl}
-        forceRedirectUrl={authRedirectCompleteUrl}
-      />
+      <ClerkLoaded>
+        <SignUp
+          routing="path"
+          path={`${basePath}/sign-up`}
+          signInUrl={`${basePath}/sign-in`}
+          oauthFlow="redirect"
+          transferable
+          fallbackRedirectUrl={authRedirectCompleteUrl}
+          forceRedirectUrl={authRedirectCompleteUrl}
+        />
+      </ClerkLoaded>
+      <ClerkFailed>
+        <div className="border border-primary/30 bg-[#090912] p-6 text-center space-y-3">
+          <p className="font-mono text-[11px] leading-relaxed text-primary/70">
+            Sign-up could not load. Continue from Sign in with GitHub or email.
+          </p>
+          <a
+            href={`${basePath}/sign-in`}
+            className="inline-block font-mono text-[10px] tracking-[0.2em] uppercase text-primary border border-primary/40 px-5 py-2.5 hover:bg-primary/15"
+          >
+            Sign in
+          </a>
+        </div>
+      </ClerkFailed>
       <p className="px-1 text-center text-xs text-cyan-400/45">
         Already registered?{" "}
         <a
@@ -883,9 +900,12 @@ const AuthenticatedApp = () => {
   }, [isLoadingAuth, authStalled, isAuthenticated, isGuest, location.pathname]);
 
   if (authError) {
-    if (authError.type === "user_not_registered") {
+    const errorType =
+      authError && typeof authError === "object" ? authError.type : null;
+    if (errorType === "user_not_registered") {
       return <UserNotRegisteredError />;
-    } else if (authError.type === "auth_required") {
+    }
+    if (errorType === "auth_required") {
       return <Landing />;
     }
   }
