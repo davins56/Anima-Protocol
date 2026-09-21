@@ -16,11 +16,12 @@ describe("localLlmWarm", () => {
     resetLocalLlmWarmForTests();
   });
 
-  it("defaults keep_alive to 10m for Ollama", () => {
+  it("defaults keep_alive to 30m for Ollama", () => {
     delete process.env.ANIMA_LOCAL_LLM_BACKEND;
     delete process.env.ANIMA_OLLAMA_KEEP_ALIVE;
     expect(ollamaKeepAliveDuration()).toBe(DEFAULT_OLLAMA_KEEP_ALIVE);
-    expect(localChatKeepAliveFields()).toEqual({ keep_alive: "10m" });
+    expect(DEFAULT_OLLAMA_KEEP_ALIVE).toBe("30m");
+    expect(localChatKeepAliveFields()).toEqual({ keep_alive: "30m" });
   });
 
   it("skips keep_alive for vLLM and when explicitly disabled", () => {
@@ -57,7 +58,7 @@ describe("localLlmWarm", () => {
     expect(init.method).toBe("POST");
     expect(JSON.parse(String(init.body))).toEqual({
       model: "anima-chat",
-      keep_alive: "10m",
+      keep_alive: "30m",
     });
     expect((init.headers as Record<string, string>).Authorization).toBe(
       "Bearer proxy-token",

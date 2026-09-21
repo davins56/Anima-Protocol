@@ -4,6 +4,9 @@
 # then stays in the foreground serving traffic so Render sees a live process.
 set -eu
 
+# /v1/chat/completions drops keep_alive. The server default still applies.
+export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-30m}"
+
 ollama serve &
 SERVE_PID=$!
 

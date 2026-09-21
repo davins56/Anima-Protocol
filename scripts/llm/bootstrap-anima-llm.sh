@@ -10,6 +10,9 @@ MODELFILE="${ROOT}/scripts/llm/Modelfile.anima-chat"
 BASE_MODEL="${ANIMA_BOOTSTRAP_BASE:-qwen2.5:3b}"
 ANIMA_TAG="${ANIMA_OLLAMA_CHAT_TAG:-anima-chat}"
 OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"
+# Applies only when this script starts `ollama serve`. An already-running
+# daemon keeps its own OLLAMA_KEEP_ALIVE (set it to 30m and restart).
+export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-30m}"
 export OLLAMA_HOST
 
 die() { echo "error: $*" >&2; exit 1; }
