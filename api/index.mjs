@@ -122753,7 +122753,7 @@ async function consumeLlmStream(stream, opts = {}) {
 }
 
 // src/lib/localLlmWarm.ts
-var DEFAULT_OLLAMA_KEEP_ALIVE = "10m";
+var DEFAULT_OLLAMA_KEEP_ALIVE = "30m";
 var WARM_TIMEOUT_MS = 45e3;
 var inFlightWarm = null;
 var lastWarmAt = 0;

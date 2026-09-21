@@ -142,6 +142,12 @@ expected. Upgrade path: a Fly GPU machine, or a larger CPU/`performance-*`
 VM, still serving `anima-chat` (or a fine-tuned tag) behind the same proxy.
 Do not point `ANIMA_LOCAL_LLM_BASE_URL` at OpenAI, Groq, or Gemini.
 
+`entrypoint.sh` exports `OLLAMA_KEEP_ALIVE=30m` when unset. Ollama's
+`/v1/chat/completions` handler drops the request `keep_alive` field; the
+server default is what keeps weights resident. The DO tunnel proxy
+(`scripts/llm/public-v1/openai-proxy.py`) also rewrites that route onto
+native `/api/chat`. Do not re-enable OpenRouter after this host.
+
 ## Files
 
 | File | Role |

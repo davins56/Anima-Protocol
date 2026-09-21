@@ -55,6 +55,9 @@ fi
 
 echo "Public URL: ${PUBLIC_URL}"
 echo "Model: anima-chat (Ollama, not vLLM)"
+echo "keep_alive: proxy rewrites /v1/chat/completions → /api/chat (30m)."
+echo "Restart this proxy after upgrading it; a healthy process is left running."
+echo "Also set OLLAMA_KEEP_ALIVE=30m on the ollama serve process."
 echo "Worker secrets: ANIMA_LOCAL_LLM_BASE_URL=${PUBLIC_URL}"
 echo "                ANIMA_LOCAL_LLM_API_KEY=<contents of ${BEARER_FILE}>"
 echo "Do not put the URL in wrangler.jsonc vars. Do not commit token files."
