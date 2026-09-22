@@ -12,7 +12,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@clerk/backend": "^3.17.1",
+    "@clerk/backend": "^3.18.1",
     "@workspace/db": "workspace:*"
   },
   "devDependencies": {
