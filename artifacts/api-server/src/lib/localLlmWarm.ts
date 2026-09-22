@@ -2,12 +2,19 @@
  * Ollama keep-alive / warm hints for local-only chat.
  *
  * After #464 the provider chain is `["local"]` with no OpenRouter hop.
- * A cold anima-chat load can exceed the old 18s stream-open abort, so we:
- *  - pass `keep_alive` on the actual generate (keeps weights resident)
- *  - fire a non-blocking native `/api/generate` warm (empty prompt) while
- *    `/chat/messages` is still loading context, overlapping TTFT with RAM load
+ * A cold anima-chat load is ~15–18s. `/chat/messages` already waits 45s
+ * (`LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS`); `/api/ai/chat` stays at 18s so it
+ * finishes under the Worker ~20s wall. Do not hop to OpenRouter.
  *
- * vLLM ignores keep_alive; we skip native warm for that backend.
+ * Ollama's OpenAI `/v1/chat/completions` struct drops `keep_alive`, so the
+ * field on the Worker body is not enough by itself. The public-v1 proxy
+ * (`scripts/llm/public-v1/openai-proxy.py`) rewrites that route onto native
+ * `/api/chat`, which honors it. Host `OLLAMA_KEEP_ALIVE` (default 30m here)
+ * covers clients that still hit raw `/v1`. vLLM ignores keep_alive.
+ *
+ * A non-blocking native `/api/generate` warm still runs on Node while
+ * `/chat/messages` loads context. It stays skipped on Cloudflare Workers
+ * (#480) — an extra subrequest on the chat invocation burned the budget.
  * Failures are swallowed — this must never delay or fail a chat turn.
  */
 
@@ -18,7 +25,7 @@ import {
   normalizeApiKey,
 } from "./openaiClient";
 
-export const DEFAULT_OLLAMA_KEEP_ALIVE = "10m";
+export const DEFAULT_OLLAMA_KEEP_ALIVE = "30m";
 
 const WARM_TIMEOUT_MS = 45_000;
 
@@ -36,7 +43,11 @@ export function ollamaKeepAliveDuration(
   return raw;
 }
 
-/** Extra body field Ollama's OpenAI-compatible `/v1/chat/completions` accepts. */
+/**
+ * Extra body field on the OpenAI-compatible request.
+ * Current Ollama drops it on `/v1/chat/completions`; the public-v1 proxy
+ * copies it onto native `/api/chat`. Still send it from every local call.
+ */
 export function localChatKeepAliveFields(
   env: NodeJS.ProcessEnv = process.env,
 ): { keep_alive?: string } {
