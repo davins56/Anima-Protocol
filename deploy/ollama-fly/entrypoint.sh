@@ -19,6 +19,9 @@ fi
 OLLAMA_HOST="${OLLAMA_HOST:-0.0.0.0:11434}"
 ANIMA_BOOTSTRAP_BASE="${ANIMA_BOOTSTRAP_BASE:-qwen2.5:3b}"
 ANIMA_OLLAMA_CHAT_TAG="${ANIMA_OLLAMA_CHAT_TAG:-anima-chat}"
+# /v1/chat/completions drops keep_alive. This default still applies to those
+# requests so anima-chat stays resident for 30m after the last hit.
+export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-30m}"
 export OLLAMA_HOST
 
 echo "Starting ollama serve on ${OLLAMA_HOST}..."

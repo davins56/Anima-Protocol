@@ -1332,7 +1332,7 @@ describe("createChatStreamWithFailover", () => {
     });
     expect(createMock.mock.calls[0]?.[0]).toMatchObject({
       stream: true,
-      keep_alive: "10m",
+      keep_alive: "30m",
     });
   });
 
