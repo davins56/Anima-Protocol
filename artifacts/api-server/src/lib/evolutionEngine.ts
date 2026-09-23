@@ -54,9 +54,10 @@ export async function loadEvolution(animaId: string, userId: string) {
 
     return row;
   } catch (err) {
-    // Schema self-heal may not have run yet; never block the chat turn.
+    // Schema self-heal, Hyperdrive blips, and Worker cross-request I/O
+    // must never abort the companion reply. Flavor state can wait.
     if (isMissingRelationError(err)) return undefined;
-    throw err;
+    return undefined;
   }
 }
 
