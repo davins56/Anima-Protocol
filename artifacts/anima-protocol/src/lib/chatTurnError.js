@@ -95,6 +95,18 @@ export function chatTurnErrorMessage(err) {
       "Retry shortly, or add credits at https://openrouter.ai/settings/credits for paid models."
     );
   }
+  // A pre-token Hyperdrive / store 503 used to become the HUD toast
+  // "Database unavailable" while the companion was still thinking.
+  if (
+    /^database unavailable$/i.test(raw) ||
+    /^database (?:connection )?(?:timed out|reset|refused|host unreachable)$/i.test(
+      raw,
+    ) ||
+    /^database query failed$/i.test(raw) ||
+    /Cannot perform I\/O on behalf of a different request/i.test(raw)
+  ) {
+    return "Couldn't load this conversation. Please try again.";
+  }
   // Local-only timeout / connection copy from `/chat/messages` is already HUD-safe.
   return raw;
 }

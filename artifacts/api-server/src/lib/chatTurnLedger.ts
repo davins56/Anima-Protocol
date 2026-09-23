@@ -1,5 +1,11 @@
 import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
-import { chatTurns, db, makeId, type ChatTurn } from "@workspace/db";
+import {
+  chatTurns,
+  db,
+  makeId,
+  withTransientDbRetry,
+  type ChatTurn,
+} from "@workspace/db";
 
 export type ChatTurnStatus = "pending" | "generated" | "committed" | "failed";
 export type PersistenceOwner = "server" | "client";
@@ -62,35 +68,39 @@ export async function beginChatTurn(input: {
   metadata?: Record<string, unknown>;
 }): Promise<{ turn: ChatTurn; created: boolean }> {
   const ids = turnMessageIds(input.id);
-  const inserted = await db
-    .insert(chatTurns)
-    .values({
-      id: input.id,
-      sessionId: input.sessionId,
-      userId: input.userId,
-      userMessageId: ids.userMessageId,
-      assistantMessageId: ids.assistantMessageId,
-      persistenceOwner: input.persistenceOwner,
-      status: "pending",
-      userContent: input.userContent,
-      metadata: input.metadata ?? {},
-      updatedAt: new Date(),
-    })
-    .onConflictDoNothing({ target: chatTurns.id })
-    .returning();
+  const inserted = await withTransientDbRetry(() =>
+    db
+      .insert(chatTurns)
+      .values({
+        id: input.id,
+        sessionId: input.sessionId,
+        userId: input.userId,
+        userMessageId: ids.userMessageId,
+        assistantMessageId: ids.assistantMessageId,
+        persistenceOwner: input.persistenceOwner,
+        status: "pending",
+        userContent: input.userContent,
+        metadata: input.metadata ?? {},
+        updatedAt: new Date(),
+      })
+      .onConflictDoNothing({ target: chatTurns.id })
+      .returning(),
+  );
   if (inserted[0]) return { turn: inserted[0], created: true };
 
-  const [existing] = await db
-    .select()
-    .from(chatTurns)
-    .where(
-      and(
-        eq(chatTurns.id, input.id),
-        eq(chatTurns.userId, input.userId),
-        eq(chatTurns.sessionId, input.sessionId),
-      ),
-    )
-    .limit(1);
+  const [existing] = await withTransientDbRetry(() =>
+    db
+      .select()
+      .from(chatTurns)
+      .where(
+        and(
+          eq(chatTurns.id, input.id),
+          eq(chatTurns.userId, input.userId),
+          eq(chatTurns.sessionId, input.sessionId),
+        ),
+      )
+      .limit(1),
+  );
   if (!existing) {
     throw new Error("turn_id is already in use");
   }
@@ -103,16 +113,18 @@ export async function checkpointGeneratedTurn(input: {
   assistantContent: string;
   metadata?: Record<string, unknown>;
 }): Promise<void> {
-  await db
-    .update(chatTurns)
-    .set({
-      status: "generated",
-      assistantContent: input.assistantContent,
-      metadata: input.metadata ?? {},
-      lastError: null,
-      updatedAt: new Date(),
-    })
-    .where(and(eq(chatTurns.id, input.id), eq(chatTurns.userId, input.userId)));
+  await withTransientDbRetry(() =>
+    db
+      .update(chatTurns)
+      .set({
+        status: "generated",
+        assistantContent: input.assistantContent,
+        metadata: input.metadata ?? {},
+        lastError: null,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(chatTurns.id, input.id), eq(chatTurns.userId, input.userId))),
+  );
 }
 
 export async function markTurnCommitted(
@@ -120,15 +132,17 @@ export async function markTurnCommitted(
   userId: string,
 ): Promise<void> {
   const now = new Date();
-  await db
-    .update(chatTurns)
-    .set({
-      status: "committed",
-      lastError: null,
-      committedAt: now,
-      updatedAt: now,
-    })
-    .where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId)));
+  await withTransientDbRetry(() =>
+    db
+      .update(chatTurns)
+      .set({
+        status: "committed",
+        lastError: null,
+        committedAt: now,
+        updatedAt: now,
+      })
+      .where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId))),
+  );
 }
 
 export async function markTurnFailed(
@@ -137,26 +151,30 @@ export async function markTurnFailed(
   error: unknown,
 ): Promise<void> {
   const message = error instanceof Error ? error.message : String(error);
-  await db
-    .update(chatTurns)
-    .set({
-      status: "failed",
-      retryCount: sql`${chatTurns.retryCount} + 1`,
-      lastError: message.slice(0, 1000),
-      updatedAt: new Date(),
-    })
-    .where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId)));
+  await withTransientDbRetry(() =>
+    db
+      .update(chatTurns)
+      .set({
+        status: "failed",
+        retryCount: sql`${chatTurns.retryCount} + 1`,
+        lastError: message.slice(0, 1000),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId))),
+  );
 }
 
 export async function readChatTurn(
   id: string,
   userId: string,
 ): Promise<ChatTurn | null> {
-  const [turn] = await db
-    .select()
-    .from(chatTurns)
-    .where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId)))
-    .limit(1);
+  const [turn] = await withTransientDbRetry(() =>
+    db
+      .select()
+      .from(chatTurns)
+      .where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId)))
+      .limit(1),
+  );
   return turn ?? null;
 }
 
@@ -165,17 +183,19 @@ export async function retryableChatTurns(
   sessionId: string,
   limit = 3,
 ): Promise<ChatTurn[]> {
-  return db
-    .select()
-    .from(chatTurns)
-    .where(
-      and(
-        eq(chatTurns.userId, userId),
-        eq(chatTurns.sessionId, sessionId),
-        inArray(chatTurns.status, ["generated", "failed"]),
-        lt(chatTurns.retryCount, 5),
-      ),
-    )
-    .orderBy(asc(chatTurns.createdAt))
-    .limit(Math.max(1, Math.min(limit, 10)));
+  return withTransientDbRetry(() =>
+    db
+      .select()
+      .from(chatTurns)
+      .where(
+        and(
+          eq(chatTurns.userId, userId),
+          eq(chatTurns.sessionId, sessionId),
+          inArray(chatTurns.status, ["generated", "failed"]),
+          lt(chatTurns.retryCount, 5),
+        ),
+      )
+      .orderBy(asc(chatTurns.createdAt))
+      .limit(Math.max(1, Math.min(limit, 10))),
+  );
 }

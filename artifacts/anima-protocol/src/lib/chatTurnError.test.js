@@ -147,6 +147,23 @@ describe("chatTurnErrorMessage", () => {
     expect(message).not.toMatch(/anima-chat-llm\.fly\.dev/i);
   });
 
+  it("remaps a pre-token Database unavailable toast to conversation copy", () => {
+    expect(chatTurnErrorMessage(new Error("Database unavailable"))).toBe(
+      "Couldn't load this conversation. Please try again.",
+    );
+    expect(chatTurnErrorMessage(new Error("Database connection timed out"))).toBe(
+      "Couldn't load this conversation. Please try again.",
+    );
+    expect(chatTurnErrorMessage(new Error("Database unavailable"))).not.toMatch(
+      /database unavailable/i,
+    );
+    expect(
+      chatTurnErrorMessage(
+        new Error("Cannot perform I/O on behalf of a different request"),
+      ),
+    ).toBe("Couldn't load this conversation. Please try again.");
+  });
+
   it("keeps local-only timeout copy so the HUD does not look like a silent hang", () => {
     const localTimeout =
       "The self-hosted Anima LLM took too long to reply. The model may still be waking — wait a moment and send again. Chat does not fall through to OpenRouter.";

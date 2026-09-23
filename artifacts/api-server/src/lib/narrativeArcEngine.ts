@@ -54,7 +54,7 @@ export async function loadArcState(animaId: string, userId: string): Promise<Arc
     return (row.state as ArcState) ?? null;
   } catch (err) {
     if (isMissingRelationError(err)) return null;
-    throw err;
+    return null;
   }
 }
 
