@@ -7,6 +7,11 @@ import {
   it,
   vi,
 } from "vitest";
+
+// Memory extraction mocks the OpenAI /v1 client. Native Ollama /api/chat
+// (#491) would bypass that mock and 500 against localhost.
+process.env.ANIMA_OLLAMA_NATIVE_CHAT = "0";
+
 import express, { type Express } from "express";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
@@ -70,6 +75,7 @@ afterAll(async () => {
 beforeEach(() => {
   createMock.mockClear();
   setExtraction("[]");
+  process.env.ANIMA_OLLAMA_NATIVE_CHAT = "0";
 });
 
 async function invoke(
