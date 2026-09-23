@@ -1792,24 +1792,27 @@ async function probeOneProvider(
     const { resolved: used } = await withModelFallback(
       client,
       { ...resolved, maxTokens: Math.min(resolved.maxTokens, 16) },
-      (m) =>
-        useOllamaNativeChat()
-          ? createOllamaChatCompletion({
-              model: m.model,
-              messages: [{ role: "user", content: "Reply with the single word: ok" }],
-              maxTokens: m.maxTokens,
-              temperature: 0,
-            })
-          : client.chat.completions.create(
-              {
-                model: m.model,
-                max_tokens: m.maxTokens,
-                messages: [{ role: "user", content: "Reply with the single word: ok" }],
-                temperature: 0,
-                ...localChatKeepAliveFields(),
-              },
-              localRequestOptions(),
-            ),
+      async (m) => {
+        if (useOllamaNativeChat()) {
+          await createOllamaChatCompletion({
+            model: m.model,
+            messages: [{ role: "user", content: "Reply with the single word: ok" }],
+            maxTokens: m.maxTokens,
+            temperature: 0,
+          });
+          return;
+        }
+        await client.chat.completions.create(
+          {
+            model: m.model,
+            max_tokens: m.maxTokens,
+            messages: [{ role: "user", content: "Reply with the single word: ok" }],
+            temperature: 0,
+            ...localChatKeepAliveFields(),
+          },
+          localRequestOptions(),
+        );
+      },
     );
     const catalog = await listLocalModels(client);
     return {

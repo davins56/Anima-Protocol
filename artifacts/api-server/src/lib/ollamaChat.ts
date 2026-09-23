@@ -12,8 +12,8 @@
  * `OLLAMA_BASE_URL`). Never ship those values to the browser.
  */
 
+import type OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import type { ChatStreamChunk } from "./consumeLlmStream";
 import {
   localChatKeepAliveFields,
   ollamaNativeOrigin,
@@ -301,8 +301,8 @@ async function postOllamaChat(
 
 function chunkFromOllamaLine(
   payload: Record<string, unknown>,
-  _fallbackModel: string,
-): ChatStreamChunk | null {
+  fallbackModel: string,
+): OpenAI.Chat.Completions.ChatCompletionChunk | null {
   if (typeof payload.error === "string" && payload.error.trim()) {
     throw new OllamaChatError(payload.error.trim(), { code: "api_error" });
   }
@@ -312,10 +312,22 @@ function chunkFromOllamaLine(
       : {};
   const content = typeof message.content === "string" ? message.content : "";
   const done = payload.done === true;
+  const model =
+    typeof payload.model === "string" && payload.model.trim()
+      ? payload.model
+      : fallbackModel;
+  const base = {
+    id: "chatcmpl-ollama",
+    object: "chat.completion.chunk" as const,
+    created: 0,
+    model,
+  };
   if (done) {
     return {
+      ...base,
       choices: [
         {
+          index: 0,
           delta: content ? { content } : {},
           finish_reason: payload.done_reason === "length" ? "length" : "stop",
         },
@@ -324,8 +336,10 @@ function chunkFromOllamaLine(
   }
   if (!content) return null;
   return {
+    ...base,
     choices: [
       {
+        index: 0,
         delta: { content },
         finish_reason: null,
       },
@@ -336,7 +350,7 @@ function chunkFromOllamaLine(
 async function* iterateOllamaNdjson(
   body: ReadableStream<Uint8Array>,
   fallbackModel: string,
-): AsyncGenerator<ChatStreamChunk> {
+): AsyncGenerator<OpenAI.Chat.Completions.ChatCompletionChunk> {
   const reader = body.getReader();
   const decoder = new TextDecoder("utf-8");
   let buffer = "";
@@ -388,7 +402,7 @@ export async function createOllamaChatStream(
   req: OllamaChatRequest,
   env: NodeJS.ProcessEnv = process.env,
   fetchImpl: typeof fetch = fetch,
-): Promise<AsyncIterable<ChatStreamChunk>> {
+): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
   const res = await postOllamaChat(req, true, env, fetchImpl);
   if (!res.body) {
     throw new OllamaChatError("Ollama /api/chat returned an empty stream body");
