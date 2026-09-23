@@ -1,13 +1,11 @@
 /**
  * Chat LLM open / stream / client abort budgets.
  *
- * Production chat is local-only (`chain: ["local"]`). Signed-in
- * `/api/openai` may still use the 35s single-model open budget (or 80s
- * when `usesFreeTierOpenBudget()` is true). Chat.jsx does not: POST
- * `/api/chat/messages` uses the local-only SSE open cap below so a cold
- * anima-chat load can finish without inheriting the free-tier cascade wait
- * and without the 18s `/api/ai/chat` wall (that cap existed so local could
- * hop — after customOnly there is no hop).
+ * Production chat prefers local anima-chat (`chain: ["local"]`). Signed-in
+ * `/api/openai` uses the 35s single-model open budget, or 80s when
+ * `usesFreeTierOpenBudget()` is true. POST `/api/chat/messages` uses the
+ * 45s local-only SSE cap unless OpenRouter is actually in the chain, then
+ * the 80s free-tier cascade so workersai 4006 + :free hops are not aborted.
  *
  * POST `/api/ai/chat` is NOT long-lived. An 80s (or even 35s) open abort
  * outlives the Worker ~20s wall, so the client sees 0 bytes instead of
@@ -34,7 +32,9 @@ export const LLM_OPEN_TIMEOUT_MS = 35_000;
 /**
  * Free-tier multi-candidate open budget. Two failed hops (m2.7 429/502,
  * m3 GMICloud 400) plus last-candidate retries must still be able to open.
- * Signed-in `/api/openai` only — never `/api/ai/chat` or `/api/chat/messages`.
+ * Used by signed-in `/api/openai` and by `/api/chat/messages` when
+ * `usesFreeTierOpenBudget()` is true (OpenRouter is actually in the chain).
+ * Never `/api/ai/chat` (Worker wall).
  */
 export const LLM_OPEN_TIMEOUT_FREE_TIER_MS = 80_000;
 
@@ -49,7 +49,7 @@ export const LLM_OPEN_TIMEOUT_AI_CHAT_MS = 18_000;
  * SSE `/api/chat/messages` open budget when the chain is local-only.
  * Cold Ollama (weights off RAM, tunnel handshake) routinely exceeds the
  * 18s `/api/ai/chat` wall. This path is wall-exempt; 45s still fails
- * clearly before the 130s browser abort, without waiting the 80s cascade.
+ * clearly before the browser abort, without waiting the 80s cascade.
  */
 export const LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS = 45_000;
 
@@ -84,11 +84,14 @@ export const CHAT_MESSAGES_CONTEXT_SLACK_MS = 10_000;
 
 /**
  * Browser `fetch` abort for `/chat/messages`.
- * Covers a full free-tier open plus a first-chunk wait so the UI does not
- * throw a generic abort while the Worker is still working.
+ * Covers a free-tier open (workersai 4006 + OpenRouter :free cascade),
+ * context slack, and a first-chunk wait so the UI does not throw a generic
+ * abort while the Worker is still hopping models.
  */
 export const CHAT_STREAM_TIMEOUT_MS =
-  LLM_OPEN_TIMEOUT_FREE_TIER_MS + LLM_STREAM_FIRST_CHUNK_MS;
+  LLM_OPEN_TIMEOUT_FREE_TIER_MS +
+  LLM_STREAM_FIRST_CHUNK_MS +
+  CHAT_MESSAGES_CONTEXT_SLACK_MS;
 
 /**
  * Companion turns are 2–4 sentences. Route tiers still advertise 4–8k
@@ -145,30 +148,40 @@ export function llmAiChatOpenTimeoutMs(): number {
 /**
  * Open budget for Chat.jsx POST `/api/chat/messages`.
  *
- * Never the 80s free-tier cascade (`freeTierCascade: true`). Uses the
- * 45s local-only SSE cap so a cold anima-chat load can open; the 18s
- * `/api/ai/chat` wall stays on that JSON probe. Streaming after open is
- * unchanged — this abort is cancelled once `createChatStreamWithFailover`
- * returns. When a next provider exists, `LLM_LOCAL_FAILOVER_ATTEMPT_MS`
- * (12s) still aborts the local attempt first.
+ * Local-only stays on the 45s SSE cap so a cold anima-chat load can open
+ * without waiting the 80s cascade. When OpenRouter is actually in the
+ * chain (`usesFreeTierOpenBudget()` / `freeTierCascade: true`), use the
+ * 80s budget so workersai 4006 + m2.7→m3→Gemma hops share one signal
+ * without aborting mid-cascade. Streaming after open is unchanged — this
+ * abort is cancelled once `createChatStreamWithFailover` returns. When a
+ * next provider exists, `LLM_LOCAL_FAILOVER_ATTEMPT_MS` (12s) still aborts
+ * the local attempt first.
  */
-export function llmChatMessagesOpenTimeoutMs(): number {
-  return cappedConfiguredOpenTimeoutMs(LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS);
+export function llmChatMessagesOpenTimeoutMs(
+  opts: { freeTierCascade?: boolean } = {},
+): number {
+  return cappedConfiguredOpenTimeoutMs(
+    opts.freeTierCascade
+      ? LLM_OPEN_TIMEOUT_FREE_TIER_MS
+      : LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS,
+  );
 }
 
 /**
  * Consume budget for POST `/api/chat/messages` after the stream is open.
  *
- * Must fit with the local-only open cap and context slack under the 130s
- * browser abort. Later turns (longer prompt, prefill) use this window for
+ * Must fit with the chosen open cap and context slack under the browser
+ * abort. Later turns (longer prompt, prefill) use this window for
  * first-chunk wait — not turn_id replay. Default `LLM_STREAM_TOTAL_MS` (90s)
- * plus a 45s open would outlive the client fetch.
+ * plus an 80s free-tier open would outlive the client fetch.
  */
-export function llmChatMessagesStreamTotalMs(): number {
+export function llmChatMessagesStreamTotalMs(
+  opts: { freeTierCascade?: boolean } = {},
+): number {
   return Math.max(
     LLM_STREAM_FIRST_CHUNK_MS,
     CHAT_STREAM_TIMEOUT_MS -
-      llmChatMessagesOpenTimeoutMs() -
+      llmChatMessagesOpenTimeoutMs(opts) -
       CHAT_MESSAGES_CONTEXT_SLACK_MS,
   );
 }

@@ -86,8 +86,14 @@ export function chatTurnErrorMessage(err) {
   if (GENERIC_HTTP_400_RE.test(raw)) {
     return "The companion service encountered an issue (HTTP 400). Please try again in a moment.";
   }
+  // After Workers AI 4006 the signed-in hop is OpenRouter :free. A bare
+  // "API error: 429" / "Request failed with status code 502" must not
+  // become the opaque companion-service toast.
   if (GENERIC_HTTP_STATUS_RE.test(raw)) {
-    return "The companion service encountered an issue. Please try again in a moment.";
+    return (
+      "The OpenRouter free-tier model is temporarily unavailable. " +
+      "Retry shortly, or add credits at https://openrouter.ai/settings/credits for paid models."
+    );
   }
   // Local-only timeout / connection copy from `/chat/messages` is already HUD-safe.
   return raw;
