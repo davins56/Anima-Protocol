@@ -27,7 +27,9 @@ pnpm llm:up
 pnpm llm:chat -- "Who are you?"
 ```
 
-Point the api-server at it (also the defaults in `.env.example`):
+Point the api-server at it (also the defaults in `.env.example`). The API
+reads these on the server and calls Ollama's native `POST /api/chat` — do
+not put the host or model name in frontend `VITE_*` variables.
 
 ```bash
 export ANIMA_LOCAL_LLM_BACKEND=ollama

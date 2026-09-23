@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// Existing failover tests mock the OpenAI /v1 client. Native /api/chat is
+// covered by ollamaChat.test.ts and the HTTP stub suites.
+process.env.ANIMA_OLLAMA_NATIVE_CHAT = "0";
+
 const createMock = vi.fn();
 const modelsListMock = vi.fn();
 
