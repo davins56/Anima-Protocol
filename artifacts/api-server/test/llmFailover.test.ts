@@ -1976,6 +1976,49 @@ describe("createChatStreamWithFailover", () => {
     expect(createMock).toHaveBeenCalledTimes(1);
   });
 
+  it("cascades to the next OpenRouter :free model when the first stream 429s on first chunk", async () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    process.env.VERCEL = "1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    setAiBinding({
+      run: async () => {
+        throw Object.assign(
+          new Error("4006: You have used up your daily free allocation of 10,000 neurons"),
+          { code: 4006 },
+        );
+      },
+    });
+    createMock.mockResolvedValueOnce({
+      async *[Symbol.asyncIterator]() {
+        throw Object.assign(new Error("Request failed with status code 429"), {
+          status: 429,
+        });
+      },
+    });
+    createMock.mockResolvedValueOnce(fakeStream("openrouter-m3"));
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 32,
+      messages: [{ role: "user", content: "hello" }],
+    });
+    expect(result.provider).toBe("openrouter");
+    expect(result.failedOver).toBe(true);
+    expect(result.model).toBe("minimax/minimax-m3:free");
+    expect(createMock).toHaveBeenCalledTimes(2);
+    const chunks: Array<{ choices?: Array<{ delta?: { content?: string } }> }> = [];
+    for await (const chunk of result.stream) {
+      chunks.push(chunk);
+    }
+    expect(chunks.some((chunk) => chunk.choices?.[0]?.delta?.content === "openrouter-m3")).toBe(
+      true,
+    );
+  });
+
   it("skips Workers AI on the next turn after isolate 4006 so OpenRouter is first", async () => {
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;

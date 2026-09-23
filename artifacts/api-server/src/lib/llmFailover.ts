@@ -1394,6 +1394,9 @@ function enrichError(
   if (provider === "local" && isLlmAbortOrTimeoutError(err)) {
     return new Error(LOCAL_LLM_TIMEOUT_HINT);
   }
+  if (provider === "openrouter" && isLlmAbortOrTimeoutError(err)) {
+    return new Error(OPENROUTER_FREE_PROVIDER_HINT);
+  }
   const base = err instanceof Error ? err : new Error(String(err));
   return remapGenericProviderError(base);
 }
@@ -1952,6 +1955,48 @@ async function withOpenRouterCreditFallback<T>(
   );
 }
 
+/**
+ * Pull the first iterator result before treating an OpenRouter stream as
+ * open. `chat.completions.create({ stream: true })` can resolve while the
+ * first SSE event is still a 429 / provider error — that used to skip the
+ * :free cascade and toast "companion service encountered an issue."
+ */
+async function ensureChatStreamOpens<T>(
+  stream: AsyncIterable<T>,
+): Promise<AsyncIterable<T>> {
+  const iterator = stream[Symbol.asyncIterator]();
+  let first: IteratorResult<T>;
+  try {
+    first = await iterator.next();
+  } catch (err) {
+    try {
+      void iterator.return?.();
+    } catch {
+      // Ignore cancel failures; the cascade must see the original error.
+    }
+    throw err;
+  }
+
+  async function* replay(): AsyncGenerator<T> {
+    try {
+      if (!first.done) yield first.value;
+      while (true) {
+        const next = await iterator.next();
+        if (next.done) return;
+        yield next.value;
+      }
+    } finally {
+      try {
+        void iterator.return?.();
+      } catch {
+        // Best-effort cancel.
+      }
+    }
+  }
+
+  return replay();
+}
+
 async function runOpenRouterStream(
   req: ChatStreamRequest,
   failedOver: boolean,
@@ -1961,8 +2006,8 @@ async function runOpenRouterStream(
   const preferred = resolveOpenRouterModel(req.tier);
   const { value: stream, resolved } = await withOpenRouterCreditFallback(
     preferred,
-    (m, remaining) =>
-      client.chat.completions.create(
+    async (m, remaining) => {
+      const raw = await client.chat.completions.create(
         {
           model: m.model,
           max_tokens: Math.min(req.maxTokens, m.maxTokens),
@@ -1973,7 +2018,9 @@ async function runOpenRouterStream(
           ...(req.signal ? { signal: req.signal } : {}),
           maxRetries: openRouterCascadeMaxRetries(remaining),
         },
-      ),
+      );
+      return ensureChatStreamOpens(raw);
+    },
   );
   return {
     stream,
