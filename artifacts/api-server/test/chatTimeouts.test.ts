@@ -74,7 +74,7 @@ describe("llmOpenTimeoutMs", () => {
     }
   });
 
-  it("keeps /api/chat/messages on the 45s local-only SSE open budget, not the 18s wall or 80s cascade", () => {
+  it("keeps /api/chat/messages on the 45s local-only SSE open budget unless OpenRouter is in the chain", () => {
     expect(LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS).toBe(45_000);
     expect(llmChatMessagesOpenTimeoutMs()).toBe(LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS);
     expect(llmChatMessagesOpenTimeoutMs()).toBe(45_000);
@@ -87,8 +87,19 @@ describe("llmOpenTimeoutMs", () => {
     ).toBeLessThan(CHAT_STREAM_TIMEOUT_MS);
   });
 
-  it("fits later-turn consume under the 130s browser abort after a 45s local open", () => {
-    expect(llmChatMessagesStreamTotalMs()).toBe(75_000);
+  it("gives /api/chat/messages the 80s free-tier open budget when OpenRouter is in the chain", () => {
+    expect(llmChatMessagesOpenTimeoutMs({ freeTierCascade: true })).toBe(
+      LLM_OPEN_TIMEOUT_FREE_TIER_MS,
+    );
+    expect(
+      llmChatMessagesOpenTimeoutMs({ freeTierCascade: true }) +
+        llmChatMessagesStreamTotalMs({ freeTierCascade: true }) +
+        CHAT_MESSAGES_CONTEXT_SLACK_MS,
+    ).toBeLessThanOrEqual(CHAT_STREAM_TIMEOUT_MS);
+  });
+
+  it("fits later-turn consume under the browser abort after a 45s local open", () => {
+    expect(llmChatMessagesStreamTotalMs()).toBe(85_000);
     expect(llmChatMessagesStreamTotalMs()).toBeLessThan(LLM_STREAM_TOTAL_MS);
     expect(llmChatMessagesStreamTotalMs()).toBeGreaterThanOrEqual(
       LLM_STREAM_FIRST_CHUNK_MS,
@@ -100,11 +111,14 @@ describe("llmOpenTimeoutMs", () => {
     ).toBeLessThanOrEqual(CHAT_STREAM_TIMEOUT_MS);
   });
 
-  it("does not let the 80s free-tier budget stretch /api/chat/messages", () => {
+  it("does not let the 80s free-tier budget stretch local-only /api/chat/messages", () => {
     const previous = process.env.ANIMA_LLM_OPEN_TIMEOUT_MS;
     try {
       process.env.ANIMA_LLM_OPEN_TIMEOUT_MS = String(LLM_OPEN_TIMEOUT_FREE_TIER_MS);
       expect(llmChatMessagesOpenTimeoutMs()).toBe(LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS);
+      expect(llmChatMessagesOpenTimeoutMs({ freeTierCascade: true })).toBe(
+        LLM_OPEN_TIMEOUT_FREE_TIER_MS,
+      );
       process.env.ANIMA_LLM_OPEN_TIMEOUT_MS = "250";
       expect(llmChatMessagesOpenTimeoutMs()).toBe(250);
     } finally {
@@ -124,7 +138,9 @@ describe("llmOpenTimeoutMs", () => {
 
   it("keeps the client abort above the free-tier open plus first-chunk wait", () => {
     expect(CHAT_STREAM_TIMEOUT_MS).toBe(
-      LLM_OPEN_TIMEOUT_FREE_TIER_MS + LLM_STREAM_FIRST_CHUNK_MS,
+      LLM_OPEN_TIMEOUT_FREE_TIER_MS +
+        LLM_STREAM_FIRST_CHUNK_MS +
+        CHAT_MESSAGES_CONTEXT_SLACK_MS,
     );
     expect(CHAT_STREAM_TIMEOUT_MS).toBeGreaterThan(LLM_OPEN_TIMEOUT_FREE_TIER_MS);
   });
@@ -181,13 +197,14 @@ describe("openStreamAbort", () => {
 });
 
 describe("client/server budget lockstep", () => {
-  it("wires the 45s local-only open budget into /api/chat/messages, not the 80s cascade", () => {
+  it("wires the chat-messages open budget to the free-tier cascade when OpenRouter is in the chain", () => {
     const chatRoute = readFileSync(
       join(repoRoot, "artifacts/api-server/src/routes/chat.ts"),
       "utf8",
     );
-    expect(chatRoute).toContain("llmChatMessagesOpenTimeoutMs()");
-    expect(chatRoute).toContain("llmChatMessagesStreamTotalMs()");
+    expect(chatRoute).toContain("llmChatMessagesOpenTimeoutMs({ freeTierCascade })");
+    expect(chatRoute).toContain("llmChatMessagesStreamTotalMs({ freeTierCascade })");
+    expect(chatRoute).toContain("usesFreeTierOpenBudget()");
     expect(chatRoute).toContain("chatReplyMaxTokens(");
     expect(chatRoute).toContain("scheduleLeftoverTurnRepair(");
     expect(chatRoute).toContain("attachStoredEmbeddings(userId, adapted).catch(");
@@ -195,7 +212,6 @@ describe("client/server budget lockstep", () => {
     expect(chatRoute).not.toContain(
       "llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() })",
     );
-    expect(chatRoute).not.toContain("usesFreeTierOpenBudget()");
     expect(chatRoute).not.toMatch(/const LLM_OPEN_TIMEOUT_MS = 35_000/);
     expect(chatRoute).not.toMatch(/maxTokens: routed\.maxTokens/);
     expect(chatRoute).toContain("queryCompanionMemories");
@@ -226,7 +242,7 @@ describe("client/server budget lockstep", () => {
       join(repoRoot, "artifacts/anima-protocol/src/api/animaApi.js"),
       "utf8",
     );
-    expect(animaApi).toMatch(/CHAT_STREAM_TIMEOUT_MS = 130_000/);
-    expect(CHAT_STREAM_TIMEOUT_MS).toBe(130_000);
+    expect(animaApi).toMatch(/CHAT_STREAM_TIMEOUT_MS = 140_000/);
+    expect(CHAT_STREAM_TIMEOUT_MS).toBe(140_000);
   });
 });
