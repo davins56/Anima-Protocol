@@ -1,6 +1,7 @@
-// Chat completion: the self-hosted Anima LLM (vLLM / Ollama / llama.cpp,
-// OpenAI-compatible) whenever ANIMA_LOCAL_LLM_BASE_URL is a usable custom
-// host. That is anima-chat — not DeepSeek, not OpenAI. Workers AI (DeepSeek
+// Chat completion: the self-hosted Anima LLM (vLLM / Ollama / llama.cpp)
+// whenever ANIMA_LOCAL_LLM_BASE_URL is a usable custom host. Ollama uses
+// native POST /api/chat via ollamaChat.ts; vLLM stays on OpenAI-compatible
+// /v1/chat/completions. That is anima-chat — not DeepSeek, not OpenAI. Workers AI (DeepSeek
 // via AI Gateway) is only used when no custom host is configured.
 // MiniMax / Deepshi stay out of the chat chain. A usable custom/local host is
 // fail-closed: OpenRouter is not appended even when ANIMA_OPENROUTER_FALLBACK
@@ -65,6 +66,11 @@ import {
   openStreamAbort,
 } from "./chatTimeouts";
 import { localChatKeepAliveFields } from "./localLlmWarm";
+import {
+  createOllamaChatCompletion,
+  createOllamaChatStream,
+  isOllamaNativeChatEnabled,
+} from "./ollamaChat";
 import {
   completeWorkersAi,
   formatWorkersAiError,
@@ -188,6 +194,8 @@ export interface LlmRoutingStatus {
     isLoopbackMisconfigured: boolean;
     backend: string;
     model: string;
+    /** True when Ollama chat uses native POST /api/chat instead of /v1. */
+    nativeChat: boolean;
   };
   /** Secret-free OpenRouter diagnostics. */
   openrouter: {
@@ -743,6 +751,11 @@ function localRequestOptions(signal?: AbortSignal): {
     maxRetries: localLlmMaxRetries(),
     ...(signal ? { signal } : {}),
   };
+}
+
+/** True when this local turn should use native Ollama /api/chat (no tools). */
+function useOllamaNativeChat(hasTools = false): boolean {
+  return isOllamaNativeChatEnabled() && !hasTools;
 }
 
 /** Honest timeout when customOnly / local-only cannot hop to OpenRouter. */
@@ -1534,6 +1547,7 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       isLoopbackMisconfigured: localSummary.isLoopbackMisconfigured,
       backend,
       model: localModel,
+      nativeChat: isOllamaNativeChatEnabled(),
     },
     openrouter: {
       configured: hasOpenRouterKey(),
@@ -1778,8 +1792,17 @@ async function probeOneProvider(
     const { resolved: used } = await withModelFallback(
       client,
       { ...resolved, maxTokens: Math.min(resolved.maxTokens, 16) },
-      (m) =>
-        client.chat.completions.create(
+      async (m) => {
+        if (useOllamaNativeChat()) {
+          await createOllamaChatCompletion({
+            model: m.model,
+            messages: [{ role: "user", content: "Reply with the single word: ok" }],
+            maxTokens: m.maxTokens,
+            temperature: 0,
+          });
+          return;
+        }
+        await client.chat.completions.create(
           {
             model: m.model,
             max_tokens: m.maxTokens,
@@ -1788,7 +1811,8 @@ async function probeOneProvider(
             ...localChatKeepAliveFields(),
           },
           localRequestOptions(),
-        ),
+        );
+      },
     );
     const catalog = await listLocalModels(client);
     return {
@@ -2160,17 +2184,25 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
         const attempt = localAttemptSignal(req.signal, hasNext);
         try {
           const { value: stream, resolved } = await withModelFallback(client, preferred, (m) =>
-            client.chat.completions.create(
-              {
-                model: m.model,
-                max_tokens: honorCallerMaxTokens(req.maxTokens, m.maxTokens),
-                messages: req.messages,
-                stream: true,
-                ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
-                ...localChatKeepAliveFields(),
-              },
-              localRequestOptions(attempt.signal),
-            ),
+            useOllamaNativeChat()
+              ? createOllamaChatStream({
+                  model: m.model,
+                  messages: req.messages,
+                  maxTokens: honorCallerMaxTokens(req.maxTokens, m.maxTokens),
+                  temperature: req.temperature,
+                  signal: attempt.signal,
+                })
+              : client.chat.completions.create(
+                  {
+                    model: m.model,
+                    max_tokens: honorCallerMaxTokens(req.maxTokens, m.maxTokens),
+                    messages: req.messages,
+                    stream: true,
+                    ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
+                    ...localChatKeepAliveFields(),
+                  },
+                  localRequestOptions(attempt.signal),
+                ),
           );
           return {
             stream,
@@ -2283,21 +2315,45 @@ export async function createChatCompletionWithFailover(
         const preferred = resolveLocalModel(req.tier);
         const hasNext = chain.indexOf(provider) < chain.length - 1;
         const attempt = localAttemptSignal(req.signal, hasNext);
+        const hasTools = Boolean(req.tools && req.tools.length);
         try {
-          const { value: completion, resolved } = await withModelFallback(client, preferred, (m) =>
-            client.chat.completions.create(
-              {
-                model: m.model,
-                max_tokens: honorCallerMaxTokens(req.maxTokens, m.maxTokens),
-                messages: req.messages,
-                ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
-                ...(req.tools && req.tools.length
-                  ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" }
-                  : {}),
-                ...localChatKeepAliveFields(),
-              },
-              localRequestOptions(attempt.signal),
-            ),
+          const { value: completion, resolved } = await withModelFallback(
+            client,
+            preferred,
+            async (m) => {
+              if (useOllamaNativeChat(hasTools)) {
+                const native = await createOllamaChatCompletion({
+                  model: m.model,
+                  messages: req.messages,
+                  maxTokens: honorCallerMaxTokens(req.maxTokens, m.maxTokens),
+                  temperature: req.temperature,
+                  signal: attempt.signal,
+                });
+                return {
+                  choices: [
+                    {
+                      message: {
+                        content: native.content,
+                        tool_calls: null,
+                      },
+                    },
+                  ],
+                };
+              }
+              return client.chat.completions.create(
+                {
+                  model: m.model,
+                  max_tokens: honorCallerMaxTokens(req.maxTokens, m.maxTokens),
+                  messages: req.messages,
+                  ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
+                  ...(hasTools
+                    ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" }
+                    : {}),
+                  ...localChatKeepAliveFields(),
+                },
+                localRequestOptions(attempt.signal),
+              );
+            },
           );
           const content = completion.choices?.[0]?.message?.content ?? "";
           return {

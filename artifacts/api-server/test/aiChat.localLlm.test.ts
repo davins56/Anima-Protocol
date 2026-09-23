@@ -36,7 +36,10 @@ describe("POST /api/ai/chat — local Ollama path", () => {
         );
         return;
       }
-      if (req.method !== "POST" || !req.url?.startsWith("/v1/chat/completions")) {
+      const isNativeChat = req.method === "POST" && req.url?.startsWith("/api/chat");
+      const isOpenAiChat =
+        req.method === "POST" && req.url?.startsWith("/v1/chat/completions");
+      if (!isNativeChat && !isOpenAiChat) {
         res.writeHead(404).end();
         return;
       }
@@ -46,6 +49,20 @@ describe("POST /api/ai/chat — local Ollama path", () => {
         const body = JSON.parse(raw || "{}");
         received.push({ model: body.model, messages: body.messages });
         if (hangNext) {
+          return;
+        }
+        if (isNativeChat) {
+          const message = missingContent
+            ? { role: "assistant" }
+            : { role: "assistant", content: replyText };
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              model: body.model,
+              message,
+              done: true,
+            }),
+          );
           return;
         }
         const message = missingContent
