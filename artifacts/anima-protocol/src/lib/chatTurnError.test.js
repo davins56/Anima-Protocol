@@ -59,9 +59,15 @@ describe("chatTurnErrorMessage", () => {
     );
   });
 
-  it("remaps generic HTTP status codes to polite error messages", () => {
-    expect(chatTurnErrorMessage(new Error("API error: 500"))).toBe(
-      "The companion service encountered an issue. Please try again in a moment.",
+  it("remaps generic HTTP status codes to the OpenRouter free-tier hint", () => {
+    expect(chatTurnErrorMessage(new Error("API error: 429"))).toMatch(
+      /OpenRouter free-tier model is temporarily unavailable/i,
+    );
+    expect(chatTurnErrorMessage(new Error("Request failed with status code 502"))).toMatch(
+      /openrouter\.ai\/settings\/credits/i,
+    );
+    expect(chatTurnErrorMessage(new Error("HTTP 503"))).not.toMatch(
+      /companion service encountered an issue/i,
     );
   });
 

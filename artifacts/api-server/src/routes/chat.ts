@@ -29,6 +29,7 @@ import {
 import { routeModel } from "../lib/modelRouter";
 import {
   createChatStreamWithFailover,
+  usesFreeTierOpenBudget,
   type LlmBrand,
   type LlmProviderId,
 } from "../lib/llmFailover";
@@ -1931,10 +1932,11 @@ router.post("/messages", async (req, res) => {
     writeSse(res, { content: delta });
   };
   const emitReasoning = () => writeSse(res, { status: "thinking" });
+  const freeTierCascade = usesFreeTierOpenBudget();
   const consumeOpts = {
     onDelta: emitDelta,
     onReasoning: emitReasoning,
-    totalMs: llmChatMessagesStreamTotalMs(),
+    totalMs: llmChatMessagesStreamTotalMs({ freeTierCascade }),
   };
 
   telemetry.startGeneration();
@@ -1982,7 +1984,7 @@ router.post("/messages", async (req, res) => {
       }
     } else {
       sse.setPhase("waking");
-      const open = openStreamAbort(llmChatMessagesOpenTimeoutMs());
+      const open = openStreamAbort(llmChatMessagesOpenTimeoutMs({ freeTierCascade }));
       let completion;
       try {
         completion = await createChatStreamWithFailover({

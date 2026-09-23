@@ -59,11 +59,12 @@ export async function requireChatAuthHeaders(extra, options = {}) {
 /**
  * Cap a hung SSE body so Chat cannot sit on "Processing..." forever.
  * Must stay above the Worker free-tier open budget (80s) plus first-chunk
- * (50s) so the browser does not abort while DeepSeek R1 is still thinking
- * or OpenRouter is hopping models. Keep in lockstep with
+ * (50s) plus context slack (10s) so the browser does not abort while
+ * DeepSeek R1 is still thinking or OpenRouter is hopping :free models.
+ * Keep in lockstep with
  * `artifacts/api-server/src/lib/chatTimeouts.ts` `CHAT_STREAM_TIMEOUT_MS`.
  */
-export const CHAT_STREAM_TIMEOUT_MS = 130_000;
+export const CHAT_STREAM_TIMEOUT_MS = 140_000;
 
 function chatStreamTimeoutError() {
   const err = new Error("The companion took too long to reply. Please try again.");

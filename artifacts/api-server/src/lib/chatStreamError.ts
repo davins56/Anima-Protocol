@@ -4,6 +4,7 @@ import {
   isLocalOnlyProviderChain,
   isOpenRouterGenericProviderError,
   isOpenRouterZdrOrDataPolicyError,
+  isProviderQuotaError,
   isWorkerSubrequestLimitError,
   LOCAL_LLM_SUBREQUEST_HINT,
   localOnlyTimeoutMessage,
@@ -29,6 +30,8 @@ const COMPANION_MEMORY_GENERIC =
   "Couldn't load companion memory. Please try again.";
 const GENERIC_COMPANION_FAILURE =
   "The companion could not reply. Please try again.";
+const GENERIC_HTTP_STATUS_RE =
+  /^(?:API\s+error:\s*\d{3}|HTTP\s*\d{3}|Request\s+failed\s+with\s+status\s+code\s+\d{3})$/i;
 
 function looksLikeSqlLeak(message: string): boolean {
   return FAILED_QUERY_RE.test(message) || SQL_LEAK_RE.test(message);
@@ -96,12 +99,18 @@ export function streamErrorMessage(err: unknown): string {
     return companionMemoryOrDbMessage(err);
   }
   if (/aborted|abort/i.test(raw)) {
-    return typeof localOnlyTimeoutMessage === "function"
+    return typeof isLocalOnlyProviderChain === "function" &&
+      isLocalOnlyProviderChain()
       ? localOnlyTimeoutMessage()
-      : "The companion took too long to reply. Please try again.";
+      : OPENROUTER_FREE_PROVIDER_HINT;
   }
   if (/workers ai|deepseek/i.test(raw)) {
     return raw;
+  }
+  // OpenAI SDK / fetch leftovers after an OpenRouter :free hop. Must not
+  // become the Chat toast "The companion service encountered an issue."
+  if (isProviderQuotaError(err) || GENERIC_HTTP_STATUS_RE.test(raw)) {
+    return OPENROUTER_FREE_PROVIDER_HINT;
   }
   return raw;
 }
