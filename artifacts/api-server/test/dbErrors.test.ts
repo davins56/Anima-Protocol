@@ -64,6 +64,18 @@ describe("classifyDbError", () => {
     });
   });
 
+  it("classifies Worker cross-request I/O as a database error without leaking the CF string", () => {
+    const err = new Error(
+      "Cannot perform I/O on behalf of a different request. I/O objects (such as streams, request/response bodies, and others) created in the context of one request handler cannot be accessed from a different request's handler.",
+    );
+    expect(classifyDbError(err)).toMatchObject({
+      isDbError: true,
+      reason: "unavailable",
+      safeMessage: "Database unavailable",
+    });
+    expect(classifyDbError(err).safeMessage).not.toMatch(/different request/i);
+  });
+
   it("does not treat unrelated errors as database failures", () => {
     expect(classifyDbError(new Error("Publishable key not valid."))).toMatchObject({
       isDbError: false,
