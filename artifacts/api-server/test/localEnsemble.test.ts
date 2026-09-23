@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// Existing ensemble tests mock the OpenAI /v1 client. Native /api/chat is
+// covered by ollamaChat.test.ts — leave this off or createMock is never called.
+process.env.ANIMA_OLLAMA_NATIVE_CHAT = "0";
+
 const createMock = vi.fn();
 
 vi.mock("../src/lib/openaiClient", () => {
