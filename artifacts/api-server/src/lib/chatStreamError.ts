@@ -28,6 +28,12 @@ const COMPANION_MEMORY_SCHEMA =
   "Couldn't load companion memory — the database schema is missing or out of date.";
 const COMPANION_MEMORY_GENERIC =
   "Couldn't load companion memory. Please try again.";
+const CONVERSATION_CONTEXT_TIMEOUT =
+  "Couldn't load this conversation — the database timed out. Please try again.";
+const CONVERSATION_CONTEXT_SCHEMA =
+  "Couldn't load this conversation — the database schema is missing or out of date.";
+const CONVERSATION_CONTEXT_GENERIC =
+  "Couldn't load this conversation. Please try again.";
 const GENERIC_COMPANION_FAILURE =
   "The companion could not reply. Please try again.";
 const GENERIC_HTTP_STATUS_RE =
@@ -45,7 +51,11 @@ function companionMemoryOrDbMessage(err: unknown): string {
     if (dbInfo.reason === "schema") return COMPANION_MEMORY_SCHEMA;
     return COMPANION_MEMORY_GENERIC;
   }
-  if (dbInfo.isDbError) return dbInfo.safeMessage;
+  if (dbInfo.isDbError) {
+    if (dbInfo.reason === "timeout") return CONVERSATION_CONTEXT_TIMEOUT;
+    if (dbInfo.reason === "schema") return CONVERSATION_CONTEXT_SCHEMA;
+    return CONVERSATION_CONTEXT_GENERIC;
+  }
   return GENERIC_COMPANION_FAILURE;
 }
 

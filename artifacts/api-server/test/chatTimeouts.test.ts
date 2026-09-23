@@ -215,7 +215,13 @@ describe("client/server budget lockstep", () => {
     expect(chatRoute).not.toMatch(/const LLM_OPEN_TIMEOUT_MS = 35_000/);
     expect(chatRoute).not.toMatch(/maxTokens: routed\.maxTokens/);
     expect(chatRoute).toContain("queryCompanionMemories");
+    expect(chatRoute).toContain("optionalChatContext");
+    expect(chatRoute).toContain("matchEntityIds");
+    expect(chatRoute).toMatch(
+      /Generated-turn checkpoint failed; delivering the reply anyway/,
+    );
     expect(chatRoute).not.toMatch(/inArray\(companionMemories/);
+    expect(chatRoute).not.toMatch(/inArray\(userEntities/);
     expect(chatRoute).toContain("resetEnsureSchemaLatch");
     expect(chatRoute).toContain("streamErrorMessage");
     expect(chatRoute).toMatch(

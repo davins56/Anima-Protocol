@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { getAuth } from "@clerk/express";
-import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 import {
   CHAT_MESSAGE,
   CHAT_SESSION,
@@ -118,6 +118,7 @@ import {
 } from "../lib/therapySafety";
 import { ChatPipelineTelemetry } from "../lib/chatTelemetry";
 import { streamErrorMessage } from "../lib/chatStreamError";
+import { optionalChatContext } from "../lib/optionalChatContext";
 import { classifyDbError, errorCauseBlob } from "../lib/dbErrors";
 import { finalizeAssistantReply } from "../lib/visibleAssistantReply";
 import {
@@ -283,6 +284,13 @@ function matchCharacterIds(characterIds: string[]) {
   )!;
 }
 
+function matchEntityIds(characterIds: string[]) {
+  if (characterIds.length === 1) {
+    return eq(userEntities.entityId, characterIds[0]!);
+  }
+  return or(...characterIds.map((id) => eq(userEntities.entityId, id)))!;
+}
+
 async function queryCompanionMemories(userId: string, characterIds: string[]) {
   return db
     .select()
@@ -322,8 +330,11 @@ async function loadCharacters(userId: string, characterIds: string[]) {
       .where(
         and(
           eq(userEntities.userId, userId),
-          inArray(userEntities.entityName, ["Character", "Anima"]),
-          inArray(userEntities.entityId, characterIds),
+          or(
+            eq(userEntities.entityName, "Character"),
+            eq(userEntities.entityName, "Anima"),
+          ),
+          matchEntityIds(characterIds),
         ),
       ),
   );
@@ -358,22 +369,24 @@ async function readRecentStoreMessages(
 ): Promise<MsgData[]> {
   // Steady-state sessions are already flagged messages_migrated. Skip the
   // advisory lock + session re-read so history load does not block first token.
-  if (!opts?.skipMigrate) {
-    await db.transaction((tx) => migrateSessionMessages(tx, userId, sessionId));
-  }
-  const rows = await db
-    .select()
-    .from(userEntities)
-    .where(
-      and(
-        eq(userEntities.userId, userId),
-        eq(userEntities.entityName, CHAT_MESSAGE),
-        sessionIdEq(sessionId),
-      ),
-    )
-    .orderBy(sql`(${userEntities.data} ->> 'seq')::numeric desc`)
-    .limit(limit);
-  return rows.map((row) => row.data as MsgData).reverse();
+  return withTransientDbRetry(async () => {
+    if (!opts?.skipMigrate) {
+      await db.transaction((tx) => migrateSessionMessages(tx, userId, sessionId));
+    }
+    const rows = await db
+      .select()
+      .from(userEntities)
+      .where(
+        and(
+          eq(userEntities.userId, userId),
+          eq(userEntities.entityName, CHAT_MESSAGE),
+          sessionIdEq(sessionId),
+        ),
+      )
+      .orderBy(sql`(${userEntities.data} ->> 'seq')::numeric desc`)
+      .limit(limit);
+    return rows.map((row) => row.data as MsgData).reverse();
+  });
 }
 
 async function appendStoreMessage(
@@ -1597,7 +1610,11 @@ router.post("/messages", async (req, res) => {
   // session so a generated turn is not retried while persist is still running.
   scheduleLeftoverTurnRepair(userId, sessionId, turnId);
 
-  const memoriesPromise = loadMemories(userId, characterIds);
+  const memoriesPromise = optionalChatContext(
+    "memories",
+    () => loadMemories(userId, characterIds),
+    [],
+  );
   const wantRepositoryKnowledge = shouldRetrieveRepositoryKnowledge(content, {
     explicit:
       body.include_repository_knowledge === true ||
@@ -1651,11 +1668,16 @@ router.post("/messages", async (req, res) => {
       : null) ||
     (mode !== "group" && characterIds[0] ? characterIds[0] : null);
   const hintedStatePromise = hintedCharId
-    ? Promise.all([
-        loadEvolution(hintedCharId, userId),
-        loadRelationshipState(hintedCharId, userId),
-        loadArcState(hintedCharId, userId),
-      ])
+    ? optionalChatContext(
+        "hinted_state",
+        () =>
+          Promise.all([
+            loadEvolution(hintedCharId, userId),
+            loadRelationshipState(hintedCharId, userId),
+            loadArcState(hintedCharId, userId),
+          ]),
+        [null, null, null] as const,
+      )
     : Promise.resolve([null, null, null] as const);
   const [
     characters,
@@ -1668,11 +1690,20 @@ router.post("/messages", async (req, res) => {
   ] = await telemetry.measure(
     "context_load_ms",
     Promise.all([
-      loadCharacters(userId, characterIds),
+      optionalChatContext(
+        "characters",
+        () => loadCharacters(userId, characterIds),
+        [],
+      ),
       memoriesPromise,
-      readRecentStoreMessages(userId, sessionId, 24, {
-        skipMigrate: Boolean(sessionData.messages_migrated),
-      }),
+      optionalChatContext(
+        "recent_messages",
+        () =>
+          readRecentStoreMessages(userId, sessionId, 24, {
+            skipMigrate: Boolean(sessionData.messages_migrated),
+          }),
+        [],
+      ),
       memoriesPromise.then((rows) => {
         const adapted = adaptMemories(rows);
         // Local companion_memories + stored vectors only. Remote supermemory
@@ -1766,17 +1797,22 @@ router.post("/messages", async (req, res) => {
   const [activeEvolutionRow, activeRelationshipState, activeArcState] =
     activeCharacterId && hintedCharId && activeCharacterId === hintedCharId
       ? hintedState
-      : await Promise.all([
-          activeCharacterId
-            ? loadEvolution(activeCharacterId, userId)
-            : Promise.resolve(null),
-          activeCharacterId
-            ? loadRelationshipState(activeCharacterId, userId)
-            : Promise.resolve(null),
-          activeCharacterId
-            ? loadArcState(activeCharacterId, userId)
-            : Promise.resolve(null),
-        ]);
+      : await optionalChatContext(
+          "active_state",
+          () =>
+            Promise.all([
+              activeCharacterId
+                ? loadEvolution(activeCharacterId, userId)
+                : Promise.resolve(null),
+              activeCharacterId
+                ? loadRelationshipState(activeCharacterId, userId)
+                : Promise.resolve(null),
+              activeCharacterId
+                ? loadArcState(activeCharacterId, userId)
+                : Promise.resolve(null),
+            ]),
+          [null, null, null] as const,
+        );
   synchroState = null;
   companionAffect = null;
   if (activeChar) {
@@ -2037,15 +2073,24 @@ router.post("/messages", async (req, res) => {
       ensemble_minds: ensembleMinds,
       ensemble_combined: ensembleCombined,
     };
-    await telemetry.measure(
-      "turn_checkpoint_ms",
-      checkpointGeneratedTurn({
-        id: turnId,
-        userId,
-        assistantContent: fullResponse,
-        metadata: generatedMetadata,
-      }),
-    );
+    try {
+      await telemetry.measure(
+        "turn_checkpoint_ms",
+        checkpointGeneratedTurn({
+          id: turnId,
+          userId,
+          assistantContent: fullResponse,
+          metadata: generatedMetadata,
+        }),
+      );
+    } catch (error) {
+      // The model already replied. A Hyperdrive blip here must not replace
+      // the answer with "Database unavailable" — leftover-turn repair retries.
+      logger.warn(
+        { error, turnId },
+        "Generated-turn checkpoint failed; delivering the reply anyway",
+      );
+    }
     // Close the SSE as soon as the model is done. Persistence / evolution LLM
     // calls used to run before `done`, so the Chat page stayed on Processing...
     // until those finished (or hung).

@@ -46,8 +46,19 @@ describe("streamErrorMessage companion_memories", () => {
 
   it("maps a generic Failed query without companion_memories to a safe DB message", () => {
     expect(streamErrorMessage(new Error("Failed query: select 1\nparams:"))).toBe(
-      "Database unavailable",
+      "Couldn't load this conversation. Please try again.",
     );
+  });
+
+  it("maps a Worker cross-request I/O failure to conversation copy, not Database unavailable", () => {
+    const message = streamErrorMessage(
+      new Error(
+        "Cannot perform I/O on behalf of a different request. I/O objects created in the context of one request handler cannot be accessed from a different request's handler.",
+      ),
+    );
+    expect(message).toBe("Couldn't load this conversation. Please try again.");
+    expect(message).not.toMatch(/Database unavailable/i);
+    expect(message).not.toMatch(/different request/i);
   });
 
   it("still names companion memory when the table is two cause levels down", () => {
