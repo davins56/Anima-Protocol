@@ -19,7 +19,7 @@ export function assertPdfBytes(bytes: Uint8Array): void {
   }
   if (bytes.byteLength > PDF_MAX_BYTES) {
     throw new PdfUploadError(
-      "That PDF is too large. The limit is 8 MB.",
+      "That PDF is too large. The limit is 4 MB.",
       "pdf_too_large",
       413,
     );
