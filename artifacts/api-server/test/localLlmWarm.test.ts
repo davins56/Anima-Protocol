@@ -59,6 +59,7 @@ describe("localLlmWarm", () => {
     expect(JSON.parse(String(init.body))).toEqual({
       model: "anima-chat",
       keep_alive: "30m",
+      options: { num_ctx: 8192 },
     });
     expect((init.headers as Record<string, string>).Authorization).toBe(
       "Bearer proxy-token",

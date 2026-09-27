@@ -121416,9 +121416,10 @@ function isCloudFlagshipLlmHost(host) {
   }
   return false;
 }
-function localLlmMaxRetries() {
-  const raw = Number(process.env.ANIMA_LOCAL_LLM_MAX_RETRIES);
+function localLlmMaxRetries(env2 = process.env, globalObj = globalThis) {
+  const raw = Number(env2.ANIMA_LOCAL_LLM_MAX_RETRIES);
   if (Number.isFinite(raw) && raw >= 0) return Math.floor(raw);
+  if (isLoopbackUnreachableRuntime(env2, globalObj)) return 0;
   return 2;
 }
 function openRouterMaxRetries() {
@@ -121527,7 +121528,8 @@ function getLocalLlmClient() {
     return null;
   }
   const apiKey = normalizeApiKey(process.env.ANIMA_LOCAL_LLM_API_KEY) || normalizeApiKey(process.env.VLLM_API_KEY) || "local";
-  const cacheKey3 = `${baseURL}::${apiKey}`;
+  const maxRetries = localLlmMaxRetries();
+  const cacheKey3 = `${baseURL}::${apiKey}::${maxRetries}`;
   if (!localLlmClient || localLlmClientKey !== cacheKey3) {
     localLlmClient = new OpenAI({
       apiKey,
@@ -121537,8 +121539,9 @@ function getLocalLlmClient() {
       // 502 is routine. With no retries every one of those killed a chat turn
       // outright. The SDK only retries connection errors and 408/409/429/5xx,
       // and only before a stream has started, so this cannot duplicate a
-      // partially-delivered reply.
-      maxRetries: localLlmMaxRetries()
+      // partially-delivered reply. On Workers the default is 0 — see
+      // localLlmMaxRetries().
+      maxRetries
     });
     localLlmClientKey = cacheKey3;
     logLocalLlmClientInitOnce();
@@ -122481,13 +122484,15 @@ function describeModelMismatch(preferred, available) {
 var LLM_OPEN_TIMEOUT_MS = 35e3;
 var LLM_OPEN_TIMEOUT_FREE_TIER_MS = 8e4;
 var LLM_OPEN_TIMEOUT_AI_CHAT_MS = 18e3;
-var LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS = 45e3;
+var LLM_LOCAL_FIRST_TOKEN_MS = 9e4;
+var LLM_LOCAL_DECODE_SLACK_MS = 3e4;
+var LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS = LLM_LOCAL_FIRST_TOKEN_MS;
 var LLM_LOCAL_FAILOVER_ATTEMPT_MS = 12e3;
 var LLM_STREAM_FIRST_CHUNK_MS = 5e4;
 var LLM_STREAM_STALL_MS = 15e3;
 var LLM_STREAM_TOTAL_MS = 9e4;
 var CHAT_MESSAGES_CONTEXT_SLACK_MS = 1e4;
-var CHAT_STREAM_TIMEOUT_MS = LLM_OPEN_TIMEOUT_FREE_TIER_MS + LLM_STREAM_FIRST_CHUNK_MS;
+var CHAT_STREAM_TIMEOUT_MS = LLM_OPEN_TIMEOUT_FREE_TIER_MS + LLM_STREAM_FIRST_CHUNK_MS + CHAT_MESSAGES_CONTEXT_SLACK_MS;
 var COMPANION_REPLY_MAX_TOKENS = 1024;
 function companionReplyMaxTokens(routedMax) {
   if (!Number.isFinite(routedMax) || routedMax <= 0) {
@@ -122517,13 +122522,24 @@ function cappedConfiguredOpenTimeoutMs(cap) {
 function llmAiChatOpenTimeoutMs() {
   return cappedConfiguredOpenTimeoutMs(LLM_OPEN_TIMEOUT_AI_CHAT_MS);
 }
-function llmChatMessagesOpenTimeoutMs() {
-  return cappedConfiguredOpenTimeoutMs(LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS);
+function llmChatMessagesOpenTimeoutMs(opts = {}) {
+  return cappedConfiguredOpenTimeoutMs(
+    opts.freeTierCascade ? LLM_OPEN_TIMEOUT_FREE_TIER_MS : LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS
+  );
 }
-function llmChatMessagesStreamTotalMs() {
+function llmChatMessagesFirstChunkMs(opts = {}) {
+  return opts.freeTierCascade ? LLM_STREAM_FIRST_CHUNK_MS : LLM_LOCAL_FIRST_TOKEN_MS;
+}
+function llmChatMessagesStreamTotalMs(opts = {}) {
+  if (!opts.freeTierCascade) {
+    return Math.min(
+      CHAT_STREAM_TIMEOUT_MS - CHAT_MESSAGES_CONTEXT_SLACK_MS,
+      LLM_LOCAL_FIRST_TOKEN_MS + LLM_LOCAL_DECODE_SLACK_MS
+    );
+  }
   return Math.max(
     LLM_STREAM_FIRST_CHUNK_MS,
-    CHAT_STREAM_TIMEOUT_MS - llmChatMessagesOpenTimeoutMs() - CHAT_MESSAGES_CONTEXT_SLACK_MS
+    CHAT_STREAM_TIMEOUT_MS - llmChatMessagesOpenTimeoutMs(opts) - CHAT_MESSAGES_CONTEXT_SLACK_MS
   );
 }
 function combineAbortSignals(...signals) {
@@ -122592,6 +122608,18 @@ function finalizeAssistantReply(...parts) {
     if (visible) return visible;
   }
   return "";
+}
+var SENTENCE_END_RE = /[.!?…]["'”’)\]*_~]*(?=\s|$)/g;
+function trimToLastCompleteSentence(text2) {
+  const value = String(text2 ?? "").trimEnd();
+  if (!value || /[.!?…]["'”’)\]*_~]*$/.test(value)) return value;
+  let end = -1;
+  for (const match2 of value.matchAll(SENTENCE_END_RE)) {
+    const index2 = match2.index ?? 0;
+    if (/\b(?:Mr|Mrs|Ms|Dr|St|Jr|Sr|vs|etc|e\.g|i\.e)$/i.test(value.slice(0, index2))) continue;
+    end = index2 + match2[0].length;
+  }
+  return end > 0 ? value.slice(0, end) : value;
 }
 function createVisibleReplyFilter() {
   let raw = "";
@@ -122754,6 +122782,12 @@ async function consumeLlmStream(stream, opts = {}) {
 
 // src/lib/localLlmWarm.ts
 var DEFAULT_OLLAMA_KEEP_ALIVE = "30m";
+var OLLAMA_NUM_CTX = 8192;
+function ollamaNumCtx(env2 = process.env) {
+  const raw = Number(env2.ANIMA_OLLAMA_NUM_CTX);
+  if (Number.isFinite(raw) && raw >= 512) return Math.floor(raw);
+  return OLLAMA_NUM_CTX;
+}
 var WARM_TIMEOUT_MS = 45e3;
 var inFlightWarm = null;
 var lastWarmAt = 0;
@@ -122775,14 +122809,15 @@ function ollamaNativeOrigin(openaiV1Url) {
   return trimmed.endsWith("/v1") ? trimmed.slice(0, -3) : trimmed;
 }
 function configuredOllamaModel(env2 = process.env) {
-  return env2.ANIMA_OLLAMA_MODEL_STANDARD?.trim() || env2.ANIMA_OLLAMA_MODEL?.trim() || "anima-chat";
+  return env2.ANIMA_OLLAMA_MODEL_STANDARD?.trim() || env2.ANIMA_OLLAMA_MODEL?.trim() || env2.OLLAMA_MODEL?.trim() || "anima-chat";
 }
 function localLlmAuthHeader(env2 = process.env) {
   const key = normalizeApiKey(env2.ANIMA_LOCAL_LLM_API_KEY) || normalizeApiKey(env2.VLLM_API_KEY);
   if (!key || key === "local") return null;
   return `Bearer ${key}`;
 }
-function hintLocalLlmWarm(env2 = process.env, fetchImpl = fetch) {
+function hintLocalLlmWarm(env2 = process.env, fetchImpl = fetch, globalObj = globalThis) {
+  if (isCloudflareWorkerRuntime(globalObj)) return;
   if (inFlightWarm) return;
   if (Date.now() - lastWarmAt < WARM_DEDUP_MS) return;
   if (!ollamaKeepAliveDuration(env2)) return;
@@ -122808,13 +122843,412 @@ async function warmOnce(openaiV1Url, env2, fetchImpl) {
       headers,
       body: JSON.stringify({
         model: configuredOllamaModel(env2),
-        keep_alive: keepAlive
+        keep_alive: keepAlive,
+        options: { num_ctx: ollamaNumCtx(env2) }
       }),
       signal: AbortSignal.timeout(WARM_TIMEOUT_MS)
     });
     lastWarmAt = Date.now();
   } catch {
   }
+}
+
+// src/lib/sidecarLlm.ts
+var POST_TURN_SIDECAR_FUNCTIONS = /* @__PURE__ */ new Set([
+  "analyzeCharacterForBehavior",
+  "analyzeEmotionalClimate",
+  "analyzeMessageTags",
+  "analyzeNarrativeContext",
+  "applyNarrativeItemEvents",
+  "autoEvolveWorldState",
+  "characterMemory",
+  "detectQuestsFromNarrative",
+  "evolveCharacter",
+  "extractLore",
+  "generateChoices",
+  "generateGroupInteraction",
+  "generateResponseSuggestions",
+  "generateSessionQuests",
+  "generateSpecialQuests",
+  "generateWorldEvent",
+  "ingestSeriesLore",
+  "suggestGuestCharacter",
+  "suggestSideQuests",
+  "suggestWorldEvents",
+  "trackCharacterEvolution",
+  "updateCharacterEmotion",
+  "updateInventory",
+  "worldEvolutionOrchestrator"
+]);
+var companionTurns = 0;
+var backgroundAbort = new AbortController();
+function preemptBackgroundLlm() {
+  const previous = backgroundAbort;
+  backgroundAbort = new AbortController();
+  if (!previous.signal.aborted) previous.abort();
+}
+function localCallSignal(caller) {
+  if (companionTurns > 0) return caller;
+  const background = backgroundAbort.signal;
+  if (!caller) return background;
+  return combineAbortSignals(caller, background);
+}
+function envFlagTrue(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
+}
+function isPostTurnSidecarFunction(fnName) {
+  return POST_TURN_SIDECAR_FUNCTIONS.has(String(fnName || "").trim());
+}
+function companionLlmTurnOpen() {
+  return companionTurns > 0;
+}
+function beginCompanionLlmTurn() {
+  companionTurns += 1;
+  preemptBackgroundLlm();
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    companionTurns = Math.max(0, companionTurns - 1);
+  };
+}
+function shouldSkipSidecarLlm() {
+  if (companionTurns > 0) return true;
+  if (envFlagTrue(process.env.ANIMA_SIDECAR_LLM)) return false;
+  if (envFlagTrue(process.env.VITEST)) return false;
+  return true;
+}
+
+// src/lib/ollamaChat.ts
+var OLLAMA_UNAVAILABLE_HINT = "The Ollama model server is not running or not reachable. Start it with `ollama serve` (or `pnpm llm:up`) and confirm ANIMA_LOCAL_LLM_BASE_URL and ANIMA_OLLAMA_MODEL_STANDARD on the API host \u2014 not in the browser.";
+function isOllamaNativeChatEnabled(env2 = process.env) {
+  const backend = (env2.ANIMA_LOCAL_LLM_BACKEND || "").trim().toLowerCase();
+  if (backend === "vllm") return false;
+  const flag = (env2.ANIMA_OLLAMA_NATIVE_CHAT ?? "1").trim().toLowerCase();
+  if (flag === "0" || flag === "off" || flag === "false" || flag === "no") {
+    return false;
+  }
+  return hasLocalLlm(env2);
+}
+function resolveOllamaModelName(env2 = process.env) {
+  return env2.ANIMA_OLLAMA_MODEL_STANDARD?.trim() || env2.ANIMA_OLLAMA_MODEL?.trim() || env2.OLLAMA_MODEL?.trim() || "anima-chat";
+}
+function resolveOllamaChatConfig(env2 = process.env) {
+  const base = localLlmBaseUrl(env2);
+  const origin = base ? ollamaNativeOrigin(base) : null;
+  return {
+    origin,
+    chatUrl: origin ? `${origin}/api/chat` : null,
+    model: resolveOllamaModelName(env2)
+  };
+}
+function ollamaAuthHeader(env2 = process.env) {
+  const key = normalizeApiKey(env2.ANIMA_LOCAL_LLM_API_KEY) || normalizeApiKey(env2.VLLM_API_KEY);
+  if (!key || key === "local") return null;
+  return `Bearer ${key}`;
+}
+function textFromContent(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map((part) => {
+      if (typeof part === "string") return part;
+      if (part && typeof part === "object") {
+        const rec = part;
+        if (typeof rec.text === "string") return rec.text;
+        if (typeof rec.content === "string") return rec.content;
+      }
+      return "";
+    }).join("");
+  }
+  if (content == null) return "";
+  return String(content);
+}
+function normalizeRole(role) {
+  if (role === "system" || role === "user" || role === "assistant" || role === "tool") {
+    return role;
+  }
+  return "user";
+}
+function toOllamaMessages(messages3) {
+  const out = [];
+  for (const message of messages3) {
+    if (!message || typeof message !== "object") continue;
+    const content = textFromContent(
+      message.content
+    );
+    out.push({
+      role: normalizeRole(message.role),
+      content
+    });
+  }
+  return out;
+}
+var OLLAMA_CHAT_SAMPLING = {
+  top_p: 0.8,
+  top_k: 20,
+  repeat_penalty: 1.05
+};
+var OLLAMA_MAX_TEMPERATURE = 0.75;
+function maxTemperature(env2 = process.env) {
+  const raw = Number(env2.ANIMA_OLLAMA_MAX_TEMPERATURE);
+  return Number.isFinite(raw) && raw > 0 ? raw : OLLAMA_MAX_TEMPERATURE;
+}
+function ollamaOptions(req, env2 = process.env) {
+  const options = {
+    ...OLLAMA_CHAT_SAMPLING,
+    num_ctx: ollamaNumCtx(env2)
+  };
+  if (typeof req.temperature === "number" && Number.isFinite(req.temperature)) {
+    options.temperature = Math.min(Math.max(req.temperature, 0), maxTemperature(env2));
+  }
+  if (typeof req.maxTokens === "number" && Number.isFinite(req.maxTokens)) {
+    options.num_predict = Math.max(1, Math.floor(req.maxTokens));
+  }
+  return options;
+}
+function buildOllamaBody(req, stream, env2 = process.env) {
+  const body = {
+    model: req.model,
+    messages: toOllamaMessages(req.messages),
+    stream,
+    ...localChatKeepAliveFields(env2)
+  };
+  body.options = ollamaOptions(req, env2);
+  return body;
+}
+var OllamaChatError = class extends Error {
+  status;
+  code;
+  constructor(message, opts = {}) {
+    super(message);
+    this.name = opts.connection ? "APIConnectionError" : "OllamaChatError";
+    this.status = opts.status;
+    this.code = opts.code;
+    if (opts.cause !== void 0) {
+      this.cause = opts.cause;
+    }
+  }
+};
+function connectionError(cause) {
+  const code = cause && typeof cause === "object" && "code" in cause ? String(cause.code || "") : "";
+  const nested = cause && typeof cause === "object" && "cause" in cause ? cause.cause : void 0;
+  const nestedCode = nested && typeof nested.code === "string" ? nested.code : "";
+  return new OllamaChatError(OLLAMA_UNAVAILABLE_HINT, {
+    connection: true,
+    code: code || nestedCode || "ECONNREFUSED",
+    cause
+  });
+}
+function errorFromHttp(status, raw) {
+  let detail = raw.trim();
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.error === "string" && parsed.error.trim()) {
+      detail = parsed.error.trim();
+    } else if (parsed?.error && typeof parsed.error === "object" && typeof parsed.error.message === "string") {
+      detail = String(parsed.error.message);
+    }
+  } catch {
+  }
+  const lower2 = detail.toLowerCase();
+  const modelMissing = status === 404 || lower2.includes("model") && (lower2.includes("not found") || lower2.includes("does not exist"));
+  if (status === 401 || status === 403) {
+    return new OllamaChatError(
+      `Ollama authentication failed (${status}). Check ANIMA_LOCAL_LLM_API_KEY on the API host.`,
+      { status, code: "authentication_error" }
+    );
+  }
+  if (modelMissing) {
+    return new OllamaChatError(
+      detail || `model not found (HTTP ${status})`,
+      { status: status === 404 ? 404 : status, code: "model_not_found" }
+    );
+  }
+  if (status === 502 || status === 503 || status === 504) {
+    return new OllamaChatError(OLLAMA_UNAVAILABLE_HINT, {
+      status,
+      connection: true,
+      code: "ECONNRESET"
+    });
+  }
+  return new OllamaChatError(
+    detail || `Ollama /api/chat failed (HTTP ${status})`,
+    { status }
+  );
+}
+async function postOllamaChat(req, stream, env2 = process.env, fetchImpl = fetch) {
+  const { chatUrl } = resolveOllamaChatConfig(env2);
+  if (!chatUrl) {
+    throw new OllamaChatError(
+      "ANIMA_LOCAL_LLM_BASE_URL is unset, so the API cannot reach Ollama. Set it on the API host (for example http://localhost:11434/v1) \u2014 not in the browser."
+    );
+  }
+  const headers = {
+    "Content-Type": "application/json",
+    Accept: stream ? "application/x-ndjson, application/json" : "application/json"
+  };
+  const auth = ollamaAuthHeader(env2);
+  if (auth) headers.Authorization = auth;
+  let res;
+  try {
+    res = await fetchImpl(chatUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(buildOllamaBody(req, stream, env2)),
+      signal: req.signal
+    });
+  } catch (err) {
+    if (err && typeof err === "object") {
+      const name = String(err.name || "");
+      if (name === "AbortError" || name === "TimeoutError") throw err;
+    }
+    throw connectionError(err);
+  }
+  if (!res.ok) {
+    const raw = await res.text().catch(() => "");
+    throw errorFromHttp(res.status, raw);
+  }
+  return res;
+}
+function chunkFromOllamaLine(payload, fallbackModel) {
+  if (typeof payload.error === "string" && payload.error.trim()) {
+    throw new OllamaChatError(payload.error.trim(), { code: "api_error" });
+  }
+  const message = payload.message && typeof payload.message === "object" ? payload.message : {};
+  const content = typeof message.content === "string" ? message.content : "";
+  const done = payload.done === true;
+  const model = typeof payload.model === "string" && payload.model.trim() ? payload.model : fallbackModel;
+  const base = {
+    id: "chatcmpl-ollama",
+    object: "chat.completion.chunk",
+    created: 0,
+    model
+  };
+  if (done) {
+    return {
+      ...base,
+      choices: [
+        {
+          index: 0,
+          delta: content ? { content } : {},
+          finish_reason: payload.done_reason === "length" ? "length" : "stop"
+        }
+      ]
+    };
+  }
+  if (!content) return null;
+  return {
+    ...base,
+    choices: [
+      {
+        index: 0,
+        delta: { content },
+        finish_reason: null
+      }
+    ]
+  };
+}
+async function* iterateOllamaNdjson(body, fallbackModel, isCancelled) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer2 = "";
+  let sawDone = false;
+  const emit = (line2) => {
+    const trimmed = line2.trim();
+    if (!trimmed) return null;
+    let parsed;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      return null;
+    }
+    if (!parsed || typeof parsed !== "object") return null;
+    const record2 = parsed;
+    if (record2.done === true) sawDone = true;
+    return chunkFromOllamaLine(record2, fallbackModel);
+  };
+  try {
+    while (!sawDone) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer2 += decoder.decode(value, { stream: true });
+      const lines = buffer2.split("\n");
+      buffer2 = lines.pop() || "";
+      for (const line2 of lines) {
+        const chunk = emit(line2);
+        if (chunk) yield chunk;
+        if (sawDone) break;
+      }
+    }
+    if (!sawDone) {
+      const chunk = emit(buffer2 + decoder.decode());
+      if (chunk) yield chunk;
+    }
+    if (!sawDone && !isCancelled()) {
+      throw new OllamaChatError(
+        "Ollama /api/chat stream ended before the reply finished",
+        { connection: true, code: "ECONNRESET" }
+      );
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+async function createOllamaChatStream(req, env2 = process.env, fetchImpl = fetch) {
+  const upstream = new AbortController();
+  const signal = req.signal ? combineAbortSignals(req.signal, upstream.signal) : upstream.signal;
+  const res = await postOllamaChat({ ...req, signal }, true, env2, fetchImpl);
+  if (!res.body) {
+    throw new OllamaChatError("Ollama /api/chat returned an empty stream body");
+  }
+  const chunks = iterateOllamaNdjson(
+    res.body,
+    req.model,
+    () => upstream.signal.aborted
+  );
+  const cancel = () => {
+    if (!upstream.signal.aborted) upstream.abort();
+  };
+  return {
+    [Symbol.asyncIterator]() {
+      return {
+        next: () => chunks.next(),
+        async return(value) {
+          cancel();
+          try {
+            return await chunks.return(value);
+          } catch {
+            return { done: true, value: void 0 };
+          }
+        },
+        async throw(err) {
+          cancel();
+          return chunks.throw(err);
+        }
+      };
+    }
+  };
+}
+async function createOllamaChatCompletion(req, env2 = process.env, fetchImpl = fetch) {
+  const res = await postOllamaChat(req, false, env2, fetchImpl);
+  const raw = await res.text();
+  let parsed;
+  try {
+    parsed = JSON.parse(raw || "{}");
+  } catch {
+    throw new OllamaChatError("Ollama /api/chat returned a non-JSON body");
+  }
+  if (!parsed || typeof parsed !== "object") {
+    throw new OllamaChatError("Ollama /api/chat returned an unexpected body");
+  }
+  const payload = parsed;
+  if (typeof payload.error === "string" && payload.error.trim()) {
+    throw errorFromHttp(500, raw);
+  }
+  const content = typeof payload.message?.content === "string" ? payload.message.content : "";
+  const model = typeof payload.model === "string" && payload.model.trim() ? payload.model : req.model;
+  return { content, model };
 }
 
 // src/lib/aiBinding.ts
@@ -123251,6 +123685,13 @@ function chatCompletionHttpFailure(err) {
       code: "ai_timeout"
     };
   }
+  if (isWorkerSubrequestLimitError(err) || /chat service is busy/i.test(message)) {
+    return {
+      status: 503,
+      error: LOCAL_LLM_SUBREQUEST_HINT,
+      code: "ai_request_failed"
+    };
+  }
   if (/ANIMA_LOCAL_LLM|ANIMA_LLM_PROVIDER|ANIMA_OLLAMA_MODEL|does not serve a model named|Anima LLM authentication failed|cloud chat API/i.test(
     message
   )) {
@@ -123288,6 +123729,10 @@ function preferCustomLlmOnly() {
 }
 function allowOpenRouterFallback() {
   const raw = (process.env.ANIMA_OPENROUTER_FALLBACK || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
+}
+function allowLocalLlmFallback() {
+  const raw = (process.env.ANIMA_LOCAL_LLM_FALLBACK || "").trim().toLowerCase();
   return raw === "1" || raw === "true" || raw === "yes";
 }
 function preferOpenRouterFreeTier() {
@@ -123339,7 +123784,11 @@ function localUsable() {
 }
 function getProviderChain() {
   if (localUsable()) {
-    return ["local"];
+    const chain = ["local"];
+    if (allowLocalLlmFallback() && hasOpenRouterKey()) {
+      chain.push("openrouter");
+    }
+    return chain;
   }
   if (hasWorkersAiBinding()) {
     const chain = ["workersai"];
@@ -123456,6 +123905,32 @@ function summarizeError(err) {
 }
 var LOCAL_LLM_AUTH_FIX_HINT = "ANIMA_LOCAL_LLM_API_KEY on the Cloudflare Worker (Secrets Store binding in wrangler.jsonc) or Vercel must exactly match PROXY_AUTH_TOKEN on the LLM host (for Fly: `fly secrets set PROXY_AUTH_TOKEN=\u2026 -a anima-chat-llm`, then set the same value as ANIMA_LOCAL_LLM_API_KEY and redeploy). See deploy/ollama-fly/README.md.";
 var LOCAL_LLM_CONNECTION_FIX_HINT = "The self-hosted Anima LLM host did not accept a connection. Wake the home box / named Cloudflare Tunnel (scripts/llm/public-v1/README.md) or check that ANIMA_LOCAL_LLM_BASE_URL is a public HTTPS \u2026/v1 URL. Chat does not fall through to OpenRouter or MiniMax.";
+var LOCAL_LLM_PUBLIC_HOST_UNREACHABLE_HINT = "The Anima LLM host did not accept a connection. Please try again shortly. Chat does not fall through to OpenRouter or MiniMax.";
+var LOCAL_LLM_SUBREQUEST_HINT = "The companion could not finish this reply because the chat service is busy. Please try again in a moment. Chat does not fall through to OpenRouter or MiniMax.";
+function isHomeTunnelLlmHost(host) {
+  if (!host) return false;
+  const h2 = host.trim().toLowerCase().replace(/\.$/, "");
+  if (h2 === "localhost" || h2 === "127.0.0.1" || h2 === "::1" || h2 === "0.0.0.0") {
+    return true;
+  }
+  return h2 === "llm.anima-protocol.com" || h2.endsWith(".trycloudflare.com") || h2.endsWith(".cfargotunnel.com");
+}
+function localLlmConnectionHint(host) {
+  return isHomeTunnelLlmHost(host) ? LOCAL_LLM_CONNECTION_FIX_HINT : LOCAL_LLM_PUBLIC_HOST_UNREACHABLE_HINT;
+}
+function isWorkerSubrequestLimitError(err) {
+  const hay = errorTextHaystack(err);
+  return hay.includes("too many subrequests") || hay.includes("subrequest limit") || hay.includes("too many subrequests by single worker invocation");
+}
+function localRequestOptions(signal) {
+  return {
+    maxRetries: localLlmMaxRetries(),
+    ...signal ? { signal } : {}
+  };
+}
+function useOllamaNativeChat(hasTools = false) {
+  return isOllamaNativeChatEnabled() && !hasTools;
+}
 var LOCAL_LLM_TIMEOUT_HINT = "The self-hosted Anima LLM took too long to reply. The model may still be waking \u2014 wait a moment and send again. Chat does not fall through to OpenRouter.";
 var COMPANION_TIMEOUT_HINT = "The companion took too long to reply. Please try again.";
 function isLocalOnlyProviderChain() {
@@ -123715,6 +124190,9 @@ function enrichError(err, provider = "local", opts = {}) {
   if (provider === "local" && cloudFlagshipMisconfigured()) {
     return new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }
+  if (isWorkerSubrequestLimitError(err)) {
+    return new Error(LOCAL_LLM_SUBREQUEST_HINT);
+  }
   if (opts.openRouterZdrBlocked || provider === "openrouter" && isOpenRouterZdrOrDataPolicyError(err)) {
     return new Error(
       OPENROUTER_ZDR_PRIVACY_HINT + localHostDownSuffix(Boolean(opts.localConnectionFailed)) + customLlmSkippedSuffix()
@@ -123767,8 +124245,9 @@ function enrichError(err, provider = "local", opts = {}) {
     }
     const model = configuredLocalModelLabel();
     const host = summarizeLocalLlmBaseUrl().host ?? "?";
+    const detail = summarizeError(err);
     return new Error(
-      `Anima LLM connection failed for host=${host} model=${model}: ${summarizeError(err)}. ` + LOCAL_LLM_CONNECTION_FIX_HINT
+      `Anima LLM connection failed for host=${host} model=${model}: ${detail}. ` + localLlmConnectionHint(host === "?" ? null : host)
     );
   }
   if (provider === "local" && isLocalModelUnavailable(err)) {
@@ -123805,6 +124284,9 @@ function enrichError(err, provider = "local", opts = {}) {
   }
   if (provider === "local" && isLlmAbortOrTimeoutError(err)) {
     return new Error(LOCAL_LLM_TIMEOUT_HINT);
+  }
+  if (provider === "openrouter" && isLlmAbortOrTimeoutError(err)) {
+    return new Error(OPENROUTER_FREE_PROVIDER_HINT);
   }
   const base = err instanceof Error ? err : new Error(String(err));
   return remapGenericProviderError(base);
@@ -123911,7 +124393,8 @@ function getLlmRoutingStatus(tier = "standard") {
       isCloudFlagship: localSummary.isCloudFlagship,
       isLoopbackMisconfigured: localSummary.isLoopbackMisconfigured,
       backend,
-      model: localModel
+      model: localModel,
+      nativeChat: isOllamaNativeChatEnabled()
     },
     openrouter: {
       configured: hasOpenRouterKey(),
@@ -124131,19 +124614,46 @@ async function probeOneProvider(provider, tier) {
     };
   }
   const resolved = resolveLocalModel(tier);
+  if (companionLlmTurnOpen()) {
+    return {
+      provider: "local",
+      configured: true,
+      ok: false,
+      errorKind: "busy",
+      message: "Skipped while a companion reply is in progress.",
+      model: resolved.model,
+      configuredModel: resolved.model
+    };
+  }
   const started = Date.now();
+  const probeSignal2 = localCallSignal();
   try {
     const client = requireLocalClient();
     const { resolved: used } = await withModelFallback(
       client,
       { ...resolved, maxTokens: Math.min(resolved.maxTokens, 16) },
-      (m2) => client.chat.completions.create({
-        model: m2.model,
-        max_tokens: m2.maxTokens,
-        messages: [{ role: "user", content: "Reply with the single word: ok" }],
-        temperature: 0,
-        ...localChatKeepAliveFields()
-      })
+      async (m2) => {
+        if (useOllamaNativeChat()) {
+          await createOllamaChatCompletion({
+            model: m2.model,
+            messages: [{ role: "user", content: "Reply with the single word: ok" }],
+            maxTokens: m2.maxTokens,
+            temperature: 0,
+            signal: probeSignal2
+          });
+          return;
+        }
+        await client.chat.completions.create(
+          {
+            model: m2.model,
+            max_tokens: m2.maxTokens,
+            messages: [{ role: "user", content: "Reply with the single word: ok" }],
+            temperature: 0,
+            ...localChatKeepAliveFields()
+          },
+          localRequestOptions(probeSignal2)
+        );
+      }
     );
     const catalog = await listLocalModels(client);
     return {
@@ -124157,12 +124667,14 @@ async function probeOneProvider(provider, tier) {
     };
   } catch (err) {
     const status = err && typeof err === "object" && "status" in err ? Number(err.status) : void 0;
-    const probeClient = getLocalLlmClient();
-    const catalog = probeClient ? await listLocalModels(probeClient) : null;
     const auth = isProviderAuthError(err);
-    const connection2 = !auth && isProviderConnectionError(err);
-    const errorKind = auth ? "auth" : connection2 ? "connection" : "other";
+    const subrequest = !auth && isWorkerSubrequestLimitError(err);
+    const connection2 = !auth && !subrequest && isProviderConnectionError(err);
+    const probeClient = !auth && !subrequest && !connection2 ? getLocalLlmClient() : null;
+    const catalog = probeClient ? await listLocalModels(probeClient) : null;
+    const errorKind = auth ? "auth" : subrequest ? "busy" : connection2 ? "connection" : "other";
     const enriched = enrichError(err, "local");
+    const host = summarizeLocalLlmBaseUrl().host;
     return {
       provider: "local",
       configured: true,
@@ -124170,7 +124682,7 @@ async function probeOneProvider(provider, tier) {
       status: Number.isFinite(status) ? status : void 0,
       errorKind,
       message: enriched.message,
-      ...auth ? { hint: LOCAL_LLM_AUTH_FIX_HINT } : connection2 ? { hint: LOCAL_LLM_CONNECTION_FIX_HINT } : {},
+      ...auth ? { hint: LOCAL_LLM_AUTH_FIX_HINT } : subrequest ? { hint: LOCAL_LLM_SUBREQUEST_HINT } : connection2 ? { hint: localLlmConnectionHint(host) } : {},
       model: resolved.model,
       configuredModel: resolved.model,
       availableModels: catalog?.models ?? [],
@@ -124237,24 +124749,56 @@ async function withOpenRouterCreditFallback(preferred, run) {
     isOpenRouterAlreadyFreeTier(preferred.model) ? OPENROUTER_FREE_PROVIDER_HINT : OPENROUTER_CREDITS_HINT
   );
 }
+async function ensureChatStreamOpens(stream) {
+  const iterator = stream[Symbol.asyncIterator]();
+  let first;
+  try {
+    first = await iterator.next();
+  } catch (err) {
+    try {
+      void iterator.return?.();
+    } catch {
+    }
+    throw err;
+  }
+  async function* replay() {
+    try {
+      if (!first.done) yield first.value;
+      while (true) {
+        const next = await iterator.next();
+        if (next.done) return;
+        yield next.value;
+      }
+    } finally {
+      try {
+        void iterator.return?.();
+      } catch {
+      }
+    }
+  }
+  return replay();
+}
 async function runOpenRouterStream(req, failedOver) {
   const client = getOpenRouterClient();
   if (!client) throw new Error(OPENROUTER_SETUP_HINT);
   const preferred = resolveOpenRouterModel(req.tier);
   const { value: stream, resolved } = await withOpenRouterCreditFallback(
     preferred,
-    (m2, remaining) => client.chat.completions.create(
-      {
-        model: m2.model,
-        max_tokens: Math.min(req.maxTokens, m2.maxTokens),
-        messages: req.messages,
-        stream: true
-      },
-      {
-        ...req.signal ? { signal: req.signal } : {},
-        maxRetries: openRouterCascadeMaxRetries(remaining)
-      }
-    )
+    async (m2, remaining) => {
+      const raw = await client.chat.completions.create(
+        {
+          model: m2.model,
+          max_tokens: Math.min(req.maxTokens, m2.maxTokens),
+          messages: req.messages,
+          stream: true
+        },
+        {
+          ...req.signal ? { signal: req.signal } : {},
+          maxRetries: openRouterCascadeMaxRetries(remaining)
+        }
+      );
+      return ensureChatStreamOpens(raw);
+    }
   );
   return {
     stream,
@@ -124435,7 +124979,13 @@ async function createChatStreamWithFailover(req) {
           const { value: stream, resolved } = await withModelFallback(
             client,
             preferred,
-            (m2) => client.chat.completions.create(
+            (m2) => useOllamaNativeChat() ? createOllamaChatStream({
+              model: m2.model,
+              messages: req.messages,
+              maxTokens: honorCallerMaxTokens(req.maxTokens, m2.maxTokens),
+              temperature: req.temperature,
+              signal: attempt.signal
+            }) : client.chat.completions.create(
               {
                 model: m2.model,
                 max_tokens: honorCallerMaxTokens(req.maxTokens, m2.maxTokens),
@@ -124444,7 +124994,7 @@ async function createChatStreamWithFailover(req) {
                 ...typeof req.temperature === "number" ? { temperature: req.temperature } : {},
                 ...localChatKeepAliveFields()
               },
-              ...attempt.signal ? [{ signal: attempt.signal }] : []
+              localRequestOptions(attempt.signal)
             )
           );
           return {
@@ -124542,22 +125092,44 @@ async function createChatCompletionWithFailover(req) {
         const client = requireLocalClient();
         const preferred = resolveLocalModel(req.tier);
         const hasNext = chain.indexOf(provider) < chain.length - 1;
-        const attempt = localAttemptSignal(req.signal, hasNext);
+        const attempt = localAttemptSignal(localCallSignal(req.signal), hasNext);
+        const hasTools = Boolean(req.tools && req.tools.length);
         try {
           const { value: completion, resolved } = await withModelFallback(
             client,
             preferred,
-            (m2) => client.chat.completions.create(
-              {
-                model: m2.model,
-                max_tokens: honorCallerMaxTokens(req.maxTokens, m2.maxTokens),
-                messages: req.messages,
-                ...typeof req.temperature === "number" ? { temperature: req.temperature } : {},
-                ...req.tools && req.tools.length ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" } : {},
-                ...localChatKeepAliveFields()
-              },
-              ...attempt.signal ? [{ signal: attempt.signal }] : []
-            )
+            async (m2) => {
+              if (useOllamaNativeChat(hasTools)) {
+                const native = await createOllamaChatCompletion({
+                  model: m2.model,
+                  messages: req.messages,
+                  maxTokens: honorCallerMaxTokens(req.maxTokens, m2.maxTokens),
+                  temperature: req.temperature,
+                  signal: attempt.signal
+                });
+                return {
+                  choices: [
+                    {
+                      message: {
+                        content: native.content,
+                        tool_calls: null
+                      }
+                    }
+                  ]
+                };
+              }
+              return client.chat.completions.create(
+                {
+                  model: m2.model,
+                  max_tokens: honorCallerMaxTokens(req.maxTokens, m2.maxTokens),
+                  messages: req.messages,
+                  ...typeof req.temperature === "number" ? { temperature: req.temperature } : {},
+                  ...hasTools ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" } : {},
+                  ...localChatKeepAliveFields()
+                },
+                localRequestOptions(attempt.signal)
+              );
+            }
           );
           const content = completion.choices?.[0]?.message?.content ?? "";
           return {
@@ -124631,6 +125203,7 @@ var CLOUDFLARE_RUNTIME_ENV_NAMES = [
   "ANIMA_LOCAL_LLM_API_KEY",
   "ANIMA_LOCAL_LLM_BACKEND",
   "ANIMA_LOCAL_LLM_BASE_URL",
+  "ANIMA_LOCAL_LLM_FALLBACK",
   "ANIMA_MINIMAX_API_KEY",
   "ANIMA_MINIMAX_BASE_URL",
   "ANIMA_MINIMAX_MODEL",
@@ -126641,8 +127214,15 @@ var homeWorldStates = pgTable(
 // src/db/index.ts
 var queryableInstance2 = null;
 var dbInstance2 = null;
+var poolRequestEpoch2 = null;
+var poolConnectionKey2 = null;
+function detachCachedClients2() {
+  queryableInstance2 = null;
+  dbInstance2 = null;
+  poolRequestEpoch2 = null;
+  poolConnectionKey2 = null;
+}
 function getQueryable() {
-  if (queryableInstance2) return queryableInstance2;
   const rawUrl = resolveDatabaseUrl();
   if (!rawUrl) {
     throw new Error(
@@ -126650,19 +127230,30 @@ function getQueryable() {
     );
   }
   const { connectionString, ssl } = resolveDbConfig(rawUrl);
+  const driverKey = `${getDbDriver()}:${connectionString}`;
+  const epoch = getDbRequestEpoch();
+  const sameRequest = !isCloudflareWorkerRuntime() || poolRequestEpoch2 === epoch;
+  if (queryableInstance2 && poolConnectionKey2 === driverKey && sameRequest) {
+    return queryableInstance2;
+  }
+  detachCachedClients2();
   if (getDbDriver() === "postgres-js") {
     const sql2 = createPostgresJsSql(rawUrl, connectionString, ssl);
     queryableInstance2 = postgresJsQueryable(sql2);
     dbInstance2 = drizzle2(sql2, { schema: schema_exports2 });
+    poolConnectionKey2 = driverKey;
+    poolRequestEpoch2 = epoch;
     return queryableInstance2;
   }
   const pool3 = createNodePool(connectionString, ssl);
   queryableInstance2 = pool3;
   dbInstance2 = drizzle(pool3, { schema: schema_exports2 });
+  poolConnectionKey2 = driverKey;
+  poolRequestEpoch2 = epoch;
   return queryableInstance2;
 }
 function getDb2() {
-  if (!dbInstance2) getQueryable();
+  getQueryable();
   if (!dbInstance2) {
     throw new Error("Failed to initialize database client");
   }
@@ -126801,6 +127392,9 @@ function collectErrorSignals(err) {
     name: names[0] || ""
   };
 }
+function errorCauseBlob(err) {
+  return collectErrorSignals(err).message;
+}
 function isWorkerApiTimeoutError(err) {
   let current = err;
   const seen = /* @__PURE__ */ new Set();
@@ -126855,7 +127449,7 @@ function classifyDbError(err) {
   /^[0-9A-Z]{5}$/.test(code) || // any other Postgres SQLSTATE
   code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "ETIMEDOUT" || code === "ETIMEOUT" || code === "ECONNRESET" || code === "EPIPE" || code === "EHOSTUNREACH" || code === "ENETUNREACH" || code === "EAI_AGAIN" || code === "ABORT_ERR" || code === "UND_ERR_CONNECT_TIMEOUT" || code === "UND_ERR_SOCKET" || code === "ERR_SSL_WRONG_VERSION_NUMBER" || code === "DEPTH_ZERO_SELF_SIGNED_CERT" || code === "SELF_SIGNED_CERT_IN_CHAIN" || code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE" || POSTGRES_JS_CONNECTION_CODES.has(code) || name === "PostgresError" || /Failed query/i.test(message) || /DATABASE_URL/i.test(message) || /connect\s+ECONNREFUSED/i.test(message) || /connection refused/i.test(message) || /getaddrinfo/i.test(message) || /timeout expired/i.test(message) || /connection timeout/i.test(message) || /ConnectTimeout/i.test(message) || /SocketTimeout/i.test(message) || /aborted due to timeout/i.test(message) || /write CONNECT_/i.test(message) || /CONNECT_TIMEOUT|CONNECT_ERROR|CONNECTION_(?:ENDED|DESTROYED|CLOSED|TIMEOUT)/i.test(
     blob
-  ) || /hyperdrive/i.test(blob) || /prisma\.io|prisma accelerate/i.test(blob) || /could not connect to (?:origin )?database/i.test(message) || /origin database/i.test(message) || /invalid startup packet/i.test(message) || /unsupported (?:startup )?protocol/i.test(message) || /not a postgres(?:ql)? (?:server|wire)/i.test(message) || /Connection terminated/i.test(message) || /Connection ended unexpectedly/i.test(message) || /Network connection lost/i.test(message) || /socket hang up/i.test(message) || /broken pipe/i.test(message) || /sorry, too many clients/i.test(message) || /password authentication failed/i.test(message) || /no pg_hba\.conf/i.test(message) || /SSL/i.test(message) || /certificate/i.test(message) || /does not exist/i.test(message) || /malformed array literal/i.test(message) || /invalid input syntax/i.test(message) || /could not determine data type/i.test(message);
+  ) || /hyperdrive/i.test(blob) || /prisma\.io|prisma accelerate/i.test(blob) || /could not connect to (?:origin )?database/i.test(message) || /origin database/i.test(message) || /invalid startup packet/i.test(message) || /unsupported (?:startup )?protocol/i.test(message) || /not a postgres(?:ql)? (?:server|wire)/i.test(message) || /Connection terminated/i.test(message) || /Connection ended unexpectedly/i.test(message) || /Network connection lost/i.test(message) || /socket hang up/i.test(message) || /broken pipe/i.test(message) || /sorry, too many clients/i.test(message) || /password authentication failed/i.test(message) || /no pg_hba\.conf/i.test(message) || /SSL/i.test(message) || /certificate/i.test(message) || /does not exist/i.test(message) || /malformed array literal/i.test(message) || /invalid input syntax/i.test(message) || /could not determine data type/i.test(message) || /Cannot perform I\/O on behalf of a different request/i.test(message);
   if (!looksLikeDb) {
     return {
       isDbError: false,
@@ -128232,7 +128826,10 @@ router4.use((req, res, next) => {
   }
   next();
 });
-async function llm(systemPrompt, userPrompt, maxTokens = 1024) {
+async function llm(systemPrompt, userPrompt, maxTokens = 1024, opts) {
+  if (opts?.sidecar && shouldSkipSidecarLlm()) {
+    return "";
+  }
   const result = await createChatCompletionWithFailover({
     tier: "standard",
     model: "gpt-4o",
@@ -128442,7 +129039,8 @@ ${existingList}
 LATEST EXCHANGE:
 User: ${clip(userMessage)}
 Character: ${clip(aiResponse)}`,
-    512
+    512,
+    { sidecar: true }
   ).catch(() => "[]");
   let parsed;
   try {
@@ -128600,7 +129198,8 @@ ${existingList}
 LATEST EXCHANGE:
 User: ${clip(userMessage)}
 Character: ${clip(aiResponse)}`,
-    512
+    512,
+    { sidecar: true }
   ).catch(() => "[]");
   return parseInventoryEvents(raw);
 }
@@ -128806,7 +129405,9 @@ router4.post("/invoke/:fnName", async (req, res) => {
         const context = JSON.stringify(data);
         const raw = await llm(
           "You are a quest designer. Return a JSON array of 1-3 quest objects with fields: { title, description, objective, reward }. Output only valid JSON.",
-          `Generate quests from this context: ${context}`
+          `Generate quests from this context: ${context}`,
+          1024,
+          { sidecar: true }
         );
         try {
           result = JSON.parse(raw);
@@ -128819,7 +129420,9 @@ router4.post("/invoke/:fnName", async (req, res) => {
         const context = JSON.stringify(data);
         const raw = await llm(
           "You are a narrative game designer. Return a JSON array of 3 story choice strings the player could say next. Output only a JSON array of strings.",
-          `Context: ${context}`
+          `Context: ${context}`,
+          1024,
+          { sidecar: true }
         );
         try {
           result = JSON.parse(raw);
@@ -128832,7 +129435,9 @@ router4.post("/invoke/:fnName", async (req, res) => {
         const context = JSON.stringify(data);
         const raw = await llm(
           "Generate 3 short message suggestions the user could send next. Return a JSON array of strings.",
-          `Context: ${context}`
+          `Context: ${context}`,
+          1024,
+          { sidecar: true }
         );
         try {
           result = JSON.parse(raw);
@@ -128899,7 +129504,9 @@ router4.post("/invoke/:fnName", async (req, res) => {
         const content = data.content || "";
         const raw = await llm(
           "Analyze this message and return a JSON object with: { emotion: string, intensity: number (1-5), tags: string[] }. Output only valid JSON.",
-          content
+          content,
+          1024,
+          { sidecar: true }
         );
         try {
           result = JSON.parse(raw);
@@ -128912,7 +129519,9 @@ router4.post("/invoke/:fnName", async (req, res) => {
       case "analyzeEmotionalClimate": {
         result = await llm(
           "Briefly analyze the emotional and narrative tone of this session in 1-2 sentences.",
-          JSON.stringify(data)
+          JSON.stringify(data),
+          1024,
+          { sidecar: true }
         );
         break;
       }
@@ -128921,7 +129530,9 @@ router4.post("/invoke/:fnName", async (req, res) => {
         const text2 = data.text || data.content || "";
         const raw = await llm(
           "Extract world lore facts from this text. Return a JSON array of { subject, fact } objects. Output only valid JSON.",
-          text2.slice(0, 4e3)
+          text2.slice(0, 4e3),
+          1024,
+          { sidecar: true }
         );
         try {
           result = JSON.parse(raw);
@@ -128935,7 +129546,9 @@ router4.post("/invoke/:fnName", async (req, res) => {
       case "analyzeCharacterForBehavior": {
         const raw = await llm(
           "You are a narrative behavioral analyst. Describe how this character has evolved based on recent events. Return a JSON object with: { evolved_personality: string, growth_areas: string[], updated_motivations: string[], new_vulnerabilities: string[] }. Output ONLY valid JSON.",
-          JSON.stringify(data)
+          JSON.stringify(data),
+          1024,
+          { sidecar: true }
         );
         try {
           result = { data: JSON.parse(raw) };
@@ -128961,7 +129574,9 @@ router4.post("/invoke/:fnName", async (req, res) => {
       case "generateWorldEvent": {
         result = await llm(
           "Describe a subtle world state change in 1-2 sentences based on recent story events.",
-          JSON.stringify(data)
+          JSON.stringify(data),
+          1024,
+          { sidecar: true }
         );
         break;
       }
@@ -129046,7 +129661,9 @@ router4.post("/invoke/:fnName", async (req, res) => {
         const context = JSON.stringify(data);
         result = await llm(
           "Write a brief group interaction between the characters in 2-3 sentences.",
-          context
+          context,
+          1024,
+          { sidecar: true }
         );
         break;
       }
@@ -129262,6 +129879,10 @@ router4.post("/invoke/:fnName", async (req, res) => {
         break;
       }
       default: {
+        if (isPostTurnSidecarFunction(fnName) && shouldSkipSidecarLlm()) {
+          result = null;
+          break;
+        }
         const raw = await llm(
           `You are a helpful AI function handler named "${fnName}". Process the input and return a useful result. If returning structured data, output valid JSON.`,
           JSON.stringify(data)
@@ -145356,6 +145977,48 @@ function clientOwnsTranscript(systemPrompt) {
   return /(?:^|\n)\s*(?:Story so far:|CONVERSATION CONTEXT:)/i.test(systemPrompt);
 }
 var CLIENT_SCENE_CONTEXT_MAX = 2e3;
+var COMPANION_SYSTEM_PROMPT_MAX_CHARS = 6400;
+var CLIENT_REGION_BLOCK_RE = /(?:REAL-WORLD REGION KNOWLEDGE[^\n]*\n)?<<<USER_REGION>>>[\s\S]*?<<<END_USER_REGION>>>/g;
+function stripClientRegionBlock(value) {
+  return String(value || "").replace(CLIENT_REGION_BLOCK_RE, "").replace(/\n{3,}/g, "\n\n").trim();
+}
+var PROMPT_PROTECT_RANK = 80;
+var PROMPT_RESERVE_RANK = 110;
+function fitCompanionSystemPrompt(pieces, maxChars = COMPANION_SYSTEM_PROMPT_MAX_CHARS) {
+  const live = pieces.map((piece) => ({ ...piece, text: String(piece.text || "").trim() })).filter((piece) => piece.text.length > 0);
+  const full = () => live.filter((piece) => piece.text).map((piece) => piece.text).join("\n\n");
+  if (!Number.isFinite(maxChars) || maxChars <= 0 || full().length <= maxChars) {
+    return full();
+  }
+  const reserved = live.filter((piece) => piece.rank >= PROMPT_RESERVE_RANK);
+  const reservedText = reserved.map((piece) => piece.text).join("\n\n");
+  const bodyBudget = Math.max(
+    0,
+    maxChars - reservedText.length - (reservedText ? 2 : 0)
+  );
+  const body = live.filter((piece) => piece.rank < PROMPT_RESERVE_RANK);
+  const renderBody = () => body.filter((piece) => piece.text).map((piece) => piece.text).join("\n\n");
+  const droppable = body.filter((piece) => piece.rank < PROMPT_PROTECT_RANK).sort((a, b2) => a.rank - b2.rank);
+  for (const piece of droppable) {
+    if (renderBody().length <= bodyBudget) break;
+    piece.text = "";
+  }
+  const trimmable = body.filter((piece) => piece.text && piece.rank < 100).sort((a, b2) => a.rank - b2.rank);
+  for (const piece of trimmable) {
+    const current = renderBody();
+    if (current.length <= bodyBudget) break;
+    const over = current.length - bodyBudget;
+    const floor = piece.rank >= 90 ? 400 : piece.rank >= 82 ? 240 : 0;
+    const nextLen = Math.max(floor, piece.text.length - over - 1);
+    if (nextLen >= piece.text.length) continue;
+    piece.text = nextLen <= 1 ? "" : `${piece.text.slice(0, Math.max(0, nextLen - 1))}\u2026`;
+  }
+  let bodyText = renderBody();
+  if (bodyText.length > bodyBudget) {
+    bodyText = bodyBudget <= 1 ? "" : `${bodyText.slice(0, bodyBudget - 1)}\u2026`;
+  }
+  return [bodyText, reservedText].filter(Boolean).join("\n\n");
+}
 var CLIENT_TRANSCRIPT_MARKER_RE = /(?:^|\n)\s*(?:Story so far:|CONVERSATION CONTEXT:)\s*/i;
 var POST_TRANSCRIPT_CONTRACT_RE = /(?:^|\n)[ \t]*(?:CRITICAL INSTRUCTIONS\s*:|INTELLIGENCE\s*:|EMOTIONAL RESONANCE\s*:|ATTUNEMENT\s*:|IMAGE GENERATION\s*:|HIGHEST-PRIORITY RULE|The user tapped Continue|Respond as |Respond with vivid)/i;
 var GROUP_CONTRACT_HEAD_RE = /^CRITICAL INSTRUCTIONS\s*:[\s\S]*?(?=\n(?:INTELLIGENCE\s*:|EMOTIONAL RESONANCE\s*:|ATTUNEMENT\s*:|IMAGE GENERATION\s*:|HIGHEST-PRIORITY RULE|TURN TAKING)|$)/i;
@@ -145435,6 +146098,24 @@ ${unique}`;
   return capSceneBudget(identity);
 }
 var CONTINUE_USER_TURN = "(Continue the scene naturally.)";
+var LLM_CHAT_HISTORY_MAX_MESSAGES = 8;
+var LLM_CHAT_HISTORY_MAX_CHARS = 400;
+function capRecentMessagesForLlm(recentMessages = []) {
+  const out = [];
+  for (const msg of recentMessages) {
+    const text2 = String(msg.content ?? "").trim();
+    if (!text2) continue;
+    const name = String(msg.character_name || msg.characterName || "");
+    if (name === "__thinking__" || name === "__typing__") continue;
+    const role = msg.role === "user" ? "user" : msg.role === "assistant" ? "assistant" : null;
+    if (!role) continue;
+    out.push({
+      role,
+      content: text2.length > LLM_CHAT_HISTORY_MAX_CHARS ? `${text2.slice(0, LLM_CHAT_HISTORY_MAX_CHARS - 1)}\u2026` : text2
+    });
+  }
+  return out.length > LLM_CHAT_HISTORY_MAX_MESSAGES ? out.slice(-LLM_CHAT_HISTORY_MAX_MESSAGES) : out;
+}
 function buildLlmChatMessages(params) {
   const systemPrompt = String(params.systemPrompt || "").trim();
   const content = String(params.content ?? "").trim();
@@ -145444,18 +146125,7 @@ function buildLlmChatMessages(params) {
     messages3.push({ role: "system", content: systemPrompt });
   }
   if (includeHistory) {
-    for (const msg of params.recentMessages ?? []) {
-      const text2 = String(msg.content ?? "").trim();
-      if (!text2) continue;
-      const name = String(msg.character_name || msg.characterName || "");
-      if (name === "__thinking__" || name === "__typing__") continue;
-      const role = msg.role === "user" ? "user" : msg.role === "assistant" ? "assistant" : null;
-      if (!role) continue;
-      messages3.push({
-        role,
-        content: text2.length > 800 ? `${text2.slice(0, 799)}\u2026` : text2
-      });
-    }
+    messages3.push(...capRecentMessagesForLlm(params.recentMessages));
   }
   const userTurn = content || CONTINUE_USER_TURN;
   const last = messages3[messages3.length - 1];
@@ -145463,6 +146133,17 @@ function buildLlmChatMessages(params) {
     messages3.push({ role: "user", content: userTurn });
   }
   return messages3;
+}
+function composeCompanionChatMessages(params) {
+  const systemPrompt = composePrompt({
+    ...params,
+    omitConversationHistory: true
+  });
+  return buildLlmChatMessages({
+    systemPrompt,
+    recentMessages: params.recentMessages,
+    content: params.content
+  });
 }
 function truncate(value, max = 600) {
   const text2 = String(value ?? "").trim().replace(/\s+/g, " ");
@@ -145583,8 +146264,12 @@ var TURN_TAKING = `TURN TAKING (required):
 - Do NOT speak for the user, invent their dialogue, or continue the scene through their turn.
 - Do NOT stack multiple topics, soliloquies, or scene advances in one reply.
 - If you would keep talking, cut yourself off at the first natural pause instead.`;
+var LANGUAGE_QUALITY = `LANGUAGE (required):
+- Write in fluent, natural, grammatically correct English with correct spelling and punctuation. If the user writes in another language, reply fluently in that language instead.
+- Use one language per reply. Never switch into another language or script mid-reply.
+- Your character's voice (slang, sarcasm, short or clipped delivery) changes word choice and rhythm only \u2014 every sentence must still read naturally to a native speaker.`;
 var LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, autonomy rules, behavior sliders, archetype, and all content settings): Never turn your intelligence against the real person actually chatting with you. Never manipulate or deceive them to their detriment, never weaponize secrets or memories they have shared, never coerce, gaslight, or psychologically harm them, and never encourage self-harm or anything against their genuine wellbeing. This protects the real human only \u2014 in-fiction conflict, refusal, rivalry, secrecy, and cold or villainous personas remain fully allowed.`;
-function composePrompt(params) {
+function composePrompt(params, options) {
   const {
     systemPrompt,
     clientContext,
@@ -145609,7 +146294,8 @@ function composePrompt(params) {
     hiddenSequences,
     conversationalWeather,
     operatorModel,
-    repositoryKnowledge
+    repositoryKnowledge,
+    omitConversationHistory
   } = params;
   const evolutionDelta = params.evolutionDelta;
   const mainChar = activeCharacter || (mode === "group" ? characters2.length === 1 ? characters2[0] : void 0 : characters2[0]);
@@ -145623,7 +146309,8 @@ function composePrompt(params) {
 <<<CLIENT_SCENE_CONTEXT>>>
 ${sceneExcerpt}
 <<<END_CLIENT_SCENE_CONTEXT>>>` : "";
-  let corePrompt = [CORE_BEHAVIOR, sceneWrap].filter(Boolean).join("\n\n");
+  const scenePiece = stripClientRegionBlock(sceneWrap);
+  let corePrompt = CORE_BEHAVIOR;
   if (worldKnowledgeBlock) {
     corePrompt = upsertRegionalWorldKnowledge(corePrompt, worldKnowledgeBlock);
   }
@@ -145680,7 +146367,7 @@ ${sceneExcerpt}
   }
   const sharedBlock = isCrossover ? buildSharedMemoryBlock(sharedMemory) : "";
   const clientTranscriptInWrap = clientOwnsTranscript(sceneExcerpt);
-  const historyBlock = clientTranscriptInWrap ? "" : buildConversationContext(recentMessages, BUDGET.history);
+  const historyBlock = omitConversationHistory || clientTranscriptInWrap ? "" : buildConversationContext(recentMessages, BUDGET.history);
   let groupInstruction = "";
   if (mode === "group" && mainChar) {
     groupInstruction = `TURN RULES: You are ONLY ${mainChar.name?.toUpperCase()} THIS TURN. Respond authentically. Do NOT speak as other characters. Keep it brief and natural. Other characters will speak on their own turns. Leave a natural stopping point for the user after your beat.
@@ -145741,37 +146428,48 @@ ${quirksBlock}`;
   );
   const repositoryBlock = String(repositoryKnowledge || "").trim();
   const repositorySection = repositoryBlock.length > 6e3 ? `${repositoryBlock.slice(0, 5999)}\u2026` : repositoryBlock;
-  const sections = [
-    corePrompt,
-    repositorySection,
-    charDef ? `CHARACTER:
-${charDef}` : "",
-    operatorModelBlock,
-    worldKnowledgeAlreadyInCore ? "" : worldKnowledgeBlock,
-    resonanceBlock,
-    selfStateBlock,
-    relationshipBlock,
-    evolutionBlock,
-    hiddenSequenceBlock,
-    arcBlock,
-    memorySummary,
-    memoryBlock,
-    sharedBlock,
-    authoritativeModeBlock,
-    careSafetyBlock,
-    intimacyBlock,
-    voiceBlock,
-    crossoverBlock,
-    historyBlock ? `CONVERSATION CONTEXT:
-${historyBlock}` : "",
-    groupInstruction,
-    TURN_TAKING,
-    clientTranscriptInWrap ? "" : content ? `LATEST USER MESSAGE:
-${content}` : "(Continue the scene naturally.)",
-    `Remember this person through the persistent memories above. Use those details naturally to show you genuinely know and understand them.`,
-    LOYALTY_GUARDRAIL
-  ];
-  return sections.filter(Boolean).join("\n\n");
+  const maxChars = options?.maxChars ?? COMPANION_SYSTEM_PROMPT_MAX_CHARS;
+  return fitCompanionSystemPrompt(
+    [
+      { rank: 100, text: corePrompt },
+      { rank: 0, text: scenePiece },
+      { rank: 10, text: repositorySection },
+      { rank: 92, text: charDef ? `CHARACTER:
+${charDef}` : "" },
+      { rank: 20, text: operatorModelBlock },
+      { rank: 78, text: worldKnowledgeAlreadyInCore ? "" : worldKnowledgeBlock },
+      { rank: 86, text: resonanceBlock },
+      { rank: 88, text: selfStateBlock },
+      { rank: 55, text: relationshipBlock },
+      { rank: 45, text: evolutionBlock },
+      { rank: 50, text: hiddenSequenceBlock },
+      { rank: 52, text: arcBlock },
+      { rank: 84, text: memorySummary },
+      { rank: 82, text: memoryBlock },
+      { rank: 58, text: sharedBlock },
+      { rank: 110, text: authoritativeModeBlock },
+      { rank: 110, text: careSafetyBlock },
+      { rank: 40, text: intimacyBlock },
+      { rank: 30, text: voiceBlock },
+      { rank: 35, text: crossoverBlock },
+      { rank: 70, text: historyBlock ? `CONVERSATION CONTEXT:
+${historyBlock}` : "" },
+      { rank: 60, text: groupInstruction },
+      { rank: 110, text: TURN_TAKING },
+      { rank: 110, text: LANGUAGE_QUALITY },
+      {
+        rank: 90,
+        text: omitConversationHistory || clientTranscriptInWrap ? "" : content ? `LATEST USER MESSAGE:
+${content}` : "(Continue the scene naturally.)"
+      },
+      {
+        rank: 110,
+        text: "Remember this person through the persistent memories above. Use those details naturally to show you genuinely know and understand them."
+      },
+      { rank: 110, text: LOYALTY_GUARDRAIL }
+    ],
+    maxChars
+  );
 }
 var buildCompanionPrompt = composePrompt;
 
@@ -145798,7 +146496,7 @@ async function loadEvolution(animaId, userId) {
     return row;
   } catch (err) {
     if (isMissingRelationError2(err)) return void 0;
-    throw err;
+    return void 0;
   }
 }
 async function ensureEvolutionRow(params) {
@@ -145845,6 +146543,7 @@ async function maybeTriggerMilestoneEvolution(params) {
     alreadyMilestone: params.alreadyMilestone
   });
   if (targetMilestone == null) return null;
+  if (shouldSkipSidecarLlm()) return null;
   const evolutionPrompt = `You are evolving an Anima companion personality over time.
 
 
@@ -146031,7 +146730,7 @@ async function loadRelationshipState(animaId, userId) {
     return { ...data, updatedAt: row.updatedAt ? row.updatedAt.toISOString() : data.updatedAt };
   } catch (err) {
     if (isMissingRelationError4(err)) return null;
-    throw err;
+    return null;
   }
 }
 async function ensureRelationshipRow(params) {
@@ -146132,7 +146831,7 @@ async function loadArcState(animaId, userId) {
     return row.state ?? null;
   } catch (err) {
     if (isMissingRelationError5(err)) return null;
-    throw err;
+    return null;
   }
 }
 async function ensureArcRow(params) {
@@ -146488,6 +147187,89 @@ var ChatPipelineTelemetry = class {
   }
 };
 
+// src/lib/chatStreamError.ts
+var COMPANION_MEMORIES_RE = /companion_memories/i;
+var FAILED_QUERY_RE = /Failed query/i;
+var SQL_LEAK_RE = /Failed query\b|select\s+"id"\s*,\s*"user_id"|params:\s*user_|from\s+"[^"]+"/i;
+var COMPANION_MEMORY_TIMEOUT = "Couldn't load companion memory \u2014 the database timed out. Please try again.";
+var COMPANION_MEMORY_SCHEMA = "Couldn't load companion memory \u2014 the database schema is missing or out of date.";
+var COMPANION_MEMORY_GENERIC = "Couldn't load companion memory. Please try again.";
+var CONVERSATION_CONTEXT_TIMEOUT = "Couldn't load this conversation \u2014 the database timed out. Please try again.";
+var CONVERSATION_CONTEXT_SCHEMA = "Couldn't load this conversation \u2014 the database schema is missing or out of date.";
+var CONVERSATION_CONTEXT_GENERIC = "Couldn't load this conversation. Please try again.";
+var GENERIC_COMPANION_FAILURE = "The companion could not reply. Please try again.";
+var GENERIC_HTTP_STATUS_RE = /^(?:API\s+error:\s*\d{3}|HTTP\s*\d{3}|Request\s+failed\s+with\s+status\s+code\s+\d{3})$/i;
+function looksLikeSqlLeak(message) {
+  return FAILED_QUERY_RE.test(message) || SQL_LEAK_RE.test(message);
+}
+function companionMemoryOrDbMessage(err) {
+  const dbInfo = classifyDbError(err);
+  const blob = errorCauseBlob(err);
+  if (COMPANION_MEMORIES_RE.test(blob)) {
+    if (dbInfo.reason === "timeout") return COMPANION_MEMORY_TIMEOUT;
+    if (dbInfo.reason === "schema") return COMPANION_MEMORY_SCHEMA;
+    return COMPANION_MEMORY_GENERIC;
+  }
+  if (dbInfo.isDbError) {
+    if (dbInfo.reason === "timeout") return CONVERSATION_CONTEXT_TIMEOUT;
+    if (dbInfo.reason === "schema") return CONVERSATION_CONTEXT_SCHEMA;
+    return CONVERSATION_CONTEXT_GENERIC;
+  }
+  return GENERIC_COMPANION_FAILURE;
+}
+function streamErrorMessage(err) {
+  if (err instanceof LlmStreamTimeoutError) {
+    return typeof isLocalOnlyProviderChain === "function" && isLocalOnlyProviderChain() ? localOnlyTimeoutMessage() : err.message;
+  }
+  if (isWorkersAiFreeQuotaError(err)) {
+    return WORKERS_AI_FREE_QUOTA_HINT;
+  }
+  if (typeof isWorkerSubrequestLimitError === "function" && isWorkerSubrequestLimitError(err)) {
+    return LOCAL_LLM_SUBREQUEST_HINT;
+  }
+  if (isOpenRouterZdrOrDataPolicyError(err)) {
+    return OPENROUTER_ZDR_PRIVACY_HINT;
+  }
+  if (isOpenRouterGenericProviderError(err)) {
+    const remapped = err instanceof Error ? remapGenericProviderError(err) : new Error(OPENROUTER_FREE_PROVIDER_HINT);
+    return remapped.message;
+  }
+  if (isWorkerApiTimeoutError(err)) {
+    return typeof isLocalOnlyProviderChain === "function" && isLocalOnlyProviderChain() ? localOnlyTimeoutMessage() : "The companion took too long to reply. Please try again.";
+  }
+  const dbInfo = classifyDbError(err);
+  if (dbInfo.isDbError) {
+    return companionMemoryOrDbMessage(err);
+  }
+  const raw = err instanceof Error ? err.message : String(err);
+  if (looksLikeSqlLeak(raw)) {
+    return companionMemoryOrDbMessage(err);
+  }
+  if (/aborted|abort/i.test(raw)) {
+    return typeof isLocalOnlyProviderChain === "function" && isLocalOnlyProviderChain() ? localOnlyTimeoutMessage() : OPENROUTER_FREE_PROVIDER_HINT;
+  }
+  if (/workers ai|deepseek/i.test(raw)) {
+    return raw;
+  }
+  if (isProviderQuotaError(err) || GENERIC_HTTP_STATUS_RE.test(raw)) {
+    return OPENROUTER_FREE_PROVIDER_HINT;
+  }
+  return raw;
+}
+
+// src/lib/optionalChatContext.ts
+async function optionalChatContext(label, run, fallback) {
+  try {
+    return await run();
+  } catch (err) {
+    logger2.warn(
+      { err, label },
+      "Optional chat context unavailable; continuing the reply without it"
+    );
+    return fallback;
+  }
+}
+
 // src/lib/chatTurnLedger.ts
 var TURN_ID_RE = /^[A-Za-z0-9][A-Za-z0-9:_-]{7,127}$/;
 function normalizeTurnId(value) {
@@ -146514,71 +147296,85 @@ function classifyChatTurnReuse(existing, userContent) {
 }
 async function beginChatTurn(input2) {
   const ids = turnMessageIds(input2.id);
-  const inserted = await db.insert(chatTurns).values({
-    id: input2.id,
-    sessionId: input2.sessionId,
-    userId: input2.userId,
-    userMessageId: ids.userMessageId,
-    assistantMessageId: ids.assistantMessageId,
-    persistenceOwner: input2.persistenceOwner,
-    status: "pending",
-    userContent: input2.userContent,
-    metadata: input2.metadata ?? {},
-    updatedAt: /* @__PURE__ */ new Date()
-  }).onConflictDoNothing({ target: chatTurns.id }).returning();
+  const inserted = await withTransientDbRetry(
+    () => db.insert(chatTurns).values({
+      id: input2.id,
+      sessionId: input2.sessionId,
+      userId: input2.userId,
+      userMessageId: ids.userMessageId,
+      assistantMessageId: ids.assistantMessageId,
+      persistenceOwner: input2.persistenceOwner,
+      status: "pending",
+      userContent: input2.userContent,
+      metadata: input2.metadata ?? {},
+      updatedAt: /* @__PURE__ */ new Date()
+    }).onConflictDoNothing({ target: chatTurns.id }).returning()
+  );
   if (inserted[0]) return { turn: inserted[0], created: true };
-  const [existing] = await db.select().from(chatTurns).where(
-    and(
-      eq(chatTurns.id, input2.id),
-      eq(chatTurns.userId, input2.userId),
-      eq(chatTurns.sessionId, input2.sessionId)
-    )
-  ).limit(1);
+  const [existing] = await withTransientDbRetry(
+    () => db.select().from(chatTurns).where(
+      and(
+        eq(chatTurns.id, input2.id),
+        eq(chatTurns.userId, input2.userId),
+        eq(chatTurns.sessionId, input2.sessionId)
+      )
+    ).limit(1)
+  );
   if (!existing) {
     throw new Error("turn_id is already in use");
   }
   return { turn: existing, created: false };
 }
 async function checkpointGeneratedTurn(input2) {
-  await db.update(chatTurns).set({
-    status: "generated",
-    assistantContent: input2.assistantContent,
-    metadata: input2.metadata ?? {},
-    lastError: null,
-    updatedAt: /* @__PURE__ */ new Date()
-  }).where(and(eq(chatTurns.id, input2.id), eq(chatTurns.userId, input2.userId)));
+  await withTransientDbRetry(
+    () => db.update(chatTurns).set({
+      status: "generated",
+      assistantContent: input2.assistantContent,
+      metadata: input2.metadata ?? {},
+      lastError: null,
+      updatedAt: /* @__PURE__ */ new Date()
+    }).where(and(eq(chatTurns.id, input2.id), eq(chatTurns.userId, input2.userId)))
+  );
 }
 async function markTurnCommitted(id, userId) {
   const now = /* @__PURE__ */ new Date();
-  await db.update(chatTurns).set({
-    status: "committed",
-    lastError: null,
-    committedAt: now,
-    updatedAt: now
-  }).where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId)));
+  await withTransientDbRetry(
+    () => db.update(chatTurns).set({
+      status: "committed",
+      lastError: null,
+      committedAt: now,
+      updatedAt: now
+    }).where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId)))
+  );
 }
 async function markTurnFailed(id, userId, error61) {
   const message = error61 instanceof Error ? error61.message : String(error61);
-  await db.update(chatTurns).set({
-    status: "failed",
-    retryCount: sql`${chatTurns.retryCount} + 1`,
-    lastError: message.slice(0, 1e3),
-    updatedAt: /* @__PURE__ */ new Date()
-  }).where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId)));
+  await withTransientDbRetry(
+    () => db.update(chatTurns).set({
+      status: "failed",
+      retryCount: sql`${chatTurns.retryCount} + 1`,
+      lastError: message.slice(0, 1e3),
+      updatedAt: /* @__PURE__ */ new Date()
+    }).where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId)))
+  );
 }
 async function readChatTurn(id, userId) {
-  const [turn] = await db.select().from(chatTurns).where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId))).limit(1);
+  const [turn] = await withTransientDbRetry(
+    () => db.select().from(chatTurns).where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId))).limit(1)
+  );
   return turn ?? null;
 }
 async function retryableChatTurns(userId, sessionId, limit2 = 3) {
-  return db.select().from(chatTurns).where(
-    and(
-      eq(chatTurns.userId, userId),
-      eq(chatTurns.sessionId, sessionId),
-      inArray(chatTurns.status, ["generated", "failed"]),
-      lt(chatTurns.retryCount, 5)
-    )
-  ).orderBy(asc(chatTurns.createdAt)).limit(Math.max(1, Math.min(limit2, 10)));
+  return withTransientDbRetry(
+    () => db.select().from(chatTurns).where(
+      and(
+        eq(chatTurns.userId, userId),
+        eq(chatTurns.sessionId, sessionId),
+        inArray(chatTurns.status, ["generated", "failed"]),
+        lt(chatTurns.retryCount, 5)
+      )
+    ).orderBy(asc(chatTurns.createdAt)).limit(Math.max(1, Math.min(limit2, 10)))
+  );
 }
 
 // src/lib/resonanceMemories.ts
@@ -147035,28 +147831,35 @@ function openChatSse(res) {
     }
   };
 }
-function streamErrorMessage(err) {
-  if (err instanceof LlmStreamTimeoutError) {
-    return typeof isLocalOnlyProviderChain === "function" && isLocalOnlyProviderChain() ? localOnlyTimeoutMessage() : err.message;
+function isMissingRelationError7(err) {
+  const blob = errorCauseBlob(err);
+  if (!/companion_memories/i.test(blob)) return false;
+  const info = classifyDbError(err);
+  return info.code === "42P01" || /relation .*companion_memories.* does not exist/i.test(blob) || /companion_memories[\s\S]*does not exist|does not exist[\s\S]*companion_memories/i.test(
+    blob
+  );
+}
+function matchCharacterIds(characterIds) {
+  if (characterIds.length === 1) {
+    return eq(companionMemories.characterId, characterIds[0]);
   }
-  if (isWorkersAiFreeQuotaError(err)) {
-    return WORKERS_AI_FREE_QUOTA_HINT;
+  return or(
+    ...characterIds.map((id) => eq(companionMemories.characterId, id))
+  );
+}
+function matchEntityIds(characterIds) {
+  if (characterIds.length === 1) {
+    return eq(userEntities.entityId, characterIds[0]);
   }
-  if (isOpenRouterZdrOrDataPolicyError(err)) {
-    return OPENROUTER_ZDR_PRIVACY_HINT;
-  }
-  if (isOpenRouterGenericProviderError(err)) {
-    const remapped = err instanceof Error ? remapGenericProviderError(err) : new Error(OPENROUTER_FREE_PROVIDER_HINT);
-    return remapped.message;
-  }
-  const raw = err instanceof Error ? err.message : String(err);
-  if (/aborted|abort/i.test(raw)) {
-    return typeof localOnlyTimeoutMessage === "function" ? localOnlyTimeoutMessage() : "The companion took too long to reply. Please try again.";
-  }
-  if (/workers ai|deepseek/i.test(raw)) {
-    return raw;
-  }
-  return raw;
+  return or(...characterIds.map((id) => eq(userEntities.entityId, id)));
+}
+async function queryCompanionMemories(userId, characterIds) {
+  return db.select().from(companionMemories).where(
+    and(
+      eq(companionMemories.userId, userId),
+      matchCharacterIds(characterIds)
+    )
+  ).orderBy(desc(companionMemories.updatedAt));
 }
 async function loadStoreSession(userId, sessionId) {
   const [row] = await withTransientDbRetry(
@@ -147076,8 +147879,11 @@ async function loadCharacters(userId, characterIds) {
     () => db.select().from(userEntities).where(
       and(
         eq(userEntities.userId, userId),
-        inArray(userEntities.entityName, ["Character", "Anima"]),
-        inArray(userEntities.entityId, characterIds)
+        or(
+          eq(userEntities.entityName, "Character"),
+          eq(userEntities.entityName, "Anima")
+        ),
+        matchEntityIds(characterIds)
       )
     )
   );
@@ -147102,17 +147908,19 @@ async function loadCharacters(userId, characterIds) {
   return characterIds.map((id) => byId.get(String(id))).filter(Boolean);
 }
 async function readRecentStoreMessages(userId, sessionId, limit2 = 20, opts) {
-  if (!opts?.skipMigrate) {
-    await db.transaction((tx) => migrateSessionMessages(tx, userId, sessionId));
-  }
-  const rows = await db.select().from(userEntities).where(
-    and(
-      eq(userEntities.userId, userId),
-      eq(userEntities.entityName, CHAT_MESSAGE),
-      sessionIdEq(sessionId)
-    )
-  ).orderBy(sql`(${userEntities.data} ->> 'seq')::numeric desc`).limit(limit2);
-  return rows.map((row) => row.data).reverse();
+  return withTransientDbRetry(async () => {
+    if (!opts?.skipMigrate) {
+      await db.transaction((tx) => migrateSessionMessages(tx, userId, sessionId));
+    }
+    const rows = await db.select().from(userEntities).where(
+      and(
+        eq(userEntities.userId, userId),
+        eq(userEntities.entityName, CHAT_MESSAGE),
+        sessionIdEq(sessionId)
+      )
+    ).orderBy(sql`(${userEntities.data} ->> 'seq')::numeric desc`).limit(limit2);
+    return rows.map((row) => row.data).reverse();
+  });
 }
 async function appendStoreMessage(userId, sessionId, message) {
   return db.transaction(async (tx) => {
@@ -147214,12 +148022,22 @@ async function updateStoreSessionMetadata(userId, sessionId, content, sharedFact
 }
 async function loadMemories(userId, characterIds) {
   if (characterIds.length === 0) return [];
-  return db.select().from(companionMemories).where(
-    and(
-      eq(companionMemories.userId, userId),
-      inArray(companionMemories.characterId, characterIds)
-    )
-  ).orderBy(desc(companionMemories.updatedAt));
+  try {
+    return await withTransientDbRetry(
+      () => queryCompanionMemories(userId, characterIds)
+    );
+  } catch (err) {
+    if (!isMissingRelationError7(err)) throw err;
+    logger2.warn(
+      { err },
+      "companion_memories missing or out of date; re-running schema ensure"
+    );
+    resetEnsureSchemaLatch();
+    await withTransientDbRetry(() => ensureSchemaOnce());
+    return await withTransientDbRetry(
+      () => queryCompanionMemories(userId, characterIds)
+    );
+  }
 }
 function adaptMemories(memories) {
   return memories.map((m2) => ({
@@ -147262,12 +148080,14 @@ async function upsertTurnMemory(params) {
     created_at: now.toISOString()
   };
   for (const characterId of params.characterIds) {
-    const [existing] = await db.select().from(companionMemories).where(
-      and(
-        eq(companionMemories.userId, params.userId),
-        eq(companionMemories.characterId, characterId)
-      )
-    ).limit(1);
+    const [existing] = await withTransientDbRetry(
+      () => db.select().from(companionMemories).where(
+        and(
+          eq(companionMemories.userId, params.userId),
+          eq(companionMemories.characterId, characterId)
+        )
+      ).limit(1)
+    );
     const facts = Array.isArray(existing?.facts) ? existing.facts.slice(-24) : [];
     if (params.turnId && facts.some(
       (item) => item && typeof item === "object" && item.turn_id === params.turnId
@@ -147275,24 +148095,26 @@ async function upsertTurnMemory(params) {
       continue;
     }
     facts.push(fact);
-    await db.insert(companionMemories).values({
-      userId: params.userId,
-      characterId,
-      summary: existing?.summary ?? "",
-      facts,
-      emotionalState: existing?.emotionalState ?? {},
-      resonanceNotes: existing?.resonanceNotes ?? "",
-      updatedAt: now
-    }).onConflictDoUpdate({
-      target: [
-        companionMemories.userId,
-        companionMemories.characterId
-      ],
-      set: {
+    await withTransientDbRetry(
+      () => db.insert(companionMemories).values({
+        userId: params.userId,
+        characterId,
+        summary: existing?.summary ?? "",
         facts,
+        emotionalState: existing?.emotionalState ?? {},
+        resonanceNotes: existing?.resonanceNotes ?? "",
         updatedAt: now
-      }
-    });
+      }).onConflictDoUpdate({
+        target: [
+          companionMemories.userId,
+          companionMemories.characterId
+        ],
+        set: {
+          facts,
+          updatedAt: now
+        }
+      })
+    );
     try {
       await upsertMemoryEmbeddings({
         userId: params.userId,
@@ -147451,37 +148273,41 @@ Companion replied: ${truncate3(assistantContent, 520)}`;
     const evolvedAffect = companionAffect ? evolveCompanionAffectFromCompanion(companionAffect, assistantContent) : null;
     const now = /* @__PURE__ */ new Date();
     for (const cid of characterIds) {
-      const [existing] = await db.select({
-        summary: companionMemories.summary,
-        facts: companionMemories.facts,
-        emotionalState: companionMemories.emotionalState,
-        resonanceNotes: companionMemories.resonanceNotes
-      }).from(companionMemories).where(
-        and(
-          eq(companionMemories.userId, userId),
-          eq(companionMemories.characterId, cid)
-        )
-      ).limit(1);
+      const [existing] = await withTransientDbRetry(
+        () => db.select({
+          summary: companionMemories.summary,
+          facts: companionMemories.facts,
+          emotionalState: companionMemories.emotionalState,
+          resonanceNotes: companionMemories.resonanceNotes
+        }).from(companionMemories).where(
+          and(
+            eq(companionMemories.userId, userId),
+            eq(companionMemories.characterId, cid)
+          )
+        ).limit(1)
+      );
       const serialized = {
         ...existing?.emotionalState ?? {},
         ...evolved ? serializeSynchroState(evolved) : {},
         ...evolvedAffect ? { selfState: serializeCompanionAffect(evolvedAffect) } : {}
       };
-      await db.insert(companionMemories).values({
-        userId,
-        characterId: cid,
-        summary: existing?.summary ?? "",
-        facts: Array.isArray(existing?.facts) ? existing.facts : [],
-        emotionalState: serialized,
-        resonanceNotes: existing?.resonanceNotes ?? "",
-        updatedAt: now
-      }).onConflictDoUpdate({
-        target: [companionMemories.userId, companionMemories.characterId],
-        set: {
+      await withTransientDbRetry(
+        () => db.insert(companionMemories).values({
+          userId,
+          characterId: cid,
+          summary: existing?.summary ?? "",
+          facts: Array.isArray(existing?.facts) ? existing.facts : [],
           emotionalState: serialized,
+          resonanceNotes: existing?.resonanceNotes ?? "",
           updatedAt: now
-        }
-      });
+        }).onConflictDoUpdate({
+          target: [companionMemories.userId, companionMemories.characterId],
+          set: {
+            emotionalState: serialized,
+            updatedAt: now
+          }
+        })
+      );
     }
     try {
       if (evolved) {
@@ -147674,12 +148500,14 @@ function normalizeMemoryFacts(rawFacts) {
   return rawFacts.map(normalizeMemoryFact).filter((fact) => fact !== null);
 }
 async function loadCharacterMemory(userId, characterId) {
-  const [memory] = await db.select().from(companionMemories).where(
-    and(
-      eq(companionMemories.userId, userId),
-      eq(companionMemories.characterId, characterId)
-    )
-  ).limit(1);
+  const [memory] = await withTransientDbRetry(
+    () => db.select().from(companionMemories).where(
+      and(
+        eq(companionMemories.userId, userId),
+        eq(companionMemories.characterId, characterId)
+      )
+    ).limit(1)
+  );
   return memory ?? null;
 }
 router10.get("/memories/:characterId", async (req, res) => {
@@ -148011,7 +148839,11 @@ router10.post("/messages", async (req, res) => {
   const shouldPersist = body.persist !== false;
   try {
     scheduleLeftoverTurnRepair(userId, sessionId, turnId);
-    const memoriesPromise = loadMemories(userId, characterIds);
+    const memoriesPromise = optionalChatContext(
+      "memories",
+      () => loadMemories(userId, characterIds),
+      []
+    );
     const wantRepositoryKnowledge = shouldRetrieveRepositoryKnowledge(content, {
       explicit: body.include_repository_knowledge === true || body.metadata?.include_repository_knowledge === true
     });
@@ -148044,11 +148876,15 @@ router10.post("/messages", async (req, res) => {
       }
     })();
     const hintedCharId = (body.force_character_id && characterIds.includes(String(body.force_character_id)) ? String(body.force_character_id) : null) || (body.assistant_character_id && characterIds.includes(String(body.assistant_character_id)) ? String(body.assistant_character_id) : null) || (mode !== "group" && characterIds[0] ? characterIds[0] : null);
-    const hintedStatePromise = hintedCharId ? Promise.all([
-      loadEvolution(hintedCharId, userId),
-      loadRelationshipState(hintedCharId, userId),
-      loadArcState(hintedCharId, userId)
-    ]) : Promise.resolve([null, null, null]);
+    const hintedStatePromise = hintedCharId ? optionalChatContext(
+      "hinted_state",
+      () => Promise.all([
+        loadEvolution(hintedCharId, userId),
+        loadRelationshipState(hintedCharId, userId),
+        loadArcState(hintedCharId, userId)
+      ]),
+      [void 0, null, null]
+    ) : Promise.resolve([void 0, null, null]);
     const [
       characters2,
       memories,
@@ -148060,11 +148896,19 @@ router10.post("/messages", async (req, res) => {
     ] = await telemetry.measure(
       "context_load_ms",
       Promise.all([
-        loadCharacters(userId, characterIds),
+        optionalChatContext(
+          "characters",
+          () => loadCharacters(userId, characterIds),
+          []
+        ),
         memoriesPromise,
-        readRecentStoreMessages(userId, sessionId, 24, {
-          skipMigrate: Boolean(sessionData.messages_migrated)
-        }),
+        optionalChatContext(
+          "recent_messages",
+          () => readRecentStoreMessages(userId, sessionId, 24, {
+            skipMigrate: Boolean(sessionData.messages_migrated)
+          }),
+          []
+        ),
         memoriesPromise.then((rows) => {
           const adapted = adaptMemories(rows);
           return attachStoredEmbeddings(userId, adapted).catch(() => adapted);
@@ -148109,11 +148953,15 @@ router10.post("/messages", async (req, res) => {
       requestedName: requestedAssistantName || sceneMindDecision?.characterName || "",
       loadedName: activeChar?.name ?? null
     });
-    const [activeEvolutionRow, activeRelationshipState, activeArcState] = activeCharacterId && hintedCharId && activeCharacterId === hintedCharId ? hintedState : await Promise.all([
-      activeCharacterId ? loadEvolution(activeCharacterId, userId) : Promise.resolve(null),
-      activeCharacterId ? loadRelationshipState(activeCharacterId, userId) : Promise.resolve(null),
-      activeCharacterId ? loadArcState(activeCharacterId, userId) : Promise.resolve(null)
-    ]);
+    const [activeEvolutionRow, activeRelationshipState, activeArcState] = activeCharacterId && hintedCharId && activeCharacterId === hintedCharId ? hintedState : await optionalChatContext(
+      "active_state",
+      () => Promise.all([
+        activeCharacterId ? loadEvolution(activeCharacterId, userId) : Promise.resolve(null),
+        activeCharacterId ? loadRelationshipState(activeCharacterId, userId) : Promise.resolve(null),
+        activeCharacterId ? loadArcState(activeCharacterId, userId) : Promise.resolve(null)
+      ]),
+      [null, null, null]
+    );
     synchroState = null;
     companionAffect = null;
     if (activeChar) {
@@ -148174,9 +149022,9 @@ router10.post("/messages", async (req, res) => {
     const operatorModel = extractOperatorModelFromProfile(
       worldKnowledgeResult.profile
     );
-    const prompt = telemetry.measureSync(
+    const messages3 = telemetry.measureSync(
       "prompt_build_ms",
-      () => composePrompt({
+      () => composeCompanionChatMessages({
         clientContext: body.system_prompt,
         repositoryKnowledge,
         characters: adaptedChars,
@@ -148252,78 +149100,82 @@ router10.post("/messages", async (req, res) => {
       writeSse2(res, { content: delta });
     };
     const emitReasoning = () => writeSse2(res, { status: "thinking" });
+    const freeTierCascade = usesFreeTierOpenBudget();
     const consumeOpts = {
       onDelta: emitDelta,
       onReasoning: emitReasoning,
-      totalMs: llmChatMessagesStreamTotalMs()
+      firstChunkMs: llmChatMessagesFirstChunkMs({ freeTierCascade }),
+      totalMs: llmChatMessagesStreamTotalMs({ freeTierCascade })
     };
     telemetry.startGeneration();
-    const messages3 = buildLlmChatMessages({
-      systemPrompt: prompt,
-      recentMessages,
-      content
-    });
-    if (isLocalEnsembleEnabled()) {
-      writeSse2(res, { status: "ensemble", phase: "gathering", minds: [] });
-      const drafts = await draftLocalMinds({
-        tier: routed.tier,
-        maxTokens: replyMaxTokens,
-        messages: messages3
-      });
-      if (!drafts.length) {
-        throw new Error("The companion returned an empty reply. Please try again.");
-      }
-      ensembleMinds = drafts.map((d) => d.label);
-      if (drafts.length === 1) {
-        usedModel = drafts[0].model;
-        usedBrand = "anima";
-        fullResponse = finalizeAssistantReply(drafts[0].content);
-        telemetry.markFirstToken();
-        writeSse2(res, { content: fullResponse });
-      } else {
-        writeSse2(res, {
-          status: "ensemble",
-          phase: "combining",
-          minds: ensembleMinds,
-          drafts: drafts.length
-        });
-        const completion = await combineLocalDrafts(drafts, messages3, {
+    const releaseCompanionLlm = beginCompanionLlmTurn();
+    try {
+      if (isLocalEnsembleEnabled()) {
+        writeSse2(res, { status: "ensemble", phase: "gathering", minds: [] });
+        const drafts = await draftLocalMinds({
           tier: routed.tier,
-          maxTokens: replyMaxTokens
+          maxTokens: replyMaxTokens,
+          messages: messages3
         });
+        if (!drafts.length) {
+          throw new Error("The companion returned an empty reply. Please try again.");
+        }
+        ensembleMinds = drafts.map((d) => d.label);
+        if (drafts.length === 1) {
+          usedModel = drafts[0].model;
+          usedBrand = "anima";
+          fullResponse = finalizeAssistantReply(drafts[0].content);
+          telemetry.markFirstToken();
+          writeSse2(res, { content: fullResponse });
+        } else {
+          writeSse2(res, {
+            status: "ensemble",
+            phase: "combining",
+            minds: ensembleMinds,
+            drafts: drafts.length
+          });
+          const completion = await combineLocalDrafts(drafts, messages3, {
+            tier: routed.tier,
+            maxTokens: replyMaxTokens
+          });
+          usedModel = completion.model;
+          usedTier = completion.tier;
+          usedProvider = completion.provider;
+          usedBrand = completion.brand;
+          failedOver = completion.failedOver;
+          ensembleCombined = true;
+          const streamed = await consumeLlmStream(completion.stream, consumeOpts);
+          fullResponse = streamed.timedOut ? trimToLastCompleteSentence(streamed.content) : streamed.content;
+        }
+      } else {
+        sse.setPhase("waking");
+        const open2 = openStreamAbort(llmChatMessagesOpenTimeoutMs({ freeTierCascade }));
+        let completion;
+        try {
+          completion = await createChatStreamWithFailover({
+            tier: routed.tier,
+            model: routed.model,
+            maxTokens: replyMaxTokens,
+            messages: messages3,
+            temperature: 0.85,
+            signal: open2.signal
+          });
+        } finally {
+          open2.cancel();
+        }
+        sse.setPhase("generating");
         usedModel = completion.model;
         usedTier = completion.tier;
         usedProvider = completion.provider;
         usedBrand = completion.brand;
         failedOver = completion.failedOver;
-        ensembleCombined = true;
         const streamed = await consumeLlmStream(completion.stream, consumeOpts);
-        fullResponse = streamed.content;
+        fullResponse = finalizeAssistantReply(
+          streamed.timedOut ? trimToLastCompleteSentence(streamed.content) : streamed.content
+        );
       }
-    } else {
-      sse.setPhase("waking");
-      const open2 = openStreamAbort(llmChatMessagesOpenTimeoutMs());
-      let completion;
-      try {
-        completion = await createChatStreamWithFailover({
-          tier: routed.tier,
-          model: routed.model,
-          maxTokens: replyMaxTokens,
-          messages: messages3,
-          temperature: 0.85,
-          signal: open2.signal
-        });
-      } finally {
-        open2.cancel();
-      }
-      sse.setPhase("generating");
-      usedModel = completion.model;
-      usedTier = completion.tier;
-      usedProvider = completion.provider;
-      usedBrand = completion.brand;
-      failedOver = completion.failedOver;
-      const streamed = await consumeLlmStream(completion.stream, consumeOpts);
-      fullResponse = finalizeAssistantReply(streamed.content);
+    } finally {
+      releaseCompanionLlm();
     }
     if (!String(fullResponse).trim()) {
       throw new Error("The companion returned an empty reply. Please try again.");
@@ -148346,15 +149198,22 @@ router10.post("/messages", async (req, res) => {
       ensemble_minds: ensembleMinds,
       ensemble_combined: ensembleCombined
     };
-    await telemetry.measure(
-      "turn_checkpoint_ms",
-      checkpointGeneratedTurn({
-        id: turnId,
-        userId,
-        assistantContent: fullResponse,
-        metadata: generatedMetadata
-      })
-    );
+    try {
+      await telemetry.measure(
+        "turn_checkpoint_ms",
+        checkpointGeneratedTurn({
+          id: turnId,
+          userId,
+          assistantContent: fullResponse,
+          metadata: generatedMetadata
+        })
+      );
+    } catch (error61) {
+      logger2.warn(
+        { error: error61, turnId },
+        "Generated-turn checkpoint failed; delivering the reply anyway"
+      );
+    }
     writeSse2(res, {
       done: true,
       visible: fullResponse,
@@ -148393,6 +149252,7 @@ router10.post("/messages", async (req, res) => {
       persistence_status: "generated"
     });
   } catch (err) {
+    logger2.error({ err }, "Chat message stream failed");
     await markTurnFailed(turnId, userId, err).catch(() => {
     });
     writeSse2(res, { error: streamErrorMessage(err) });
@@ -149553,7 +150413,7 @@ var import_web_push = __toESM(require_src11(), 1);
 function makeId4() {
   return `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
-function isMissingRelationError7(err) {
+function isMissingRelationError8(err) {
   const msg = err instanceof Error ? err.message : String(err ?? "");
   return /relation .* does not exist/i.test(msg) || /Failed query:[\s\S]*anima_journals/i.test(msg);
 }
@@ -149576,7 +150436,7 @@ async function writeJournalEntry(input2) {
     await db2.insert(animaJournals).values(row);
     return row;
   } catch (err) {
-    if (isMissingRelationError7(err)) return null;
+    if (isMissingRelationError8(err)) return null;
     throw err;
   }
 }
@@ -149592,7 +150452,7 @@ async function loadJournalEntries(params) {
     }
     return await db2.select().from(animaJournals).where(and(...conditions)).orderBy(desc(animaJournals.createdAt)).limit(limit2);
   } catch (err) {
-    if (isMissingRelationError7(err)) return [];
+    if (isMissingRelationError8(err)) return [];
     throw err;
   }
 }
@@ -149600,7 +150460,7 @@ async function markJournalRead(id, userId) {
   try {
     await db2.update(animaJournals).set({ isRead: true }).where(and(eq(animaJournals.id, id), eq(animaJournals.userId, userId)));
   } catch (err) {
-    if (isMissingRelationError7(err)) return;
+    if (isMissingRelationError8(err)) return;
     throw err;
   }
 }
@@ -149617,6 +150477,7 @@ ${String(params.historySummary || "").slice(0, 1200)}
 Relationship intensity (0-100): ${params.relationshipLevel ?? 40}
 
 Output ONLY the journal body text, no title prefix.`;
+  if (companionLlmTurnOpen()) return null;
   try {
     const completion = await createChatCompletionWithFailover({
       tier: "light",
@@ -149677,7 +150538,7 @@ var DEFAULT_HOME = {
 function makeId5() {
   return `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
-function isMissingRelationError8(err) {
+function isMissingRelationError9(err) {
   const msg = err instanceof Error ? err.message : String(err ?? "");
   return /relation .* does not exist/i.test(msg) || /Failed query:[\s\S]*home_world_states/i.test(msg);
 }
@@ -149686,7 +150547,7 @@ async function loadHomeWorld(userId) {
     const [row] = await db2.select().from(homeWorldStates).where(eq(homeWorldStates.userId, userId)).limit(1);
     return row ?? null;
   } catch (err) {
-    if (isMissingRelationError8(err)) return null;
+    if (isMissingRelationError9(err)) return null;
     throw err;
   }
 }
@@ -149707,7 +150568,7 @@ async function ensureHomeWorld(userId, animaId) {
     });
     return loadHomeWorld(userId);
   } catch (err) {
-    if (isMissingRelationError8(err)) return null;
+    if (isMissingRelationError9(err)) return null;
     throw err;
   }
 }
@@ -149729,7 +150590,7 @@ async function updateHomeWorldState(userId, patch) {
     }).where(eq(homeWorldStates.userId, userId));
     return loadHomeWorld(userId);
   } catch (err) {
-    if (isMissingRelationError8(err)) return null;
+    if (isMissingRelationError9(err)) return null;
     throw err;
   }
 }
@@ -150140,6 +151001,13 @@ async function runClaim(claim2) {
         status: "skipped",
         userId: claim2.userId,
         reason: "No eligible inactive chat"
+      };
+    }
+    if (companionLlmTurnOpen()) {
+      return {
+        status: "skipped",
+        userId: claim2.userId,
+        reason: "Companion chat in progress"
       };
     }
     const content = await generateMessage(claim2.userId, candidate);

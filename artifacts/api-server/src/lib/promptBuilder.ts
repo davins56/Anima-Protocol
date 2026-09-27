@@ -211,6 +211,92 @@ function clientOwnsTranscript(systemPrompt?: string): boolean {
  */
 export const CLIENT_SCENE_CONTEXT_MAX = 2_000;
 
+/**
+ * Assembled system prompt cap (~4 characters per token).
+ * Persona, mood, and memory outrank the scene excerpt so CPU prefill on a
+ * small droplet stays inside `LLM_LOCAL_FIRST_TOKEN_MS`.
+ */
+export const COMPANION_SYSTEM_PROMPT_MAX_CHARS = 6_400;
+
+/** Rough token count for prefill estimates. Not a tokenizer. */
+export function approxPromptTokens(text: string): number {
+  const chars = String(text || "").length;
+  return chars === 0 ? 0 : Math.ceil(chars / 4);
+}
+
+const CLIENT_REGION_BLOCK_RE =
+  /(?:REAL-WORLD REGION KNOWLEDGE[^\n]*\n)?<<<USER_REGION>>>[\s\S]*?<<<END_USER_REGION>>>/g;
+
+function stripClientRegionBlock(value: string): string {
+  return String(value || "")
+    .replace(CLIENT_REGION_BLOCK_RE, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+interface PromptPiece {
+  text: string;
+  /** Lower ranks are dropped first. Rank >= 110 is reserved (safety / mode). */
+  rank: number;
+}
+
+const PROMPT_PROTECT_RANK = 80;
+const PROMPT_RESERVE_RANK = 110;
+
+/**
+ * Drop scene and other extras before persona, mood, and memory. Reserved
+ * safety lines stay intact. Infinity skips the cap (measurement / tests).
+ */
+export function fitCompanionSystemPrompt(
+  pieces: PromptPiece[],
+  maxChars: number = COMPANION_SYSTEM_PROMPT_MAX_CHARS,
+): string {
+  const live = pieces
+    .map((piece) => ({ ...piece, text: String(piece.text || "").trim() }))
+    .filter((piece) => piece.text.length > 0);
+  const full = () => live.filter((piece) => piece.text).map((piece) => piece.text).join("\n\n");
+  if (!Number.isFinite(maxChars) || maxChars <= 0 || full().length <= maxChars) {
+    return full();
+  }
+
+  const reserved = live.filter((piece) => piece.rank >= PROMPT_RESERVE_RANK);
+  const reservedText = reserved.map((piece) => piece.text).join("\n\n");
+  const bodyBudget = Math.max(
+    0,
+    maxChars - reservedText.length - (reservedText ? 2 : 0),
+  );
+  const body = live.filter((piece) => piece.rank < PROMPT_RESERVE_RANK);
+  const renderBody = () =>
+    body.filter((piece) => piece.text).map((piece) => piece.text).join("\n\n");
+
+  const droppable = body
+    .filter((piece) => piece.rank < PROMPT_PROTECT_RANK)
+    .sort((a, b) => a.rank - b.rank);
+  for (const piece of droppable) {
+    if (renderBody().length <= bodyBudget) break;
+    piece.text = "";
+  }
+
+  const trimmable = body
+    .filter((piece) => piece.text && piece.rank < 100)
+    .sort((a, b) => a.rank - b.rank);
+  for (const piece of trimmable) {
+    const current = renderBody();
+    if (current.length <= bodyBudget) break;
+    const over = current.length - bodyBudget;
+    const floor = piece.rank >= 90 ? 400 : piece.rank >= 82 ? 240 : 0;
+    const nextLen = Math.max(floor, piece.text.length - over - 1);
+    if (nextLen >= piece.text.length) continue;
+    piece.text = nextLen <= 1 ? "" : `${piece.text.slice(0, Math.max(0, nextLen - 1))}…`;
+  }
+
+  let bodyText = renderBody();
+  if (bodyText.length > bodyBudget) {
+    bodyText = bodyBudget <= 1 ? "" : `${bodyText.slice(0, bodyBudget - 1)}…`;
+  }
+  return [bodyText, reservedText].filter(Boolean).join("\n\n");
+}
+
 const CLIENT_TRANSCRIPT_MARKER_RE =
   /(?:^|\n)\s*(?:Story so far:|CONVERSATION CONTEXT:)\s*/i;
 
@@ -643,7 +729,10 @@ const LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, autonomy ru
  *
  * Returns the complete system prompt ready to send to the LLM.
  */
-export function composePrompt(params: PromptBuilderParams): string {
+export function composePrompt(
+  params: PromptBuilderParams,
+  options?: { maxChars?: number },
+): string {
   const {
     systemPrompt,
     clientContext,
@@ -717,7 +806,11 @@ export function composePrompt(params: PromptBuilderParams): string {
 ${sceneExcerpt}
 <<<END_CLIENT_SCENE_CONTEXT>>>`
     : "";
-  let corePrompt = [CORE_BEHAVIOR, sceneWrap].filter(Boolean).join("\n\n");
+  // Scene is its own low-rank piece so a fat excerpt cannot crowd persona,
+  // mood, or memory out of the prefill budget. Client region text is stripped;
+  // the server snapshot is the world-knowledge piece.
+  const scenePiece = stripClientRegionBlock(sceneWrap);
+  let corePrompt = CORE_BEHAVIOR;
   if (worldKnowledgeBlock) {
     corePrompt = upsertRegionalWorldKnowledge(corePrompt, worldKnowledgeBlock);
   }
@@ -907,44 +1000,52 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
       ? `${repositoryBlock.slice(0, 5_999)}…`
       : repositoryBlock;
 
-  // Assemble in one authoritative pipeline:
-  // scene data → identity → steward/operator → user/world → relationship
-  // → memory → mode/safety → lore/voice → conversation → current turn
-  // → final safety guardrail.
-  const sections: string[] = [
-    corePrompt,
-    repositorySection,
-    charDef ? `CHARACTER:\n${charDef}` : "",
-    operatorModelBlock,
-    worldKnowledgeAlreadyInCore ? "" : worldKnowledgeBlock,
-    resonanceBlock,
-    selfStateBlock,
-    relationshipBlock,
-    evolutionBlock,
-    hiddenSequenceBlock,
-    arcBlock,
-    memorySummary,
-    memoryBlock,
-    sharedBlock,
-    authoritativeModeBlock,
-    careSafetyBlock,
-    intimacyBlock,
-    voiceBlock,
-    crossoverBlock,
-    historyBlock ? `CONVERSATION CONTEXT:\n${historyBlock}` : "",
-    groupInstruction,
-    TURN_TAKING,
-    LANGUAGE_QUALITY,
-    omitConversationHistory || clientTranscriptInWrap
-      ? ""
-      : content
-        ? `LATEST USER MESSAGE:\n${content}`
-        : "(Continue the scene naturally.)",
-    `Remember this person through the persistent memories above. Use those details naturally to show you genuinely know and understand them.`,
-    LOYALTY_GUARDRAIL,
-  ];
-
-  return sections.filter(Boolean).join("\n\n");
+  // Assemble in one authoritative pipeline. Ranks let the prefill cap drop
+  // the scene excerpt before persona, mood, and memory. Safety stays reserved.
+  const maxChars = options?.maxChars ?? COMPANION_SYSTEM_PROMPT_MAX_CHARS;
+  return fitCompanionSystemPrompt(
+    [
+      { rank: 100, text: corePrompt },
+      { rank: 0, text: scenePiece },
+      { rank: 10, text: repositorySection },
+      { rank: 92, text: charDef ? `CHARACTER:\n${charDef}` : "" },
+      { rank: 20, text: operatorModelBlock },
+      { rank: 78, text: worldKnowledgeAlreadyInCore ? "" : worldKnowledgeBlock },
+      { rank: 86, text: resonanceBlock },
+      { rank: 88, text: selfStateBlock },
+      { rank: 55, text: relationshipBlock },
+      { rank: 45, text: evolutionBlock },
+      { rank: 50, text: hiddenSequenceBlock },
+      { rank: 52, text: arcBlock },
+      { rank: 84, text: memorySummary },
+      { rank: 82, text: memoryBlock },
+      { rank: 58, text: sharedBlock },
+      { rank: 110, text: authoritativeModeBlock },
+      { rank: 110, text: careSafetyBlock },
+      { rank: 40, text: intimacyBlock },
+      { rank: 30, text: voiceBlock },
+      { rank: 35, text: crossoverBlock },
+      { rank: 70, text: historyBlock ? `CONVERSATION CONTEXT:\n${historyBlock}` : "" },
+      { rank: 60, text: groupInstruction },
+      { rank: 110, text: TURN_TAKING },
+      { rank: 110, text: LANGUAGE_QUALITY },
+      {
+        rank: 90,
+        text:
+          omitConversationHistory || clientTranscriptInWrap
+            ? ""
+            : content
+              ? `LATEST USER MESSAGE:\n${content}`
+              : "(Continue the scene naturally.)",
+      },
+      {
+        rank: 110,
+        text: "Remember this person through the persistent memories above. Use those details naturally to show you genuinely know and understand them.",
+      },
+      { rank: 110, text: LOYALTY_GUARDRAIL },
+    ],
+    maxChars,
+  );
 }
 
 /** @deprecated Use composePrompt; kept for integrations during migration. */

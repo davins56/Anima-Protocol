@@ -227,9 +227,10 @@ describe("ollamaChat adapter", () => {
 
       expect(received[0]!.options).toEqual({
         ...OLLAMA_CHAT_SAMPLING,
+        num_ctx: 8192,
         temperature: OLLAMA_MAX_TEMPERATURE,
       });
-      expect(received[1]!.options).toEqual({ ...OLLAMA_CHAT_SAMPLING });
+      expect(received[1]!.options).toEqual({ ...OLLAMA_CHAT_SAMPLING, num_ctx: 8192 });
       expect((received[2]!.options as { temperature: number }).temperature).toBe(0.9);
     } finally {
       await new Promise<void>((resolve, reject) =>

@@ -66,6 +66,7 @@ import {
   openStreamAbort,
 } from "./chatTimeouts";
 import { localChatKeepAliveFields } from "./localLlmWarm";
+import { companionLlmTurnOpen, localCallSignal } from "./sidecarLlm";
 import {
   createOllamaChatCompletion,
   createOllamaChatStream,
@@ -1789,7 +1790,19 @@ async function probeOneProvider(
   }
 
   const resolved = resolveLocalModel(tier);
+  if (companionLlmTurnOpen()) {
+    return {
+      provider: "local",
+      configured: true,
+      ok: false,
+      errorKind: "busy",
+      message: "Skipped while a companion reply is in progress.",
+      model: resolved.model,
+      configuredModel: resolved.model,
+    };
+  }
   const started = Date.now();
+  const probeSignal = localCallSignal();
   try {
     const client = requireLocalClient();
     const { resolved: used } = await withModelFallback(
@@ -1802,6 +1815,7 @@ async function probeOneProvider(
             messages: [{ role: "user", content: "Reply with the single word: ok" }],
             maxTokens: m.maxTokens,
             temperature: 0,
+            signal: probeSignal,
           });
           return;
         }
@@ -1813,7 +1827,7 @@ async function probeOneProvider(
             temperature: 0,
             ...localChatKeepAliveFields(),
           },
-          localRequestOptions(),
+          localRequestOptions(probeSignal),
         );
       },
     );
@@ -2361,7 +2375,7 @@ export async function createChatCompletionWithFailover(
         const client = requireLocalClient();
         const preferred = resolveLocalModel(req.tier);
         const hasNext = chain.indexOf(provider) < chain.length - 1;
-        const attempt = localAttemptSignal(req.signal, hasNext);
+        const attempt = localAttemptSignal(localCallSignal(req.signal), hasNext);
         const hasTools = Boolean(req.tools && req.tools.length);
         try {
           const { value: completion, resolved } = await withModelFallback(

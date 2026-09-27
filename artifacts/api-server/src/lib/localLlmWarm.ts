@@ -2,9 +2,9 @@
  * Ollama keep-alive / warm hints for local-only chat.
  *
  * After #464 the provider chain is `["local"]` with no OpenRouter hop.
- * A cold anima-chat load is ~15–18s. `/chat/messages` already waits 45s
- * (`LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS`); `/api/ai/chat` stays at 18s so it
- * finishes under the Worker ~20s wall. Do not hop to OpenRouter.
+ * `/chat/messages` waits `LLM_LOCAL_FIRST_TOKEN_MS` (90s) for CPU prefill;
+ * `/api/ai/chat` stays at 18s so it finishes under the Worker ~20s wall.
+ * Do not hop to OpenRouter.
  *
  * Ollama's OpenAI `/v1/chat/completions` struct drops `keep_alive`, so the
  * field on the Worker body is not enough by itself. The public-v1 proxy
@@ -26,6 +26,20 @@ import {
 } from "./openaiClient";
 
 export const DEFAULT_OLLAMA_KEEP_ALIVE = "30m";
+
+/**
+ * Context window sent on every Ollama call (chat, probe, warm).
+ * Must match across those calls: a different `num_ctx` makes Ollama unload
+ * and reload anima-chat. 8192 matches `scripts/llm/Modelfile.anima-chat`.
+ * Override with `ANIMA_OLLAMA_NUM_CTX` when the droplet's model differs.
+ */
+export const OLLAMA_NUM_CTX = 8192;
+
+export function ollamaNumCtx(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = Number(env.ANIMA_OLLAMA_NUM_CTX);
+  if (Number.isFinite(raw) && raw >= 512) return Math.floor(raw);
+  return OLLAMA_NUM_CTX;
+}
 
 const WARM_TIMEOUT_MS = 45_000;
 
@@ -65,6 +79,7 @@ function configuredOllamaModel(env: NodeJS.ProcessEnv = process.env): string {
   return (
     env.ANIMA_OLLAMA_MODEL_STANDARD?.trim() ||
     env.ANIMA_OLLAMA_MODEL?.trim() ||
+    env.OLLAMA_MODEL?.trim() ||
     "anima-chat"
   );
 }
@@ -126,6 +141,7 @@ async function warmOnce(
       body: JSON.stringify({
         model: configuredOllamaModel(env),
         keep_alive: keepAlive,
+        options: { num_ctx: ollamaNumCtx(env) },
       }),
       signal: AbortSignal.timeout(WARM_TIMEOUT_MS),
     });

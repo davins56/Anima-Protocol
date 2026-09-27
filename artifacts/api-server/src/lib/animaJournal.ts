@@ -2,6 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { db } from "../db/index";
 import { animaJournals } from "../db/schema";
 import { createChatCompletionWithFailover } from "./llmFailover";
+import { companionLlmTurnOpen } from "./sidecarLlm";
 
 export type JournalEntryType =
   | "reflection"
@@ -124,6 +125,7 @@ Relationship intensity (0-100): ${params.relationshipLevel ?? 40}
 
 Output ONLY the journal body text, no title prefix.`;
 
+  if (companionLlmTurnOpen()) return null;
   try {
     const completion = await createChatCompletionWithFailover({
       tier: "light",
