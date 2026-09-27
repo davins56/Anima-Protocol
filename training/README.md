@@ -21,6 +21,18 @@ Checkpoints and tokenizer outputs (`out/`, `data/anima_tokens/`, `data/anima_cor
 3. `python training/phase2/sft.py` → `python training/phase3/dpo.py`
 4. `python server/server.py` (listens on 127.0.0.1:8000 only).
 
+## Fluency notes
+
+- `data_pipeline.py` keeps `<|endoftext|>` document boundaries and short dialogue
+  lines. Checkpoints trained before that fix learned from stories glued
+  together with the separators deleted. Rerun phases 1–3 to get the benefit.
+- Serving (`server.py`, `sft.chat`) fits the prompt by whole messages and leaves
+  half the 256-token window for the reply. A long system prompt is dropped
+  before the latest user message, so the model never starts mid-sentence.
+- Sampling adds top-p (0.9) and a light repetition penalty over the reply only.
+- At ~10M parameters this model writes simple, TinyStories-level English. For
+  adult-level companion replies, the production path is `anima-chat` (Qwen2.5 3B).
+
 ## Local checkpoint server
 
 `server/server.py` exposes `/v1/chat/completions` for this tiny-GPT checkpoint.

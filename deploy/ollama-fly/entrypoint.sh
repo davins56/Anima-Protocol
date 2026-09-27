@@ -1,7 +1,7 @@
 #!/bin/sh
 # Starts `ollama serve`, puts Caddy in front (Bearer PROXY_AUTH_TOKEN on /v1/*),
-# bootstraps the branded `anima-chat` model on first boot (skipped once the
-# Fly volume already has the weights), then stays up so Fly health checks pass
+# pulls the base weights on first boot (skipped once the Fly volume has them),
+# rebuilds the branded `anima-chat` model from the Modelfile, then stays up so Fly health checks pass
 # during the first-boot pull.
 #
 # Caddy binds :8080 immediately with a static /healthz. Ollama readiness and
@@ -52,12 +52,15 @@ wait_for_ollama() {
 bootstrap_model() {
   echo "Waiting for ollama serve to become ready..."
   wait_for_ollama || return 1
-  if ollama list 2>/dev/null | grep -q "^${ANIMA_OLLAMA_CHAT_TAG}"; then
-    echo "${ANIMA_OLLAMA_CHAT_TAG} already present on volume, skipping bootstrap."
-    return 0
+  if ollama list 2>/dev/null | grep -q "^${ANIMA_BOOTSTRAP_BASE}"; then
+    echo "${ANIMA_BOOTSTRAP_BASE} already present on volume, skipping pull."
+  else
+    echo "Pulling open weights: ${ANIMA_BOOTSTRAP_BASE} (first boot; /healthz stays up)"
+    ollama pull "${ANIMA_BOOTSTRAP_BASE}"
   fi
-  echo "Pulling open weights: ${ANIMA_BOOTSTRAP_BASE} (first boot; /healthz stays up)"
-  ollama pull "${ANIMA_BOOTSTRAP_BASE}"
+  # Rebuild on every boot. The base weights are already on the volume, so this
+  # only rewrites the small params/system layer — and a redeploy with a new
+  # Modelfile (sampling, system prompt) actually reaches the served model.
   echo "Creating Anima chat model: ${ANIMA_OLLAMA_CHAT_TAG}"
   ollama create "${ANIMA_OLLAMA_CHAT_TAG}" -f /Modelfile.anima-chat
   echo "Bootstrap complete: ${ANIMA_OLLAMA_CHAT_TAG}"
