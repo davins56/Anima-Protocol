@@ -1,0 +1,167 @@
+# Anima Protocol — Phase 3: DPO (Direct Preference Optimization).
+# Takes the SFT checkpoint and sharpens it with pairwise preferences:
+# which Anima reply is better (warmer, safer, more in-character)?
+# Runs after Phase 2 on the same free Colab T4.
+#
+# Expects a preferences JSONL file, one pair per line:
+#   {"prompt_messages": [{"role": "user", "content": "..."}],
+#    "chosen": "the better Anima reply",
+#    "rejected": "the worse Anima reply"}
+#
+# Theory in one breath: instead of training a separate reward model +
+# RL loop (expensive, unstable), DPO directly increases the log-prob
+# gap between chosen and rejected responses, relative to a frozen
+# reference (the SFT model). One loss, two forward passes, no RL.
+
+import json
+import os
+import pickle
+import random
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+from train import GPT, GPTConfig
+from sft import (TOK_DIR, tok, role_ids, eot_id,
+                 encode_conversation, cfg as _sft_cfg)
+
+# ----------------------------- Config -----------------------------
+
+PREF_DATA = "data/prefs/anima_preferences.jsonl"
+SFT_CKPT = "out/anima-sft/ckpt.pt"
+OUT_DIR3 = "out/anima-dpo"
+MAX_PAIRS = 5000
+EPOCHS = 1
+BATCH_SIZE = 8
+LR = 5e-6          # DPO needs a much smaller LR than SFT
+BETA = 0.1          # KL-penalty strength; lower = more aggressive shift
+MAX_NEW_TOKENS_EVAL = 200
+
+
+# --------------------- Step 1: load policy + reference ---------------------
+
+def load_ckpt(path):
+    ckpt = torch.load(path, map_location="cpu")
+    cfg = GPTConfig(**ckpt["cfg"])
+    model = GPT(cfg)
+    model.load_state_dict(ckpt["model"])
+    return model
+
+policy = load_ckpt(SFT_CKPT)
+reference = load_ckpt(SFT_CKPT)  # frozen copy of the same weights
+device = "cuda" if torch.cuda.is_available() else "cpu"
+policy.to(device).train()
+reference.to(device).eval()
+for p in reference.parameters():
+    p.requires_grad_(False)
+print(f"policy + reference loaded: {sum(p.numel() for p in policy.parameters())/1e6:.1f}M params each")
+
+
+# --------------------- Step 2: build pair sequences ---------------------
+# We reuse the SFT conversation encoder: context = prompt + <anima> role
+# marker, completion = the candidate reply + <eot>. Loss uses only the
+# completion tokens (mask on context, active on reply).
+
+def encode_pair(prompt_messages, reply):
+    msgs = prompt_messages + [{"role": "anima", "content": reply}]
+    ids, targets = encode_conversation(msgs)
+    # find where the anima role marker sits — completion starts right after
+    try:
+        anima_pos = len(ids) - 1 - ids[::-1].index(role_ids["anima"])
+    except ValueError:
+        return None
+    completion_start = anima_pos + 1
+    if completion_start >= len(ids) or len(ids) > _sft_cfg.block_size:
+        return None
+    return ids, completion_start
+
+
+def load_pairs():
+    pairs = []
+    with open(PREF_DATA, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            d = json.loads(line)
+            ch = encode_pair(d["prompt_messages"], d["chosen"])
+            rj = encode_pair(d["prompt_messages"], d["rejected"])
+            if ch and rj:
+                pairs.append((ch, rj))
+    random.shuffle(pairs)
+    return pairs[:MAX_PAIRS]
+
+
+def batch_logprobs(model, seqs, device):
+    """Mean token log-prob of completion tokens for each sequence."""
+    B = len(seqs)
+    T = max(len(ids) for ids, _ in seqs)
+    x = torch.zeros((B, T), dtype=torch.long, device=device)
+    mask = torch.zeros((B, T), dtype=torch.bool, device=device)
+    for i, (ids, cstart) in enumerate(seqs):
+        x[i, :len(ids)] = torch.tensor(ids, device=device)
+        mask[i, cstart:len(ids)] = True  # completion tokens only
+    logits, _ = model(x)
+    logprobs = F.log_softmax(logits[:, :-1], dim=-1)
+    tgt = x[:, 1:]
+    token_lp = logprobs.gather(-1, tgt.unsqueeze(-1)).squeeze(-1)
+    m = mask[:, 1:]
+    per_seq = (token_lp * m).sum(dim=1) / m.sum(dim=1).clamp(min=1)
+    return per_seq
+
+
+# --------------------- Step 3: DPO training ---------------------
+
+def dpo():
+    pairs = load_pairs()
+    print(f"preference pairs: {len(pairs)}")
+    if not pairs:
+        raise SystemExit("no usable pairs — check data/prefs/anima_preferences.jsonl")
+    optim = torch.optim.AdamW(policy.parameters(), lr=LR, betas=(0.9, 0.95), weight_decay=0.0)
+    total_steps = EPOCHS * (len(pairs) // BATCH_SIZE + 1)
+    step = 0
+    for ep in range(EPOCHS):
+        random.shuffle(pairs)
+        for i in range(0, len(pairs), BATCH_SIZE):
+            batch = pairs[i:i + BATCH_SIZE]
+            chosen = [c for c, _ in batch]
+            rejected = [r for _, r in batch]
+            pi_ch = batch_logprobs(policy, chosen, device)
+            pi_rj = batch_logprobs(policy, rejected, device)
+            with torch.no_grad():
+                ref_ch = batch_logprobs(reference, chosen, device)
+                ref_rj = batch_logprobs(reference, rejected, device)
+            pi_logratios = pi_ch - pi_rj
+            ref_logratios = ref_ch - ref_rj
+            logits_dpo = pi_logratios - ref_logratios
+            # DPO loss: -log sigmoid(beta * logits). Add a mild NLL
+            # anchor on the chosen side to keep fluency from drifting.
+            losses = -F.logsigmoid(BETA * logits_dpo)
+            loss = losses.mean() + 0.1 * (-pi_ch.mean())
+            optim.zero_grad(set_to_none=True)
+            loss.backward()
+            nn.utils.clip_grad_norm_(policy.parameters(), 1.0)
+            optim.step()
+            step += 1
+            if step % 10 == 0:
+                acc = (logits_dpo > 0).float().mean().item()
+                margin = logits_dpo.mean().item()
+                print(f"ep {ep} step {step}/{total_steps} loss {loss.item():.4f} "
+                      f"pair-acc {acc:.2f} margin {margin:+.2f}")
+    os.makedirs(OUT_DIR3, exist_ok=True)
+    torch.save({"model": policy.state_dict(), "cfg": policy.cfg.__dict__},
+               os.path.join(OUT_DIR3, "ckpt.pt"))
+    print("saved to", OUT_DIR3)
+
+
+if __name__ == "__main__":
+    dpo()
+
+# Building preferences without a labeling team:
+# 1. Sample 2+ replies from the SFT model for real prompts.
+# 2. Rank them yourself (you know Anima's voice best).
+# 3. Store best as "chosen", worst as "rejected".
+# Even 200-500 thoughtful pairs noticeably shift tone at this scale.
+# Watch pair-acc: it should climb toward 0.7+. If margin explodes
+# past ~5, raise BETA (stronger KL leash) or stop early.
