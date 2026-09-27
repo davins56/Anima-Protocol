@@ -8,10 +8,21 @@
  * and PDF text must stay on this app's server and database.
  */
 
-/** Decoded file size. 8 MB base64 fits the 25 MB JSON body limit. */
-export const PDF_MAX_BYTES = 8 * 1024 * 1024;
+/**
+ * Decoded file size. An 8 MB PDF is about 11 MB of base64 JSON. V8 holds that
+ * string as UTF-16 (~22 MB), then extraction copies the decoded bytes again
+ * before pdf.js parses them. That spike is fine for one request, but the
+ * Worker isolate is 128 MB shared across concurrent requests, so two 8 MB
+ * uploads on top of the API can cross it. 4 MB decoded is about 5.4 MB of
+ * JSON and stays inside that limit. The request-body cap (100 MB on Free and
+ * Pro) and the 30s paid CPU budget are not the binding constraint.
+ */
+export const PDF_MAX_BYTES = 4 * 1024 * 1024;
 
-/** Page cap so extraction stays inside a Worker / Node request. */
+/**
+ * Page cap. 80 pages of text near the extracted-character cap finishes in
+ * well under a second, inside the Worker CPU budget, so the page count stays.
+ */
 export const PDF_MAX_PAGES = 80;
 
 /** Reject dense PDFs even when the page count is under the cap. */
