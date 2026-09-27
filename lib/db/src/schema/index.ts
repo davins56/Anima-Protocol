@@ -8,6 +8,7 @@ import {
   boolean,
   uniqueIndex,
   index,
+  customType,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
@@ -385,3 +386,75 @@ export const uploadedImages = pgTable(
 );
 
 export type UploadedImage = typeof uploadedImages.$inferSelect;
+
+/** Postgres full-text column. Populated in SQL with to_tsvector — not by Drizzle. */
+const tsvector = customType<{ data: string }>({
+  dataType() {
+    return "tsvector";
+  },
+});
+
+/**
+ * PDF text the user shared in a chat or attached to a companion's lore.
+ * The original file bytes are not stored. `pdf_chunks.search_vector` is
+ * filled at insert time for Postgres full-text retrieval.
+ */
+export const pdfDocuments = pgTable(
+  "pdf_documents",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    /** "chat" (this conversation) or "lore" (every chat with the companion). */
+    scope: text("scope").notNull(),
+    sessionId: text("session_id"),
+    characterId: text("character_id"),
+    filename: text("filename").notNull(),
+    byteSize: integer("byte_size").notNull().default(0),
+    pageCount: integer("page_count").notNull().default(0),
+    chunkCount: integer("chunk_count").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    pdfDocumentsUserSessionIdx: index("pdf_documents_user_session_idx").on(
+      t.userId,
+      t.scope,
+      t.sessionId,
+    ),
+    pdfDocumentsUserCharacterIdx: index("pdf_documents_user_character_idx").on(
+      t.userId,
+      t.scope,
+      t.characterId,
+    ),
+  }),
+);
+
+export type PdfDocument = typeof pdfDocuments.$inferSelect;
+
+export const pdfChunks = pgTable(
+  "pdf_chunks",
+  {
+    id: text("id").primaryKey(),
+    documentId: text("document_id").notNull(),
+    userId: text("user_id").notNull(),
+    chunkIndex: integer("chunk_index").notNull(),
+    pageStart: integer("page_start").notNull().default(1),
+    pageEnd: integer("page_end").notNull().default(1),
+    content: text("content").notNull(),
+    searchVector: tsvector("search_vector").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    pdfChunksDocumentIdx: index("pdf_chunks_document_idx").on(
+      t.userId,
+      t.documentId,
+      t.chunkIndex,
+    ),
+    pdfChunksSearchIdx: index("pdf_chunks_search_idx").using(
+      "gin",
+      sql`search_vector`,
+    ),
+  }),
+);
+
+export type PdfChunk = typeof pdfChunks.$inferSelect;

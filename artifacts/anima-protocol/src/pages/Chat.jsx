@@ -47,6 +47,7 @@ import Sidebar from "@/components/layout/Sidebar";
 import WelcomeScreen from "@/components/chat/WelcomeScreen";
 import MessageBubble from "@/components/chat/MessageBubble";
 import ChatInput from "@/components/chat/ChatInput";
+import ChatPdfBar from "@/components/pdf/ChatPdfBar";
 import NewSessionModal from "@/components/chat/NewSessionModal";
 import { Menu, X } from "lucide-react";
 import ChatBackground, { BACKGROUND_THEMES } from "@/components/chat/ChatBackground.jsx";
@@ -233,6 +234,7 @@ export default function Chat() {
   const [bgTheme, setBgTheme] = useState("default");
   const [bgImage, setBgImage] = useState("");
   const [pendingMessage, setPendingMessage] = useState("");
+  const [pdfRevision, setPdfRevision] = useState(0);
   const [nextSpeaker, setNextSpeaker] = useState(null);
   const [serenity, setSerenity] = useState(null); // Serenity anima — always present but silent
   const [relationships, setRelationships] = useState({}); // keyed by character_id
@@ -1251,8 +1253,15 @@ export default function Chat() {
     
     // Handle both string (legacy) and object (new with attachments) formats
     const messageData = typeof message === "string" ? { text: message, attachments: undefined } : message;
-    const content = messageData.text || "";
     const attachments = messageData.attachments || [];
+    const pdfAttachments = attachments.filter((item) => item?.type === "pdf");
+    let content = messageData.text || "";
+    if (!content.trim() && pdfAttachments.length) {
+      content =
+        pdfAttachments.length === 1
+          ? `I shared a PDF: ${pdfAttachments[0].name || "document.pdf"}.`
+          : `I shared PDFs: ${pdfAttachments.map((item) => item.name || "document.pdf").join(", ")}.`;
+    }
 
     // Empty content = "continue" — keep the scene moving without a new user line.
     // Works in solo (character takes the next beat) and group (next speaker).
@@ -3000,11 +3009,14 @@ Return JSON:
                 )}
               </div>
               <div className="flex-shrink-0" data-testid="chat-input-slot">
+                <ChatPdfBar sessionId={activeSession.id} revision={pdfRevision} />
                 <ChatInput
                   onSend={handleSendMessage}
                   isLoading={isLoading}
                   disabled={false}
                   allowEmpty={activeSession?.mode === "group" || activeSession?.mode === "solo"}
+                  sessionId={activeSession.id}
+                  onPdfStored={() => setPdfRevision((n) => n + 1)}
                 />
               </div>
             </div>
