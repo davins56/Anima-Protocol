@@ -1,6 +1,9 @@
 import { useState, useRef, useLayoutEffect } from "react";
-import { Send, Zap, Paperclip, Loader } from "lucide-react";
+import { Send, Zap, Paperclip, Loader, FileText } from "lucide-react";
+import { toast } from "sonner";
 import { base44 } from "@/api/base44Client";
+import { pdfProgressLabel, uploadPdfDocument, deletePdfDocument } from "@/api/pdfDocuments";
+import PdfFileChip from "@/components/pdf/PdfFileChip";
 
 // Max height the input grows to before it starts scrolling internally (px).
 const MAX_INPUT_HEIGHT = 200;
@@ -12,10 +15,19 @@ function isInItalicContext(text) {
   return !!starMatches;
 }
 
-export default function ChatInput({ onSend, isLoading, disabled, allowEmpty = false }) {
+export default function ChatInput({
+  onSend,
+  isLoading,
+  disabled,
+  allowEmpty = false,
+  sessionId = null,
+  onPdfStored,
+}) {
   const [value, setValue] = useState("");
   const [attachments, setAttachments] = useState([]);
+  const [pdfs, setPdfs] = useState([]);
   const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
   const textareaRef = useRef(null);
 
   // Grow the textarea to fit its content (up to MAX_INPUT_HEIGHT, then it
@@ -31,17 +43,87 @@ export default function ChatInput({ onSend, isLoading, disabled, allowEmpty = fa
   const handleSubmit = (e) => {
     e.preventDefault();
     if (isLoading || disabled) return;
-    if (!value.trim() && !attachments.length && !allowEmpty) return;
+    const readyPdfs = pdfs.filter((pdf) => pdf.status === "ready");
+    if (!value.trim() && !attachments.length && !readyPdfs.length && !allowEmpty) return;
+    if (pdfBusy) return;
     
     // Create message with attachments if present
     const message = {
       text: value.trim(),
-      attachments: attachments.length > 0 ? attachments : undefined
+      attachments: [
+        ...attachments,
+        ...readyPdfs.map((pdf) => ({
+          type: "pdf",
+          id: pdf.id,
+          name: pdf.name,
+          page_count: pdf.pageCount,
+        })),
+      ].filter(Boolean),
     };
+    if (!message.attachments.length) message.attachments = undefined;
     
     onSend(message);
     setValue("");
     setAttachments([]);
+    setPdfs([]);
+  };
+
+  const handlePdfUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (!files.length || !sessionId) return;
+    const file = files[0];
+    const localId = `${Date.now()}_${file.name}`;
+    setPdfBusy(true);
+    setPdfs((prev) => [
+      ...prev,
+      { localId, name: file.name, status: "reading", progress: { phase: "reading_file", ratio: 0 } },
+    ]);
+    try {
+      const stored = await uploadPdfDocument({
+        file,
+        scope: "chat",
+        sessionId,
+        onProgress: (progress) => {
+          setPdfs((prev) =>
+            prev.map((pdf) => (pdf.localId === localId ? { ...pdf, progress, status: "reading" } : pdf)),
+          );
+        },
+      });
+      setPdfs((prev) =>
+        prev.map((pdf) =>
+          pdf.localId === localId
+            ? {
+                ...pdf,
+                status: "ready",
+                id: stored.id,
+                name: stored.filename || file.name,
+                pageCount: stored.pageCount,
+                progress: null,
+              }
+            : pdf,
+        ),
+      );
+      onPdfStored?.();
+    } catch (err) {
+      const message = err?.message || "Couldn't read that PDF.";
+      toast.error(message);
+      setPdfs((prev) => prev.filter((pdf) => pdf.localId !== localId));
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
+  const removePdf = async (pdf) => {
+    setPdfs((prev) => prev.filter((item) => item.localId !== pdf.localId));
+    if (pdf.id) {
+      try {
+        await deletePdfDocument(pdf.id);
+        onPdfStored?.();
+      } catch (err) {
+        toast.error(err?.message || "Couldn't remove that PDF.");
+      }
+    }
   };
 
   const handleMediaUpload = async (e) => {
@@ -91,6 +173,20 @@ export default function ChatInput({ onSend, isLoading, disabled, allowEmpty = fa
       )}
 
       {/* Attachments preview */}
+      {pdfs.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          {pdfs.map((pdf) => (
+            <PdfFileChip
+              key={pdf.localId}
+              name={pdf.name}
+              pageCount={pdf.pageCount}
+              statusLabel={pdf.status === "ready" ? null : pdfProgressLabel(pdf.progress)}
+              onRemove={() => removePdf(pdf)}
+            />
+          ))}
+        </div>
+      )}
+
       {attachments.length > 0 && (
         <div className="flex gap-2 flex-wrap">
           {attachments.map((att, idx) => (
@@ -113,6 +209,25 @@ export default function ChatInput({ onSend, isLoading, disabled, allowEmpty = fa
 
       <form onSubmit={handleSubmit} className="flex gap-2 sm:gap-3 items-end min-w-0">
         {/* Media upload button */}
+        <label
+          className="flex-shrink-0 w-11 sm:w-12 h-11 sm:h-12 btn-sacred text-primary disabled:opacity-30 flex items-center justify-center hud-corner cursor-pointer"
+          title={sessionId ? "Attach a PDF" : "Open a conversation before attaching a PDF"}
+        >
+          <input
+            data-testid="chat-pdf-upload"
+            type="file"
+            accept=".pdf,application/pdf"
+            onChange={handlePdfUpload}
+            disabled={pdfBusy || isLoading || disabled || !sessionId}
+            className="hidden"
+            aria-label="Attach a PDF"
+          />
+          {pdfBusy ? (
+            <Loader className="w-3.5 sm:w-4 h-3.5 sm:h-4 animate-spin" />
+          ) : (
+            <FileText className="w-3.5 sm:w-4 h-3.5 sm:h-4" />
+          )}
+        </label>
         <label className="flex-shrink-0 w-10 sm:w-12 h-10 sm:h-12 btn-sacred text-primary disabled:opacity-30 flex items-center justify-center hud-corner cursor-pointer">
           <input
             type="file"
@@ -121,6 +236,7 @@ export default function ChatInput({ onSend, isLoading, disabled, allowEmpty = fa
             onChange={handleMediaUpload}
             disabled={uploadingMedia || isLoading || disabled}
             className="hidden"
+            aria-label="Attach an image or audio clip"
           />
           {uploadingMedia ? (
             <Loader className="w-3.5 sm:w-4 h-3.5 sm:h-4 animate-spin" />
@@ -144,7 +260,7 @@ export default function ChatInput({ onSend, isLoading, disabled, allowEmpty = fa
         </div>
         <button
           type="submit"
-          disabled={((!value.trim() && !attachments.length && !allowEmpty) || isLoading || disabled || uploadingMedia)}
+          disabled={((!value.trim() && !attachments.length && !pdfs.some((pdf) => pdf.status === "ready") && !allowEmpty) || isLoading || disabled || uploadingMedia || pdfBusy)}
           className="flex-shrink-0 w-10 sm:w-12 h-10 sm:h-12 btn-sacred text-primary disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center hud-corner"
         >
           <Send className="w-3.5 sm:w-4 h-3.5 sm:h-4" />
