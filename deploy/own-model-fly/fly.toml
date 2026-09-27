@@ -1,0 +1,38 @@
+# The steward's own model (server/server.py) — see deploy/own-model-fly/README.md.
+#
+# Deploy from the repository root so the Dockerfile can copy the trained
+# checkpoint and tokenizer:
+#   deploy/own-model-fly/deploy.sh
+#
+# Do not put ANIMA_SERVER_TOKEN (or any secret) in this file.
+
+app = "anima-own-llm"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Learning runs in a background thread after a lesson request returns.
+  # A machine stopped mid-lesson loses that practice, so keep one running.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "60s"
+    interval = "30s"
+    timeout = "5s"
+    method = "GET"
+    path = "/health"
+
+[mounts]
+  source = "anima_own_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"

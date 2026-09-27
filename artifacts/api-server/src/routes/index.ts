@@ -15,6 +15,7 @@ import protocolUpgradeRouter from "./protocolUpgrade";
 import notificationsRouter from "./notifications";
 import relationshipOsRouter from "./relationshipOs";
 import repoCodespaceRouter from "./repoCodespace";
+import modelTutorRouter from "./modelTutor";
 
 const router: IRouter = Router();
 
@@ -32,6 +33,7 @@ router.use("/protocol-upgrade", protocolUpgradeRouter);
 router.use("/notifications", notificationsRouter);
 router.use("/relationship-os", relationshipOsRouter);
 router.use("/repo-codespace", repoCodespaceRouter);
+router.use("/tutor", modelTutorRouter);
 router.use("/store", storeRouter);
 router.use(storageRouter);
 

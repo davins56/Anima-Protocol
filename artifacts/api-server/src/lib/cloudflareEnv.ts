@@ -54,6 +54,10 @@ export const CLOUDFLARE_RUNTIME_ENV_NAMES = [
   "ANIMA_OPENROUTER_API_KEY",
   "ANIMA_OPENROUTER_FALLBACK",
   "ANIMA_OPENROUTER_FREE",
+  // The steward's own model (server/server.py) — see docs/own-model.md.
+  "ANIMA_OWN_LLM_API_KEY",
+  "ANIMA_OWN_LLM_BASE_URL",
+  "ANIMA_OWN_LLM_MODEL",
   "ANIMA_CODESPACE_TERMINAL",
   "API_KEY",
   "CLERK_JWT_KEY",

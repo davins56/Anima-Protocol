@@ -63,6 +63,9 @@ The repo root **`.env`** is gitignored. Both **`anima-protocol`** (Vite) and **`
 | `ANIMA_LOCAL_LLM_API_KEY` | API — bearer token; must match Fly `PROXY_AUTH_TOKEN` |
 | `ANIMA_LOCAL_LLM_BACKEND` | API — `ollama` (default) or `vllm` |
 | `ANIMA_OLLAMA_MODEL_STANDARD` | API — model tag the host serves (`anima-chat`) |
+| `ANIMA_OWN_LLM_BASE_URL` | API — public HTTPS `…/v1` URL of the steward's own tiny-GPT (`server/server.py`). Chats route there only for stewards who switch on Settings → Model Tutor → "Answer my chats with my model"; lessons taught in the app fine-tune it. See `docs/own-model.md` |
+| `ANIMA_OWN_LLM_API_KEY` | API — bearer token; must equal the model server's `ANIMA_SERVER_TOKEN` |
+| `ANIMA_OWN_LLM_MODEL` | API — optional model id sent to the own model (default `anima-own`) |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Web Push credentials for proactive character messages |
 | `VAPID_SUBJECT` | Web Push contact URI; defaults to `mailto:support@anima-protocol.com` |
 | `CRON_SECRET` | Authorizes the hourly Vercel proactive-message cron |
@@ -273,6 +276,7 @@ All new events must follow these conventions.
 | `therapy_session_started` | User begins a therapy-mode chat with their Anima | `source` (`therapy_page` / `chat_new_session`), `is_anima`, `has_multiple_animas`, `has_topic` | `src/pages/Therapy.jsx`, `src/pages/Chat.jsx` |
 | `device_scan_completed` | Anima finishes a permission-gated scan of this device for leftover / junk data | `flag_count`, `has_folder_grant`, `is_anima` | `src/lib/animaDeviceScan.js`, `src/components/anima/DeviceScanPanel.jsx` |
 | `echo_key_discovered` | Operator finds, synthesises, or evolves an Echo Key in story mode | `source` (`virtual` / `field` / `synthesis` / `evolution`), `site`, `tier`, `is_outdoor` | `src/components/echoKeys/EchoStoryMode.jsx`, `src/pages/NetBattle.jsx` |
+| `model_lesson_taught` | Steward saves a correction for their own model from a chat reply (fires after the lesson is saved) | `has_note`, `is_drafted`, `is_own_model_reply`, `is_learned` | `src/components/tutor/TeachDialog.jsx` |
 
 > **Value moment:** the core action is a *crossover interaction* — engaging multiple characters from different universes in one session. `message_sent` with `is_crossover: true` captures it.
 

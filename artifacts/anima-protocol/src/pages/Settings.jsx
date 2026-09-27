@@ -27,7 +27,9 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import { BACKGROUND_THEMES } from "@/components/chat/ChatBackground.jsx";
-import { Upload, BookOpen } from "lucide-react";
+import { Upload, BookOpen, GraduationCap } from "lucide-react";
+import ModelTutorPanel from "@/components/tutor/ModelTutorPanel";
+import { useModelTutor } from "@/hooks/useModelTutor";
 import UserContextSettings from "@/components/anima/UserContextSettings";
 import DeviceScanPanel from "@/components/anima/DeviceScanPanel";
 import KnowledgeGraphViewer from "@/components/anima/KnowledgeGraphViewer";
@@ -52,6 +54,7 @@ export const SECTION = {
   INTERFACE: "interface",
   DATA: "data",
   LEGAL: "legal",
+  TUTOR: "model-tutor",
 };
 
 export function normalizeSettingsSection(raw) {
@@ -84,6 +87,7 @@ export default function Settings() {
   const { logout, user: authUser, isAuthenticated } = useAuth();
   const { user: clerkUser } = useUser();
   const clerkIdentity = clerkIdentityFromUser(clerkUser);
+  const modelTutor = useModelTutor();
   const [section, setSectionState] = useState(() =>
     normalizeSettingsSection(searchParams.get("section")),
   );
@@ -505,6 +509,10 @@ export default function Settings() {
     { id: SECTION.CUSTOMISE_ANIMA, label: "Customise Anima", icon: Wand2 },
     { id: SECTION.BACKGROUND, label: "Background", icon: BookOpen },
     { id: SECTION.AI, label: "AI Behavior", icon: Bot },
+    // Steward only — teach the own model (see ModelTutorPanel).
+    ...(modelTutor.isSteward || section === SECTION.TUTOR
+      ? [{ id: SECTION.TUTOR, label: "Model Tutor", icon: GraduationCap }]
+      : []),
     { id: SECTION.INTERFACE, label: "Interface", icon: Sliders },
     { id: SECTION.DATA, label: "Data & Privacy", icon: Shield },
     { id: SECTION.LEGAL, label: "Legal", icon: Scale },
@@ -1054,6 +1062,18 @@ export default function Settings() {
               <div className="flex justify-end">
                 <SaveButton onSave={handleSave} saved={saved} />
               </div>
+            </div>
+          )}
+
+          {/* ── MODEL TUTOR ── */}
+          {section === SECTION.TUTOR && (
+            <div className="space-y-4">
+              <SectionTitle>Model Tutor</SectionTitle>
+              <p className="text-xs leading-relaxed text-primary/45">
+                Teach the model you trained. Every correction fine-tunes it, and it keeps each
+                version so a bad lesson can be undone.
+              </p>
+              <ModelTutorPanel />
             </div>
           )}
 

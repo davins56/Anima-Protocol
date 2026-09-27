@@ -65,6 +65,11 @@ function companionMemoryOrDbMessage(err: unknown): string {
  * client toast — keep the raw error in server logs.
  */
 export function streamErrorMessage(err: unknown): string {
+  // The steward's own model already words its errors (ownModel.ts); the
+  // provider remaps below would turn them into OpenRouter hints.
+  if (err instanceof Error && err.name === "OwnModelError") {
+    return err.message;
+  }
   if (err instanceof LlmStreamTimeoutError) {
     return typeof isLocalOnlyProviderChain === "function" &&
       isLocalOnlyProviderChain()
