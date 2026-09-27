@@ -1,4 +1,3 @@
-import { extractText, getDocumentProxy } from "unpdf";
 import { PdfUploadError } from "./errors";
 import {
   PDF_MAX_BYTES,
@@ -52,6 +51,37 @@ export type ExtractedPdf = {
   pages: string[];
 };
 
+type UnpdfApi = {
+  extractText: (
+    pdf: unknown,
+    options: { mergePages: false },
+  ) => Promise<{ text: string | string[] }>;
+  getDocumentProxy: (data: Uint8Array) => Promise<{
+    numPages: number;
+    loadingTask: { destroy: () => Promise<void> };
+  }>;
+};
+
+let unpdfLoad: Promise<UnpdfApi> | null = null;
+
+/**
+ * pdf.js is several megabytes. Chat and store import this module, so a static
+ * `unpdf` import evaluates on every cold start. Import it here so that
+ * initializer runs on the first extraction only.
+ */
+function loadUnpdf(): Promise<UnpdfApi> {
+  if (!unpdfLoad) {
+    unpdfLoad = import("unpdf").then(
+      (mod) => mod as unknown as UnpdfApi,
+      (err) => {
+        unpdfLoad = null;
+        throw err;
+      },
+    );
+  }
+  return unpdfLoad;
+}
+
 /**
  * Extract selectable text with unpdf (PDF.js packaged for serverless).
  * The same module runs inside the esbuild bundle used by the Cloudflare
@@ -63,6 +93,7 @@ export type ExtractedPdf = {
  */
 export async function extractPdfPages(bytes: Uint8Array): Promise<ExtractedPdf> {
   assertPdfBytes(bytes);
+  const { extractText, getDocumentProxy } = await loadUnpdf();
   // pdf.js transfers the buffer into its worker and detaches the original.
   // Copy first so the caller can still read byteLength, and so a retry of
   // the same bytes is not an empty buffer.
