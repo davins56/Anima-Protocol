@@ -717,11 +717,12 @@ export function composePrompt(params: PromptBuilderParams): string {
 ${sceneExcerpt}
 <<<END_CLIENT_SCENE_CONTEXT>>>`
     : "";
-  let corePrompt = [CORE_BEHAVIOR, sceneWrap].filter(Boolean).join("\n\n");
-  if (worldKnowledgeBlock) {
-    corePrompt = upsertRegionalWorldKnowledge(corePrompt, worldKnowledgeBlock);
-  }
-  const worldKnowledgeAlreadyInCore = promptHasRegionalWorldKnowledge(corePrompt);
+  // The region block carries the local clock, so it changes every turn. It
+  // lives in the scene wrap (volatile tail), never next to CORE_BEHAVIOR.
+  const sceneSection = worldKnowledgeBlock
+    ? upsertRegionalWorldKnowledge(sceneWrap, worldKnowledgeBlock)
+    : sceneWrap;
+  const worldKnowledgeAlreadyInCore = promptHasRegionalWorldKnowledge(sceneSection);
   const modePolicy =
     providedModePolicy ||
     resolveChatModePolicy({
@@ -907,15 +908,30 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
       ? `${repositoryBlock.slice(0, 5_999)}…`
       : repositoryBlock;
 
-  // Assemble in one authoritative pipeline:
-  // scene data → identity → steward/operator → user/world → relationship
-  // → memory → mode/safety → lore/voice → conversation → current turn
-  // → final safety guardrail.
-  const sections: string[] = [
-    corePrompt,
-    repositorySection,
+  // Assemble in two parts so the self-hosted model can reuse its KV cache.
+  //
+  // Ollama (llama.cpp) keeps the previous request's evaluated tokens and only
+  // re-reads from the first byte that differs. anima-chat runs on CPU, where
+  // prompt prefill — not generation — dominates time-to-first-token: a ~4k
+  // token prompt takes most of a minute. The old order put the live clock,
+  // mood, and turn-scored memories right after CORE_BEHAVIOR, so every turn
+  // invalidated the cache and re-read the whole prompt plus history.
+  //
+  // Stable prefix (identical turn to turn within a session): core rules →
+  // identity → voice → crossover → steward/operator.
+  // Volatile tail (changes per turn): scene/world → relationship → memory →
+  // mode/safety → conversation → turn rules → final safety guardrail.
+  // Turn rules and the guardrail stay last for recency on the 3B model.
+  const stablePrefix: string[] = [
+    CORE_BEHAVIOR,
     charDef ? `CHARACTER:\n${charDef}` : "",
+    voiceBlock,
+    crossoverBlock,
     operatorModelBlock,
+  ];
+  const volatileTail: string[] = [
+    sceneSection,
+    repositorySection,
     worldKnowledgeAlreadyInCore ? "" : worldKnowledgeBlock,
     resonanceBlock,
     selfStateBlock,
@@ -929,8 +945,6 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     authoritativeModeBlock,
     careSafetyBlock,
     intimacyBlock,
-    voiceBlock,
-    crossoverBlock,
     historyBlock ? `CONVERSATION CONTEXT:\n${historyBlock}` : "",
     groupInstruction,
     TURN_TAKING,
@@ -943,6 +957,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     `Remember this person through the persistent memories above. Use those details naturally to show you genuinely know and understand them.`,
     LOYALTY_GUARDRAIL,
   ];
+  const sections = [...stablePrefix, ...volatileTail];
 
   return sections.filter(Boolean).join("\n\n");
 }
