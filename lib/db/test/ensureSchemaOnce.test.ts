@@ -43,6 +43,72 @@ describe("ensureSchema skips DDL when the schema is already present", () => {
     expect(statements).toEqual([]);
   });
 
+  it("creates only the PDF tables when those are the only ones missing", async () => {
+    const statements: string[] = [];
+    let pdfCreated = false;
+    const queryable: SqlQueryable = {
+      async query(text: string) {
+        statements.push(text);
+        if (/CREATE TABLE IF NOT EXISTS "pdf_documents"/i.test(text)) {
+          pdfCreated = true;
+        }
+        if (/information_schema\.tables/i.test(text)) {
+          const names = pdfCreated
+            ? REQUIRED_TABLES
+            : REQUIRED_TABLES.filter(
+                (name) => name !== "pdf_documents" && name !== "pdf_chunks",
+              );
+          return { rows: names.map((table_name) => ({ table_name })) };
+        }
+        if (/pg_extension/i.test(text)) {
+          return { rows: [{ exists: true }] };
+        }
+        return { rows: [] };
+      },
+    };
+    const result = await ensureSchema(queryable);
+    expect(result.ok).toBe(true);
+    expect(result.missingBefore.sort()).toEqual(["pdf_chunks", "pdf_documents"]);
+    const creates = statements.filter((sql) => /CREATE /i.test(sql));
+    expect(creates.some((sql) => /"pdf_documents"/i.test(sql))).toBe(true);
+    expect(creates.some((sql) => /"pdf_chunks"/i.test(sql))).toBe(true);
+    expect(creates.some((sql) => /"user_entities"/i.test(sql))).toBe(false);
+    expect(creates.some((sql) => /pg_trgm/i.test(sql))).toBe(false);
+  });
+
+  it("skips PDF DDL when those tables already exist", async () => {
+    const statements: string[] = [];
+    let inspects = 0;
+    const queryable: SqlQueryable = {
+      async query(text: string) {
+        statements.push(text);
+        if (/information_schema\.tables/i.test(text)) {
+          inspects += 1;
+          const names =
+            inspects === 1
+              ? REQUIRED_TABLES.filter((name) => name !== "user_entities")
+              : REQUIRED_TABLES;
+          return { rows: names.map((table_name) => ({ table_name })) };
+        }
+        if (/pg_extension/i.test(text)) {
+          return { rows: [{ exists: true }] };
+        }
+        return { rows: [] };
+      },
+    };
+    const result = await ensureSchema(queryable);
+    expect(result.ok).toBe(true);
+    expect(
+      statements.some((sql) => /CREATE TABLE IF NOT EXISTS "user_entities"/i.test(sql)),
+    ).toBe(true);
+    expect(
+      statements.some((sql) => /CREATE TABLE IF NOT EXISTS "pdf_documents"/i.test(sql)),
+    ).toBe(false);
+    expect(
+      statements.some((sql) => /CREATE INDEX IF NOT EXISTS "pdf_chunks_search_idx"/i.test(sql)),
+    ).toBe(false);
+  });
+
   it("still runs CREATE TABLE when required tables are missing", async () => {
     const statements: string[] = [];
     const queryable: SqlQueryable = {
