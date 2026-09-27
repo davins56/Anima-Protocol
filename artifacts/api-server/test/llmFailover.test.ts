@@ -1322,7 +1322,7 @@ describe("createChatStreamWithFailover", () => {
     });
     expect(createMock.mock.calls[0]?.[0]).toMatchObject({
       stream: true,
-      max_tokens: 512,
+      max_tokens: 200,
     });
   });
 
@@ -2104,7 +2104,7 @@ describe("createChatCompletionWithFailover", () => {
     expect(result.content).toBe("anima reply");
     expect(result.provider).toBe("local");
     expect(result.brand).toBe("anima");
-    expect(createMock.mock.calls[0]?.[0]).toMatchObject({ max_tokens: 512 });
+    expect(createMock.mock.calls[0]?.[0]).toMatchObject({ max_tokens: 200 });
   });
 
   it("caps the local completion at the Ollama num_predict ceiling", async () => {
@@ -2115,7 +2115,7 @@ describe("createChatCompletionWithFailover", () => {
       messages: [{ role: "system", content: "You are Serenity." }],
     });
     expect(createMock.mock.calls[0]?.[0]).toMatchObject({
-      max_tokens: 512,
+      max_tokens: 200,
     });
   });
 

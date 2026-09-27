@@ -304,9 +304,8 @@ export function honorCallerMaxTokens(
 }
 
 /**
- * Every local generate, native or `/v1`, stops at `OLLAMA_NUM_PREDICT_CAP`.
- * A 4k–8k decode on the single-CPU droplet holds the only slot and queues
- * the next "hi" past the client timeout.
+ * Every local generate, native or `/v1`, stops at `OLLAMA_NUM_PREDICT_CAP`
+ * (200). A longer decode on the single-CPU droplet holds the only slot.
  */
 export function localOllamaMaxTokens(
   requested: number | undefined,

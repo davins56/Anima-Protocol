@@ -59,7 +59,7 @@ The tunnel dies when the origin box / `cloudflared` stops. For a warm production
 
 ## keep_alive
 
-Ollama's OpenAI route (`/v1/chat/completions`) **drops** `keep_alive`. This proxy rewrites `POST /v1/chat/completions` onto native `POST /api/chat` and **streams** the reply. It does **not** inject `keep_alive`. The Worker also omits the field unless `ANIMA_OLLAMA_KEEP_ALIVE` is set, so the daemon value wins. A client hang-up closes the upstream connection so Ollama stops the generate. Translated `num_predict` is capped at 512.
+Ollama's OpenAI route (`/v1/chat/completions`) **drops** `keep_alive`. This proxy rewrites `POST /v1/chat/completions` onto native `POST /api/chat` and **streams** the reply. It does **not** inject `keep_alive`. The Worker also omits the field unless `ANIMA_OLLAMA_KEEP_ALIVE` is set, so the daemon value wins. A client hang-up closes the upstream connection so Ollama stops the generate. Translated `num_predict` is capped at 200.
 
 Pin the daemon so the model stays loaded:
 
