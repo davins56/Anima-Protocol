@@ -7,80 +7,123 @@
 
 import json
 import os
-import pickle
 import random
+import sys
+from pathlib import Path
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+ROOT = Path(__file__).resolve().parents[2]
+for _sub in ("phase1",):
+    _p = str(ROOT / "training" / _sub)
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from train import GPT, GPTConfig  # reuse the Phase 1 model
 
 # ----------------------------- Config -----------------------------
 
-SFT_DATA = "data/sft/anima_dialogues.jsonl"
-CKPT_PATH = "out/anima-tiny/ckpt.pt"
-TOK_DIR = "data/anima_tokens"
-OUT_DIR = "out/anima-sft"
+SFT_DATA = str(ROOT / "data" / "sft" / "anima_dialogues.jsonl")
+CKPT_PATH = str(ROOT / "out" / "anima-tiny" / "ckpt.pt")
+TOK_DIR = str(ROOT / "data" / "anima_tokens")
+OUT_DIR = str(ROOT / "out" / "anima-sft")
 MAX_EXAMPLES = 20000
 EPOCHS = 3
 BATCH_SIZE = 32
 LR = 1e-4
 
+_SPECIAL_STRINGS = ("<|endoftext|>", "<|user|>", "<|anima|>")
 
-# --------------------- Step 1: load tokenizer + model ---------------------
+# Filled by init_tokenizer(). Importing this module does not load weights.
+tok = None
+role_ids = {}
+eot_id = None
+model = None
+cfg = None
 
-with open(os.path.join(TOK_DIR, "meta.pkl"), "rb") as f:
-    meta = pickle.load(f)
-with open(os.path.join(TOK_DIR, "tokenizer.json")) as f:
+
+def init_tokenizer(tok_dir=None):
+    """Load the Phase 1 tokenizer. Safe to call more than once."""
+    global tok, role_ids, eot_id
+    if tok is not None and tok_dir is None:
+        return tok
+    tok_dir = tok_dir or TOK_DIR
+    meta_path = os.path.join(tok_dir, "meta.json")
+    tok_path = os.path.join(tok_dir, "tokenizer.json")
+    if not os.path.isfile(meta_path) or not os.path.isfile(tok_path):
+        raise SystemExit(f"missing tokenizer in {tok_dir}; run training/phase1/data_pipeline.py")
+    with open(meta_path, encoding="utf-8") as f:
+        meta = json.load(f)
     from tokenizers import Tokenizer
-    tok = Tokenizer.from_str(f.read())
+    with open(tok_path, encoding="utf-8") as f:
+        tok = Tokenizer.from_str(f.read())
+    roles = {"user": meta["special"]["user"], "anima": meta["special"]["anima"]}
+    role_ids = {r: tok.token_to_id(s) for r, s in roles.items()}
+    eot_id = tok.token_to_id(meta["special"]["endoftext"])
+    if any(v is None for v in role_ids.values()) or eot_id is None:
+        raise SystemExit("role tokens missing from tokenizer")
+    return tok
 
-ROLES = {"user": meta["special"]["user"], "anima": meta["special"]["anima"]}
-EOT = meta["special"]["endoftext"]
-role_ids = {r: tok.token_to_id(s) for r, s in ROLES.items()}
-eot_id = tok.token_to_id(EOT)
-assert None not in role_ids.values() and eot_id is not None, "role tokens missing from tokenizer"
 
-ckpt = torch.load(CKPT_PATH, map_location="cpu")
-cfg = GPTConfig(**ckpt["cfg"])
-model = GPT(cfg)
-model.load_state_dict(ckpt["model"])
-model.to("cuda" if torch.cuda.is_available() else "cpu")
-print(f"loaded ckpt: {sum(p.numel() for p in model.parameters())/1e6:.1f}M params")
+def _role_token_id(role: str) -> int:
+    if role in ("anima", "assistant"):
+        return role_ids["anima"]
+    if role == "user":
+        return role_ids["user"]
+    raise KeyError(f"unknown role {role!r}")
+
+
+def encode_text(text: str):
+    """Encode message text without letting role markers flip the loss mask."""
+    init_tokenizer()
+    for special in _SPECIAL_STRINGS:
+        text = text.replace(special, " ")
+    return tok.encode(text, add_special_tokens=False).ids
 
 
 # --------------------- Step 2: build packed sequences ---------------------
 # Format: <|endoftext|> <|user|> text <|anima|> text <|endoftext|>
 # Loss is masked to Anima's turns only — the model learns to *respond*,
 # not to imitate the user.
+# targets[i] == ids[i] when token i should be predicted, else -100.
+# masked_next_token_loss shifts by one so logits[t] predict token t+1.
 
 def encode_conversation(messages):
+    init_tokenizer()
     ids, targets = [], []
     ids.append(eot_id)
     targets.append(-100)
     for m in messages:
-        rid = role_ids[m["role"]]
+        rid = _role_token_id(m["role"])
         ids.append(rid)
         targets.append(-100)  # role tokens are context, never targets
-        text_ids = tok.encode(m["content"]).ids
+        text_ids = encode_text(m["content"])
         ids.extend(text_ids)
         targets.extend([-100] * len(text_ids))
         ids.append(eot_id)
         targets.append(-100)
-    # mark Anima's text (and its closing <|endoftext|>) as targets
+    # mark Anima's text (and its closing <|endoftext|>) as tokens to predict
     final_ids, final_targets = ids[:], targets[:]
     in_anima = False
+    anima_id = role_ids["anima"]
     for i, t in enumerate(final_ids):
-        if t == role_ids["anima"]:
+        if t == anima_id:
             in_anima = True
         elif in_anima and t == eot_id:
             final_targets[i] = eot_id
             in_anima = False
         elif in_anima:
-            final_targets[i] = final_ids[i]  # predict Anima's text
+            final_targets[i] = final_ids[i]
     return final_ids, final_targets
+
+
+def masked_next_token_loss(logits, y):
+    """Cross-entropy of next-token preds. Prompt positions stay ignore_index."""
+    shift_logits = logits[:, :-1, :].reshape(-1, logits.size(-1))
+    shift_y = y[:, 1:].reshape(-1)
+    return F.cross_entropy(shift_logits, shift_y, ignore_index=-100)
 
 
 def load_dataset():
@@ -91,7 +134,7 @@ def load_dataset():
             if not line:
                 continue
             conv = json.loads(line)["messages"]
-            if not any(m["role"] == "anima" for m in conv):
+            if not any(m["role"] in ("anima", "assistant") for m in conv):
                 continue
             ids, targets = encode_conversation(conv)
             if len(ids) < 10 or len(ids) > cfg.block_size:
@@ -112,9 +155,25 @@ def pad_batch(batch, device):
     return x.to(device), y.to(device)
 
 
+def load_pretrained():
+    global model, cfg
+    if not os.path.isfile(CKPT_PATH):
+        raise SystemExit(f"checkpoint not found: {CKPT_PATH}")
+    ckpt = torch.load(CKPT_PATH, map_location="cpu", weights_only=True)
+    cfg = GPTConfig(**ckpt["cfg"])
+    model = GPT(cfg)
+    model.load_state_dict(ckpt["model"])
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model.to(device)
+    print(f"loaded ckpt: {sum(p.numel() for p in model.parameters())/1e6:.1f}M params")
+    return model
+
+
 # --------------------- Step 3: train ---------------------
 
 def sft():
+    init_tokenizer()
+    load_pretrained()
     device = next(model.parameters()).device
     examples = load_dataset()
     print(f"SFT examples: {len(examples)}")
@@ -130,8 +189,7 @@ def sft():
             batch = examples[i:i + BATCH_SIZE]
             x, y = pad_batch(batch, device)
             logits, _ = model(x)
-            logits = logits.view(-1, logits.size(-1))
-            loss = F.cross_entropy(logits, y.view(-1), ignore_index=-100)
+            loss = masked_next_token_loss(logits, y)
             optim.zero_grad(set_to_none=True)
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -141,8 +199,8 @@ def sft():
                 print(f"epoch {ep} step {step}/{total_steps} loss {loss.item():.4f}")
     os.makedirs(OUT_DIR, exist_ok=True)
     torch.save({"model": model.state_dict(), "cfg": cfg.__dict__}, os.path.join(OUT_DIR, "ckpt.pt"))
-    with open(os.path.join(OUT_DIR, "sft_meta.pkl"), "wb") as f:
-        pickle.dump({"role_ids": role_ids, "eot_id": eot_id}, f)
+    with open(os.path.join(OUT_DIR, "sft_meta.json"), "w", encoding="utf-8") as f:
+        json.dump({"role_ids": role_ids, "eot_id": eot_id}, f)
     print("saved to", OUT_DIR)
 
 
@@ -151,27 +209,33 @@ def sft():
 @torch.no_grad()
 def chat(user_text, history=None, max_new_tokens=200, temperature=0.8, top_k=40):
     """Talk to the fine-tuned model. history: list of prior message dicts."""
+    if model is None or cfg is None:
+        raise RuntimeError("call sft() before chat()")
+    init_tokenizer()
     device = next(model.parameters()).device
     model.eval()
     history = history or []
     msgs = history + [{"role": "user", "content": user_text}]
     ids, _ = encode_conversation(msgs)
-    if ids and ids[-1] == eot_id:
-        ids = ids[:-1]
-    idx = torch.tensor([ids], device=device)
+    # Open Anima's turn. The training format ends the user turn with <|endoftext|>.
+    ids.append(role_ids["anima"])
+    ids = ids[-cfg.block_size:]
+    temperature = max(float(temperature), 1e-5)
+    idx = torch.tensor([ids], dtype=torch.long, device=device)
     for _ in range(max_new_tokens):
         idx_cond = idx[:, -cfg.block_size:]
         logits, _ = model(idx_cond)
         logits = logits[:, -1, :] / temperature
-        if top_k:
-            v, _ = torch.topk(logits, top_k)
+        k = min(int(top_k), cfg.vocab_size) if top_k else 0
+        if k > 0:
+            v, _ = torch.topk(logits, k)
             logits[logits < v[:, [-1]]] = float("-inf")
         probs = F.softmax(logits, dim=-1)
         nxt = torch.multinomial(probs, 1)
         if nxt.item() == eot_id or nxt.item() in role_ids.values():
             break
         idx = torch.cat([idx, nxt], dim=1)
-    return tok.decode(idx[0].tolist()[len(ids):])
+    return tok.decode(idx[0, len(ids):].tolist())
 
 
 if __name__ == "__main__":

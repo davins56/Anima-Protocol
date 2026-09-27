@@ -15,22 +15,28 @@
 
 import json
 import os
-import pickle
 import random
+import sys
+from pathlib import Path
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+ROOT = Path(__file__).resolve().parents[2]
+for _sub in ("phase1", "phase2"):
+    _p = str(ROOT / "training" / _sub)
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+import sft
 from train import GPT, GPTConfig
-from sft import (TOK_DIR, tok, role_ids, eot_id,
-                 encode_conversation, cfg as _sft_cfg)
 
 # ----------------------------- Config -----------------------------
 
-PREF_DATA = "data/prefs/anima_preferences.jsonl"
-SFT_CKPT = "out/anima-sft/ckpt.pt"
-OUT_DIR3 = "out/anima-dpo"
+PREF_DATA = str(ROOT / "data" / "prefs" / "anima_preferences.jsonl")
+SFT_CKPT = str(ROOT / "out" / "anima-sft" / "ckpt.pt")
+OUT_DIR3 = str(ROOT / "out" / "anima-dpo")
 MAX_PAIRS = 5000
 EPOCHS = 1
 BATCH_SIZE = 8
@@ -42,20 +48,13 @@ MAX_NEW_TOKENS_EVAL = 200
 # --------------------- Step 1: load policy + reference ---------------------
 
 def load_ckpt(path):
-    ckpt = torch.load(path, map_location="cpu")
+    if not os.path.isfile(path):
+        raise SystemExit(f"checkpoint not found: {path}")
+    ckpt = torch.load(path, map_location="cpu", weights_only=True)
     cfg = GPTConfig(**ckpt["cfg"])
     model = GPT(cfg)
     model.load_state_dict(ckpt["model"])
     return model
-
-policy = load_ckpt(SFT_CKPT)
-reference = load_ckpt(SFT_CKPT)  # frozen copy of the same weights
-device = "cuda" if torch.cuda.is_available() else "cpu"
-policy.to(device).train()
-reference.to(device).eval()
-for p in reference.parameters():
-    p.requires_grad_(False)
-print(f"policy + reference loaded: {sum(p.numel() for p in policy.parameters())/1e6:.1f}M params each")
 
 
 # --------------------- Step 2: build pair sequences ---------------------
@@ -63,21 +62,22 @@ print(f"policy + reference loaded: {sum(p.numel() for p in policy.parameters())/
 # marker, completion = the candidate reply + <eot>. Loss uses only the
 # completion tokens (mask on context, active on reply).
 
-def encode_pair(prompt_messages, reply):
+def encode_pair(prompt_messages, reply, block_size):
+    sft.init_tokenizer()
     msgs = prompt_messages + [{"role": "anima", "content": reply}]
-    ids, targets = encode_conversation(msgs)
+    ids, _ = sft.encode_conversation(msgs)
     # find where the anima role marker sits — completion starts right after
     try:
-        anima_pos = len(ids) - 1 - ids[::-1].index(role_ids["anima"])
+        anima_pos = len(ids) - 1 - ids[::-1].index(sft.role_ids["anima"])
     except ValueError:
         return None
     completion_start = anima_pos + 1
-    if completion_start >= len(ids) or len(ids) > _sft_cfg.block_size:
+    if completion_start >= len(ids) or len(ids) > block_size:
         return None
     return ids, completion_start
 
 
-def load_pairs():
+def load_pairs(block_size):
     pairs = []
     with open(PREF_DATA, encoding="utf-8") as f:
         for line in f:
@@ -85,8 +85,8 @@ def load_pairs():
             if not line:
                 continue
             d = json.loads(line)
-            ch = encode_pair(d["prompt_messages"], d["chosen"])
-            rj = encode_pair(d["prompt_messages"], d["rejected"])
+            ch = encode_pair(d["prompt_messages"], d["chosen"], block_size)
+            rj = encode_pair(d["prompt_messages"], d["rejected"], block_size)
             if ch and rj:
                 pairs.append((ch, rj))
     random.shuffle(pairs)
@@ -114,7 +114,18 @@ def batch_logprobs(model, seqs, device):
 # --------------------- Step 3: DPO training ---------------------
 
 def dpo():
-    pairs = load_pairs()
+    policy = load_ckpt(SFT_CKPT)
+    reference = load_ckpt(SFT_CKPT)  # frozen copy of the same weights
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    # eval() disables dropout so the policy/reference ratio is the real one.
+    # Gradients still flow into policy; reference stays frozen.
+    policy.to(device).eval()
+    reference.to(device).eval()
+    for p in reference.parameters():
+        p.requires_grad_(False)
+    print(f"policy + reference loaded: {sum(p.numel() for p in policy.parameters())/1e6:.1f}M params each")
+
+    pairs = load_pairs(policy.cfg.block_size)
     print(f"preference pairs: {len(pairs)}")
     if not pairs:
         raise SystemExit("no usable pairs — check data/prefs/anima_preferences.jsonl")
@@ -153,6 +164,7 @@ def dpo():
     torch.save({"model": policy.state_dict(), "cfg": policy.cfg.__dict__},
                os.path.join(OUT_DIR3, "ckpt.pt"))
     print("saved to", OUT_DIR3)
+    return policy, reference
 
 
 if __name__ == "__main__":
