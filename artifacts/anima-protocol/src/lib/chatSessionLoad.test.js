@@ -1,8 +1,12 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
+import { STORE_LIST_TIMEOUT_MS } from "./storeTimeouts";
 import {
   beginOpenSession,
   loadOpenChatSession,
   mergeOpenedSession,
+  OPEN_CHAT_MESSAGE_LIMIT,
+  openChatMessageReadOptions,
+  openChatSessionReadOptions,
   rememberCreatedSession,
   resolveOpenSessionFetch,
   takeCreatedSession,
@@ -29,6 +33,25 @@ const primedGroup = {
   mode: "group",
   messages: [{ role: "assistant", character_name: "Narrator", content: "The stage is set." }],
 };
+
+describe("open conversation reads", () => {
+  it("bounds history and uses the store list budget, with no LLM call", () => {
+    expect(OPEN_CHAT_MESSAGE_LIMIT).toBeGreaterThan(0);
+    expect(OPEN_CHAT_MESSAGE_LIMIT).toBeLessThanOrEqual(200);
+    const session = openChatSessionReadOptions(STORE_LIST_TIMEOUT_MS);
+    const messages = openChatMessageReadOptions(STORE_LIST_TIMEOUT_MS);
+    expect(session).toEqual({
+      withMessages: false,
+      timeoutMs: STORE_LIST_TIMEOUT_MS,
+    });
+    expect(messages).toEqual({
+      limit: OPEN_CHAT_MESSAGE_LIMIT,
+      timeoutMs: STORE_LIST_TIMEOUT_MS,
+    });
+    expect(STORE_LIST_TIMEOUT_MS).toBe(20_000);
+    expect(JSON.stringify({ session, messages })).not.toMatch(/llm|ollama|warm/i);
+  });
+});
 
 describe("loadOpenChatSession", () => {
   it("returns the session plus its messages when the request is still current", async () => {
@@ -205,6 +228,24 @@ describe("primed Init session across remount", () => {
     });
     expect(next).toEqual({ status: "ready", keepPrimed: true });
     expect(takeCreatedSession(primedGroup.id).messages).toHaveLength(1);
+  });
+
+  it("keeps the store timeout sentence for a conversation the user did not just create", () => {
+    rememberCreatedSession(null);
+    const error = new Error(
+      "The server took too long to respond. Check your connection or try again in a moment.",
+    );
+    error.code = "timeout";
+    expect(
+      resolveOpenSessionFetch({
+        sessionId: "sess_1",
+        result: { status: "error", error },
+      }),
+    ).toEqual({
+      status: "error",
+      message:
+        "The server took too long to respond. Check your connection or try again in a moment.",
+    });
   });
 
   it("still reports missing/error for a session the user did not just create", () => {

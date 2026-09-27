@@ -87,6 +87,33 @@ describe("ensureSchema recovers a blank database", () => {
     expect(rows[0]?.name).toBe("Korra");
   });
 
+  it("creates only pdf tables when those are the only ones missing", async () => {
+    resetEnsureSchemaLatch();
+    const primed = await ensureSchema(pool);
+    expect(primed.ok).toBe(true);
+    await pool.query(`DROP TABLE IF EXISTS "pdf_chunks"`);
+    await pool.query(`DROP TABLE IF EXISTS "pdf_documents"`);
+
+    const statements: string[] = [];
+    const wrapped: SqlQueryable = {
+      async query(queryText, values) {
+        statements.push(queryText);
+        return pool.query(queryText, values);
+      },
+    };
+    const result = await ensureSchema(wrapped);
+    expect(result.ok).toBe(true);
+    expect(result.missingBefore.sort()).toEqual(["pdf_chunks", "pdf_documents"]);
+    expect(result.createdTables.sort()).toEqual(["pdf_chunks", "pdf_documents"]);
+    const ddl = statements.filter((sql) => /^\s*(CREATE|ALTER|DO)\b/i.test(sql));
+    expect(ddl.length).toBeGreaterThan(0);
+    expect(ddl.filter((sql) => !/pdf_/i.test(sql))).toEqual([]);
+    expect(ddl.some((sql) => /user_entities_title_trgm/i.test(sql))).toBe(false);
+    expect(ddl.some((sql) => /CREATE INDEX IF NOT EXISTS "chat_messages_session_idx"/i.test(sql))).toBe(
+      false,
+    );
+  });
+
   it("returns immediately without CREATE/ALTER/INDEX when inspect reports ok", async () => {
     resetEnsureSchemaLatch();
     const primed = await ensureSchema(pool);

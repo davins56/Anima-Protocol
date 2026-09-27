@@ -9,6 +9,29 @@
 
 const OPEN_SESSION_ERROR_MESSAGE = "Couldn't open this conversation.";
 
+/**
+ * Latest messages fetched before the thread is shown.
+ * Opening a conversation does not call the LLM (no greeting, title, summary,
+ * or warm). It is two store reads: the session row, then this many messages.
+ * An unbounded history plus a post-deploy schema burst is what held the
+ * "Opening conversation..." spinner until the store timeout.
+ */
+export const OPEN_CHAT_MESSAGE_LIMIT = 200;
+
+export function openChatSessionReadOptions(timeoutMs) {
+  return {
+    withMessages: false,
+    timeoutMs,
+  };
+}
+
+export function openChatMessageReadOptions(timeoutMs) {
+  return {
+    limit: OPEN_CHAT_MESSAGE_LIMIT,
+    timeoutMs,
+  };
+}
+
 function usableId(id) {
   return typeof id === "string" && id.trim() !== "" && id !== "undefined" && id !== "null";
 }
