@@ -70,7 +70,9 @@ def init_tokenizer(tok_dir=None):
 def _role_token_id(role: str) -> int:
     if role in ("anima", "assistant"):
         return role_ids["anima"]
-    if role == "user":
+    # System prompts are context, like user text — the same mapping
+    # server/server.py applies, so training and serving see one layout.
+    if role in ("user", "system"):
         return role_ids["user"]
     raise KeyError(f"unknown role {role!r}")
 
