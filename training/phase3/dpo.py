@@ -94,7 +94,12 @@ def load_pairs(block_size):
 
 
 def batch_logprobs(model, seqs, device):
-    """Mean token log-prob of completion tokens for each sequence."""
+    """Summed and mean token log-prob of completion tokens for each sequence.
+
+    DPO compares summed log-probs (log pi(y|x) of the whole reply). The mean
+    divides that signal by reply length, which leaves BETA=0.1 with almost
+    no gradient; the mean is only used for the fluency anchor below.
+    """
     B = len(seqs)
     T = max(len(ids) for ids, _ in seqs)
     x = torch.zeros((B, T), dtype=torch.long, device=device)
@@ -107,8 +112,8 @@ def batch_logprobs(model, seqs, device):
     tgt = x[:, 1:]
     token_lp = logprobs.gather(-1, tgt.unsqueeze(-1)).squeeze(-1)
     m = mask[:, 1:]
-    per_seq = (token_lp * m).sum(dim=1) / m.sum(dim=1).clamp(min=1)
-    return per_seq
+    summed = (token_lp * m).sum(dim=1)
+    return summed, summed / m.sum(dim=1).clamp(min=1)
 
 
 # --------------------- Step 3: DPO training ---------------------
@@ -138,18 +143,18 @@ def dpo():
             batch = pairs[i:i + BATCH_SIZE]
             chosen = [c for c, _ in batch]
             rejected = [r for _, r in batch]
-            pi_ch = batch_logprobs(policy, chosen, device)
-            pi_rj = batch_logprobs(policy, rejected, device)
+            pi_ch, pi_ch_mean = batch_logprobs(policy, chosen, device)
+            pi_rj, _ = batch_logprobs(policy, rejected, device)
             with torch.no_grad():
-                ref_ch = batch_logprobs(reference, chosen, device)
-                ref_rj = batch_logprobs(reference, rejected, device)
+                ref_ch, _ = batch_logprobs(reference, chosen, device)
+                ref_rj, _ = batch_logprobs(reference, rejected, device)
             pi_logratios = pi_ch - pi_rj
             ref_logratios = ref_ch - ref_rj
             logits_dpo = pi_logratios - ref_logratios
             # DPO loss: -log sigmoid(beta * logits). Add a mild NLL
             # anchor on the chosen side to keep fluency from drifting.
             losses = -F.logsigmoid(BETA * logits_dpo)
-            loss = losses.mean() + 0.1 * (-pi_ch.mean())
+            loss = losses.mean() + 0.1 * (-pi_ch_mean.mean())
             optim.zero_grad(set_to_none=True)
             loss.backward()
             nn.utils.clip_grad_norm_(policy.parameters(), 1.0)

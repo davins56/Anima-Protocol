@@ -14,6 +14,7 @@
 
 import type OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import { combineAbortSignals } from "./chatTimeouts";
 import {
   localChatKeepAliveFields,
   ollamaNativeOrigin,
@@ -350,48 +351,51 @@ function chunkFromOllamaLine(
 async function* iterateOllamaNdjson(
   body: ReadableStream<Uint8Array>,
   fallbackModel: string,
+  isCancelled: () => boolean,
 ): AsyncGenerator<OpenAI.Chat.Completions.ChatCompletionChunk> {
   const reader = body.getReader();
   const decoder = new TextDecoder("utf-8");
   let buffer = "";
+  let sawDone = false;
+  const emit = (line: string) => {
+    const trimmed = line.trim();
+    if (!trimmed) return null;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      return null;
+    }
+    if (!parsed || typeof parsed !== "object") return null;
+    const record = parsed as Record<string, unknown>;
+    if (record.done === true) sawDone = true;
+    return chunkFromOllamaLine(record, fallbackModel);
+  };
   try {
-    while (true) {
+    while (!sawDone) {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop() || "";
       for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(trimmed);
-        } catch {
-          continue;
-        }
-        if (!parsed || typeof parsed !== "object") continue;
-        const chunk = chunkFromOllamaLine(
-          parsed as Record<string, unknown>,
-          fallbackModel,
-        );
+        const chunk = emit(line);
         if (chunk) yield chunk;
+        if (sawDone) break;
       }
     }
-    const tail = buffer.trim();
-    if (tail) {
-      try {
-        const parsed = JSON.parse(tail);
-        if (parsed && typeof parsed === "object") {
-          const chunk = chunkFromOllamaLine(
-            parsed as Record<string, unknown>,
-            fallbackModel,
-          );
-          if (chunk) yield chunk;
-        }
-      } catch {
-        // ignore a trailing partial line
-      }
+    if (!sawDone) {
+      const chunk = emit(buffer + decoder.decode());
+      if (chunk) yield chunk;
+    }
+    // Ollama always ends a stream with a `done: true` line. Without it the
+    // host or a proxy cut the connection mid-reply — surface that instead of
+    // saving a truncated answer as if it were complete.
+    if (!sawDone && !isCancelled()) {
+      throw new OllamaChatError(
+        "Ollama /api/chat stream ended before the reply finished",
+        { connection: true, code: "ECONNRESET" },
+      );
     }
   } finally {
     reader.releaseLock();
@@ -403,11 +407,46 @@ export async function createOllamaChatStream(
   env: NodeJS.ProcessEnv = process.env,
   fetchImpl: typeof fetch = fetch,
 ): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
-  const res = await postOllamaChat(req, true, env, fetchImpl);
+  // Own an abort handle for the whole stream. consumeLlmStream calls
+  // `iterator.return()` when a reply stalls or runs past its budget; on a
+  // generator parked in `reader.read()` that call only queues, so without an
+  // abort the HTTP request stays open and Ollama keeps generating into a
+  // closed turn — holding the model while the next user waits behind it.
+  const upstream = new AbortController();
+  const signal = req.signal
+    ? combineAbortSignals(req.signal, upstream.signal)
+    : upstream.signal;
+  const res = await postOllamaChat({ ...req, signal }, true, env, fetchImpl);
   if (!res.body) {
     throw new OllamaChatError("Ollama /api/chat returned an empty stream body");
   }
-  return iterateOllamaNdjson(res.body, req.model);
+  const chunks = iterateOllamaNdjson(
+    res.body,
+    req.model,
+    () => upstream.signal.aborted,
+  );
+  const cancel = () => {
+    if (!upstream.signal.aborted) upstream.abort();
+  };
+  return {
+    [Symbol.asyncIterator]() {
+      return {
+        next: () => chunks.next(),
+        async return(value?: unknown) {
+          cancel();
+          try {
+            return await chunks.return(value as undefined);
+          } catch {
+            return { done: true as const, value: undefined };
+          }
+        },
+        async throw(err?: unknown) {
+          cancel();
+          return chunks.throw(err);
+        },
+      };
+    },
+  };
 }
 
 export async function createOllamaChatCompletion(
@@ -432,7 +471,10 @@ export async function createOllamaChatCompletion(
     message?: { content?: unknown };
   };
   if (typeof payload.error === "string" && payload.error.trim()) {
-    throw errorFromHttp(404, raw);
+    // An error inside a 200 body is not a 404. errorFromHttp still flags
+    // "model … not found" from the message; anything else (out of memory,
+    // context overflow) must not send failover hunting for another tag.
+    throw errorFromHttp(500, raw);
   }
   const content =
     typeof payload.message?.content === "string" ? payload.message.content : "";
