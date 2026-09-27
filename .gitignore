@@ -135,3 +135,5 @@ anima-work/
 # production deploys after the Cloudflare worker experiment. Source maps
 # are generated next to the bundle and are not needed in git.
 api/*.map
+/data/sft/
+/data/prefs/

@@ -53,6 +53,43 @@ From the React app, `animaApi.aiChat({ prompt })` hits that same probe. Signed-i
 
 ---
 
+## Scribe voice — finished, literate replies
+
+If the model answers in fragments or trails off, the fix is two-layered:
+a model large enough to carry a paragraph, and sampling tuned for finished
+prose. `anima-scribe` is that layer on open weights:
+
+```bash
+ollama pull qwen2.5:7b
+ollama create anima-scribe -f scripts/llm/Modelfile.anima-scribe
+export ANIMA_OLLAMA_MODEL_STANDARD=anima-scribe
+```
+
+The Modelfile sets the system voice (doctoral fluency, every thought
+finished, prose not bullets) and the sampler (`temperature 0.7`, `min_p
+0.05`, `repeat_penalty 1.12`, `num_predict 768`). Qwen2.5 7B Q4_K_M fits a
+free Colab T4 or any 8 GB GPU; on a CPU-only host change `FROM` to
+`qwen2.5:3b` and expect plainer prose.
+
+To bake the register into the weights, the seed set now includes
+`register:scribe` turns and three DPO pairs whose rejected replies are the
+concrete failures — mid-clause truncation, fragment stacks, and drifting off
+the question. They flow through the normal pipeline:
+
+```bash
+pnpm llm:dataset            # scribe seeds land in finetune-sharegpt.jsonl + dpo-pairs.jsonl
+pnpm llm:eval               # includes the complete-thought cases
+```
+
+`pnpm llm:eval` gained two checks for this: `mustEndSentence` (reply ends on
+terminal punctuation) and `minWords`. Both `complete-thought-*` cases must
+pass before pointing production at a new tag.
+
+The from-scratch tiny GPT in `training/` cannot reach this register at its
+size; see `training/README.md` for what it can do and what was fixed there.
+
+---
+
 ## Path B — GPU upgrade (Ministral 3 8B)
 
 | Role | Hugging Face id |
