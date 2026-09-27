@@ -439,9 +439,9 @@ function mapHit(row: HitRow): PdfHit {
 }
 
 /**
- * One full-text lookup (plus a file list) for this turn.
- * Returns a string already inside PDF_CONTEXT_CHAR_BUDGET, or "".
- * Never calls a model.
+ * One Postgres full-text lookup (plus a file list) for this turn.
+ * Chat attachments and lore share PDF_CONTEXT_WORD_BUDGET.
+ * Never calls a model, embeddings, Workers AI, or Vectorize.
  */
 export async function retrievePdfContext(input: {
   userId: string;

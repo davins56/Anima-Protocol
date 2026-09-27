@@ -13,7 +13,8 @@ vi.mock("@clerk/express", () => ({
 import pdfRouter from "../src/routes/pdf";
 import storeRouter from "../src/routes/store";
 import { retrievePdfContext } from "../src/lib/pdf/store";
-import { PDF_CONTEXT_CHAR_BUDGET } from "../src/lib/pdf/limits";
+import { pdfWordCount } from "../src/lib/pdf/context";
+import { PDF_CONTEXT_WORD_BUDGET } from "../src/lib/pdf/limits";
 import { pdfBase64 } from "./pdfFixture";
 
 const PREFIX = `pdf_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_`;
@@ -137,7 +138,7 @@ describe("PDF documents", () => {
       query: "Where is the silver key?",
     });
     expect(context).toContain("silver key");
-    expect(context.length).toBeLessThanOrEqual(PDF_CONTEXT_CHAR_BUDGET);
+    expect(pdfWordCount(context)).toBeLessThanOrEqual(PDF_CONTEXT_WORD_BUDGET);
 
     const leaked = await retrievePdfContext({
       userId: other,
@@ -176,7 +177,7 @@ describe("PDF documents", () => {
       query: "Tell me about the silver key",
     });
     expect(context).toContain("silver key");
-    expect(context.length).toBeLessThanOrEqual(PDF_CONTEXT_CHAR_BUDGET);
+    expect(pdfWordCount(context)).toBeLessThanOrEqual(PDF_CONTEXT_WORD_BUDGET);
 
     const deleted = await call(owner, "DELETE", `/store/Character/${characterId}`);
     expect(deleted.status).toBe(204);
