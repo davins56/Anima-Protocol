@@ -4,14 +4,16 @@
 Unauthenticated /v1/* → 401. /healthz is open. Does not log the token.
 
 Ollama's OpenAI layer (`/v1/chat/completions`) unmarshals a struct with no
-`keep_alive` field, so the Worker field is dropped and anima-chat unloads
-after the server default (~5m). Cold generate on the droplet is ~15–18s.
-This proxy maps that one route onto native `/api/chat`, which honors
-`keep_alive`, and streams the reply instead of buffering the full generate
-(buffering made the Worker open budget cover decode as well as the load).
+`keep_alive` field. This proxy maps that one route onto native `/api/chat`
+and streams the reply instead of buffering the full generate.
+
+`keep_alive` is copied only when the request or `ANIMA_OLLAMA_KEEP_ALIVE`
+sets it. Omitting it lets the droplet's `OLLAMA_KEEP_ALIVE` (production:
+`-1`, keep loaded) win. A client disconnect closes the upstream connection
+so Ollama stops generating instead of holding the single CPU slot.
 
 Set ANIMA_LLM_PROXY_NATIVE=0 to pass `/v1/chat/completions` through unchanged
-(vLLM). Set ANIMA_OLLAMA_KEEP_ALIVE=0 to stop injecting a default.
+(vLLM).
 """
 from __future__ import annotations
 
@@ -19,7 +21,10 @@ import http.client
 import http.server
 import json
 import os
+import select
+import socket
 import sys
+import threading
 from typing import Any
 
 UPSTREAM_HOST = os.environ.get("ANIMA_LLM_UPSTREAM", "127.0.0.1:11434")
@@ -41,7 +46,8 @@ HOP_BY_HOP = {
     "host",
     "content-length",
 }
-DEFAULT_KEEP_ALIVE = "30m"
+# Hard ceiling so one translated generate cannot pin the single CPU slot.
+NUM_PREDICT_CAP = 512
 
 TOKEN = ""
 
@@ -61,10 +67,19 @@ def load_token() -> str:
 
 
 def default_keep_alive() -> str:
-    raw = os.environ.get("ANIMA_OLLAMA_KEEP_ALIVE", DEFAULT_KEEP_ALIVE).strip()
+    """Empty unless the operator set ANIMA_OLLAMA_KEEP_ALIVE."""
+    if "ANIMA_OLLAMA_KEEP_ALIVE" not in os.environ:
+        return ""
+    raw = os.environ.get("ANIMA_OLLAMA_KEEP_ALIVE", "").strip()
     if not raw or raw.lower() in {"0", "off", "false", "no"}:
         return ""
     return raw
+
+
+def cap_num_predict(value: int) -> int:
+    if value < 1:
+        return 1
+    return min(value, NUM_PREDICT_CAP)
 
 
 def native_chat_enabled() -> bool:
@@ -97,7 +112,9 @@ def openai_chat_to_native(body: dict[str, Any], keep_alive: str) -> dict[str, An
         options["temperature"] = body["temperature"]
     max_tokens = body.get("max_tokens", body.get("max_completion_tokens"))
     if isinstance(max_tokens, (int, float)) and not isinstance(max_tokens, bool):
-        options["num_predict"] = int(max_tokens)
+        options["num_predict"] = cap_num_predict(int(max_tokens))
+    else:
+        options["num_predict"] = NUM_PREDICT_CAP
     if isinstance(body.get("top_p"), (int, float)) and not isinstance(body.get("top_p"), bool):
         options["top_p"] = body["top_p"]
     stop = body.get("stop")
@@ -337,6 +354,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "Connection": "close",
         }
         conn = http.client.HTTPConnection(UPSTREAM_HOST, timeout=300)
+        stop_watch = self._arm_client_cancel(conn)
         self._response_started = False
         try:
             conn.request("POST", "/api/chat", body=upstream_body, headers=headers)
@@ -377,7 +395,36 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 except Exception:
                     return
         finally:
+            stop_watch.set()
             conn.close()
+
+    def _arm_client_cancel(self, conn: http.client.HTTPConnection) -> threading.Event:
+        """Close upstream when the client socket EOFs, including during prefill."""
+        stop = threading.Event()
+        client = self.connection
+
+        def watch() -> None:
+            while not stop.wait(0.2):
+                try:
+                    readable, _, _ = select.select([client], [], [], 0)
+                except (OSError, ValueError):
+                    conn.close()
+                    return
+                if not readable:
+                    continue
+                try:
+                    peeked = client.recv(1, socket.MSG_PEEK | socket.MSG_DONTWAIT)
+                except BlockingIOError:
+                    continue
+                except OSError:
+                    conn.close()
+                    return
+                if peeked == b"":
+                    conn.close()
+                    return
+
+        threading.Thread(target=watch, daemon=True).start()
+        return stop
 
     def _stream_native_chat(self, resp: http.client.HTTPResponse, model: str) -> None:
         self.send_response(200)
@@ -405,6 +452,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if body:
             headers["Content-Length"] = str(len(body))
         conn = http.client.HTTPConnection(UPSTREAM_HOST, timeout=300)
+        stop_watch = self._arm_client_cancel(conn)
         try:
             conn.request(method, path, body=body, headers=headers)
             resp = conn.getresponse()
@@ -424,6 +472,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.wfile.write(chunk)
                 self.wfile.flush()
         finally:
+            stop_watch.set()
             conn.close()
 
 

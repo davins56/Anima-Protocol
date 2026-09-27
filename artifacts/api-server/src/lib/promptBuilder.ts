@@ -44,6 +44,7 @@ import {
   type HiddenSequencesState,
   type Weather,
 } from "./hiddenSequences";
+import { appendPdfAfterContext, fitPdfToRoom } from "./pdf/context";
 
 import {
   type CharacterData,
@@ -175,6 +176,21 @@ export interface PromptBuilderParams {
   repositoryKnowledge?: string | null;
 
   /**
+   * Excerpts from PDFs the user shared in this chat or saved as companion
+   * lore. Appended after persona, mood, and memory, then trimmed to
+   * PDF_CONTEXT_WORD_BUDGET and whatever room remains in
+   * PROMPT_CONTEXT_CHAR_BUDGET.
+   */
+  pdfContext?: string | null;
+
+  /**
+   * Characters already reserved outside this string (replayed history and
+   * the user turn). They count against PROMPT_CONTEXT_CHAR_BUDGET so PDF
+   * text cannot push that history out.
+   */
+  contextReservedChars?: number;
+
+  /**
    * When true, skip CONVERSATION CONTEXT and LATEST USER MESSAGE. Pair with
    * `buildLlmChatMessages` so history is sent once as chat turns instead of
    * being inlined here and replayed (double prefill toward num_ctx 8192).
@@ -182,7 +198,9 @@ export interface PromptBuilderParams {
   omitConversationHistory?: boolean;
 }
 
-// Token budget allocation (approximate char counts at ~4 chars/token)
+// Token budget allocation (approximate char counts at ~4 chars/token).
+// These caps already bound persona, mood/resonance, memory, and history.
+// PDF excerpts are not part of this allocation.
 const BUDGET = {
   systemCore: 2000,
   characterDef: 3000,
@@ -195,6 +213,17 @@ const BUDGET = {
   userMessage: 600,
   operatorModel: 1200,
 } as const;
+
+/**
+ * Existing history/context budget: the sum of the section caps above.
+ * Persona, mood/resonance, and memory are built inside it first. PDF text
+ * may use only the leftover characters, and is dropped before any of those
+ * sections are shortened.
+ */
+export const PROMPT_CONTEXT_CHAR_BUDGET = Object.values(BUDGET).reduce(
+  (sum, n) => sum + n,
+  0,
+);
 
 function clientOwnsTranscript(systemPrompt?: string): boolean {
   if (!systemPrompt) return false;
@@ -519,9 +548,13 @@ export function buildLlmChatMessages(params: {
 export function composeCompanionChatMessages(
   params: PromptBuilderParams,
 ): LlmChatMessage[] {
+  const history = capRecentMessagesForLlm(params.recentMessages);
+  const historyChars = history.reduce((sum, message) => sum + message.content.length, 0);
+  const userTurn = String(params.content ?? "").trim() || CONTINUE_USER_TURN;
   const systemPrompt = composePrompt({
     ...params,
     omitConversationHistory: true,
+    contextReservedChars: historyChars + userTurn.length,
   });
   return buildLlmChatMessages({
     systemPrompt,
@@ -758,7 +791,9 @@ export function composePrompt(
     conversationalWeather,
     operatorModel,
     repositoryKnowledge,
+    pdfContext,
     omitConversationHistory,
+    contextReservedChars,
   } = params;
 
   // Evolution delta (milestone-based)
@@ -1002,8 +1037,10 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
 
   // Assemble in one authoritative pipeline. Ranks let the prefill cap drop
   // the scene excerpt before persona, mood, and memory. Safety stays reserved.
+  // PDF is inserted after that base, only in leftover room, and before the
+  // loyalty guardrail.
   const maxChars = options?.maxChars ?? COMPANION_SYSTEM_PROMPT_MAX_CHARS;
-  return fitCompanionSystemPrompt(
+  const base = fitCompanionSystemPrompt(
     [
       { rank: 100, text: corePrompt },
       { rank: 0, text: scenePiece },
@@ -1046,6 +1083,9 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     ],
     maxChars,
   );
+  const reserved = Math.max(0, Number(contextReservedChars) || 0);
+  const room = PROMPT_CONTEXT_CHAR_BUDGET - base.length - reserved;
+  return appendPdfAfterContext(base, fitPdfToRoom(pdfContext, room));
 }
 
 /** @deprecated Use composePrompt; kept for integrations during migration. */

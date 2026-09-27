@@ -298,20 +298,18 @@ export function isCloudFlagshipLlmHost(host: string | null | undefined): boolean
  * ANIMA_LOCAL_LLM_MAX_RETRIES (0 disables) for hosts where a retry is more
  * expensive than a failed turn — e.g. a single-slot GPU box.
  *
- * Cloudflare Workers share one subrequest budget across Hyperdrive, Clerk,
- * keep-alive warm, and the OpenAI SDK. Default 2 retries on a wedged Fly /
- * tunnel origin burns that budget and surfaces as "Too many subrequests by
- * single Worker invocation." The #476 45s stream-open budget already waits
- * out a cold start on the first attempt, so Workers / Vercel default to 0.
+ * A retry starts a second generate while the first may still be running on
+ * the single-CPU droplet, so the default is 0 everywhere. Set
+ * `ANIMA_LOCAL_LLM_MAX_RETRIES` only when the host can absorb a duplicate.
+ * `globalObj` is unused; kept so existing callers stay source-compatible.
  */
 export function localLlmMaxRetries(
   env: NodeJS.ProcessEnv = process.env,
-  globalObj: typeof globalThis = globalThis,
+  _globalObj: typeof globalThis = globalThis,
 ): number {
   const raw = Number(env.ANIMA_LOCAL_LLM_MAX_RETRIES);
   if (Number.isFinite(raw) && raw >= 0) return Math.floor(raw);
-  if (isLoopbackUnreachableRuntime(env, globalObj)) return 0;
-  return 2;
+  return 0;
 }
 
 /**
@@ -498,13 +496,8 @@ export function getLocalLlmClient(): OpenAI | null {
     localLlmClient = new OpenAI({
       apiKey,
       baseURL,
-      // Self-hosted endpoints are usually reached over a tunnel (cloudflared,
-      // Fly, a VPS reverse proxy), where a dropped connection or a cold-start
-      // 502 is routine. With no retries every one of those killed a chat turn
-      // outright. The SDK only retries connection errors and 408/409/429/5xx,
-      // and only before a stream has started, so this cannot duplicate a
-      // partially-delivered reply. On Workers the default is 0 — see
-      // localLlmMaxRetries().
+      // Default 0. A retry starts a second generate while the first may
+      // still be running on the single-CPU droplet. See localLlmMaxRetries().
       maxRetries,
     });
     localLlmClientKey = cacheKey;

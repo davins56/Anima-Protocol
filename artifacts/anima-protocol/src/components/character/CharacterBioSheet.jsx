@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { X, Fingerprint, BookOpen, ScrollText, Sparkles } from "lucide-react";
+import CompanionLoreFiles from "@/components/pdf/CompanionLoreFiles";
 import { motion, AnimatePresence } from "framer-motion";
 
 const CATEGORY_COLORS = {
@@ -205,6 +206,11 @@ export default function CharacterBioSheet({ character, open = true, onClose }) {
                   )}
                 </Section>
               )}
+
+              <CompanionLoreFiles
+                characterId={character.id}
+                characterName={character.name}
+              />
 
               {character.backstory && (
                 <Section icon={BookOpen} title="Backstory" accent="violet">

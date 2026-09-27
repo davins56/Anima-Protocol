@@ -231,35 +231,29 @@ describe("streamChatReplyWithTurnRetry", () => {
     expect(result.turn_id).toBe("turn_retry");
   });
 
-  it("retries once with a new turn_id on 409", async () => {
+  it("does not retry turn_in_flight with a new turn id", async () => {
     const err = Object.assign(
       new Error("This chat turn is already being processed."),
       { status: 409, code: "turn_in_flight" },
     );
-    const send = vi.fn((id) => {
-      if (id === "turn_old") {
-        return (async function* () {
+    const send = vi.fn(
+      () =>
+        (async function* () {
           throw err;
-        })();
-      }
-      return fromEvents([{ content: "Go" }, { done: true, turn_id: id }]);
-    });
+        })(),
+    );
 
-    const result = await streamChatReplyWithTurnRetry({
-      send,
-      turnId: "turn_old",
-      mintTurnId: () => "turn_new",
-    });
-
-    expect(result.content).toBe("Go");
-    expect(result.turn_id).toBe("turn_new");
-    expect(send.mock.calls.map((call) => call[0])).toEqual([
-      "turn_old",
-      "turn_new",
-    ]);
+    await expect(
+      streamChatReplyWithTurnRetry({
+        send,
+        turnId: "turn_old",
+        mintTurnId: () => "turn_new",
+      }),
+    ).rejects.toMatchObject({ code: "turn_in_flight" });
+    expect(send).toHaveBeenCalledTimes(1);
   });
 
-  it("does not retry a second 409", async () => {
+  it("does not retry a 409 while the first generate may still be running", async () => {
     const err = Object.assign(
       new Error("This chat turn is already being processed."),
       { status: 409 },
@@ -278,6 +272,6 @@ describe("streamChatReplyWithTurnRetry", () => {
         mintTurnId: () => "turn_new",
       }),
     ).rejects.toMatchObject({ status: 409 });
-    expect(send).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenCalledTimes(1);
   });
 });

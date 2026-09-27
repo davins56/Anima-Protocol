@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -17,6 +18,7 @@ import {
   llmChatMessagesFirstChunkMs,
   llmChatMessagesOpenTimeoutMs,
   llmChatMessagesStreamTotalMs,
+  abortWhenClientLeaves,
   llmOpenTimeoutMs,
   openStreamAbort,
   COMPANION_REPLY_MAX_TOKENS,
@@ -150,6 +152,30 @@ describe("llmOpenTimeoutMs", () => {
         CHAT_MESSAGES_CONTEXT_SLACK_MS,
     );
     expect(CHAT_STREAM_TIMEOUT_MS).toBeGreaterThan(LLM_OPEN_TIMEOUT_FREE_TIER_MS);
+  });
+});
+
+describe("abortWhenClientLeaves", () => {
+  it("aborts when the client closes before the response finishes", () => {
+    const res = new EventEmitter() as EventEmitter & {
+      writableEnded: boolean;
+      off: (event: string, listener: () => void) => void;
+    };
+    res.writableEnded = false;
+    const { signal, cancel } = abortWhenClientLeaves(res);
+    expect(signal.aborted).toBe(false);
+    res.emit("close");
+    expect(signal.aborted).toBe(true);
+    cancel();
+  });
+
+  it("does not abort a response that already finished", () => {
+    const res = new EventEmitter() as EventEmitter & { writableEnded: boolean };
+    res.writableEnded = true;
+    const { signal, cancel } = abortWhenClientLeaves(res);
+    res.emit("close");
+    expect(signal.aborted).toBe(false);
+    cancel();
   });
 });
 

@@ -274,3 +274,29 @@ export function openStreamAbort(ms: number): { signal: AbortSignal; cancel: () =
     cancel: () => clearTimeout(timer),
   };
 }
+
+/**
+ * Abort when the SSE client disconnects before the response finishes.
+ *
+ * Listen on the response, not the request. Node fires `req` "close" when the
+ * body has been read, which is before generation starts and would cancel
+ * Ollama immediately. `res` "close" also fires after a normal `end`;
+ * `writableEnded` is the finished-reply case and must not abort.
+ */
+export function abortWhenClientLeaves(res: {
+  on: (event: string, listener: () => void) => void;
+  off?: (event: string, listener: () => void) => void;
+  writableEnded: boolean;
+}): { signal: AbortSignal; cancel: () => void } {
+  const controller = new AbortController();
+  const onClose = () => {
+    if (!res.writableEnded) controller.abort();
+  };
+  res.on("close", onClose);
+  return {
+    signal: controller.signal,
+    cancel: () => {
+      res.off?.("close", onClose);
+    },
+  };
+}

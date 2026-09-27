@@ -1322,11 +1322,24 @@ describe("createChatStreamWithFailover", () => {
     });
     expect(createMock.mock.calls[0]?.[0]).toMatchObject({
       stream: true,
-      max_tokens: 1024,
+      max_tokens: 512,
     });
   });
 
-  it("sends Ollama keep_alive on the local stream so weights stay resident", async () => {
+  it("omits keep_alive unless ANIMA_OLLAMA_KEEP_ALIVE is set", async () => {
+    delete process.env.ANIMA_OLLAMA_KEEP_ALIVE;
+    createMock.mockResolvedValueOnce(fakeStream("anima"));
+    await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 1024,
+      messages: [{ role: "user", content: "hello" }],
+    });
+    expect(createMock.mock.calls[0]?.[0].keep_alive).toBeUndefined();
+  });
+
+  it("sends Ollama keep_alive when ANIMA_OLLAMA_KEEP_ALIVE is set", async () => {
+    process.env.ANIMA_OLLAMA_KEEP_ALIVE = "30m";
     createMock.mockResolvedValueOnce(fakeStream("anima"));
     await createChatStreamWithFailover({
       tier: "standard",
@@ -2091,10 +2104,10 @@ describe("createChatCompletionWithFailover", () => {
     expect(result.content).toBe("anima reply");
     expect(result.provider).toBe("local");
     expect(result.brand).toBe("anima");
-    expect(createMock.mock.calls[0]?.[0]).toMatchObject({ max_tokens: 1024 });
+    expect(createMock.mock.calls[0]?.[0]).toMatchObject({ max_tokens: 512 });
   });
 
-  it("honors the caller maxTokens cap on the local completion", async () => {
+  it("caps the local completion at the Ollama num_predict ceiling", async () => {
     createMock.mockResolvedValueOnce(fakeCompletion("anima reply"));
     await createChatCompletionWithFailover({
       tier: "standard",
@@ -2102,7 +2115,7 @@ describe("createChatCompletionWithFailover", () => {
       messages: [{ role: "system", content: "You are Serenity." }],
     });
     expect(createMock.mock.calls[0]?.[0]).toMatchObject({
-      max_tokens: 1024,
+      max_tokens: 512,
     });
   });
 
