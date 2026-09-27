@@ -45,6 +45,7 @@ import {
   clerkIdentityHydrationKey,
   shouldClearLocalSession,
 } from '@/lib/clerkIdentity';
+import { scheduleSessionLlmWarm } from '@/lib/warmLocalLlm';
 import {
   disableProactivePush,
   getProactiveMessagePreferences,
@@ -113,6 +114,13 @@ export const AuthProvider = ({ children }) => {
     }
     clearAuthTokenGetter();
   }, [getToken, isSignedIn, localUser]);
+
+  // One background preload per tab session so a cold droplet model is already
+  // loading before the first chat send. Not awaited; failures stay silent.
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || !clerkUser) return;
+    scheduleSessionLlmWarm();
+  }, [isLoaded, isSignedIn, clerkUser?.id]);
 
   // Sync localUser into base44 if not signed in with Clerk
   useEffect(() => {
