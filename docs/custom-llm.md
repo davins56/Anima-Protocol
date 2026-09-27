@@ -71,14 +71,32 @@ finished, prose not bullets) and the sampler (`temperature 0.7`, `min_p
 free Colab T4 or any 8 GB GPU; on a CPU-only host change `FROM` to
 `qwen2.5:3b` and expect plainer prose.
 
-To bake the register into the weights, the seed set now includes
-`register:scribe` turns and three DPO pairs whose rejected replies are the
-concrete failures — mid-clause truncation, fragment stacks, and drifting off
-the question. They flow through the normal pipeline:
+To bake the register into the weights, the repo ships a committed synthetic
+scribe set — [`scripts/llm/data/scribe/`](../scripts/llm/data/scribe/README.md):
+a few hundred finished, literate exchanges in Serenity's and Fallen Angel's
+voices plus DPO pairs whose rejected replies are the concrete failures
+(mid-clause truncation, fragment stacks, drift, list-dumps, generic-assistant
+lapses, restart loops). It merges through the normal pipeline at weight 1, so
+your own logs stay the majority:
 
 ```bash
-pnpm llm:dataset            # scribe seeds land in finetune-sharegpt.jsonl + dpo-pairs.jsonl
-pnpm llm:eval               # includes the complete-thought cases
+pnpm llm:dataset            # seeds + raw logs + scribe set → finetune-sharegpt.jsonl, dpo-pairs.jsonl
+pnpm llm:dataset -- --no-scribe   # train without the synthetic set
+```
+
+### Fine-tune the scribe on a free Colab T4
+
+Open [`scripts/llm/finetune/colab_scribe_qlora.ipynb`](../scripts/llm/finetune/colab_scribe_qlora.ipynb)
+in Colab (T4 runtime), upload the three JSONL files from `scripts/llm/output/`,
+and run top to bottom: QLoRA SFT on `unsloth/Qwen2.5-7B-Instruct-bnb-4bit`
+(~60–90 min), DPO (~15 min), a sanity chat, then GGUF export via
+`pnpm llm:export-gguf` / `scripts/llm/finetune/export_gguf.py`. The Unsloth
+scripts pick fp16 on T4 and bf16 on Ampere+ automatically. On the Ollama host:
+
+```bash
+ollama create anima-scribe -f scripts/llm/Modelfile.anima-scribe-tuned   # FROM ./gguf/anima-scribe-q4_k_m.gguf
+export ANIMA_OLLAMA_MODEL_STANDARD=anima-scribe
+pnpm llm:eval
 ```
 
 `pnpm llm:eval` gained two checks for this: `mustEndSentence` (reply ends on
