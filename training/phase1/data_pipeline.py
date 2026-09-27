@@ -19,25 +19,38 @@ ROOT = Path(__file__).resolve().parents[2]
 RAW_DIR = str(ROOT / "data" / "raw")        # put .txt files here (dialogue, persona text, etc.)
 TOK_DIR = str(ROOT / "data" / "anima_tokens")
 VOCAB_SIZE = 4096           # small corpus -> small vocab; grow later
-MIN_LINE_LEN = 20           # drop junk/blank-ish lines
+MIN_LINE_LEN = 2            # drop blank-ish lines; keep short dialogue ("Hi!")
+EOT = "<|endoftext|>"       # document boundary, also the SFT turn terminator
 
 # --------------------- Step 1: clean the corpus --------------------
 # Even a tiny corpus rewards cleaning. This is where Anima's "soul"
 # starts: keep the text you'd be proud to have the model imitate.
 
 def clean_text(text: str) -> str:
+    """Clean one file, keeping <|endoftext|> document boundaries.
+
+    TinyStories separates stories with a bare <|endoftext|> line. A line-length
+    filter used to delete those markers (and every short dialogue line), so
+    stories ran into each other and the model learned run-on, broken English.
+    """
     text = re.sub(r"\r\n?", "\n", text)
-    lines = []
-    for line in text.split("\n"):
-        line = line.strip()
-        if len(line) < MIN_LINE_LEN:
-            continue
-        line = re.sub(r"[ \t]+", " ", line)
-        # drop obvious boilerplate: URLs, page numbers, chapter cruft
-        if re.search(r"https?://|^\d+$|chapter \d+", line, re.I):
-            continue
-        lines.append(line)
-    return "\n".join(lines)
+    docs = []
+    for doc in text.split(EOT):
+        lines = []
+        for line in doc.split("\n"):
+            line = re.sub(r"[ \t]+", " ", line.strip())
+            if len(line) < MIN_LINE_LEN:
+                continue
+            # drop lines with no letters (page numbers, separators, ****)
+            if not re.search(r"[^\W\d_]", line):
+                continue
+            # drop obvious boilerplate: URLs, bare chapter headings
+            if re.search(r"https?://", line) or re.fullmatch(r"chapter \w+\.?", line, re.I):
+                continue
+            lines.append(line)
+        if lines:
+            docs.append("\n".join(lines))
+    return EOT.join(docs)
 
 
 def build_corpus():
@@ -55,7 +68,8 @@ def build_corpus():
             print(f"  {fname}: {len(cleaned):,} chars after cleaning")
     if not chunks:
         raise SystemExit(f"no usable text in {RAW_DIR}")
-    corpus = "\n\n".join(chunks)
+    # Separate files like documents so one file's ending does not bleed into the next.
+    corpus = EOT.join(chunks)
     with open(ROOT / "data" / "anima_corpus.txt", "w", encoding="utf-8") as f:
         f.write(corpus)
     print(f"corpus total: {len(corpus):,} chars")
@@ -113,8 +127,13 @@ def run():
     # Corpus text is not enough: unseen letters must survive too.
     sample = corpus[:200]
     probe = "Hello there — café."
-    sample_ok = tok.decode(tok.encode(sample).ids) == sample
-    probe_ok = tok.decode(tok.encode(probe).ids) == probe
+
+    def round_trips(text):
+        # Keep specials so a sample that includes <|endoftext|> compares equal.
+        return tok.decode(tok.encode(text).ids, skip_special_tokens=False) == text
+
+    sample_ok = round_trips(sample)
+    probe_ok = round_trips(probe)
     print("round-trip ok:", sample_ok and probe_ok)
     if not sample_ok or not probe_ok:
         raise SystemExit(f"tokenizer round-trip failed ({sample[:40]!r} / {probe!r})")
