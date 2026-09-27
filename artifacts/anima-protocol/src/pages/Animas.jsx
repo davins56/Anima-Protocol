@@ -23,6 +23,7 @@ import {
 } from "@/lib/listPersonalAnimas";
 import { STORE_AUTH_WAIT_MS } from "@/lib/storeTimeouts";
 import { useAuth } from "@/lib/AuthContext";
+import CompanionLoreFiles from "@/components/pdf/CompanionLoreFiles";
 
 const ARCHETYPES = ["guardian", "muse", "sage", "trickster", "shadow", "lover", "explorer", "oracle"];
 
@@ -718,6 +719,11 @@ Return JSON with a single "${field}" string field.`,
                   className="w-full bg-black/60 border border-primary/20 text-primary/80 placeholder-primary/15 font-mono text-sm px-3 py-2 focus:outline-none focus:border-primary/50 transition-colors resize-none leading-relaxed"
                 />
               </div>
+
+              <CompanionLoreFiles
+                characterId={editingAnima?.id || null}
+                characterName={form.name}
+              />
 
               {/* Speaking Style */}
               <div>

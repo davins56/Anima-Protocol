@@ -22,6 +22,11 @@ import type { Request, Response, NextFunction } from "express";
 import { addClient, removeClient, notifyUser } from "../lib/storeEvents";
 import { presentEntityData } from "../lib/entityRecord";
 import { logger } from "../lib/logger";
+import {
+  deleteAllPdfDocumentsForUser,
+  deleteChatPdfsForSession,
+  deleteLorePdfsForCharacter,
+} from "../lib/pdf/store";
 
 const router = Router();
 
@@ -614,6 +619,12 @@ router.post("/restore", async (req, res) => {
 
     return count;
   });
+
+  if (mode === "replace") {
+    // PDF chunks are not part of the entity backup. A full replace should
+    // not leave the previous account's files attached to the new data.
+    await deleteAllPdfDocumentsForUser(userId);
+  }
 
   res.json({ restored: true, mode, count: result });
 });
@@ -1369,6 +1380,11 @@ router.put("/:entity/:id", async (req, res) => {
 router.delete("/:entity/:id", async (req, res) => {
   const userId = getUserId(req);
   const { entity, id } = req.params;
+  if (entity === "Character" || entity === "Anima") {
+    await deleteLorePdfsForCharacter(userId, id);
+  } else if (entity === CHAT_SESSION) {
+    await deleteChatPdfsForSession(userId, id);
+  }
   await db
     .delete(userEntities)
     .where(
