@@ -1,16 +1,20 @@
 # Anima Protocol — Phase 1: train a tiny GPT from scratch.
 # Runs on a free Colab T4 in ~30-60 min for a ~10M param model.
-# Expects tokens produced by data_pipeline.py in ./data/anima_tokens
+# Expects tokens produced by data_pipeline.py in <repo>/data/anima_tokens
 
+import json
 import math
 import os
-import pickle
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+# Paths are anchored at the repo root so the script does not depend on cwd.
+ROOT = Path(__file__).resolve().parents[2]
 
 
 # ----------------------------- Config -----------------------------
@@ -126,10 +130,12 @@ class GPT(nn.Module):
         for _ in range(max_new_tokens):
             idx_cond = idx[:, -self.cfg.block_size:]
             logits, _ = self(idx_cond)
-            logits = logits[:, -1, :] / temperature
+            logits = logits[:, -1, :] / max(float(temperature), 1e-5)
             if top_k is not None:
-                v, _ = torch.topk(logits, top_k)
-                logits[logits < v[:, [-1]]] = float("-inf")
+                k = min(int(top_k), logits.size(-1))
+                if k > 0:
+                    v, _ = torch.topk(logits, k)
+                    logits[logits < v[:, [-1]]] = float("-inf")
             probs = F.softmax(logits, dim=-1)
             next_tok = torch.multinomial(probs, num_samples=1)
             idx = torch.cat([idx, next_tok], dim=1)
@@ -139,17 +145,41 @@ class GPT(nn.Module):
 # ----------------------------- Training -----------------------------
 
 def get_batch(ids, cfg: GPTConfig, device):
-    ix = torch.randint(len(ids) - cfg.block_size - 1, (cfg.batch_size,))
-    x = torch.stack([torch.from_numpy(ids[i:i + cfg.block_size].astype(np.int64)) for i in ix])
-    y = torch.stack([torch.from_numpy(ids[i + 1:i + cfg.block_size + 1].astype(np.int64)) for i in ix])
-    return x.to(device), y.to(device)
+    # i + block_size is a valid end, and the target window reaches the next token.
+    hi = len(ids) - cfg.block_size
+    if hi <= 0:
+        raise ValueError(f"need more than {cfg.block_size} tokens, got {len(ids)}")
+    ix = torch.randint(hi, (cfg.batch_size,))
+    xs, ys = [], []
+    for i in ix.tolist():
+        xs.append(torch.from_numpy(ids[i:i + cfg.block_size].astype(np.int64)))
+        ys.append(torch.from_numpy(ids[i + 1:i + cfg.block_size + 1].astype(np.int64)))
+    return torch.stack(xs).to(device), torch.stack(ys).to(device)
+
+
+def train_val_split(ids, cfg: GPTConfig):
+    """Hold out the last 10%. Train only on the front so val loss is not memorized."""
+    if len(ids) <= cfg.block_size:
+        raise SystemExit(
+            f"need more than {cfg.block_size} tokens to train; got {len(ids)}. "
+            "Add text under data/raw and rerun data_pipeline.py."
+        )
+    cut = int(len(ids) * 0.9)
+    train_ids, val_ids = ids[:cut], ids[cut:]
+    if len(train_ids) <= cfg.block_size or len(val_ids) <= cfg.block_size:
+        print(f"corpus has {len(ids)} tokens; training on all of them (too small for a val split)")
+        return ids, None
+    return train_ids, val_ids
 
 
 @torch.no_grad()
-def estimate_loss(model, ids, cfg: GPTConfig, device):
+def estimate_loss(model, train_ids, val_ids, cfg: GPTConfig, device):
     model.eval()
     out = {}
-    for split, data in (("train", ids[:int(0.9 * len(ids))]), ("val", ids[int(0.9 * len(ids)):])):
+    parts = [("train", train_ids)]
+    if val_ids is not None:
+        parts.append(("val", val_ids))
+    for split, data in parts:
         losses = []
         for _ in range(cfg.eval_iters):
             x, y = get_batch(data, cfg, device)
@@ -160,12 +190,15 @@ def estimate_loss(model, ids, cfg: GPTConfig, device):
     return out
 
 
-def train(tok_dir="data/anima_tokens", out_dir="out/anima-tiny"):
+def train(tok_dir=None, out_dir=None):
+    tok_dir = tok_dir or str(ROOT / "data" / "anima_tokens")
+    out_dir = out_dir or str(ROOT / "out" / "anima-tiny")
     device = "cuda" if torch.cuda.is_available() else "cpu"
     ids = load_tokens(tok_dir)
-    with open(os.path.join(tok_dir, "meta.pkl"), "rb") as f:
-        meta = pickle.load(f)
+    with open(os.path.join(tok_dir, "meta.json"), encoding="utf-8") as f:
+        meta = json.load(f)
     cfg = GPTConfig(vocab_size=meta["vocab_size"])
+    train_ids, val_ids = train_val_split(ids, cfg)
     print(f"device={device}  tokens={len(ids):,}  vocab={cfg.vocab_size}")
 
     model = GPT(cfg).to(device)
@@ -178,9 +211,10 @@ def train(tok_dir="data/anima_tokens", out_dir="out/anima-tiny"):
         for g in optim.param_groups:
             g["lr"] = lr
         if it % cfg.eval_interval == 0 or it == cfg.max_iters - 1:
-            losses = estimate_loss(model, ids, cfg, device)
-            print(f"step {it:5d} | train {losses['train']:.3f} | val {losses['val']:.3f}")
-        x, y = get_batch(ids, cfg, device)
+            losses = estimate_loss(model, train_ids, val_ids, cfg, device)
+            val_s = f"{losses['val']:.3f}" if "val" in losses else "n/a"
+            print(f"step {it:5d} | train {losses['train']:.3f} | val {val_s}")
+        x, y = get_batch(train_ids, cfg, device)
         _, loss = model(x, y)
         optim.zero_grad(set_to_none=True)
         loss.backward()
