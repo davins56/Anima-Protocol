@@ -68,6 +68,7 @@ import {
 import { localChatKeepAliveFields } from "./localLlmWarm";
 import { companionLlmTurnOpen, localCallSignal } from "./sidecarLlm";
 import {
+  capOllamaNumPredict,
   createOllamaChatCompletion,
   createOllamaChatStream,
   isOllamaNativeChatEnabled,
@@ -300,6 +301,18 @@ export function honorCallerMaxTokens(
     return cap;
   }
   return Math.min(Math.max(Math.floor(requested), 1), cap);
+}
+
+/**
+ * Every local generate, native or `/v1`, stops at `OLLAMA_NUM_PREDICT_CAP`.
+ * A 4k–8k decode on the single-CPU droplet holds the only slot and queues
+ * the next "hi" past the client timeout.
+ */
+export function localOllamaMaxTokens(
+  requested: number | undefined,
+  modelMax: number,
+): number {
+  return capOllamaNumPredict(honorCallerMaxTokens(requested, modelMax));
 }
 
 export interface ChatStreamResult {
@@ -2249,14 +2262,14 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
               ? createOllamaChatStream({
                   model: m.model,
                   messages: req.messages,
-                  maxTokens: honorCallerMaxTokens(req.maxTokens, m.maxTokens),
+                  maxTokens: localOllamaMaxTokens(req.maxTokens, m.maxTokens),
                   temperature: req.temperature,
                   signal: attempt.signal,
                 })
               : client.chat.completions.create(
                   {
                     model: m.model,
-                    max_tokens: honorCallerMaxTokens(req.maxTokens, m.maxTokens),
+                    max_tokens: localOllamaMaxTokens(req.maxTokens, m.maxTokens),
                     messages: req.messages,
                     stream: true,
                     ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
@@ -2386,7 +2399,7 @@ export async function createChatCompletionWithFailover(
                 const native = await createOllamaChatCompletion({
                   model: m.model,
                   messages: req.messages,
-                  maxTokens: honorCallerMaxTokens(req.maxTokens, m.maxTokens),
+                  maxTokens: localOllamaMaxTokens(req.maxTokens, m.maxTokens),
                   temperature: req.temperature,
                   signal: attempt.signal,
                 });
@@ -2404,7 +2417,7 @@ export async function createChatCompletionWithFailover(
               return client.chat.completions.create(
                 {
                   model: m.model,
-                  max_tokens: honorCallerMaxTokens(req.maxTokens, m.maxTokens),
+                  max_tokens: localOllamaMaxTokens(req.maxTokens, m.maxTokens),
                   messages: req.messages,
                   ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
                   ...(hasTools

@@ -71,14 +71,32 @@ finished, prose not bullets) and the sampler (`temperature 0.7`, `min_p
 free Colab T4 or any 8 GB GPU; on a CPU-only host change `FROM` to
 `qwen2.5:3b` and expect plainer prose.
 
-To bake the register into the weights, the seed set now includes
-`register:scribe` turns and three DPO pairs whose rejected replies are the
-concrete failures — mid-clause truncation, fragment stacks, and drifting off
-the question. They flow through the normal pipeline:
+To bake the register into the weights, the repo ships a committed synthetic
+scribe set — [`scripts/llm/data/scribe/`](../scripts/llm/data/scribe/README.md):
+a few hundred finished, literate exchanges in Serenity's and Fallen Angel's
+voices plus DPO pairs whose rejected replies are the concrete failures
+(mid-clause truncation, fragment stacks, drift, list-dumps, generic-assistant
+lapses, restart loops). It merges through the normal pipeline at weight 1, so
+your own logs stay the majority:
 
 ```bash
-pnpm llm:dataset            # scribe seeds land in finetune-sharegpt.jsonl + dpo-pairs.jsonl
-pnpm llm:eval               # includes the complete-thought cases
+pnpm llm:dataset            # seeds + raw logs + scribe set → finetune-sharegpt.jsonl, dpo-pairs.jsonl
+pnpm llm:dataset -- --no-scribe   # train without the synthetic set
+```
+
+### Fine-tune the scribe on a free Colab T4
+
+Open [`scripts/llm/finetune/colab_scribe_qlora.ipynb`](../scripts/llm/finetune/colab_scribe_qlora.ipynb)
+in Colab (T4 runtime), upload the three JSONL files from `scripts/llm/output/`,
+and run top to bottom: QLoRA SFT on `unsloth/Qwen2.5-7B-Instruct-bnb-4bit`
+(~60–90 min), DPO (~15 min), a sanity chat, then GGUF export via
+`pnpm llm:export-gguf` / `scripts/llm/finetune/export_gguf.py`. The Unsloth
+scripts pick fp16 on T4 and bf16 on Ampere+ automatically. On the Ollama host:
+
+```bash
+ollama create anima-scribe -f scripts/llm/Modelfile.anima-scribe-tuned   # FROM ./gguf/anima-scribe-q4_k_m.gguf
+export ANIMA_OLLAMA_MODEL_STANDARD=anima-scribe
+pnpm llm:eval
 ```
 
 `pnpm llm:eval` gained two checks for this: `mustEndSentence` (reply ends on
@@ -213,7 +231,9 @@ OPENROUTER_API_KEY=sk-or-…
 
 Do not set `ANIMA_OPENROUTER_FALLBACK=true` to paper over a down self-hosted host — fail the turn and wake that host. Restoring a local→OpenRouter hop is not supported while customOnly is on.
 
-Local chat calls send Ollama `keep_alive` (default `30m`, override `ANIMA_OLLAMA_KEEP_ALIVE`). Ollama's `/v1/chat/completions` handler ignores that field; set `OLLAMA_KEEP_ALIVE=30m` on the daemon, and use the public-v1 proxy which rewrites chat completions onto native `/api/chat`. Companion `/api/chat/messages` already opens for 45s, which covers a ~15–18s cold load. `/api/ai/chat` stays at 18s so a hung generate still returns JSON before the Worker ~20s wall. Do not raise that probe.
+Local chat calls omit Ollama `keep_alive` unless `ANIMA_OLLAMA_KEEP_ALIVE` is set, so the droplet daemon wins. Production should keep `OLLAMA_KEEP_ALIVE=-1` (model stays loaded). A body value of `30m` overrides that and unloads anima-chat. Ollama's `/v1/chat/completions` handler ignores the field; the public-v1 proxy rewrites that route onto native `/api/chat` and only copies `keep_alive` when the request or env sets it. Companion `/api/chat/messages` waits 90s for the first token on the local-only path. `/api/ai/chat` stays at 18s so a hung generate still returns JSON before the Worker ~20s wall. Do not raise that probe. A client disconnect aborts the upstream generate. Native `num_predict` is capped at 512.
+
+Signed-in app open fires one background `POST /api/llm/warm` per browser session. That route is its own request: it sends a native `/api/generate` with an empty prompt and `num_predict: 1`, times out at 22s, and does not call OpenRouter or OpenAI. It skips while a companion turn is open. The chat-turn warm (`hintLocalLlmWarm`) stays skipped on Workers (#480). A successful preload suppresses another one for 5 minutes on that isolate.
 
 More detail on the fine-tune pipeline and self-hosted stack: [`docs/llm-build.md`](./llm-build.md).
 

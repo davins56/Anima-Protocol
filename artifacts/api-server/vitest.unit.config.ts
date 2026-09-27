@@ -9,6 +9,7 @@ export default defineConfig({
       "test/localEnsemble.test.ts",
       "test/chatStreamError.test.ts",
       "test/localLlmWarm.test.ts",
+      "test/llmWarmRoute.test.ts",
       "test/llmFailover.test.ts",
       "test/wranglerConfig.test.ts",
       "test/localLlmLive.test.ts",

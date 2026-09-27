@@ -168,6 +168,21 @@ export const OLLAMA_CHAT_SAMPLING = {
 /** Ceiling for caller temperatures. Override with ANIMA_OLLAMA_MAX_TEMPERATURE. */
 export const OLLAMA_MAX_TEMPERATURE = 0.75;
 
+/**
+ * Hard ceiling for `num_predict` on every native Ollama call.
+ * A 4k–8k decode on a single CPU blocks every later request, including a
+ * one-word probe. 512 tokens is still a full companion beat.
+ */
+export const OLLAMA_NUM_PREDICT_CAP = 512;
+
+export function capOllamaNumPredict(requested: number | undefined): number {
+  const raw =
+    typeof requested === "number" && Number.isFinite(requested) && requested > 0
+      ? Math.floor(requested)
+      : OLLAMA_NUM_PREDICT_CAP;
+  return Math.min(Math.max(1, raw), OLLAMA_NUM_PREDICT_CAP);
+}
+
 function maxTemperature(env: NodeJS.ProcessEnv = process.env): number {
   const raw = Number(env.ANIMA_OLLAMA_MAX_TEMPERATURE);
   return Number.isFinite(raw) && raw > 0 ? raw : OLLAMA_MAX_TEMPERATURE;
@@ -180,12 +195,10 @@ function ollamaOptions(
   const options: Record<string, number> = {
     ...OLLAMA_CHAT_SAMPLING,
     num_ctx: ollamaNumCtx(env),
+    num_predict: capOllamaNumPredict(req.maxTokens),
   };
   if (typeof req.temperature === "number" && Number.isFinite(req.temperature)) {
     options.temperature = Math.min(Math.max(req.temperature, 0), maxTemperature(env));
-  }
-  if (typeof req.maxTokens === "number" && Number.isFinite(req.maxTokens)) {
-    options.num_predict = Math.max(1, Math.floor(req.maxTokens));
   }
   return options;
 }
