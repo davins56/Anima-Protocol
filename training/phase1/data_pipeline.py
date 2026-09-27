@@ -71,8 +71,11 @@ def train_tokenizer(corpus: str) -> Tokenizer:
     trainer = trainers.BpeTrainer(
         vocab_size=VOCAB_SIZE,
         show_progress=True,
+        # Reserve slots for later SFT chat roles.
         special_tokens=["<|endoftext|>", "<|user|>", "<|anima|>"],
-        # ^ reserve slots for later SFT: these become your chat roles.
+        # Every byte needs a token. Without this, letters that never appeared
+        # in the corpus (for example "H" or "l") are silently dropped.
+        initial_alphabet=pre_tokenizers.ByteLevel.alphabet(),
     )
     tok.train_from_iterator([corpus], trainer)
     tok.save(os.path.join(TOK_DIR, "tokenizer.json"))
@@ -107,9 +110,14 @@ def run():
     corpus = build_corpus()
     tok = train_tokenizer(corpus)
     encode_and_save(tok, corpus)
-    # sanity check: can we round-trip?
+    # Corpus text is not enough: unseen letters must survive too.
     sample = corpus[:200]
-    print("round-trip ok:", tok.decode(tok.encode(sample).ids) == sample)
+    probe = "Hello there — café."
+    sample_ok = tok.decode(tok.encode(sample).ids) == sample
+    probe_ok = tok.decode(tok.encode(probe).ids) == probe
+    print("round-trip ok:", sample_ok and probe_ok)
+    if not sample_ok or not probe_ok:
+        raise SystemExit(f"tokenizer round-trip failed ({sample[:40]!r} / {probe!r})")
 
 
 if __name__ == "__main__":
