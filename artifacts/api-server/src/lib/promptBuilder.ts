@@ -44,6 +44,7 @@ import {
   type HiddenSequencesState,
   type Weather,
 } from "./hiddenSequences";
+import { capPdfPromptBlock } from "./pdf/context";
 
 import {
   type CharacterData,
@@ -173,6 +174,12 @@ export interface PromptBuilderParams {
    * Chat.jsx systemPrompt cannot crowd it out — and so ordinary turns can skip it.
    */
   repositoryKnowledge?: string | null;
+
+  /**
+   * Capped excerpts from PDFs the user shared in this chat or saved as
+   * companion lore. Already limited to PDF_CONTEXT_CHAR_BUDGET.
+   */
+  pdfContext?: string | null;
 
   /**
    * When true, skip CONVERSATION CONTEXT and LATEST USER MESSAGE. Pair with
@@ -669,6 +676,7 @@ export function composePrompt(params: PromptBuilderParams): string {
     conversationalWeather,
     operatorModel,
     repositoryKnowledge,
+    pdfContext,
     omitConversationHistory,
   } = params;
 
@@ -901,6 +909,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     BUDGET.operatorModel,
   );
 
+  const pdfBlock = capPdfPromptBlock(pdfContext);
   const repositoryBlock = String(repositoryKnowledge || "").trim();
   const repositorySection =
     repositoryBlock.length > 6_000
@@ -915,6 +924,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     corePrompt,
     repositorySection,
     charDef ? `CHARACTER:\n${charDef}` : "",
+    pdfBlock,
     operatorModelBlock,
     worldKnowledgeAlreadyInCore ? "" : worldKnowledgeBlock,
     resonanceBlock,

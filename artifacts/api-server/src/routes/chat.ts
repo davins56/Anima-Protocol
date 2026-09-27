@@ -29,10 +29,12 @@ import {
 import { routeModel } from "../lib/modelRouter";
 import {
   createChatStreamWithFailover,
+  isLocalOnlyProviderChain,
   usesFreeTierOpenBudget,
   type LlmBrand,
   type LlmProviderId,
 } from "../lib/llmFailover";
+import { retrievePdfContext } from "../lib/pdf/store";
 import {
   consumeLlmStream,
   LlmStreamTimeoutError,
@@ -1628,6 +1630,21 @@ router.post("/messages", async (req, res) => {
         .measure("repository_rag_ms", retrieveRepositoryKnowledge(content))
         .catch(() => "")
     : Promise.resolve("");
+  // Postgres full-text only, and only when this turn cannot leave the
+  // self-hosted model. A missing table or slow lookup must not block the reply.
+  const pdfContextPromise = isLocalOnlyProviderChain()
+    ? optionalChatContext(
+        "pdf_context",
+        () =>
+          retrievePdfContext({
+            userId,
+            sessionId,
+            characterIds,
+            query: content,
+          }),
+        "",
+      )
+    : Promise.resolve("");
   const worldKnowledgePromise = (async () => {
     try {
       const [profileRow] = await db
@@ -1690,6 +1707,7 @@ router.post("/messages", async (req, res) => {
     hintedState,
     worldKnowledgeResult,
     repositoryKnowledge,
+    pdfContext,
   ] = await telemetry.measure(
     "context_load_ms",
     Promise.all([
@@ -1716,6 +1734,7 @@ router.post("/messages", async (req, res) => {
       hintedStatePromise,
       worldKnowledgePromise,
       repositoryKnowledgePromise,
+      pdfContextPromise,
     ]),
   );
   const worldKnowledge = worldKnowledgeResult.prompt;
@@ -1894,6 +1913,7 @@ router.post("/messages", async (req, res) => {
     composeCompanionChatMessages({
       clientContext: body.system_prompt,
       repositoryKnowledge,
+      pdfContext,
       characters: adaptedChars,
       activeCharacter: activeChar,
       memories: adaptedMemories,
