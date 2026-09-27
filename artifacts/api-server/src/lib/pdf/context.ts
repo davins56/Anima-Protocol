@@ -198,6 +198,46 @@ export function capPdfPromptBlock(
   return `${words.slice(0, budget).join(" ")}…`;
 }
 
+/**
+ * Shrink a PDF excerpt so it fits both the word cap and the leftover
+ * characters in the history/context budget. Returns "" when there is no
+ * room — callers must not trim persona, mood, or memory to make space.
+ */
+export function fitPdfToRoom(
+  block: string | null | undefined,
+  roomChars: number,
+  wordBudget = PDF_CONTEXT_WORD_BUDGET,
+): string {
+  const capped = capPdfPromptBlock(block, wordBudget);
+  if (!capped || roomChars <= 0) return "";
+  if (capped.length <= roomChars) return capped;
+  const words = pdfWords(capped);
+  let acc = "";
+  for (const word of words) {
+    const next = acc ? `${acc} ${word}` : word;
+    if (`${next}…`.length > roomChars) break;
+    acc = next;
+  }
+  if (!acc) return "";
+  return `${acc}…`;
+}
+
+const LOYALTY_MARKER = "HIGHEST-PRIORITY RULE";
+
+/**
+ * Place PDF text after persona, mood, and memory. The loyalty guardrail
+ * stays after the excerpt so it is not pushed out of the prompt.
+ */
+export function appendPdfAfterContext(base: string, pdf: string): string {
+  const block = String(pdf || "").trim();
+  if (!block) return base;
+  const idx = base.lastIndexOf(LOYALTY_MARKER);
+  if (idx < 0) return `${base.trimEnd()}\n\n${block}`;
+  const head = base.slice(0, idx).trimEnd();
+  const tail = base.slice(idx);
+  return `${head}\n\n${block}\n\n${tail}`;
+}
+
 type PdfSqlMode = "search" | "fallback" | "files";
 
 /**

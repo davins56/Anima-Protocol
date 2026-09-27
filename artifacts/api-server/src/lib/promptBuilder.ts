@@ -44,7 +44,7 @@ import {
   type HiddenSequencesState,
   type Weather,
 } from "./hiddenSequences";
-import { capPdfPromptBlock } from "./pdf/context";
+import { appendPdfAfterContext, fitPdfToRoom } from "./pdf/context";
 
 import {
   type CharacterData,
@@ -176,10 +176,19 @@ export interface PromptBuilderParams {
   repositoryKnowledge?: string | null;
 
   /**
-   * Capped excerpts from PDFs the user shared in this chat or saved as
-   * companion lore. Already limited to PDF_CONTEXT_WORD_BUDGET.
+   * Excerpts from PDFs the user shared in this chat or saved as companion
+   * lore. Appended after persona, mood, and memory, then trimmed to
+   * PDF_CONTEXT_WORD_BUDGET and whatever room remains in
+   * PROMPT_CONTEXT_CHAR_BUDGET.
    */
   pdfContext?: string | null;
+
+  /**
+   * Characters already reserved outside this string (replayed history and
+   * the user turn). They count against PROMPT_CONTEXT_CHAR_BUDGET so PDF
+   * text cannot push that history out.
+   */
+  contextReservedChars?: number;
 
   /**
    * When true, skip CONVERSATION CONTEXT and LATEST USER MESSAGE. Pair with
@@ -189,7 +198,9 @@ export interface PromptBuilderParams {
   omitConversationHistory?: boolean;
 }
 
-// Token budget allocation (approximate char counts at ~4 chars/token)
+// Token budget allocation (approximate char counts at ~4 chars/token).
+// These caps already bound persona, mood/resonance, memory, and history.
+// PDF excerpts are not part of this allocation.
 const BUDGET = {
   systemCore: 2000,
   characterDef: 3000,
@@ -202,6 +213,17 @@ const BUDGET = {
   userMessage: 600,
   operatorModel: 1200,
 } as const;
+
+/**
+ * Existing history/context budget: the sum of the section caps above.
+ * Persona, mood/resonance, and memory are built inside it first. PDF text
+ * may use only the leftover characters, and is dropped before any of those
+ * sections are shortened.
+ */
+export const PROMPT_CONTEXT_CHAR_BUDGET = Object.values(BUDGET).reduce(
+  (sum, n) => sum + n,
+  0,
+);
 
 function clientOwnsTranscript(systemPrompt?: string): boolean {
   if (!systemPrompt) return false;
@@ -440,9 +462,13 @@ export function buildLlmChatMessages(params: {
 export function composeCompanionChatMessages(
   params: PromptBuilderParams,
 ): LlmChatMessage[] {
+  const history = capRecentMessagesForLlm(params.recentMessages);
+  const historyChars = history.reduce((sum, message) => sum + message.content.length, 0);
+  const userTurn = String(params.content ?? "").trim() || CONTINUE_USER_TURN;
   const systemPrompt = composePrompt({
     ...params,
     omitConversationHistory: true,
+    contextReservedChars: historyChars + userTurn.length,
   });
   return buildLlmChatMessages({
     systemPrompt,
@@ -678,6 +704,7 @@ export function composePrompt(params: PromptBuilderParams): string {
     repositoryKnowledge,
     pdfContext,
     omitConversationHistory,
+    contextReservedChars,
   } = params;
 
   // Evolution delta (milestone-based)
@@ -909,22 +936,19 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     BUDGET.operatorModel,
   );
 
-  const pdfBlock = capPdfPromptBlock(pdfContext);
   const repositoryBlock = String(repositoryKnowledge || "").trim();
   const repositorySection =
     repositoryBlock.length > 6_000
       ? `${repositoryBlock.slice(0, 5_999)}…`
       : repositoryBlock;
 
-  // Assemble in one authoritative pipeline:
-  // scene data → identity → steward/operator → user/world → relationship
-  // → memory → mode/safety → lore/voice → conversation → current turn
-  // → final safety guardrail.
+  // Persona, mood/resonance, and memory are assembled before any PDF text.
+  // PDF is appended after this base, and only if PROMPT_CONTEXT_CHAR_BUDGET
+  // still has room. The loyalty guardrail stays last.
   const sections: string[] = [
     corePrompt,
     repositorySection,
     charDef ? `CHARACTER:\n${charDef}` : "",
-    pdfBlock,
     operatorModelBlock,
     worldKnowledgeAlreadyInCore ? "" : worldKnowledgeBlock,
     resonanceBlock,
@@ -954,7 +978,10 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     LOYALTY_GUARDRAIL,
   ];
 
-  return sections.filter(Boolean).join("\n\n");
+  const base = sections.filter(Boolean).join("\n\n");
+  const reserved = Math.max(0, Number(contextReservedChars) || 0);
+  const room = PROMPT_CONTEXT_CHAR_BUDGET - base.length - reserved;
+  return appendPdfAfterContext(base, fitPdfToRoom(pdfContext, room));
 }
 
 /** @deprecated Use composePrompt; kept for integrations during migration. */

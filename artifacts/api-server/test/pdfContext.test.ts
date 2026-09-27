@@ -17,6 +17,7 @@ import {
   composePrompt,
   LLM_CHAT_HISTORY_MAX_CHARS,
   LLM_CHAT_HISTORY_MAX_MESSAGES,
+  PROMPT_CONTEXT_CHAR_BUDGET,
 } from "../src/lib/promptBuilder";
 import { buildTextPdf } from "./pdfFixture";
 
@@ -191,6 +192,82 @@ describe("PDF retrieval and prompt budget", () => {
     const run = prompt.slice(start).match(/^(?:zeta\s+)+/)?.[0] || "";
     expect(pdfWordCount(run)).toBeLessThanOrEqual(PDF_CONTEXT_WORD_BUDGET);
     expect(pdfWordCount(run)).toBeGreaterThan(100);
+  });
+
+  it("builds persona, mood, and memory before PDF and trims PDF first", () => {
+    const persona = "PERSONA_MARK violet lantern";
+    const memoryText = "MEMORY_MARK silver moth";
+    const personaCharacter = { ...character, personality: persona };
+    const memory = {
+      characterId: "char_1",
+      summary: "A bond the companion keeps.",
+      facts: [
+        {
+          type: "emotional",
+          text: memoryText,
+          created_at: new Date().toISOString(),
+        },
+      ],
+      emotionalState: { intimacy: 70 },
+      resonanceNotes: "Tender.",
+    };
+    const pdfContext = Array.from(
+      { length: PDF_CONTEXT_WORD_BUDGET + 200 },
+      (_, i) => `pdfword${i}`,
+    ).join(" ");
+    const shared = {
+      characters: [personaCharacter],
+      activeCharacter: personaCharacter,
+      memories: [memory],
+      recentMessages: [] as { role: string; content: string }[],
+      content: "Tell me about the silver moth",
+      mode: "solo" as const,
+    };
+
+    const bare = composePrompt(shared);
+    const withPdf = composePrompt({ ...shared, pdfContext });
+
+    expect(bare).toContain(persona);
+    expect(bare).toContain("RESONANCE STATE");
+    expect(bare).toContain(memoryText);
+    expect(bare).not.toContain("pdfword0");
+
+    expect(withPdf.indexOf(persona)).toBeLessThan(withPdf.indexOf("RESONANCE STATE"));
+    expect(withPdf.indexOf("RESONANCE STATE")).toBeLessThan(withPdf.indexOf(memoryText));
+    expect(withPdf.indexOf(memoryText)).toBeLessThan(withPdf.indexOf("pdfword0"));
+    expect(withPdf.indexOf("pdfword0")).toBeLessThan(withPdf.indexOf("HIGHEST-PRIORITY RULE"));
+    const fullPdfSlice = withPdf
+      .slice(withPdf.indexOf("pdfword0"), withPdf.indexOf("HIGHEST-PRIORITY RULE"))
+      .trim();
+    expect(pdfWordCount(fullPdfSlice)).toBeLessThanOrEqual(PDF_CONTEXT_WORD_BUDGET);
+
+    const withoutPdf = (prompt: string) =>
+      prompt.replace(/\n\npdfword0[\s\S]*?\n\n(?=HIGHEST-PRIORITY RULE)/, "\n\n");
+    expect(withoutPdf(withPdf)).toBe(bare);
+
+    const squeezed = composePrompt({
+      ...shared,
+      pdfContext,
+      contextReservedChars: PROMPT_CONTEXT_CHAR_BUDGET,
+    });
+    expect(squeezed).toBe(bare);
+    expect(squeezed).not.toContain("pdfword0");
+
+    const partial = composePrompt({
+      ...shared,
+      pdfContext,
+      contextReservedChars: PROMPT_CONTEXT_CHAR_BUDGET - bare.length - 80,
+    });
+    expect(partial.startsWith(bare.slice(0, bare.indexOf(persona)))).toBe(true);
+    expect(partial).toContain(persona);
+    expect(partial).toContain("RESONANCE STATE");
+    expect(partial).toContain(memoryText);
+    const pdfSlice = partial
+      .slice(partial.indexOf("pdfword0"), partial.indexOf("HIGHEST-PRIORITY RULE"))
+      .trim();
+    expect(pdfSlice.length).toBeLessThanOrEqual(80);
+    expect(pdfSlice.length).toBeGreaterThan(0);
+    expect(withoutPdf(partial)).toBe(bare);
   });
 
   it("sends PDF text only when the provider chain is local-only", () => {
