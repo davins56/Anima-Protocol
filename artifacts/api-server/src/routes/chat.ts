@@ -39,6 +39,7 @@ import {
 } from "../lib/consumeLlmStream.js";
 import {
   chatReplyMaxTokens,
+  llmChatMessagesFirstChunkMs,
   llmChatMessagesOpenTimeoutMs,
   llmChatMessagesStreamTotalMs,
   openStreamAbort,
@@ -1975,6 +1976,7 @@ router.post("/messages", async (req, res) => {
   const consumeOpts = {
     onDelta: emitDelta,
     onReasoning: emitReasoning,
+    firstChunkMs: llmChatMessagesFirstChunkMs({ freeTierCascade }),
     totalMs: llmChatMessagesStreamTotalMs({ freeTierCascade }),
   };
 

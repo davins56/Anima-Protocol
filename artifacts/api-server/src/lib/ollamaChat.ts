@@ -18,6 +18,7 @@ import { combineAbortSignals } from "./chatTimeouts";
 import {
   localChatKeepAliveFields,
   ollamaNativeOrigin,
+  ollamaNumCtx,
 } from "./localLlmWarm";
 import {
   hasLocalLlm,
@@ -176,7 +177,10 @@ function ollamaOptions(
   req: OllamaChatRequest,
   env: NodeJS.ProcessEnv = process.env,
 ): Record<string, number> {
-  const options: Record<string, number> = { ...OLLAMA_CHAT_SAMPLING };
+  const options: Record<string, number> = {
+    ...OLLAMA_CHAT_SAMPLING,
+    num_ctx: ollamaNumCtx(env),
+  };
   if (typeof req.temperature === "number" && Number.isFinite(req.temperature)) {
     options.temperature = Math.min(Math.max(req.temperature, 0), maxTemperature(env));
   }
