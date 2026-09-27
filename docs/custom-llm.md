@@ -215,6 +215,8 @@ Do not set `ANIMA_OPENROUTER_FALLBACK=true` to paper over a down self-hosted hos
 
 Local chat calls send Ollama `keep_alive` (default `30m`, override `ANIMA_OLLAMA_KEEP_ALIVE`). Ollama's `/v1/chat/completions` handler ignores that field; set `OLLAMA_KEEP_ALIVE=30m` on the daemon, and use the public-v1 proxy which rewrites chat completions onto native `/api/chat`. Companion `/api/chat/messages` already opens for 45s, which covers a ~15–18s cold load. `/api/ai/chat` stays at 18s so a hung generate still returns JSON before the Worker ~20s wall. Do not raise that probe.
 
+Signed-in app open fires one background `POST /api/llm/warm` per browser session. That route is its own request: it sends a native `/api/generate` with `keep_alive` and no prompt, times out at 22s, and does not call OpenRouter or OpenAI. The chat-turn warm (`hintLocalLlmWarm`) stays skipped on Workers (#480). A successful preload suppresses another one for 5 minutes on that isolate.
+
 More detail on the fine-tune pipeline and self-hosted stack: [`docs/llm-build.md`](./llm-build.md).
 
 ### Optional: parallel local minds
