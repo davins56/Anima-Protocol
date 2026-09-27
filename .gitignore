@@ -114,6 +114,15 @@ Desktop.ini
 
 .venv/
 
+# Tiny-GPT pipeline (training/phase1–3, server/server.py).
+# Checkpoints, token dumps, and generated corpus stay local.
+/out/
+/data/anima_corpus.txt
+/data/anima_tokens/
+/data/raw/
+__pycache__/
+*.py[cod]
+
 # Optional local checkouts — never commit these as git submodules.
 # Cloudflare Workers Builds always runs `git submodule update` on clone,
 # so unused or unmapped gitlinks fail production deploys at Cloning.
