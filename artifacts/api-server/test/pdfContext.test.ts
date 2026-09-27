@@ -30,6 +30,16 @@ const character = {
 };
 
 describe("PDF extraction", () => {
+  it("loads unpdf only from inside extraction", async () => {
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync(
+      new URL("../src/lib/pdf/extract.ts", import.meta.url),
+      "utf8",
+    );
+    expect(source).not.toMatch(/^import\s+[\s\S]*from\s+["']unpdf["']/m);
+    expect(source).toMatch(/import\(["']unpdf["']\)/);
+  });
+
   it("reads selectable text from a real PDF", async () => {
     const extracted = await extractPdfPages(
       buildTextPdf(["The dragon keeps the silver key."]),
