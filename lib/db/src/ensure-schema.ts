@@ -169,106 +169,6 @@ export async function ensureSchema(
   return withTransientDbRetry(() => runEnsureSchema(getPool()));
 }
 
-/** Tables added for PDF uploads. A gap of only these must not replay every index. */
-const PDF_GAP_TABLES = new Set<string>(["pdf_documents", "pdf_chunks"]);
-
-export function isPdfOnlySchemaGap(missing: readonly string[]): boolean {
-  return missing.length > 0 && missing.every((name) => PDF_GAP_TABLES.has(name));
-}
-
-function createdSince(
-  missingBefore: readonly RequiredTable[],
-  presentAfter: readonly RequiredTable[],
-): RequiredTable[] {
-  const created: RequiredTable[] = [];
-  for (const table of presentAfter) {
-    if (missingBefore.includes(table)) created.push(table);
-  }
-  return created;
-}
-
-async function runSchemaStatement(
-  db: Queryable,
-  sql: string,
-  label: string,
-  errors: string[],
-): Promise<void> {
-  try {
-    await db.query(sql);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    errors.push(`${label}: ${message.slice(0, 240)}`);
-  }
-}
-
-async function ensurePdfTables(
-  run: (sql: string, label: string) => Promise<void>,
-): Promise<void> {
-  await run(
-    `CREATE TABLE IF NOT EXISTS "pdf_documents" (
-      "id" text PRIMARY KEY NOT NULL,
-      "user_id" text NOT NULL,
-      "scope" text NOT NULL,
-      "session_id" text,
-      "character_id" text,
-      "filename" text NOT NULL,
-      "byte_size" integer DEFAULT 0 NOT NULL,
-      "page_count" integer DEFAULT 0 NOT NULL,
-      "chunk_count" integer DEFAULT 0 NOT NULL,
-      "created_at" timestamp DEFAULT now() NOT NULL,
-      "updated_at" timestamp DEFAULT now() NOT NULL
-    )`,
-    "table:pdf_documents",
-  );
-  await run(
-    `CREATE INDEX IF NOT EXISTS "pdf_documents_user_session_idx"
-       ON "pdf_documents" USING btree ("user_id", "scope", "session_id")`,
-    "index:pdf_documents_user_session_idx",
-  );
-  await run(
-    `CREATE INDEX IF NOT EXISTS "pdf_documents_user_character_idx"
-       ON "pdf_documents" USING btree ("user_id", "scope", "character_id")`,
-    "index:pdf_documents_user_character_idx",
-  );
-  await run(
-    `CREATE TABLE IF NOT EXISTS "pdf_chunks" (
-      "id" text PRIMARY KEY NOT NULL,
-      "document_id" text NOT NULL,
-      "user_id" text NOT NULL,
-      "chunk_index" integer NOT NULL,
-      "page_start" integer DEFAULT 1 NOT NULL,
-      "page_end" integer DEFAULT 1 NOT NULL,
-      "content" text NOT NULL,
-      "search_vector" tsvector NOT NULL,
-      "created_at" timestamp DEFAULT now() NOT NULL
-    )`,
-    "table:pdf_chunks",
-  );
-  await run(
-    `CREATE INDEX IF NOT EXISTS "pdf_chunks_document_idx"
-       ON "pdf_chunks" USING btree ("user_id", "document_id", "chunk_index")`,
-    "index:pdf_chunks_document_idx",
-  );
-  await run(
-    `CREATE INDEX IF NOT EXISTS "pdf_chunks_search_idx"
-       ON "pdf_chunks" USING gin ("search_vector")`,
-    "index:pdf_chunks_search_idx",
-  );
-  await run(
-    `DO $$ BEGIN
-       ALTER TABLE "pdf_chunks"
-         ADD CONSTRAINT "pdf_chunks_document_id_fk"
-         FOREIGN KEY ("document_id")
-         REFERENCES "pdf_documents"("id")
-         ON DELETE CASCADE;
-     EXCEPTION
-       WHEN duplicate_object THEN NULL;
-       WHEN undefined_table THEN NULL;
-     END $$`,
-    "fk:pdf_chunks_document_id",
-  );
-}
-
 async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
   // Inspect must not gate DDL when it throws (Hyperdrive/postgres.js array-bind
   // used to skip every CREATE IF NOT EXISTS). When inspect succeeds and every
@@ -283,24 +183,6 @@ async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
       createdTables: [],
       hasPgTrgm: before.hasPgTrgm,
       errors: [],
-    };
-  }
-  // #502 added pdf_documents / pdf_chunks to the required set. A deploy where
-  // those two are the only gap must not replay the rest of the schema. That
-  // burst is ~50 sequential CREATE INDEX statements, including the
-  // user_entities title GIN index, and it is what pushes the first store
-  // read — opening a conversation — past the client timeout. PDF tables start
-  // empty, so their own DDL is a handful of round-trips.
-  if (isPdfOnlySchemaGap(before.missingTables)) {
-    const errors: string[] = [];
-    await ensurePdfTables((sql, label) => runSchemaStatement(db, sql, label, errors));
-    const after = await inspectSchema(db);
-    return {
-      ok: after.ok && after.missingTables.length === 0,
-      missingBefore: before.missingTables,
-      createdTables: createdSince(before.missingTables, after.presentTables),
-      hasPgTrgm: after.hasPgTrgm,
-      errors,
     };
   }
   const errors: string[] = [];
@@ -411,9 +293,70 @@ async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
 
   // Companion / chat PDFs. Original bytes are not kept — text is extracted
   // at upload and stored as chunks. search_vector is Postgres full-text
-  // (no extra model call on the chat droplet). Same statements as the
-  // pdf-only gap path above.
-  await ensurePdfTables(run);
+  // (no extra model call on the chat droplet).
+  await run(
+    `CREATE TABLE IF NOT EXISTS "pdf_documents" (
+      "id" text PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "scope" text NOT NULL,
+      "session_id" text,
+      "character_id" text,
+      "filename" text NOT NULL,
+      "byte_size" integer DEFAULT 0 NOT NULL,
+      "page_count" integer DEFAULT 0 NOT NULL,
+      "chunk_count" integer DEFAULT 0 NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "updated_at" timestamp DEFAULT now() NOT NULL
+    )`,
+    "table:pdf_documents",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "pdf_documents_user_session_idx"
+       ON "pdf_documents" USING btree ("user_id", "scope", "session_id")`,
+    "index:pdf_documents_user_session_idx",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "pdf_documents_user_character_idx"
+       ON "pdf_documents" USING btree ("user_id", "scope", "character_id")`,
+    "index:pdf_documents_user_character_idx",
+  );
+  await run(
+    `CREATE TABLE IF NOT EXISTS "pdf_chunks" (
+      "id" text PRIMARY KEY NOT NULL,
+      "document_id" text NOT NULL,
+      "user_id" text NOT NULL,
+      "chunk_index" integer NOT NULL,
+      "page_start" integer DEFAULT 1 NOT NULL,
+      "page_end" integer DEFAULT 1 NOT NULL,
+      "content" text NOT NULL,
+      "search_vector" tsvector NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL
+    )`,
+    "table:pdf_chunks",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "pdf_chunks_document_idx"
+       ON "pdf_chunks" USING btree ("user_id", "document_id", "chunk_index")`,
+    "index:pdf_chunks_document_idx",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "pdf_chunks_search_idx"
+       ON "pdf_chunks" USING gin ("search_vector")`,
+    "index:pdf_chunks_search_idx",
+  );
+  await run(
+    `DO $$ BEGIN
+       ALTER TABLE "pdf_chunks"
+         ADD CONSTRAINT "pdf_chunks_document_id_fk"
+         FOREIGN KEY ("document_id")
+         REFERENCES "pdf_documents"("id")
+         ON DELETE CASCADE;
+     EXCEPTION
+       WHEN duplicate_object THEN NULL;
+       WHEN undefined_table THEN NULL;
+     END $$`,
+    "fk:pdf_chunks_document_id",
+  );
 
   await run(
     `CREATE TABLE IF NOT EXISTS "chat_sessions" (
@@ -689,7 +632,11 @@ async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
   );
 
   const after = await inspectSchema(db);
-  createdTables.push(...createdSince(before.missingTables, after.presentTables));
+  for (const table of after.presentTables) {
+    if (before.missingTables.includes(table)) {
+      createdTables.push(table);
+    }
+  }
 
   return {
     ok: after.ok,
