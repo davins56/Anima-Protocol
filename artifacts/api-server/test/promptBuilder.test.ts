@@ -856,6 +856,49 @@ describe("composeCompanionChatMessages", () => {
     expect(prompt).not.toContain("LATEST USER MESSAGE:");
     expect(prompt).not.toContain("I miss the garden");
   });
+
+  it("keeps a byte-identical system prefix across turns for KV-cache reuse", () => {
+    // Ollama only re-reads the prompt from the first differing byte. The
+    // clock, mood, and turn-scored memories must sit after identity/voice so
+    // a CPU host does not re-prefill the whole prompt on every send.
+    const turn = (content: string, clock: string, factText: string) =>
+      composeCompanionChatMessages({
+        characters: [character],
+        activeCharacter: character,
+        memories: [
+          {
+            characterId: "char-1",
+            summary: "Long bond.",
+            facts: [
+              { type: "emotional", text: factText, created_at: new Date().toISOString() },
+            ],
+            emotionalState: { intimacy: 60 },
+            resonanceNotes: "Warm.",
+          },
+        ],
+        recentMessages: [],
+        mode: "solo",
+        content,
+        companionAffect: initCompanionAffect(null),
+        worldKnowledge: `REAL-WORLD REGION KNOWLEDGE (test):\n<<<USER_REGION>>>\nLocal time: ${clock}\n<<<END_USER_REGION>>>`,
+      })[0]!.content as string;
+
+    const a = turn("Take me back there.", "9:01 PM", "User loves rain");
+    const b = turn("What do you see?", "9:02 PM", "User fears the dark");
+    expect(a).not.toBe(b);
+
+    let shared = 0;
+    while (shared < a.length && a[shared] === b[shared]) shared += 1;
+    const prefix = a.slice(0, shared);
+    expect(prefix).toContain("CRITICAL AUTONOMY RULES");
+    expect(prefix).toContain("CHARACTER IDENTITY LOCK");
+    expect(prefix).toContain("Personality: Warm");
+    expect(prefix).toContain("VOICE ANCHORS");
+    // First divergence is at or after the per-turn region block, not inside identity.
+    expect(shared).toBeGreaterThanOrEqual(a.indexOf("REAL-WORLD REGION KNOWLEDGE"));
+    expect(a.indexOf("Local time: 9:01 PM")).toBeGreaterThan(a.indexOf("CHARACTER:"));
+    expect(a.lastIndexOf("HIGHEST-PRIORITY RULE")).toBeGreaterThan(a.indexOf("Local time"));
+  });
 });
 
 describe("buildGroupCompanionPrompt", () => {

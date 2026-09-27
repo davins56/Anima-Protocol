@@ -107,6 +107,34 @@ class _FakeOllama(BaseHTTPRequestHandler):
         self.wfile.flush()
 
 
+class _FakeChunkedOllama(BaseHTTPRequestHandler):
+    """Real Ollama streams /api/chat as a chunked NDJSON body."""
+
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, fmt: str, *args: object) -> None:
+        return
+
+    def _chunk(self, data: bytes) -> None:
+        self.wfile.write(b"%x\r\n%s\r\n" % (len(data), data))
+        self.wfile.flush()
+
+    def do_POST(self) -> None:  # noqa: N802
+        length = int(self.headers.get("Content-Length") or 0)
+        if length:
+            self.rfile.read(length)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson")
+        self.send_header("Transfer-Encoding", "chunked")
+        self.end_headers()
+        self._chunk(b'{"model":"anima-chat","message":{"role":"assistant","content":"Hi"},"done":false}\n')
+        self.server.release.wait(3)  # type: ignore[attr-defined]
+        self.server.finished.set()  # type: ignore[attr-defined]
+        self._chunk(b'{"model":"anima-chat","message":{"role":"assistant","content":""},"done":true,"done_reason":"stop"}\n')
+        self.wfile.write(b"0\r\n\r\n")
+        self.wfile.flush()
+
+
 class ProxyStreamTests(unittest.TestCase):
     def test_chat_completions_stream_before_upstream_finishes(self) -> None:
         upstream = ThreadingHTTPServer(("127.0.0.1", 0), _FakeOllama)
@@ -168,6 +196,55 @@ class ProxyStreamTests(unittest.TestCase):
             listen.server_close()
             upstream.server_close()
 
+
+    def test_native_api_chat_passthrough_streams_chunked_body(self) -> None:
+        upstream = ThreadingHTTPServer(("127.0.0.1", 0), _FakeChunkedOllama)
+        upstream.release = threading.Event()  # type: ignore[attr-defined]
+        upstream.finished = threading.Event()  # type: ignore[attr-defined]
+        threading.Thread(target=upstream.serve_forever, daemon=True).start()
+
+        proxy.TOKEN = "test-token"
+        proxy.UPSTREAM_HOST = f"127.0.0.1:{upstream.server_address[1]}"
+        listen = ThreadingHTTPServer(("127.0.0.1", 0), proxy.Handler)
+        threading.Thread(target=listen.serve_forever, daemon=True).start()
+        host, port = listen.server_address
+
+        try:
+            conn = http.client.HTTPConnection(host, port, timeout=5)
+            payload = json.dumps(
+                {
+                    "model": "anima-chat",
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "stream": True,
+                }
+            )
+            conn.request(
+                "POST",
+                "/api/chat",
+                body=payload,
+                headers={
+                    "Authorization": "Bearer test-token",
+                    "Content-Type": "application/json",
+                    "Content-Length": str(len(payload)),
+                },
+            )
+            resp = conn.getresponse()
+            self.assertEqual(resp.status, 200)
+            # The first NDJSON line must reach the client while Ollama is
+            # still generating. `read(8192)` on a chunked body held it back.
+            first = resp.fp.readline()
+            self.assertIn(b"Hi", first)
+            self.assertFalse(upstream.finished.is_set())  # type: ignore[attr-defined]
+            upstream.release.set()  # type: ignore[attr-defined]
+            rest = resp.read()
+            self.assertIn(b'"done":true', rest)
+            conn.close()
+        finally:
+            upstream.release.set()  # type: ignore[attr-defined]
+            listen.shutdown()
+            upstream.shutdown()
+            listen.server_close()
+            upstream.server_close()
 
 if __name__ == "__main__":
     unittest.main()
