@@ -1676,9 +1676,9 @@ router.post("/messages", async (req, res) => {
             loadRelationshipState(hintedCharId, userId),
             loadArcState(hintedCharId, userId),
           ]),
-        [null, null, null] as const,
+        [undefined, null, null] as const,
       )
-    : Promise.resolve([null, null, null] as const);
+    : Promise.resolve([undefined, null, null] as const);
   const [
     characters,
     memories,
