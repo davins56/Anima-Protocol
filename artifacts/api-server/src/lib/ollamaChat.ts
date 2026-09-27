@@ -149,10 +149,36 @@ export function toOllamaMessages(
   return out;
 }
 
-function ollamaOptions(req: OllamaChatRequest): Record<string, number> {
-  const options: Record<string, number> = {};
+/**
+ * Qwen2.5's published chat sampling (temperature 0.7, top_p 0.8, top_k 20,
+ * repetition penalty 1.05). The old Modelfile ran top_p 0.92 with
+ * repeat_penalty 1.1 and the chat route asks for 0.85 (ensemble up to 1.15).
+ * On a 3B model that combination penalizes "the", "a", "to" out of the recent
+ * window and samples the long tail: dropped articles, odd word swaps, and
+ * stray Chinese tokens. Sent per request because the Fly volume keeps an
+ * `anima-chat` built from whatever Modelfile existed on first boot.
+ */
+export const OLLAMA_CHAT_SAMPLING = {
+  top_p: 0.8,
+  top_k: 20,
+  repeat_penalty: 1.05,
+} as const;
+
+/** Ceiling for caller temperatures. Override with ANIMA_OLLAMA_MAX_TEMPERATURE. */
+export const OLLAMA_MAX_TEMPERATURE = 0.75;
+
+function maxTemperature(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = Number(env.ANIMA_OLLAMA_MAX_TEMPERATURE);
+  return Number.isFinite(raw) && raw > 0 ? raw : OLLAMA_MAX_TEMPERATURE;
+}
+
+function ollamaOptions(
+  req: OllamaChatRequest,
+  env: NodeJS.ProcessEnv = process.env,
+): Record<string, number> {
+  const options: Record<string, number> = { ...OLLAMA_CHAT_SAMPLING };
   if (typeof req.temperature === "number" && Number.isFinite(req.temperature)) {
-    options.temperature = req.temperature;
+    options.temperature = Math.min(Math.max(req.temperature, 0), maxTemperature(env));
   }
   if (typeof req.maxTokens === "number" && Number.isFinite(req.maxTokens)) {
     options.num_predict = Math.max(1, Math.floor(req.maxTokens));
@@ -171,10 +197,7 @@ function buildOllamaBody(
     stream,
     ...localChatKeepAliveFields(env),
   };
-  const options = ollamaOptions(req);
-  if (Object.keys(options).length > 0) {
-    body.options = options;
-  }
+  body.options = ollamaOptions(req, env);
   return body;
 }
 

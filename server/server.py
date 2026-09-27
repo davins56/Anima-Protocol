@@ -23,7 +23,6 @@ import uuid
 from pathlib import Path
 
 import torch
-import torch.nn.functional as F
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -103,10 +102,10 @@ def _api_messages(messages):
     return mapped
 
 
-def encode(messages):
-    ids, _ = sft.encode_conversation(_api_messages(messages))
-    ids.append(sft.role_ids["anima"])
-    return ids
+def encode(messages, max_tokens=None):
+    """Prompt ids ending in <|anima|>, fitted to `max_tokens` by whole messages."""
+    budget = cfg.block_size if max_tokens is None else max_tokens
+    return sft.encode_prompt(_api_messages(messages), budget)
 
 
 def _temperature(value: float) -> float:
@@ -120,21 +119,17 @@ def _temperature(value: float) -> float:
 
 
 @torch.no_grad()
-def generate_reply(messages, max_tokens=256, temperature=0.8, top_k=40):
+def generate_reply(messages, max_tokens=256, temperature=0.8, top_k=40, top_p=0.9):
     max_tokens = max(1, min(int(max_tokens), MAX_NEW_TOKENS))
     temperature = _temperature(temperature)
-    ids = encode(messages)
-    idx = torch.tensor([ids[-cfg.block_size:]], dtype=torch.long, device=device)
+    # Reserve part of the window for the reply; the prompt keeps whole messages.
+    reserve = min(max_tokens, cfg.block_size // 2)
+    ids = encode(messages, cfg.block_size - reserve)
+    idx = torch.tensor([ids], dtype=torch.long, device=device)
     out = []
-    k = min(int(top_k), cfg.vocab_size) if top_k else 0
     for _ in range(max_tokens):
         logits, _ = model(idx[:, -cfg.block_size:])
-        logits = logits[:, -1, :] / temperature
-        if k > 0:
-            v, _ = torch.topk(logits, k)
-            logits[logits < v[:, [-1]]] = float("-inf")
-        probs = F.softmax(logits, dim=-1)
-        nxt = torch.multinomial(probs, 1)
+        nxt = sft.sample_next(logits[:, -1, :], out, temperature, top_k, top_p)
         t = nxt.item()
         if t == sft.eot_id or t in sft.role_ids.values():
             break
@@ -212,6 +207,7 @@ class ChatRequest(BaseModel):
     model: str = Field(default="anima", max_length=64)
     messages: list[Msg] = Field(min_length=1, max_length=MAX_MESSAGES)
     temperature: float = Field(default=0.8, ge=0.0, le=2.0)
+    top_p: float = Field(default=0.9, gt=0.0, le=1.0)
     max_tokens: int = Field(default=256, ge=1, le=MAX_NEW_TOKENS)
     stream: bool = False  # rejected; this server does not stream
 
@@ -237,6 +233,7 @@ def chat(req: ChatRequest, _auth: None = Depends(require_token)):
         [m.model_dump() for m in req.messages],
         max_tokens=req.max_tokens,
         temperature=req.temperature,
+        top_p=req.top_p,
     )
     return ChatResponse(
         id="chatcmpl-" + uuid.uuid4().hex[:12],
