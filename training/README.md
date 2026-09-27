@@ -2,6 +2,14 @@
 
 From-scratch LLM for the Anima Protocol app, sized for free-tier GPUs.
 
+**Scope, honestly:** the default config is ~34M parameters with a
+1024-token window. That is enough for coherent, finished sentences in the
+voice of your corpus — it is not enough for doctoral-grade prose. The
+production scribe voice lives on open weights:
+[`scripts/llm/Modelfile.anima-scribe`](../scripts/llm/Modelfile.anima-scribe)
+(see `docs/custom-llm.md` → "Scribe voice"). Treat this pipeline as the
+research / preview model.
+
 ## Pipeline
 
 | Phase | Script | Output |
@@ -21,17 +29,37 @@ Checkpoints and tokenizer outputs (`out/`, `data/anima_tokens/`, `data/anima_cor
 3. `python training/phase2/sft.py` → `python training/phase3/dpo.py`
 4. `python server/server.py` (listens on 127.0.0.1:8000 only).
 
-## Fluency notes
+## Why replies used to come out as incomplete thoughts
 
-- `data_pipeline.py` keeps `<|endoftext|>` document boundaries and short dialogue
-  lines. Checkpoints trained before that fix learned from stories glued
-  together with the separators deleted. Rerun phases 1–3 to get the benefit.
-- Serving (`server.py`, `sft.chat`) fits the prompt by whole messages and leaves
-  half the 256-token window for the reply. A long system prompt is dropped
-  before the latest user message, so the model never starts mid-sentence.
-- Sampling adds top-p (0.9) and a light repetition penalty over the reply only.
-- At ~10M parameters this model writes simple, TinyStories-level English. For
-  adult-level companion replies, the production path is `anima-chat` (Qwen2.5 3B).
+The first cut of this pipeline had a 256-token window, and three things
+followed from it. Any SFT conversation longer than 256 tokens was thrown
+away, so the model never saw a long, finished reply and learned to stop
+early. The server truncated the prompt on a raw token boundary, which could
+slice a message in half or drop the role marker. And generation re-fed only
+the last 256 tokens each step, so on a long answer the user's question slid
+out of the window mid-reply and the model drifted.
+
+Current behavior:
+
+- `block_size` is 1024; attention uses the fused kernel so it fits a T4 in fp16.
+- SFT (`sft.fit_conversation`) drops the *oldest turns* of an over-long
+  conversation instead of the whole example.
+- Serving reserves room for the reply, never lets the prompt leave the
+  window, suppresses `<|endoftext|>` for the first `min_tokens`, applies a
+  repetition penalty, and stops at the first sentence end once 75% of the
+  budget is spent. A reply that still hits the cap is trimmed back to its
+  last complete sentence and reported with `finish_reason: "length"`.
+- Pretraining keeps the best-validation checkpoint, not the last one — on a
+  small corpus the overfit final checkpoint is the one that rambles.
+
+## Corpus size
+
+`train.py` sees ~390M tokens over its 6000 steps. A handful of novels is
+1–5M tokens, so the model will loop over them many times; watch `val` in the
+log and let best-val checkpointing do its job. To lift fluency, add
+public-domain literary prose (Project Gutenberg) to `data/raw/` alongside
+your own transcripts — keep your material in the majority if you want the
+voice to stay yours.
 
 ## Local checkpoint server
 
@@ -44,7 +72,7 @@ Clients then send `Authorization: Bearer <token>`.
 
 ## Status
 
-- [x] Phase 1 — pretrain (tiny GPT, ~10M params)
+- [x] Phase 1 — pretrain (small GPT, ~34M params, 1024-token window)
 - [x] Phase 2 — SFT (chat format with role tokens)
 - [x] Phase 3 — DPO (tone & guardrail preferences)
-- [x] Phase 4 — serving (OpenAI-compatible API)
+- [x] Phase 4 — serving (OpenAI-compatible API, complete-thought sampler)
