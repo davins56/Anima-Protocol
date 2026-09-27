@@ -1,0 +1,7 @@
+# Anima Protocol — training + serving dependencies
+torch>=2.0
+numpy
+tokenizers
+fastapi
+uvicorn
+pydantic
