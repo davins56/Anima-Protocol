@@ -422,4 +422,51 @@ export const animaApi = {
     list: () => request("/protocol-upgrade").then((r) => r.json()),
     get: (id) => request(`/protocol-upgrade/${id}`).then((r) => r.json()),
   },
+
+  /** Model Tutor — the steward teaches their own model (steward-only API). */
+  tutor: {
+    status: () => request("/tutor/status").then((r) => r.json()),
+    setOwnModelChat: (enabled) =>
+      request("/tutor/preferences", {
+        method: "PUT",
+        body: JSON.stringify({ own_model_chat: !!enabled }),
+      }).then((r) => r.json()),
+    lessons: ({ limit = 100 } = {}) =>
+      request(`/tutor/lessons?limit=${encodeURIComponent(limit)}`).then((r) => r.json()),
+    teach: (lesson) =>
+      request("/tutor/lessons", {
+        method: "POST",
+        body: JSON.stringify(lesson),
+      }).then((r) => r.json()),
+    job: (jobId, { lessonId } = {}) =>
+      request(
+        `/tutor/jobs/${encodeURIComponent(jobId)}${
+          lessonId ? `?lesson_id=${encodeURIComponent(lessonId)}` : ""
+        }`,
+      ).then((r) => r.json()),
+    forget: (lessonId) =>
+      request(`/tutor/lessons/${encodeURIComponent(lessonId)}`, { method: "DELETE" }).then((r) =>
+        r.json(),
+      ),
+    draft: ({ context, rejected, note }) =>
+      request("/tutor/lessons/draft", {
+        method: "POST",
+        body: JSON.stringify({ context, rejected, note }),
+      }).then((r) => r.json()),
+    sync: () => request("/tutor/sync", { method: "POST" }).then((r) => r.json()),
+    rollback: () => request("/tutor/rollback", { method: "POST" }).then((r) => r.json()),
+    advice: () => request("/tutor/advice").then((r) => r.json()),
+    addAdvice: (text) =>
+      request("/tutor/advice", {
+        method: "POST",
+        body: JSON.stringify({ text }),
+      }).then((r) => r.json()),
+    removeAdvice: (id) =>
+      request(`/tutor/advice/${encodeURIComponent(id)}`, { method: "DELETE" }).then((r) =>
+        r.json(),
+      ),
+    /** @param {"sft" | "dpo"} format */
+    exportLessons: (format) =>
+      request(`/tutor/export?format=${format === "dpo" ? "dpo" : "sft"}`).then((r) => r.text()),
+  },
 };

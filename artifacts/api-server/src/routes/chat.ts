@@ -122,6 +122,15 @@ import { optionalChatContext } from "../lib/optionalChatContext";
 import { classifyDbError, errorCauseBlob } from "../lib/dbErrors";
 import { finalizeAssistantReply } from "../lib/visibleAssistantReply";
 import {
+  OWN_MODEL_EMPTY_REPLY,
+  OWN_MODEL_TEMPERATURE,
+  asOwnModelError,
+  buildOwnModelMessages,
+  createOwnModelChatStream,
+  ownModelId,
+  wantsOwnModelReply,
+} from "../lib/ownModel";
+import {
   beginChatTurn,
   checkpointGeneratedTurn,
   classifyChatTurnReuse,
@@ -748,6 +757,8 @@ async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
     character_id: activeCharacterId,
     character_name: activeCharacterName,
     timestamp: turn.updatedAt.toISOString(),
+    // Which model spoke — the chat UI marks replies from the steward's own model.
+    ...(typeof metadata.brand === "string" ? { llm_brand: metadata.brand } : {}),
     metadata: { turn_id: turn.id },
   };
   await appendStoreMessage(turn.userId, turn.sessionId, assistantMessage);
@@ -1927,6 +1938,17 @@ router.post("/messages", async (req, res) => {
     mode,
     deepMode: Boolean(body.deep_mode),
   });
+  // A steward who switched on "Answer my chats with my model" (Settings →
+  // Model Tutor) gets their own model instead of the Anima chain. The check
+  // reads the profile loaded above; nobody else pays for it.
+  const ownModelTurn = await wantsOwnModelReply({
+    userId,
+    sessionClaims: getAuth(req).sessionClaims,
+    profile: worldKnowledgeResult.profile,
+  }).catch((error) => {
+    logger.warn({ error }, "Own-model routing check failed; using the Anima chain");
+    return false;
+  });
 
   preStreamPersist = (async () => {
     await syncTypedSession({
@@ -1978,7 +2000,39 @@ router.post("/messages", async (req, res) => {
   telemetry.startGeneration();
     const releaseCompanionLlm = beginCompanionLlmTurn();
     try {
-    if (isLocalEnsembleEnabled()) {
+    if (ownModelTurn) {
+      usedProvider = "own";
+      usedBrand = "own";
+      usedModel = ownModelId();
+      sse.setPhase("waking");
+      const open = openStreamAbort(llmChatMessagesOpenTimeoutMs({ freeTierCascade: false }));
+      try {
+        const completion = await createOwnModelChatStream({
+          messages: buildOwnModelMessages(recentMessages, content),
+          maxTokens: replyMaxTokens,
+          // Cooler than the Anima chain's 0.85: a tiny model's freshly taught
+          // replies only show reliably with less sampling noise.
+          temperature: OWN_MODEL_TEMPERATURE,
+          signal: open.signal,
+        });
+        open.cancel();
+        sse.setPhase("generating");
+        usedModel = completion.model;
+        usedTier = completion.tier;
+        usedProvider = completion.provider;
+        usedBrand = completion.brand;
+        const streamed = await consumeLlmStream(completion.stream, consumeOpts);
+        // A tiny model sometimes closes its turn at once. Keep the bubble so
+        // the steward can teach it what to say there.
+        const replied = finalizeAssistantReply(streamed.content);
+        fullResponse = replied || OWN_MODEL_EMPTY_REPLY;
+        if (!replied) emitDelta(OWN_MODEL_EMPTY_REPLY);
+      } catch (error) {
+        throw asOwnModelError(error);
+      } finally {
+        open.cancel();
+      }
+    } else if (isLocalEnsembleEnabled()) {
       writeSse(res, { status: "ensemble", phase: "gathering", minds: [] });
       const drafts = await draftLocalMinds({
         tier: routed.tier,

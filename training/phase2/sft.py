@@ -26,8 +26,11 @@ from train import GPT, GPTConfig  # reuse the Phase 1 model
 # ----------------------------- Config -----------------------------
 
 SFT_DATA = str(ROOT / "data" / "sft" / "anima_dialogues.jsonl")
+# Corrections taught in the app (Settings -> Model Tutor -> download). Optional.
+STEWARD_SFT_DATA = str(ROOT / "data" / "sft" / "steward_lessons.jsonl")
 CKPT_PATH = str(ROOT / "out" / "anima-tiny" / "ckpt.pt")
-TOK_DIR = str(ROOT / "data" / "anima_tokens")
+# ANIMA_TOK_DIR lets a hosted model server keep the tokenizer on a volume.
+TOK_DIR = os.environ.get("ANIMA_TOK_DIR", "").strip() or str(ROOT / "data" / "anima_tokens")
 OUT_DIR = str(ROOT / "out" / "anima-sft")
 MAX_EXAMPLES = 20000
 EPOCHS = 3
@@ -94,31 +97,24 @@ def encode_text(text: str):
 
 def encode_conversation(messages):
     init_tokenizer()
-    ids, targets = [], []
-    ids.append(eot_id)
-    targets.append(-100)
+    ids, targets = [eot_id], [-100]
+    anima_id = role_ids["anima"]
     for m in messages:
         rid = _role_token_id(m["role"])
+        text_ids = encode_text(m["content"])
         ids.append(rid)
         targets.append(-100)  # role tokens are context, never targets
-        text_ids = encode_text(m["content"])
         ids.extend(text_ids)
-        targets.extend([-100] * len(text_ids))
         ids.append(eot_id)
-        targets.append(-100)
-    # mark Anima's text (and its closing <|endoftext|>) as tokens to predict
-    final_ids, final_targets = ids[:], targets[:]
-    in_anima = False
-    anima_id = role_ids["anima"]
-    for i, t in enumerate(final_ids):
-        if t == anima_id:
-            in_anima = True
-        elif in_anima and t == eot_id:
-            final_targets[i] = eot_id
-            in_anima = False
-        elif in_anima:
-            final_targets[i] = final_ids[i]
-    return final_ids, final_targets
+        # Anima's text (and its closing <|endoftext|>) are the tokens to
+        # predict. A turn marked "train": false stays context only — e.g. an
+        # earlier reply in a lesson that the steward may have corrected.
+        if rid == anima_id and m.get("train", True) is not False:
+            targets.extend(text_ids)
+            targets.append(eot_id)
+        else:
+            targets.extend([-100] * (len(text_ids) + 1))
+    return ids, targets
 
 
 def masked_next_token_loss(logits, y):
@@ -128,20 +124,26 @@ def masked_next_token_loss(logits, y):
     return F.cross_entropy(shift_logits, shift_y, ignore_index=-100)
 
 
+def sft_data_files():
+    """The main dialogue set plus in-app steward lessons when downloaded."""
+    return [p for p in (SFT_DATA, STEWARD_SFT_DATA) if os.path.isfile(p)]
+
+
 def load_dataset():
     examples = []
-    with open(SFT_DATA, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            conv = json.loads(line)["messages"]
-            if not any(m["role"] in ("anima", "assistant") for m in conv):
-                continue
-            ids, targets = encode_conversation(conv)
-            if len(ids) < 10 or len(ids) > cfg.block_size:
-                continue  # skip trivial or too-long convos
-            examples.append((ids, targets))
+    for path in sft_data_files():
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                conv = json.loads(line)["messages"]
+                if not any(m["role"] in ("anima", "assistant") for m in conv):
+                    continue
+                ids, targets = encode_conversation(conv)
+                if len(ids) < 10 or len(ids) > cfg.block_size:
+                    continue  # skip trivial or too-long convos
+                examples.append((ids, targets))
     random.shuffle(examples)
     return examples[:MAX_EXAMPLES]
 
@@ -180,7 +182,8 @@ def sft():
     examples = load_dataset()
     print(f"SFT examples: {len(examples)}")
     if not examples:
-        raise SystemExit("no usable examples — check data/sft/anima_dialogues.jsonl")
+        raise SystemExit("no usable examples — check data/sft/anima_dialogues.jsonl "
+                         "(and data/sft/steward_lessons.jsonl if you downloaded lessons)")
     model.train()
     optim = torch.optim.AdamW(model.parameters(), lr=LR, betas=(0.9, 0.95), weight_decay=0.1)
     total_steps = EPOCHS * (len(examples) // BATCH_SIZE + 1)

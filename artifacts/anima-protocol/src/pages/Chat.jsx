@@ -59,6 +59,9 @@ import { useEmotionalTheming } from "@/hooks/useEmotionalTheming";
 import { motion, AnimatePresence } from "framer-motion";
 import InventoryDrawer from "@/components/chat/InventoryDrawer";
 import CharacterBioSheet from "@/components/character/CharacterBioSheet";
+import TeachDialog from "@/components/tutor/TeachDialog";
+import { useModelTutor } from "@/hooks/useModelTutor";
+import { buildTeachTarget } from "@/lib/modelTutor";
 import SystemAlert from "@/components/chat/SystemAlert";
 import CalendarDisplay from "@/components/chat/CalendarDisplay";
 
@@ -243,6 +246,9 @@ export default function Chat() {
   const [inventoryItems, setInventoryItems] = useState([]);
   const [showInventory, setShowInventory] = useState(false);
   const [bioCharacter, setBioCharacter] = useState(null);
+  // Steward only: teach the own model a better reply (Settings → Model Tutor).
+  const modelTutor = useModelTutor();
+  const [teachTarget, setTeachTarget] = useState(null);
   const [showMentalLine, setShowMentalLine] = useState(false);
   const [mentalLineLoading, setMentalLineLoading] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -2017,6 +2023,11 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       } else {
         newAiMessages = [{ role: "assistant", content: strippedResult || result, character_name: charName, timestamp: new Date().toISOString() }];
       }
+      // Remember which model spoke so a reply from the steward's own model
+      // is marked (and can be taught) after it is saved and reloaded.
+      if (resultPayload.brand) {
+        newAiMessages = newAiMessages.map((m) => ({ ...m, llm_brand: resultPayload.brand }));
+      }
 
       if (imageAttachments.length && newAiMessages[0]) {
         newAiMessages[0] = {
@@ -2898,6 +2909,20 @@ Return JSON:
                 onDeleteMessage={handleDeleteMessage}
                 onRegenerateMessage={handleRegenerateMessage}
                 onAvatarClick={setBioCharacter}
+                onTeachMessage={
+                  modelTutor.isSteward
+                    ? (index, subMessage, part) =>
+                        setTeachTarget(
+                          buildTeachTarget({
+                            session: activeSession,
+                            messages: activeSession.messages,
+                            index,
+                            subMessage,
+                            part,
+                          }),
+                        )
+                    : undefined
+                }
               />
               
               {/* Render quest detection messages inline */}
@@ -3085,6 +3110,8 @@ Return JSON:
         open={!!bioCharacter}
         onClose={() => setBioCharacter(null)}
       />
+
+      <TeachDialog target={teachTarget} onClose={() => setTeachTarget(null)} />
 
       <DataExportModal
         isOpen={showExportModal}
