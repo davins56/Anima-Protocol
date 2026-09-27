@@ -47,7 +47,7 @@ HOP_BY_HOP = {
     "content-length",
 }
 # Hard ceiling so one translated generate cannot pin the single CPU slot.
-NUM_PREDICT_CAP = 512
+NUM_PREDICT_CAP = 200
 
 TOKEN = ""
 

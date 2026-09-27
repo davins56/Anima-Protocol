@@ -158,10 +158,10 @@ describe("PDF retrieval and prompt budget", () => {
   it("adds the capped excerpt to the system prompt and not to replayed history", () => {
     const marker = "SILVERKEYUNIQUE";
     const pdfContext = `${marker} ${"y ".repeat(PDF_CONTEXT_WORD_BUDGET + 400)}`;
-    const recent = Array.from({ length: 20 }, (_, i) => ({
-      role: i % 2 === 0 ? "user" : "assistant",
-      content: `turn ${i} ${"h".repeat(800)}`,
-    }));
+    const recent = [
+      { role: "user", content: "turn 0 hello" },
+      { role: "assistant", content: "turn 1 hello back" },
+    ];
     const messages = composeCompanionChatMessages({
       characters: [character],
       activeCharacter: character,

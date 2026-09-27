@@ -170,10 +170,12 @@ export const OLLAMA_MAX_TEMPERATURE = 0.75;
 
 /**
  * Hard ceiling for `num_predict` on every native Ollama call.
- * A 4k–8k decode on a single CPU blocks every later request, including a
- * one-word probe. 512 tokens is still a full companion beat.
+ * The droplet generates about 9 tokens/s on one vCPU (84 tokens in 9.4s).
+ * A chat reply stays in the 160–200 token band so one turn is roughly
+ * 18–22s of decode instead of holding the only slot for a long essay.
+ * Warm-up calls pass 1 and stay under this cap.
  */
-export const OLLAMA_NUM_PREDICT_CAP = 512;
+export const OLLAMA_NUM_PREDICT_CAP = 200;
 
 export function capOllamaNumPredict(requested: number | undefined): number {
   const raw =

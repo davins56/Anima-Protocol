@@ -39,13 +39,12 @@ export const PDF_MAX_CHUNKS = 120;
 
 /**
  * Words of PDF text injected into one companion turn, chat files and lore
- * combined. qwen2.5:0.5b on a 1 vCPU droplet prefills on the order of
- * 40–100 tokens/s. 1000 words is about 1,300 tokens, roughly 13–30s of
- * extra prefill that holds Ollama's single slot and pushes the next "hi"
- * past an 18s client timeout. 500 words is about half of that (~650 tokens,
- * ~7–16s) and still leaves a usable excerpt.
+ * combined. The droplet log showed a 3,916-token prompt against n_ctx 4096;
+ * PDF text is the first thing dropped when that prompt is over budget, and
+ * 300 words is about 400 tokens so a cache miss does not spend the whole
+ * 18s client limit on excerpt prefill.
  */
-export const PDF_CONTEXT_WORD_BUDGET = 500;
+export const PDF_CONTEXT_WORD_BUDGET = 300;
 
 /** How many full-text hits to consider before the word budget cuts them. */
 export const PDF_CONTEXT_MAX_HITS = 4;
