@@ -505,9 +505,8 @@ export default function Chat() {
         // Hyperdrive pool can miss a filter read, and a body without data.id
         // would never match filter even though /ChatSession/:id exists.
         // withMessages stays false: hydrating here would be a second full
-        // history read. The list budget matches the Worker store wall so a
-        // one-time schema ensure can finish; the global 8s cap still applies
-        // to ordinary writes.
+        // history read. The list budget matches the Worker store wall; the
+        // global 8s cap still applies to ordinary writes.
         const readOpts = openChatSessionReadOptions(STORE_LIST_TIMEOUT_MS);
         const byEntityId = await base44.entities.ChatSession.get(id, readOpts);
         if (byEntityId?.id) return [byEntityId];
