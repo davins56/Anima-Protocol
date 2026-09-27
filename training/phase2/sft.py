@@ -121,6 +121,71 @@ def encode_conversation(messages):
     return final_ids, final_targets
 
 
+def encode_prompt(messages, max_tokens):
+    """Encode a chat prompt ending in <|anima|>, within `max_tokens`.
+
+    Cutting the token list from the left starts the model mid-sentence inside
+    some message, a layout SFT never trained on, and it answers in fragments.
+    Keep whole messages instead, newest first: older turns (and a long system
+    prompt, which leads the list) drop out before the latest message does.
+    """
+    init_tokenizer()
+    segments = []
+    for m in messages:
+        segments.append([_role_token_id(m["role"])] + encode_text(m["content"]) + [eot_id])
+    # leading <|endoftext|> + trailing <|anima|>; 5 ids is the smallest prompt
+    budget = max(5, int(max_tokens)) - 2
+    kept = []
+    used = 0
+    for seg in reversed(segments):
+        if used + len(seg) > budget:
+            if not kept:
+                # The latest message alone is too long: keep its role token and
+                # the tail of its text, which carries the actual question.
+                room = max(1, budget - 2)
+                seg = [seg[0]] + seg[1:-1][-room:] + [eot_id]
+                kept.append(seg)
+            break
+        kept.append(seg)
+        used += len(seg)
+    ids = [eot_id]
+    for seg in reversed(kept):
+        ids.extend(seg)
+    ids.append(role_ids["anima"])
+    return ids
+
+
+def sample_next(logits, generated, temperature=0.8, top_k=40, top_p=0.9,
+                repetition_penalty=1.1, penalty_window=64):
+    """Pick the next token from last-position logits of shape (1, vocab).
+
+    A ~10M model sampled with temperature + top-k alone wanders into the low
+    probability tail (misspelled joins, random words) and loops on phrases.
+    top_p trims that tail; a light repetition penalty over the reply so far
+    (not the prompt) breaks loops without banning common words the user used.
+    """
+    logits = logits.float().clone()
+    recent = generated[-penalty_window:] if penalty_window else generated
+    if repetition_penalty and repetition_penalty != 1.0 and recent:
+        idx = torch.tensor(sorted(set(recent)), dtype=torch.long, device=logits.device)
+        picked = logits[0, idx]
+        logits[0, idx] = torch.where(picked > 0, picked / repetition_penalty, picked * repetition_penalty)
+    logits = logits / max(float(temperature), 1e-5)
+    k = min(int(top_k), logits.size(-1)) if top_k else 0
+    if k > 0:
+        v, _ = torch.topk(logits, k)
+        logits[logits < v[:, [-1]]] = float("-inf")
+    if top_p is not None and 0.0 < float(top_p) < 1.0:
+        sorted_logits, sorted_idx = torch.sort(logits, descending=True)
+        probs = F.softmax(sorted_logits, dim=-1)
+        # drop tokens once the mass before them already covers top_p
+        drop = probs.cumsum(dim=-1) - probs > float(top_p)
+        sorted_logits[drop] = float("-inf")
+        logits = torch.full_like(logits, float("-inf")).scatter(-1, sorted_idx, sorted_logits)
+    probs = F.softmax(logits, dim=-1)
+    return torch.multinomial(probs, 1)
+
+
 def masked_next_token_loss(logits, y):
     """Cross-entropy of next-token preds. Prompt positions stay ignore_index."""
     shift_logits = logits[:, :-1, :].reshape(-1, logits.size(-1))
@@ -209,7 +274,7 @@ def sft():
 # --------------------- Step 4: chat ---------------------
 
 @torch.no_grad()
-def chat(user_text, history=None, max_new_tokens=200, temperature=0.8, top_k=40):
+def chat(user_text, history=None, max_new_tokens=200, temperature=0.8, top_k=40, top_p=0.9):
     """Talk to the fine-tuned model. history: list of prior message dicts."""
     if model is None or cfg is None:
         raise RuntimeError("call sft() before chat()")
@@ -218,26 +283,19 @@ def chat(user_text, history=None, max_new_tokens=200, temperature=0.8, top_k=40)
     model.eval()
     history = history or []
     msgs = history + [{"role": "user", "content": user_text}]
-    ids, _ = encode_conversation(msgs)
-    # Open Anima's turn. The training format ends the user turn with <|endoftext|>.
-    ids.append(role_ids["anima"])
-    ids = ids[-cfg.block_size:]
-    temperature = max(float(temperature), 1e-5)
+    # Leave room for the reply so it is not generated with the prompt sliding out.
+    reserve = min(int(max_new_tokens), cfg.block_size // 2)
+    ids = encode_prompt(msgs, cfg.block_size - reserve)
     idx = torch.tensor([ids], dtype=torch.long, device=device)
+    out = []
     for _ in range(max_new_tokens):
-        idx_cond = idx[:, -cfg.block_size:]
-        logits, _ = model(idx_cond)
-        logits = logits[:, -1, :] / temperature
-        k = min(int(top_k), cfg.vocab_size) if top_k else 0
-        if k > 0:
-            v, _ = torch.topk(logits, k)
-            logits[logits < v[:, [-1]]] = float("-inf")
-        probs = F.softmax(logits, dim=-1)
-        nxt = torch.multinomial(probs, 1)
+        logits, _ = model(idx[:, -cfg.block_size:])
+        nxt = sample_next(logits[:, -1, :], out, temperature, top_k, top_p)
         if nxt.item() == eot_id or nxt.item() in role_ids.values():
             break
+        out.append(nxt.item())
         idx = torch.cat([idx, nxt], dim=1)
-    return tok.decode(idx[0, len(ids):].tolist())
+    return tok.decode(out)
 
 
 if __name__ == "__main__":

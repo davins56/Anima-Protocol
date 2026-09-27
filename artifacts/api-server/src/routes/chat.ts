@@ -120,7 +120,10 @@ import { ChatPipelineTelemetry } from "../lib/chatTelemetry";
 import { streamErrorMessage } from "../lib/chatStreamError";
 import { optionalChatContext } from "../lib/optionalChatContext";
 import { classifyDbError, errorCauseBlob } from "../lib/dbErrors";
-import { finalizeAssistantReply } from "../lib/visibleAssistantReply";
+import {
+  finalizeAssistantReply,
+  trimToLastCompleteSentence,
+} from "../lib/visibleAssistantReply";
 import {
   beginChatTurn,
   checkpointGeneratedTurn,
@@ -2016,7 +2019,9 @@ router.post("/messages", async (req, res) => {
         ensembleCombined = true;
 
         const streamed = await consumeLlmStream(completion.stream, consumeOpts);
-        fullResponse = streamed.content;
+        fullResponse = streamed.timedOut
+          ? trimToLastCompleteSentence(streamed.content)
+          : streamed.content;
       }
     } else {
       sse.setPhase("waking");
@@ -2042,7 +2047,13 @@ router.post("/messages", async (req, res) => {
       failedOver = completion.failedOver;
 
       const streamed = await consumeLlmStream(completion.stream, consumeOpts);
-      fullResponse = finalizeAssistantReply(streamed.content);
+      // A stalled or over-budget stream stops mid-word. `done.visible`
+      // repaints the bubble, so the saved and shown reply both end cleanly.
+      fullResponse = finalizeAssistantReply(
+        streamed.timedOut
+          ? trimToLastCompleteSentence(streamed.content)
+          : streamed.content,
+      );
     }
     } finally {
       releaseCompanionLlm();

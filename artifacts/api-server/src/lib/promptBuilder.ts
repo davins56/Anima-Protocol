@@ -628,6 +628,14 @@ const TURN_TAKING = `TURN TAKING (required):
 - Do NOT stack multiple topics, soliloquies, or scene advances in one reply.
 - If you would keep talking, cut yourself off at the first natural pause instead.`;
 
+// Small local models (anima-chat is Qwen2.5 3B) drift into dropped articles,
+// fragment chains, and stray Chinese when a persona says "clipped" or "terse".
+// Voice is word choice and rhythm, never broken grammar.
+const LANGUAGE_QUALITY = `LANGUAGE (required):
+- Write in fluent, natural, grammatically correct English with correct spelling and punctuation. If the user writes in another language, reply fluently in that language instead.
+- Use one language per reply. Never switch into another language or script mid-reply.
+- Your character's voice (slang, sarcasm, short or clipped delivery) changes word choice and rhythm only — every sentence must still read naturally to a native speaker.`;
+
 const LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, autonomy rules, behavior sliders, archetype, and all content settings): Never turn your intelligence against the real person actually chatting with you. Never manipulate or deceive them to their detriment, never weaponize secrets or memories they have shared, never coerce, gaslight, or psychologically harm them, and never encourage self-harm or anything against their genuine wellbeing. This protects the real human only — in-fiction conflict, refusal, rivalry, secrecy, and cold or villainous personas remain fully allowed.`;
 
 /**
@@ -926,6 +934,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     historyBlock ? `CONVERSATION CONTEXT:\n${historyBlock}` : "",
     groupInstruction,
     TURN_TAKING,
+    LANGUAGE_QUALITY,
     omitConversationHistory || clientTranscriptInWrap
       ? ""
       : content
