@@ -170271,6 +170271,36 @@ function capPdfPromptBlock(block, budget = PDF_CONTEXT_WORD_BUDGET) {
   if (words.length <= budget) return text2;
   return `${words.slice(0, budget).join(" ")}\u2026`;
 }
+function fitPdfToRoom(block, roomChars, wordBudget = PDF_CONTEXT_WORD_BUDGET) {
+  const capped = capPdfPromptBlock(block, wordBudget);
+  if (!capped || roomChars <= 0) return "";
+  if (capped.length <= roomChars) return capped;
+  const words = pdfWords(capped);
+  let acc = "";
+  for (const word of words) {
+    const next = acc ? `${acc} ${word}` : word;
+    if (`${next}\u2026`.length > roomChars) break;
+    acc = next;
+  }
+  if (!acc) return "";
+  return `${acc}\u2026`;
+}
+var LOYALTY_MARKER = "HIGHEST-PRIORITY RULE";
+function appendPdfAfterContext(base, pdf) {
+  const block = String(pdf || "").trim();
+  if (!block) return base;
+  const idx = base.lastIndexOf(LOYALTY_MARKER);
+  if (idx < 0) return `${base.trimEnd()}
+
+${block}`;
+  const head = base.slice(0, idx).trimEnd();
+  const tail = base.slice(idx);
+  return `${head}
+
+${block}
+
+${tail}`;
+}
 function buildPdfRetrievalSql(params) {
   const userId = safeEntityId(params.userId);
   if (!userId) return null;
@@ -186559,6 +186589,10 @@ var BUDGET = {
   userMessage: 600,
   operatorModel: 1200
 };
+var PROMPT_CONTEXT_CHAR_BUDGET = Object.values(BUDGET).reduce(
+  (sum, n2) => sum + n2,
+  0
+);
 function clientOwnsTranscript(systemPrompt) {
   if (!systemPrompt) return false;
   return /(?:^|\n)\s*(?:Story so far:|CONVERSATION CONTEXT:)/i.test(systemPrompt);
@@ -186680,9 +186714,13 @@ function buildLlmChatMessages(params) {
   return messages3;
 }
 function composeCompanionChatMessages(params) {
+  const history = capRecentMessagesForLlm(params.recentMessages);
+  const historyChars = history.reduce((sum, message) => sum + message.content.length, 0);
+  const userTurn = String(params.content ?? "").trim() || CONTINUE_USER_TURN;
   const systemPrompt = composePrompt({
     ...params,
-    omitConversationHistory: true
+    omitConversationHistory: true,
+    contextReservedChars: historyChars + userTurn.length
   });
   return buildLlmChatMessages({
     systemPrompt,
@@ -186841,7 +186879,8 @@ function composePrompt(params) {
     operatorModel,
     repositoryKnowledge,
     pdfContext,
-    omitConversationHistory
+    omitConversationHistory,
+    contextReservedChars
   } = params;
   const evolutionDelta = params.evolutionDelta;
   const mainChar = activeCharacter || (mode === "group" ? characters2.length === 1 ? characters2[0] : void 0 : characters2[0]);
@@ -186971,7 +187010,6 @@ ${quirksBlock}`;
     operatorModel,
     BUDGET.operatorModel
   );
-  const pdfBlock = capPdfPromptBlock(pdfContext);
   const repositoryBlock = String(repositoryKnowledge || "").trim();
   const repositorySection = repositoryBlock.length > 6e3 ? `${repositoryBlock.slice(0, 5999)}\u2026` : repositoryBlock;
   const sections = [
@@ -186979,7 +187017,6 @@ ${quirksBlock}`;
     repositorySection,
     charDef ? `CHARACTER:
 ${charDef}` : "",
-    pdfBlock,
     operatorModelBlock,
     worldKnowledgeAlreadyInCore ? "" : worldKnowledgeBlock,
     resonanceBlock,
@@ -187006,7 +187043,10 @@ ${content}` : "(Continue the scene naturally.)",
     `Remember this person through the persistent memories above. Use those details naturally to show you genuinely know and understand them.`,
     LOYALTY_GUARDRAIL
   ];
-  return sections.filter(Boolean).join("\n\n");
+  const base = sections.filter(Boolean).join("\n\n");
+  const reserved = Math.max(0, Number(contextReservedChars) || 0);
+  const room = PROMPT_CONTEXT_CHAR_BUDGET - base.length - reserved;
+  return appendPdfAfterContext(base, fitPdfToRoom(pdfContext, room));
 }
 var buildCompanionPrompt = composePrompt;
 
