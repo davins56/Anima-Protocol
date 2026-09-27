@@ -6,11 +6,12 @@ import {
   chatMayIncludePdfContext,
   packPdfContext,
   pdfSearchTerms,
+  pdfWordCount,
   safeEntityId,
   sanitizePdfFilename,
 } from "../src/lib/pdf/context";
 import { extractPdfPages } from "../src/lib/pdf/extract";
-import { PDF_CONTEXT_CHAR_BUDGET, PDF_MAX_PAGES } from "../src/lib/pdf/limits";
+import { PDF_CONTEXT_WORD_BUDGET, PDF_MAX_PAGES } from "../src/lib/pdf/limits";
 import {
   composeCompanionChatMessages,
   composePrompt,
@@ -94,35 +95,58 @@ describe("PDF retrieval and prompt budget", () => {
     expect(sql!.text).not.toContain("user_owner");
     expect(sql!.text).not.toContain("DROP TABLE");
     expect(sql!.text).not.toContain("silver key");
+    expect(sql!.text).toContain("to_tsquery('english'");
+    expect(sql!.text).toContain("search_vector");
+    expect(sql!.text).not.toMatch(/embedding|vectorize|ollama/i);
     expect(sql!.values).toContain("char_1");
     expect(sql!.values).not.toContain("bad id");
     expect(safeEntityId("user' OR 1=1")).toBeNull();
   });
 
-  it("keeps packed excerpts inside the character budget", () => {
+  it("keeps chat and lore excerpts inside one word budget", () => {
+    const chatWords = Array.from({ length: 800 }, (_, i) => `chat${i}`).join(" ");
+    const loreWords = Array.from({ length: 800 }, (_, i) => `lore${i}`).join(" ");
     const packed = packPdfContext({
-      files: [{ filename: "novel.pdf", scope: "lore", pageCount: 40 }],
+      files: [
+        { filename: "notes.pdf", scope: "chat", pageCount: 2 },
+        { filename: "novel.pdf", scope: "lore", pageCount: 40 },
+      ],
       hits: [
+        {
+          filename: "notes.pdf",
+          scope: "chat",
+          pageStart: 1,
+          pageEnd: 1,
+          content: chatWords,
+          rank: 2,
+        },
         {
           filename: "novel.pdf",
           scope: "lore",
           pageStart: 3,
           pageEnd: 4,
-          content: "Z".repeat(20_000),
+          content: loreWords,
           rank: 1,
         },
       ],
     });
-    expect(packed.length).toBeLessThanOrEqual(PDF_CONTEXT_CHAR_BUDGET);
+    expect(pdfWordCount(packed)).toBeLessThanOrEqual(PDF_CONTEXT_WORD_BUDGET);
+    expect(pdfWordCount(packed)).toBeGreaterThan(700);
+    expect(packed).toContain("chat0");
+    expect(packed).toContain("lore0");
+    expect(packed).toContain("notes.pdf");
     expect(packed).toContain("novel.pdf");
-    expect(capPdfPromptBlock("Q".repeat(50_000)).length).toBeLessThanOrEqual(
-      PDF_CONTEXT_CHAR_BUDGET,
+    expect(pdfWordCount(capPdfPromptBlock(`${"Q ".repeat(5_000)}`))).toBeLessThanOrEqual(
+      PDF_CONTEXT_WORD_BUDGET,
+    );
+    expect(pdfWordCount(capPdfPromptBlock("Z".repeat(50_000)))).toBeLessThanOrEqual(
+      PDF_CONTEXT_WORD_BUDGET,
     );
   });
 
   it("adds the capped excerpt to the system prompt and not to replayed history", () => {
     const marker = "SILVERKEYUNIQUE";
-    const pdfContext = `${marker}${"y".repeat(PDF_CONTEXT_CHAR_BUDGET + 800)}`;
+    const pdfContext = `${marker} ${"y ".repeat(PDF_CONTEXT_WORD_BUDGET + 400)}`;
     const recent = Array.from({ length: 20 }, (_, i) => ({
       role: i % 2 === 0 ? "user" : "assistant",
       content: `turn ${i} ${"h".repeat(800)}`,
@@ -138,11 +162,11 @@ describe("PDF retrieval and prompt budget", () => {
     });
     const system = messages.find((message) => message.role === "system")?.content || "";
     expect(system).toContain(marker);
-    const afterMarker = system.slice(system.indexOf(marker) + marker.length);
-    const yRun = afterMarker.match(/^y*/)?.[0] ?? "";
-    expect(marker.length + yRun.length).toBeLessThanOrEqual(PDF_CONTEXT_CHAR_BUDGET);
-    expect(yRun.length).toBeGreaterThan(0);
-    expect(yRun.length).toBeLessThan(PDF_CONTEXT_CHAR_BUDGET + 800);
+    const afterMarker = system.slice(system.indexOf(marker));
+    const excerpt = afterMarker.match(/^SILVERKEYUNIQUE(?:\s+y)+/)?.[0] ?? "";
+    expect(pdfWordCount(excerpt)).toBeGreaterThan(0);
+    expect(pdfWordCount(excerpt)).toBeLessThanOrEqual(PDF_CONTEXT_WORD_BUDGET);
+    expect(pdfWordCount(excerpt)).toBeLessThan(PDF_CONTEXT_WORD_BUDGET + 400);
     const replay = messages.filter((message) => message.role !== "system");
     expect(replay.map((message) => message.content).join("\n")).not.toContain(marker);
     const history = replay.filter((message) => message.content.startsWith("turn "));
@@ -160,12 +184,13 @@ describe("PDF retrieval and prompt budget", () => {
       recentMessages: [],
       content: "hello",
       mode: "solo",
-      pdfContext: "Z".repeat(20_000),
+      pdfContext: "zeta ".repeat(PDF_CONTEXT_WORD_BUDGET + 500),
     });
-    const start = prompt.indexOf("Z");
+    const start = prompt.indexOf("zeta");
     expect(start).toBeGreaterThan(-1);
-    const run = prompt.slice(start).match(/^Z+…?/)?.[0] || "";
-    expect(run.replace(/…$/, "").length).toBeLessThanOrEqual(PDF_CONTEXT_CHAR_BUDGET);
+    const run = prompt.slice(start).match(/^(?:zeta\s+)+/)?.[0] || "";
+    expect(pdfWordCount(run)).toBeLessThanOrEqual(PDF_CONTEXT_WORD_BUDGET);
+    expect(pdfWordCount(run)).toBeGreaterThan(100);
   });
 
   it("sends PDF text only when the provider chain is local-only", () => {

@@ -1,5 +1,53 @@
 import type { LlmProviderId } from "../llmFailover";
-import { PDF_CONTEXT_CHAR_BUDGET, PDF_CONTEXT_MAX_HITS } from "./limits";
+import { PDF_CONTEXT_MAX_HITS, PDF_CONTEXT_WORD_BUDGET } from "./limits";
+
+/**
+ * A normal word is whitespace-separated. A huge token with no spaces still
+ * counts as several words so a spaceless dump cannot skip the budget.
+ */
+const LONG_TOKEN_CHARS = 24;
+
+export function pdfWords(text: string): string[] {
+  const trimmed = String(text || "")
+    .trim()
+    .replace(/…+$/u, "")
+    .trim();
+  if (!trimmed) return [];
+  const out: string[] = [];
+  for (const token of trimmed.split(/\s+/)) {
+    if (!token) continue;
+    if (token.length <= LONG_TOKEN_CHARS) {
+      out.push(token);
+      continue;
+    }
+    for (let i = 0; i < token.length; i += LONG_TOKEN_CHARS) {
+      out.push(token.slice(i, i + LONG_TOKEN_CHARS));
+    }
+  }
+  return out;
+}
+
+export function pdfWordCount(text: string): number {
+  return pdfWords(text).length;
+}
+
+function takeWords(
+  text: string,
+  room: number,
+): { text: string; words: number; truncated: boolean } {
+  const words = pdfWords(text);
+  if (room <= 0 || words.length === 0) {
+    return { text: "", words: 0, truncated: words.length > 0 };
+  }
+  if (words.length <= room) {
+    return { text: text.trim(), words: words.length, truncated: false };
+  }
+  return {
+    text: `${words.slice(0, room).join(" ")}…`,
+    words: room,
+    truncated: true,
+  };
+}
 
 const STOP_WORDS = new Set([
   "a", "an", "the", "and", "or", "of", "to", "in", "on", "for", "with",
@@ -87,8 +135,9 @@ export type PdfFileSummary = {
 };
 
 /**
- * Fit file names plus the best excerpts into PDF_CONTEXT_CHAR_BUDGET.
- * The returned string is what may be appended to the system prompt.
+ * Fit file names plus the best excerpts into PDF_CONTEXT_WORD_BUDGET.
+ * Chat hits and lore hits share that one budget. The returned string is
+ * what may be appended to the system prompt.
  */
 export function packPdfContext(
   input: {
@@ -96,7 +145,7 @@ export function packPdfContext(
     hits?: PdfHit[];
     fallback?: PdfHit | null;
   },
-  budget = PDF_CONTEXT_CHAR_BUDGET,
+  budget = PDF_CONTEXT_WORD_BUDGET,
 ): string {
   const files = input.files ?? [];
   const hits = (input.hits ?? []).slice(0, PDF_CONTEXT_MAX_HITS);
@@ -111,37 +160,42 @@ export function packPdfContext(
         .map((file) => `${file.scope} "${file.filename}" (${file.pageCount}p)`)
         .join("; ")}`
     : "";
-  let body = [intro, fileLine].filter(Boolean).join("\n");
-  if (body.length > budget) {
-    return `${body.slice(0, Math.max(0, budget - 1))}…`;
-  }
 
+  const pieces: string[] = [];
+  let used = 0;
+  const add = (text: string): boolean => {
+    const taken = takeWords(text, budget - used);
+    if (!taken.text) return false;
+    pieces.push(taken.text);
+    used += taken.words;
+    return !taken.truncated;
+  };
+
+  if (!add(intro)) return pieces.join("\n\n");
+  if (fileLine) add(fileLine);
   for (const hit of excerpts) {
+    if (used >= budget) break;
     const pageLabel =
       hit.pageEnd > hit.pageStart ? `p.${hit.pageStart}–${hit.pageEnd}` : `p.${hit.pageStart}`;
-    const header = `\n\nFrom ${hit.filename} (${hit.scope}, ${pageLabel}):\n`;
-    const room = budget - body.length - header.length;
-    if (room < 40) break;
-    body += header + hit.content.slice(0, room).trim();
+    const header = `From ${hit.filename} (${hit.scope}, ${pageLabel}):`;
+    if (!add(`${header}\n${hit.content}`)) break;
   }
-  if (body.length > budget) {
-    return `${body.slice(0, Math.max(0, budget - 1))}…`;
-  }
-  return body;
+  return pieces.join("\n\n");
 }
 
 /**
  * Last-line cap used by the prompt builder so a bug upstream cannot
- * push a whole PDF into the model.
+ * push a whole PDF into the model. Chat and lore share this word budget.
  */
 export function capPdfPromptBlock(
   block: string | null | undefined,
-  budget = PDF_CONTEXT_CHAR_BUDGET,
+  budget = PDF_CONTEXT_WORD_BUDGET,
 ): string {
   const text = String(block || "").trim();
   if (!text) return "";
-  if (text.length <= budget) return text;
-  return `${text.slice(0, Math.max(0, budget - 1))}…`;
+  const words = pdfWords(text);
+  if (words.length <= budget) return text;
+  return `${words.slice(0, budget).join(" ")}…`;
 }
 
 type PdfSqlMode = "search" | "fallback" | "files";

@@ -170055,7 +170055,7 @@ var PDF_MAX_FILES_PER_LORE = 12;
 var PDF_CHUNK_TARGET_CHARS = 900;
 var PDF_CHUNK_OVERLAP_CHARS = 100;
 var PDF_MAX_CHUNKS = 120;
-var PDF_CONTEXT_CHAR_BUDGET = 1200;
+var PDF_CONTEXT_WORD_BUDGET = 1e3;
 var PDF_CONTEXT_MAX_HITS = 4;
 
 // src/lib/pdf/chunk.ts
@@ -170108,6 +170108,37 @@ function chunkPdfPages(pages, options = {}) {
 }
 
 // src/lib/pdf/context.ts
+var LONG_TOKEN_CHARS = 24;
+function pdfWords(text2) {
+  const trimmed = String(text2 || "").trim().replace(/…+$/u, "").trim();
+  if (!trimmed) return [];
+  const out = [];
+  for (const token of trimmed.split(/\s+/)) {
+    if (!token) continue;
+    if (token.length <= LONG_TOKEN_CHARS) {
+      out.push(token);
+      continue;
+    }
+    for (let i3 = 0; i3 < token.length; i3 += LONG_TOKEN_CHARS) {
+      out.push(token.slice(i3, i3 + LONG_TOKEN_CHARS));
+    }
+  }
+  return out;
+}
+function takeWords(text2, room) {
+  const words = pdfWords(text2);
+  if (room <= 0 || words.length === 0) {
+    return { text: "", words: 0, truncated: words.length > 0 };
+  }
+  if (words.length <= room) {
+    return { text: text2.trim(), words: words.length, truncated: false };
+  }
+  return {
+    text: `${words.slice(0, room).join(" ")}\u2026`,
+    words: room,
+    truncated: true
+  };
+}
 var STOP_WORDS = /* @__PURE__ */ new Set([
   "a",
   "an",
@@ -170206,37 +170237,39 @@ function sanitizePdfFilename(name) {
   }
   return base || "document.pdf";
 }
-function packPdfContext(input2, budget = PDF_CONTEXT_CHAR_BUDGET) {
+function packPdfContext(input2, budget = PDF_CONTEXT_WORD_BUDGET) {
   const files = input2.files ?? [];
   const hits = (input2.hits ?? []).slice(0, PDF_CONTEXT_MAX_HITS);
   const excerpts = hits.length ? hits : input2.fallback ? [input2.fallback] : [];
   if (!files.length && !excerpts.length) return "";
   const intro = "REFERENCE EXCERPTS from PDFs the user shared. Use only this text. Do not invent pages you were not given.";
   const fileLine = files.length ? `Files: ${files.slice(0, 8).map((file2) => `${file2.scope} "${file2.filename}" (${file2.pageCount}p)`).join("; ")}` : "";
-  let body = [intro, fileLine].filter(Boolean).join("\n");
-  if (body.length > budget) {
-    return `${body.slice(0, Math.max(0, budget - 1))}\u2026`;
-  }
+  const pieces = [];
+  let used = 0;
+  const add = (text2) => {
+    const taken = takeWords(text2, budget - used);
+    if (!taken.text) return false;
+    pieces.push(taken.text);
+    used += taken.words;
+    return !taken.truncated;
+  };
+  if (!add(intro)) return pieces.join("\n\n");
+  if (fileLine) add(fileLine);
   for (const hit of excerpts) {
+    if (used >= budget) break;
     const pageLabel = hit.pageEnd > hit.pageStart ? `p.${hit.pageStart}\u2013${hit.pageEnd}` : `p.${hit.pageStart}`;
-    const header = `
-
-From ${hit.filename} (${hit.scope}, ${pageLabel}):
-`;
-    const room = budget - body.length - header.length;
-    if (room < 40) break;
-    body += header + hit.content.slice(0, room).trim();
+    const header = `From ${hit.filename} (${hit.scope}, ${pageLabel}):`;
+    if (!add(`${header}
+${hit.content}`)) break;
   }
-  if (body.length > budget) {
-    return `${body.slice(0, Math.max(0, budget - 1))}\u2026`;
-  }
-  return body;
+  return pieces.join("\n\n");
 }
-function capPdfPromptBlock(block, budget = PDF_CONTEXT_CHAR_BUDGET) {
+function capPdfPromptBlock(block, budget = PDF_CONTEXT_WORD_BUDGET) {
   const text2 = String(block || "").trim();
   if (!text2) return "";
-  if (text2.length <= budget) return text2;
-  return `${text2.slice(0, Math.max(0, budget - 1))}\u2026`;
+  const words = pdfWords(text2);
+  if (words.length <= budget) return text2;
+  return `${words.slice(0, budget).join(" ")}\u2026`;
 }
 function buildPdfRetrievalSql(params) {
   const userId = safeEntityId(params.userId);

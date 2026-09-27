@@ -177,7 +177,7 @@ export interface PromptBuilderParams {
 
   /**
    * Capped excerpts from PDFs the user shared in this chat or saved as
-   * companion lore. Already limited to PDF_CONTEXT_CHAR_BUDGET.
+   * companion lore. Already limited to PDF_CONTEXT_WORD_BUDGET.
    */
   pdfContext?: string | null;
 
