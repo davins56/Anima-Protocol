@@ -110,6 +110,18 @@ def resolve_host(host: str | None = None) -> str:
     return host
 
 
+def _bind_serving_model() -> None:
+    """The sampler reads sft.model. Point it at the weights being served now.
+
+    Learning replaces live.model with a new object, so this has to run on
+    each request rather than once at startup.
+    """
+    if live is None:
+        return
+    sft.model = live.model
+    sft.cfg = live.cfg
+
+
 def load_runtime():
     global live, device
     sft.init_tokenizer(os.environ.get("ANIMA_TOK_DIR", "").strip() or None)
@@ -232,6 +244,24 @@ def stream_reply(prompt_ids, max_new_tokens, temperature, top_k, **kw):
     if len(final) > len(sent) and final.startswith(sent):
         yield final[len(sent):]
     return finish_reason
+
+
+def _stream_model_reply(model, prompt_ids, max_tokens, temperature, top_k):
+    """Yield reply text from the weights being served. Return value is finish_reason.
+
+    Stops on the model's end-of-turn token, matching modeling.generate_text,
+    so a streamed reply is the same text as the non-streaming one.
+    """
+    count = 0
+
+    def counted():
+        nonlocal count
+        for token in modeling.iter_reply_tokens(model, prompt_ids, max_tokens, temperature, top_k):
+            count += 1
+            yield token
+
+    yield from modeling.iter_text_deltas(counted())
+    return "length" if count >= max(int(max_tokens), 0) else "stop"
 
 
 def _sse_chunks(deltas, completion_id: str, created: int, model_name: str):
@@ -408,12 +438,26 @@ def chat(req: ChatRequest, _auth: None = Depends(require_token)):
     )
     completion_id = "chatcmpl-" + uuid.uuid4().hex[:12]
     created = int(time.time())
+    # Fit the prompt before the 200 goes out so a bad request still gets
+    # a real status code instead of a broken stream.
+    prompt_ids = sft.prompt_for_reply(messages, sampling["max_new_tokens"])
+    # Same stop rule as learning (modeling.generate_text): a taught reply can
+    # end as soon as the model closes the turn. The complete-thought minimum
+    # would pad a short correction.
     if req.stream:
-        # Fit the prompt before the 200 goes out so a bad request still gets
-        # a real status code instead of a broken stream.
-        prompt_ids = sft.prompt_for_reply(messages, sampling["max_new_tokens"])
         return StreamingResponse(
-            _sse_chunks(stream_reply(prompt_ids, **sampling), completion_id, created, req.model),
+            _sse_chunks(
+                _stream_model_reply(
+                    live.model,
+                    prompt_ids,
+                    sampling["max_new_tokens"],
+                    sampling["temperature"],
+                    sampling["top_k"],
+                ),
+                completion_id,
+                created,
+                req.model,
+            ),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
