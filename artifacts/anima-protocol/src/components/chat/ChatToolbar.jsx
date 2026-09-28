@@ -13,6 +13,7 @@ import ProtocolUpgradeConsole from "./ProtocolUpgradeConsole";
 import DeviceScanConsole from "./DeviceScanConsole";
 import PortaledFixedPanel from "./PortaledFixedPanel";
 import { useAuth } from "@/lib/AuthContext";
+import { AI_COMPANION_HEADER_LINE } from "@/lib/aiCompanionNotice";
 
 export default function ChatToolbar({
   activeSession,
@@ -127,6 +128,13 @@ export default function ChatToolbar({
           </button>
         </div>
       </div>
+
+      <p
+        data-testid="ai-companion-header-line"
+        className="w-full px-3 py-2 text-base leading-snug text-cyan-50 border-t border-cyan-300/40 bg-cyan-950/70"
+      >
+        {AI_COMPANION_HEADER_LINE}
+      </p>
 
       <PortaledFixedPanel
         open={showActionsPanel}

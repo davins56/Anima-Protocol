@@ -145,7 +145,11 @@ import {
 import { resolveChatModePolicy } from "../lib/chatModeRegistry";
 import {
   assessTherapySafety,
+  companionCrisisResourceCard,
   crisisResourceForCountry,
+  detectCompanionCrisis,
+  noteCompanionCrisisResource,
+  type CrisisResourceCard,
 } from "../lib/therapySafety";
 import { ChatPipelineTelemetry } from "../lib/chatTelemetry";
 import { streamErrorMessage } from "../lib/chatStreamError";
@@ -2103,6 +2107,7 @@ router.post("/messages", async (req, res) => {
   let activeCharacterId: string | null = null;
   let isCrossover = false;
   let preStreamPersist: Promise<void> = Promise.resolve();
+  let crisisResourceCard: CrisisResourceCard | null = null;
   const shouldPersist = body.persist !== false;
 
   try {
@@ -2370,6 +2375,13 @@ router.post("/messages", async (req, res) => {
     modePolicy.name === "therapy"
       ? assessTherapySafety({ content, recentMessages })
       : null;
+  crisisResourceCard = detectCompanionCrisis(content)
+    ? companionCrisisResourceCard()
+    : null;
+  if (crisisResourceCard) {
+    noteCompanionCrisisResource({ sessionId, turnId, mode });
+    writeSse(res, { crisis_resource: crisisResourceCard });
+  }
 
   intimacyProfile = null;
   intimacyScene = null;
@@ -2423,6 +2435,7 @@ router.post("/messages", async (req, res) => {
       crisisResource: crisisResourceForCountry(
         worldKnowledgeResult.countryCode,
       ),
+      companionCrisis: Boolean(crisisResourceCard),
       hiddenSequences: (body.metadata?.hidden_sequences as any) || null,
       conversationalWeather: (body.metadata?.conversational_weather as any) || null,
       intimacyProfile,
@@ -2976,6 +2989,7 @@ router.post("/messages", async (req, res) => {
     writeSse(res, {
       done: true,
       visible: fullResponse,
+      ...(crisisResourceCard ? { crisis_resource: crisisResourceCard } : {}),
       model: usedModel,
       tier: usedTier,
       provider: usedProvider,
@@ -3005,6 +3019,7 @@ router.post("/messages", async (req, res) => {
       done: {
         done: true,
         visible: fullResponse,
+        ...(crisisResourceCard ? { crisis_resource: crisisResourceCard } : {}),
         model: usedModel,
         tier: usedTier,
         provider: usedProvider,
@@ -3035,7 +3050,10 @@ router.post("/messages", async (req, res) => {
     logger.error({ err }, "Chat message stream failed");
     flight.fail(err);
     await markTurnFailed(turnId, userId, err).catch(() => {});
-    writeSse(res, { error: streamErrorMessage(err) });
+    writeSse(res, {
+      error: streamErrorMessage(err),
+      ...(crisisResourceCard ? { crisis_resource: crisisResourceCard } : {}),
+    });
     telemetry.report("failed", {
       provider: usedProvider,
       model: usedModel,

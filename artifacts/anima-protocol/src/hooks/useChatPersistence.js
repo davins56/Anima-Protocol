@@ -20,6 +20,14 @@ export function assignTurnMessageIds(messages, turnId) {
       eventIndex += 1;
       return { ...message, id: `${turnId}:${suffix}`, turn_id: turnId };
     }
+    if (message?.type === "crisis_resource" || message?.type === "ai_notice") {
+      return {
+        ...message,
+        id: `${turnId}:${message.type === "crisis_resource" ? "crisis" : "ai-notice"}`,
+        turn_id: turnId,
+        role: "system",
+      };
+    }
     if (message?.role === "user") {
       const suffix = userIndex === 0 ? "user" : `user:${userIndex}`;
       userIndex += 1;
