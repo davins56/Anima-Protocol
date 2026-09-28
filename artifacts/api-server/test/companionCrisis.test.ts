@@ -113,17 +113,26 @@ describe("crisis care stays out of the cached prefix and the transcript", () => 
   };
 
   it("does not change the stable prefix on a crisis turn", () => {
-    const calm = companionStaticPrefix({ ...base, content: "Hello", companionCrisis: false });
-    const crisis = companionStaticPrefix({
+    const calmParams = { ...base, content: "Hello", companionCrisis: false };
+    const crisisParams = {
       ...base,
       content: "I want to kill myself",
       companionCrisis: true,
-    });
+    };
+    const calm = companionStaticPrefix(calmParams);
+    const crisis = companionStaticPrefix(crisisParams);
     expect(crisis).toBe(calm);
     expect(calm.indexOf("CHARACTER:")).toBeLessThan(calm.indexOf("HIGHEST-PRIORITY RULE"));
     expect(calm).not.toContain(COMPANION_CRISIS_TURN_LINE);
     expect(calm).not.toContain(AI_COMPANION_NOTICE_TEXT);
     expect(calm).not.toContain(CRISIS_RESOURCE_CARD_TEXT);
+
+    const calmSystem = messagesForLocalOllama(composeCompanionChatMessages(calmParams))[0]
+      ?.content;
+    const crisisSystem = messagesForLocalOllama(composeCompanionChatMessages(crisisParams))[0]
+      ?.content;
+    expect(crisisSystem).toBe(calmSystem);
+    expect(crisisSystem).not.toContain(COMPANION_CRISIS_TURN_LINE);
   });
 
   it("puts the care line on crisis turns only, and never the notice or the card", () => {
