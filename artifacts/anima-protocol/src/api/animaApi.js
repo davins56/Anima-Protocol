@@ -1,6 +1,7 @@
 import { apiUrl } from '@/lib/apiOrigin';
 import { authHeaders } from './authBridge';
 import { readSseJsonStream } from '@/lib/readSseJsonStream';
+import { streamChatReply } from '@/lib/streamChatReply';
 
 export function chatAuthRequiredError() {
   const err = new Error(
@@ -287,16 +288,8 @@ export const animaApi = {
       );
     },
 
-    completeMessage: async (payload) => {
-      let content = "";
-      let done = null;
-      for await (const event of animaApi.chat.sendMessage(payload)) {
-        if (event.error) throw new Error(event.error);
-        if (event.content) content += event.content;
-        if (event.done) done = event;
-      }
-      return { content, ...done };
-    },
+    completeMessage: (payload) =>
+      streamChatReply(animaApi.chat.sendMessage(payload)),
 
     turnStatus: (turnId) =>
       request(`/chat/turns/${encodeURIComponent(turnId)}`).then((r) => r.json()),
