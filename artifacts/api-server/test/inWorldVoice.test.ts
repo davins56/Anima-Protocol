@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { initCompanionAffect } from "../src/lib/companionAffect";
 import {
+  CONTINUE_USER_TURN,
   FIRSTHAND_NOTE_LABEL,
   IN_WORLD_PRESENCE,
   IN_WORLD_VOICE,
@@ -73,6 +74,26 @@ describe("in-world companion prompt", () => {
     expect(calm[0]?.content).toContain(IN_WORLD_PRESENCE);
     expect(calm[0]?.content).toContain(IN_WORLD_VOICE);
     expect(String(calm.at(-1)?.content)).toContain("Tell me about Vormir.");
+  });
+
+  it("asks an empty continue turn to speak in first person without touching the prefix", () => {
+    const spoken = companionStaticPrefix({ ...base, content: "Tell me about Vormir." });
+    const empty = companionStaticPrefix({ ...base, content: "" });
+    expect(empty).toBe(spoken);
+    expect(empty).not.toContain(CONTINUE_USER_TURN);
+    const spokenFold = messagesForLocalOllama(
+      composeCompanionChatMessages({ ...base, content: "Tell me about Vormir." }),
+    );
+    const folded = messagesForLocalOllama(
+      composeCompanionChatMessages({ ...base, content: "" }),
+    );
+    expect(String(folded[0]?.content)).toBe(String(spokenFold[0]?.content));
+    expect(String(folded[0]?.content)).not.toContain(CONTINUE_USER_TURN);
+    const user = String(folded.at(-1)?.content || "");
+    expect(user).toContain(CONTINUE_USER_TURN);
+    expect(CONTINUE_USER_TURN).toBe("I'm here with you. Go on in your own first person.");
+    expect(user).not.toMatch(/continue the scene/i);
+    expect(user).not.toMatch(/Continue as /);
   });
 
   it("rewrites franchise labels in the card and does not name another world's title", () => {

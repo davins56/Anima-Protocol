@@ -163,7 +163,7 @@ import { optionalChatContext } from "../lib/optionalChatContext";
 import { classifyDbError, errorCauseBlob } from "../lib/dbErrors";
 import {
   finalizeAssistantReply,
-  trimToLastCompleteSentence,
+  settleCappedReply,
 } from "../lib/visibleAssistantReply";
 import {
   OWN_MODEL_EMPTY_REPLY,
@@ -2586,7 +2586,7 @@ router.post("/messages", async (req, res) => {
     const replyIsStock = (text: unknown) =>
       !crisisTurn && isStockAssistantLine(text, personaParts);
     const replyBreaksFourthWall = (text: unknown) =>
-      !crisisTurn && isFourthWallReply(text);
+      !crisisTurn && isFourthWallReply(text, activeChar?.name);
     const stockDeflection = () =>
       stockAssistantDeflection(activeChar?.name, pronounFromPersona(personaParts));
     const fourthWallRetryOpen = () =>
@@ -2621,11 +2621,11 @@ router.post("/messages", async (req, res) => {
           firstChunkMs: Math.min(consumeOpts.firstChunkMs, retryBudgetMs),
           totalMs: Math.min(consumeOpts.totalMs, retryBudgetMs),
         });
-        const retriedText = finalizeAssistantReply(
-          retried.timedOut
-            ? trimToLastCompleteSentence(retried.content)
-            : retried.content,
-        );
+        const retriedText = settleCappedReply(finalizeAssistantReply(retried.content), {
+          timedOut: retried.timedOut,
+          finishReason: retried.finishReason,
+          stoppedEarly: retried.stoppedEarly,
+        });
         // A fourth-wall backup that times out keeps the original reply.
         // A stock retry may still keep a trimmed sentence.
         if (retried.timedOut && !noteStock) return null;
@@ -2712,9 +2712,11 @@ router.post("/messages", async (req, res) => {
           onDelta: () => {},
           onReasoning: () => {},
         });
-        fullResponse = streamed.timedOut
-          ? trimToLastCompleteSentence(streamed.content)
-          : streamed.content;
+        fullResponse = settleCappedReply(finalizeAssistantReply(streamed.content), {
+          timedOut: streamed.timedOut,
+          finishReason: streamed.finishReason,
+          stoppedEarly: streamed.stoppedEarly,
+        });
       }
       const ensembleStock = !crisisTurn && replyIsStock(fullResponse);
       const ensembleFourth = replyBreaksFourthWall(fullResponse) && fourthWallRetryOpen();
@@ -2822,15 +2824,14 @@ router.post("/messages", async (req, res) => {
         },
         stopWhen: () => cutReason !== null,
       });
-      // A stalled or over-budget stream stops mid-word. `done.visible`
-      // repaints the bubble, so the saved and shown reply both end cleanly.
-      fullResponse = finalizeAssistantReply(
-        streamed.stoppedEarly
-          ? streamed.content
-          : streamed.timedOut
-            ? trimToLastCompleteSentence(streamed.content)
-            : streamed.content,
-      );
+      // A stall, a deadline, or finish_reason "length" stops mid-word.
+      // `done.visible` repaints the bubble, so the saved and shown reply
+      // both end on a finished sentence or a closed action. No extra call.
+      fullResponse = settleCappedReply(finalizeAssistantReply(streamed.content), {
+        timedOut: streamed.timedOut,
+        finishReason: streamed.finishReason,
+        stoppedEarly: streamed.stoppedEarly,
+      });
       if (localHost && !flushed && !cutReason && held && !fullResponse) {
         fullResponse = held;
       }
@@ -2913,11 +2914,11 @@ router.post("/messages", async (req, res) => {
             firstChunkMs: Math.min(consumeOpts.firstChunkMs, retryBudgetMs),
             totalMs: Math.min(consumeOpts.totalMs, retryBudgetMs),
           });
-          const retriedText = finalizeAssistantReply(
-            retried.timedOut
-              ? trimToLastCompleteSentence(retried.content)
-              : retried.content,
-          );
+          const retriedText = settleCappedReply(finalizeAssistantReply(retried.content), {
+            timedOut: retried.timedOut,
+            finishReason: retried.finishReason,
+            stoppedEarly: retried.stoppedEarly,
+          });
           if (
             retriedText.trim() &&
             !isRepeatedReply(retriedText, [fullResponse, copiedReply || ""])

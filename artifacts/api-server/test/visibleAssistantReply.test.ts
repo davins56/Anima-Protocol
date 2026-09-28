@@ -107,4 +107,21 @@ describe("trimToLastCompleteSentence", () => {
       "Ask Mr. Smith about the wa",
     );
   });
+
+  it("keeps a closed action when that keeps more than the last sentence", () => {
+    expect(
+      trimToLastCompleteSentence(
+        "I stay. *She looks across the room* and the quiet, undist",
+      ),
+    ).toBe("I stay. *She looks across the room*");
+  });
+
+  it("closes an open action when there is no sentence end", () => {
+    expect(trimToLastCompleteSentence("*reaches toward the quiet, undist")).toBe(
+      "*reaches toward the quiet, undist*",
+    );
+    expect(trimToLastCompleteSentence("no punctuation at all")).toBe(
+      "no punctuation at all",
+    );
+  });
 });

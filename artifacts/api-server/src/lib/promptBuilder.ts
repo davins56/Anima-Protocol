@@ -531,8 +531,12 @@ export function clientSceneExcerpt(supplied: string): string {
   return capSceneBudget(identity);
 }
 
-/** Instruct-style chat models (Qwen2.5 / anima-chat) require a user turn. */
-export const CONTINUE_USER_TURN = "(Continue the scene naturally.)";
+/**
+ * Empty send ("continue story") still needs a user turn. One short line, on
+ * the user turn only, so the cached system prefix stays byte-stable.
+ */
+export const CONTINUE_USER_TURN =
+  "I'm here with you. Go on in your own first person.";
 
 function messageTurnKey(message: MsgData): string | null {
   const id = String(message.id || "");
@@ -2435,7 +2439,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
             ? ""
             : content
               ? `LATEST USER MESSAGE:\n${content}`
-              : "(Continue the scene naturally.)",
+              : CONTINUE_USER_TURN,
       },
       {
         rank: 110,

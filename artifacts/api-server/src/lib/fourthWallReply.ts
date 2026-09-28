@@ -25,11 +25,55 @@ export const FOURTH_WALL_RETRY_MAX_TOKENS = 32;
  */
 export const FOURTH_WALL_RETRY_ELAPSED_LIMIT_MS = LLM_LOCAL_FIRST_TOKEN_MS / 2;
 
-/** True when the companion's reply names the world as a film, comic, or franchise. */
-export function isFourthWallReply(reply: unknown): boolean {
+const PAST_NARRATION_VERB =
+  "found|felt|smiled|turned|looked|walked|stood|sat|said|whispered|sighed|watched|stepped|reached|noticed|realized|realised|knew|saw|heard|thought|wondered|glanced|nodded|frowned|laughed|paused|stopped|moved|leaned|leant|stared|gazed|closed|opened|took|gave|held|kept|remained|became|began|started|continued|crossed|entered|left|ran|came|went|asked|answered|replied|murmured|shook|raised|lowered|pressed|pulled|pushed|drew|caught|let|made|had|was|were";
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function openingSentence(reply: string): string {
+  const trimmed = reply.trim();
+  const split = trimmed.split(/(?<=[.!?…])\s+/);
+  return (split[0] || trimmed).trim();
+}
+
+/**
+ * The opening sentence starts with the companion's own name and then narrates
+ * her in the third person ("Natasha Romanoff found herself"). A later mention
+ * ("people call me Natasha") is not this.
+ */
+export function isThirdPersonSelfNarration(
+  reply: unknown,
+  name: string | null | undefined,
+): boolean {
+  const who = String(name || "")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const text = String(reply ?? "").trim();
+  if (!who || who.length < 2 || !text) return false;
+  const sentence = openingSentence(text);
+  const first = who.split(/\s+/)[0] || "";
+  const names = [who];
+  if (first.length >= 2 && first.toLowerCase() !== who.toLowerCase()) names.push(first);
+  const pattern = new RegExp(
+    `^(?:${names.map(escapeRegExp).join("|")})\\s+(?:found\\s+(?:herself|himself|themselves)|${PAST_NARRATION_VERB})\\b`,
+    "i",
+  );
+  return pattern.test(sentence);
+}
+
+/**
+ * True when the companion's reply names the world as a film, comic, or
+ * franchise, or opens by narrating herself in the third person.
+ * `name` is the companion's own name. Omit it and only the franchise phrases match.
+ */
+export function isFourthWallReply(reply: unknown, name?: string | null): boolean {
   const text = String(reply ?? "").trim();
   if (!text) return false;
-  return FOURTH_WALL_PATTERNS.some((pattern) => pattern.test(text));
+  if (FOURTH_WALL_PATTERNS.some((pattern) => pattern.test(text))) return true;
+  return isThirdPersonSelfNarration(text, name);
 }
 
 /** False once the turn has already spent a large share of its time budget. */

@@ -145,6 +145,7 @@ import { streamChatReplyWithTurnRetry } from "@/lib/streamChatReply";
 import { scheduleLocationContextInject } from "@/lib/locationContextInject";
 import { finalizeAssistantReply } from "@/lib/visibleAssistantReply";
 import {
+  CONTINUE_IN_FIRST_PERSON,
   buildLeanSoloClientContext,
   companionChatDeepMode,
 } from "@/lib/leanCompanionChat";
@@ -2067,9 +2068,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         send: (nextTurnId) =>
           animaApi.chat.sendMessage({
             sessionId: activeSession.id,
-            content: isContinue
-              ? `Continue as ${charName}. Make real decisions based on who you are.`
-              : content,
+            content: isContinue ? CONTINUE_IN_FIRST_PERSON : content,
             characterId: activeSession.character_id,
             characterIds: activeSession.mode === "group"
               ? activeSession.group_character_ids || []
