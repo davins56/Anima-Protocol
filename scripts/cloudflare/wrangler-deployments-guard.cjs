@@ -121,19 +121,98 @@ function recoverDeploymentsListJson(jsonText) {
   );
 }
 
-function patchWranglerCliSource(content) {
-  const source = String(content ?? "");
-  if (source.includes(MARKER)) return source;
-  if (!source.includes(PARSE_TRY)) return source;
-  let next = source.replace(PARSE_TRY, PARSE_TRY_PATCHED);
-  if (next.startsWith("'use strict';")) {
-    next = `'use strict';\n${HELPERS}${next.slice("'use strict';".length)}`;
-  } else if (next.startsWith('"use strict";')) {
-    next = `"use strict";\n${HELPERS}${next.slice('"use strict";'.length)}`;
-  } else {
-    next = `${HELPERS}${next}`;
+/**
+ * `wrangler versions upload` (Workers Builds on pull requests) cannot apply a
+ * new Durable Object class. Drop that unapplied migration and its binding so
+ * the preview upload succeeds. `wrangler deploy` does not call this and still
+ * creates the SQLite-backed class.
+ *
+ * Once the script's migration tag matches wrangler.jsonc, versions upload
+ * sends no new steps and the binding stays.
+ */
+function omitUnappliedDurableObjectFromVersionUpload(migrations, bindings) {
+  if (!migrations || !Array.isArray(migrations.steps) || migrations.steps.length === 0) {
+    return migrations;
   }
-  return next;
+  const newClasses = new Set();
+  for (const step of migrations.steps) {
+    for (const name of step.new_sqlite_classes || []) newClasses.add(name);
+    for (const name of step.new_classes || []) newClasses.add(name);
+  }
+  if (bindings && typeof bindings === "object") {
+    for (const key of Object.keys(bindings)) {
+      const binding = bindings[key];
+      if (
+        binding &&
+        binding.type === "durable_object_namespace" &&
+        newClasses.has(binding.class_name) &&
+        !binding.script_name
+      ) {
+        delete bindings[key];
+      }
+    }
+  }
+  if (typeof console !== "undefined" && console.warn) {
+    console.warn(
+      "[anima-wrangler-guard] versions upload cannot apply a new Durable Object migration. Omitting it so the preview upload can finish. wrangler deploy still applies new_sqlite_classes.",
+    );
+  }
+  return undefined;
+}
+
+const VERSION_UPLOAD_WORKER_NEEDLE = `  const worker = {
+    main: main2,
+    migrations,
+    exports: exports2,
+    modules,
+    containers: config2.containers,
+    sourceMaps,
+    compatibility_date: compatibilityDate,
+    compatibility_flags: compatibilityFlags,
+    keepVars,
+    // we never delete secret bindings when uploading, even if we are setting secrets from a file`;
+
+const VERSION_UPLOAD_WORKER_PATCHED = `  const animaVersionMigrations = omitUnappliedDurableObjectFromVersionUpload(migrations, bindings2);
+  const worker = {
+    main: main2,
+    migrations: animaVersionMigrations,
+    exports: exports2,
+    modules,
+    containers: config2.containers,
+    sourceMaps,
+    compatibility_date: compatibilityDate,
+    compatibility_flags: compatibilityFlags,
+    keepVars,
+    // we never delete secret bindings when uploading, even if we are setting secrets from a file`;
+
+function prependHelpers(source) {
+  const fn = `${omitUnappliedDurableObjectFromVersionUpload.toString()}\n`;
+  const block = `${HELPERS}${fn}`;
+  if (source.startsWith("'use strict';")) {
+    return `'use strict';\n${block}${source.slice("'use strict';".length)}`;
+  }
+  if (source.startsWith('"use strict";')) {
+    return `"use strict";\n${block}${source.slice('"use strict";'.length)}`;
+  }
+  return `${block}${source}`;
+}
+
+function patchWranglerCliSource(content) {
+  let source = String(content ?? "");
+  if (!source.includes(MARKER) && source.includes(PARSE_TRY)) {
+    source = source.replace(PARSE_TRY, PARSE_TRY_PATCHED);
+    source = prependHelpers(source);
+  }
+  if (
+    source.includes(VERSION_UPLOAD_WORKER_NEEDLE) &&
+    !source.includes("omitUnappliedDurableObjectFromVersionUpload(migrations, bindings2)")
+  ) {
+    source = source.replace(VERSION_UPLOAD_WORKER_NEEDLE, VERSION_UPLOAD_WORKER_PATCHED);
+    if (!source.includes("function omitUnappliedDurableObjectFromVersionUpload")) {
+      source = prependHelpers(source);
+    }
+  }
+  return source;
 }
 
 function installCompileHook() {
@@ -159,6 +238,8 @@ module.exports = {
   isInformationalGet,
   recoverDeploymentsListJson,
   recoverInformationalGetJson,
+  omitUnappliedDurableObjectFromVersionUpload,
+  VERSION_UPLOAD_WORKER_NEEDLE,
   patchWranglerCliSource,
   installCompileHook,
 };

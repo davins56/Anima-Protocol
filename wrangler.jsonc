@@ -174,10 +174,15 @@
   // chat turn is waiting. The lease TTL is inside the object (no new secret).
   //
   // LocalLlmSlot uses the SQLite backend (new_sqlite_classes). Workers Free
-  // includes SQLite-backed Durable Objects, so this migration does not need
-  // Workers Paid. Keep the class in new_sqlite_classes — do not move it to
-  // new_classes. Do not rename LocalLlmSlot without a new migration tag.
-  // The object name in code is getByName("ollama") — one slot for the droplet.
+  // includes SQLite-backed Durable Objects. Keep the class in
+  // new_sqlite_classes — do not move it to new_classes. Do not rename
+  // LocalLlmSlot without a new migration tag. The object name in code is
+  // getByName("ollama") — one slot for the droplet.
+  //
+  // PR Workers Builds run `wrangler versions upload`, which cannot create a
+  // new Durable Object class. scripts/cloudflare/wrangler-deployments-guard.cjs
+  // omits this unapplied migration from that upload. `wrangler deploy` on
+  // main still applies it.
   "durable_objects": {
     "bindings": [
       {

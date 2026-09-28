@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { injectRequireIntoWranglerBin } from "../../../scripts/cloudflare/install-wrangler-deploy-guard.mjs";
 import { wranglerSucceededDespiteInformationalGet } from "../../../scripts/cloudflare/workers-builds-deploy.mjs";
 
@@ -159,6 +159,49 @@ ${guard.PARSE_TRY}
         1,
       ),
     ).toBe(false);
+  });
+
+  it("drops an unapplied SQLite Durable Object from a version upload", () => {
+    const bindings = {
+      LOCAL_LLM_SLOT: {
+        type: "durable_object_namespace",
+        class_name: "LocalLlmSlot",
+      },
+      HYPERDRIVE: { type: "hyperdrive", id: "keep" },
+    };
+    const migrations = {
+      new_tag: "v1-local-llm-slot",
+      steps: [{ new_sqlite_classes: ["LocalLlmSlot"] }],
+    };
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(
+        guard.omitUnappliedDurableObjectFromVersionUpload(migrations, bindings),
+      ).toBeUndefined();
+    } finally {
+      warn.mockRestore();
+    }
+    expect(bindings.LOCAL_LLM_SLOT).toBeUndefined();
+    expect(bindings.HYPERDRIVE).toEqual({ type: "hyperdrive", id: "keep" });
+    expect(
+      guard.omitUnappliedDurableObjectFromVersionUpload(undefined, bindings),
+    ).toBeUndefined();
+  });
+
+  it("patches wrangler versions upload so a new Durable Object class is not sent", () => {
+    const cliPath = path.join(
+      path.dirname(require.resolve("wrangler/package.json")),
+      "wrangler-dist/cli.js",
+    );
+    const original = readFileSync(cliPath, "utf8");
+    expect(original).toContain(guard.VERSION_UPLOAD_WORKER_NEEDLE);
+    const patched = guard.patchWranglerCliSource(original);
+    expect(patched).toContain(
+      "omitUnappliedDurableObjectFromVersionUpload(migrations, bindings2)",
+    );
+    expect(patched).toContain("function omitUnappliedDurableObjectFromVersionUpload");
+    expect(patched).not.toContain(guard.VERSION_UPLOAD_WORKER_NEEDLE);
+    expect(guard.patchWranglerCliSource(patched)).toBe(patched);
   });
 
   it("injects --require into wrangler/bin/wrangler.js spawn args", () => {

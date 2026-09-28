@@ -49,3 +49,7 @@ node scripts/cloudflare/workers-builds-deploy.mjs deploy --assets=./dist --compa
 That wrapper exits 0 if wrangler printed `Worker Version ID:` then died on those informational GETs.
 
 Do not remove `api/index.mjs`. Do not put secret values in this file or `wrangler.jsonc`.
+
+## New Durable Object classes
+
+`wrangler versions upload` cannot apply a new Durable Object migration (`new_sqlite_classes` included). PR builds of `anima-protocol` and `anima-protocol-worker` fail at the versions API if the upload still contains that migration. `scripts/cloudflare/wrangler-deployments-guard.cjs` drops an unapplied migration and its binding from the version-upload payload only. `wrangler deploy` on main still creates the SQLite-backed class. Workers Free supports that backend. Keep the class in `new_sqlite_classes`.
