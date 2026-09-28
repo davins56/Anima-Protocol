@@ -68,7 +68,7 @@ export const APP_OPEN_LLM_WARM_COOLDOWN_MS = 5 * 60 * 1000;
 /** Collapse repeats while the host is down or still timing out. */
 export const APP_OPEN_LLM_WARM_FAILURE_BACKOFF_MS = 60_000;
 
-let inFlightWarm: Promise<boolean> | null = null;
+let inFlightWarm: Promise<boolean | "busy"> | null = null;
 let lastWarmAt = 0;
 let lastSuccessfulWarmAt = 0;
 let lastAppWarmFailureAt = 0;
@@ -193,6 +193,7 @@ export async function warmLocalLlmForAppOpen(
   inFlightWarm = run;
   try {
     const ok = await run;
+    if (ok === "busy") return { ok: true, warmed: false, skipped: "busy" };
     if (!ok) lastAppWarmFailureAt = Date.now();
     return ok
       ? { ok: true, warmed: true }
@@ -207,7 +208,7 @@ async function warmOnce(
   env: NodeJS.ProcessEnv,
   fetchImpl: typeof fetch,
   timeoutMs: number,
-): Promise<boolean> {
+): Promise<boolean | "busy"> {
   const keepAlive = ollamaKeepAliveDuration(env);
   const url = `${ollamaNativeOrigin(openaiV1Url)}/api/generate`;
   const headers: Record<string, string> = {
@@ -224,6 +225,15 @@ async function warmOnce(
     options: { num_ctx: ollamaNumCtx(env), num_predict: OLLAMA_WARM_NUM_PREDICT },
   };
   if (keepAlive) body.keep_alive = keepAlive;
+  // Dynamic import: llmFailover already imports this module for keep-alive.
+  const { acquireLocalLlmBackground, localLlmSlotEnabled } = await import(
+    "./localLlmSlot"
+  );
+  const slot = localLlmSlotEnabled(env)
+    ? await acquireLocalLlmBackground("llm-warm")
+    : null;
+  if (localLlmSlotEnabled(env) && !slot) return "busy";
+
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const background = localCallSignal();
   const signal = background
@@ -245,6 +255,8 @@ async function warmOnce(
   } catch {
     // Host down, path not exposed, or still loading — the chat generate owns the error.
     return false;
+  } finally {
+    await slot?.release();
   }
 }
 

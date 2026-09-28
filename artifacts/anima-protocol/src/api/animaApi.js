@@ -62,10 +62,14 @@ export async function requireChatAuthHeaders(extra, options = {}) {
  * Must stay above the Worker free-tier open budget (80s) plus first-chunk
  * (50s) plus context slack (10s) so the browser does not abort while
  * DeepSeek R1 is still thinking or OpenRouter is hopping :free models.
+ * `CHAT_STREAM_TIMEOUT_MS` is that free-tier floor (and the server's
+ * repeat-retry clock). The fetch abort is longer: local slot queue 180s
+ * + first token 90s + decode slack 30s + context slack 10s.
  * Keep in lockstep with
- * `artifacts/api-server/src/lib/chatTimeouts.ts` `CHAT_STREAM_TIMEOUT_MS`.
+ * `artifacts/api-server/src/lib/chatTimeouts.ts` `CHAT_FETCH_ABORT_MS`.
  */
 export const CHAT_STREAM_TIMEOUT_MS = 140_000;
+export const CHAT_FETCH_ABORT_MS = 310_000;
 
 function chatStreamTimeoutError() {
   const err = new Error("The companion took too long to reply. Please try again.");
@@ -98,7 +102,7 @@ async function request(path, options = {}) {
 async function* postAuthedSse(path, body) {
   let headers = await requireChatAuthHeaders();
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), CHAT_STREAM_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), CHAT_FETCH_ABORT_MS);
   try {
     const postOnce = (requestHeaders) =>
       fetch(apiUrl(path), {

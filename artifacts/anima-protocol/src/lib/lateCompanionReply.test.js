@@ -3,6 +3,7 @@ import {
   CONNECTION_DROPPED_STATUS,
   dropLateTurnPlaceholder,
   GENERIC_COMPANION_COULD_NOT_REPLY,
+  LATE_REPLY_POLL_MS,
   isCompanionStillTypingError,
   isConnectionDroppedError,
   dropTurnPlaceholder,
@@ -10,6 +11,12 @@ import {
   mergeLateReplyIntoMessages,
   pollLateCompanionReply,
 } from "./lateCompanionReply.js";
+
+describe("late reply poll window", () => {
+  it("covers the local queue wait plus the generation cap", () => {
+    expect(LATE_REPLY_POLL_MS).toBe(300_000);
+  });
+});
 
 describe("isCompanionStillTypingError", () => {
   it("treats a slow stream and an in-flight turn as still typing", () => {

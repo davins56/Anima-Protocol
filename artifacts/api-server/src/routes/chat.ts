@@ -48,6 +48,7 @@ import {
   llmChatMessagesOpenTimeoutMs,
   llmChatMessagesStreamTotalMs,
   llmCompanionDurableWaitMs,
+  llmProducingGenerateHardCapMs,
   openStreamAbort,
   repeatRetryBudgetMs,
   shouldRegenerateRepeatedReply,
@@ -77,6 +78,7 @@ import {
   type CharacterData,
 } from "../lib/promptBuilder";
 import { beginCompanionLlmTurn, companionTurnsOpenForUser } from "../lib/sidecarLlm";
+import { localLlmSlotEnabled, waitForLocalChatSlot } from "../lib/localLlmSlot";
 import { extractOperatorModelFromProfile } from "../lib/operatorModel";
 import {
   incrementConversationCount,
@@ -430,6 +432,8 @@ function openChatSse(res: Response): {
   stop: () => void;
   setPhase: (phase: ChatSsePhase) => void;
   markStreaming: () => void;
+  pauseProgress: () => void;
+  resumeProgress: () => void;
 } {
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
@@ -441,21 +445,28 @@ function openChatSse(res: Response): {
   const startedAt = Date.now();
   let phase: ChatSsePhase = "preparing";
   let streaming = false;
+  let progressPaused = false;
   writeSseComment(res, `keepalive ${startedAt}`);
   writeProgressSse(res, phase, startedAt);
   const timer = setInterval(() => {
     writeSseComment(res, `keepalive ${Date.now()}`);
-    if (!streaming) writeProgressSse(res, phase, startedAt);
+    if (!streaming && !progressPaused) writeProgressSse(res, phase, startedAt);
   }, SSE_HEARTBEAT_MS);
   timer.unref?.();
   return {
     stop: () => clearInterval(timer),
     setPhase: (next) => {
       phase = next;
-      if (!streaming) writeProgressSse(res, phase, startedAt);
+      if (!streaming && !progressPaused) writeProgressSse(res, phase, startedAt);
     },
     markStreaming: () => {
       streaming = true;
+    },
+    pauseProgress: () => {
+      progressPaused = true;
+    },
+    resumeProgress: () => {
+      progressPaused = false;
     },
   };
 }
@@ -2478,7 +2489,9 @@ router.post("/messages", async (req, res) => {
   usedModel = routed.model;
   usedTier = routed.tier;
 
+  let producingTokens = false;
   const emitDelta = (delta: string) => {
+    if (delta) producingTokens = true;
     telemetry.markFirstToken();
     sse.markStreaming();
     writeSse(res, { content: delta });
@@ -2493,19 +2506,41 @@ router.post("/messages", async (req, res) => {
     totalMs: llmChatMessagesStreamTotalMs({ freeTierCascade }),
   };
 
+  const releaseCompanionLlm = beginCompanionLlmTurn(userId);
+  let releaseLocalSlot = async () => {};
+  let open: { signal: AbortSignal; cancel: () => void } = {
+    signal: new AbortController().signal,
+    cancel: () => {},
+  };
+  try {
+  if (!ownModelTurn && localLlmSlotEnabled()) {
+    sse.pauseProgress();
+    const grant = await waitForLocalChatSlot({
+      turnId,
+      onWaiting: (position) => {
+        writeSse(res, { status: "waiting", queue_position: position });
+      },
+      shouldStop: () => clientLeft(),
+    });
+    releaseLocalSlot = grant.release;
+    sse.resumeProgress();
+  }
+
   telemetry.startGeneration();
+    // First-token budget starts here, after the local slot is held.
     const generationStartedAt = Date.now();
-    const open = openStreamAbort(generationBudgetMs);
+    open = openStreamAbort(generationBudgetMs);
     const abandoned = armAbandonedGenerateAbort({
       res,
       startedAt: generationStartedAt,
+      producingTokens: () => producingTokens,
+      hardCapMs: llmProducingGenerateHardCapMs(),
       hasWaiter: async () => {
         if (chatTurnFlightWaiters(turnId) > 0) return true;
         return chatTurnHasRemoteWaiter(turnId, userId);
       },
     });
     const generateSignal = combineAbortSignals(open.signal, abandoned.signal);
-    const releaseCompanionLlm = beginCompanionLlmTurn(userId);
     try {
     if (ownModelTurn) {
       usedProvider = "own";
@@ -2685,7 +2720,12 @@ router.post("/messages", async (req, res) => {
       abandoned.cancel();
       clientWatch.cancel();
       releaseCompanionLlm();
+      void releaseLocalSlot();
     }
+  } finally {
+    releaseCompanionLlm();
+    void releaseLocalSlot();
+  }
 
     // An empty completion used to look like a successful turn on the client
     // (thinking/typing cleared, no visible reply). Fail loudly instead.
