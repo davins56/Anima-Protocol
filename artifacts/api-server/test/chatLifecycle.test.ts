@@ -62,6 +62,7 @@ vi.mock("../src/lib/localEnsemble", () => ({
 }));
 
 import chatRouter from "../src/routes/chat";
+import { COMPANION_CHAT_TEMPERATURE } from "../src/lib/ollamaChat";
 import { beginChatTurn } from "../src/lib/chatTurnLedger";
 import { resetChatTurnFlightsForTests } from "../src/lib/chatTurnFlight";
 import {
@@ -79,6 +80,7 @@ import {
   db,
   ensureSchemaOnce,
   userEntities,
+  userProfiles,
 } from "@workspace/db";
 
 const prefix = `chat_lifecycle_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -120,6 +122,10 @@ beforeAll(async () => {
     failedOver: false,
   }));
   await ensureSchemaOnce();
+  await db.insert(userProfiles).values({
+    userId,
+    data: { display_name: "Mara" },
+  });
   await db.insert(userEntities).values([
     {
       userId,
@@ -161,6 +167,7 @@ afterAll(async () => {
   await db.delete(chatSessions).where(eq(chatSessions.userId, userId));
   await db.delete(chatTurns).where(eq(chatTurns.userId, userId));
   await db.delete(companionMemories).where(eq(companionMemories.userId, userId));
+  await db.delete(userProfiles).where(eq(userProfiles.userId, userId));
   await db.delete(userEntities).where(like(userEntities.userId, `${prefix}%`));
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
@@ -208,7 +215,14 @@ describe("chat lifecycle", () => {
     expect(sent.messages?.some((message) => message.role === "user" && message.content === "Hello")).toBe(
       true,
     );
-    expect(sent.temperature).toBe(0.85);
+    expect(COMPANION_CHAT_TEMPERATURE).toBe(0.65);
+    expect(sent.temperature).toBe(COMPANION_CHAT_TEMPERATURE);
+    expect(sent.messages?.at(-2)).toEqual({
+      role: "system",
+      content:
+        "Answer Mara's last message first, directly, in Aria's own voice. Stay on what they said. Bring in memories or lore only when they help answer it.",
+    });
+    expect(sent.messages?.at(-1)).toEqual({ role: "user", content: "Hello" });
     expect(sent.maxTokens).toBe(1024);
     expect(sent.signal).toBeInstanceOf(AbortSignal);
 
