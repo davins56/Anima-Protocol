@@ -75,7 +75,6 @@ async function llm(
       : undefined;
   const result = await createChatCompletionWithFailover({
     tier: "standard",
-    model: "gpt-4o",
     maxTokens,
     messages: [
       { role: "system", content: systemPrompt },
@@ -294,7 +293,6 @@ async function analyzeTextContext(text: string): Promise<ContextAnalysis> {
 async function analyzeImageContext(dataUrl: string): Promise<ContextAnalysis> {
   const result = await createChatCompletionWithFailover({
     tier: "standard",
-    model: "gpt-4o",
     maxTokens: 1500,
     messages: [
       { role: "system", content: CONTEXT_SYSTEM_PROMPT },

@@ -63,12 +63,18 @@ voice to stay yours.
 
 ## Local checkpoint server
 
-`server/server.py` exposes `/v1/chat/completions` for this tiny-GPT checkpoint.
-It is a local preview, not the production anima-protocol.com chat path (that
-stays on the Cloudflare Worker and the self-hosted Ollama model).
+`server/server.py` exposes `/v1/chat/completions` (streaming and
+non-streaming) for this tiny-GPT checkpoint. The api-server can use it as the
+companion chat backend with `ANIMA_LOCAL_LLM_BACKEND=vllm` and
+`ANIMA_LOCAL_LLM_BASE_URL` set to its `/v1`. Production anima-protocol.com
+stays on the self-hosted `anima-chat` Ollama model until you switch it. See
+[`docs/custom-llm.md`](../docs/custom-llm.md), "Your own trained model".
 
 To listen beyond localhost, set `ANIMA_SERVER_TOKEN` and `ANIMA_HOST=0.0.0.0`.
-Clients then send `Authorization: Bearer <token>`.
+Clients then send `Authorization: Bearer <token>`. `ANIMA_CKPT` and
+`ANIMA_TOK_DIR` override the checkpoint and tokenizer paths.
+`python3 server/test_server.py` checks the protocol against a tiny
+random-weight model.
 
 ## Status
 
