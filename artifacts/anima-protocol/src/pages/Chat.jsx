@@ -1336,8 +1336,9 @@ export default function Chat() {
             ],
           };
         });
+        const pendingTurnId = live.turn_id;
         live = await pollLateCompanionReply({
-          fetchTurn: () => animaApi.chat.turnStatus(live.turn_id),
+          fetchTurn: () => animaApi.chat.turnStatus(pendingTurnId),
         });
         if (cancelled) return;
         if (!String(live?.assistant_content || "").trim()) {
@@ -1345,7 +1346,7 @@ export default function Chat() {
             if (!prev || prev.id !== sid) return prev;
             return {
               ...prev,
-              messages: dropTurnPlaceholder(prev.messages, live.turn_id),
+              messages: dropTurnPlaceholder(prev.messages, pendingTurnId),
             };
           });
           return;
@@ -1537,7 +1538,13 @@ export default function Chat() {
 
     // Show thinking immediately while we build context / call the model.
     // No artificial pause — tokens replace this as soon as they arrive.
-    const thinkingMsg = { role: "assistant", content: "...", character_name: "__thinking__", timestamp: new Date().toISOString() };
+    const thinkingMsg = {
+      role: "assistant",
+      content: "...",
+      character_name: "__thinking__",
+      turn_id: turnId,
+      timestamp: new Date().toISOString(),
+    };
     setActiveSession((prev) => ({ ...prev, messages: [...updatedMessages, thinkingMsg] }));
 
     try {
@@ -2023,6 +2030,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         updatedMessages,
         characterName: charName,
         timestamp: streamTs,
+        turnId: () => turnId,
         onDelta: (accumulated) => {
           streamedSoFar = accumulated;
         },
@@ -2087,8 +2095,9 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
               ? { ownModelReply: ownModelTurn.reply, ownModelVersion: ownModelTurn.version }
               : {}),
           }),
-        onRetry: () => {
+        onRetry: (nextTurnId) => {
           streamedSoFar = "";
+          if (nextTurnId) turnId = nextTurnId;
           streamUi.showTyping();
         },
         onDelta: streamUi.showStreamingPartial,
@@ -2861,6 +2870,7 @@ Return JSON:
               role: "assistant",
               content: connectionDropped ? CONNECTION_DROPPED_STATUS : "...",
               character_name: "__typing__",
+              turn_id: turnId,
               timestamp: new Date().toISOString(),
             },
           ],
@@ -2897,9 +2907,7 @@ Return JSON:
           lateTurnRef.current = null;
           applyIfSendSession((prev) => ({
             ...prev,
-            messages: (prev.messages || []).filter(
-              (m) => m.character_name !== "__typing__" && m.character_name !== "__thinking__",
-            ),
+            messages: dropTurnPlaceholder(prev.messages, turnId),
           }));
           toast.error(GENERIC_COMPANION_COULD_NOT_REPLY);
         }
@@ -2922,6 +2930,7 @@ Return JSON:
                 role: "assistant",
                 content: "...",
                 character_name: "__typing__",
+                turn_id: turnId,
                 timestamp: new Date().toISOString(),
               },
             ],
