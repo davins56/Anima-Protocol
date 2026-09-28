@@ -145,8 +145,9 @@ describe("companion prompt prefill budget", () => {
     expect(fullTokens).toBeGreaterThan(probeTokens * 10);
     expect(fullTokens).toBeLessThanOrEqual(LOCAL_PROMPT_MAX_TOKENS);
     expect(fullTokens).toBeLessThan(OLLAMA_NUM_CTX);
-    expect(uncapped.length).toBeGreaterThan(8_000);
-    expect(capped.length).toBeGreaterThan(5_000);
+    // Slimmer shared persona blocks (0.5B local model) shrank this fixture.
+    expect(uncapped.length).toBeGreaterThan(6_500);
+    expect(capped.length).toBeGreaterThan(4_000);
     expect(messageChars(messages)).toBeGreaterThan(0);
   });
 
