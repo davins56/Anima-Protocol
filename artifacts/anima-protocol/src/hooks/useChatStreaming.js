@@ -61,6 +61,16 @@ export function useChatStreaming(setActiveSession) {
           });
           return;
         }
+        if (event?.status === "waiting") {
+          if (paintedTokens) return;
+          replaceTransient({
+            role: "assistant",
+            content: chatStreamStatusCopy(event) || "Still here — one reply ahead.",
+            character_name: "__thinking__",
+            timestamp,
+          });
+          return;
+        }
         const copy = chatStreamStatusCopy(event);
         if (!copy) return;
         if (event?.status === "progress") {

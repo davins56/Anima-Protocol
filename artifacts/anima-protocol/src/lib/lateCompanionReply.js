@@ -179,10 +179,10 @@ export function mergeLateReplyIntoMessages(messages, turn) {
 
 /**
  * How long the page waits on a late reply before taking the "..." bubble
- * down. Covers the server's 90s first-token budget plus decode slack on a
- * CPU host (`LLM_LOCAL_FIRST_TOKEN_MS` + `LLM_LOCAL_DECODE_SLACK_MS`).
+ * down. Covers the local slot queue (`LLM_LOCAL_SLOT_WAIT_MS`, 180s) plus
+ * the generation cap (`LLM_LOCAL_FIRST_TOKEN_MS` 90s + `LLM_LOCAL_DECODE_SLACK_MS` 30s).
  */
-export const LATE_REPLY_POLL_MS = 150_000;
+export const LATE_REPLY_POLL_MS = 300_000;
 
 /**
  * Remove the placeholder bubble added while waiting on `turnId`. Bubbles for

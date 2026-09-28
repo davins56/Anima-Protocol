@@ -67,6 +67,23 @@ describe("streamChatReply", () => {
     expect(onDelta.mock.calls.at(-1)[0]).toBe("Hi");
   });
 
+  it("forwards a waiting status with the queue position", async () => {
+    const onStatus = vi.fn();
+    const onDelta = vi.fn();
+    await streamChatReply(
+      fromEvents([
+        { status: "waiting", queue_position: 1 },
+        { status: "waiting", queue_position: 1 },
+        { content: "Hi" },
+        { done: true },
+      ]),
+      { onStatus, onDelta },
+    );
+    expect(onStatus).toHaveBeenCalledTimes(2);
+    expect(onStatus.mock.calls[0][0].queue_position).toBe(1);
+    expect(onDelta.mock.calls.at(-1)[0]).toBe("Hi");
+  });
+
   it("forwards local-only progress status before the first token", async () => {
     const onStatus = vi.fn();
     const onDelta = vi.fn();

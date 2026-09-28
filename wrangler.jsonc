@@ -169,6 +169,29 @@
       "secret_name": "ANIMA_LOCAL_LLM_API_KEY"
     }
   ],
+  // One Durable Object serializes the local Ollama slot across isolates.
+  // Chat turns queue FIFO; background callers skip while it is held or a
+  // chat turn is waiting. The lease TTL is inside the object (no new secret).
+  //
+  // LocalLlmSlot uses the SQLite backend (new_sqlite_classes). Workers Free
+  // includes SQLite-backed Durable Objects, so this migration does not need
+  // Workers Paid. Keep the class in new_sqlite_classes — do not move it to
+  // new_classes. Do not rename LocalLlmSlot without a new migration tag.
+  // The object name in code is getByName("ollama") — one slot for the droplet.
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "LOCAL_LLM_SLOT",
+        "class_name": "LocalLlmSlot"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1-local-llm-slot",
+      "new_sqlite_classes": ["LocalLlmSlot"]
+    }
+  ],
   // Free plan: 10k neurons/day. Exhaustion is Workers AI error 4006 — the
   // AI binding is still present (healthz/llm configured:true). Dàvīn approved
   // temporary OpenRouter failover via ANIMA_OPENROUTER_FALLBACK=true when no

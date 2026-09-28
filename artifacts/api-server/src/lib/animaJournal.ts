@@ -3,6 +3,7 @@ import { db } from "../db/index";
 import { animaJournals } from "../db/schema";
 import { createChatCompletionWithFailover } from "./llmFailover";
 import { companionLlmTurnOpen } from "./sidecarLlm";
+import { acquireLocalLlmBackground } from "./localLlmSlot";
 
 export type JournalEntryType =
   | "reflection"
@@ -126,6 +127,8 @@ Relationship intensity (0-100): ${params.relationshipLevel ?? 40}
 Output ONLY the journal body text, no title prefix.`;
 
   if (companionLlmTurnOpen()) return null;
+  const background = await acquireLocalLlmBackground(`journal:${params.userId}`);
+  if (!background) return null;
   try {
     const completion = await createChatCompletionWithFailover({
       tier: "light",
@@ -158,5 +161,7 @@ Output ONLY the journal body text, no title prefix.`;
     return { title, content };
   } catch {
     return null;
+  } finally {
+    await background.release();
   }
 }

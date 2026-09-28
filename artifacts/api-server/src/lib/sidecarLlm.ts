@@ -9,6 +9,9 @@
  * ANIMA_SIDECAR_LLM is explicitly enabled, so production local-only
  * chat never queue-starves itself. User-initiated invokes (companion
  * create, codespace) do not use this helper.
+ *
+ * This counter lives in the current isolate. The cross-isolate lease for
+ * the local Ollama host is `localLlmSlot.ts` (Durable Object).
  */
 
 import { combineAbortSignals } from "./chatTimeouts";

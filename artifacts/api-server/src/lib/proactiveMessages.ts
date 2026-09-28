@@ -19,6 +19,7 @@ import {
 } from "@workspace/db";
 import { createChatCompletionWithFailover } from "./llmFailover";
 import { companionLlmTurnOpen } from "./sidecarLlm";
+import { acquireLocalLlmBackground } from "./localLlmSlot";
 import { routeModel } from "./modelRouter";
 import { buildCompanionPrompt, type CharacterData } from "./promptBuilder";
 import { loadOperatorModel } from "./operatorModel";
@@ -558,15 +559,30 @@ async function runClaim(claim: ClaimedPreference): Promise<ProactiveRunResult> {
         reason: "Companion chat in progress",
       };
     }
-    const content = await generateMessage(claim.userId, candidate);
-    if (!content) {
-      throw new Error("The model returned an empty proactive message");
+    const background = await acquireLocalLlmBackground(`proactive:${claim.userId}`);
+    if (!background) {
+      return {
+        status: "skipped",
+        userId: claim.userId,
+        reason: "Companion chat in progress",
+      };
     }
-    await persistMessage(claim.userId, candidate, content);
-    const delivered = await deliverPush(claim.userId, candidate, content);
-    await completePreference(claim.userId, candidate.sessionId);
+    let content = "";
+    let delivered = 0;
+    try {
+      content = await generateMessage(claim.userId, candidate);
+      if (!content) {
+        throw new Error("The model returned an empty proactive message");
+      }
+      await persistMessage(claim.userId, candidate, content);
+      delivered = await deliverPush(claim.userId, candidate, content);
+      await completePreference(claim.userId, candidate.sessionId);
+    } finally {
+      await background.release();
+    }
 
     // Fire-and-forget Relationship OS journal + Home artifact.
+    // Released first so a journal call can skip on its own if a chat is waiting.
     void maybeWriteAutonomousReflection(claim.userId, candidate, content);
 
     return {

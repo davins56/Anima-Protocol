@@ -22,6 +22,8 @@ import {
   registerWorkerWaitUntil,
 } from "./lib/workerBackground";
 
+export { LocalLlmSlot } from "./lib/localLlmSlotDo";
+
 interface Env {
   ASSETS: { fetch: (request: Request) => Promise<Response> };
   HYPERDRIVE?: { connectionString?: string };
