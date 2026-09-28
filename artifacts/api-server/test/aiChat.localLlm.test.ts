@@ -22,6 +22,7 @@ describe("POST /api/ai/chat — local Ollama path", () => {
   let received: Array<{ model: string; messages: unknown[] }> = [];
   let replyText: string | null = "Hello from the local stub.";
   let hangNext = false;
+  let releaseHung = () => {};
   let missingContent = false;
 
   let app: Express;
@@ -55,6 +56,18 @@ describe("POST /api/ai/chat — local Ollama path", () => {
         const body = JSON.parse(raw || "{}");
         received.push({ model: body.model, messages: body.messages });
         if (hangNext) {
+          hangNext = false;
+          releaseHung = () => {
+            if (res.writableEnded) return;
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                model: body.model,
+                message: { role: "assistant", content: "late" },
+                done: true,
+              }),
+            );
+          };
           return;
         }
         if (isNativeChat) {
@@ -143,6 +156,7 @@ describe("POST /api/ai/chat — local Ollama path", () => {
     received = [];
     replyText = "Hello from the local stub.";
     hangNext = false;
+    releaseHung = () => {};
     missingContent = false;
     delete process.env.ANIMA_LLM_OPEN_TIMEOUT_MS;
     resetAiBindingForTests();
@@ -294,6 +308,29 @@ describe("POST /api/ai/chat — local Ollama path", () => {
 
     expect(status).toBe(429);
     expect(received.length).toBe(AI_CHAT_RATE_LIMIT_MAX);
+  });
+
+  it("returns 429 to a second probe while the first still holds the slot", async () => {
+    hangNext = true;
+    const first = fetch(`${apiBase}/api/ai/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "hold the slot" }),
+    });
+    const started = Date.now();
+    while (received.length < 1 && Date.now() - started < 5_000) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(received.length).toBe(1);
+    const second = await fetch(`${apiBase}/api/ai/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "also me" }),
+    });
+    expect(second.status).toBe(429);
+    expect((await second.json()).code).toBe("llm_busy");
+    releaseHung();
+    expect((await first).status).toBe(200);
   });
 
   it("returns 429 while a companion turn holds the model slot", async () => {
