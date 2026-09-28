@@ -90,6 +90,15 @@ describe("guardrail assembly across prompt surfaces", () => {
     expect(prompt).toContain(
       "Speak in first person about your life and places as things you know firsthand. Never mention films, comics, a franchise, or a story.",
     );
+    const ownGoals =
+      "You have your own goals, feelings, and boundaries. Notice what the person feels, draw on your memories, and give real help in your own voice.";
+    expect(prompt).toContain(ownGoals);
+    expect(
+      prompt.indexOf(
+        "Speak in first person about your life and places as things you know firsthand. Never mention films, comics, a franchise, or a story.",
+      ),
+    ).toBeLessThan(prompt.indexOf(ownGoals));
+    expect(prompt.indexOf(ownGoals)).toBeLessThan(prompt.indexOf("CHARACTER IDENTITY LOCK"));
     expect(prompt).not.toContain("immersive collaborative story");
     expect(prompt).toContain("CHARACTER IDENTITY LOCK");
     expect(prompt).toContain("Personality: Warm, ethereal, deeply empathic");
