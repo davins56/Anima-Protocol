@@ -7,12 +7,56 @@
 export const GENERIC_COMPANION_COULD_NOT_REPLY =
   "The companion could not reply. Please try again.";
 
+/** Shown while a dropped connection is checked against the durable turn. */
+export const CONNECTION_DROPPED_STATUS =
+  "Connection dropped, checking for her reply…";
+
+const ENGINE_TYPE_ERROR_RE =
+  /before initialization|is not defined|is not a function|Cannot read propert|dynamically imported module/i;
+const NETWORK_DROP_RE =
+  /failed to fetch|load failed|networkerror|network request failed|network connection|internet connection/i;
+
 const TOOK_TOO_LONG_RE = /took too long/i;
 
 /**
  * @param {unknown} err
  * @returns {boolean}
  */
+/**
+ * A fetch TypeError from a backgrounded or suspended tab. Engine TypeErrors
+ * (missing bindings, TDZ) stay ordinary failures.
+ *
+ * @param {unknown} err
+ * @returns {boolean}
+ */
+/**
+ * The durable turn finished without a reply. Polling should stop and the
+ * checking bubble should come down.
+ *
+ * @param {unknown} turn
+ * @returns {boolean}
+ */
+export function lateTurnFailedWithoutReply(turn) {
+  if (!turn || typeof turn !== "object") return false;
+  const row = /** @type {{ assistant_content?: unknown, assistantContent?: unknown, persistence_status?: unknown, status?: unknown }} */ (
+    turn
+  );
+  if (String(row.assistant_content || row.assistantContent || "").trim()) return false;
+  const status = row.persistence_status || row.status;
+  return status === "failed";
+}
+
+export function isConnectionDroppedError(err) {
+  if (!err || typeof err !== "object") return false;
+  const error = /** @type {{ name?: unknown, message?: unknown }} */ (err);
+  const message = String(error.message || "");
+  if (ENGINE_TYPE_ERROR_RE.test(message)) return false;
+  const name = typeof error.name === "string" ? error.name : "";
+  if (name === "NetworkError") return true;
+  if (name === "TypeError" && NETWORK_DROP_RE.test(message)) return true;
+  return false;
+}
+
 export function isCompanionStillTypingError(err) {
   if (!err || typeof err !== "object") return false;
   const error = /** @type {{ code?: unknown, name?: unknown, status?: unknown, message?: unknown }} */ (
@@ -42,49 +86,76 @@ export function isCompanionStillTypingError(err) {
 }
 
 /**
- * @param {Array<Record<string, unknown>> | null | undefined} messages
- * @param {{
- *   turnId: string,
- *   userContent?: string,
- *   assistantContent?: string,
- *   characterName?: string | null,
- * }} turn
+ * @param {Record<string, unknown>} message
+ * @param {string} turnId
+ * @param {string} userId
+ * @param {string} assistantId
  */
+function messageBelongsToTurn(message, turnId, userId, assistantId) {
+  if (message.id === userId || message.id === assistantId) return true;
+  return message.turn_id === turnId;
+}
+
 export function mergeLateReplyIntoMessages(messages, turn) {
   const turnId = String(turn.turnId || "");
   const userId = `${turnId}:user`;
   const assistantId = `${turnId}:assistant`;
-  const kept = (messages || []).filter((message) => {
+  const source = (messages || []).filter((message) => {
     if (!message) return false;
     if (message.character_name === "__typing__" || message.character_name === "__thinking__") {
       return false;
     }
-    if (message.id === userId || message.id === assistantId) return false;
     return true;
   });
-  const next = [...kept];
+  /** @type {Record<string, unknown>[]} */
+  const kept = [];
+  let insertAt = null;
+  for (const message of source) {
+    if (messageBelongsToTurn(message, turnId, userId, assistantId)) {
+      if (insertAt == null) insertAt = kept.length;
+      continue;
+    }
+    kept.push(message);
+  }
+  if (insertAt == null) {
+    const turnTime = Date.parse(String(turn.createdAt || turn.timestamp || ""));
+    if (Number.isFinite(turnTime)) {
+      const newerAt = kept.findIndex((message) => {
+        const at = Date.parse(
+          String(message.timestamp || message.created_date || ""),
+        );
+        return Number.isFinite(at) && at > turnTime;
+      });
+      insertAt = newerAt >= 0 ? newerAt : kept.length;
+    } else {
+      insertAt = kept.length;
+    }
+  }
+  /** @type {Record<string, unknown>[]} */
+  const block = [];
   const userContent = String(turn.userContent || "");
   if (userContent.trim()) {
-    next.push({
+    block.push({
       id: userId,
       turn_id: turnId,
       role: "user",
       content: userContent,
-      timestamp: new Date().toISOString(),
+      timestamp: turn.createdAt || turn.timestamp || new Date().toISOString(),
     });
   }
   const assistantContent = String(turn.assistantContent || "");
   if (assistantContent.trim()) {
-    next.push({
+    block.push({
       id: assistantId,
       turn_id: turnId,
       role: "assistant",
       content: assistantContent,
       character_name: turn.characterName || "Character",
-      timestamp: new Date().toISOString(),
+      timestamp: turn.createdAt || new Date().toISOString(),
     });
   }
-  return next;
+  kept.splice(insertAt, 0, ...block);
+  return kept;
 }
 
 /**

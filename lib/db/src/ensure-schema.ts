@@ -260,7 +260,49 @@ function tablesCreatedByRun(
   return createdTables;
 }
 
+/**
+ * Existing databases already have `chat_turns` from the fast path, which
+ * skips CREATE TABLE. The lease columns still have to land or a retry join
+ * cannot see the owner across isolates. A complete schema is left untouched.
+ */
+async function ensureChatTurnLeaseColumns(db: Queryable): Promise<void> {
+  let names = new Set<string>();
+  try {
+    const found = await db.query(
+      `SELECT column_name
+         FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'chat_turns'
+          AND column_name IN ('id', 'lease_expires_at', 'waiting_until')`,
+    );
+    names = new Set(
+      (found.rows ?? []).map((row) =>
+        String((row as { column_name?: string }).column_name || ""),
+      ),
+    );
+  } catch {
+    return;
+  }
+  if (!names.has("id")) return;
+  const statements = [
+    !names.has("lease_expires_at")
+      ? `ALTER TABLE "chat_turns" ADD COLUMN IF NOT EXISTS "lease_expires_at" timestamp`
+      : "",
+    !names.has("waiting_until")
+      ? `ALTER TABLE "chat_turns" ADD COLUMN IF NOT EXISTS "waiting_until" timestamp`
+      : "",
+  ].filter(Boolean);
+  for (const statement of statements) {
+    try {
+      await db.query(statement);
+    } catch {
+      // The CREATE TABLE path below includes these columns on a fresh database.
+    }
+  }
+}
+
 async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
+  await ensureChatTurnLeaseColumns(db);
   // Inspect must not gate DDL when it throws (Hyperdrive/postgres.js array-bind
   // used to skip every CREATE IF NOT EXISTS). When inspect succeeds and every
   // required table is already present, skip the ~50 sequential CREATE
@@ -454,6 +496,8 @@ async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
       "assistant_content" text DEFAULT '' NOT NULL,
       "metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
       "last_error" text,
+      "lease_expires_at" timestamp,
+      "waiting_until" timestamp,
       "created_at" timestamp DEFAULT now() NOT NULL,
       "updated_at" timestamp DEFAULT now() NOT NULL,
       "committed_at" timestamp

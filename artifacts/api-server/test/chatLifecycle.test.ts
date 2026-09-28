@@ -62,7 +62,11 @@ vi.mock("../src/lib/localEnsemble", () => ({
 }));
 
 import chatRouter from "../src/routes/chat";
-import { beginChatTurn } from "../src/lib/chatTurnLedger";
+import {
+  beginChatTurn,
+  checkpointGeneratedTurn,
+  claimChatTurnLease,
+} from "../src/lib/chatTurnLedger";
 import { resetChatTurnFlightsForTests } from "../src/lib/chatTurnFlight";
 import {
   evolveCompanionAffectFromCompanion,
@@ -355,7 +359,7 @@ describe("chat lifecycle", () => {
     }));
   });
 
-  it("returns 409 when the same turn is still pending", async () => {
+  it("joins a leased pending turn and replays the saved reply", async () => {
     const pendingId = `turn_${prefix}_pending`;
     const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
     await beginChatTurn({
@@ -365,7 +369,9 @@ describe("chat lifecycle", () => {
       userContent: "Hello",
       persistenceOwner: "server",
     });
-    const res = await request("/chat/messages", {
+    expect(await claimChatTurnLease(pendingId, userId)).toBe(true);
+
+    const pending = request("/chat/messages", {
       method: "POST",
       body: JSON.stringify({
         turn_id: pendingId,
@@ -375,12 +381,28 @@ describe("chat lifecycle", () => {
         mode: "solo",
       }),
     });
-    expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({
-      error: "This chat turn is already being processed.",
-      code: "turn_in_flight",
+    // The joiner polls the ledger. Save the owner's reply during that wait
+    // so this request replays instead of claiming the turn and generating.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await checkpointGeneratedTurn({
+      id: pendingId,
+      userId,
+      assistantContent: "Already on the way.",
+    });
+
+    const res = await pending;
+    expect(res.status).toBe(200);
+    const events = sseEvents(await res.text());
+    const text = events
+      .filter((event) => typeof event.content === "string" && !event.done)
+      .map((event) => event.content)
+      .join("");
+    expect(text).toBe("Already on the way.");
+    expect(events.at(-1)).toMatchObject({
+      done: true,
+      replayed: true,
+      joined: true,
       turn_id: pendingId,
-      persistence_status: "pending",
     });
     expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(
       callsBefore,

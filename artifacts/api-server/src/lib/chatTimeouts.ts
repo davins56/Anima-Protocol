@@ -126,13 +126,46 @@ export const CHAT_STREAM_TIMEOUT_MS =
 export const WORKER_WAIT_UNTIL_GRACE_MS = 30_000;
 
 /**
- * How long `/api/chat/messages` may wait on the self-hosted model after the
- * browser's 140s abort. Capped at that deadline plus the Worker grace so a
- * slow anima-chat reply can still be saved. Does not change the 90s
- * header-withheld budget (`LLM_LOCAL_FIRST_TOKEN_MS`) or `/api/ai/chat`.
+ * After the browser drops, wait this long for a retry/join before aborting
+ * the upstream generate. A live client or a pending join keeps the slot.
+ */
+export const CLIENT_DISCONNECT_GRACE_MS = 25_000;
+
+/**
+ * Hard ceiling for a generate that continues only so a late reply can be
+ * saved. A companion beat is about 200 tokens (~15s at 13 tok/s) after a
+ * ~23s prefill, so this stays well under the old 170s durable wait.
+ * A connected client still uses the 90s first-token budget.
+ */
+export const LLM_LATE_PERSIST_BUDGET_MS = 60_000;
+
+/**
+ * How long a disconnected companion generate may keep the model slot when
+ * nobody is waiting on the reply. Connected turns use the local first-token
+ * budget instead. Does not change `/api/ai/chat`.
  */
 export function llmCompanionDurableWaitMs(): number {
-  return CHAT_STREAM_TIMEOUT_MS + WORKER_WAIT_UNTIL_GRACE_MS;
+  return LLM_LATE_PERSIST_BUDGET_MS;
+}
+
+/**
+ * Abort an upstream generate that no longer has a live client or a retry
+ * waiting on it. A turn still inside the disconnect grace keeps running.
+ * Past the late-persist ceiling, a disconnected turn stops even sooner.
+ */
+export function shouldAbortAbandonedGenerate(input: {
+  clientLeft: boolean;
+  disconnectedForMs: number;
+  hasWaiter: boolean;
+  elapsedMs: number;
+  graceMs?: number;
+  lateBudgetMs?: number;
+}): boolean {
+  if (!input.clientLeft || input.hasWaiter) return false;
+  const grace = input.graceMs ?? CLIENT_DISCONNECT_GRACE_MS;
+  const late = input.lateBudgetMs ?? LLM_LATE_PERSIST_BUDGET_MS;
+  if (input.elapsedMs >= late) return true;
+  return input.disconnectedForMs >= grace;
 }
 
 /**
@@ -336,6 +369,98 @@ export function watchClientLeave(res: {
     left: () => gone,
     cancel: () => {
       res.off?.("close", onClose);
+    },
+  };
+}
+
+/**
+ * Abort the upstream generate after the disconnect grace when no retry is
+ * joined, and never let that orphaned generate run past the late-persist cap.
+ * A connected response is left alone so a slow prefill can still finish.
+ */
+export function armAbandonedGenerateAbort(args: {
+  res: {
+    on: (event: string, listener: () => void) => void;
+    off?: (event: string, listener: () => void) => void;
+    writableEnded: boolean;
+  };
+  hasWaiter: () => boolean | Promise<boolean>;
+  startedAt?: number;
+  graceMs?: number;
+  lateBudgetMs?: number;
+}): { signal: AbortSignal; cancel: () => void } {
+  const controller = new AbortController();
+  const startedAt = args.startedAt ?? Date.now();
+  const graceMs = args.graceMs ?? CLIENT_DISCONNECT_GRACE_MS;
+  const lateBudgetMs = args.lateBudgetMs ?? LLM_LATE_PERSIST_BUDGET_MS;
+  let disconnectedAt: number | null = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let cancelled = false;
+
+  const clearTimer = () => {
+    if (!timer) return;
+    clearTimeout(timer);
+    timer = undefined;
+  };
+
+  const schedule = (ms: number) => {
+    clearTimer();
+    timer = setTimeout(() => {
+      void tick();
+    }, Math.max(1, ms));
+    timer.unref?.();
+  };
+
+  const tick = async () => {
+    if (cancelled || controller.signal.aborted) return;
+    if (args.res.writableEnded || disconnectedAt == null) return;
+    const now = Date.now();
+    let waiting = false;
+    try {
+      waiting = await args.hasWaiter();
+    } catch {
+      waiting = false;
+    }
+    const disconnectedForMs = now - disconnectedAt;
+    const elapsedMs = now - startedAt;
+    if (
+      shouldAbortAbandonedGenerate({
+        clientLeft: true,
+        disconnectedForMs,
+        hasWaiter: waiting,
+        elapsedMs,
+        graceMs,
+        lateBudgetMs,
+      })
+    ) {
+      controller.abort();
+      return;
+    }
+    if (waiting) {
+      schedule(graceMs);
+      return;
+    }
+    const untilGrace = graceMs - disconnectedForMs;
+    const untilCap = lateBudgetMs - elapsedMs;
+    schedule(Math.min(untilGrace, untilCap));
+  };
+
+  const onClose = () => {
+    if (args.res.writableEnded || disconnectedAt != null) return;
+    disconnectedAt = Date.now();
+    const elapsedMs = disconnectedAt - startedAt;
+    const untilGrace = graceMs;
+    const untilCap = lateBudgetMs - elapsedMs;
+    schedule(Math.min(untilGrace, Math.max(1, untilCap)));
+  };
+
+  args.res.on("close", onClose);
+  return {
+    signal: controller.signal,
+    cancel: () => {
+      cancelled = true;
+      clearTimer();
+      args.res.off?.("close", onClose);
     },
   };
 }

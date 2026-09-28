@@ -103,6 +103,11 @@ export type ChatMessage = typeof chatMessages.$inferSelect;
  * Durable chat-turn ledger. A generated reply is checkpointed here before the
  * SSE `done` event, then idempotent message persistence advances it to
  * `committed`. Failed/client-interrupted writes remain retryable.
+ *
+ * `lease_expires_at` is the running-owner lease. A pending turn whose lease
+ * has expired can be claimed by another isolate. `waiting_until` is set by a
+ * retry that is joined to that owner so a disconnect does not abort the slot
+ * while someone is still waiting.
  */
 export const chatTurns = pgTable(
   "chat_turns",
@@ -119,6 +124,8 @@ export const chatTurns = pgTable(
     assistantContent: text("assistant_content").notNull().default(""),
     metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
     lastError: text("last_error"),
+    leaseExpiresAt: timestamp("lease_expires_at"),
+    waitingUntil: timestamp("waiting_until"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
     committedAt: timestamp("committed_at"),
