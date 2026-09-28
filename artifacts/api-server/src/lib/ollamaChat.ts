@@ -17,13 +17,13 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat/completio
 import { combineAbortSignals } from "./chatTimeouts";
 import {
   localChatKeepAliveFields,
+  localLlmAuthorizationHeader,
   ollamaNativeOrigin,
   ollamaNumCtx,
 } from "./localLlmWarm";
 import {
   hasLocalLlm,
   localLlmBaseUrl,
-  normalizeApiKey,
 } from "./openaiClient";
 import { messagesForLocalOllama } from "./promptBuilder";
 
@@ -161,8 +161,11 @@ async function discardResponseBody(response: Response): Promise<void> {
 /**
  * Health check for the local Ollama host that does not generate.
  * A generate of "Reply with the single word: ok" replaces the cached
- * companion prompt. GET `/api/ps` (then `/api/tags` if the model is not
- * loaded) only confirms the tag is present.
+ * companion prompt. GET `/api/ps` first. A non-2xx answer is drained and
+ * the probe continues with GET `/api/tags`, which the tunnel answers
+ * without taking the model slot. `/api/tags` is also used when `/api/ps`
+ * is 2xx but the model is installed and not loaded. Every list body is
+ * read or cancelled.
  */
 export async function probeOllamaModelListed(opts: {
   model: string;
@@ -184,7 +187,7 @@ export async function probeOllamaModelListed(opts: {
     };
   }
   const headers: Record<string, string> = { Accept: "application/json" };
-  const auth = ollamaAuthHeader(env);
+  const auth = localLlmAuthorizationHeader(env);
   if (auth) headers.Authorization = auth;
 
   const read = async (
@@ -204,11 +207,24 @@ export async function probeOllamaModelListed(opts: {
       }
       throw connectionError(err);
     }
-    if (!response.ok) {
+    // Read the body on every status. A 2xx is the model list. A non-2xx
+    // still has to be drained before the /api/tags fallback, or before
+    // the probe returns.
+    let raw = "";
+    try {
+      raw = await response.text();
+    } catch {
       await discardResponseBody(response);
+    }
+    if (!response.ok) {
       return { ok: false, status: response.status, models: [] };
     }
-    const body = (await response.json().catch(() => null)) as unknown;
+    let body: unknown = null;
+    try {
+      body = raw ? JSON.parse(raw) : null;
+    } catch {
+      body = null;
+    }
     return { ok: true, status: response.status, models: modelNamesFromOllamaList(body) };
   };
 
@@ -247,16 +263,6 @@ export async function probeOllamaModelListed(opts: {
     status: tags.status || ps.status,
     message: `Model ${opts.model} is not listed by Ollama.`,
   };
-}
-
-function ollamaAuthHeader(
-  env: NodeJS.ProcessEnv = process.env,
-): string | null {
-  const key =
-    normalizeApiKey(env.ANIMA_LOCAL_LLM_API_KEY) ||
-    normalizeApiKey(env.VLLM_API_KEY);
-  if (!key || key === "local") return null;
-  return `Bearer ${key}`;
 }
 
 function textFromContent(content: unknown): string {
@@ -484,7 +490,7 @@ async function postOllamaChat(
     "Content-Type": "application/json",
     Accept: stream ? "application/x-ndjson, application/json" : "application/json",
   };
-  const auth = ollamaAuthHeader(env);
+  const auth = localLlmAuthorizationHeader(env);
   if (auth) headers.Authorization = auth;
 
   let res: Response;
