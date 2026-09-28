@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 import {
   chatTurns,
   db,
@@ -228,11 +228,24 @@ export async function readChatTurn(
   return turn ?? null;
 }
 
-/** Newest pending or generated turn for this session, if the reply is not committed yet. */
+/**
+ * A pending turn whose lease (or, before any lease, its last update) is older
+ * than this is abandoned: no isolate is generating it and no heartbeat will
+ * renew it. Well past the 140s browser abort and the late-persist budget.
+ */
+export const STALE_PENDING_TURN_MS = 3 * 60 * 1000;
+
+/**
+ * Newest pending or generated turn for this session, if the reply is not
+ * committed yet. Abandoned pending turns (see `STALE_PENDING_TURN_MS`) are skipped
+ * so reopening the chat does not show a "..." bubble for a dead generate.
+ */
 export async function latestOpenChatTurn(
   userId: string,
   sessionId: string,
+  now = new Date(),
 ): Promise<ChatTurn | null> {
+  const staleBefore = new Date(now.getTime() - STALE_PENDING_TURN_MS);
   const [turn] = await withTransientDbRetry(() =>
     db
       .select()
@@ -241,7 +254,16 @@ export async function latestOpenChatTurn(
         and(
           eq(chatTurns.userId, userId),
           eq(chatTurns.sessionId, sessionId),
-          inArray(chatTurns.status, ["pending", "generated"]),
+          or(
+            eq(chatTurns.status, "generated"),
+            and(
+              eq(chatTurns.status, "pending"),
+              or(
+                gt(chatTurns.leaseExpiresAt, staleBefore),
+                and(isNull(chatTurns.leaseExpiresAt), gt(chatTurns.updatedAt, staleBefore)),
+              ),
+            ),
+          ),
         ),
       )
       .orderBy(desc(chatTurns.createdAt))
