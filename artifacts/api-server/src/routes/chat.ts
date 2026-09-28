@@ -2572,7 +2572,13 @@ router.post("/messages", async (req, res) => {
       activeChar?.backstory,
       activeChar?.speaking_style,
     ];
-    const replyIsStock = (text: unknown) => isStockAssistantLine(text, personaParts);
+    // A self-harm turn keeps the generated reply. Swapping it for the
+    // in-character dodge would drop the care the model just offered.
+    // The crisis card and the care note are unchanged; this only skips
+    // the stock and repeat machinery.
+    const crisisTurn = Boolean(crisisResourceCard);
+    const replyIsStock = (text: unknown) =>
+      !crisisTurn && isStockAssistantLine(text, personaParts);
     const stockDeflection = () =>
       stockAssistantDeflection(activeChar?.name, pronounFromPersona(personaParts));
     const regenerateStockReply = async (maxTokens: number): Promise<string | null> => {
@@ -2679,7 +2685,7 @@ router.post("/messages", async (req, res) => {
           ? trimToLastCompleteSentence(streamed.content)
           : streamed.content;
       }
-      if (replyIsStock(fullResponse)) {
+      if (!crisisTurn && replyIsStock(fullResponse)) {
         const retryBudgetMs = repeatRetryBudgetMs(Date.now() - requestStartedAt);
         let otherWorkQueued = companionTurnsOpenForUser(userId) > 1;
         if (retryBudgetMs > 0 && !generateSignal.aborted && !otherWorkQueued) {
@@ -2754,7 +2760,10 @@ router.post("/messages", async (req, res) => {
           const visible = held.trim();
           if (visible.length < LOCAL_REPEAT_DETECT_CHARS) return;
           const opening = visible.slice(0, LOCAL_REPEAT_DETECT_CHARS);
-          if (visiblePrefixRepeatsHistory(opening, priorReplies)) {
+          if (
+            !crisisTurn &&
+            visiblePrefixRepeatsHistory(opening, priorReplies)
+          ) {
             cutReason = "repeat";
             return;
           }
@@ -2781,12 +2790,16 @@ router.post("/messages", async (req, res) => {
       }
 
       const retryBudgetMs = repeatRetryBudgetMs(Date.now() - requestStartedAt);
-      const copiedReply =
-        matchingRepeatedReply(fullResponse, priorReplies) ||
-        (cutReason === "repeat" ? matchingRepeatedReply(held, priorReplies) : null);
-      const repeated = Boolean(copiedReply) || isRepeatedReply(fullResponse, priorReplies);
+      const copiedReply = crisisTurn
+        ? null
+        : matchingRepeatedReply(fullResponse, priorReplies) ||
+          (cutReason === "repeat" ? matchingRepeatedReply(held, priorReplies) : null);
+      const repeated =
+        !crisisTurn &&
+        (Boolean(copiedReply) || isRepeatedReply(fullResponse, priorReplies));
       const stockLine =
-        cutReason === "stock" || replyIsStock(fullResponse) || replyIsStock(held);
+        !crisisTurn &&
+        (cutReason === "stock" || replyIsStock(fullResponse) || replyIsStock(held));
       let otherWorkQueued = false;
       const wantsExtra =
         (repeated || stockLine) &&
@@ -2888,11 +2901,12 @@ router.post("/messages", async (req, res) => {
         }
       }
       // A repeat stop leaves only the opening fragment. Never save or show
-      // that fragment when the retry was skipped or failed.
-      if (cutReason === "repeat" && !repeatResolved) {
+      // that fragment when the retry was skipped or failed. Crisis turns
+      // keep whatever the model wrote.
+      if (!crisisTurn && cutReason === "repeat" && !repeatResolved) {
         fullResponse = stockDeflection();
         flushed = false;
-      } else {
+      } else if (!crisisTurn) {
         const unresolvedStock =
           replyIsStock(fullResponse) ||
           (cutReason === "stock" &&

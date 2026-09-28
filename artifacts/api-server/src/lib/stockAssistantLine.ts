@@ -80,9 +80,26 @@ function stockMatchCoverage(text: string): number {
   return covered;
 }
 
-/** Persona text that already presents the character as a machine. "as an AI" can be in character. */
-const PERSONA_MACHINE_RE =
-  /\b(?:ai|android|robot|synthetic|machine|automaton|droid|cyborg|bot|software|construct|program)\b/i;
+/**
+ * Persona text that identifies the character as a machine. A bare keyword
+ * ("killing machine", "software engineer", "the Widow program") does not.
+ * The line has to say the character is that thing: a copula ("she is an
+ * android", "Echo is a synthetic being", "I am a machine"), a leading
+ * "a/an … who/that/named" descriptor, or a "species:" tag.
+ */
+const MACHINE_NOUN =
+  "ai|android|robot|synthetic|automaton|droid|cyborg|bot|software|construct|program";
+const MACHINE_ADJECTIVES = "(?:[a-z][a-z'-]*\\s+){0,2}";
+const MACHINE_NOT_MODIFIER =
+  "(?!\\s+(?:engineer|engineers|app|apps|farm|farms|developer|developers|update|updates|license|company|project|suite|tool|tools|patch|store|shop|lab|course|class)\\b)";
+/** "machine" stays bare so "killing machine" is not an identity. */
+const MACHINE_HEAD = `(?:${MACHINE_ADJECTIVES}(?:${MACHINE_NOUN})\\b${MACHINE_NOT_MODIFIER}|machine\\b${MACHINE_NOT_MODIFIER})`;
+const PERSONA_MACHINE_RE = new RegExp(
+  `(?:\\b(?:i|you|he|she|they|we|it)\\s+(?:am|are|is|was|were)\\b|\\b(?:i['’]m|you['’]re|he['’]s|she['’]s|they['’]re|it['’]s|we['’]re)\\b|\\b\\w+\\s+(?:is|was|are|were)\\b)(?!\\s+not\\b)(?!\\s+never\\b)\\s+(?:built\\s+as\\s+)?(?:an?\\s+)?${MACHINE_HEAD}` +
+    `|(?:^|\\n)\\s*an?\\s+${MACHINE_HEAD}\\s+(?:who|that|named)\\b` +
+    `|\\bspecies\\s*:\\s*${MACHINE_HEAD}`,
+  "i",
+);
 
 export function personaDescribesMachine(
   parts: Array<string | null | undefined> | undefined,
