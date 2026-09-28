@@ -3,12 +3,13 @@
  * not to one account, so they live in a reserved `user_entities` partition
  * (`__anima_model__`). The generic /api/store always scopes to the caller's
  * Clerk id, so no client can read or write this partition — only the
- * steward-gated /api/tutor routes do. No schema change is needed.
+ * steward-gated /api/tutor routes and /api/model do.
  *
- * The "Answer my chats with my model" switch is per steward and sits in
- * their profile under `model_tutor`, outside `settings`, so a Settings save
- * never overwrites it. /api/chat/messages already loads the profile, so the
- * switch costs the chat hot path nothing.
+ * Per-user switches (the steward's "Answer my chats with my model", and
+ * anyone's consent to learn from their own-model chats) sit in the profile
+ * under `model_tutor`, outside `settings`, so a Settings save never
+ * overwrites them. /api/chat/messages already loads the profile, so the
+ * switches cost the chat hot path nothing.
  */
 
 import { and, desc, eq, sql } from "drizzle-orm";
@@ -21,9 +22,9 @@ import {
   type ModelAdvice,
   type ModelLesson,
 } from "./modelTutor";
-import { ownModelChatPreference } from "./ownModel";
+import { MODEL_PARTITION, modelTutorPrefs, type ModelTutorPrefs } from "./ownModel";
 
-export const MODEL_TUTOR_PARTITION = "__anima_model__";
+export const MODEL_TUTOR_PARTITION = MODEL_PARTITION;
 export const MODEL_LESSON_ENTITY = "ModelLesson";
 export const MODEL_ADVICE_ENTITY = "ModelAdvice";
 export const MAX_STORED_LESSONS = 5000;
@@ -69,6 +70,41 @@ export async function countLessons(): Promise<number> {
       .where(scope(MODEL_LESSON_ENTITY)),
   );
   return Number(row?.count ?? 0);
+}
+
+export interface LessonCounts {
+  total: number;
+  pending: number;
+  learned: number;
+  failed: number;
+  auto: number;
+  auto_pending: number;
+}
+
+export async function lessonCounts(): Promise<LessonCounts> {
+  const status = sql`${userEntities.data}->>'status'`;
+  const auto = sql`${userEntities.data}->>'source' = 'auto'`;
+  const [row] = await withTransientDbRetry(() =>
+    db
+      .select({
+        total: sql<number>`count(*)::int`,
+        pending: sql<number>`count(*) filter (where ${status} = 'saved')::int`,
+        learned: sql<number>`count(*) filter (where ${status} = 'learned')::int`,
+        failed: sql<number>`count(*) filter (where ${status} = 'failed')::int`,
+        auto: sql<number>`count(*) filter (where ${auto})::int`,
+        auto_pending: sql<number>`count(*) filter (where ${auto} and ${status} = 'saved')::int`,
+      })
+      .from(userEntities)
+      .where(scope(MODEL_LESSON_ENTITY)),
+  );
+  return {
+    total: Number(row?.total ?? 0),
+    pending: Number(row?.pending ?? 0),
+    learned: Number(row?.learned ?? 0),
+    failed: Number(row?.failed ?? 0),
+    auto: Number(row?.auto ?? 0),
+    auto_pending: Number(row?.auto_pending ?? 0),
+  };
 }
 
 export async function getLesson(id: string): Promise<ModelLesson | null> {
@@ -142,7 +178,7 @@ export async function deleteAdvice(id: string): Promise<boolean> {
 
 // ------------------------------------------------------------------ preferences
 
-export async function readOwnModelChatPreference(userId: string): Promise<boolean> {
+export async function readModelTutorPrefs(userId: string): Promise<ModelTutorPrefs> {
   const [row] = await withTransientDbRetry(() =>
     db
       .select({ data: userProfiles.data })
@@ -150,20 +186,23 @@ export async function readOwnModelChatPreference(userId: string): Promise<boolea
       .where(eq(userProfiles.userId, userId))
       .limit(1),
   );
-  return ownModelChatPreference(row?.data);
+  return modelTutorPrefs(row?.data);
 }
 
-/** Merge `model_tutor.own_model_chat` into the profile without touching the rest. */
-export async function writeOwnModelChatPreference(userId: string, enabled: boolean): Promise<void> {
-  const patch = JSON.stringify({ own_model_chat: enabled });
+/** Merge into the profile's `model_tutor` without touching anything else. */
+export async function writeModelTutorPrefs(
+  userId: string,
+  patch: Partial<ModelTutorPrefs>,
+): Promise<void> {
+  const json = JSON.stringify(patch);
   await withTransientDbRetry(() =>
     db
       .insert(userProfiles)
-      .values({ userId, data: { model_tutor: { own_model_chat: enabled } } })
+      .values({ userId, data: { model_tutor: patch } })
       .onConflictDoUpdate({
         target: userProfiles.userId,
         set: {
-          data: sql`coalesce(${userProfiles.data}, '{}'::jsonb) || jsonb_build_object('model_tutor', coalesce(${userProfiles.data} -> 'model_tutor', '{}'::jsonb) || ${patch}::jsonb)`,
+          data: sql`coalesce(${userProfiles.data}, '{}'::jsonb) || jsonb_build_object('model_tutor', coalesce(${userProfiles.data} -> 'model_tutor', '{}'::jsonb) || ${json}::jsonb)`,
           updatedAt: new Date(),
         },
       }),

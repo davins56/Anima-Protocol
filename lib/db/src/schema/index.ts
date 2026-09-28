@@ -8,6 +8,8 @@ import {
   boolean,
   uniqueIndex,
   index,
+  primaryKey,
+  customType,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
@@ -385,3 +387,39 @@ export const uploadedImages = pgTable(
 );
 
 export type UploadedImage = typeof uploadedImages.$inferSelect;
+
+/** Raw bytes. node-pg and postgres.js both hand back a Buffer for bytea. */
+const bytea = customType<{ data: Uint8Array; driverData: Uint8Array | string }>({
+  dataType() {
+    return "bytea";
+  },
+  fromDriver(value) {
+    if (typeof value === "string") {
+      return Buffer.from(value.startsWith("\\x") ? value.slice(2) : value, "hex");
+    }
+    return value;
+  },
+});
+
+/**
+ * Weights of the steward's own model, in 512 KiB chunks per version:
+ * "inference" (what browsers download and run) and "master" (fp16 weights
+ * the background trainer resumes from). Written by the Model Tutor upload and
+ * by server/trainer.py, which creates the same table if it is missing — keep
+ * the two definitions in step (server/trainer.py BLOBS_DDL).
+ */
+export const ownModelBlobs = pgTable(
+  "own_model_blobs",
+  {
+    version: integer("version").notNull(),
+    kind: text("kind").notNull(),
+    idx: integer("idx").notNull(),
+    data: bytea("data").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ name: "own_model_blobs_pk", columns: [t.version, t.kind, t.idx] }),
+  }),
+);
+
+export type OwnModelBlob = typeof ownModelBlobs.$inferSelect;

@@ -54,10 +54,6 @@ export const CLOUDFLARE_RUNTIME_ENV_NAMES = [
   "ANIMA_OPENROUTER_API_KEY",
   "ANIMA_OPENROUTER_FALLBACK",
   "ANIMA_OPENROUTER_FREE",
-  // The steward's own model (server/server.py) — see docs/own-model.md.
-  "ANIMA_OWN_LLM_API_KEY",
-  "ANIMA_OWN_LLM_BASE_URL",
-  "ANIMA_OWN_LLM_MODEL",
   "ANIMA_CODESPACE_TERMINAL",
   "API_KEY",
   "CLERK_JWT_KEY",
@@ -72,6 +68,11 @@ export const CLOUDFLARE_RUNTIME_ENV_NAMES = [
   "FIRECRAWL_DEV",
   "FIREWORKS_AI_KEY",
   "GEMINI_API_KEY",
+  // Optional: start the own-model trainer right after a lesson instead of
+  // waiting for its 15-minute schedule — see docs/own-model.md.
+  "GITHUB_TRAINER_REF",
+  "GITHUB_TRAINER_REPO",
+  "GITHUB_TRAINER_TOKEN",
   "GROQ_API_KEY",
   "KIMI_API_KEY",
   "LEONARDO_AI_API",

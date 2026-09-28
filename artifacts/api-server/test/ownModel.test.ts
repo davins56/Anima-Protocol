@@ -1,4 +1,4 @@
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
   afterAll,
@@ -22,86 +22,91 @@ vi.mock("@clerk/express", () => ({
   }),
 }));
 
-import { db, userEntities, userProfiles } from "@workspace/db";
-import { like } from "drizzle-orm";
+const teacherCompletion = vi.fn();
+vi.mock("../src/lib/llmFailover", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/lib/llmFailover")>()),
+  createChatCompletionWithFailover: (...args: unknown[]) => teacherCompletion(...args),
+}));
+
+import { eq, like } from "drizzle-orm";
+import { db, ownModelBlobs, userEntities, userProfiles } from "@workspace/db";
 import chatRouter from "../src/routes/chat";
 import storeRouter from "../src/routes/store";
-import { streamErrorMessage } from "../src/lib/chatStreamError";
-import { LlmStreamTimeoutError, consumeLlmStream } from "../src/lib/consumeLlmStream";
+import ownModelRouter from "../src/routes/ownModel";
+import { resetRateLimitStateForTests } from "../src/lib/rateLimit";
+import { MODEL_TUTOR_PARTITION, getLesson, listLessons } from "../src/lib/modelTutorStore";
+import { lessonIdFor } from "../src/lib/modelTutor";
 import {
-  OWN_MODEL_AUTH_HINT,
+  BLOB_CHUNK_BYTES,
   OWN_MODEL_EMPTY_REPLY,
-  OWN_MODEL_TIMEOUT_HINT,
-  OWN_MODEL_UNAVAILABLE_HINT,
-  asOwnModelError,
-  buildOwnModelMessages,
-  createOwnModelChatStream,
-  ownModelBaseUrl,
-  ownModelChatPreference,
+  base64ByteLength,
+  ensureOwnModelBlobsTable,
+  installBaseVersion,
+  mergeModelState,
+  modelTutorPrefs,
+  normalizeModelState,
+  ownModelAccess,
   resetOwnModelForTests,
-  wantsOwnModelReply,
+  writeBlobChunk,
+  type ModelState,
 } from "../src/lib/ownModel";
 
 const PREFIX = `own_model_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_`;
+const STEWARD = `${PREFIX}steward`;
+const VISITOR = `${PREFIX}visitor`;
 const SAVED_ENV = { ...process.env };
+const VERSION = 7;
+const WEIGHTS = new Uint8Array(BLOB_CHUNK_BYTES + 100).map((_, i) => (i * 7) & 0xff);
 
-type StubReply = { status?: number; deltas?: string[]; hang?: boolean };
-let stubReply: StubReply = {};
-const stubRequests: { headers: IncomingMessage["headers"]; body: Record<string, unknown> }[] = [];
-let stub: Server;
-let stubOrigin = "";
-
-function sseChunk(delta: Record<string, unknown>, finish: string | null = null) {
-  return `data: ${JSON.stringify({
-    id: "chatcmpl-stub",
-    object: "chat.completion.chunk",
-    created: 0,
-    model: "anima-own",
-    choices: [{ index: 0, delta, finish_reason: finish }],
-  })}\n\n`;
-}
-
-function handleStub(req: IncomingMessage, res: ServerResponse) {
-  let raw = "";
-  req.on("data", (c) => (raw += c));
-  req.on("end", () => {
-    stubRequests.push({ headers: req.headers, body: JSON.parse(raw || "{}") });
-    if (stubReply.status && stubReply.status !== 200) {
-      res.writeHead(stubReply.status, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ detail: "nope", error: { message: "nope" } }));
-      return;
-    }
-    res.writeHead(200, { "Content-Type": "text/event-stream" });
-    res.write(sseChunk({ role: "assistant", content: "" }));
-    if (stubReply.hang) return;
-    for (const d of stubReply.deltas ?? ["Hello ", "from my model."]) {
-      res.write(sseChunk({ content: d }));
-    }
-    res.write(sseChunk({}, "stop"));
-    res.end("data: [DONE]\n\n");
-  });
-}
+let server: Server;
+let baseUrl = "";
 
 beforeAll(async () => {
-  stub = createServer(handleStub);
-  await new Promise<void>((resolve) => stub.listen(0, "127.0.0.1", resolve));
-  stubOrigin = `http://127.0.0.1:${(stub.address() as AddressInfo).port}`;
+  const app: Express = express();
+  app.use(express.json({ limit: "4mb" }));
+  app.use("/store", storeRouter);
+  app.use("/chat", chatRouter);
+  app.use("/model", ownModelRouter);
+  await new Promise<void>((resolve) => {
+    server = app.listen(0, () => resolve());
+  });
+  baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 
-afterAll(async () => {
-  stub.closeAllConnections();
-  await new Promise<void>((resolve) => stub.close(() => resolve()));
-});
+async function clearModelData() {
+  await db.delete(userEntities).where(eq(userEntities.userId, MODEL_TUTOR_PARTITION));
+  await db.delete(userEntities).where(like(userEntities.userId, `${PREFIX}%`));
+  await db.delete(userProfiles).where(like(userProfiles.userId, `${PREFIX}%`));
+  await ensureOwnModelBlobsTable();
+  await db.delete(ownModelBlobs);
+}
 
-beforeEach(() => {
-  process.env.ANIMA_RUNTIME = "node";
-  process.env.ANIMA_OWN_LLM_BASE_URL = `${stubOrigin}/v1`;
-  process.env.ANIMA_OWN_LLM_API_KEY = "own-token";
-  process.env.PROTOCOL_UPGRADE_ADMIN_USER_IDS = `${PREFIX}steward`;
+/** A published model, as the Model Tutor upload leaves it. */
+async function publishModel(settings: Partial<ModelState> = {}) {
+  const b64 = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64");
+  await writeBlobChunk(VERSION, "inference", 0, b64(WEIGHTS.subarray(0, BLOB_CHUNK_BYTES)));
+  await writeBlobChunk(VERSION, "inference", 1, b64(WEIGHTS.subarray(BLOB_CHUNK_BYTES)));
+  await writeBlobChunk(VERSION, "master", 0, b64(new Uint8Array([1, 2, 3])));
+  await mergeModelState({ uploads: {} });
+  await installBaseVersion(VERSION, {
+    kind: "base",
+    created_at: "2026-09-01T00:00:00.000Z",
+    lessons: 0,
+    inference: { bytes: WEIGHTS.length, chunks: 2, sha256: "ab".repeat(32) },
+    master: { bytes: 3, chunks: 1 },
+    config: { vocab_size: 300, block_size: 48, n_layer: 2, n_head: 2, n_embd: 32 },
+  });
+  if (Object.keys(settings).length) await mergeModelState(settings);
+}
+
+beforeEach(async () => {
+  process.env.PROTOCOL_UPGRADE_ADMIN_USER_IDS = STEWARD;
   delete process.env.CLERK_SECRET_KEY;
-  stubReply = {};
-  stubRequests.length = 0;
+  delete process.env.GITHUB_TRAINER_TOKEN;
   resetOwnModelForTests();
+  resetRateLimitStateForTests();
+  teacherCompletion.mockReset();
+  await clearModelData();
 });
 
 afterEach(() => {
@@ -109,179 +114,329 @@ afterEach(() => {
   resetOwnModelForTests();
 });
 
-describe("own model config", () => {
-  it("normalises the base URL and refuses loopback where it cannot be reached", () => {
-    expect(ownModelBaseUrl({})).toBeNull();
-    expect(ownModelBaseUrl({ ANIMA_OWN_LLM_BASE_URL: "https://me.fly.dev" })).toBe("https://me.fly.dev/v1");
-    expect(ownModelBaseUrl({ ANIMA_OWN_LLM_BASE_URL: "https://me.fly.dev/v1/" })).toBe("https://me.fly.dev/v1");
-    expect(ownModelBaseUrl({ ANIMA_OWN_LLM_BASE_URL: "me.fly.dev" })).toBeNull();
-    expect(
-      ownModelBaseUrl({ ANIMA_OWN_LLM_BASE_URL: "http://127.0.0.1:8000/v1", ANIMA_RUNTIME: "worker" }),
-    ).toBeNull();
-    expect(
-      ownModelBaseUrl({ ANIMA_OWN_LLM_BASE_URL: "http://127.0.0.1:8000/v1", ANIMA_RUNTIME: "node" }),
-    ).toBe("http://127.0.0.1:8000/v1");
+afterAll(async () => {
+  await clearModelData();
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+});
+
+async function call(user: string | null, method: string, path: string, body?: unknown) {
+  return fetch(`${baseUrl}${path}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      ...(user ? { "x-test-user": user } : {}),
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+}
+
+async function json(user: string | null, method: string, path: string, body?: unknown) {
+  const res = await call(user, method, path, body);
+  return { status: res.status, body: (await res.json()) as any };
+}
+
+// ---- who the model answers ----------------------------------------------
+
+describe("access", () => {
+  const published = normalizeModelState({
+    base_version: 1,
+    current_version: 1,
+    versions: { "1": { kind: "base", inference: { bytes: 1, chunks: 1 }, master: { bytes: 1, chunks: 1 } } },
+  });
+  const access = (userId: string, profile: unknown, state: Partial<ModelState> = {}) =>
+    ownModelAccess({ userId, profile, state: { ...published, ...state } });
+  const chatOn = { model_tutor: { own_model_chat: true } };
+  const sharing = { model_tutor: { share_for_training: true } };
+
+  it("measures base64 without decoding it", () => {
+    for (const n of [0, 1, 2, 3, 512, 1000]) {
+      expect(base64ByteLength(Buffer.alloc(n, 7).toString("base64"))).toBe(n);
+    }
+    expect(base64ByteLength("abc")).toBeNull();
+    expect(base64ByteLength("ab!d")).toBeNull();
+    expect(base64ByteLength("ab\ncd==")).toBeNull();
   });
 
-  it("reads the switch from the profile, not from settings", () => {
-    expect(ownModelChatPreference({ model_tutor: { own_model_chat: true } })).toBe(true);
-    expect(ownModelChatPreference({ settings: { own_model_chat: true } })).toBe(false);
-    expect(ownModelChatPreference(null)).toBe(false);
+  it("reads the switches from the profile, not from settings", () => {
+    expect(modelTutorPrefs({ model_tutor: { own_model_chat: true } })).toEqual({
+      own_model_chat: true,
+      share_for_training: false,
+    });
+    expect(modelTutorPrefs({ settings: { own_model_chat: true } }).own_model_chat).toBe(false);
+    expect(modelTutorPrefs(null)).toEqual({ own_model_chat: false, share_for_training: false });
   });
 
-  it("routes only stewards who switched it on, and only when the model is connected", async () => {
-    const on = { model_tutor: { own_model_chat: true } };
-    expect(await wantsOwnModelReply({ userId: `${PREFIX}steward`, profile: on })).toBe(true);
-    expect(await wantsOwnModelReply({ userId: `${PREFIX}steward`, profile: {} })).toBe(false);
-    expect(await wantsOwnModelReply({ userId: `${PREFIX}someone`, profile: on })).toBe(false);
-    delete process.env.ANIMA_OWN_LLM_BASE_URL;
-    expect(await wantsOwnModelReply({ userId: `${PREFIX}steward`, profile: on })).toBe(false);
+  it("answers nobody until a model is published", async () => {
+    const empty = normalizeModelState({ answer_everyone: true });
+    expect(await ownModelAccess({ userId: STEWARD, profile: chatOn, state: empty })).toMatchObject({
+      enabled: false,
+      learning: false,
+    });
   });
 
-  it("sends the conversation without the character sheet", () => {
-    const messages = buildOwnModelMessages(
-      [
-        { role: "user", content: "Hi" },
-        { role: "assistant", content: "Hello!" },
-        { role: "assistant", content: "...", character_name: "__typing__" },
-        { role: "user", content: "How are you?" },
-      ],
-      "How are you?",
-    );
-    expect(messages).toEqual([
-      { role: "user", content: "Hi" },
-      { role: "assistant", content: "Hello!" },
-      { role: "user", content: "How are you?" },
-    ]);
+  it("answers the steward who switched it on, and everyone when told to", async () => {
+    expect((await access(STEWARD, chatOn)).enabled).toBe(true);
+    expect((await access(STEWARD, {})).enabled).toBe(false);
+    // The profile is the user's to write; the switch alone is not enough.
+    expect((await access(VISITOR, chatOn)).enabled).toBe(false);
+    expect((await access(VISITOR, {}, { answer_everyone: true })).enabled).toBe(true);
+  });
+
+  it("learns from the steward, and from others only when both sides agree", async () => {
+    const everyone = { answer_everyone: true, always_learning: true };
+    expect((await access(STEWARD, chatOn, everyone)).learning).toBe(true);
+    expect((await access(STEWARD, chatOn, { answer_everyone: true })).learning).toBe(false);
+    expect((await access(VISITOR, sharing, everyone)).learning).toBe(false);
+    expect((await access(VISITOR, {}, { ...everyone, learn_from_opted_in: true })).learning).toBe(false);
+    expect((await access(VISITOR, sharing, { ...everyone, learn_from_opted_in: true })).learning).toBe(true);
   });
 });
 
-describe("own model stream", () => {
-  it("streams OpenAI chunks with the model id and bearer key", async () => {
-    const opened = await createOwnModelChatStream({
-      messages: [{ role: "user", content: "Hi" }],
-      maxTokens: 64,
-      temperature: 0.5,
+// ---- /model --------------------------------------------------------------
+
+describe("GET /model/config and the weights", () => {
+  it("requires a signed-in user", async () => {
+    expect((await call(null, "GET", "/model/config")).status).toBe(401);
+    expect((await call(null, "GET", `/model/v/${VERSION}/inference/0`)).status).toBe(401);
+  });
+
+  it("gives the version to run to someone it answers, and serves it in chunks", async () => {
+    await publishModel();
+    await call(STEWARD, "PUT", "/store/profile", { model_tutor: { own_model_chat: true } });
+    const config = await json(STEWARD, "GET", "/model/config");
+    expect(config.body).toMatchObject({
+      enabled: true,
+      learning: false,
+      model: {
+        version: VERSION,
+        chunk_bytes: BLOB_CHUNK_BYTES,
+        inference: { bytes: WEIGHTS.length, chunks: 2, sha256: "ab".repeat(32) },
+        config: { block_size: 48 },
+      },
     });
-    expect(opened).toMatchObject({ provider: "own", brand: "own", model: "anima-own", failedOver: false });
-    const result = await consumeLlmStream(opened.stream);
-    expect(result.content).toBe("Hello from my model.");
-    expect(stubRequests[0]!.headers.authorization).toBe("Bearer own-token");
-    expect(stubRequests[0]!.body).toMatchObject({ model: "anima-own", stream: true, max_tokens: 64 });
+
+    const parts: Buffer[] = [];
+    for (const idx of [0, 1]) {
+      const res = await call(STEWARD, "GET", `/model/v/${VERSION}/inference/${idx}`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("cache-control")).toContain("immutable");
+      const text = await res.text();
+      expect(text).toMatch(/^[A-Za-z0-9+/]+=*$/);
+      parts.push(Buffer.from(text, "base64"));
+    }
+    expect(Buffer.concat(parts).equals(Buffer.from(WEIGHTS))).toBe(true);
+
+    expect((await call(STEWARD, "GET", `/model/v/${VERSION}/inference/2`)).status).toBe(404);
+    expect((await call(STEWARD, "GET", `/model/v/${VERSION + 1}/inference/0`)).status).toBe(404);
+    expect((await call(STEWARD, "GET", `/model/v/${VERSION}/master/0`)).status).toBe(404);
   });
 
-  it("explains auth and connection failures in the steward's terms", async () => {
-    stubReply = { status: 401 };
-    await expect(
-      createOwnModelChatStream({ messages: [{ role: "user", content: "Hi" }], maxTokens: 8 }),
-    ).rejects.toMatchObject({ name: "OwnModelError", message: OWN_MODEL_AUTH_HINT });
+  it("keeps the weights from users it does not answer", async () => {
+    await publishModel();
+    const config = await json(VISITOR, "GET", "/model/config");
+    expect(config.body).toMatchObject({ enabled: false, model: null, learning_open: false });
+    expect((await call(VISITOR, "GET", `/model/v/${VERSION}/inference/0`)).status).toBe(403);
 
-    process.env.ANIMA_OWN_LLM_BASE_URL = "http://127.0.0.1:1/v1";
-    resetOwnModelForTests();
-    await expect(
-      createOwnModelChatStream({ messages: [{ role: "user", content: "Hi" }], maxTokens: 8 }),
-    ).rejects.toMatchObject({ name: "OwnModelError", message: OWN_MODEL_UNAVAILABLE_HINT });
+    await mergeModelState({ answer_everyone: true });
+    expect((await json(VISITOR, "GET", "/model/config")).body).toMatchObject({
+      enabled: true,
+      model: { version: VERSION },
+    });
+    expect((await call(VISITOR, "GET", `/model/v/${VERSION}/inference/0`)).status).toBe(200);
   });
 
-  it("keeps its own wording through the chat error mapper", () => {
-    expect(asOwnModelError(new LlmStreamTimeoutError("slow")).message).toBe(OWN_MODEL_TIMEOUT_HINT);
-    const err = asOwnModelError(Object.assign(new Error("400 bad request"), { status: 400 }));
-    expect(streamErrorMessage(err)).toBe(err.message);
-    expect(err.message).toContain("Your own model could not reply");
+  it("records a user's consent to learn from their chats", async () => {
+    await publishModel({ answer_everyone: true, always_learning: true, learn_from_opted_in: true });
+    expect((await json(VISITOR, "GET", "/model/config")).body).toMatchObject({
+      learning_open: true,
+      share_for_training: false,
+      learning: false,
+    });
+    const res = await json(VISITOR, "PUT", "/model/consent", { share_for_training: true });
+    expect(res.body).toEqual({ share_for_training: true });
+    expect((await json(VISITOR, "GET", "/model/config")).body).toMatchObject({
+      share_for_training: true,
+      learning: true,
+    });
   });
 });
 
-describe("POST /chat/messages with the own model", () => {
-  let server: Server;
-  let baseUrl = "";
+// ---- chat turns ---------------------------------------------------------
 
-  beforeAll(async () => {
-    const app: Express = express();
-    app.use(express.json({ limit: "4mb" }));
-    app.use("/store", storeRouter);
-    app.use("/chat", chatRouter);
-    await new Promise<void>((resolve) => {
-      server = app.listen(0, () => resolve());
-    });
-    baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+async function chatAs(user: string, content: string, extra: Record<string, unknown> = {}) {
+  const suffix = Math.random().toString(36).slice(2, 8);
+  const characterId = `${PREFIX}char_${suffix}`;
+  const sessionId = `${PREFIX}sess_${suffix}`;
+  await call(user, "PUT", `/store/Character/${characterId}`, { name: "Aria", universe: "Original" });
+  await call(user, "PUT", `/store/ChatSession/${sessionId}`, {
+    character_id: characterId,
+    mode: "solo",
+    title: "Own model",
   });
-
-  afterAll(async () => {
-    await db.delete(userEntities).where(like(userEntities.userId, `${PREFIX}%`));
-    await db.delete(userProfiles).where(like(userProfiles.userId, `${PREFIX}%`));
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+  const res = await call(user, "POST", "/chat/messages", {
+    session_id: sessionId,
+    content,
+    character_id: characterId,
+    mode: "solo",
+    persist: false,
+    ...extra,
   });
+  const events = (await res.text())
+    .split("\n")
+    .filter((line) => line.startsWith("data: "))
+    .map((line) => JSON.parse(line.slice(6)) as Record<string, unknown>);
+  return { status: res.status, events, sessionId, done: events.find((e) => e.done === true) };
+}
 
-  async function call(user: string, method: string, path: string, body?: unknown) {
-    return fetch(`${baseUrl}${path}`, {
-      method,
-      headers: { "Content-Type": "application/json", "x-test-user": user },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-  }
-
-  async function chatAs(user: string, content: string) {
-    const suffix = Math.random().toString(36).slice(2, 8);
-    const characterId = `${PREFIX}char_${suffix}`;
-    const sessionId = `${PREFIX}sess_${suffix}`;
-    await call(user, "PUT", `/store/Character/${characterId}`, { name: "Aria", universe: "Original" });
-    await call(user, "PUT", `/store/ChatSession/${sessionId}`, {
-      character_id: characterId,
-      mode: "solo",
-      title: "Own model",
-    });
-    await call(user, "PUT", "/store/profile", {
+describe("POST /chat/messages with a reply from the own model", () => {
+  beforeEach(async () => {
+    await call(STEWARD, "PUT", "/store/profile", {
       settings: { theme_mode: "dark" },
       model_tutor: { own_model_chat: true },
     });
-    const res = await call(user, "POST", "/chat/messages", {
-      session_id: sessionId,
-      content,
-      character_id: characterId,
-      mode: "solo",
-      persist: false,
-    });
-    const events = (await res.text())
-      .split("\n")
-      .filter((line) => line.startsWith("data: "))
-      .map((line) => JSON.parse(line.slice(6)) as Record<string, unknown>);
-    return { status: res.status, events };
-  }
+  });
 
-  it("answers a steward's turn with their own model", async () => {
-    const { status, events } = await chatAs(`${PREFIX}steward`, "Hi there");
+  it("records the browser's reply as the turn", async () => {
+    await publishModel();
+    const { status, events, done } = await chatAs(STEWARD, "Hi there", {
+      own_model_reply: "Hello from my model.",
+      own_model_version: VERSION,
+    });
     expect(status).toBe(200);
-    const done = events.find((e) => e.done === true);
     expect(done, JSON.stringify(events).slice(0, 500)).toMatchObject({
       provider: "own",
       brand: "own",
-      model: "anima-own",
+      model: `anima-own v${VERSION}`,
       visible: "Hello from my model.",
     });
-    const sent = stubRequests.at(-1)!.body as { messages: { role: string; content: string }[] };
-    expect(sent.messages.some((m) => m.role === "system")).toBe(false);
-    expect(sent.messages.at(-1)).toEqual({ role: "user", content: "Hi there" });
-  });
-
-  it("never routes someone who is not a steward, whatever their profile says", async () => {
-    const { events } = await chatAs(`${PREFIX}visitor`, "Hi there");
-    expect(stubRequests).toHaveLength(0);
-    expect(events.find((e) => e.done === true)?.provider).not.toBe("own");
+    expect(events.filter((e) => typeof e.content === "string").map((e) => e.content)).toEqual([
+      "Hello from my model.",
+    ]);
   });
 
   it("keeps an empty reply as a teachable bubble", async () => {
-    stubReply = { deltas: [] };
-    const { events } = await chatAs(`${PREFIX}steward`, "Hello?");
-    expect(events.find((e) => e.done === true)).toMatchObject({
-      provider: "own",
-      visible: OWN_MODEL_EMPTY_REPLY,
+    await publishModel();
+    const { done } = await chatAs(STEWARD, "Hello?", { own_model_reply: "   " });
+    expect(done).toMatchObject({ provider: "own", visible: OWN_MODEL_EMPTY_REPLY });
+  });
+
+  it("ignores a reply from someone the model does not answer", async () => {
+    await publishModel();
+    await call(VISITOR, "PUT", "/store/profile", { model_tutor: { own_model_chat: true } });
+    const { events, done } = await chatAs(VISITOR, "Hi there", { own_model_reply: "I am the model now." });
+    expect(done?.provider).not.toBe("own");
+    expect(JSON.stringify(events)).not.toContain("I am the model now.");
+  });
+});
+
+// ---- automatic lessons ---------------------------------------------------
+
+describe("POST /model/auto-lesson", () => {
+  async function ownTurn(user: string, content: string, extra: Record<string, unknown> = {}) {
+    const turn = await chatAs(user, content, { own_model_reply: "The number 1746 was kind.", ...extra });
+    expect(turn.done?.provider).toBe("own");
+    return turn;
+  }
+
+  beforeEach(async () => {
+    await call(STEWARD, "PUT", "/store/profile", { model_tutor: { own_model_chat: true } });
+    teacherCompletion.mockResolvedValue({
+      content: '"That sounds heavy. Do you want to tell me about it?"',
+      model: "anima-chat",
+      brand: "anima",
     });
   });
 
-  it("fails closed with a clear message when the model is down", async () => {
-    process.env.ANIMA_OWN_LLM_BASE_URL = "http://127.0.0.1:1/v1";
-    resetOwnModelForTests();
-    const { events } = await chatAs(`${PREFIX}steward`, "Hi there");
-    expect(events.find((e) => typeof e.error === "string")?.error).toBe(OWN_MODEL_UNAVAILABLE_HINT);
+  it("queues what the main model would have said, taught from the recent conversation", async () => {
+    await publishModel({ always_learning: true });
+    const { done, sessionId } = await ownTurn(STEWARD, "I had a rough day.");
+    const res = await json(STEWARD, "POST", "/model/auto-lesson", {
+      turn_id: done!.turn_id,
+      context: [
+        { role: "user", content: "Hey" },
+        { role: "assistant", content: "Hi!" },
+        { role: "user", content: "I had a rough day." },
+      ],
+    });
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ queued: true });
+
+    const lesson = (await getLesson(res.body.lesson_id))!;
+    expect(lesson).toMatchObject({
+      source: "auto",
+      status: "saved",
+      chosen: "That sounds heavy. Do you want to tell me about it?",
+      rejected: "The number 1746 was kind.",
+      session_id: sessionId,
+      taught_by: STEWARD,
+    });
+    expect(lesson.context).toEqual([
+      { role: "user", content: "Hey" },
+      { role: "assistant", content: "Hi!" },
+      { role: "user", content: "I had a rough day." },
+    ]);
+    const teacher = teacherCompletion.mock.calls[0]![0] as { messages: { role: string; content: string }[] };
+    expect(teacher.messages[0]!.role).toBe("system");
+    expect(teacher.messages.at(-1)).toEqual({ role: "user", content: "I had a rough day." });
+
+    // Same turn twice: one lesson.
+    const again = await json(STEWARD, "POST", "/model/auto-lesson", { turn_id: done!.turn_id });
+    expect(again.body).toEqual({ queued: false, reason: "already_taught" });
+    expect(lesson.id).toBe(
+      lessonIdFor({ sessionId, messageId: `${done!.turn_id}:assistant`, part: 0 }),
+    );
+  });
+
+  it("does nothing unless learning is switched on", async () => {
+    await publishModel();
+    const { done } = await ownTurn(STEWARD, "Hi");
+    const res = await json(STEWARD, "POST", "/model/auto-lesson", { turn_id: done!.turn_id });
+    expect(res.body).toEqual({ queued: false, reason: "not_learning" });
+    expect(teacherCompletion).not.toHaveBeenCalled();
+  });
+
+  it("never learns from therapy sessions or someone else's turn", async () => {
+    await publishModel({ always_learning: true });
+    const therapy = await ownTurn(STEWARD, "I feel hopeless", { metadata: { therapy_mode: true } });
+    expect(
+      (await json(STEWARD, "POST", "/model/auto-lesson", { turn_id: therapy.done!.turn_id })).body,
+    ).toEqual({ queued: false, reason: "not_learnable" });
+
+    const mine = await ownTurn(STEWARD, "Hello");
+    await mergeModelState({ answer_everyone: true, learn_from_opted_in: true });
+    await call(VISITOR, "PUT", "/store/profile", { model_tutor: { share_for_training: true } });
+    expect(
+      (await json(VISITOR, "POST", "/model/auto-lesson", { turn_id: mine.done!.turn_id })).body,
+    ).toEqual({ queued: false, reason: "turn_not_found" });
+    expect(teacherCompletion).not.toHaveBeenCalled();
+    expect(await listLessons()).toEqual([]);
+  });
+
+  it("learns from an opted-in user's own-model turn", async () => {
+    await publishModel({ answer_everyone: true, always_learning: true, learn_from_opted_in: true });
+    await call(VISITOR, "PUT", "/store/profile", { model_tutor: { share_for_training: true } });
+    const { done } = await ownTurn(VISITOR, "Tell me something nice");
+    const res = await json(VISITOR, "POST", "/model/auto-lesson", { turn_id: done!.turn_id });
+    expect(res.status).toBe(201);
+    expect((await listLessons())[0]).toMatchObject({ source: "auto", taught_by: VISITOR });
+  });
+
+  it("skips a turn the main model could not improve on", async () => {
+    await publishModel({ always_learning: true });
+    teacherCompletion.mockResolvedValue({ content: "The number 1746 was kind.", model: "m", brand: "anima" });
+    const { done } = await ownTurn(STEWARD, "Hi");
+    expect((await json(STEWARD, "POST", "/model/auto-lesson", { turn_id: done!.turn_id })).body).toEqual({
+      queued: false,
+      reason: "no_better_reply",
+    });
+  });
+
+  it("reports a teacher failure without saving anything", async () => {
+    await publishModel({ always_learning: true });
+    teacherCompletion.mockRejectedValue(new Error("down"));
+    const { done } = await ownTurn(STEWARD, "Hi");
+    const res = await json(STEWARD, "POST", "/model/auto-lesson", { turn_id: done!.turn_id });
+    expect(res.status).toBe(502);
+    expect(await listLessons()).toEqual([]);
   });
 });

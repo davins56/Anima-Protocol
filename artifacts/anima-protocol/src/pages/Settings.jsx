@@ -29,6 +29,7 @@ import {
 import { BACKGROUND_THEMES } from "@/components/chat/ChatBackground.jsx";
 import { Upload, BookOpen, GraduationCap } from "lucide-react";
 import ModelTutorPanel from "@/components/tutor/ModelTutorPanel";
+import OwnModelConsent from "@/components/tutor/OwnModelConsent";
 import { useModelTutor } from "@/hooks/useModelTutor";
 import UserContextSettings from "@/components/anima/UserContextSettings";
 import DeviceScanPanel from "@/components/anima/DeviceScanPanel";
@@ -765,6 +766,8 @@ export default function Settings() {
               <SectionTitle>AI Behavior</SectionTitle>
 
               <div className="border border-primary/15 bg-black/40 p-5 space-y-5">
+                <OwnModelConsent />
+
                 {/* Creativity */}
                 <div>
                   <div className="flex items-center justify-between mb-2">

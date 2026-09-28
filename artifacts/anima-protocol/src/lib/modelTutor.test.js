@@ -1,12 +1,19 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import {
+  UPLOAD_CHUNK_BYTES,
+  parseModelBundle,
+  uploadModelBundle,
   TEACH_CONTEXT_TURNS,
   buildTeachTarget,
   describeLearning,
   isOwnModelReply,
   lessonStatusLabel,
   teachableContext,
-  waitForLesson,
+  describeTrainer,
   wordChancePercent,
 } from "./modelTutor";
 
@@ -83,6 +90,8 @@ describe("labels", () => {
   it("reads lesson status and learning in plain words", () => {
     expect(lessonStatusLabel({ status: "learned" })).toBe("Learned");
     expect(lessonStatusLabel({ status: "saved" })).toBe("Waiting to learn");
+    expect(lessonStatusLabel({ status: "failed", attempts: 1 })).toBe("Retrying");
+    expect(lessonStatusLabel({ status: "failed", attempts: 3 })).toBe("Didn't take");
     expect(wordChancePercent(0)).toBe(100);
     expect(wordChancePercent(Math.log(2))).toBe(50);
     expect(wordChancePercent(null)).toBeNull();
@@ -91,26 +100,105 @@ describe("labels", () => {
   });
 });
 
-describe("waitForLesson", () => {
-  it("polls a learning job until the lesson settles", async () => {
-    const api = {
-      job: vi
-        .fn()
-        .mockResolvedValueOnce({ job: { status: "running" }, lesson: { id: "l1", status: "learning", job_id: "j1" } })
-        .mockResolvedValueOnce({ job: { status: "done" }, lesson: { id: "l1", status: "learned", version: 5 } }),
-    };
-    const settled = await waitForLesson(api, { id: "l1", status: "learning", job_id: "j1" }, {
-      sleep: async () => {},
-    });
-    expect(settled).toMatchObject({ status: "learned", version: 5 });
-    expect(api.job).toHaveBeenCalledWith("j1", { lessonId: "l1" });
+describe("trainer status", () => {
+  const now = Date.parse("2026-09-28T12:00:00Z");
+  it("says what the trainer did last", () => {
+    expect(describeTrainer({}, now)).toContain("hasn't run yet");
+    expect(
+      describeTrainer(
+        {
+          last_run: { status: "ok", at: "2026-09-28T11:50:00Z", message: "Learned 2 lesson(s)." },
+          checked_at: "2026-09-28T11:58:00Z",
+        },
+        now,
+      ),
+    ).toBe("Last run 10 min ago: Learned 2 lesson(s). Checked for lessons 2 min ago.");
+    expect(describeTrainer({ last_run: { status: "running", at: "2026-09-28T11:59:50Z" } }, now)).toBe(
+      "Learning now (started just now).",
+    );
+  });
+});
+
+describe("model file upload", () => {
+  const inference = new Uint8Array(
+    readFileSync(join(dirname(fileURLToPath(import.meta.url)), "ownModel", "__fixtures__", "tiny-model.bin")),
+  );
+  const master = new Uint8Array(1_200_000).map((_, i) => i & 0xff);
+  const sha = (data) => createHash("sha256").update(data).digest("hex");
+
+  function bundle({ corrupt = false } = {}) {
+    const header = new TextEncoder().encode(
+      JSON.stringify({
+        format: "anima-model-1",
+        config: { vocab_size: 300, block_size: 48, n_layer: 2, n_head: 2, n_embd: 32 },
+        parts: [
+          { name: "inference", bytes: inference.length, sha256: sha(inference) },
+          { name: "master", bytes: master.length, sha256: corrupt ? "0".repeat(64) : sha(master) },
+        ],
+      }),
+    );
+    const out = new Uint8Array(12 + header.length + inference.length + master.length);
+    out.set(new TextEncoder().encode("ANIMAMDL"));
+    new DataView(out.buffer).setUint32(8, header.length, true);
+    out.set(header, 12);
+    out.set(inference, 12 + header.length);
+    out.set(master, 12 + header.length + inference.length);
+    return out.buffer;
+  }
+
+  it("reads a model file and refuses anything else", async () => {
+    const parsed = await parseModelBundle(bundle());
+    expect(parsed.config.block_size).toBe(48);
+    expect(parsed.inference.data.byteLength).toBe(inference.length);
+    expect(parsed.master.sha256).toBe(sha(master));
+    await expect(parseModelBundle(new ArrayBuffer(64))).rejects.toThrow(/isn't an Anima model/);
+    await expect(parseModelBundle(bundle({ corrupt: true }))).rejects.toThrow(/damaged/);
   });
 
-  it("returns a failed job as a failed lesson", async () => {
-    const api = { job: vi.fn().mockResolvedValue({ job: { status: "failed", error: "oom" }, lesson: null }) };
-    const settled = await waitForLesson(api, { id: "l1", status: "learning", job_id: "j1" }, {
-      sleep: async () => {},
+  it("uploads both parts in chunks, retrying a flaky one, then publishes", async () => {
+    const parsed = await parseModelBundle(bundle());
+    const received = { inference: [], master: [] };
+    let flaked = false;
+    const api = {
+      startUpload: vi.fn().mockResolvedValue({ version: 9, chunk_bytes: UPLOAD_CHUNK_BYTES }),
+      uploadChunk: vi.fn(async (version, kind, idx, chunk) => {
+        if (kind === "master" && idx === 1 && !flaked) {
+          flaked = true;
+          throw Object.assign(new Error("bad gateway"), { status: 502 });
+        }
+        received[kind][idx] = new Uint8Array(chunk);
+        return { ok: true };
+      }),
+      finishUpload: vi.fn().mockResolvedValue({ version: 9 }),
+      cancelUpload: vi.fn().mockResolvedValue({}),
+    };
+    const progress = [];
+    const done = await uploadModelBundle(api, parsed, { onProgress: (p) => progress.push(p) });
+    expect(done).toEqual({ version: 9 });
+    expect(api.startUpload).toHaveBeenCalledWith({
+      config: parsed.config,
+      inference: { bytes: inference.length, sha256: sha(inference) },
+      master: { bytes: master.length },
     });
-    expect(settled).toMatchObject({ status: "failed", error: "oom" });
+    const join = (parts) => Buffer.concat(parts.map((p) => Buffer.from(p)));
+    expect(join(received.inference).equals(Buffer.from(inference))).toBe(true);
+    expect(join(received.master).equals(Buffer.from(master))).toBe(true);
+    expect(received.master).toHaveLength(3);
+    expect(progress.at(-1)).toBe(1);
+    expect(api.cancelUpload).not.toHaveBeenCalled();
+  });
+
+  it("cancels the upload when a chunk is refused", async () => {
+    const parsed = await parseModelBundle(bundle());
+    const api = {
+      startUpload: vi.fn().mockResolvedValue({ version: 9, chunk_bytes: UPLOAD_CHUNK_BYTES }),
+      uploadChunk: vi.fn().mockRejectedValue(Object.assign(new Error("Bad chunk"), { status: 400 })),
+      finishUpload: vi.fn(),
+      cancelUpload: vi.fn().mockResolvedValue({}),
+    };
+    await expect(uploadModelBundle(api, parsed)).rejects.toThrow("Bad chunk");
+    expect(api.uploadChunk).toHaveBeenCalledTimes(1);
+    expect(api.cancelUpload).toHaveBeenCalledWith(9);
+    expect(api.finishUpload).not.toHaveBeenCalled();
   });
 });

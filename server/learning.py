@@ -385,100 +385,6 @@ class LiveModel:
 
     # ------------------------------------------------------------ training
 
-    def _pad(self, seqs: list[list[int]]) -> torch.Tensor:
-        T = max(len(s) for s in seqs)
-        x = torch.full((len(seqs), T), sft.eot_id, dtype=torch.long)
-        for i, s in enumerate(seqs):
-            x[i, :len(s)] = torch.tensor(s, dtype=torch.long)
-        return x.to(self.device)
-
-    def _sft_loss(self, model: GPT, examples) -> torch.Tensor:
-        x = self._pad([e.sft_ids for e in examples])
-        y = torch.full_like(x, -100)
-        for i, e in enumerate(examples):
-            y[i, :len(e.sft_targets)] = torch.tensor(e.sft_targets, dtype=torch.long)
-        logits, _ = model(x)
-        return sft.masked_next_token_loss(logits, y)
-
-    @torch.no_grad()
-    def _reply_losses(self, model: GPT, examples) -> list[float]:
-        """Mean nats per reply token for each example — how surprising the
-        correction still is to the model."""
-        out = []
-        for i in range(0, len(examples), REBUILD_BATCH):
-            chunk = examples[i:i + REBUILD_BATCH]
-            x = self._pad([e.sft_ids for e in chunk])
-            y = torch.full_like(x, -100)
-            for j, e in enumerate(chunk):
-                y[j, :len(e.sft_targets)] = torch.tensor(e.sft_targets, dtype=torch.long)
-            logits, _ = model(x)
-            tok = F.cross_entropy(
-                logits[:, :-1, :].reshape(-1, logits.size(-1)),
-                y[:, 1:].reshape(-1),
-                ignore_index=-100,
-                reduction="none",
-            ).view(len(chunk), -1)
-            mask = (y[:, 1:] != -100).float()
-            out.extend(((tok * mask).sum(1) / mask.sum(1).clamp(min=1)).tolist())
-        return out
-
-    def _logprob_sums(self, model: GPT, seqs) -> torch.Tensor:
-        x = self._pad([ids for ids, _ in seqs])
-        mask = torch.zeros_like(x, dtype=torch.bool)
-        for i, (ids, start) in enumerate(seqs):
-            mask[i, start:len(ids)] = True
-        logits, _ = model(x)
-        logprobs = F.log_softmax(logits[:, :-1], dim=-1)
-        token_lp = logprobs.gather(-1, x[:, 1:].unsqueeze(-1)).squeeze(-1)
-        return (token_lp * mask[:, 1:]).sum(dim=1)
-
-    def _dpo_loss(self, model: GPT, examples) -> torch.Tensor | None:
-        pairs = [e for e in examples if e.rejected_seq is not None]
-        if not pairs:
-            return None
-        chosen = [e.chosen_seq for e in pairs]
-        rejected = [e.rejected_seq for e in pairs]
-        pi = self._logprob_sums(model, chosen) - self._logprob_sums(model, rejected)
-        with torch.no_grad():
-            ref = self._logprob_sums(self.base, chosen) - self._logprob_sums(self.base, rejected)
-        return -F.logsigmoid(DPO_BETA * (pi - ref)).mean()
-
-    def _train_step(self, model: GPT, optim, examples) -> float:
-        loss = self._sft_loss(model, examples)
-        dpo = self._dpo_loss(model, examples)
-        if dpo is not None:
-            loss = loss + DPO_WEIGHT * dpo
-        optim.zero_grad(set_to_none=True)
-        loss.backward()
-        nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        optim.step()
-        return float(loss.item())
-
-    @staticmethod
-    def _escalate(optim, window_start: float, loss_now: float) -> None:
-        """Double the step size when the last window made too little progress."""
-        if loss_now <= window_start * LESSON_PROGRESS:
-            return
-        for group in optim.param_groups:
-            group["lr"] = min(group["lr"] * 2, LESSON_LR_MAX)
-
-    def _student(self, source: GPT):
-        student = copy.deepcopy(source)
-        # eval() keeps dropout off so a handful of steps is not dominated by
-        # noise (the same choice phase-3 DPO makes); gradients still flow.
-        student.eval()
-        for p in student.parameters():
-            p.requires_grad_(True)
-        optim = torch.optim.AdamW(student.parameters(), lr=LESSON_LR, betas=(0.9, 0.95), weight_decay=0.0)
-        return student, optim
-
-    @staticmethod
-    def _freeze(model: GPT) -> GPT:
-        model.eval()
-        for p in model.parameters():
-            p.requires_grad_(False)
-        return model
-
     def _learn(self, lesson_id: str) -> dict:
         with self._lock:
             lesson = self.lessons.get(lesson_id)
@@ -486,34 +392,14 @@ class LiveModel:
                 raise KeyError(f"lesson {lesson_id} was removed before it was learned")
             source = self.model
             learned = dict(self.learned)
-            replay_pool = [self.lessons[i] for i in learned if i in self.lessons and i != lesson_id]
+            replay = [self.lessons[i] for i in learned if i in self.lessons and i != lesson_id]
         example = self._example(lesson)
-        student, optim = self._student(source)
-        loss_before = self._reply_losses(student, [example])[0]
-        loss_now = window_start = loss_before
-        steps = 0
-        with torch.enable_grad():
-            while steps < LESSON_MAX_STEPS:
-                replay = random.sample(replay_pool, min(REPLAY_LESSONS, len(replay_pool)))
-                self._train_step(student, optim, [example, *(self._example(l) for l in replay)])
-                steps += 1
-                if steps >= LESSON_MIN_STEPS:
-                    loss_now = self._reply_losses(student, [example])[0]
-                    if loss_now <= LESSON_TARGET_LOSS:
-                        break
-                if steps % LESSON_PATIENCE == 0:
-                    self._escalate(optim, window_start, loss_now)
-                    window_start = loss_now
-        self._freeze(student)
-        loss_after = self._reply_losses(student, [example])[0]
+        student, stats = learn_lesson(
+            source, self.base, example, [self._example(l) for l in replay], self.device,
+        )
         after_reply, _, _ = modeling.generate_text(
             student, example.prompt_ids, AFTER_REPLY_TOKENS, temperature=0.5,
         )
-        stats = {
-            "loss_before": round(loss_before, 4),
-            "loss_after": round(loss_after, 4),
-            "steps": steps,
-        }
         learned[lesson_id] = {**stats, "at": _now()}
         version = self._commit(student, "learn", learned, {"lesson_ids": [lesson_id], **stats})
         return {"version": version, "lesson_id": lesson_id, **stats, "after_reply": after_reply.strip()}
@@ -524,35 +410,18 @@ class LiveModel:
         if not lessons:
             version = self._commit(copy.deepcopy(self.base), "rebuild", {}, {"lessons": 0})
             return {"version": version, "lessons": 0, "epochs": 0}
-        examples = [self._example(l) for l in lessons]
-        student, optim = self._student(self.base)
-        epochs = 0
-        losses = self._reply_losses(student, examples)
-        window_start = sum(losses) / len(losses)
-        batches = -(-len(examples) // REBUILD_BATCH)  # optimizer steps per epoch
-        window = max(1, -(-LESSON_PATIENCE // batches))  # epochs per progress check
-        # A handful of lessons is one step per epoch; give them the practice a
-        # single lesson would get.
-        max_epochs = max(REBUILD_MAX_EPOCHS, -(-LESSON_MAX_STEPS // batches))
-        with torch.enable_grad():
-            while epochs < max_epochs and max(losses) > LESSON_TARGET_LOSS:
-                order = list(range(len(examples)))
-                random.shuffle(order)
-                for i in range(0, len(order), REBUILD_BATCH):
-                    self._train_step(student, optim, [examples[j] for j in order[i:i + REBUILD_BATCH]])
-                epochs += 1
-                losses = self._reply_losses(student, examples)
-                mean_loss = sum(losses) / len(losses)
-                if epochs % window == 0:
-                    self._escalate(optim, window_start, mean_loss)
-                    window_start = mean_loss
-                with self._lock:
-                    job["progress"] = {
-                        "epoch": epochs,
-                        "mean_loss": round(sum(losses) / len(losses), 4),
-                        "max_loss": round(max(losses), 4),
-                    }
-        self._freeze(student)
+
+        def progress(epochs, losses):
+            with self._lock:
+                job["progress"] = {
+                    "epoch": epochs,
+                    "mean_loss": round(sum(losses) / len(losses), 4),
+                    "max_loss": round(max(losses), 4),
+                }
+
+        student, losses, epochs = relearn(
+            self.base, [self._example(l) for l in lessons], self.device, on_epoch=progress,
+        )
         learned = {
             l["id"]: {"loss_after": round(loss, 4), "at": _now()}
             for l, loss in zip(lessons, losses)
@@ -631,3 +500,172 @@ class LiveModel:
                 {"id": l["id"], "created_at": l["created_at"], "learned": l["id"] in self.learned}
                 for l in sorted(self.lessons.values(), key=lambda l: l["created_at"])
             ]
+
+
+# ------------------------------------------------------------------ training core
+# Shared by LiveModel (server.py) and the background trainer (trainer.py).
+
+def pad(seqs: list[list[int]], device: str) -> torch.Tensor:
+    T = max(len(s) for s in seqs)
+    x = torch.full((len(seqs), T), sft.eot_id, dtype=torch.long)
+    for i, s in enumerate(seqs):
+        x[i, :len(s)] = torch.tensor(s, dtype=torch.long)
+    return x.to(device)
+
+
+def _targets(x: torch.Tensor, examples) -> torch.Tensor:
+    y = torch.full_like(x, -100)
+    for i, e in enumerate(examples):
+        y[i, :len(e.sft_targets)] = torch.tensor(e.sft_targets, dtype=torch.long)
+    return y
+
+
+def sft_loss(model: GPT, examples, device: str) -> torch.Tensor:
+    x = pad([e.sft_ids for e in examples], device)
+    logits, _ = model(x)
+    return sft.masked_next_token_loss(logits, _targets(x, examples))
+
+
+@torch.no_grad()
+def reply_losses(model: GPT, examples, device: str) -> list[float]:
+    """Mean nats per reply token for each example — how surprising the
+    correction still is to the model."""
+    out = []
+    for i in range(0, len(examples), REBUILD_BATCH):
+        chunk = examples[i:i + REBUILD_BATCH]
+        x = pad([e.sft_ids for e in chunk], device)
+        y = _targets(x, chunk)
+        logits, _ = model(x)
+        tok = F.cross_entropy(
+            logits[:, :-1, :].reshape(-1, logits.size(-1)),
+            y[:, 1:].reshape(-1),
+            ignore_index=-100,
+            reduction="none",
+        ).view(len(chunk), -1)
+        mask = (y[:, 1:] != -100).float()
+        out.extend(((tok * mask).sum(1) / mask.sum(1).clamp(min=1)).tolist())
+    return out
+
+
+def logprob_sums(model: GPT, seqs, device: str) -> torch.Tensor:
+    x = pad([ids for ids, _ in seqs], device)
+    mask = torch.zeros_like(x, dtype=torch.bool)
+    for i, (ids, start) in enumerate(seqs):
+        mask[i, start:len(ids)] = True
+    logits, _ = model(x)
+    logprobs = F.log_softmax(logits[:, :-1], dim=-1)
+    token_lp = logprobs.gather(-1, x[:, 1:].unsqueeze(-1)).squeeze(-1)
+    return (token_lp * mask[:, 1:]).sum(dim=1)
+
+
+def dpo_loss(model: GPT, base: GPT, examples, device: str) -> torch.Tensor | None:
+    pairs = [e for e in examples if e.rejected_seq is not None]
+    if not pairs:
+        return None
+    chosen = [e.chosen_seq for e in pairs]
+    rejected = [e.rejected_seq for e in pairs]
+    pi = logprob_sums(model, chosen, device) - logprob_sums(model, rejected, device)
+    with torch.no_grad():
+        ref = logprob_sums(base, chosen, device) - logprob_sums(base, rejected, device)
+    return -F.logsigmoid(DPO_BETA * (pi - ref)).mean()
+
+
+def train_step(model: GPT, base: GPT, optim, examples, device: str) -> float:
+    loss = sft_loss(model, examples, device)
+    dpo = dpo_loss(model, base, examples, device)
+    if dpo is not None:
+        loss = loss + DPO_WEIGHT * dpo
+    optim.zero_grad(set_to_none=True)
+    loss.backward()
+    nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+    optim.step()
+    return float(loss.item())
+
+
+def escalate(optim, window_start: float, loss_now: float) -> None:
+    """Double the step size when the last window made too little progress."""
+    if loss_now <= window_start * LESSON_PROGRESS:
+        return
+    for group in optim.param_groups:
+        group["lr"] = min(group["lr"] * 2, LESSON_LR_MAX)
+
+
+def new_student(source: GPT):
+    student = copy.deepcopy(source)
+    # eval() keeps dropout off so a handful of steps is not dominated by
+    # noise (the same choice phase-3 DPO makes); gradients still flow.
+    student.eval()
+    for p in student.parameters():
+        p.requires_grad_(True)
+    optim = torch.optim.AdamW(student.parameters(), lr=LESSON_LR, betas=(0.9, 0.95), weight_decay=0.0)
+    return student, optim
+
+
+def freeze(model: GPT) -> GPT:
+    model.eval()
+    for p in model.parameters():
+        p.requires_grad_(False)
+    return model
+
+
+def learn_lesson(source: GPT, base: GPT, example, replay_pool, device: str) -> tuple[GPT, dict]:
+    """Practise one correction on a copy of `source` until it sticks.
+
+    `replay_pool` holds already-learned lessons; a few ride along in every
+    step so the new lesson does not wash them out.
+    """
+    student, optim = new_student(source)
+    loss_before = reply_losses(student, [example], device)[0]
+    loss_now = window_start = loss_before
+    steps = 0
+    with torch.enable_grad():
+        while steps < LESSON_MAX_STEPS:
+            replay = random.sample(replay_pool, min(REPLAY_LESSONS, len(replay_pool)))
+            train_step(student, base, optim, [example, *replay], device)
+            steps += 1
+            if steps >= LESSON_MIN_STEPS:
+                loss_now = reply_losses(student, [example], device)[0]
+                if loss_now <= LESSON_TARGET_LOSS:
+                    break
+            if steps % LESSON_PATIENCE == 0:
+                escalate(optim, window_start, loss_now)
+                window_start = loss_now
+    freeze(student)
+    loss_after = reply_losses(student, [example], device)[0]
+    return student, {
+        "loss_before": round(loss_before, 4),
+        "loss_after": round(loss_after, 4),
+        "steps": steps,
+    }
+
+
+def relearn(base: GPT, examples, device: str, on_epoch=None, deadline: float | None = None):
+    """Learn every example from the base weights (how deleted lessons are
+    forgotten). Returns (student, per-example losses, epochs)."""
+    student, optim = new_student(base)
+    epochs = 0
+    losses = reply_losses(student, examples, device)
+    window_start = sum(losses) / len(losses)
+    batches = -(-len(examples) // REBUILD_BATCH)  # optimizer steps per epoch
+    window = max(1, -(-LESSON_PATIENCE // batches))  # epochs per progress check
+    # A handful of lessons is one step per epoch; give them the practice a
+    # single lesson would get.
+    max_epochs = max(REBUILD_MAX_EPOCHS, -(-LESSON_MAX_STEPS // batches))
+    with torch.enable_grad():
+        while epochs < max_epochs and max(losses) > LESSON_TARGET_LOSS:
+            if deadline is not None and epochs > 0 and time.monotonic() > deadline:
+                break
+            order = list(range(len(examples)))
+            random.shuffle(order)
+            for i in range(0, len(order), REBUILD_BATCH):
+                train_step(student, base, optim, [examples[j] for j in order[i:i + REBUILD_BATCH]], device)
+            epochs += 1
+            losses = reply_losses(student, examples, device)
+            mean_loss = sum(losses) / len(losses)
+            if epochs % window == 0:
+                escalate(optim, window_start, mean_loss)
+                window_start = mean_loss
+            if on_epoch:
+                on_epoch(epochs, losses)
+    freeze(student)
+    return student, losses, epochs
