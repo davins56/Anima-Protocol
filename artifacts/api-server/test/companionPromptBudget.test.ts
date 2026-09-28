@@ -1158,11 +1158,12 @@ describe("companion prompt prefill budget", () => {
 
     const beforeTrim = build(6, "STABLE_ASK_7 still growing", "3:10 PM", "20°C", "MEMORY_SIX", "quiet-watchful");
     const afterTrim = build(7, "STABLE_ASK_8 block cut", "3:12 PM", "20°C", "MEMORY_SEVEN", "quiet-watchful");
-    const growing = beforeTrim.slice(0, -1);
-    expect(afterTrim.slice(0, growing.length)).not.toEqual(growing);
-    expect(afterTrim.some((message) => message.content.includes("STABLE_USER_1"))).toBe(false);
-    expect(afterTrim.some((message) => message.content.includes("STABLE_USER_6"))).toBe(true);
-    expect(afterTrim.some((message) => message.content.includes("STABLE_USER_7"))).toBe(true);
+    const beforeHistory = beforeTrim.slice(1, -1);
+    const afterHistory = afterTrim.slice(1, -1);
+    expect(afterHistory.slice(0, 2)).toEqual(beforeHistory.slice(-2));
+    expect(afterHistory.some((message) => message.content.includes("STABLE_USER_1"))).toBe(false);
+    expect(afterHistory.some((message) => message.content.includes("STABLE_USER_6"))).toBe(true);
+    expect(afterHistory.some((message) => message.content.includes("STABLE_USER_7"))).toBe(true);
   });
 
   it("keeps guardrails in the local system message and leads the notes with a crisis policy", () => {

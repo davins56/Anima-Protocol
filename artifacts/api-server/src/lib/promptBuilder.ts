@@ -636,13 +636,11 @@ export function matchingRepeatedReply(visible: unknown, previous: unknown[]): st
   const opening = visiblePrefixRepeatsHistory(raw, previous);
   const whole = isRepeatedReply(raw, previous);
   if (!opening && !whole) return null;
-  const body = normalizeReplyForRepeat(raw);
   for (const prior of previous) {
     const text = String(prior ?? "");
-    const other = normalizeReplyForRepeat(text);
-    if (other.length < 12 || body.length < 12) continue;
-    const n = Math.min(body.length, other.length);
-    if (opening && body.slice(0, n) === other.slice(0, n)) return text;
+    // The opening match uses the same 40-character rule as the stream check.
+    // A 12-character action beat is not a copied reply.
+    if (opening && visiblePrefixRepeatsHistory(raw, [text])) return text;
     if (whole && isRepeatedReply(raw, [text])) return text;
   }
   return null;
@@ -1486,6 +1484,12 @@ function isLocalClosingInstruction(content: string): boolean {
  */
 export function messagesForLocalOllama<T extends { role: string; content: string }>(
   messages: T[],
+  /**
+   * Array the layout was stored on, when `messages` is a normalized copy.
+   * The production adapter copies role and content before this fold. Looking
+   * up the copy misses the WeakMap and every real request takes the fallback.
+   */
+  layoutSource?: object,
 ): T[] {
   if (messages.length < 2) return messages;
   const last = messages[messages.length - 1];
@@ -1499,7 +1503,7 @@ export function messagesForLocalOllama<T extends { role: string; content: string
     start -= 1;
   }
 
-  const layout = companionLocalLayouts.get(messages);
+  const layout = companionLocalLayouts.get(layoutSource ?? messages);
   if (!layout) {
     if (start === messages.length - 1) return messages;
     const notes = messages

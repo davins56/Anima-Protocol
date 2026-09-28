@@ -136,6 +136,26 @@ export interface OllamaModelPresence {
   via: "ps" | "tags" | null;
   status?: number;
   message?: string;
+  /**
+   * Both list routes answered 404. The proxy in front of Ollama is not
+   * forwarding `/api/ps` or `/api/tags`. The caller should use the tiny
+   * generate probe instead of reporting the model missing.
+   */
+  listBlocked?: boolean;
+}
+
+async function discardResponseBody(response: Response): Promise<void> {
+  const body = response.body;
+  if (!body) return;
+  try {
+    await body.cancel();
+  } catch {
+    try {
+      await response.arrayBuffer();
+    } catch {
+      // Already closed.
+    }
+  }
 }
 
 /**
@@ -185,6 +205,7 @@ export async function probeOllamaModelListed(opts: {
       throw connectionError(err);
     }
     if (!response.ok) {
+      await discardResponseBody(response);
       return { ok: false, status: response.status, models: [] };
     }
     const body = (await response.json().catch(() => null)) as unknown;
@@ -202,6 +223,16 @@ export async function probeOllamaModelListed(opts: {
   }
   if (!ps.ok && !tags.ok) {
     const status = tags.status || ps.status;
+    if (ps.status === 404 && tags.status === 404) {
+      return {
+        ok: false,
+        models: [],
+        via: null,
+        status,
+        listBlocked: true,
+        message: "Ollama model list endpoints are not available.",
+      };
+    }
     throw new OllamaChatError(
       status
         ? `Ollama model list failed (HTTP ${status})`
@@ -258,20 +289,18 @@ function normalizeRole(role: unknown): OllamaChatMessage["role"] {
 export function toOllamaMessages(
   messages: ChatCompletionMessageParam[],
 ): OllamaChatMessage[] {
-  const out: OllamaChatMessage[] = [];
+  const normalized: Array<{ role: OllamaChatMessage["role"]; content: string }> = [];
   for (const message of messages) {
     if (!message || typeof message !== "object") continue;
-    const content = textFromContent(
-      (message as { content?: unknown }).content,
-    );
-    out.push({
+    normalized.push({
       role: normalizeRole((message as { role?: unknown }).role),
-      content,
+      content: textFromContent((message as { content?: unknown }).content),
     });
   }
-  // Qwen hoists system turns into the top block. Closing instructions have
-  // to ride inside the final user turn or they never sit next to it.
-  return messagesForLocalOllama(out);
+  // Fold on the original array's layout. Normalizing into `normalized`
+  // first would miss companionLocalLayouts and send the volatile system
+  // message on every turn.
+  return messagesForLocalOllama(normalized, messages);
 }
 
 /**
