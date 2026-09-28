@@ -60,11 +60,16 @@ describe("chunkTextDelta / chunkIsReasoning", () => {
 describe("consumeLlmStream", () => {
   it("stops early when stopWhen matches and ends the upstream iterator", async () => {
     let pulls = 0;
+    let upstreamEnded = false;
     async function* source() {
-      const parts = ["The room stays ", "quiet while she ", "watches the door ", "and keeps going."];
-      for (const part of parts) {
-        pulls += 1;
-        yield { choices: [{ delta: { content: part } }] };
+      try {
+        const parts = ["The room stays ", "quiet while she ", "watches the door ", "and keeps going."];
+        for (const part of parts) {
+          pulls += 1;
+          yield { choices: [{ delta: { content: part } }] };
+        }
+      } finally {
+        upstreamEnded = true;
       }
     }
     const result = await consumeLlmStream(source(), {
@@ -75,6 +80,7 @@ describe("consumeLlmStream", () => {
     expect(result.content.length).toBeGreaterThanOrEqual(20);
     expect(result.content).not.toContain("keeps going");
     expect(pulls).toBeLessThan(4);
+    expect(upstreamEnded).toBe(true);
   });
 
   it("awaits iterator.return before resolving when stopWhen fires", async () => {

@@ -41,8 +41,27 @@ export function noteStockAssistantLine(kind: "retry" | "deflect"): void {
   );
 }
 
-function lineIsStock(line: string): boolean {
-  return STOCK_LINE_PATTERNS.some((pattern) => pattern.test(line));
+/** Merged character count of the stock phrases themselves, not the lines around them. */
+function stockMatchCoverage(text: string): number {
+  const ranges: Array<[number, number]> = [];
+  for (const pattern of STOCK_LINE_PATTERNS) {
+    const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
+    const re = new RegExp(pattern.source, flags);
+    for (const match of text.matchAll(re)) {
+      const start = match.index ?? 0;
+      if (!match[0]) continue;
+      ranges.push([start, start + match[0].length]);
+    }
+  }
+  ranges.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  let covered = 0;
+  let end = 0;
+  for (const [start, stop] of ranges) {
+    if (stop <= end) continue;
+    covered += stop - Math.max(start, end);
+    end = stop;
+  }
+  return covered;
 }
 
 /** Persona text that already presents the character as a machine. "as an AI" can be in character. */
@@ -58,8 +77,9 @@ export function personaDescribesMachine(
 /**
  * True for assistant / model-identity lines. Case-insensitive.
  * Short replies match on the phrase. Longer replies match only when the
- * stock line is at least half of the reply, so a passing mention inside a
- * scene does not trip the guard.
+ * stock phrase itself (not the whole sentence around it) is at least half
+ * of the reply, so one long in-character paragraph that mentions a phrase
+ * does not trip the guard.
  */
 export function isStockAssistantLine(
   reply: unknown,
@@ -68,17 +88,10 @@ export function isStockAssistantLine(
   if (personaDescribesMachine(personaParts)) return false;
   const text = String(reply ?? "").trim();
   if (!text) return false;
-  const lines = text
-    .split(/\n+/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const matched = lines.filter((line) => lineIsStock(line));
-  if (matched.length === 0) {
-    return text.length <= STOCK_ASSISTANT_SHORT_REPLY_CHARS && lineIsStock(text);
-  }
+  const covered = stockMatchCoverage(text);
+  if (covered === 0) return false;
   if (text.length <= STOCK_ASSISTANT_SHORT_REPLY_CHARS) return true;
-  const matchedChars = matched.reduce((sum, line) => sum + line.length, 0);
-  return matchedChars * 2 >= text.length;
+  return covered * 2 >= text.length;
 }
 
 export type PersonaPronoun = "she" | "he" | "they";

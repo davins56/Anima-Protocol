@@ -2554,6 +2554,59 @@ router.post("/messages", async (req, res) => {
     });
     const generateSignal = combineAbortSignals(open.signal, abandoned.signal);
     try {
+    const personaParts = [
+      activeChar?.personality,
+      activeChar?.backstory,
+      activeChar?.speaking_style,
+    ];
+    const replyIsStock = (text: unknown) => isStockAssistantLine(text, personaParts);
+    const stockDeflection = () =>
+      stockAssistantDeflection(activeChar?.name, pronounFromPersona(personaParts));
+    const regenerateStockReply = async (maxTokens: number): Promise<string | null> => {
+      const retryBudgetMs = repeatRetryBudgetMs(Date.now() - requestStartedAt);
+      noteStockAssistantLine("retry");
+      const retryOpen = openStreamAbort(retryBudgetMs);
+      try {
+        const retry = await createChatStreamWithFailover({
+          tier: routed.tier,
+          model: routed.model,
+          maxTokens,
+          messages: appendFinalUserReminder(
+            messages,
+            inCharacterRetryReminder(activeChar?.name),
+          ),
+          temperature: COMPANION_CHAT_TEMPERATURE,
+          signal: combineAbortSignals(retryOpen.signal, abandoned.signal),
+        });
+        const retried = await consumeLlmStream(retry.stream, {
+          ...consumeOpts,
+          onDelta: () => {},
+          onReasoning: () => {},
+          firstChunkMs: Math.min(consumeOpts.firstChunkMs, retryBudgetMs),
+          totalMs: Math.min(consumeOpts.totalMs, retryBudgetMs),
+        });
+        const retriedText = finalizeAssistantReply(
+          retried.timedOut
+            ? trimToLastCompleteSentence(retried.content)
+            : retried.content,
+        );
+        if (retriedText.trim() && !replyIsStock(retriedText)) {
+          usedModel = retry.model;
+          usedTier = retry.tier;
+          usedProvider = retry.provider;
+          usedBrand = retry.brand;
+          failedOver = retry.failedOver;
+          return retriedText;
+        }
+        return null;
+      } catch (error) {
+        logger.warn({ error, turnId }, "Stock-assistant regenerate failed");
+        return null;
+      } finally {
+        retryOpen.cancel();
+      }
+    };
+
     if (ownModelTurn) {
       usedProvider = "own";
       usedBrand = "own";
@@ -2583,8 +2636,6 @@ router.post("/messages", async (req, res) => {
         usedModel = drafts[0]!.model;
         usedBrand = "anima";
         fullResponse = finalizeAssistantReply(drafts[0]!.content);
-        telemetry.markFirstToken();
-        writeSse(res, { content: fullResponse });
       } else {
         writeSse(res, {
           status: "ensemble",
@@ -2604,11 +2655,41 @@ router.post("/messages", async (req, res) => {
         failedOver = completion.failedOver;
         ensembleCombined = true;
 
-        const streamed = await consumeLlmStream(completion.stream, consumeOpts);
+        // Hold the combined text until the stock guard decides. Emitting
+        // first would leave a cut-off reply in the bubble.
+        const streamed = await consumeLlmStream(completion.stream, {
+          ...consumeOpts,
+          onDelta: () => {},
+          onReasoning: () => {},
+        });
         fullResponse = streamed.timedOut
           ? trimToLastCompleteSentence(streamed.content)
           : streamed.content;
       }
+      if (replyIsStock(fullResponse)) {
+        const retryBudgetMs = repeatRetryBudgetMs(Date.now() - requestStartedAt);
+        let otherWorkQueued = companionTurnsOpenForUser(userId) > 1;
+        if (retryBudgetMs > 0 && !generateSignal.aborted && !otherWorkQueued) {
+          try {
+            otherWorkQueued = await userHasOtherPendingChatTurn(userId, turnId);
+          } catch (error) {
+            logger.warn(
+              { error, turnId },
+              "Could not check queued turns; skipping extra regenerate",
+            );
+            otherWorkQueued = true;
+          }
+        }
+        const recovered =
+          retryBudgetMs > 0 && !generateSignal.aborted && !otherWorkQueued
+            ? await regenerateStockReply(
+                Math.min(replyMaxTokens, LOCAL_EXTRA_GENERATION_MAX_TOKENS),
+              )
+            : null;
+        fullResponse = recovered || stockDeflection();
+        if (!recovered) noteStockAssistantLine("deflect");
+      }
+      if (fullResponse.trim()) emitDelta(fullResponse);
     } else {
       sse.setPhase("waking");
       let completion;
@@ -2639,12 +2720,6 @@ router.post("/messages", async (req, res) => {
       // is not shown that text. Hosted providers still stream as they go.
       const localHost = usedProvider === "local";
       const priorReplies = recentAssistantReplies(recentMessages);
-      const personaParts = [
-        activeChar?.personality,
-        activeChar?.backstory,
-        activeChar?.speaking_style,
-      ];
-      const replyIsStock = (text: unknown) => isStockAssistantLine(text, personaParts);
       let held = "";
       let flushed = false;
       let cutReason: "repeat" | "stock" | null = null;
@@ -2655,22 +2730,27 @@ router.post("/messages", async (req, res) => {
             emitDelta(delta);
             return;
           }
+          // Once any text has reached the user, keep streaming. A later
+          // stock phrase is the full-reply check's decision, not a cut.
+          if (flushed) {
+            emitDelta(delta);
+            return;
+          }
           held += delta;
-          if (cutReason || held.trim().length < LOCAL_REPEAT_DETECT_CHARS) return;
-          if (visiblePrefixRepeatsHistory(held, priorReplies)) {
+          if (cutReason) return;
+          const visible = held.trim();
+          if (visible.length < LOCAL_REPEAT_DETECT_CHARS) return;
+          const opening = visible.slice(0, LOCAL_REPEAT_DETECT_CHARS);
+          if (visiblePrefixRepeatsHistory(opening, priorReplies)) {
             cutReason = "repeat";
             return;
           }
-          if (replyIsStock(held)) {
+          if (replyIsStock(opening)) {
             cutReason = "stock";
             return;
           }
-          if (!flushed) {
-            flushed = true;
-            emitDelta(held);
-            return;
-          }
-          emitDelta(delta);
+          flushed = true;
+          emitDelta(held);
         },
         stopWhen: () => cutReason !== null,
       });
@@ -2719,6 +2799,7 @@ router.post("/messages", async (req, res) => {
       // copied line is the more specific fix, and a stock result still
       // deflects below without a second generate.
       let extraGenerationUsed = false;
+      let repeatResolved = false;
       const canRegenerate = wantsExtra && !otherWorkQueued;
       if (
         canRegenerate &&
@@ -2768,6 +2849,7 @@ router.post("/messages", async (req, res) => {
           ) {
             fullResponse = retriedText;
             flushed = false;
+            repeatResolved = true;
             usedModel = retry.model;
             usedTier = retry.tier;
             usedProvider = retry.provider;
@@ -2775,78 +2857,39 @@ router.post("/messages", async (req, res) => {
             failedOver = retry.failedOver;
           }
         } catch (error) {
-          // Keep the first reply. A repeat beats an error bubble.
-          logger.warn({ error, turnId }, "Repeat regenerate failed; keeping first reply");
+          // A finished reply can stay. An early-stop fragment is replaced below.
+          logger.warn({ error, turnId }, "Repeat regenerate failed");
         } finally {
           retryOpen.cancel();
         }
       } else if (canRegenerate && stockLine && !extraGenerationUsed) {
         extraGenerationUsed = true;
-        noteStockAssistantLine("retry");
-        logger.warn(
-          { turnId, metric: "stock_assistant_line", kind: "retry" },
-          "stock assistant line guard fired",
+        const recovered = await regenerateStockReply(
+          localHost
+            ? Math.min(replyMaxTokens, LOCAL_EXTRA_GENERATION_MAX_TOKENS)
+            : replyMaxTokens,
         );
-        const retryOpen = openStreamAbort(retryBudgetMs);
-        try {
-          const retry = await createChatStreamWithFailover({
-            tier: routed.tier,
-            model: routed.model,
-            maxTokens: localHost
-              ? Math.min(replyMaxTokens, LOCAL_EXTRA_GENERATION_MAX_TOKENS)
-              : replyMaxTokens,
-            messages: appendFinalUserReminder(
-              messages,
-              inCharacterRetryReminder(activeChar?.name),
-            ),
-            temperature: COMPANION_CHAT_TEMPERATURE,
-            signal: combineAbortSignals(retryOpen.signal, abandoned.signal),
-          });
-          const retried = await consumeLlmStream(retry.stream, {
-            ...consumeOpts,
-            onDelta: () => {},
-            onReasoning: () => {},
-            firstChunkMs: Math.min(consumeOpts.firstChunkMs, retryBudgetMs),
-            totalMs: Math.min(consumeOpts.totalMs, retryBudgetMs),
-          });
-          const retriedText = finalizeAssistantReply(
-            retried.timedOut
-              ? trimToLastCompleteSentence(retried.content)
-              : retried.content,
-          );
-          if (retriedText.trim() && !replyIsStock(retriedText)) {
-            fullResponse = retriedText;
-            flushed = false;
-            usedModel = retry.model;
-            usedTier = retry.tier;
-            usedProvider = retry.provider;
-            usedBrand = retry.brand;
-            failedOver = retry.failedOver;
-          }
-        } catch (error) {
-          logger.warn({ error, turnId }, "Stock-assistant regenerate failed");
-        } finally {
-          retryOpen.cancel();
+        if (recovered) {
+          fullResponse = recovered;
+          flushed = false;
         }
       }
-      const unresolvedStock =
-        replyIsStock(fullResponse) ||
-        (cutReason === "stock" &&
-          replyIsStock(held) &&
-          !String(fullResponse || "").trim());
-      if (unresolvedStock) {
-        const personaPronoun = pronounFromPersona([
-          activeChar?.personality,
-          activeChar?.backstory,
-          activeChar?.speaking_style,
-        ]);
-        fullResponse = stockAssistantDeflection(activeChar?.name, personaPronoun);
+      // A repeat stop leaves only the opening fragment. Never save or show
+      // that fragment when the retry was skipped or failed.
+      if (cutReason === "repeat" && !repeatResolved) {
+        fullResponse = stockDeflection();
         flushed = false;
-        noteStockAssistantLine("deflect");
-        logger.warn(
-          { turnId, metric: "stock_assistant_line", kind: "deflect" },
-          "stock assistant line guard fired",
-        );
+      } else {
+        const unresolvedStock =
+          replyIsStock(fullResponse) ||
+          (cutReason === "stock" &&
+            replyIsStock(held) &&
+            !String(fullResponse || "").trim());
+        if (unresolvedStock) {
+          fullResponse = stockDeflection();
+          flushed = false;
+          noteStockAssistantLine("deflect");
+        }
       }
       if (localHost && !flushed && fullResponse.trim()) {
         emitDelta(fullResponse);
