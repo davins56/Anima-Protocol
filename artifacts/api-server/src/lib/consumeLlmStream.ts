@@ -77,12 +77,20 @@ export interface ConsumeLlmStreamOptions {
   firstChunkMs?: number;
   stallMs?: number;
   totalMs?: number;
+  /**
+   * Stop reading once this returns true. The caller already saw the deltas
+   * that were emitted. Used to restart a local repeat before num_predict
+   * finishes. `iterator.return()` still runs, so the upstream generate ends.
+   */
+  stopWhen?: (visible: string) => boolean;
 }
 
 export interface ConsumeLlmStreamResult {
   content: string;
   /** True when we cut the stream short because it stalled or hit the deadline. */
   timedOut: boolean;
+  /** True when `stopWhen` ended the stream before the model finished. */
+  stoppedEarly?: boolean;
 }
 
 type WaitResult =
@@ -101,6 +109,7 @@ export async function consumeLlmStream(
   const totalMs = opts.totalMs ?? LLM_STREAM_TOTAL_MS;
 
   let rawContent = "";
+  let streamedVisible = "";
   let reasoning = "";
   let sawReasoning = false;
   const filter = createVisibleReplyFilter();
@@ -193,7 +202,11 @@ export async function consumeLlmStream(
         const extra = filter.push(delta);
         if (extra) {
           emittedAny = true;
+          streamedVisible += extra;
           opts.onDelta?.(extra);
+          if (opts.stopWhen?.(streamedVisible)) {
+            return { content: streamedVisible, timedOut: false, stoppedEarly: true };
+          }
         }
       }
     }

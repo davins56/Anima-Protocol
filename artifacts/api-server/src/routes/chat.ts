@@ -70,15 +70,27 @@ import {
   upsertMemoryEmbeddings,
 } from "../lib/memoryEmbeddings";
 import {
+  appendFinalUserReminder,
   composeCompanionChatMessages,
   isRepeatedReply,
+  LOCAL_EXTRA_GENERATION_MAX_TOKENS,
+  LOCAL_REPEAT_DETECT_CHARS,
+  matchingRepeatedReply,
   messagesForRepeatRetry,
   recentAssistantReplies,
+  visiblePrefixRepeatsHistory,
   type CompanionMemoryRecord,
   type CharacterData,
 } from "../lib/promptBuilder";
 import { beginCompanionLlmTurn, companionTurnsOpenForUser } from "../lib/sidecarLlm";
 import { localLlmSlotEnabled, waitForLocalChatSlot } from "../lib/localLlmSlot";
+import {
+  inCharacterRetryReminder,
+  isStockAssistantLine,
+  noteStockAssistantLine,
+  pronounFromPersona,
+  stockAssistantDeflection,
+} from "../lib/stockAssistantLine";
 import { extractOperatorModelFromProfile } from "../lib/operatorModel";
 import {
   incrementConversationCount,
@@ -2621,31 +2633,68 @@ router.post("/messages", async (req, res) => {
       usedBrand = completion.brand;
       failedOver = completion.failedOver;
 
-      const streamed = await consumeLlmStream(completion.stream, consumeOpts);
+      // Local Ollama: hold the opening of the reply. A copy of an earlier
+      // turn, or a stock assistant line, stops the generate in the first
+      // ~40 characters instead of waiting out a 200-token decode. The user
+      // is not shown that text. Hosted providers still stream as they go.
+      const localHost = usedProvider === "local";
+      const priorReplies = recentAssistantReplies(recentMessages);
+      let held = "";
+      let flushed = false;
+      let cutReason: "repeat" | "stock" | null = null;
+      const streamed = await consumeLlmStream(completion.stream, {
+        ...consumeOpts,
+        onDelta: (delta) => {
+          if (!localHost) {
+            emitDelta(delta);
+            return;
+          }
+          held += delta;
+          if (cutReason || held.trim().length < LOCAL_REPEAT_DETECT_CHARS) return;
+          if (visiblePrefixRepeatsHistory(held, priorReplies)) {
+            cutReason = "repeat";
+            return;
+          }
+          if (isStockAssistantLine(held)) {
+            cutReason = "stock";
+            return;
+          }
+          if (!flushed) {
+            flushed = true;
+            emitDelta(held);
+            return;
+          }
+          emitDelta(delta);
+        },
+        stopWhen: () => cutReason !== null,
+      });
       // A stalled or over-budget stream stops mid-word. `done.visible`
       // repaints the bubble, so the saved and shown reply both end cleanly.
       fullResponse = finalizeAssistantReply(
-        streamed.timedOut
-          ? trimToLastCompleteSentence(streamed.content)
-          : streamed.content,
+        streamed.stoppedEarly
+          ? streamed.content
+          : streamed.timedOut
+            ? trimToLastCompleteSentence(streamed.content)
+            : streamed.content,
       );
+      if (localHost && !flushed && !cutReason && held && !fullResponse) {
+        fullResponse = held;
+      }
 
-      // A small local model copies its own earlier reply and then keeps
-      // copying it. Regenerate once without that reply in context, inside
-      // what is left of the browser's fetch window. Deltas are not streamed
-      // and the first reply stays painted; `done.visible` swaps it in.
       const retryBudgetMs = repeatRetryBudgetMs(Date.now() - requestStartedAt);
-      const repeated = isRepeatedReply(
-        fullResponse,
-        recentAssistantReplies(recentMessages),
-      );
+      const copiedReply =
+        matchingRepeatedReply(fullResponse, priorReplies) ||
+        (cutReason === "repeat" ? matchingRepeatedReply(held, priorReplies) : null);
+      const repeated = Boolean(copiedReply) || isRepeatedReply(fullResponse, priorReplies);
+      const stockLine =
+        cutReason === "stock" || isStockAssistantLine(fullResponse) || isStockAssistantLine(held);
       let otherWorkQueued = false;
-      if (
+      const wantsExtra =
+        (repeated || stockLine) &&
         retryBudgetMs > 0 &&
         !generateSignal.aborted &&
-        !streamed.timedOut &&
-        repeated
-      ) {
+        !streamed.timedOut;
+      if (wantsExtra) {
         otherWorkQueued = companionTurnsOpenForUser(userId) > 1;
         if (!otherWorkQueued) {
           try {
@@ -2653,13 +2702,20 @@ router.post("/messages", async (req, res) => {
           } catch (error) {
             logger.warn(
               { error, turnId },
-              "Could not check queued turns; skipping repeat regenerate",
+              "Could not check queued turns; skipping extra regenerate",
             );
             otherWorkQueued = true;
           }
         }
       }
+      // One extra generation per turn, shared by the repeat retry and the
+      // stock-assistant retry. Repeat wins when both match: dropping the
+      // copied line is the more specific fix, and a stock result still
+      // deflects below without a second generate.
+      let extraGenerationUsed = false;
+      const canRegenerate = wantsExtra && !otherWorkQueued;
       if (
+        canRegenerate &&
         shouldRegenerateRepeatedReply({
           retryBudgetMs,
           aborted: generateSignal.aborted,
@@ -2668,19 +2724,23 @@ router.post("/messages", async (req, res) => {
           otherWorkQueued,
         })
       ) {
+        extraGenerationUsed = true;
         logger.warn(
-          { turnId, retryBudgetMs },
+          { turnId, retryBudgetMs, localHost },
           "Companion reply repeated recent history; regenerating once",
         );
-        // Hard stop for open + consume together, so `done` always goes out
-        // before the browser abort.
+        // Local restarts from the first ~40 characters and caps the retry
+        // near 80 tokens. Hosted still uses the caller's token cap. Deltas
+        // stay silent; `done.visible` is the only text the user keeps.
         const retryOpen = openStreamAbort(retryBudgetMs);
         try {
           const retry = await createChatStreamWithFailover({
             tier: routed.tier,
             model: routed.model,
-            maxTokens: replyMaxTokens,
-            messages: messagesForRepeatRetry(messages, fullResponse),
+            maxTokens: localHost
+              ? Math.min(replyMaxTokens, LOCAL_EXTRA_GENERATION_MAX_TOKENS)
+              : replyMaxTokens,
+            messages: messagesForRepeatRetry(messages, copiedReply || fullResponse),
             temperature: OLLAMA_MAX_TEMPERATURE,
             signal: combineAbortSignals(retryOpen.signal, abandoned.signal),
           });
@@ -2698,9 +2758,10 @@ router.post("/messages", async (req, res) => {
           );
           if (
             retriedText.trim() &&
-            !isRepeatedReply(retriedText, [fullResponse])
+            !isRepeatedReply(retriedText, [fullResponse, copiedReply || ""])
           ) {
             fullResponse = retriedText;
+            flushed = false;
             usedModel = retry.model;
             usedTier = retry.tier;
             usedProvider = retry.provider;
@@ -2713,6 +2774,74 @@ router.post("/messages", async (req, res) => {
         } finally {
           retryOpen.cancel();
         }
+      } else if (canRegenerate && stockLine && !extraGenerationUsed) {
+        extraGenerationUsed = true;
+        noteStockAssistantLine("retry");
+        logger.warn(
+          { turnId, metric: "stock_assistant_line", kind: "retry" },
+          "stock assistant line guard fired",
+        );
+        const retryOpen = openStreamAbort(retryBudgetMs);
+        try {
+          const retry = await createChatStreamWithFailover({
+            tier: routed.tier,
+            model: routed.model,
+            maxTokens: Math.min(replyMaxTokens, LOCAL_EXTRA_GENERATION_MAX_TOKENS),
+            messages: appendFinalUserReminder(
+              messages,
+              inCharacterRetryReminder(activeChar?.name),
+            ),
+            temperature: COMPANION_CHAT_TEMPERATURE,
+            signal: combineAbortSignals(retryOpen.signal, abandoned.signal),
+          });
+          const retried = await consumeLlmStream(retry.stream, {
+            ...consumeOpts,
+            onDelta: () => {},
+            onReasoning: () => {},
+            firstChunkMs: Math.min(consumeOpts.firstChunkMs, retryBudgetMs),
+            totalMs: Math.min(consumeOpts.totalMs, retryBudgetMs),
+          });
+          const retriedText = finalizeAssistantReply(
+            retried.timedOut
+              ? trimToLastCompleteSentence(retried.content)
+              : retried.content,
+          );
+          if (retriedText.trim() && !isStockAssistantLine(retriedText)) {
+            fullResponse = retriedText;
+            flushed = false;
+            usedModel = retry.model;
+            usedTier = retry.tier;
+            usedProvider = retry.provider;
+            usedBrand = retry.brand;
+            failedOver = retry.failedOver;
+          }
+        } catch (error) {
+          logger.warn({ error, turnId }, "Stock-assistant regenerate failed");
+        } finally {
+          retryOpen.cancel();
+        }
+      }
+      const unresolvedStock =
+        isStockAssistantLine(fullResponse) ||
+        (cutReason === "stock" &&
+          isStockAssistantLine(held) &&
+          !String(fullResponse || "").trim());
+      if (unresolvedStock) {
+        const personaPronoun = pronounFromPersona([
+          activeChar?.personality,
+          activeChar?.backstory,
+          activeChar?.speaking_style,
+        ]);
+        fullResponse = stockAssistantDeflection(activeChar?.name, personaPronoun);
+        flushed = false;
+        noteStockAssistantLine("deflect");
+        logger.warn(
+          { turnId, metric: "stock_assistant_line", kind: "deflect" },
+          "stock assistant line guard fired",
+        );
+      }
+      if (localHost && !flushed && fullResponse.trim()) {
+        emitDelta(fullResponse);
       }
     }
     } finally {
