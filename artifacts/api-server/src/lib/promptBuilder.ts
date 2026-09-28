@@ -1552,10 +1552,56 @@ export function messagesForLocalOllama<T extends { role: string; content: string
  * about six exchanges and then cuts back to the last two, so the start of
  * the history stays identical on the turns in between. Persona, region,
  * weather, the answer-last instruction, and the latest user message are
- * never dropped. Mood and the operator block are shortened so those parts
- * plus the kept history cannot exceed `LOCAL_PROMPT_MAX_TOKENS` (~1.2k)
- * unless the persona alone is already over that cap.
+ * never dropped. When mood has to shrink, the long synchro paragraph loses
+ * sentences from its end (or the whole paragraph) so the current-feeling
+ * line and the atmosphere line stay. Mood remains the last bracket before
+ * the user's words. Those parts plus the kept history stay inside
+ * `LOCAL_PROMPT_MAX_TOKENS` (~1.2k) unless the persona alone is already
+ * over that cap.
  */
+
+/**
+ * The synchro paragraph sits in the middle of the mood block. The atmosphere
+ * line is before it and the current-feeling line ("You feel quiet-watchful")
+ * is after it. Budget cuts take sentences off this paragraph first.
+ */
+function splitMoodAroundSynchro(mood: string): {
+  before: string;
+  synchro: string;
+  after: string;
+} | null {
+  const match = mood.match(/(^|[\s\S]*?\n\n)(SYNCHRO:[\s\S]*?)(\n\n[\s\S]*|$)/);
+  if (!match?.[2]) return null;
+  return {
+    before: match[1].trim(),
+    synchro: match[2].trim(),
+    after: match[3].replace(/^\n\n/, "").trim(),
+  };
+}
+
+function synchroSentences(paragraph: string): string[] {
+  const text = paragraph.trim();
+  if (!text) return [];
+  return (text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [text])
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+}
+
+function assembleMoodParts(before: string, synchro: string, after: string): string {
+  return [before, synchro, after]
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/** True when a shortened mood still carries the atmosphere and feeling lines. */
+function moodKeepsFeelingAndAtmosphere(original: string, next: string): boolean {
+  const atmosphere = original.match(/Current emotional atmosphere:[^\n]*/);
+  const feeling = original.match(/You feel [^\n]+/);
+  if (atmosphere && !next.includes(atmosphere[0])) return false;
+  if (feeling && !next.includes(feeling[0])) return false;
+  return true;
+}
 export function composeCompanionChatMessages(
   params: PromptBuilderParams,
 ): LlmChatMessage[] {
@@ -1638,6 +1684,10 @@ export function composeCompanionChatMessages(
   // Shorten mood only when the rest of the turn can fit without it. Persona
   // text stays as written. If the persona alone is already over the cap,
   // shortening mood cannot make the turn fit, so the mood block stays whole.
+  // Otherwise drop sentences from the end of the synchro paragraph, then the
+  // paragraph itself. If that is still over, other mood lines can yield.
+  // The atmosphere line and the current-feeling line always stay, and the
+  // mood block stays the last bracket before the user's words.
   const shrinkMoodToFit = () => {
     if (!over()) return;
     const saved = moodText;
@@ -1646,20 +1696,75 @@ export function composeCompanionChatMessages(
       moodText = saved;
       return;
     }
-    let allowance = Math.max(0, budget - packedTokens());
-    moodText = capBlockToLocalTokens(saved, allowance);
-    while (moodText && over() && allowance > 0) {
-      allowance -= 1;
-      moodText = capBlockToLocalTokens(saved, allowance);
+    const tightenAroundFeeling = () => {
+      let lines = moodText.split("\n");
+      while (over()) {
+        const atmosphereAt = lines.findIndex((line) =>
+          line.includes("Current emotional atmosphere:"),
+        );
+        const feelingAt = lines.findIndex((line) => line.includes("You feel "));
+        const head: number[] = [];
+        const middle: number[] = [];
+        const tail: number[] = [];
+        for (let i = 0; i < lines.length; i += 1) {
+          const line = lines[i] ?? "";
+          if (!line.trim()) continue;
+          if (line.includes("Current emotional atmosphere:")) continue;
+          if (line.includes("You feel ")) continue;
+          if (feelingAt >= 0 && i > feelingAt) tail.push(i);
+          else if (atmosphereAt >= 0 && i < atmosphereAt) head.push(i);
+          else middle.push(i);
+        }
+        // Synchro is already gone. Shed resonance coloring before the
+        // atmosphere line, then headers between the two protected lines.
+        // Trailing notes past the feeling line go last, from the end, so
+        // the feeling line itself is never the thing that gets cut.
+        head.reverse();
+        tail.reverse();
+        const index = [...head, ...middle, ...tail][0];
+        if (index == null) break;
+        const next = lines
+          .filter((_, lineIndex) => lineIndex !== index)
+          .join("\n")
+          .replace(/\n{3,}/g, "\n\n")
+          .trim();
+        if (!moodKeepsFeelingAndAtmosphere(saved, next)) break;
+        moodText = next;
+        lines = next.split("\n");
+      }
+    };
+
+    const parts = splitMoodAroundSynchro(saved);
+    if (!parts) {
+      moodText = saved;
+      if (over()) tightenAroundFeeling();
+      return;
     }
-    if (over()) moodText = saved;
+    const sentences = synchroSentences(parts.synchro);
+    const apply = (synchro: string) => {
+      const next = assembleMoodParts(parts.before, synchro, parts.after);
+      if (!moodKeepsFeelingAndAtmosphere(saved, next)) return false;
+      moodText = next;
+      return !over();
+    };
+    for (let keep = sentences.length - 1; keep >= 0; keep -= 1) {
+      if (apply(sentences.slice(0, keep).join(" "))) return;
+    }
+    const withoutSynchro = assembleMoodParts(parts.before, "", parts.after);
+    if (!moodKeepsFeelingAndAtmosphere(saved, withoutSynchro)) {
+      moodText = saved;
+      return;
+    }
+    moodText = withoutSynchro;
+    if (!over()) return;
+    tightenAroundFeeling();
   };
 
   if (over()) pdfText = "";
   if (over()) sceneText = "";
   if (over()) repositoryText = "";
-  // A short memory stays when cutting the tail of the mood block frees
-  // enough room. Memories are still dropped before history is cut.
+  // A short memory stays when shortening the synchro paragraph frees enough
+  // room. Memories are still dropped before history is cut.
   if (over()) shrinkMoodToFit();
   if (over()) memoryText = "";
   // One block cut to the last two exchanges. Sliding a single message off
