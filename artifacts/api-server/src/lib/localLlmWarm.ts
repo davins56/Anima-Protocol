@@ -122,7 +122,15 @@ function configuredOllamaModel(env: NodeJS.ProcessEnv = process.env): string {
   );
 }
 
-function localLlmAuthHeader(env: NodeJS.ProcessEnv = process.env): string | null {
+/**
+ * Bearer token for the local Ollama / vLLM host. Native `/api/chat` and the
+ * list probe both send this. A key of `local` is the OpenAI SDK placeholder
+ * for an open host and is not a password, so it is omitted.
+ * Chat does not send Cloudflare Access service-token headers.
+ */
+export function localLlmAuthorizationHeader(
+  env: NodeJS.ProcessEnv = process.env,
+): string | null {
   const key =
     normalizeApiKey(env.ANIMA_LOCAL_LLM_API_KEY) ||
     normalizeApiKey(env.VLLM_API_KEY);
@@ -214,7 +222,7 @@ async function warmOnce(
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  const auth = localLlmAuthHeader(env);
+  const auth = localLlmAuthorizationHeader(env);
   if (auth) headers.Authorization = auth;
   const body: Record<string, unknown> = {
     model: configuredOllamaModel(env),
