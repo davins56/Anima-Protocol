@@ -52,7 +52,10 @@ import {
   watchClientLeave,
 } from "../lib/chatTimeouts";
 import { hintLocalLlmWarm } from "../lib/localLlmWarm";
-import { COMPANION_CHAT_TEMPERATURE } from "../lib/ollamaChat";
+import {
+  COMPANION_CHAT_TEMPERATURE,
+  OLLAMA_MAX_TEMPERATURE,
+} from "../lib/ollamaChat";
 import {
   combineLocalDrafts,
   draftLocalMinds,
@@ -65,6 +68,9 @@ import {
 } from "../lib/memoryEmbeddings";
 import {
   composeCompanionChatMessages,
+  isRepeatedReply,
+  messagesForRepeatRetry,
+  recentAssistantReplies,
   type CompanionMemoryRecord,
   type CharacterData,
 } from "../lib/promptBuilder";
@@ -2539,6 +2545,52 @@ router.post("/messages", async (req, res) => {
           ? trimToLastCompleteSentence(streamed.content)
           : streamed.content,
       );
+
+      // A small local model copies its own earlier reply and then keeps
+      // copying it. Regenerate once without that reply in context. Deltas
+      // are not streamed; `done.visible` replaces the painted bubble.
+      if (
+        !generateSignal.aborted &&
+        !streamed.timedOut &&
+        isRepeatedReply(fullResponse, recentAssistantReplies(recentMessages))
+      ) {
+        logger.warn({ turnId }, "Companion reply repeated recent history; regenerating once");
+        writeSse(res, { status: "thinking" });
+        const retryOpen = openStreamAbort(generationBudgetMs);
+        try {
+          const retry = await createChatStreamWithFailover({
+            tier: routed.tier,
+            model: routed.model,
+            maxTokens: replyMaxTokens,
+            messages: messagesForRepeatRetry(messages, fullResponse),
+            temperature: OLLAMA_MAX_TEMPERATURE,
+            signal: combineAbortSignals(retryOpen.signal, abandoned.signal),
+          });
+          retryOpen.cancel();
+          const retried = await consumeLlmStream(retry.stream, {
+            ...consumeOpts,
+            onDelta: () => {},
+          });
+          const retriedText = finalizeAssistantReply(
+            retried.timedOut
+              ? trimToLastCompleteSentence(retried.content)
+              : retried.content,
+          );
+          if (retriedText.trim()) {
+            fullResponse = retriedText;
+            usedModel = retry.model;
+            usedTier = retry.tier;
+            usedProvider = retry.provider;
+            usedBrand = retry.brand;
+            failedOver = retry.failedOver;
+          }
+        } catch (error) {
+          // Keep the first reply. A repeat beats an error bubble.
+          logger.warn({ error, turnId }, "Repeat regenerate failed; keeping first reply");
+        } finally {
+          retryOpen.cancel();
+        }
+      }
     }
     } finally {
       open.cancel();
