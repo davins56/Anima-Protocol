@@ -18,6 +18,7 @@ import {
 export async function streamChatReply(events, { onDelta, onFirstToken, onStatus } = {}) {
   let content = "";
   let doneEvent = null;
+  let crisisResource = null;
   let sawFirst = false;
   let pending = null;
   let rafId = null;
@@ -56,9 +57,13 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus 
 
   try {
     for await (const event of events) {
+      if (event?.crisis_resource) {
+        crisisResource = event.crisis_resource;
+      }
       if (event?.error) {
         const err = new Error(event.error);
         if (content) err.partialContent = content;
+        if (crisisResource) err.crisisResource = crisisResource;
         throw err;
       }
       if (event?.status) {
@@ -97,7 +102,13 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus 
   );
   if (content && onDelta) onDelta(content);
 
-  return { ...(doneEvent || {}), content };
+  return {
+    ...(doneEvent || {}),
+    content,
+    ...(crisisResource && !doneEvent?.crisis_resource
+      ? { crisis_resource: crisisResource }
+      : {}),
+  };
 }
 
 export function isChatTurnCollisionError(error) {

@@ -211,6 +211,9 @@ import {
   getDynamicLengthGuide,
   getRelationshipContext,
 } from "@/lib/chatPromptContext";
+import { chatHistoryForLlm, crisisCardFromPayload, messagesForModel } from "@/lib/aiCompanionNotice";
+import { useAiCompanionNotice } from "@/hooks/useAiCompanionNotice";
+import SystemDisclosure from "@/components/chat/SystemDisclosure";
 
 export default function Chat() {
   const confirm = useConfirm();
@@ -234,6 +237,13 @@ export default function Chat() {
   const { activeSession, setActiveSession } = useChatSession();
   const { createStreamUi } = useChatStreaming(setActiveSession);
   const { persistTurn } = useChatPersistence();
+  const aiNotices = useAiCompanionNotice({
+    sessionId: activeSession?.id,
+    serverShownAt: activeSession?.ai_notice_shown_at,
+    persistShownAt: (id, iso) => {
+      base44.entities.ChatSession.update(id, { ai_notice_shown_at: iso }).catch(() => {});
+    },
+  });
   const [characters, setCharacters] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [sessionLoad, setSessionLoad] = useState({ status: "idle" });
@@ -1679,15 +1689,7 @@ export default function Chat() {
         },
       );
 
-      const conversationHistory = updatedMessages
-        .slice(-14)
-        .map((m) => {
-          const speaker = m.role === "user" ? "You" : (m.character_name || "Character");
-          const text = String(m.content || "");
-          const clipped = text.length > 800 ? `${text.slice(0, 799)}…` : text;
-          return `${speaker}: ${clipped}`;
-        })
-        .join("\n");
+      const conversationHistory = chatHistoryForLlm(updatedMessages);
 
       // Adult Mode unlocks explicit capability; lewdTiming tells the model whether
       // THIS beat is a right or wrong time to use it (grief/logistics vs invite/heat).
@@ -2049,7 +2051,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       let ownModelTurn = null;
       try {
         ownModelTurn = await writeOwnModelReply({
-          messages: updatedMessages,
+          messages: messagesForModel(updatedMessages),
           onLoading: () => streamUi.showStatus({ status: "thinking" }),
           onDelta: streamUi.showStreamingPartial,
         });
@@ -2116,7 +2118,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       if (ownModelTurn?.learning && resultPayload.brand === "own") {
         // "Always learning": Anima drafts what it would have said and the
         // own model learns it in the background.
-        queueOwnModelLesson({ turnId, messages: updatedMessages });
+        queueOwnModelLesson({ turnId, messages: messagesForModel(updatedMessages) });
       }
       const result = finalizeAssistantReply(
         resultPayload.content,
@@ -2282,11 +2284,13 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       const priorHistory = isContinue
         ? updatedMessages
         : updatedMessages.slice(0, -1);
+      const crisisMessage = crisisCardFromPayload(resultPayload);
       const newMessages = assignTurnMessageIds(
         [
           ...(isContinue ? [] : [userMessage]),
           ...eventMessages,
           ...newAiMessages,
+          ...(crisisMessage ? [crisisMessage] : []),
         ],
         turnId,
       );
@@ -2858,6 +2862,18 @@ Return JSON:
         }
       }
 
+      const crisisOnError = crisisCardFromPayload(err);
+      if (crisisOnError && sendSessionId) {
+        applyIfSendSession((prev) => {
+          const already = (prev.messages || []).some(
+            (message) => message?.type === "crisis_resource" && message?.turn_id === turnId,
+          );
+          if (already) return prev;
+          return { ...prev, messages: [...(prev.messages || []), { ...crisisOnError, turn_id: turnId }] };
+        });
+        base44.messages.append(sendSessionId, { ...crisisOnError, turn_id: turnId }).catch(() => {});
+      }
+
       const connectionDropped = isConnectionDroppedError(err);
       if (!retained && (connectionDropped || isCompanionStillTypingError(err))) {
         // The model is still working past this browser's deadline, this send
@@ -3217,6 +3233,9 @@ Return JSON:
                   handleSendMessage(directive);
                 }}
               />
+              {aiNotices.filter((notice) => notice.placement !== "repeat").map((notice) => (
+                <SystemDisclosure key={notice.id} tone="info" testId="ai-companion-notice" />
+              ))}
               <MessageList
                 key={activeSession.id}
                 messages={activeSession.messages}
@@ -3245,6 +3264,9 @@ Return JSON:
                     : undefined
                 }
               />
+              {aiNotices.filter((notice) => notice.placement === "repeat").map((notice) => (
+                <SystemDisclosure key={notice.id} tone="info" testId="ai-companion-notice" />
+              ))}
               
               {/* Render quest detection messages inline */}
               <AnimatePresence>

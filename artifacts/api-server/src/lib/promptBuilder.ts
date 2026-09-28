@@ -63,7 +63,9 @@ import {
   type ChatModePolicy,
 } from "./chatModeRegistry";
 import {
+  COMPANION_CRISIS_TURN_LINE,
   crisisResourceForCountry,
+  isLlmExcludedDisclosure,
   therapySafetyPrompt,
   type CrisisResource,
   type TherapySafetyAssessment,
@@ -159,6 +161,11 @@ export interface PromptBuilderParams {
   /** Layered therapy risk result; only used by the therapy mode contract. */
   therapyAssessment?: TherapySafetyAssessment | null;
   crisisResource?: CrisisResource | null;
+  /**
+   * This user message expressed suicidal thoughts or self-harm.
+   * Adds a per-turn care line. It does not change the stable prefix.
+   */
+  companionCrisis?: boolean;
 
   /** Hidden Sequences / conversational weather (client-authored, sanitized as guidance). */
   hiddenSequences?: HiddenSequencesState | null;
@@ -769,6 +776,7 @@ type SeqHistoryMessage = LlmChatMessage & { seq?: number };
 function normalizeRecentMessages(recentMessages: MsgData[] = []): SeqHistoryMessage[] {
   const out: SeqHistoryMessage[] = [];
   for (const msg of recentMessages) {
+    if (isLlmExcludedDisclosure(msg)) continue;
     const text = String(msg.content ?? "").trim();
     if (!text) continue;
     const name = String(msg.character_name || msg.characterName || "");
@@ -1295,7 +1303,10 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     sceneText,
     memoryText,
     pdfText: capPdfPromptBlock(pdfContext),
-    turnSafetyText: therapySafety.turn,
+    turnSafetyText: joinPromptParts([
+      therapySafety.turn,
+      params.companionCrisis ? COMPANION_CRISIS_TURN_LINE : "",
+    ]),
     companionName: sanitizePromptName(mainChar?.name),
   };
 }
@@ -1805,6 +1816,7 @@ function buildConversationContext(
   // Walk backwards from most recent
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
+    if (!msg || isLlmExcludedDisclosure(msg)) continue;
     const speaker =
       msg.role === "user"
         ? "User"
@@ -2305,6 +2317,10 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
         text: "Remember this person through the persistent memories above. Use those details naturally to show you genuinely know and understand them.",
       },
       { rank: 110, text: LOYALTY_GUARDRAIL },
+      {
+        rank: 110,
+        text: params.companionCrisis ? COMPANION_CRISIS_TURN_LINE : "",
+      },
     ],
     maxChars,
   );
