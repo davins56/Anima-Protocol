@@ -708,7 +708,9 @@ function clientSceneForCompanion(params: {
   if (kept.length === lines.length) {
     return wrapClientScene(clientSceneExcerpt(value));
   }
-  return wrapClientScene(capSceneBudget(kept.join("\n")));
+  // capSceneBudget keeps the head and drops image/length lines at the bottom.
+  // clientSceneExcerpt keeps the post-transcript tail, same as the group path.
+  return wrapClientScene(clientSceneExcerpt(kept.join("\n")));
 }
 
 const REGION_CLOCK_RE = /(\d{1,2}):(\d{2})(?:[\s\u00a0\u202f]*([AaPp][Mm]))?/;

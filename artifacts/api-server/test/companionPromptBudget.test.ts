@@ -7,6 +7,7 @@ import {
   approxPromptTokens,
   companionLocalSections,
   companionStaticPrefix,
+  CLIENT_SCENE_CONTEXT_MAX,
   composeCompanionChatMessages,
   composePrompt,
   estimateLocalPromptTokens,
@@ -621,12 +622,12 @@ describe("companion prompt prefill budget", () => {
       },
     ];
     const transcript = [
-      "Story so far:",
-      "User: I miss the garden by the river.",
-      "Natasha Romanoff: I remember the lanterns there.",
       "The lantern on the table is still lit.",
       "Rain on the window, not a storm.",
       "A third fact about the locked gate.",
+      "Story so far:",
+      "User: I miss the garden by the river.",
+      "Natasha Romanoff: I remember the lanterns there.",
     ].join("\n");
     const messages = composeCompanionChatMessages({
       characters: [natasha],
@@ -640,7 +641,7 @@ describe("companion prompt prefill budget", () => {
     const system = messages[0]?.content || "";
     expect(system).not.toContain("I miss the garden by the river.");
     expect(system).not.toContain("I remember the lanterns there.");
-    expect(system).toContain("Story so far:");
+    expect(system).not.toContain("Story so far:");
     expect(system).toContain("The lantern on the table is still lit.");
     expect(system).toContain("Rain on the window, not a storm.");
     expect(system).toContain("A third fact about the locked gate.");
@@ -717,5 +718,55 @@ describe("companion prompt prefill budget", () => {
       expect(next).toBeGreaterThan(at);
       at = next;
     }
+  });
+
+  it("keeps image and length lines at the bottom of a long solo scene", () => {
+    const repeated = "I miss the garden by the river.";
+    const filler = "Lore about the locked gate and the three lanterns. ".repeat(80);
+    const imageLine =
+      "IMAGE GENERATION: emit [IMAGE: rain on the window] when asked to draw.";
+    const lengthLine = "LENGTH: Keep it conversational — 2-4 sentences.";
+    const clientContext = [
+      filler,
+      "Story so far:",
+      `User: ${repeated}`,
+      "Natasha Romanoff: I remember the lanterns there.",
+      imageLine,
+      lengthLine,
+    ].join("\n");
+    expect(filler.length).toBeGreaterThan(CLIENT_SCENE_CONTEXT_MAX);
+    expect(clientContext.length).toBeGreaterThan(CLIENT_SCENE_CONTEXT_MAX);
+
+    const speaker = {
+      id: "natasha",
+      name: "Natasha Romanoff",
+      personality: "Controlled and brief.",
+    };
+    const messages = composeCompanionChatMessages({
+      characters: [speaker],
+      activeCharacter: speaker,
+      memories: [],
+      recentMessages: [
+        { role: "user", content: repeated },
+        {
+          role: "assistant",
+          content: "I remember the lanterns there.",
+          character_name: "Natasha Romanoff",
+        },
+      ],
+      mode: "solo",
+      content: "What do you see?",
+      clientContext,
+    });
+    const system = messages[0]?.content || "";
+    const scene =
+      system.split("<<<CLIENT_SCENE_CONTEXT>>>")[1]?.split("<<<END_CLIENT_SCENE_CONTEXT>>>")[0] ??
+      "";
+    expect(scene.trim().length).toBeLessThanOrEqual(CLIENT_SCENE_CONTEXT_MAX);
+    expect(scene).toContain(imageLine);
+    expect(scene).toContain(lengthLine);
+    expect(scene.indexOf(imageLine)).toBeLessThan(scene.indexOf(lengthLine));
+    expect(scene).not.toContain(repeated);
+    expect(scene).not.toContain("I remember the lanterns there.");
   });
 });
