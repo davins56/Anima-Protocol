@@ -536,7 +536,7 @@ export function clientSceneExcerpt(supplied: string): string {
  * the user turn only, so the cached system prefix stays byte-stable.
  */
 export const CONTINUE_USER_TURN =
-  "I'm here with you. Go on in your own first person.";
+  "I'm here with you. Go on in your own first person, then pause for me.";
 
 function messageTurnKey(message: MsgData): string | null {
   const id = String(message.id || "");

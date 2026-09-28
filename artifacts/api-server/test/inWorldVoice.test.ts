@@ -91,7 +91,9 @@ describe("in-world companion prompt", () => {
     expect(String(folded[0]?.content)).not.toContain(CONTINUE_USER_TURN);
     const user = String(folded.at(-1)?.content || "");
     expect(user).toContain(CONTINUE_USER_TURN);
-    expect(CONTINUE_USER_TURN).toBe("I'm here with you. Go on in your own first person.");
+    expect(CONTINUE_USER_TURN).toBe(
+      "I'm here with you. Go on in your own first person, then pause for me.",
+    );
     expect(user).not.toMatch(/continue the scene/i);
     expect(user).not.toMatch(/Continue as /);
   });
