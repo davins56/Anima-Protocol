@@ -179,5 +179,61 @@ class ProxyStreamTests(unittest.TestCase):
             upstream.server_close()
 
 
+class _ListOllama(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, fmt: str, *args: object) -> None:
+        return
+
+    def do_GET(self) -> None:  # noqa: N802
+        path = self.path.split("?", 1)[0]
+        self.server.paths.append(path)  # type: ignore[attr-defined]
+        body = b'{"models":[{"name":"anima-chat"}]}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+class ProxyListTests(unittest.TestCase):
+    def test_ps_and_tags_pass_and_pull_stays_closed(self) -> None:
+        upstream = ThreadingHTTPServer(("127.0.0.1", 0), _ListOllama)
+        upstream.paths = []  # type: ignore[attr-defined]
+        threading.Thread(target=upstream.serve_forever, daemon=True).start()
+
+        proxy.TOKEN = "test-token"
+        proxy.UPSTREAM_HOST = f"127.0.0.1:{upstream.server_address[1]}"
+        listen = ThreadingHTTPServer(("127.0.0.1", 0), proxy.Handler)
+        threading.Thread(target=listen.serve_forever, daemon=True).start()
+        host, port = listen.server_address
+
+        def get(path: str) -> http.client.HTTPResponse:
+            conn = http.client.HTTPConnection(host, port, timeout=5)
+            conn.request(
+                "GET",
+                path,
+                headers={"Authorization": "Bearer test-token"},
+            )
+            resp = conn.getresponse()
+            resp.read()
+            conn.close()
+            return resp
+
+        try:
+            ps = get("/api/ps")
+            tags = get("/api/tags")
+            pull = get("/api/pull")
+            self.assertEqual(ps.status, 200)
+            self.assertEqual(tags.status, 200)
+            self.assertEqual(pull.status, 404)
+            self.assertEqual(upstream.paths, ["/api/ps", "/api/tags"])  # type: ignore[attr-defined]
+        finally:
+            listen.shutdown()
+            upstream.shutdown()
+            listen.server_close()
+            upstream.server_close()
+
+
 if __name__ == "__main__":
     unittest.main()

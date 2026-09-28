@@ -46,8 +46,27 @@ export function noteStockAssistantLine(kind: "retry" | "deflect"): void {
   );
 }
 
-function lineIsStock(line: string): boolean {
-  return STOCK_LINE_PATTERNS.some((pattern) => pattern.test(line));
+/** Merged character count of the stock phrases themselves, not the lines around them. */
+function stockMatchCoverage(text: string): number {
+  const ranges: Array<[number, number]> = [];
+  for (const pattern of STOCK_LINE_PATTERNS) {
+    const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
+    const re = new RegExp(pattern.source, flags);
+    for (const match of text.matchAll(re)) {
+      const start = match.index ?? 0;
+      if (!match[0]) continue;
+      ranges.push([start, start + match[0].length]);
+    }
+  }
+  ranges.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  let covered = 0;
+  let end = 0;
+  for (const [start, stop] of ranges) {
+    if (stop <= end) continue;
+    covered += stop - Math.max(start, end);
+    end = stop;
+  }
+  return covered;
 }
 
 /** Persona text that already presents the character as a machine. "as an AI" can be in character. */
@@ -60,9 +79,16 @@ export function personaDescribesMachine(
   return PERSONA_MACHINE_RE.test(blob);
 }
 
+function lineTriggersStock(line: string): boolean {
+  const covered = stockMatchCoverage(line);
+  if (covered === 0) return false;
+  if (line.length <= STOCK_ASSISTANT_SHORT_REPLY_CHARS) return true;
+  return covered * 2 >= line.length;
+}
+
 /**
- * True when any line reveals model identity. Case-insensitive.
- * A buried admission still counts — the reply is retried or deflected.
+ * True for assistant / model-identity lines. Case-insensitive.
+ * Buried admissions still count when they appear as their own line.
  * Machine personas (android, robot, synthetic, in-story AI) are exempt.
  */
 export function isStockAssistantLine(
@@ -76,8 +102,8 @@ export function isStockAssistantLine(
     .split(/\n+/)
     .map((line) => line.trim())
     .filter(Boolean);
-  if (lines.some((line) => lineIsStock(line))) return true;
-  return text.length <= STOCK_ASSISTANT_SHORT_REPLY_CHARS && lineIsStock(text);
+  if (lines.some((line) => lineTriggersStock(line))) return true;
+  return lineTriggersStock(text);
 }
 
 export type PersonaPronoun = "she" | "he" | "they";

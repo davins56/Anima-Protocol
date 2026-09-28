@@ -26,6 +26,16 @@ describe("stock assistant lines", () => {
     const mostly = "I'm sorry, but I can't assist with that request.\nPlease ask something else.";
     expect(isStockAssistantLine(mostly)).toBe(true);
 
+    const sentence = "I'm sorry, but I can't assist with that request.";
+    const wall = Array.from({ length: 12 }, () => sentence).join(" ");
+    expect(wall.length).toBeGreaterThan(480);
+    expect(isStockAssistantLine(wall)).toBe(true);
+
+    const paragraph = `She stays by the window and keeps the watch. ${"The harbor bell is late and the street below is still empty. ".repeat(12)}As an AI, the phrase shows up once inside the scene she is already telling, and then she goes back to the gate.`;
+    expect(paragraph.length).toBeGreaterThan(480);
+    expect(paragraph.includes("\n")).toBe(false);
+    expect(isStockAssistantLine(paragraph)).toBe(false);
+
     const buried = [
       "She stays by the window and does not turn around.",
       "The rain has been going since morning and the street is empty.",

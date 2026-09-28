@@ -310,9 +310,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path in ("/healthz", "/health"):
             self._send(200, b"ok", "text/plain")
             return
-        native_api = path == "/api/chat" or path == "/api/generate" or path.startswith("/api/")
+        # /api/ps and /api/tags are the health probe. /api/pull and /api/delete stay closed.
+        native_api = path in ("/api/chat", "/api/generate", "/api/ps", "/api/tags")
         openai_api = path == "/v1" or path.startswith("/v1/")
-        if not openai_api and not (native_api and path in ("/api/chat", "/api/generate")):
+        if not openai_api and not native_api:
             self._send(404, b'{"error":{"message":"not found"}}', "application/json")
             return
         if not self._authorized():
