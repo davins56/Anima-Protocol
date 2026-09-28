@@ -1057,11 +1057,17 @@ interface LocalCompanionSections {
   memoryText: string;
   pdfText: string;
   /**
-   * Crisis-response policy for this message only. Empty unless therapy
-   * assessment asked for a direct safety response. First bracketed note
-   * on the local path; not part of the cached system prefix.
+   * Therapy crisis-response policy for this message only. Empty unless the
+   * assessment asked for a direct safety response. The companion care line,
+   * when present, is the bracket ahead of this one. Not part of the cached
+   * system prefix.
    */
   turnSafetyText: string;
+  /**
+   * Care instruction for a companion crisis turn. Empty on every other turn.
+   * First bracketed note on the local path; not part of the cached prefix.
+   */
+  crisisTurnText: string;
   /** Active companion name, or "" when this turn has no single speaker. */
   companionName: string;
 }
@@ -1303,18 +1309,17 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     sceneText,
     memoryText,
     pdfText: capPdfPromptBlock(pdfContext),
-    turnSafetyText: joinPromptParts([
-      therapySafety.turn,
-      params.companionCrisis ? COMPANION_CRISIS_TURN_LINE : "",
-    ]),
+    turnSafetyText: therapySafety.turn,
+    crisisTurnText: params.companionCrisis ? COMPANION_CRISIS_TURN_LINE : "",
     companionName: sanitizePromptName(mainChar?.name),
   };
 }
 
 /**
  * Therapy care contract and the non-crisis assessment stay in the cached
- * system prefix. The crisis-response policy is the only safety block that
- * depends on this message, so it moves to the front of the per-turn notes.
+ * system prefix. The crisis-response policy depends on this message, so it
+ * moves into the per-turn notes, after the companion care line when that
+ * line is present.
  */
 function splitTherapySafetyForLocal(
   assessment: TherapySafetyAssessment,
@@ -1487,8 +1492,9 @@ function isLocalClosingInstruction(content: string): boolean {
  * Qwen's chat template folds every system message into the top system block.
  * On the native Ollama path the system message keeps only the stable parts
  * (persona, then the region date). History follows. Everything that changes
- * per turn — a crisis-response policy when this message triggered one,
- * then memories, weather, lore, the clock, and mood — plus the answer-last
+ * per turn — the companion crisis care line when this turn fired one,
+ * then a therapy crisis-response policy, then memories, weather, lore,
+ * the clock, and mood — plus the answer-last
  * line (and the avoid-repeat line, when a retry added one) is bracketed at
  * the start of the final user turn. Guardrails stay in the system message.
  * The user's own text stays last.
@@ -1639,6 +1645,7 @@ export function composeCompanionChatMessages(
 
   const render = (): LlmChatMessage[] => {
     const volatileBlocks = [
+      sections.crisisTurnText,
       sections.turnSafetyText,
       memoryText,
       sections.weatherText,
@@ -1660,6 +1667,7 @@ export function composeCompanionChatMessages(
       repositoryText,
       pdfText,
       sceneText,
+      sections.crisisTurnText,
       sections.turnSafetyText,
       moodText,
     ]);
