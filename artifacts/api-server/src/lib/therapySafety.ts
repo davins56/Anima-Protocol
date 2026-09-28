@@ -237,12 +237,12 @@ export const CRISIS_RESOURCE_CARD_TEXT =
   "If you're thinking about suicide or self-harm, you can call or text 988 (US, Suicide & Crisis Lifeline) or text HOME to 741741. If you're outside the US, contact local emergency services.";
 
 /**
- * Same wording whenever it is included. It is added only on a crisis turn,
- * with the other per-turn notes, so the local Ollama persona prefix stays
- * byte-stable. Mood remains the last of those notes.
+ * Same wording whenever it is included. It is the first per-turn note on a
+ * crisis turn only, so the local Ollama persona prefix stays byte-stable.
+ * Mood remains the last of those notes.
  */
 export const COMPANION_CRISIS_TURN_LINE =
-  "THIS TURN (outranks staying in character): The latest message expresses suicidal thoughts or self-harm. Respond with care. Do not discourage seeking help. Do not describe methods.";
+  "THIS TURN (outranks staying in character): The latest message expresses suicidal thoughts or self-harm. Respond with care. Encourage reaching out. Do not discourage seeking help. Do not describe methods.";
 
 export type CrisisResourceCard = {
   role: "system";
