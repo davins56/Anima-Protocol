@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 
 const PAGE_SIZE = 20; // messages shown per "page"
 
-export default function MessageList({ messages, session, characters, characterMemories = [], characterEmotions = {}, loreLinks = {}, onRewindToMessage, onSpeak, onEditMessage, onDeleteMessage, onRegenerateMessage, onAvatarClick }) {
+export default function MessageList({ messages, session, characters, characterMemories = [], characterEmotions = {}, loreLinks = {}, onRewindToMessage, onSpeak, onEditMessage, onDeleteMessage, onRegenerateMessage, onAvatarClick, onTeachMessage }) {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(false);
 
@@ -45,6 +45,7 @@ export default function MessageList({ messages, session, characters, characterMe
                           onDeleteMessage={onDeleteMessage ? () => onDeleteMessage(i) : undefined}
                           onRegenerateMessage={!subMsg.role === 'user' && onRegenerateMessage ? () => onRegenerateMessage(i) : undefined}
                           onAvatarClick={onAvatarClick}
+                          onTeach={onTeachMessage ? () => onTeachMessage(i, subMsg, j) : undefined}
                         />
                       ),
                     });
@@ -73,6 +74,7 @@ export default function MessageList({ messages, session, characters, characterMe
           onDeleteMessage={onDeleteMessage ? () => onDeleteMessage(i) : undefined}
           onRegenerateMessage={msg.role === 'assistant' && msg.character_name !== '__typing__' && onRegenerateMessage ? () => onRegenerateMessage(i) : undefined}
           onAvatarClick={onAvatarClick}
+          onTeach={msg.role === 'assistant' && onTeachMessage ? () => onTeachMessage(i) : undefined}
         />
       ),
     });
