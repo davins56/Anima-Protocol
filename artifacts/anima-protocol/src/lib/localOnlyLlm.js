@@ -7,12 +7,26 @@ import { apiUrl } from "@/lib/apiOrigin";
  * call the model. Unknown routing is treated as local-only.
  */
 
+/** How long a failed health probe stays fail-closed before another try. */
+export const LOCAL_ONLY_HEALTH_RETRY_MS = 60_000;
+
 /** @type {boolean | null} */
 let known = null;
+/** 0 means a successful (or test) result stays until reset. */
+let knownUntil = 0;
 /** @type {Promise<boolean> | null} */
 let probe = null;
 /** @type {Set<() => void>} */
 const listeners = new Set();
+
+function cacheIsFresh() {
+  return known != null && (knownUntil === 0 || Date.now() < knownUntil);
+}
+
+function remember(value, retryMs) {
+  known = value;
+  knownUntil = retryMs > 0 ? Date.now() + retryMs : 0;
+}
 
 /**
  * @param {unknown} status
@@ -29,19 +43,21 @@ export function chainIsLocalOnly(status) {
 
 /** @returns {boolean} */
 export function isLocalOnlyLlmChain() {
-  if (known != null) return known;
+  if (cacheIsFresh()) return /** @type {boolean} */ (known);
   return true;
 }
 
 /** @param {boolean | null} value */
 export function setLocalOnlyLlmChainForTests(value) {
   known = value;
+  knownUntil = 0;
   probe = value == null ? null : Promise.resolve(Boolean(value));
   for (const listener of listeners) listener();
 }
 
 export function resetLocalOnlyLlmChainForTests() {
   known = null;
+  knownUntil = 0;
   probe = null;
   listeners.clear();
 }
@@ -58,19 +74,25 @@ function publish() {
 
 /** @returns {Promise<boolean>} */
 export function ensureLocalOnlyLlmChainProbed() {
-  if (known != null) return Promise.resolve(known);
+  if (cacheIsFresh()) return Promise.resolve(/** @type {boolean} */ (known));
   if (probe) return probe;
   probe = fetch(apiUrl("/healthz/llm"), { credentials: "same-origin" })
-    .then((res) => (res.ok ? res.json() : null))
-    .then((body) => {
-      known = chainIsLocalOnly(body);
-      return known;
+    .then(async (res) => {
+      if (!res.ok) {
+        remember(true, LOCAL_ONLY_HEALTH_RETRY_MS);
+        return true;
+      }
+      remember(chainIsLocalOnly(await res.json()), 0);
+      return /** @type {boolean} */ (known);
     })
     .catch(() => {
-      known = true;
+      remember(true, LOCAL_ONLY_HEALTH_RETRY_MS);
       return true;
     })
-    .finally(publish);
+    .finally(() => {
+      probe = null;
+      publish();
+    });
   return probe;
 }
 

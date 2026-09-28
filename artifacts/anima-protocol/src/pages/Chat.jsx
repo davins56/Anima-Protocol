@@ -163,6 +163,7 @@ import {
   isCompanionStillTypingError,
   isConnectionDroppedError,
   lateTurnFailedWithoutReply,
+  dropTurnPlaceholder,
   mergeLateReplyIntoMessages,
   pollLateCompanionReply,
 } from "@/lib/lateCompanionReply";
@@ -1300,7 +1301,15 @@ export default function Chat() {
         }
         setActiveSession((prev) => {
           if (!prev || prev.id !== sid) return prev;
-          if ((prev.messages || []).some((m) => m.character_name === "__typing__")) return prev;
+          if (
+            (prev.messages || []).some(
+              (m) =>
+                m.turn_id === live.turn_id &&
+                (m.character_name === "__typing__" || m.character_name === "__thinking__"),
+            )
+          ) {
+            return prev;
+          }
           return {
             ...prev,
             messages: [
@@ -1309,6 +1318,7 @@ export default function Chat() {
                 role: "assistant",
                 content: "...",
                 character_name: "__typing__",
+                turn_id: live.turn_id,
                 timestamp: new Date().toISOString(),
               },
             ],
@@ -1323,11 +1333,7 @@ export default function Chat() {
             if (!prev || prev.id !== sid) return prev;
             return {
               ...prev,
-              messages: (prev.messages || []).filter(
-                (message) =>
-                  message.character_name !== "__typing__" &&
-                  message.character_name !== "__thinking__",
-              ),
+              messages: dropTurnPlaceholder(prev.messages, live.turn_id),
             };
           });
           return;
@@ -1370,11 +1376,7 @@ export default function Chat() {
             if (!prev || (sessionId && prev.id !== sessionId)) return prev;
             return {
               ...prev,
-              messages: (prev.messages || []).filter(
-                (message) =>
-                  message.character_name !== "__typing__" &&
-                  message.character_name !== "__thinking__",
-              ),
+              messages: dropTurnPlaceholder(prev.messages, pending.turnId),
             };
           });
           toast.error(GENERIC_COMPANION_COULD_NOT_REPLY);

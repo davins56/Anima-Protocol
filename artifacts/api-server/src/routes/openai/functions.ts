@@ -1561,11 +1561,13 @@ router.post("/invoke/:fnName", async (req, res) => {
       }
 
       default: {
-        if (chainIsLocalOnly()) {
-          result = null;
-          break;
-        }
-        if (isPostTurnSidecarFunction(fnName) && shouldSkipSidecarLlm()) {
+        // Automatic sidecars never take the local slot. User-started names
+        // still go through llm(), which skips only while that user's
+        // companion turn is open and always times out / aborts on disconnect.
+        if (
+          isPostTurnSidecarFunction(fnName) &&
+          (chainIsLocalOnly() || shouldSkipSidecarLlm())
+        ) {
           result = null;
           break;
         }
