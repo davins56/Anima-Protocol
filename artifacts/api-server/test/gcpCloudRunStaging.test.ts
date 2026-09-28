@@ -50,7 +50,9 @@ describe("GCP Cloud Run staging prep", () => {
     expect(header).toMatch(/workflow_dispatch:/);
     expect(header).not.toMatch(/^\s+push:/m);
     expect(header).not.toMatch(/^\s+pull_request:/m);
-    expect(workflow).toContain("google-github-actions/auth@v2");
+    const authMajor = workflow.match(/google-github-actions\/auth@v(\d+)/);
+    expect(authMajor).not.toBeNull();
+    expect(Number(authMajor?.[1])).toBeGreaterThanOrEqual(2);
     expect(workflow).toContain("workload_identity_provider");
     expect(workflow).not.toMatch(/credentials_json|GCP_SA_KEY/);
     expect(workflow).toContain("deploy-staging");

@@ -860,21 +860,23 @@ describe("companion prompt prefill budget", () => {
       ["KEEP_3_USER the lantern by the gate", "KEEP_3_COMPANION she left it lit"],
       ["KEEP_4_USER the locked gate", "KEEP_4_COMPANION she did not open it"],
     ];
+    // Summaries and facts are truncated per record. One record now fits beside
+    // the slim persona, so several max-length records are required before
+    // persona + four exchanges + memories exceed LOCAL_PROMPT_MAX_TOKENS.
+    const oversizedMemory = (index: number) => ({
+      characterId: "natasha",
+      summary: `MEMORY_DROP_FIRST summary ${index} ${"bond summary ".repeat(80)}`,
+      resonanceNotes: `MEMORY_DROP_FIRST resonance ${index} ${"resonance note ".repeat(40)}`,
+      facts: Array.from({ length: 4 }, (_, i) => ({
+        type: "factual" as const,
+        text: `MEMORY_DROP_FIRST fact ${index}-${i} ${"remembered detail ".repeat(40)}`,
+      })),
+    });
     const input = {
       characters: [natasha],
       activeCharacter: natasha,
       userDisplayName: "Mara",
-      memories: [
-        {
-          characterId: "natasha",
-          summary: `MEMORY_DROP_FIRST ${"bond summary ".repeat(40)}`,
-          resonanceNotes: `MEMORY_DROP_FIRST ${"resonance note ".repeat(20)}`,
-          facts: Array.from({ length: 12 }, (_, i) => ({
-            type: "factual" as const,
-            text: `MEMORY_DROP_FIRST fact ${i} ${"remembered detail ".repeat(12)}`,
-          })),
-        },
-      ],
+      memories: Array.from({ length: 8 }, (_, index) => oversizedMemory(index)),
       recentMessages: exchanges.flatMap(([user, companion]) => [
         { role: "user", content: user },
         {
@@ -899,5 +901,24 @@ describe("companion prompt prefill budget", () => {
     }
     expect(tokens).toBeLessThanOrEqual(LOCAL_PROMPT_MAX_TOKENS);
     expect(messages.at(-1)).toEqual({ role: "user", content: userText });
+
+    const kept = composeCompanionChatMessages({
+      ...input,
+      memories: [
+        {
+          characterId: "natasha",
+          summary: "MEMORY_KEEP_WHEN_FIT the short bond",
+          facts: [
+            {
+              type: "factual" as const,
+              text: "MEMORY_KEEP_WHEN_FIT one detail",
+            },
+          ],
+        },
+      ],
+    });
+    expect(kept.map((message) => message.content).join("\n")).toContain(
+      "MEMORY_KEEP_WHEN_FIT",
+    );
   });
 });
