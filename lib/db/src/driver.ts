@@ -63,7 +63,11 @@ export function createNodePool(
     keepAlive: true,
     keepAliveInitialDelayMillis: 10_000,
     allowExitOnIdle: true,
-    options: `-c statement_timeout=${statementTimeoutMs}`,
+    // Setting `options` replaces libpq's PGOPTIONS, so carry it along (the
+    // api-server tests use it to pin a disposable schema).
+    options: [process.env.PGOPTIONS?.trim(), `-c statement_timeout=${statementTimeoutMs}`]
+      .filter(Boolean)
+      .join(" "),
   });
 }
 
