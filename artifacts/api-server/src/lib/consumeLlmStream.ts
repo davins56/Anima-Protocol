@@ -80,7 +80,8 @@ export interface ConsumeLlmStreamOptions {
   /**
    * Stop reading once this returns true. The caller already saw the deltas
    * that were emitted. Used to restart a local repeat before num_predict
-   * finishes. `iterator.return()` still runs, so the upstream generate ends.
+   * finishes. `iterator.return()` is awaited before this function resolves
+   * so the cancelled generate has released the single local slot.
    */
   stopWhen?: (visible: string) => boolean;
 }
@@ -117,6 +118,16 @@ export async function consumeLlmStream(
   let lastActivity = started;
   let emittedAny = false;
   const iterator = stream[Symbol.asyncIterator]();
+  let returnSettled = false;
+  const settleReturn = async () => {
+    if (returnSettled) return;
+    returnSettled = true;
+    try {
+      await iterator.return?.();
+    } catch {
+      // Upstream cancel is best-effort.
+    }
+  };
   // Think-inner text is painted, but it is not a post-think answer. Keep the
   // first-chunk window until remainder text arrives so a short pause after
   // `<think>` does not cut the stream. Unclosed think-only still finalizes
@@ -205,18 +216,23 @@ export async function consumeLlmStream(
           streamedVisible += extra;
           opts.onDelta?.(extra);
           if (opts.stopWhen?.(streamedVisible)) {
-            return { content: streamedVisible, timedOut: false, stoppedEarly: true };
+            break;
           }
         }
       }
     }
+    await settleReturn();
+    return { content: streamedVisible, timedOut: false, stoppedEarly: true };
   } finally {
-    // Don't await return() — a hung upstream iterator would block the timeout
-    // path that this helper exists to provide.
-    try {
-      void iterator.return?.();
-    } catch {
-      // Upstream cancel is best-effort.
+    // Don't await return() on the timeout path — a hung upstream iterator
+    // would block the deadline this helper exists to provide. The early-stop
+    // path awaits settleReturn before it resolves.
+    if (!returnSettled) {
+      try {
+        void iterator.return?.();
+      } catch {
+        // Upstream cancel is best-effort.
+      }
     }
   }
 }

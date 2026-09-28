@@ -618,14 +618,14 @@ export function visiblePrefixRepeatsHistory(
   const raw = String(visible ?? "");
   if (raw.trim().length < LOCAL_REPEAT_DETECT_CHARS) return false;
   const body = normalizeReplyForRepeat(raw);
-  if (body.length < 12) return false;
+  if (body.length < LOCAL_REPEAT_DETECT_CHARS) return false;
   return previous.some((prior) => {
     const other = normalizeReplyForRepeat(prior);
-    if (other.length < 12) return false;
+    // A short action beat ("She nods once.") is not a copied reply.
+    if (other.length < LOCAL_REPEAT_DETECT_CHARS) return false;
     const n = Math.min(body.length, other.length);
-    if (n < 12) return false;
-    if (body.slice(0, n) !== other.slice(0, n)) return false;
-    return n >= Math.min(24, other.length);
+    if (n < LOCAL_REPEAT_DETECT_CHARS) return false;
+    return body.slice(0, n) === other.slice(0, n);
   });
 }
 
@@ -1050,6 +1050,12 @@ interface LocalCompanionSections {
   sceneText: string;
   memoryText: string;
   pdfText: string;
+  /**
+   * Crisis-response policy for this message only. Empty unless therapy
+   * assessment asked for a direct safety response. First bracketed note
+   * on the local path; not part of the cached system prefix.
+   */
+  turnSafetyText: string;
   /** Active companion name, or "" when this turn has no single speaker. */
   companionName: string;
 }
@@ -1144,6 +1150,14 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
 - Do NOT remove or weaken the highest-priority rule about never turning intelligence against the real person.`
     : "";
 
+  const therapySafety =
+    modePolicy.name === "therapy" && therapyAssessment
+      ? splitTherapySafetyForLocal(
+          therapyAssessment,
+          crisisResource || crisisResourceForCountry(null),
+        )
+      : { stable: "", turn: "" };
+
   const staticText = joinPromptParts([
     CORE_BEHAVIOR,
     charDef ? `CHARACTER:\n${charDef}` : "",
@@ -1155,6 +1169,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     TURN_TAKING,
     LANGUAGE_QUALITY,
     LOYALTY_GUARDRAIL,
+    therapySafety.stable,
   ]);
 
   let resonanceBlock = "";
@@ -1216,13 +1231,6 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     Math.floor(localPromptTokenBudget() * 0.2) * LOCAL_PROMPT_CHARS_PER_TOKEN,
   );
   const operatorModelBlock = formatOperatorModelForPrompt(operatorModel, operatorMaxChars);
-  const careSafetyBlock =
-    modePolicy.name === "therapy" && therapyAssessment
-      ? therapySafetyPrompt(
-          therapyAssessment,
-          crisisResource || crisisResourceForCountry(null),
-        )
-      : "";
 
   const moodText = joinPromptParts([
     resonanceBlock,
@@ -1233,7 +1241,6 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     hiddenSequenceBlock,
     intimacyBlock,
     operatorModelBlock,
-    careSafetyBlock,
   ]);
 
   const suppliedContext = String(clientContext || systemPrompt || "").trim();
@@ -1289,8 +1296,26 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     sceneText,
     memoryText,
     pdfText: capPdfPromptBlock(pdfContext),
+    turnSafetyText: therapySafety.turn,
     companionName: sanitizePromptName(mainChar?.name),
   };
+}
+
+/**
+ * Therapy care contract and the non-crisis assessment stay in the cached
+ * system prefix. The crisis-response policy is the only safety block that
+ * depends on this message, so it moves to the front of the per-turn notes.
+ */
+function splitTherapySafetyForLocal(
+  assessment: TherapySafetyAssessment,
+  resource: CrisisResource,
+): { stable: string; turn: string } {
+  const full = therapySafetyPrompt(assessment, resource);
+  if (!assessment.requiresDirectSafetyResponse) return { stable: full, turn: "" };
+  const marker = "CRISIS RESPONSE POLICY";
+  const at = full.indexOf(marker);
+  if (at < 0) return { stable: full, turn: "" };
+  return { stable: full.slice(0, at).trim(), turn: full.slice(at).trim() };
 }
 
 /** Collapse a display name so it cannot break the one-line instruction. */
@@ -1452,9 +1477,11 @@ function isLocalClosingInstruction(content: string): boolean {
  * Qwen's chat template folds every system message into the top system block.
  * On the native Ollama path the system message keeps only the stable parts
  * (persona, then the region date). History follows. Everything that changes
- * per turn — memories, weather, lore, the clock, mood — plus the answer-last
+ * per turn — a crisis-response policy when this message triggered one,
+ * then memories, weather, lore, the clock, and mood — plus the answer-last
  * line (and the avoid-repeat line, when a retry added one) is bracketed at
- * the start of the final user turn. The user's own text stays last.
+ * the start of the final user turn. Guardrails stay in the system message.
+ * The user's own text stays last.
  * Cloud providers keep the separate system turns.
  */
 export function messagesForLocalOllama<T extends { role: string; content: string }>(
@@ -1550,6 +1577,7 @@ export function composeCompanionChatMessages(
 
   const render = (): LlmChatMessage[] => {
     const volatileBlocks = [
+      sections.turnSafetyText,
       memoryText,
       sections.weatherText,
       repositoryText,
@@ -1570,6 +1598,7 @@ export function composeCompanionChatMessages(
       repositoryText,
       pdfText,
       sceneText,
+      sections.turnSafetyText,
       moodText,
     ]);
     const messages: LlmChatMessage[] = [];
