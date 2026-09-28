@@ -249,8 +249,10 @@ export async function readChatTurn(
 
 /**
  * Newest pending or generated turn for this session, if the reply is not
- * committed yet. Pending rows whose lease expired more than
- * `STALE_PENDING_LEASE_MS` ago are marked failed and ignored.
+ * committed yet. Abandoned pending rows (lease, or before any lease the last
+ * update, older than `STALE_PENDING_LEASE_MS`) are marked failed first, so
+ * reopening the chat does not show a "..." bubble for a dead generate. Both
+ * steps filter in SQL, so a run of abandoned rows cannot hide a live one.
  */
 export async function latestOpenChatTurn(
   userId: string,
@@ -258,8 +260,7 @@ export async function latestOpenChatTurn(
   now = new Date(),
 ): Promise<ChatTurn | null> {
   const staleBefore = new Date(now.getTime() - STALE_PENDING_LEASE_MS);
-  // Drop expired pending rows before the limit, or eight stale leases hide
-  // an older turn that is still open.
+  const scope = and(eq(chatTurns.userId, userId), eq(chatTurns.sessionId, sessionId));
   await withTransientDbRetry(() =>
     db
       .update(chatTurns)
@@ -273,28 +274,24 @@ export async function latestOpenChatTurn(
       })
       .where(
         and(
-          eq(chatTurns.userId, userId),
-          eq(chatTurns.sessionId, sessionId),
+          scope,
           eq(chatTurns.status, "pending"),
-          lte(chatTurns.leaseExpiresAt, staleBefore),
+          or(
+            lt(chatTurns.leaseExpiresAt, staleBefore),
+            and(isNull(chatTurns.leaseExpiresAt), lt(chatTurns.updatedAt, staleBefore)),
+          ),
         ),
       ),
   );
-  const [open] = await withTransientDbRetry(() =>
+  const [turn] = await withTransientDbRetry(() =>
     db
       .select()
       .from(chatTurns)
-      .where(
-        and(
-          eq(chatTurns.userId, userId),
-          eq(chatTurns.sessionId, sessionId),
-          inArray(chatTurns.status, ["pending", "generated"]),
-        ),
-      )
+      .where(and(scope, inArray(chatTurns.status, ["pending", "generated"])))
       .orderBy(desc(chatTurns.createdAt))
-      .limit(8),
+      .limit(1),
   );
-  return open ?? null;
+  return turn ?? null;
 }
 
 /**
