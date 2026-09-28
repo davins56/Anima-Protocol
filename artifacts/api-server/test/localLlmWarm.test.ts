@@ -20,11 +20,14 @@ describe("localLlmWarm", () => {
     resetLocalLlmWarmForTests();
   });
 
-  it("defaults keep_alive to 30m for Ollama", () => {
+  it("omits keep_alive unless ANIMA_OLLAMA_KEEP_ALIVE is set", () => {
     delete process.env.ANIMA_LOCAL_LLM_BACKEND;
     delete process.env.ANIMA_OLLAMA_KEEP_ALIVE;
-    expect(ollamaKeepAliveDuration()).toBe(DEFAULT_OLLAMA_KEEP_ALIVE);
+    expect(ollamaKeepAliveDuration()).toBeNull();
+    expect(localChatKeepAliveFields()).toEqual({});
     expect(DEFAULT_OLLAMA_KEEP_ALIVE).toBe("30m");
+    process.env.ANIMA_OLLAMA_KEEP_ALIVE = DEFAULT_OLLAMA_KEEP_ALIVE;
+    expect(ollamaKeepAliveDuration()).toBe("30m");
     expect(localChatKeepAliveFields()).toEqual({ keep_alive: "30m" });
   });
 
@@ -45,7 +48,7 @@ describe("localLlmWarm", () => {
     );
   });
 
-  it("fires a non-blocking native generate warm with keep_alive", async () => {
+  it("fires a non-blocking native generate warm without keep_alive", async () => {
     process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
     process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
     process.env.ANIMA_LOCAL_LLM_API_KEY = "proxy-token";
@@ -62,8 +65,9 @@ describe("localLlmWarm", () => {
     expect(init.method).toBe("POST");
     expect(JSON.parse(String(init.body))).toEqual({
       model: "anima-chat",
-      keep_alive: "30m",
+      prompt: "",
       stream: false,
+      options: { num_ctx: 8192, num_predict: 1 },
     });
     expect((init.headers as Record<string, string>).Authorization).toBe(
       "Bearer proxy-token",
@@ -120,10 +124,11 @@ describe("localLlmWarm", () => {
     const body = JSON.parse(String(init.body));
     expect(body).toEqual({
       model: "anima-chat",
-      keep_alive: "30m",
+      prompt: "",
       stream: false,
+      options: { num_ctx: 8192, num_predict: 1 },
     });
-    expect(body.prompt).toBeUndefined();
+    expect(body.keep_alive).toBeUndefined();
     expect(body.messages).toBeUndefined();
     expect(timeout).toHaveBeenCalledWith(APP_OPEN_LLM_WARM_TIMEOUT_MS);
     expect(APP_OPEN_LLM_WARM_TIMEOUT_MS).toBeGreaterThanOrEqual(15_000);

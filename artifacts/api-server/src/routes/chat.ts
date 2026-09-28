@@ -40,7 +40,10 @@ import {
   LlmStreamTimeoutError,
 } from "../lib/consumeLlmStream.js";
 import {
+  abortWhenClientLeaves,
   chatReplyMaxTokens,
+  combineAbortSignals,
+  llmChatMessagesFirstChunkMs,
   llmChatMessagesOpenTimeoutMs,
   llmChatMessagesStreamTotalMs,
   openStreamAbort,
@@ -1995,10 +1998,12 @@ router.post("/messages", async (req, res) => {
   const consumeOpts = {
     onDelta: emitDelta,
     onReasoning: emitReasoning,
+    firstChunkMs: llmChatMessagesFirstChunkMs({ freeTierCascade }),
     totalMs: llmChatMessagesStreamTotalMs({ freeTierCascade }),
   };
 
   telemetry.startGeneration();
+    const clientGone = abortWhenClientLeaves(res);
     const releaseCompanionLlm = beginCompanionLlmTurn();
     try {
     if (isLocalEnsembleEnabled()) {
@@ -2007,6 +2012,7 @@ router.post("/messages", async (req, res) => {
         tier: routed.tier,
         maxTokens: replyMaxTokens,
         messages,
+        signal: clientGone.signal,
       });
       if (!drafts.length) {
         throw new Error("The companion returned an empty reply. Please try again.");
@@ -2030,6 +2036,7 @@ router.post("/messages", async (req, res) => {
         const completion = await combineLocalDrafts(drafts, messages, {
           tier: routed.tier,
           maxTokens: replyMaxTokens,
+          signal: clientGone.signal,
         });
         usedModel = completion.model;
         usedTier = completion.tier;
@@ -2054,7 +2061,7 @@ router.post("/messages", async (req, res) => {
           maxTokens: replyMaxTokens,
           messages,
           temperature: 0.85,
-          signal: open.signal,
+          signal: combineAbortSignals(open.signal, clientGone.signal),
         });
       } finally {
         open.cancel();
@@ -2076,6 +2083,7 @@ router.post("/messages", async (req, res) => {
       );
     }
     } finally {
+      clientGone.cancel();
       releaseCompanionLlm();
     }
 

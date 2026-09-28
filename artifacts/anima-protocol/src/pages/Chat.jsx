@@ -34,9 +34,12 @@ import {
   beginOpenSession,
   loadOpenChatSession,
   mergeOpenedSession,
+  openChatMessageReadOptions,
+  openChatSessionReadOptions,
   rememberCreatedSession,
   resolveOpenSessionFetch,
 } from "@/lib/chatSessionLoad";
+import { STORE_LIST_TIMEOUT_MS } from "@/lib/storeTimeouts";
 import {
   buildInitSessionPayload,
   createInitChatSession,
@@ -501,15 +504,16 @@ export default function Chat() {
         // Lookup by entityId (GET), not jsonb filter({ id }). After POST the
         // Hyperdrive pool can miss a filter read, and a body without data.id
         // would never match filter even though /ChatSession/:id exists.
-        const byEntityId = await base44.entities.ChatSession.get(id, {
-          withMessages: false,
-        });
+        // withMessages stays false: hydrating here would be a second full
+        // history read. The list budget matches the Worker store wall; the
+        // global 8s cap still applies to ordinary writes.
+        const readOpts = openChatSessionReadOptions(STORE_LIST_TIMEOUT_MS);
+        const byEntityId = await base44.entities.ChatSession.get(id, readOpts);
         if (byEntityId?.id) return [byEntityId];
-        return base44.entities.ChatSession.filter({ id }, undefined, 1, {
-          withMessages: false,
-        });
+        return base44.entities.ChatSession.filter({ id }, undefined, 1, readOpts);
       },
-      fetchMessages: (id) => base44.messages.list(id),
+      fetchMessages: (id) =>
+        base44.messages.list(id, openChatMessageReadOptions(STORE_LIST_TIMEOUT_MS)),
     }).then((result) => {
       if (!isCurrent() || cancelled) return;
       const next = resolveOpenSessionFetch({ result, sessionId });

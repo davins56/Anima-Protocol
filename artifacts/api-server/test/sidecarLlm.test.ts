@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  backgroundLlmSignal,
   beginCompanionLlmTurn,
   companionLlmTurnOpen,
   isPostTurnSidecarFunction,
+  localCallSignal,
   resetCompanionLlmTurnForTests,
   shouldSkipSidecarLlm,
 } from "../src/lib/sidecarLlm";
@@ -44,6 +46,20 @@ describe("sidecar LLM occupancy", () => {
     expect(companionLlmTurnOpen()).toBe(true);
     resetCompanionLlmTurnForTests();
     expect(companionLlmTurnOpen()).toBe(false);
+  });
+
+  it("aborts in-flight background LLM work when a companion turn starts", () => {
+    const background = backgroundLlmSignal();
+    const combined = localCallSignal(new AbortController().signal);
+    expect(background.aborted).toBe(false);
+    expect(combined?.aborted).toBe(false);
+
+    const release = beginCompanionLlmTurn();
+    expect(background.aborted).toBe(true);
+    expect(combined?.aborted).toBe(true);
+    expect(localCallSignal()).toBeUndefined();
+    release();
+    expect(backgroundLlmSignal().aborted).toBe(false);
   });
 
   it("skips sidecar LLM outside tests unless explicitly enabled", () => {

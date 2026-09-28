@@ -37,15 +37,25 @@ class TransformTests(unittest.TestCase):
         self.assertTrue(native["stream"])
         self.assertEqual(native["keep_alive"], "30m")
         self.assertEqual(native["options"]["temperature"], 0.85)
-        self.assertEqual(native["options"]["num_predict"], 1024)
+        self.assertEqual(native["options"]["num_predict"], proxy.NUM_PREDICT_CAP)
 
-    def test_injects_default_keep_alive_when_openai_body_omits_it(self) -> None:
+    def test_omits_keep_alive_unless_the_env_var_is_set(self) -> None:
+        os.environ.pop("ANIMA_OLLAMA_KEEP_ALIVE", None)
+        self.assertEqual(proxy.default_keep_alive(), "")
         native = proxy.openai_chat_to_native(
             {"model": "anima-chat", "messages": [{"role": "user", "content": "hi"}]},
-            "30m",
+            proxy.default_keep_alive(),
         )
-        self.assertEqual(native["keep_alive"], "30m")
+        self.assertNotIn("keep_alive", native)
+        self.assertEqual(native["options"]["num_predict"], proxy.NUM_PREDICT_CAP)
         self.assertFalse(native["stream"])
+
+    def test_uses_explicit_keep_alive_env(self) -> None:
+        os.environ["ANIMA_OLLAMA_KEEP_ALIVE"] = "30m"
+        try:
+            self.assertEqual(proxy.default_keep_alive(), "30m")
+        finally:
+            os.environ.pop("ANIMA_OLLAMA_KEEP_ALIVE", None)
 
     def test_nonstream_openai_shape_and_tool_arguments(self) -> None:
         out = proxy.native_chat_to_openai(

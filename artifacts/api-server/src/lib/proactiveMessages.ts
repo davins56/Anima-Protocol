@@ -18,6 +18,7 @@ import {
   type MsgData,
 } from "@workspace/db";
 import { createChatCompletionWithFailover } from "./llmFailover";
+import { companionLlmTurnOpen } from "./sidecarLlm";
 import { routeModel } from "./modelRouter";
 import { buildCompanionPrompt, type CharacterData } from "./promptBuilder";
 import { loadOperatorModel } from "./operatorModel";
@@ -548,6 +549,13 @@ async function runClaim(claim: ClaimedPreference): Promise<ProactiveRunResult> {
         status: "skipped",
         userId: claim.userId,
         reason: "No eligible inactive chat",
+      };
+    }
+    if (companionLlmTurnOpen()) {
+      return {
+        status: "skipped",
+        userId: claim.userId,
+        reason: "Companion chat in progress",
       };
     }
     const content = await generateMessage(claim.userId, candidate);

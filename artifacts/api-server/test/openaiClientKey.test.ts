@@ -61,11 +61,11 @@ describe("localLlmMaxRetries", () => {
     resetLlmClientsForTests();
   });
 
-  it("defaults to 2 on local Node so a single dropped tunnel packet can retry", () => {
+  it("defaults to 0 so a retry cannot queue a second generate behind the first", () => {
     delete process.env.ANIMA_LOCAL_LLM_MAX_RETRIES;
     delete process.env.ANIMA_RUNTIME;
     delete process.env.VERCEL;
-    expect(localLlmMaxRetries()).toBe(2);
+    expect(localLlmMaxRetries()).toBe(0);
   });
 
   it("defaults to 0 on Cloudflare Workers so SDK retries cannot burn the subrequest budget", () => {

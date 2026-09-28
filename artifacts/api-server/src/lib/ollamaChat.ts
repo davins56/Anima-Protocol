@@ -18,6 +18,7 @@ import { combineAbortSignals } from "./chatTimeouts";
 import {
   localChatKeepAliveFields,
   ollamaNativeOrigin,
+  ollamaNumCtx,
 } from "./localLlmWarm";
 import {
   hasLocalLlm,
@@ -167,6 +168,23 @@ export const OLLAMA_CHAT_SAMPLING = {
 /** Ceiling for caller temperatures. Override with ANIMA_OLLAMA_MAX_TEMPERATURE. */
 export const OLLAMA_MAX_TEMPERATURE = 0.75;
 
+/**
+ * Hard ceiling for `num_predict` on every native Ollama call.
+ * The droplet generates about 9 tokens/s on one vCPU (84 tokens in 9.4s).
+ * A chat reply stays in the 160–200 token band so one turn is roughly
+ * 18–22s of decode instead of holding the only slot for a long essay.
+ * Warm-up calls pass 1 and stay under this cap.
+ */
+export const OLLAMA_NUM_PREDICT_CAP = 200;
+
+export function capOllamaNumPredict(requested: number | undefined): number {
+  const raw =
+    typeof requested === "number" && Number.isFinite(requested) && requested > 0
+      ? Math.floor(requested)
+      : OLLAMA_NUM_PREDICT_CAP;
+  return Math.min(Math.max(1, raw), OLLAMA_NUM_PREDICT_CAP);
+}
+
 function maxTemperature(env: NodeJS.ProcessEnv = process.env): number {
   const raw = Number(env.ANIMA_OLLAMA_MAX_TEMPERATURE);
   return Number.isFinite(raw) && raw > 0 ? raw : OLLAMA_MAX_TEMPERATURE;
@@ -176,12 +194,13 @@ function ollamaOptions(
   req: OllamaChatRequest,
   env: NodeJS.ProcessEnv = process.env,
 ): Record<string, number> {
-  const options: Record<string, number> = { ...OLLAMA_CHAT_SAMPLING };
+  const options: Record<string, number> = {
+    ...OLLAMA_CHAT_SAMPLING,
+    num_ctx: ollamaNumCtx(env),
+    num_predict: capOllamaNumPredict(req.maxTokens),
+  };
   if (typeof req.temperature === "number" && Number.isFinite(req.temperature)) {
     options.temperature = Math.min(Math.max(req.temperature, 0), maxTemperature(env));
-  }
-  if (typeof req.maxTokens === "number" && Number.isFinite(req.maxTokens)) {
-    options.num_predict = Math.max(1, Math.floor(req.maxTokens));
   }
   return options;
 }

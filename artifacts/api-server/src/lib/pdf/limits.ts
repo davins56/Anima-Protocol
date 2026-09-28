@@ -39,10 +39,12 @@ export const PDF_MAX_CHUNKS = 120;
 
 /**
  * Words of PDF text injected into one companion turn, chat files and lore
- * combined. Tune this constant. 1000 is the ceiling; a smaller number is
- * safer because every extra word delays the first reply on anima-chat.
+ * combined. The droplet log showed a 3,916-token prompt against n_ctx 4096;
+ * PDF text is the first thing dropped when that prompt is over budget, and
+ * 300 words is about 400 tokens so a cache miss does not spend the whole
+ * 18s client limit on excerpt prefill.
  */
-export const PDF_CONTEXT_WORD_BUDGET = 1_000;
+export const PDF_CONTEXT_WORD_BUDGET = 300;
 
 /** How many full-text hits to consider before the word budget cuts them. */
 export const PDF_CONTEXT_MAX_HITS = 4;
