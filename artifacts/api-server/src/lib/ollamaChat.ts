@@ -18,6 +18,7 @@ import { combineAbortSignals } from "./chatTimeouts";
 import {
   localChatKeepAliveFields,
   ollamaNativeOrigin,
+  ollamaNumCtx,
 } from "./localLlmWarm";
 import {
   hasLocalLlm,
@@ -42,6 +43,8 @@ export interface OllamaChatRequest {
   maxTokens?: number;
   temperature?: number;
   signal?: AbortSignal;
+  /** Override `ANIMA_LOCAL_LLM_BASE_URL` for the backup host. */
+  baseUrl?: string;
 }
 
 export interface OllamaChatCompletionResult {
@@ -149,13 +152,69 @@ export function toOllamaMessages(
   return out;
 }
 
-function ollamaOptions(req: OllamaChatRequest): Record<string, number> {
-  const options: Record<string, number> = {};
+/**
+ * Qwen2.5's published chat sampling (temperature 0.7, top_p 0.8, top_k 20,
+ * repetition penalty 1.05). The old Modelfile ran top_p 0.92 with
+ * repeat_penalty 1.1. Companion chat now asks for COMPANION_CHAT_TEMPERATURE
+ * (one step under the 0.75 this ceiling used to apply to a 0.85 request).
+ * Ensemble minds still ask up to 1.15 and stay clamped here.
+ * On a 3B model that combination penalizes "the", "a", "to" out of the recent
+ * window and samples the long tail: dropped articles, odd word swaps, and
+ * stray Chinese tokens. Sent per request because the Fly volume keeps an
+ * `anima-chat` built from whatever Modelfile existed on first boot.
+ */
+export const OLLAMA_CHAT_SAMPLING = {
+  top_p: 0.8,
+  top_k: 20,
+  repeat_penalty: 1.05,
+} as const;
+
+/** Ceiling for caller temperatures. Override with ANIMA_OLLAMA_MAX_TEMPERATURE. */
+export const OLLAMA_MAX_TEMPERATURE = 0.75;
+
+/**
+ * Companion chat reply temperature on the local model path.
+ * The chat route used to request 0.85, and native Ollama clamped that to
+ * this ceiling (0.75), so the model sampled companion replies at 0.75.
+ * 0.65 is one 0.1 step below that applied temperature and stays under the
+ * ceiling, so the clamp does not undo it. Journal, proactive, summaries,
+ * and ensemble minds do not read this constant.
+ */
+export const COMPANION_CHAT_TEMPERATURE = 0.65;
+
+/**
+ * Hard ceiling for `num_predict` on every native Ollama call.
+ * The droplet generates about 9 tokens/s on one vCPU (84 tokens in 9.4s).
+ * A chat reply stays in the 160–200 token band so one turn is roughly
+ * 18–22s of decode instead of holding the only slot for a long essay.
+ * Warm-up calls pass 1 and stay under this cap.
+ */
+export const OLLAMA_NUM_PREDICT_CAP = 200;
+
+export function capOllamaNumPredict(requested: number | undefined): number {
+  const raw =
+    typeof requested === "number" && Number.isFinite(requested) && requested > 0
+      ? Math.floor(requested)
+      : OLLAMA_NUM_PREDICT_CAP;
+  return Math.min(Math.max(1, raw), OLLAMA_NUM_PREDICT_CAP);
+}
+
+function maxTemperature(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = Number(env.ANIMA_OLLAMA_MAX_TEMPERATURE);
+  return Number.isFinite(raw) && raw > 0 ? raw : OLLAMA_MAX_TEMPERATURE;
+}
+
+function ollamaOptions(
+  req: OllamaChatRequest,
+  env: NodeJS.ProcessEnv = process.env,
+): Record<string, number> {
+  const options: Record<string, number> = {
+    ...OLLAMA_CHAT_SAMPLING,
+    num_ctx: ollamaNumCtx(env),
+    num_predict: capOllamaNumPredict(req.maxTokens),
+  };
   if (typeof req.temperature === "number" && Number.isFinite(req.temperature)) {
-    options.temperature = req.temperature;
-  }
-  if (typeof req.maxTokens === "number" && Number.isFinite(req.maxTokens)) {
-    options.num_predict = Math.max(1, Math.floor(req.maxTokens));
+    options.temperature = Math.min(Math.max(req.temperature, 0), maxTemperature(env));
   }
   return options;
 }
@@ -171,10 +230,7 @@ function buildOllamaBody(
     stream,
     ...localChatKeepAliveFields(env),
   };
-  const options = ollamaOptions(req);
-  if (Object.keys(options).length > 0) {
-    body.options = options;
-  }
+  body.options = ollamaOptions(req, env);
   return body;
 }
 
@@ -263,7 +319,10 @@ async function postOllamaChat(
   env: NodeJS.ProcessEnv = process.env,
   fetchImpl: typeof fetch = fetch,
 ): Promise<Response> {
-  const { chatUrl } = resolveOllamaChatConfig(env);
+  const override = req.baseUrl?.trim();
+  const chatUrl = override
+    ? `${ollamaNativeOrigin(override)}/api/chat`
+    : resolveOllamaChatConfig(env).chatUrl;
   if (!chatUrl) {
     throw new OllamaChatError(
       "ANIMA_LOCAL_LLM_BASE_URL is unset, so the API cannot reach Ollama. " +

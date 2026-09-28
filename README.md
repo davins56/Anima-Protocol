@@ -189,14 +189,14 @@ Chat talks to a self-hosted Ollama host. The API reads `ANIMA_LOCAL_LLM_BASE_URL
 2. Pull a small model and create the Anima tag:
 
    ```bash
-   ollama pull qwen2.5:3b
+   ollama pull qwen2.5:0.5b
    pnpm llm:up          # creates anima-chat from that base, then smoke-tests
    ```
 
    Or skip the branded tag and use the pulled model directly:
 
    ```bash
-   export ANIMA_OLLAMA_MODEL_STANDARD=qwen2.5:3b
+   export ANIMA_OLLAMA_MODEL_STANDARD=qwen2.5:0.5b
    ```
 
 3. Point the API at it (these are the `.env.example` defaults):

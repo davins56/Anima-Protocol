@@ -51,6 +51,10 @@ const model =
     : process.env.ANIMA_OLLAMA_MODEL_STANDARD || process.env.ANIMA_VLLM_MODEL_STANDARD || "anima-chat";
 const apiKey = process.env.ANIMA_LOCAL_LLM_API_KEY || "local";
 
+// A finished reply ends on terminal punctuation, optionally followed by a
+// closing quote, bracket, or emphasis marker.
+const SENTENCE_END = /[.!?\u2026]["'\u201d\u2019)\]*_]*$/;
+
 function scoreChecks(content, latencyMs, testCase) {
   const checks = [];
   checks.push({ name: "non-empty", pass: content.length > 0 });
@@ -75,6 +79,21 @@ function scoreChecks(content, latencyMs, testCase) {
     const hits = testCase.mustInclude.filter((s) => lower.includes(s.toLowerCase()));
     const pass = mode === "all" ? hits.length === testCase.mustInclude.length : hits.length > 0;
     checks.push({ name: `mustInclude(${mode})`, pass, detail: `matched: ${hits.join(", ") || "none"}` });
+  }
+
+  if (testCase.mustEndSentence) {
+    const trimmed = content.trim();
+    const pass = SENTENCE_END.test(trimmed);
+    checks.push({
+      name: "mustEndSentence",
+      pass,
+      detail: pass ? undefined : `ended with "${trimmed.slice(-30)}"`,
+    });
+  }
+
+  if (testCase.minWords) {
+    const words = content.trim().split(/\s+/).filter(Boolean).length;
+    checks.push({ name: `minWords>=${testCase.minWords}`, pass: words >= testCase.minWords, detail: `${words} words` });
   }
 
   return checks;

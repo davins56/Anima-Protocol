@@ -1,0 +1,134 @@
+import { describe, expect, it, vi } from "vitest";
+import {
+  CONNECTION_DROPPED_STATUS,
+  GENERIC_COMPANION_COULD_NOT_REPLY,
+  isCompanionStillTypingError,
+  isConnectionDroppedError,
+  lateTurnFailedWithoutReply,
+  mergeLateReplyIntoMessages,
+  pollLateCompanionReply,
+} from "./lateCompanionReply.js";
+
+describe("isCompanionStillTypingError", () => {
+  it("treats a slow stream and an in-flight turn as still typing", () => {
+    const timeout = new Error("The companion took too long to reply. Please try again.");
+    timeout.code = "chat_stream_timeout";
+    expect(isCompanionStillTypingError(timeout)).toBe(true);
+    const inflight = new Error("This chat turn is already being processed.");
+    inflight.code = "turn_in_flight";
+    inflight.status = 409;
+    expect(isCompanionStillTypingError(inflight)).toBe(true);
+    const aborted = new Error("The operation was aborted.");
+    aborted.name = "AbortError";
+    expect(isCompanionStillTypingError(aborted)).toBe(true);
+    expect(
+      isCompanionStillTypingError(new Error(GENERIC_COMPANION_COULD_NOT_REPLY)),
+    ).toBe(true);
+  });
+
+  it("treats a network TypeError as a dropped connection, not an engine bug", () => {
+    expect(isConnectionDroppedError(new TypeError("Failed to fetch"))).toBe(true);
+    expect(isConnectionDroppedError(new TypeError("Load failed"))).toBe(true);
+    expect(
+      isConnectionDroppedError(
+        new TypeError("NetworkError when attempting to fetch resource."),
+      ),
+    ).toBe(true);
+    expect(isConnectionDroppedError(new TypeError("H is not a function"))).toBe(false);
+    expect(isCompanionStillTypingError(new TypeError("Failed to fetch"))).toBe(false);
+    expect(CONNECTION_DROPPED_STATUS).toMatch(/checking for her reply/i);
+    expect(lateTurnFailedWithoutReply({ persistence_status: "failed" })).toBe(true);
+    expect(
+      lateTurnFailedWithoutReply({
+        persistence_status: "failed",
+        assistant_content: "I stayed.",
+      }),
+    ).toBe(false);
+    expect(lateTurnFailedWithoutReply({ persistence_status: "pending" })).toBe(false);
+  });
+
+  it("does not hide a real auth failure", () => {
+    const err = new Error("Not signed in — your session may have expired.");
+    err.status = 401;
+    expect(isCompanionStillTypingError(err)).toBe(false);
+  });
+});
+
+describe("mergeLateReplyIntoMessages", () => {
+  it("keeps one user line and one assistant line for the turn", () => {
+    const first = mergeLateReplyIntoMessages(
+      [
+        { id: "older", role: "assistant", content: "Earlier." },
+        { id: "turn_1:user", role: "user", content: "Hello" },
+        { role: "assistant", content: "...", character_name: "__typing__" },
+      ],
+      {
+        turnId: "turn_1",
+        userContent: "Hello",
+        assistantContent: "I am happy you stayed.",
+        characterName: "Aria",
+      },
+    );
+    const again = mergeLateReplyIntoMessages(first, {
+      turnId: "turn_1",
+      userContent: "Hello",
+      assistantContent: "I am happy you stayed.",
+      characterName: "Aria",
+    });
+    expect(again.map((message) => message.id)).toEqual([
+      "older",
+      "turn_1:user",
+      "turn_1:assistant",
+    ]);
+    expect(again.filter((message) => message.character_name === "__typing__")).toEqual([]);
+  });
+
+  it("inserts the late reply under its own user message when newer turns exist", () => {
+    const merged = mergeLateReplyIntoMessages(
+      [
+        { id: "turn_1:user", role: "user", content: "First question", turn_id: "turn_1" },
+        { id: "turn_2:user", role: "user", content: "Newer question", turn_id: "turn_2" },
+        {
+          id: "turn_2:assistant",
+          role: "assistant",
+          content: "Newer answer",
+          turn_id: "turn_2",
+        },
+      ],
+      {
+        turnId: "turn_1",
+        userContent: "First question",
+        assistantContent: "Answer to the first question",
+        characterName: "Aria",
+      },
+    );
+    expect(merged.map((message) => message.id)).toEqual([
+      "turn_1:user",
+      "turn_1:assistant",
+      "turn_2:user",
+      "turn_2:assistant",
+    ]);
+    expect(merged[1].content).toBe("Answer to the first question");
+  });
+});
+
+describe("pollLateCompanionReply", () => {
+  it("returns the saved reply once assistant text arrives", async () => {
+    const fetchTurn = vi
+      .fn()
+      .mockResolvedValueOnce({ persistence_status: "pending", assistant_content: "" })
+      .mockResolvedValueOnce({
+        persistence_status: "committed",
+        assistant_content: "I am happy you stayed.",
+        companion_affect: { primary: "happy" },
+      });
+    const result = await pollLateCompanionReply({
+      fetchTurn,
+      timeoutMs: 5_000,
+      intervalMs: 1,
+      sleep: async () => {},
+    });
+    expect(result.assistant_content).toBe("I am happy you stayed.");
+    expect(fetchTurn).toHaveBeenCalledTimes(2);
+  });
+});

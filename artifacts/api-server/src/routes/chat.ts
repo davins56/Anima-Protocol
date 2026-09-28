@@ -29,21 +29,34 @@ import {
 import { routeModel } from "../lib/modelRouter";
 import {
   createChatStreamWithFailover,
+  isLocalOnlyProviderChain,
   usesFreeTierOpenBudget,
   type LlmBrand,
   type LlmProviderId,
 } from "../lib/llmFailover";
+import { retrievePdfContext } from "../lib/pdf/store";
 import {
   consumeLlmStream,
   LlmStreamTimeoutError,
 } from "../lib/consumeLlmStream.js";
 import {
+  armAbandonedGenerateAbort,
   chatReplyMaxTokens,
+  CLIENT_DISCONNECT_GRACE_MS,
+  combineAbortSignals,
+  llmChatMessagesFirstChunkMs,
   llmChatMessagesOpenTimeoutMs,
   llmChatMessagesStreamTotalMs,
+  llmCompanionDurableWaitMs,
   openStreamAbort,
+  repeatRetryBudgetMs,
+  watchClientLeave,
 } from "../lib/chatTimeouts";
 import { hintLocalLlmWarm } from "../lib/localLlmWarm";
+import {
+  COMPANION_CHAT_TEMPERATURE,
+  OLLAMA_MAX_TEMPERATURE,
+} from "../lib/ollamaChat";
 import {
   combineLocalDrafts,
   draftLocalMinds,
@@ -56,6 +69,9 @@ import {
 } from "../lib/memoryEmbeddings";
 import {
   composeCompanionChatMessages,
+  isRepeatedReply,
+  messagesForRepeatRetry,
+  recentAssistantReplies,
   type CompanionMemoryRecord,
   type CharacterData,
 } from "../lib/promptBuilder";
@@ -120,7 +136,10 @@ import { ChatPipelineTelemetry } from "../lib/chatTelemetry";
 import { streamErrorMessage } from "../lib/chatStreamError";
 import { optionalChatContext } from "../lib/optionalChatContext";
 import { classifyDbError, errorCauseBlob } from "../lib/dbErrors";
-import { finalizeAssistantReply } from "../lib/visibleAssistantReply";
+import {
+  finalizeAssistantReply,
+  trimToLastCompleteSentence,
+} from "../lib/visibleAssistantReply";
 import {
   OWN_MODEL_EMPTY_REPLY,
   OWN_MODEL_ID,
@@ -129,15 +148,38 @@ import {
 } from "../lib/ownModel";
 import {
   beginChatTurn,
+  chatTurnHasRemoteWaiter,
   checkpointGeneratedTurn,
+  claimChatTurnLease,
   classifyChatTurnReuse,
+  decideDurableTurnJoin,
+  latestOpenChatTurn,
+  markChatTurnWaiting,
   markTurnCommitted,
   markTurnFailed,
   normalizeTurnId,
   readChatTurn,
+  renewChatTurnLease,
   retryableChatTurns,
   type PersistenceOwner,
 } from "../lib/chatTurnLedger";
+import {
+  ChatTurnFlightElsewhere,
+  chatTurnFlightWaiters,
+  isChatTurnFlightElsewhere,
+  reserveChatTurnFlight,
+  type ChatTurnFlightOutcome,
+  type ChatTurnFlightReservation,
+} from "../lib/chatTurnFlight";
+import { planTurnMessageSeqs, type SeqRow } from "../lib/chatMessageOrder";
+import {
+  emotionalStateWithTurnBond,
+  emotionalStateWithTurnMood,
+  moodTurnAlreadyWritten,
+  relationshipTurnAlreadyWritten,
+  savedMomentsTurnAlreadyWritten,
+} from "../lib/turnMoodWrite";
+import { scheduleWorkerBackground } from "../lib/workerBackground";
 import { logger } from "../lib/logger";
 import {
   shouldCrystallize,
@@ -206,8 +248,157 @@ function flushSse(res: Response) {
 
 function writeSse(res: Response, payload: unknown) {
   if (res.writableEnded) return;
-  res.write(`data: ${JSON.stringify(payload)}\n\n`);
-  flushSse(res);
+  try {
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    flushSse(res);
+  } catch {
+    // The browser left. Keep generating and save the reply when it arrives.
+  }
+}
+
+function replayFlightOutcome(turn: ChatTurn): ChatTurnFlightOutcome {
+  const content = String(turn.assistantContent || "");
+  return {
+    content,
+    done: {
+      done: true,
+      visible: content,
+      turn_id: turn.id,
+      persistence_status: turn.status,
+      replayed: true,
+      joined: true,
+    },
+  };
+}
+
+function writeFlightSse(res: Response, outcome: ChatTurnFlightOutcome) {
+  const sse = openChatSse(res);
+  try {
+    if (outcome.content) writeSse(res, { content: outcome.content });
+    writeSse(res, outcome.done);
+  } finally {
+    sse.stop();
+    if (!res.writableEnded) res.end();
+  }
+}
+
+const DURABLE_JOIN_POLL_MS = 1_000;
+
+/**
+ * Wait on the ledger row for this turn_id. A live lease means another
+ * isolate is generating; an expired lease is claimed here so the turn cannot
+ * stay pending after the owner dies.
+ */
+async function awaitDurableTurnOwner(input: {
+  turn: ChatTurn;
+  content: string;
+  stillWaiting: () => boolean;
+}): Promise<
+  | { action: "replay"; outcome: ChatTurnFlightOutcome }
+  | { action: "generate"; turn: ChatTurn }
+> {
+  const deadline = Date.now() + llmCompanionDurableWaitMs();
+  let turn = input.turn;
+  while (input.stillWaiting()) {
+    const decision = decideDurableTurnJoin(turn, input.content, Date.now());
+    if (decision === "conflict") throw new ChatTurnFlightElsewhere();
+    if (decision === "replay") {
+      return { action: "replay", outcome: replayFlightOutcome(turn) };
+    }
+    if (decision === "claim") {
+      const claimed = await claimChatTurnLease(turn.id, turn.userId);
+      if (claimed) {
+        const latest = await readChatTurn(turn.id, turn.userId);
+        return { action: "generate", turn: latest ?? turn };
+      }
+    } else {
+      await markChatTurnWaiting(
+        turn.id,
+        turn.userId,
+        CLIENT_DISCONNECT_GRACE_MS,
+      );
+    }
+    if (Date.now() >= deadline) break;
+    await new Promise((resolve) => setTimeout(resolve, DURABLE_JOIN_POLL_MS));
+    const latest = await readChatTurn(turn.id, turn.userId);
+    if (!latest) throw new ChatTurnFlightElsewhere();
+    turn = latest;
+  }
+  if (!input.stillWaiting()) throw new ChatTurnFlightElsewhere();
+  if (await claimChatTurnLease(turn.id, turn.userId)) {
+    const latest = await readChatTurn(turn.id, turn.userId);
+    return { action: "generate", turn: latest ?? turn };
+  }
+  throw new ChatTurnFlightElsewhere();
+}
+
+async function streamDurableFollow(
+  res: Response,
+  flight: ChatTurnFlightReservation,
+  work: ReturnType<typeof awaitDurableTurnOwner>,
+): Promise<
+  | { action: "finished" }
+  | {
+      action: "generate";
+      turn: ChatTurn;
+      sse: ReturnType<typeof openChatSse>;
+    }
+> {
+  const sse = openChatSse(res);
+  let handoff = false;
+  try {
+    const result = await work;
+    if (result.action === "replay") {
+      flight.resolve(result.outcome);
+      if (result.outcome.content) writeSse(res, { content: result.outcome.content });
+      writeSse(res, { ...result.outcome.done, joined: true, replayed: true });
+      return { action: "finished" };
+    }
+    handoff = true;
+    return { action: "generate", turn: result.turn, sse };
+  } catch (err) {
+    if (isChatTurnFlightElsewhere(err)) {
+      flight.abandon();
+    } else {
+      flight.fail(err);
+    }
+    writeSse(res, { error: streamErrorMessage(err) });
+    return { action: "finished" };
+  } finally {
+    if (!handoff) {
+      sse.stop();
+      try {
+        if (!res.writableEnded) res.end();
+      } catch {
+        // The joiner already left.
+      }
+    }
+  }
+}
+
+async function writeJoinedTurn(
+  res: Response,
+  result: Promise<ChatTurnFlightOutcome>,
+) {
+  try {
+    const outcome = await result;
+    writeFlightSse(res, { ...outcome, done: { ...outcome.done, joined: true } });
+  } catch (err) {
+    if (isChatTurnFlightElsewhere(err)) {
+      res.status(409).json({
+        error: "This chat turn is already being processed.",
+        code: "turn_in_flight",
+      });
+      return;
+    }
+    const sse = openChatSse(res);
+    try {
+      writeSse(res, { error: streamErrorMessage(err) });
+    } finally {
+      sse.stop();
+      if (!res.writableEnded) res.end();
+    }
+  }
 }
 
 function writeSseComment(res: Response, comment: string) {
@@ -484,6 +675,7 @@ async function persistTypedMessage(params: {
   characterName?: string | null;
   isCrossover: boolean;
   metadata?: Record<string, unknown>;
+  createdAt?: Date;
 }) {
   await db
     .insert(chatMessages)
@@ -497,6 +689,7 @@ async function persistTypedMessage(params: {
       characterName: params.characterName ?? null,
       isCrossover: params.isCrossover,
       metadata: params.metadata ?? {},
+      ...(params.createdAt ? { createdAt: params.createdAt } : {}),
     })
     .onConflictDoNothing();
 }
@@ -569,6 +762,17 @@ async function loadMemories(userId: string, characterIds: string[]) {
       queryCompanionMemories(userId, characterIds),
     );
   }
+}
+
+/** Profile display name for the answer-last instruction. Never an email. */
+function profileDisplayName(
+  profile: Record<string, unknown>,
+  settings: Record<string, unknown>,
+): string {
+  for (const value of [profile.display_name, settings.display_name, profile.full_name]) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
 }
 
 /**
@@ -701,6 +905,108 @@ async function upsertTurnMemory(params: {
   }
 }
 
+function storeMessageMoment(data: MsgData): number {
+  const raw = data.created_date || data.timestamp || data.updated_date;
+  const at = Date.parse(String(raw || ""));
+  return Number.isFinite(at) ? at : 0;
+}
+
+/**
+ * Write the user line and the assistant line in turn order. A late repair
+ * inserts them after this turn's user message (or at `created_at` when that
+ * row is missing), never at max(seq) after newer committed messages.
+ */
+async function writeTurnMessagesInOrder(
+  turn: ChatTurn,
+  messages: { user: MsgData | null; assistant: MsgData },
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    await migrateSessionMessages(tx, turn.userId, turn.sessionId);
+    const rows = await tx
+      .select({
+        id: userEntities.id,
+        entityId: userEntities.entityId,
+        data: userEntities.data,
+      })
+      .from(userEntities)
+      .where(
+        and(
+          eq(userEntities.userId, turn.userId),
+          eq(userEntities.entityName, CHAT_MESSAGE),
+          sessionIdEq(turn.sessionId),
+        ),
+      );
+    const seqRows: SeqRow[] = rows.map((row) => {
+      const data = asObject(row.data);
+      return {
+        id: String(data.id || row.entityId),
+        seq: Number(data.seq ?? 0),
+        at: storeMessageMoment(data),
+      };
+    });
+    const plan = planTurnMessageSeqs(seqRows, {
+      userMessageId: turn.userMessageId,
+      assistantMessageId: turn.assistantMessageId,
+      createdAtMs: turn.createdAt.getTime(),
+      includeUser: Boolean(messages.user),
+    });
+    const now = new Date().toISOString();
+    const insertRow = async (data: MsgData) => {
+      await tx
+        .insert(userEntities)
+        .values({
+          userId: turn.userId,
+          entityName: CHAT_MESSAGE,
+          entityId: String(data.id),
+          data,
+        })
+        .onConflictDoNothing();
+    };
+    if (messages.user && plan.userSeq != null) {
+      await insertRow({
+        ...asObject(messages.user),
+        id: turn.userMessageId,
+        session_id: turn.sessionId,
+        seq: plan.userSeq,
+        created_date: turn.createdAt.toISOString(),
+        updated_date: now,
+      });
+    }
+    const assistantAt = new Date(turn.createdAt.getTime() + 1).toISOString();
+    if (plan.reseatAssistant) {
+      const existing = rows.find(
+        (row) =>
+          String(asObject(row.data).id || row.entityId) === turn.assistantMessageId,
+      );
+      if (existing) {
+        const data = asObject(existing.data);
+        await tx
+          .update(userEntities)
+          .set({
+            data: {
+              ...data,
+              seq: plan.assistantSeq,
+              created_date: data.created_date || assistantAt,
+              updated_date: now,
+            },
+            updatedAt: new Date(),
+          })
+          .where(eq(userEntities.id, existing.id));
+        return;
+      }
+    }
+    if (seqRows.some((row) => row.id === turn.assistantMessageId)) return;
+    await insertRow({
+      ...asObject(messages.assistant),
+      id: turn.assistantMessageId,
+      session_id: turn.sessionId,
+      seq: plan.assistantSeq,
+      created_date: assistantAt,
+      updated_date: now,
+    });
+  });
+}
+
 async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
   if (!turn.assistantContent.trim()) {
     throw new Error("Cannot persist a turn before its assistant reply is generated");
@@ -727,15 +1033,30 @@ async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
     metadata: { source: "chat_api", turn_id: turn.id },
   });
 
-  if (!isContinue && turn.userContent.trim()) {
-    const userMessage = {
-      id: turn.userMessageId,
-      role: "user",
-      content: turn.userContent,
-      timestamp: turn.createdAt.toISOString(),
-      metadata: { turn_id: turn.id },
-    };
-    await appendStoreMessage(turn.userId, turn.sessionId, userMessage);
+  const userMessage =
+    !isContinue && turn.userContent.trim()
+      ? {
+          id: turn.userMessageId,
+          role: "user",
+          content: turn.userContent,
+          timestamp: turn.createdAt.toISOString(),
+          metadata: { turn_id: turn.id },
+        }
+      : null;
+  const assistantMessage = {
+    id: turn.assistantMessageId,
+    role: "assistant",
+    content: turn.assistantContent,
+    character_id: activeCharacterId,
+    character_name: activeCharacterName,
+    timestamp: new Date(turn.createdAt.getTime() + 1).toISOString(),
+    metadata: { turn_id: turn.id },
+  };
+  await writeTurnMessagesInOrder(turn, {
+    user: userMessage,
+    assistant: assistantMessage,
+  });
+  if (userMessage) {
     await persistTypedMessage({
       id: turn.userMessageId,
       userId: turn.userId,
@@ -744,21 +1065,9 @@ async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
       content: turn.userContent,
       isCrossover,
       metadata: { turn_id: turn.id },
+      createdAt: turn.createdAt,
     });
   }
-
-  const assistantMessage = {
-    id: turn.assistantMessageId,
-    role: "assistant",
-    content: turn.assistantContent,
-    character_id: activeCharacterId,
-    character_name: activeCharacterName,
-    timestamp: turn.updatedAt.toISOString(),
-    // Which model spoke — the chat UI marks replies from the steward's own model.
-    ...(typeof metadata.brand === "string" ? { llm_brand: metadata.brand } : {}),
-    metadata: { turn_id: turn.id },
-  };
-  await appendStoreMessage(turn.userId, turn.sessionId, assistantMessage);
   await persistTypedMessage({
     id: turn.assistantMessageId,
     userId: turn.userId,
@@ -769,10 +1078,67 @@ async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
     characterName: activeCharacterName,
     isCrossover,
     metadata,
+    createdAt: new Date(turn.createdAt.getTime() + 1),
   });
 
   await recordTurnContinuity(turn);
+  await writeTurnMoodFromMetadata(turn);
   await markTurnCommitted(turn.id, turn.userId);
+}
+
+/**
+ * Mood lands in the same persist as the assistant row. `moodTurnId` makes a
+ * retry of this turn a no-op so the felt state cannot shift twice.
+ */
+async function writeTurnMoodFromMetadata(turn: ChatTurn): Promise<void> {
+  const metadata = asObject(turn.metadata);
+  const selfState = asObject(metadata.mood_self_state);
+  if (!selfState || Object.keys(selfState).length === 0) return;
+  const characterIds = asStringArray(metadata.character_ids);
+  if (characterIds.length === 0) return;
+  const now = new Date();
+  for (const characterId of characterIds) {
+    const [existing] = await withTransientDbRetry(() =>
+      db
+        .select({
+          summary: companionMemories.summary,
+          facts: companionMemories.facts,
+          emotionalState: companionMemories.emotionalState,
+          resonanceNotes: companionMemories.resonanceNotes,
+        })
+        .from(companionMemories)
+        .where(
+          and(
+            eq(companionMemories.userId, turn.userId),
+            eq(companionMemories.characterId, characterId),
+          ),
+        )
+        .limit(1),
+    );
+    const current = (existing?.emotionalState as Record<string, unknown> | null) ?? {};
+    const next = emotionalStateWithTurnMood(current, turn.id, selfState);
+    if (!next.wrote) continue;
+    await withTransientDbRetry(() =>
+      db
+        .insert(companionMemories)
+        .values({
+          userId: turn.userId,
+          characterId,
+          summary: existing?.summary ?? "",
+          facts: Array.isArray(existing?.facts) ? existing.facts : [],
+          emotionalState: next.state,
+          resonanceNotes: existing?.resonanceNotes ?? "",
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [companionMemories.userId, companionMemories.characterId],
+          set: {
+            emotionalState: next.state,
+            updatedAt: now,
+          },
+        }),
+    );
+  }
 }
 
 /**
@@ -873,12 +1239,90 @@ async function applyRelationshipPostProcess(params: {
     }
   }
   if ((synchroState || companionAffect) && assistantContent) {
-    const evolved = synchroState
-      ? evolveSynchroFromCompanion(synchroState, assistantContent)
-      : null;
-    const evolvedAffect = companionAffect
-      ? evolveCompanionAffectFromCompanion(companionAffect, assistantContent)
-      : null;
+    const anchorId =
+      activeCharacterId && characterIds.includes(activeCharacterId)
+        ? activeCharacterId
+        : characterIds[0];
+    const [anchorRow] = anchorId
+      ? await withTransientDbRetry(() =>
+          db
+            .select({ emotionalState: companionMemories.emotionalState })
+            .from(companionMemories)
+            .where(
+              and(
+                eq(companionMemories.userId, userId),
+                eq(companionMemories.characterId, anchorId),
+              ),
+            )
+            .limit(1),
+        )
+      : [undefined];
+    const anchorState =
+      (anchorRow?.emotionalState as Record<string, unknown> | null) ?? null;
+    // The server save stamps mood before this runs. Skip only that write.
+    // Relationship strength and saved moments still land once for the turn.
+    const bondAlready = relationshipTurnAlreadyWritten(anchorState, turnId);
+    const momentsAlready = savedMomentsTurnAlreadyWritten(anchorState, turnId);
+    const evolved =
+      bondAlready || !synchroState
+        ? null
+        : evolveSynchroFromCompanion(synchroState, assistantContent);
+    const evolvedAffect =
+      moodTurnAlreadyWritten(anchorState, turnId) || !companionAffect
+        ? null
+        : evolveCompanionAffectFromCompanion(companionAffect, assistantContent);
+    if (evolved && !momentsAlready) {
+      try {
+        const intimacy = Number(
+          evolved.vector?.intimacy ?? evolved.vector?.synchroStrength ?? 0,
+        );
+        if (shouldCrystallize(intimacy, evolved.lastShift, content)) {
+          const title =
+            content.length > 56
+              ? `${content.slice(0, 53).trim()}…`
+              : content.slice(0, 56) || "A moment that settled";
+          const bodyText = [
+            `User: ${truncate(content, 280)}`,
+            `Companion: ${truncate(assistantContent, 360)}`,
+            evolved.lastShift ? `Shift: ${evolved.lastShift}` : null,
+          ]
+            .filter(Boolean)
+            .join("\n");
+          const targetIds =
+            activeCharacterId && characterIds.includes(activeCharacterId)
+              ? [activeCharacterId]
+              : characterIds.slice(0, 1);
+          for (const animaId of targetIds) {
+            await crystallizeResonanceMemory({
+              userId,
+              animaId,
+              sessionId,
+              title,
+              body: bodyText,
+              resonanceSnapshot: {
+                intimacy: evolved.vector.intimacy,
+                powerDynamic: evolved.vector.powerDynamic,
+                spiritualAttunement: evolved.vector.spiritualAttunement,
+                primalIntensity: evolved.vector.primalIntensity,
+                crossoverOpenness: evolved.vector.crossoverOpenness,
+              },
+              emotionalTone: evolved.emotionalTone,
+              tags: ["crystallized", evolved.level, mode, `turn:${turnId}`].filter(
+                Boolean,
+              ) as string[],
+              intensity: Math.round(
+                Math.max(intimacy, Number(evolved.vector.synchroStrength ?? 0)),
+              ),
+            });
+          }
+        }
+      } catch (crystalErr) {
+        logger.warn(
+          { crystalErr, turnId, sessionId },
+          "Resonance memory crystallization failed (non-blocking)",
+        );
+      }
+    }
     const now = new Date();
     for (const cid of characterIds) {
       const [existing] = await withTransientDbRetry(() =>
@@ -898,14 +1342,16 @@ async function applyRelationshipPostProcess(params: {
           )
           .limit(1),
       );
-      const serialized = {
-        ...((existing?.emotionalState as Record<string, unknown> | undefined) ??
-          {}),
-        ...(evolved ? serializeSynchroState(evolved) : {}),
-        ...(evolvedAffect
-          ? { selfState: serializeCompanionAffect(evolvedAffect) }
-          : {}),
-      };
+      const current =
+        (existing?.emotionalState as Record<string, unknown> | null) ?? null;
+      const next = emotionalStateWithTurnBond(current, turnId, {
+        synchro: evolved ? serializeSynchroState(evolved) : null,
+        selfState: evolvedAffect ? serializeCompanionAffect(evolvedAffect) : null,
+        saveMoment: Boolean(evolved) && !savedMomentsTurnAlreadyWritten(current, turnId),
+      });
+      if (!next.wroteMood && !next.wroteRelationship && !next.wroteSavedMoments) {
+        continue;
+      }
       await withTransientDbRetry(() =>
         db
           .insert(companionMemories)
@@ -914,66 +1360,17 @@ async function applyRelationshipPostProcess(params: {
             characterId: cid,
             summary: existing?.summary ?? "",
             facts: Array.isArray(existing?.facts) ? existing.facts : [],
-            emotionalState: serialized,
+            emotionalState: next.state,
             resonanceNotes: existing?.resonanceNotes ?? "",
             updatedAt: now,
           })
           .onConflictDoUpdate({
             target: [companionMemories.userId, companionMemories.characterId],
             set: {
-              emotionalState: serialized,
+              emotionalState: next.state,
               updatedAt: now,
             },
           }),
-      );
-    }
-
-    try {
-      if (evolved) {
-      const intimacy = Number(evolved.vector?.intimacy ?? evolved.vector?.synchroStrength ?? 0);
-      if (shouldCrystallize(intimacy, evolved.lastShift, content)) {
-        const title =
-          content.length > 56
-            ? `${content.slice(0, 53).trim()}…`
-            : content.slice(0, 56) || "A moment that settled";
-        const bodyText = [
-          `User: ${truncate(content, 280)}`,
-          `Companion: ${truncate(assistantContent, 360)}`,
-          evolved.lastShift ? `Shift: ${evolved.lastShift}` : null,
-        ]
-          .filter(Boolean)
-          .join("\n");
-        const targetIds =
-          activeCharacterId && characterIds.includes(activeCharacterId)
-            ? [activeCharacterId]
-            : characterIds.slice(0, 1);
-        for (const animaId of targetIds) {
-          await crystallizeResonanceMemory({
-            userId,
-            animaId,
-            sessionId,
-            title,
-            body: bodyText,
-            resonanceSnapshot: {
-              intimacy: evolved.vector.intimacy,
-              powerDynamic: evolved.vector.powerDynamic,
-              spiritualAttunement: evolved.vector.spiritualAttunement,
-              primalIntensity: evolved.vector.primalIntensity,
-              crossoverOpenness: evolved.vector.crossoverOpenness,
-            },
-            emotionalTone: evolved.emotionalTone,
-            tags: ["crystallized", evolved.level, mode].filter(Boolean) as string[],
-            intensity: Math.round(
-              Math.max(intimacy, Number(evolved.vector.synchroStrength ?? 0)),
-            ),
-          });
-        }
-      }
-      }
-    } catch (crystalErr) {
-      logger.warn(
-        { crystalErr, turnId, sessionId },
-        "Resonance memory crystallization failed (non-blocking)",
       );
     }
   }
@@ -1395,6 +1792,37 @@ router.post("/scene-mind", async (req, res) => {
   });
 });
 
+function turnStatusPayload(turn: ChatTurn) {
+  const metadata = asObject(turn.metadata);
+  return {
+    turn_id: turn.id,
+    session_id: turn.sessionId,
+    persistence_owner: turn.persistenceOwner,
+    persistence_status: turn.status,
+    retry_count: turn.retryCount,
+    last_error: turn.lastError,
+    committed_at: turn.committedAt,
+    user_content: turn.userContent,
+    assistant_content: turn.assistantContent || "",
+    created_at: turn.createdAt,
+    assistant_message_id: turn.assistantMessageId,
+    user_message_id: turn.userMessageId,
+    companion_affect: metadata.companion_affect ?? null,
+    active_character_name: metadata.active_character_name ?? null,
+  };
+}
+
+router.get("/sessions/:sessionId/live-turn", async (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const turn = await latestOpenChatTurn(userId, req.params.sessionId);
+  if (!turn) {
+    res.json({ turn_id: null, persistence_status: null });
+    return;
+  }
+  res.json(turnStatusPayload(turn));
+});
+
 router.get("/turns/:turnId", async (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
@@ -1403,15 +1831,7 @@ router.get("/turns/:turnId", async (req, res) => {
     res.status(404).json({ error: "Turn not found" });
     return;
   }
-  res.json({
-    turn_id: turn.id,
-    session_id: turn.sessionId,
-    persistence_owner: turn.persistenceOwner,
-    persistence_status: turn.status,
-    retry_count: turn.retryCount,
-    last_error: turn.lastError,
-    committed_at: turn.committedAt,
-  });
+  res.json(turnStatusPayload(turn));
 });
 
 router.post("/turns/:turnId/commit", async (req, res) => {
@@ -1472,6 +1892,7 @@ router.post("/turns/:turnId/retry", async (req, res) => {
 });
 
 router.post("/messages", async (req, res) => {
+  const requestStartedAt = Date.now();
   const userId = requireUser(req, res);
   if (!userId) return;
 
@@ -1495,6 +1916,7 @@ router.post("/messages", async (req, res) => {
     own_model_version?: number;
     persist?: boolean;
     turn_id?: string;
+    idempotency_key?: string;
     persistence_owner?: PersistenceOwner;
     metadata?: Record<string, unknown>;
     region?: RegionHints | null;
@@ -1525,7 +1947,7 @@ router.post("/messages", async (req, res) => {
   ];
   const mode = body.mode || String(sessionData.mode || "solo");
   const content = String(body.content ?? "");
-  let turnId = normalizeTurnId(body.turn_id);
+  let turnId = normalizeTurnId(body.turn_id || body.idempotency_key);
   const persistenceOwner: PersistenceOwner =
     body.persistence_owner === "client" || body.persist === false
       ? "client"
@@ -1540,6 +1962,24 @@ router.post("/messages", async (req, res) => {
     sessionId,
     mode,
   });
+  let flight = reserveChatTurnFlight(turnId, content);
+  if (flight.mismatched) {
+    turnId = normalizeTurnId("");
+    flight = reserveChatTurnFlight(turnId, content);
+  }
+  if (flight.joined) {
+    const joinerWatch = watchClientLeave(res);
+    res.on("close", () => {
+      if (joinerWatch.left()) flight.releaseWaiter();
+    });
+    try {
+      await writeJoinedTurn(res, flight.result);
+    } finally {
+      flight.releaseWaiter();
+      joinerWatch.cancel();
+    }
+    return;
+  }
   let turnStart = await beginChatTurn({
     id: turnId,
     sessionId,
@@ -1549,29 +1989,39 @@ router.post("/messages", async (req, res) => {
     metadata: turnMetadata,
   });
 
+  let adoptedSse: ReturnType<typeof openChatSse> | null = null;
+  const followDurableTurn = async (turn: ChatTurn): Promise<boolean> => {
+    const joinerWatch = watchClientLeave(res);
+    const followed = await streamDurableFollow(
+      res,
+      flight,
+      awaitDurableTurnOwner({
+        turn,
+        content,
+        stillWaiting: () => !joinerWatch.left(),
+      }),
+    );
+    joinerWatch.cancel();
+    if (followed.action === "finished") return false;
+    turnStart = { turn: followed.turn, created: false };
+    adoptedSse = followed.sse;
+    turnId = followed.turn.id;
+    return true;
+  };
+
   if (!turnStart.created) {
     const reuse = classifyChatTurnReuse(turnStart.turn, content);
     if (reuse === "replay") {
-      res.writeHead(200, {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
-        "X-Accel-Buffering": "no",
-      });
-      writeSse(res, { content: String(turnStart.turn.assistantContent || "") });
-      writeSse(res, {
-        done: true,
-        visible: String(turnStart.turn.assistantContent || ""),
-        turn_id: turnId,
-        persistence_status: turnStart.turn.status,
-        replayed: true,
-      });
-      res.end();
+      const outcome = replayFlightOutcome(turnStart.turn);
+      flight.resolve(outcome);
+      writeFlightSse(res, outcome);
       return;
     }
     if (reuse === "conflict") {
       // Same turn_id, different user text — never stream the prior reply.
+      flight.abandon();
       turnId = normalizeTurnId("");
+      flight = reserveChatTurnFlight(turnId, content);
       turnStart = await beginChatTurn({
         id: turnId,
         sessionId,
@@ -1581,24 +2031,39 @@ router.post("/messages", async (req, res) => {
         metadata: turnMetadata,
       });
     }
-    if (!turnStart.created) {
-      res.status(409).json({
-        error: "This chat turn is already being processed.",
-        code: "turn_in_flight",
-        turn_id: turnId,
-        persistence_status: turnStart.turn.status,
-      });
-      return;
+  }
+  if (!turnStart.created) {
+    // Same text on a turn another isolate may already be generating. Join
+    // through the ledger row, or claim it when the owner's lease has expired.
+    const handedOff = await followDurableTurn(turnStart.turn);
+    if (!handedOff) return;
+  } else {
+    const claimed = await claimChatTurnLease(turnId, userId);
+    if (!claimed) {
+      const handedOff = await followDurableTurn(turnStart.turn);
+      if (!handedOff) return;
     }
   }
 
   // First SSE byte / heartbeat before memories, embeddings, weather, RAG, or
   // prompt compose. User-perceived TTFT used to include all of that work.
-  const sse = openChatSse(res);
+  const sse = adoptedSse ?? openChatSse(res);
   const stopHeartbeat = sse.stop;
+  let clientLeft: () => boolean = () => false;
+  const clientWatch = watchClientLeave(res);
+  clientLeft = clientWatch.left;
+  const leaseHeartbeat = setInterval(() => {
+    void renewChatTurnLease(turnId, userId).catch(() => {});
+  }, 10_000);
+  leaseHeartbeat.unref?.();
   hintLocalLlmWarm();
   let streamSucceeded = false;
   let fullResponse = "";
+  let releaseBackground = () => {};
+  const backgroundDone = new Promise<void>((resolve) => {
+    releaseBackground = resolve;
+  });
+  scheduleWorkerBackground(backgroundDone, req.header("x-anima-bg"));
   let usedModel = "";
   let usedTier: string = "";
   let usedProvider: LlmProviderId = "local";
@@ -1635,6 +2100,21 @@ router.post("/messages", async (req, res) => {
     ? telemetry
         .measure("repository_rag_ms", retrieveRepositoryKnowledge(content))
         .catch(() => "")
+    : Promise.resolve("");
+  // Postgres full-text only, and only when this turn cannot leave the
+  // self-hosted model. A missing table or slow lookup must not block the reply.
+  const pdfContextPromise = isLocalOnlyProviderChain()
+    ? optionalChatContext(
+        "pdf_context",
+        () =>
+          retrievePdfContext({
+            userId,
+            sessionId,
+            characterIds,
+            query: content,
+          }),
+        "",
+      )
     : Promise.resolve("");
   const worldKnowledgePromise = (async () => {
     try {
@@ -1698,23 +2178,17 @@ router.post("/messages", async (req, res) => {
     hintedState,
     worldKnowledgeResult,
     repositoryKnowledge,
+    pdfContext,
   ] = await telemetry.measure(
     "context_load_ms",
     Promise.all([
-      optionalChatContext(
-        "characters",
-        () => loadCharacters(userId, characterIds),
-        [],
-      ),
+      // Identity and conversation history are required. The lean client prompt
+      // no longer includes either; a failed read must not become an empty chat.
+      loadCharacters(userId, characterIds),
       memoriesPromise,
-      optionalChatContext(
-        "recent_messages",
-        () =>
-          readRecentStoreMessages(userId, sessionId, 24, {
-            skipMigrate: Boolean(sessionData.messages_migrated),
-          }),
-        [],
-      ),
+      readRecentStoreMessages(userId, sessionId, 24, {
+        skipMigrate: Boolean(sessionData.messages_migrated),
+      }),
       memoriesPromise.then((rows) => {
         const adapted = adaptMemories(rows);
         // Local companion_memories + stored vectors only. Remote supermemory
@@ -1724,6 +2198,7 @@ router.post("/messages", async (req, res) => {
       hintedStatePromise,
       worldKnowledgePromise,
       repositoryKnowledgePromise,
+      pdfContextPromise,
     ]),
   );
   const worldKnowledge = worldKnowledgeResult.prompt;
@@ -1849,6 +2324,7 @@ router.post("/messages", async (req, res) => {
   }
   const profileData = asObject(worldKnowledgeResult.profile);
   const profileSettings = asObject(profileData.settings);
+  const userDisplayName = profileDisplayName(profileData, profileSettings);
   const therapyActive =
     sessionData.therapy_mode === true ||
     sessionData.companion_mode === "therapy" ||
@@ -1902,6 +2378,7 @@ router.post("/messages", async (req, res) => {
     composeCompanionChatMessages({
       clientContext: body.system_prompt,
       repositoryKnowledge,
+      pdfContext,
       characters: adaptedChars,
       activeCharacter: activeChar,
       memories: adaptedMemories,
@@ -1927,6 +2404,7 @@ router.post("/messages", async (req, res) => {
       intimacyScene,
       intimacyTurnResult: intimacyResult,
       operatorModel,
+      userDisplayName,
     }),
   );
 
@@ -2005,13 +2483,26 @@ router.post("/messages", async (req, res) => {
   };
   const emitReasoning = () => writeSse(res, { status: "thinking" });
   const freeTierCascade = usesFreeTierOpenBudget();
+  const generationBudgetMs = llmChatMessagesOpenTimeoutMs({ freeTierCascade });
   const consumeOpts = {
     onDelta: emitDelta,
     onReasoning: emitReasoning,
+    firstChunkMs: llmChatMessagesFirstChunkMs({ freeTierCascade }),
     totalMs: llmChatMessagesStreamTotalMs({ freeTierCascade }),
   };
 
   telemetry.startGeneration();
+    const generationStartedAt = Date.now();
+    const open = openStreamAbort(generationBudgetMs);
+    const abandoned = armAbandonedGenerateAbort({
+      res,
+      startedAt: generationStartedAt,
+      hasWaiter: async () => {
+        if (chatTurnFlightWaiters(turnId) > 0) return true;
+        return chatTurnHasRemoteWaiter(turnId, userId);
+      },
+    });
+    const generateSignal = combineAbortSignals(open.signal, abandoned.signal);
     const releaseCompanionLlm = beginCompanionLlmTurn();
     try {
     if (ownModelTurn) {
@@ -2031,6 +2522,7 @@ router.post("/messages", async (req, res) => {
         tier: routed.tier,
         maxTokens: replyMaxTokens,
         messages,
+        signal: generateSignal,
       });
       if (!drafts.length) {
         throw new Error("The companion returned an empty reply. Please try again.");
@@ -2054,6 +2546,7 @@ router.post("/messages", async (req, res) => {
         const completion = await combineLocalDrafts(drafts, messages, {
           tier: routed.tier,
           maxTokens: replyMaxTokens,
+          signal: generateSignal,
         });
         usedModel = completion.model;
         usedTier = completion.tier;
@@ -2063,11 +2556,12 @@ router.post("/messages", async (req, res) => {
         ensembleCombined = true;
 
         const streamed = await consumeLlmStream(completion.stream, consumeOpts);
-        fullResponse = streamed.content;
+        fullResponse = streamed.timedOut
+          ? trimToLastCompleteSentence(streamed.content)
+          : streamed.content;
       }
     } else {
       sse.setPhase("waking");
-      const open = openStreamAbort(llmChatMessagesOpenTimeoutMs({ freeTierCascade }));
       let completion;
       try {
         completion = await createChatStreamWithFailover({
@@ -2075,10 +2569,12 @@ router.post("/messages", async (req, res) => {
           model: routed.model,
           maxTokens: replyMaxTokens,
           messages,
-          temperature: 0.85,
-          signal: open.signal,
+          temperature: COMPANION_CHAT_TEMPERATURE,
+          signal: generateSignal,
         });
       } finally {
+        // Headers are in. The open timer must not cut a slow prefill once
+        // bytes are flowing. Disconnect grace still aborts an abandoned slot.
         open.cancel();
       }
       sse.setPhase("generating");
@@ -2089,9 +2585,76 @@ router.post("/messages", async (req, res) => {
       failedOver = completion.failedOver;
 
       const streamed = await consumeLlmStream(completion.stream, consumeOpts);
-      fullResponse = finalizeAssistantReply(streamed.content);
+      // A stalled or over-budget stream stops mid-word. `done.visible`
+      // repaints the bubble, so the saved and shown reply both end cleanly.
+      fullResponse = finalizeAssistantReply(
+        streamed.timedOut
+          ? trimToLastCompleteSentence(streamed.content)
+          : streamed.content,
+      );
+
+      // A small local model copies its own earlier reply and then keeps
+      // copying it. Regenerate once without that reply in context, inside
+      // what is left of the browser's fetch window. Deltas are not streamed
+      // and the first reply stays painted; `done.visible` swaps it in.
+      const retryBudgetMs = repeatRetryBudgetMs(Date.now() - requestStartedAt);
+      if (
+        retryBudgetMs > 0 &&
+        !generateSignal.aborted &&
+        !streamed.timedOut &&
+        isRepeatedReply(fullResponse, recentAssistantReplies(recentMessages))
+      ) {
+        logger.warn(
+          { turnId, retryBudgetMs },
+          "Companion reply repeated recent history; regenerating once",
+        );
+        // Hard stop for open + consume together, so `done` always goes out
+        // before the browser abort.
+        const retryOpen = openStreamAbort(retryBudgetMs);
+        try {
+          const retry = await createChatStreamWithFailover({
+            tier: routed.tier,
+            model: routed.model,
+            maxTokens: replyMaxTokens,
+            messages: messagesForRepeatRetry(messages, fullResponse),
+            temperature: OLLAMA_MAX_TEMPERATURE,
+            signal: combineAbortSignals(retryOpen.signal, abandoned.signal),
+          });
+          const retried = await consumeLlmStream(retry.stream, {
+            ...consumeOpts,
+            onDelta: () => {},
+            onReasoning: () => {},
+            firstChunkMs: Math.min(consumeOpts.firstChunkMs, retryBudgetMs),
+            totalMs: Math.min(consumeOpts.totalMs, retryBudgetMs),
+          });
+          const retriedText = finalizeAssistantReply(
+            retried.timedOut
+              ? trimToLastCompleteSentence(retried.content)
+              : retried.content,
+          );
+          if (
+            retriedText.trim() &&
+            !isRepeatedReply(retriedText, [fullResponse])
+          ) {
+            fullResponse = retriedText;
+            usedModel = retry.model;
+            usedTier = retry.tier;
+            usedProvider = retry.provider;
+            usedBrand = retry.brand;
+            failedOver = retry.failedOver;
+          }
+        } catch (error) {
+          // Keep the first reply. A repeat beats an error bubble.
+          logger.warn({ error, turnId }, "Repeat regenerate failed; keeping first reply");
+        } finally {
+          retryOpen.cancel();
+        }
+      }
     }
     } finally {
+      open.cancel();
+      abandoned.cancel();
+      clientWatch.cancel();
       releaseCompanionLlm();
     }
 
@@ -2103,6 +2666,20 @@ router.post("/messages", async (req, res) => {
     }
 
     streamSucceeded = true;
+    const evolvedCompanion = companionAffect
+      ? evolveCompanionAffectFromCompanion(companionAffect, fullResponse)
+      : null;
+    const evolvedAffectSnapshot = evolvedCompanion
+      ? toCompanionAffectSnapshot(
+          evolvedCompanion,
+          synchroState
+            ? synchroStrengthFromEmotionalState(serializeSynchroState(synchroState))
+            : null,
+        )
+      : null;
+    const evolvedMoodSelfState = evolvedCompanion
+      ? serializeCompanionAffect(evolvedCompanion)
+      : null;
     const generatedMetadata = {
       ...(body.metadata ?? {}),
       mode,
@@ -2119,11 +2696,8 @@ router.post("/messages", async (req, res) => {
       failed_over: failedOver,
       ensemble_minds: ensembleMinds,
       ensemble_combined: ensembleCombined,
-      // Own-model turns outside therapy, adult scenes and "continue" may
-      // become automatic lessons (routes/ownModel.ts).
-      ...(ownModelTurn
-        ? { own_model_learnable: !therapyActive && !adultActive && !body.is_continue }
-        : {}),
+      companion_affect: evolvedAffectSnapshot,
+      mood_self_state: evolvedMoodSelfState,
     };
     try {
       await telemetry.measure(
@@ -2171,16 +2745,31 @@ router.post("/messages", async (req, res) => {
       assistant_message_id: turnStart.turn.assistantMessageId,
       persistence_status: "generated",
       persistence_owner: persistenceOwner,
-      companion_affect: companionAffect
-        ? toCompanionAffectSnapshot(
-            evolveCompanionAffectFromCompanion(companionAffect, fullResponse),
-            synchroState
-              ? synchroStrengthFromEmotionalState(
-                  serializeSynchroState(synchroState),
-                )
-              : null,
-          )
-        : null,
+      companion_affect: evolvedAffectSnapshot,
+    });
+    flight.resolve({
+      content: fullResponse,
+      done: {
+        done: true,
+        visible: fullResponse,
+        model: usedModel,
+        tier: usedTier,
+        provider: usedProvider,
+        brand: usedBrand,
+        failed_over: failedOver,
+        ensemble_minds: ensembleMinds,
+        ensemble_combined: ensembleCombined,
+        is_crossover: isCrossover,
+        assistant_character_id: activeCharacterId,
+        assistant_character_name: activeCharacterName,
+        turn_id: turnId,
+        user_message_id: turnStart.turn.userMessageId,
+        assistant_message_id: turnStart.turn.assistantMessageId,
+        persistence_status: "generated",
+        persistence_owner: persistenceOwner,
+        companion_affect: evolvedAffectSnapshot,
+        joined: true,
+      },
     });
     telemetry.report("completed", {
       provider: usedProvider,
@@ -2191,6 +2780,7 @@ router.post("/messages", async (req, res) => {
     });
   } catch (err) {
     logger.error({ err }, "Chat message stream failed");
+    flight.fail(err);
     await markTurnFailed(turnId, userId, err).catch(() => {});
     writeSse(res, { error: streamErrorMessage(err) });
     telemetry.report("failed", {
@@ -2199,19 +2789,27 @@ router.post("/messages", async (req, res) => {
       stream_timeout: err instanceof LlmStreamTimeoutError,
     });
   } finally {
+    clearInterval(leaseHeartbeat);
     stopHeartbeat();
-    if (!res.writableEnded) res.end();
+    try {
+      if (!res.writableEnded) res.end();
+    } catch {
+      // The browser already left. Persistence below still saves the reply.
+    }
   }
 
   void (async () => {
     try {
-      await preStreamPersist;
-    } catch (error) {
-      logger.warn({ error, turnId }, "Pre-stream chat persistence failed");
-    }
-    if (!streamSucceeded || !String(fullResponse).trim()) return;
+      try {
+        await preStreamPersist;
+      } catch (error) {
+        logger.warn({ error, turnId }, "Pre-stream chat persistence failed");
+      }
+      if (!streamSucceeded || !String(fullResponse).trim()) return;
 
-    if (persistenceOwner === "server" && shouldPersist) {
+      const lateClient = clientLeft();
+      const serverPersist = persistenceOwner === "server" && shouldPersist;
+      if (serverPersist || lateClient) {
       const persistenceStartedAt = Date.now();
       try {
         const generatedTurn = await readChatTurn(turnId, userId);
@@ -2241,7 +2839,7 @@ router.post("/messages", async (req, res) => {
         return;
       }
     }
-    if (persistenceOwner !== "server" || !shouldPersist) return;
+    if (!(persistenceOwner === "server" && shouldPersist) && !clientLeft()) return;
 
     // Save intimacy profile and scene updates if intimacy engine ran
     if (intimacyProfile) {
@@ -2279,6 +2877,9 @@ router.post("/messages", async (req, res) => {
         { postProcessError, turnId, sessionId },
         "Chat relationship/evolution post-processing failed",
       );
+    }
+    } finally {
+      releaseBackground();
     }
   })();
 });

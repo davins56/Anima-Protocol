@@ -46,6 +46,26 @@ export function finalizeAssistantReply(
   return "";
 }
 
+const SENTENCE_END_RE = /[.!?…]["'”’)\]*_~]*(?=\s|$)/g;
+
+/**
+ * A stream cut by a stall or deadline ends mid-word ("I was thinking we co").
+ * Drop the unfinished tail so the saved reply reads as complete English.
+ * Keeps the text as-is when it has no finished sentence to fall back on.
+ */
+export function trimToLastCompleteSentence(text: string): string {
+  const value = String(text ?? "").trimEnd();
+  if (!value || /[.!?…]["'”’)\]*_~]*$/.test(value)) return value;
+  let end = -1;
+  for (const match of value.matchAll(SENTENCE_END_RE)) {
+    const index = match.index ?? 0;
+    // "Mr. Smith" is not a sentence end.
+    if (/\b(?:Mr|Mrs|Ms|Dr|St|Jr|Sr|vs|etc|e\.g|i\.e)$/i.test(value.slice(0, index))) continue;
+    end = index + match[0].length;
+  }
+  return end > 0 ? value.slice(0, end) : value;
+}
+
 export function createVisibleReplyFilter() {
   let raw = "";
   let emittedVisible = "";

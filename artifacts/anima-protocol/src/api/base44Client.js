@@ -1000,9 +1000,12 @@ async function queryEntity(entityName, opts) {
       `/${encodeURIComponent(entityName)}${qs ? `?${qs}` : ''}`,
       {
         retryOnTimeout: true,
-        timeoutMs: LONG_LIST_ENTITIES.has(entityName)
-          ? STORE_LIST_TIMEOUT_MS
-          : undefined,
+        timeoutMs:
+          typeof opts?.timeoutMs === 'number' && opts.timeoutMs > 0
+            ? opts.timeoutMs
+            : LONG_LIST_ENTITIES.has(entityName)
+              ? STORE_LIST_TIMEOUT_MS
+              : undefined,
         token,
       },
     );
@@ -1079,7 +1082,7 @@ async function throwErr(res) {
 
 // Read a session's messages, ascending (chronological) seq. With no limit this
 // is the whole history; limit/beforeSeq page it (see the server contract).
-async function listMessages(sessionId, { limit, beforeSeq } = {}) {
+async function listMessages(sessionId, { limit, beforeSeq, timeoutMs } = {}) {
   if (!sessionId) return [];
   const token = await resolveStoreToken();
   if (!token) {
@@ -1090,7 +1093,10 @@ async function listMessages(sessionId, { limit, beforeSeq } = {}) {
   params.set('session_id', sessionId);
   if (typeof limit === 'number' && limit >= 0) params.set('limit', String(limit));
   if (typeof beforeSeq === 'number') params.set('before_seq', String(beforeSeq));
-  const res = await storeFetch(`/messages?${params.toString()}`);
+  const res = await storeFetch(`/messages?${params.toString()}`, {
+    token,
+    timeoutMs,
+  });
   if (res.status === 401) throw missingStoreTokenError();
   if (!res.ok) await throwErr(res);
   return res.json();
@@ -1232,6 +1238,7 @@ function entityStore(entityName) {
       }
       const res = await storeFetch(
         `/${encodeURIComponent(entityName)}/${encodeURIComponent(id)}`,
+        { token, timeoutMs: opts?.timeoutMs },
       );
       if (res.status === 401) throw missingStoreTokenError();
       if (res.status === 404) return null;
@@ -1368,7 +1375,13 @@ function entityStore(entityName) {
       },
       async filter(filters = {}, sort, limit, opts) {
         const offset = opts && typeof opts.offset === 'number' ? opts.offset : undefined;
-        const sessions = await queryEntity(entityName, { filters, sort, limit, offset });
+        const sessions = await queryEntity(entityName, {
+          filters,
+          sort,
+          limit,
+          offset,
+          timeoutMs: opts?.timeoutMs,
+        });
         if (opts && opts.withMessages === false) return sessions;
         return hydrateMany(sessions);
       },
@@ -1612,20 +1625,30 @@ export const base44 = {
         deepMode,
         response_json_schema,
         max_tokens,
+        sidecar,
       }) => {
         // Signed-in OpenAI completions — not the unauthenticated /api/ai/chat probe.
         let result = '';
+        let skipped = false;
         for await (const chunk of animaApi.chatCompletions({
           content: prompt,
           systemPrompt: systemPrompt || system_prompt || '',
           deepMode: !!deepMode,
           responseJsonSchema: response_json_schema,
           maxTokens: typeof max_tokens === 'number' ? max_tokens : undefined,
+          sidecar: !!sidecar,
         })) {
+          if (chunk.skipped) {
+            skipped = true;
+            break;
+          }
           if (chunk.done) break;
           if (chunk.error) throw new Error(chunk.error);
           if (chunk.content) result += chunk.content;
         }
+
+        // Local-only sidecar gate: canned empty, no throw, no toast.
+        if (skipped) return response_json_schema ? {} : '';
 
         result = visibleAssistantReply(result);
         if (!String(result).trim()) {

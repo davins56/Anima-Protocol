@@ -124,26 +124,49 @@ def masked_next_token_loss(logits, y):
     return F.cross_entropy(shift_logits, shift_y, ignore_index=-100)
 
 
-def sft_data_files():
-    """The main dialogue set plus in-app steward lessons when downloaded."""
-    return [p for p in (SFT_DATA, STEWARD_SFT_DATA) if os.path.isfile(p)]
+def fit_conversation(messages, block_size, reserve=0):
+    """Drop the oldest turns until the encoded conversation fits.
+
+    Cutting on a raw token boundary can slice a message in half or lose the
+    role marker that says whose turn it is; cutting on message boundaries
+    keeps every remaining turn intact. `reserve` holds back room for the
+    reply that will be generated after the prompt. Returns the encoded ids,
+    targets, and the messages that survived.
+    """
+    msgs = list(messages)
+    budget = block_size - reserve
+    while True:
+        ids, targets = encode_conversation(msgs)
+        if len(ids) <= budget or len(msgs) <= 1:
+            return ids, targets, msgs
+        msgs = msgs[1:]
 
 
 def load_dataset():
     examples = []
-    for path in sft_data_files():
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                conv = json.loads(line)["messages"]
-                if not any(m["role"] in ("anima", "assistant") for m in conv):
-                    continue
-                ids, targets = encode_conversation(conv)
-                if len(ids) < 10 or len(ids) > cfg.block_size:
-                    continue  # skip trivial or too-long convos
-                examples.append((ids, targets))
+    dropped = 0
+    with open(SFT_DATA, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            conv = json.loads(line)["messages"]
+            if not any(m["role"] in ("anima", "assistant") for m in conv):
+                continue
+            # A conversation longer than the window used to be thrown away, so
+            # the model never saw a long, complete reply and learned to end
+            # early. Keep the tail of the conversation instead.
+            ids, targets, kept = fit_conversation(conv, cfg.block_size)
+            if len(ids) < 10 or len(ids) > cfg.block_size:
+                dropped += 1
+                continue
+            roles = {m["role"] for m in kept}
+            if not roles & {"anima", "assistant"} or not roles - {"anima", "assistant"}:
+                dropped += 1  # a reply with no prompt left teaches nothing
+                continue
+            examples.append((ids, targets))
+    if dropped:
+        print(f"dropped {dropped} examples whose final turn alone exceeds block_size={cfg.block_size}")
     random.shuffle(examples)
     return examples[:MAX_EXAMPLES]
 
@@ -209,38 +232,152 @@ def sft():
     print("saved to", OUT_DIR)
 
 
-# --------------------- Step 4: chat ---------------------
+# --------------------- Step 4: sampling + chat ---------------------
+
+SENTENCE_END = (".", "!", "?", "\u2026", '."', ".\u201d", "!\u201d", "?\u201d", '!"', '?"', ".)", ".\u2019")
+
+
+def ends_sentence(text: str) -> bool:
+    return text.rstrip().endswith(SENTENCE_END)
+
+
+def trim_to_sentence(text: str, min_keep_ratio: float = 0.3) -> str:
+    """Cut a length-capped reply back to its last complete sentence.
+
+    Only trims when at least `min_keep_ratio` of the text survives; a reply
+    that is one long unfinished sentence is returned as-is rather than
+    reduced to nothing.
+    """
+    stripped = text.rstrip()
+    if ends_sentence(stripped):
+        return stripped
+    best = -1
+    for end in SENTENCE_END:
+        idx = stripped.rfind(end)
+        if idx >= 0:
+            best = max(best, idx + len(end))
+    if best >= int(len(stripped) * min_keep_ratio):
+        return stripped[:best]
+    return stripped
+
+
+@torch.no_grad()
+def iter_tokens(
+    prompt_ids,
+    max_new_tokens=256,
+    temperature=0.8,
+    top_k=40,
+    repetition_penalty=1.15,
+    min_new_tokens=8,
+    soft_stop_ratio=0.75,
+):
+    """Yield reply token ids one at a time for a prompt ending in <|anima|>.
+
+    - The prompt must fit the window with room left for the reply; the loop
+      never lets the prompt slide out of view (that is what made the model
+      forget the question halfway through answering).
+    - <|endoftext|> and role tokens are suppressed for the first
+      `min_new_tokens` so a nervous model cannot answer with a fragment.
+    - Repeated tokens are penalized; past `soft_stop_ratio` of the budget the
+      first sentence end stops generation cleanly.
+    The generator's return value is the finish_reason: "stop" or "length".
+    """
+    if model is None or cfg is None:
+        raise RuntimeError("model is not loaded")
+    init_tokenizer()
+    device = next(model.parameters()).device
+    model.eval()
+    room = cfg.block_size - len(prompt_ids)
+    if room < 1:
+        raise ValueError(
+            f"prompt is {len(prompt_ids)} tokens; block_size is {cfg.block_size}. "
+            "Call fit_conversation with a reserve before generating."
+        )
+    budget = max(1, min(int(max_new_tokens), room))
+    temperature = max(float(temperature), 1e-5)
+    k = min(int(top_k), cfg.vocab_size) if top_k else 0
+    stop_ids = {eot_id, *role_ids.values()}
+    soft_stop_at = int(budget * soft_stop_ratio)
+
+    idx = torch.tensor([prompt_ids], dtype=torch.long, device=device)
+    out = []
+    for step in range(budget):
+        logits, _ = model(idx)
+        logits = logits[:, -1, :] / temperature
+        if out and repetition_penalty and repetition_penalty != 1.0:
+            seen = torch.tensor(sorted(set(out)), device=device)
+            picked = logits[0, seen]
+            logits[0, seen] = torch.where(picked > 0, picked / repetition_penalty, picked * repetition_penalty)
+        if step < min_new_tokens:
+            for sid in stop_ids:
+                logits[0, sid] = float("-inf")
+        if k > 0:
+            v, _ = torch.topk(logits, k)
+            logits[logits < v[:, [-1]]] = float("-inf")
+        probs = F.softmax(logits, dim=-1)
+        nxt = torch.multinomial(probs, 1)
+        t = nxt.item()
+        if t in stop_ids:
+            return "stop"
+        out.append(t)
+        yield t
+        idx = torch.cat([idx, nxt], dim=1)
+        if step >= soft_stop_at and ends_sentence(tok.decode(out[-8:])):
+            return "stop"
+    return "length"
+
+
+def generate_tokens(prompt_ids, max_new_tokens=256, temperature=0.8, top_k=40, **kw):
+    """Sample a whole reply (see iter_tokens). Returns (token_ids, finish_reason)."""
+    out = []
+    steps = iter_tokens(prompt_ids, max_new_tokens, temperature, top_k, **kw)
+    while True:
+        try:
+            out.append(next(steps))
+        except StopIteration as done:
+            return out, done.value
+
+
+def prompt_for_reply(messages, max_new_tokens=256):
+    """Encode a conversation for generation and open Anima's turn.
+
+    Oldest turns are dropped first (fit_conversation). If the newest message
+    alone still overflows the window, keep its tail: the end of a long paste
+    is usually where the question is, and generate_tokens would otherwise
+    refuse a prompt with no room left for the reply.
+    """
+    init_tokenizer()
+    reserve = min(int(max_new_tokens), cfg.block_size // 2) + 1
+    budget = cfg.block_size - reserve
+    ids, _, kept = fit_conversation(messages, cfg.block_size, reserve=reserve)
+    if len(ids) > budget and kept:
+        last = kept[-1]
+        text_ids = encode_text(last["content"])
+        keep = max(0, budget - 3)  # <|endoftext|> <|role|> text <|endoftext|>
+        tail = text_ids[max(0, len(text_ids) - keep):] if keep else []
+        ids = [eot_id, _role_token_id(last["role"]), *tail, eot_id]
+    ids.append(role_ids["anima"])
+    return ids
+
+
+def generate_reply(messages, max_new_tokens=256, temperature=0.8, top_k=40, **kw):
+    """Encode a conversation, open Anima's turn, sample, and tidy the ending."""
+    ids = prompt_for_reply(messages, max_new_tokens)
+    out, finish_reason = generate_tokens(ids, max_new_tokens, temperature, top_k, **kw)
+    text = tok.decode(out).strip()
+    if finish_reason == "length":
+        text = trim_to_sentence(text)
+    return text, finish_reason
+
 
 @torch.no_grad()
 def chat(user_text, history=None, max_new_tokens=200, temperature=0.8, top_k=40):
     """Talk to the fine-tuned model. history: list of prior message dicts."""
     if model is None or cfg is None:
         raise RuntimeError("call sft() before chat()")
-    init_tokenizer()
-    device = next(model.parameters()).device
-    model.eval()
-    history = history or []
-    msgs = history + [{"role": "user", "content": user_text}]
-    ids, _ = encode_conversation(msgs)
-    # Open Anima's turn. The training format ends the user turn with <|endoftext|>.
-    ids.append(role_ids["anima"])
-    ids = ids[-cfg.block_size:]
-    temperature = max(float(temperature), 1e-5)
-    idx = torch.tensor([ids], dtype=torch.long, device=device)
-    for _ in range(max_new_tokens):
-        idx_cond = idx[:, -cfg.block_size:]
-        logits, _ = model(idx_cond)
-        logits = logits[:, -1, :] / temperature
-        k = min(int(top_k), cfg.vocab_size) if top_k else 0
-        if k > 0:
-            v, _ = torch.topk(logits, k)
-            logits[logits < v[:, [-1]]] = float("-inf")
-        probs = F.softmax(logits, dim=-1)
-        nxt = torch.multinomial(probs, 1)
-        if nxt.item() == eot_id or nxt.item() in role_ids.values():
-            break
-        idx = torch.cat([idx, nxt], dim=1)
-    return tok.decode(idx[0, len(ids):].tolist())
+    msgs = (history or []) + [{"role": "user", "content": user_text}]
+    text, _ = generate_reply(msgs, max_new_tokens, temperature, top_k)
+    return text
 
 
 if __name__ == "__main__":

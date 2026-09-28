@@ -1,7 +1,7 @@
 import { apiUrl } from '@/lib/apiOrigin';
 import { authHeaders } from './authBridge';
 import { readSseJsonStream } from '@/lib/readSseJsonStream';
-import { base64ToBytes, bytesToBase64 } from '@/lib/ownModel/base64.js';
+import { streamChatReply } from '@/lib/streamChatReply';
 
 export function chatAuthRequiredError() {
   const err = new Error(
@@ -192,6 +192,7 @@ export const animaApi = {
     responseJsonSchema,
     maxTokens,
     stream = true,
+    sidecar = false,
   } = {}) {
     yield* postAuthedSse(
       "/openai/v1/chat/completions",
@@ -203,6 +204,7 @@ export const animaApi = {
         stream: stream !== false,
         ...(responseJsonSchema ? { responseJsonSchema } : {}),
         ...(typeof maxTokens === "number" ? { maxTokens } : {}),
+        ...(sidecar ? { sidecar: true } : {}),
       }),
     );
   },
@@ -282,6 +284,7 @@ export const animaApi = {
           deep_mode: !!deepMode,
           persist,
           turn_id: turnId,
+          idempotency_key: turnId,
           persistence_owner: persistenceOwner,
           metadata,
           region,
@@ -293,19 +296,14 @@ export const animaApi = {
       );
     },
 
-    completeMessage: async (payload) => {
-      let content = "";
-      let done = null;
-      for await (const event of animaApi.chat.sendMessage(payload)) {
-        if (event.error) throw new Error(event.error);
-        if (event.content) content += event.content;
-        if (event.done) done = event;
-      }
-      return { content, ...done };
-    },
+    completeMessage: (payload) =>
+      streamChatReply(animaApi.chat.sendMessage(payload)),
 
     turnStatus: (turnId) =>
       request(`/chat/turns/${encodeURIComponent(turnId)}`).then((r) => r.json()),
+
+    liveTurn: (sessionId) =>
+      request(`/chat/sessions/${encodeURIComponent(sessionId)}/live-turn`).then((r) => r.json()),
 
     commitTurn: (turnId) =>
       request(`/chat/turns/${encodeURIComponent(turnId)}/commit`, {

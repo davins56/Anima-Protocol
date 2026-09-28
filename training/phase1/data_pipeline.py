@@ -18,8 +18,9 @@ ROOT = Path(__file__).resolve().parents[2]
 
 RAW_DIR = str(ROOT / "data" / "raw")        # put .txt files here (dialogue, persona text, etc.)
 TOK_DIR = str(ROOT / "data" / "anima_tokens")
-VOCAB_SIZE = 4096           # small corpus -> small vocab; grow later
-MIN_LINE_LEN = 20           # drop junk/blank-ish lines
+VOCAB_SIZE = 8192           # literary prose has a wide word stock; 4k splits too many words
+MIN_LINE_LEN = 3            # keep short dialogue lines ("No." / "Stay.") — the junk
+                            # regex below handles page numbers and chapter cruft
 
 # --------------------- Step 1: clean the corpus --------------------
 # Even a tiny corpus rewards cleaning. This is where Anima's "soul"
