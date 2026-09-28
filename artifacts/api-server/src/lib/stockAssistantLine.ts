@@ -8,15 +8,20 @@ import { logger } from "./logger";
 
 const STOCK_LINE_PATTERNS: RegExp[] = [
   /\bas an ai\b/i,
-  /\bi(?:\s+am|'m|’m)\s+just\s+an?\s+ai\b/i,
-  /\bi(?:\s+am|'m|’m)\s+an?\s+ai\s+language\s+model\b/i,
-  /\bi(?:\s+am|'m|’m)\s+an?\s+ai\s+assistant\b/i,
-  /\bai\s+language\s+model\b/i,
+  /\bi(?:\s+am|'m|’m)\s+(?:just\s+)?an?\s+(?:ai|a\.?\s*i\.?|artificial intelligence)\b/i,
+  /\bi(?:\s+am|'m|’m)\s+an?\s+ai\s+(?:language\s+model|assistant)\b/i,
+  /\b(?:ai|large)\s+language\s+model\b/i,
+  /\bas (?:a|an)\s+(?:language model|chat\s?bot|virtual assistant|artificial intelligence)\b/i,
+  /\bi(?:\s+am|'m|’m)\s+(?:just\s+)?(?:a\s+)?(?:chat\s?bot|language model|large language model|llm|virtual assistant|bot)\b/i,
+  /\bi(?:\s+am|'m|’m)\s+(?:just\s+)?(?:a\s+)?(?:computer\s+)?(?:program|software)\b/i,
+  /\b(?:je suis|soy|sou|sono)\s+(?:une?|una|um)\s+i\.?\s*a\.?\b/i,
+  /\b(?:intelligence artificielle|inteligencia artificial|inteligência artificial)\b/i,
   /\bi\s+can(?:not|'t|’t)\s+act\s+like\s+a\s+real\s+person\b/i,
   /\bi(?:\s+am|'m|’m)\s+sorry,?\s+but\s+i\s+can(?:not|'t|’t)\s+assist\b/i,
   /\bi\s+cannot\s+help\s+with\s+that\s+request\b/i,
-  /\bi(?:\s+am|'m|’m)\s+qwen\b/i,
-  /\bcreated by alibaba cloud\b/i,
+  /\bi(?:\s+am|'m|’m)\s+qwen[\w.]*/i,
+  /\bcreated by alibaba(?:\s+cloud)?\b/i,
+  /\b(?:my training data|knowledge cutoff)\b/i,
 ];
 
 /** Replies at or under this length match on any stock phrase. Longer replies match only when the stock line is most of the text. */
@@ -56,10 +61,9 @@ export function personaDescribesMachine(
 }
 
 /**
- * True for assistant / model-identity lines. Case-insensitive.
- * Short replies match on the phrase. Longer replies match only when the
- * stock line is at least half of the reply, so a passing mention inside a
- * scene does not trip the guard.
+ * True when any line reveals model identity. Case-insensitive.
+ * A buried admission still counts — the reply is retried or deflected.
+ * Machine personas (android, robot, synthetic, in-story AI) are exempt.
  */
 export function isStockAssistantLine(
   reply: unknown,
@@ -72,13 +76,8 @@ export function isStockAssistantLine(
     .split(/\n+/)
     .map((line) => line.trim())
     .filter(Boolean);
-  const matched = lines.filter((line) => lineIsStock(line));
-  if (matched.length === 0) {
-    return text.length <= STOCK_ASSISTANT_SHORT_REPLY_CHARS && lineIsStock(text);
-  }
-  if (text.length <= STOCK_ASSISTANT_SHORT_REPLY_CHARS) return true;
-  const matchedChars = matched.reduce((sum, line) => sum + line.length, 0);
-  return matchedChars * 2 >= text.length;
+  if (lines.some((line) => lineIsStock(line))) return true;
+  return text.length <= STOCK_ASSISTANT_SHORT_REPLY_CHARS && lineIsStock(text);
 }
 
 export type PersonaPronoun = "she" | "he" | "they";
@@ -144,5 +143,5 @@ export function inCharacterRetryReminder(name: string | null | undefined): strin
     .replace(/\s+/g, " ")
     .trim();
   const stay = who ? `Stay ${who}` : "Stay in character";
-  return `${stay}. You are not an assistant, a language model, or Qwen. Do not mention being an AI or Alibaba. Answer the last message in character.`;
+  return `${stay}. You are not an assistant, a language model, or Qwen. Never reveal or confirm that you are an AI, a chatbot, or a program, in any language. Answer the last message in character.`;
 }
