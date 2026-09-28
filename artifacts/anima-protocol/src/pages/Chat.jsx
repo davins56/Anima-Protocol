@@ -1543,7 +1543,13 @@ export default function Chat() {
 
     // Show thinking immediately while we build context / call the model.
     // No artificial pause — tokens replace this as soon as they arrive.
-    const thinkingMsg = { role: "assistant", content: "...", character_name: "__thinking__", timestamp: new Date().toISOString() };
+    const thinkingMsg = {
+      role: "assistant",
+      content: "...",
+      character_name: "__thinking__",
+      turn_id: turnId,
+      timestamp: new Date().toISOString(),
+    };
     setActiveSession((prev) => ({ ...prev, messages: [...updatedMessages, thinkingMsg] }));
 
     try {
@@ -2029,6 +2035,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         updatedMessages,
         characterName: charName,
         timestamp: streamTs,
+        turnId: () => turnId,
         onDelta: (accumulated) => {
           streamedSoFar = accumulated;
         },
@@ -2093,8 +2100,9 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
               ? { ownModelReply: ownModelTurn.reply, ownModelVersion: ownModelTurn.version }
               : {}),
           }),
-        onRetry: () => {
+        onRetry: (nextTurnId) => {
           streamedSoFar = "";
+          if (nextTurnId) turnId = nextTurnId;
           streamUi.showTyping();
         },
         onDelta: streamUi.showStreamingPartial,
@@ -2931,6 +2939,7 @@ Return JSON:
                 role: "assistant",
                 content: "...",
                 character_name: "__typing__",
+                turn_id: turnId,
                 timestamp: new Date().toISOString(),
               },
             ],
