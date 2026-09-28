@@ -26,12 +26,14 @@ const POST_TURN_SIDECAR_FUNCTIONS = new Set([
   "evolveCharacter",
   "extractLore",
   "generateChoices",
+  "generateDivergentPaths",
   "generateGroupInteraction",
   "generateResponseSuggestions",
   "generateSessionQuests",
   "generateSpecialQuests",
   "generateWorldEvent",
   "ingestSeriesLore",
+  "scanAndLinkLoreKeywords",
   "suggestGuestCharacter",
   "suggestSideQuests",
   "suggestWorldEvents",
@@ -42,6 +44,7 @@ const POST_TURN_SIDECAR_FUNCTIONS = new Set([
 ]);
 
 let companionTurns = 0;
+const companionTurnsByUser = new Map<string, number>();
 let backgroundAbort = new AbortController();
 
 /** Signal for LLM work that is not the companion reply. Aborted when a turn starts. */
@@ -81,20 +84,38 @@ export function companionLlmTurnOpen(): boolean {
   return companionTurns > 0;
 }
 
-export function beginCompanionLlmTurn(): () => void {
+/** Open companion generates for one Clerk user. The current turn counts. */
+export function companionTurnsOpenForUser(userId: string): number {
+  const id = String(userId || "").trim();
+  if (!id) return 0;
+  return companionTurnsByUser.get(id) ?? 0;
+}
+
+export function userHasOpenCompanionTurn(userId: string): boolean {
+  return companionTurnsOpenForUser(userId) > 0;
+}
+
+export function beginCompanionLlmTurn(userId?: string): () => void {
   companionTurns += 1;
+  const id = String(userId || "").trim();
+  if (id) companionTurnsByUser.set(id, (companionTurnsByUser.get(id) ?? 0) + 1);
   preemptBackgroundLlm();
   let released = false;
   return () => {
     if (released) return;
     released = true;
     companionTurns = Math.max(0, companionTurns - 1);
+    if (!id) return;
+    const next = (companionTurnsByUser.get(id) ?? 1) - 1;
+    if (next <= 0) companionTurnsByUser.delete(id);
+    else companionTurnsByUser.set(id, next);
   };
 }
 
 /** Test-only: drop occupancy so cases do not leak across files. */
 export function resetCompanionLlmTurnForTests(): void {
   companionTurns = 0;
+  companionTurnsByUser.clear();
   backgroundAbort = new AbortController();
 }
 

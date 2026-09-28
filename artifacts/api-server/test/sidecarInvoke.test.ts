@@ -19,6 +19,10 @@ vi.mock("../src/lib/llmFailover", () => ({
 }));
 
 import functionsRouter from "../src/routes/openai/functions";
+import {
+  beginCompanionLlmTurn,
+  resetCompanionLlmTurnForTests,
+} from "../src/lib/sidecarLlm";
 
 let server: Server;
 let baseUrl = "";
@@ -39,7 +43,9 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
-  createMock.mockClear();
+  createMock.mockReset();
+  createMock.mockImplementation(async () => ({ content: "warmer, more direct" }));
+  resetCompanionLlmTurnForTests();
 });
 
 async function invoke(fnName: string): Promise<{ status: number; json: { result?: unknown } }> {
@@ -85,13 +91,101 @@ describe("aggregatePersonalityShifts sidecar gate", () => {
     });
   });
 
-  it("still calls the model when sidecars are enabled", async () => {
+  it("still calls an explicit sidecar when sidecars are enabled", async () => {
     await withSidecarEnv(true, async () => {
-      const res = await invoke("aggregatePersonalityShifts");
+      const res = await invoke("generateGroupInteraction");
       expect(res.status).toBe(200);
       expect(res.json.result).toBe("warmer, more direct");
       expect(createMock).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it("returns null for an unhandled function when the chain is local-only", async () => {
+    await withSidecarEnv(true, async () => {
+      const res = await invoke("scanAndLinkLoreKeywords");
+      expect(res.status).toBe(200);
+      expect(res.json.result).toBeNull();
+      expect(createMock).not.toHaveBeenCalled();
+    });
+  });
+
+  it("matches lore keywords without calling the model", async () => {
+    const res = await fetch(`${baseUrl}/openai/invoke/detectLoreKeywords`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-test-user": "user_sidecar_invoke",
+      },
+      body: JSON.stringify({
+        content: "The harbor light is lit tonight.",
+        lore_entries: [
+          {
+            subject: "harbor light",
+            fact: "It guides ships home.",
+            category: "location",
+          },
+        ],
+      }),
+    });
+    const json = (await res.json()) as {
+      result?: { data?: { context?: Array<{ keyword?: string; fact?: string }> } };
+    };
+    expect(res.status).toBe(200);
+    expect(json.result?.data?.context?.[0]?.keyword).toBe("harbor light");
+    expect(json.result?.data?.context?.[0]?.fact).toMatch(/guides ships/i);
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it("skips a non-chat local call while that user has an open companion turn", async () => {
+    const release = beginCompanionLlmTurn("user_sidecar_invoke");
+    try {
+      await withSidecarEnv(true, async () => {
+        const res = await invoke("respondMentalLine");
+        expect(res.status).toBe(200);
+        expect(createMock).not.toHaveBeenCalled();
+      });
+    } finally {
+      release();
+    }
+  });
+
+  it("aborts llm() upstream when the client disconnects", async () => {
+    let seen: AbortSignal | undefined;
+    createMock.mockImplementation((req: { signal?: AbortSignal }) => {
+      seen = req.signal;
+      return new Promise((_resolve, reject) => {
+        const signal = req.signal;
+        if (!signal) {
+          reject(new Error("missing signal"));
+          return;
+        }
+        const fail = () => reject(new Error("aborted"));
+        if (signal.aborted) {
+          fail();
+          return;
+        }
+        signal.addEventListener("abort", fail, { once: true });
+      });
+    });
+
+    const controller = new AbortController();
+    const pending = fetch(`${baseUrl}/openai/invoke/respondMentalLine`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-test-user": "user_sidecar_invoke",
+      },
+      body: JSON.stringify({ prompt: "stay with me" }),
+      signal: controller.signal,
+    }).catch((err: unknown) => err);
+    await vi.waitFor(() => {
+      expect(seen).toBeTruthy();
+    });
+    controller.abort();
+    await vi.waitFor(() => {
+      expect(seen?.aborted).toBe(true);
+    });
+    await pending;
   });
 
   it("still calls the model for a user-initiated invoke in local-only mode", async () => {

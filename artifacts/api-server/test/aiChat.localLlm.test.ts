@@ -3,8 +3,14 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { Express } from "express";
 
 import { resetAiBindingForTests } from "../src/lib/aiBinding";
+import { AI_CHAT_RATE_LIMIT_MAX } from "../src/lib/aiChatGate";
+import { resetRateLimitStateForTests } from "../src/lib/rateLimit";
 import { resetLlmClientsForTests } from "../src/lib/openaiClient";
 import { resetLocalModelCatalogForTests } from "../src/lib/localModelCatalog";
+import {
+  beginCompanionLlmTurn,
+  resetCompanionLlmTurnForTests,
+} from "../src/lib/sidecarLlm";
 
 /**
  * POST /api/ai/chat must work on local Node without a Workers AI binding.
@@ -142,6 +148,10 @@ describe("POST /api/ai/chat — local Ollama path", () => {
     resetAiBindingForTests();
     resetLlmClientsForTests();
     resetLocalModelCatalogForTests();
+    resetRateLimitStateForTests();
+    resetCompanionLlmTurnForTests();
+    delete process.env.ANIMA_AI_CHAT_PROBE_KEY;
+    delete process.env.ANIMA_AI_CHAT_REQUIRE_AUTH;
   });
 
   afterEach(() => {
@@ -173,6 +183,7 @@ describe("POST /api/ai/chat — local Ollama path", () => {
 
   it("returns a setup hint when no local LLM is reachable on a no-loopback runtime", async () => {
     process.env.ANIMA_RUNTIME = "vercel";
+    process.env.ANIMA_AI_CHAT_PROBE_KEY = "probe-test-key";
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.VLLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
@@ -181,7 +192,10 @@ describe("POST /api/ai/chat — local Ollama path", () => {
 
     const response = await fetch(`${apiBase}/api/ai/chat`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer probe-test-key",
+      },
       body: JSON.stringify({ prompt: "Hello" }),
     });
 
@@ -242,5 +256,66 @@ describe("POST /api/ai/chat — local Ollama path", () => {
     expect(body.code).toBe("ai_timeout");
     expect(body.error).toMatch(/took too long to reply/i);
     expect(received).toHaveLength(1);
+  });
+
+  it("returns 401 in production without a signed-in user or probe key", async () => {
+    process.env.ANIMA_RUNTIME = "worker";
+    delete process.env.ANIMA_AI_CHAT_PROBE_KEY;
+
+    const response = await fetch(`${apiBase}/api/ai/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "Hello" }),
+    });
+
+    expect(response.status).toBe(401);
+    const body = await response.json();
+    expect(body.code).toBe("ai_chat_unauthorized");
+    expect(received).toHaveLength(0);
+  });
+
+  it("returns 429 when the per-IP limit is exceeded", async () => {
+    process.env.ANIMA_AI_CHAT_REQUIRE_AUTH = "1";
+    process.env.ANIMA_AI_CHAT_PROBE_KEY = "probe-test-key";
+    resetRateLimitStateForTests();
+
+    let status = 0;
+    for (let i = 0; i < AI_CHAT_RATE_LIMIT_MAX + 1; i += 1) {
+      const response = await fetch(`${apiBase}/api/ai/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer probe-test-key",
+        },
+        body: JSON.stringify({ prompt: "Hello" }),
+      });
+      status = response.status;
+    }
+
+    expect(status).toBe(429);
+    expect(received.length).toBe(AI_CHAT_RATE_LIMIT_MAX);
+  });
+
+  it("returns 429 while a companion turn holds the model slot", async () => {
+    const release = beginCompanionLlmTurn("user_probe");
+    try {
+      const response = await fetch(`${apiBase}/api/ai/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: "Hello" }),
+      });
+      expect(response.status).toBe(429);
+      const body = await response.json();
+      expect(body.code).toBe("llm_busy");
+      expect(received).toHaveLength(0);
+    } finally {
+      release();
+    }
+  });
+
+  it("keeps /api/healthz/llm?probe=1 public", async () => {
+    process.env.ANIMA_RUNTIME = "worker";
+    const health = await fetch(`${apiBase}/api/healthz/llm?probe=1`);
+    expect(health.status).not.toBe(401);
   });
 });

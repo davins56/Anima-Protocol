@@ -20,6 +20,7 @@ import {
   llmChatMessagesStreamTotalMs,
   REPEAT_RETRY_MIN_MS,
   repeatRetryBudgetMs,
+  shouldRegenerateRepeatedReply,
   CLIENT_DISCONNECT_GRACE_MS,
   LLM_LATE_PERSIST_BUDGET_MS,
   llmCompanionDurableWaitMs,
@@ -383,5 +384,26 @@ describe("repeatRetryBudgetMs", () => {
       const budget = repeatRetryBudgetMs(elapsed);
       expect(elapsed + budget).toBeLessThanOrEqual(CHAT_STREAM_TIMEOUT_MS);
     }
+  });
+
+  it("skips the regenerate when another turn is already queued", () => {
+    expect(
+      shouldRegenerateRepeatedReply({
+        retryBudgetMs: REPEAT_RETRY_MIN_MS,
+        aborted: false,
+        timedOut: false,
+        repeated: true,
+        otherWorkQueued: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldRegenerateRepeatedReply({
+        retryBudgetMs: REPEAT_RETRY_MIN_MS,
+        aborted: false,
+        timedOut: false,
+        repeated: true,
+        otherWorkQueued: false,
+      }),
+    ).toBe(true);
   });
 });
