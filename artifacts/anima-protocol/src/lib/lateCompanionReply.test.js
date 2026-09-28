@@ -5,6 +5,7 @@ import {
   GENERIC_COMPANION_COULD_NOT_REPLY,
   isCompanionStillTypingError,
   isConnectionDroppedError,
+  dropTurnPlaceholder,
   lateTurnFailedWithoutReply,
   mergeLateReplyIntoMessages,
   pollLateCompanionReply,
@@ -52,6 +53,23 @@ describe("isCompanionStillTypingError", () => {
     const err = new Error("Not signed in — your session may have expired.");
     err.status = 401;
     expect(isCompanionStillTypingError(err)).toBe(false);
+  });
+});
+
+describe("dropTurnPlaceholder", () => {
+  it("removes only the placeholder for that turn", () => {
+    const messages = [
+      { role: "user", content: "hi", turn_id: "turn_a" },
+      { role: "assistant", content: "...", character_name: "__typing__", turn_id: "turn_a" },
+      { role: "assistant", content: "...", character_name: "__thinking__", turn_id: "turn_b" },
+      { role: "assistant", content: "still here", turn_id: "turn_a" },
+    ];
+    expect(dropTurnPlaceholder(messages, "turn_a").map((message) => message.turn_id)).toEqual([
+      "turn_a",
+      "turn_b",
+      "turn_a",
+    ]);
+    expect(dropTurnPlaceholder(messages, "turn_a")[1].character_name).toBe("__thinking__");
   });
 });
 

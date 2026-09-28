@@ -96,6 +96,25 @@ function messageBelongsToTurn(message, turnId, userId, assistantId) {
   return message.turn_id === turnId;
 }
 
+/**
+ * Remove only the typing/thinking bubble for this turn.
+ * Other in-flight placeholders in the session stay.
+ *
+ * @param {Array<Record<string, unknown>> | null | undefined} messages
+ * @param {unknown} turnId
+ */
+export function dropTurnPlaceholder(messages, turnId) {
+  const id = String(turnId || "");
+  if (!id) return messages || [];
+  return (messages || []).filter((message) => {
+    if (!message) return true;
+    const placeholder =
+      message.character_name === "__typing__" || message.character_name === "__thinking__";
+    if (placeholder && message.turn_id === id) return false;
+    return true;
+  });
+}
+
 export function mergeLateReplyIntoMessages(messages, turn) {
   const turnId = String(turn.turnId || "");
   const userId = `${turnId}:user`;

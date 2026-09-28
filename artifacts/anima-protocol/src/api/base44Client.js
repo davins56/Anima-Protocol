@@ -56,8 +56,93 @@ export {
   STORE_SESSION_CREATE_TIMEOUT_MS,
 };
 
-/** Bound for base44.functions.invoke. A hung sidecar must not sit on the model. */
+/**
+ * Bound for automatic sidecar invokes only. Foreground calls such as
+ * generateCompanionFromPrompt and codespaceAgentStep keep no default
+ * timeout — a cold local model can take ~90s for a first token.
+ * Names match POST_TURN_SIDECAR_FUNCTIONS in the API, plus lore detection.
+ */
 export const FUNCTION_INVOKE_TIMEOUT_MS = 12_000;
+
+const BACKGROUND_FUNCTION_INVOKES = new Set([
+  "aggregatePersonalityShifts",
+  "analyzeCharacterForBehavior",
+  "analyzeEmotionalClimate",
+  "analyzeMessageTags",
+  "analyzeNarrativeContext",
+  "applyNarrativeItemEvents",
+  "autoEvolveWorldState",
+  "characterMemory",
+  "detectLoreKeywords",
+  "detectQuestsFromNarrative",
+  "evolveCharacter",
+  "extractLore",
+  "generateChoices",
+  "generateDivergentPaths",
+  "generateGroupInteraction",
+  "generateResponseSuggestions",
+  "generateSessionQuests",
+  "generateSpecialQuests",
+  "generateWorldEvent",
+  "ingestSeriesLore",
+  "scanAndLinkLoreKeywords",
+  "suggestGuestCharacter",
+  "suggestSideQuests",
+  "suggestWorldEvents",
+  "trackCharacterEvolution",
+  "updateCharacterEmotion",
+  "updateInventory",
+  "worldEvolutionOrchestrator",
+]);
+
+function isBackgroundFunctionInvoke(name) {
+  return BACKGROUND_FUNCTION_INVOKES.has(String(name || "").trim());
+}
+
+function combineClientAbortSignals(signals) {
+  const live = signals.filter(Boolean);
+  if (live.length === 0) return undefined;
+  if (live.length === 1) return live[0];
+  if (typeof AbortSignal !== "undefined" && typeof AbortSignal.any === "function") {
+    return AbortSignal.any(live);
+  }
+  const controller = new AbortController();
+  for (const signal of live) {
+    if (signal.aborted) {
+      controller.abort(signal.reason);
+      return controller.signal;
+    }
+    signal.addEventListener(
+      "abort",
+      () => controller.abort(signal.reason),
+      { once: true },
+    );
+  }
+  return controller.signal;
+}
+
+/** Timeout for a function invoke. Falls back when AbortSignal.timeout is missing. */
+function createInvokeTimeout(timeoutMs) {
+  if (!(typeof timeoutMs === "number" && timeoutMs > 0)) {
+    return { signal: undefined, cancel() {} };
+  }
+  if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+    return { signal: AbortSignal.timeout(timeoutMs), cancel() {} };
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    const err = new Error("The operation was aborted");
+    err.name = "TimeoutError";
+    controller.abort(err);
+  }, timeoutMs);
+  if (typeof timer.unref === "function") timer.unref();
+  return {
+    signal: controller.signal,
+    cancel() {
+      clearTimeout(timer);
+    },
+  };
+}
 
 const DEFAULT_STORE_TIMEOUT_MESSAGE =
   'The server took too long to respond. Check your connection or try again in a moment.';
@@ -1721,11 +1806,18 @@ export const base44 = {
           const realName = fnName === 'invoke' ? nameOrData : fnName;
           const payload = fnName === 'invoke' ? data : nameOrData;
           const invokeOptions = fnName === 'invoke' ? options : undefined;
-          const timeoutMs =
+          const explicitTimeout =
             typeof invokeOptions?.timeoutMs === 'number' && invokeOptions.timeoutMs > 0
               ? invokeOptions.timeoutMs
-              : FUNCTION_INVOKE_TIMEOUT_MS;
-          const signal = createStoreAbortSignal(timeoutMs, invokeOptions?.signal);
+              : 0;
+          const timeoutMs =
+            explicitTimeout ||
+            (isBackgroundFunctionInvoke(realName) ? FUNCTION_INVOKE_TIMEOUT_MS : 0);
+          const timeout = createInvokeTimeout(timeoutMs);
+          const signal = combineClientAbortSignals([
+            timeout.signal,
+            invokeOptions?.signal,
+          ]);
           try {
             let headers = await requireChatAuthHeaders();
             const postOnce = (requestHeaders) =>
@@ -1752,6 +1844,8 @@ export const base44 = {
           } catch (err) {
             console.warn(`base44.functions.${String(realName)} failed:`, err.message);
             return null;
+          } finally {
+            timeout.cancel();
           }
         };
 
