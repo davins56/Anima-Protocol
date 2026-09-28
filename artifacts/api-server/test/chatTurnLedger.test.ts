@@ -281,4 +281,44 @@ describe("chat turn ledger", () => {
       lastError: "Companion turn lease expired",
     });
   });
+
+  it("live-turn skips abandoned pending turns even when they are newest", async () => {
+    const liveSession = `${sessionId}_live`;
+    const now = new Date();
+    const old = new Date(now.getTime() - STALE_PENDING_LEASE_MS - 60_000);
+    const insert = (id: string, fields: Partial<typeof chatTurns.$inferInsert>) =>
+      db.insert(chatTurns).values({
+        id,
+        sessionId: liveSession,
+        userId,
+        userMessageId: `${id}:user`,
+        assistantMessageId: `${id}:assistant`,
+        persistenceOwner: "server",
+        status: "pending",
+        userContent: "hello",
+        ...fields,
+      });
+    const older = `${prefix}_live_older`;
+    await insert(older, {
+      createdAt: new Date(now.getTime() - 20_000),
+      updatedAt: now,
+      leaseExpiresAt: new Date(now.getTime() + 30_000),
+    });
+    // More abandoned rows than the old 8-row window, one with no lease.
+    for (let i = 0; i < 9; i += 1) {
+      await insert(`${prefix}_live_dead_${i}`, {
+        createdAt: new Date(now.getTime() - 10_000 + i * 100),
+        updatedAt: old,
+        leaseExpiresAt: i === 0 ? null : old,
+      });
+    }
+    const live = await latestOpenChatTurn(userId, liveSession, now);
+    expect(live?.id).toBe(older);
+    expect(await readChatTurn(`${prefix}_live_dead_0`, userId)).toMatchObject({
+      status: "failed",
+    });
+
+    await db.update(chatTurns).set({ status: "failed" }).where(eq(chatTurns.id, older));
+    expect(await latestOpenChatTurn(userId, liveSession, now)).toBeNull();
+  });
 });
