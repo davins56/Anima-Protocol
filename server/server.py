@@ -10,7 +10,7 @@
 # Test:
 #   curl http://127.0.0.1:8000/v1/chat/completions \
 #     -H "Content-Type: application/json" \
-#     -d '{"model":"anima","messages":[{"role":"user","content":"Hello"}]}'
+#     -d '{"model":"anima-own","messages":[{"role":"user","content":"Hello"}]}'
 #
 # ANIMA_CKPT and ANIMA_TOK_DIR override the checkpoint and tokenizer paths
 # (defaults: out/anima-dpo/ckpt.pt and data/anima_tokens/).
@@ -22,7 +22,6 @@
 import json
 import math
 import os
-import sys
 import time
 import uuid
 from pathlib import Path
@@ -39,8 +38,13 @@ for _rel in ("training/phase1", "training/phase2"):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+import _paths  # noqa: F401
+import modeling
 import sft
-from train import GPT, GPTConfig
+from learning import LessonError, LiveModel
+
+ROOT = Path(__file__).resolve().parents[1]
+log = logging.getLogger("anima.server")
 
 # ----------------------------- Config -----------------------------
 
@@ -58,8 +62,7 @@ MAX_BODY_BYTES = 8 * 1024 * 1024
 STREAM_FLUSH_CHARS = 160
 
 device = "cpu"
-cfg = None
-model = None
+live: LiveModel | None = None
 
 
 def checkpoint_path() -> str:
@@ -67,6 +70,21 @@ def checkpoint_path() -> str:
     if override:
         return override
     return str(ROOT / "out" / "anima-dpo" / "ckpt.pt")
+
+
+def live_dir() -> str:
+    override = os.environ.get("ANIMA_LIVE_DIR", "").strip()
+    if override:
+        return override
+    return str(ROOT / "out" / "anima-live")
+
+
+def model_id() -> str:
+    return os.environ.get("ANIMA_MODEL_ID", "").strip() or "anima-own"
+
+
+def learning_enabled() -> bool:
+    return os.environ.get("ANIMA_LEARNING", "on").strip().lower() not in {"0", "off", "false", "no"}
 
 
 def server_token() -> str:
@@ -90,10 +108,6 @@ def load_runtime():
     path = checkpoint_path()
     if not os.path.isfile(path):
         raise SystemExit(f"checkpoint not found: {path} (set ANIMA_CKPT or train phase 3)")
-    ckpt = torch.load(path, map_location="cpu", weights_only=True)
-    cfg = GPTConfig(**ckpt["cfg"])
-    model = GPT(cfg)
-    model.load_state_dict(ckpt["model"])
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device).eval()
     sft.model, sft.cfg = model, cfg
@@ -229,17 +243,20 @@ def _sse_chunks(deltas, completion_id: str, created: int, model_name: str):
 # --------------------- API ---------------------
 
 class LimitBodyMiddleware:
-    def __init__(self, app, max_bytes: int = MAX_BODY_BYTES):
+    def __init__(self, app, max_bytes: int = MAX_BODY_BYTES, sync_max_bytes: int = MAX_SYNC_BODY_BYTES):
         self.app = app
         self.max_bytes = max_bytes
+        self.sync_max_bytes = sync_max_bytes
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http" or scope.get("method") not in ("POST", "PUT", "PATCH"):
             await self.app(scope, receive, send)
             return
-        if not scope.get("path", "").startswith("/v1/"):
+        path = scope.get("path", "")
+        if not path.startswith("/v1/"):
             await self.app(scope, receive, send)
             return
+        limit = self.sync_max_bytes if path == "/v1/lessons/sync" else self.max_bytes
         body = bytearray()
         while True:
             message = await receive()
@@ -248,8 +265,8 @@ class LimitBodyMiddleware:
             if message["type"] != "http.request":
                 continue
             body.extend(message.get("body", b""))
-            if len(body) > self.max_bytes:
-                raw = b'{"detail":"request too large"}'
+            if len(body) > limit:
+                raw = b'{"detail":"request too large","error":{"message":"request too large","type":"invalid_request_error"}}'
                 await send({
                     "type": "http.response.start",
                     "status": 413,
@@ -284,7 +301,7 @@ def require_token(authorization: str | None = Header(default=None)):
     token = server_token()
     if not token:
         return
-    if authorization != f"Bearer {token}":
+    if not hmac.compare_digest((authorization or "").encode(), f"Bearer {token}".encode()):
         raise HTTPException(status_code=401, detail="unauthorized")
 
 
@@ -293,6 +310,7 @@ class Msg(BaseModel):
     # A string, OpenAI content parts, or null (assistant tool-call turns).
     content: str | list[dict[str, Any]] | None = None
 
+# ----------------------------- Chat -----------------------------
 
 class ChatRequest(BaseModel):
     model: str = Field(default="anima", max_length=128)
@@ -307,20 +325,44 @@ class ChatRequest(BaseModel):
     stream: bool = False
 
 
-class ChatResponse(BaseModel):
-    id: str
-    object: str = "chat.completion"
-    created: int
-    model: str
-    choices: list[dict]
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _stream_chat(model, prompt_ids, max_tokens, temperature, name):
+    cid = "chatcmpl-" + uuid.uuid4().hex[:12]
+    created = int(time.time())
+
+    def chunk(delta, finish=None):
+        return _sse({
+            "id": cid,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": name,
+            "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
+        })
+
+    yield chunk({"role": "assistant", "content": ""})
+    count = 0
+
+    def counted():
+        nonlocal count
+        for t in modeling.iter_reply_tokens(model, prompt_ids, max_tokens, temperature):
+            count += 1
+            yield t
+
+    for delta in modeling.iter_text_deltas(counted()):
+        yield chunk({"content": delta})
+    yield chunk({}, "length" if count >= max_tokens else "stop")
+    yield "data: [DONE]\n\n"
 
 
 @app.get("/v1/models")
 def list_models(_auth: None = Depends(require_token)):
-    return {"object": "list", "data": [{"id": "anima", "object": "model"}]}
+    return {"object": "list", "data": [{"id": model_id(), "object": "model", "owned_by": "anima"}]}
 
 
-@app.post("/v1/chat/completions", response_model=ChatResponse)
+@app.post("/v1/chat/completions")
 def chat(req: ChatRequest, _auth: None = Depends(require_token)):
     messages = _api_messages([m.model_dump() for m in req.messages])
     if not messages:
@@ -352,17 +394,127 @@ def chat(req: ChatRequest, _auth: None = Depends(require_token)):
             "message": {"role": "assistant", "content": reply},
             "finish_reason": finish_reason,
         }],
-    )
+        "usage": {
+            "prompt_tokens": len(prompt_ids),
+            "completion_tokens": n,
+            "total_tokens": len(prompt_ids) + n,
+        },
+    }
+
+
+# ----------------------------- Lessons -----------------------------
+
+class LessonIn(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: str | None = Field(default=None, max_length=80)
+    messages: list[Any] = Field(default_factory=list, max_length=MAX_MESSAGES)
+    chosen: Any = None
+    rejected: Any = None
+    created_at: float | None = None
+    wait: float = Field(default=10.0, ge=0, le=MAX_WAIT_SECONDS)
+
+
+class SyncIn(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    lessons: list[dict[str, Any]] = Field(default_factory=list)
+    rebuild: bool = True
+    wait: float = Field(default=0.0, ge=0, le=MAX_WAIT_SECONDS)
+
+
+class WaitIn(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    wait: float = Field(default=10.0, ge=0, le=MAX_WAIT_SECONDS)
+
+
+def learner() -> LiveModel:
+    if not learning_enabled():
+        raise HTTPException(status_code=403, detail="learning is disabled on this server (ANIMA_LEARNING=off)")
+    if live is None:
+        raise HTTPException(status_code=503, detail="model is not loaded")
+    return live
+
+
+def _job_response(job: dict | None):
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    body = {
+        "status": job["status"],
+        "job_id": job["id"],
+        "kind": job["kind"],
+        "result": job.get("result"),
+        "error": job.get("error"),
+        "progress": job.get("progress"),
+        "version": live.version if live else None,
+    }
+    if job["status"] == "failed":
+        detail = job.get("error") or "learning failed"
+        return JSONResponse(
+            {**body, "detail": detail, "error": {"message": detail, "type": "learning_error"}},
+            status_code=500,
+        )
+    return JSONResponse(body, status_code=200 if job["status"] == "done" else 202)
+
+
+@app.post("/v1/lessons")
+def teach(req: LessonIn, _auth: None = Depends(require_token)):
+    model = learner()
+    try:
+        lesson = model.put_lesson(req.model_dump(exclude={"wait"}))
+    except LessonError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    job_id = model.submit("learn", lesson["id"])
+    return _job_response(model.wait(job_id, req.wait))
+
+
+@app.get("/v1/lessons")
+def lessons(_auth: None = Depends(require_token)):
+    return {"lessons": learner().list_lessons()}
+
+
+@app.get("/v1/lessons/status")
+def lesson_status(_auth: None = Depends(require_token)):
+    model = learner()
+    return {"model": model_id(), "learning": True, **model.status()}
+
+
+@app.get("/v1/lessons/jobs/{job_id}")
+def lesson_job(job_id: str, _auth: None = Depends(require_token)):
+    return _job_response(learner().job(job_id))
+
+
+@app.delete("/v1/lessons/{lesson_id}")
+def forget(lesson_id: str, _auth: None = Depends(require_token)):
+    return learner().remove_lesson(lesson_id)
+
+
+@app.post("/v1/lessons/sync")
+def sync(req: SyncIn, _auth: None = Depends(require_token)):
+    model = learner()
+    try:
+        count = model.replace_lessons(req.lessons)
+    except LessonError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not req.rebuild:
+        return {"status": "done", "lessons": count, "version": model.version}
+    job_id = model.submit("rebuild")
+    return _job_response(model.wait(job_id, req.wait))
+
+
+@app.post("/v1/lessons/rollback")
+def rollback(req: WaitIn | None = None, _auth: None = Depends(require_token)):
+    model = learner()
+    if not model.can_rollback():
+        raise HTTPException(status_code=409, detail="nothing to roll back")
+    job_id = model.submit("rollback")
+    return _job_response(model.wait(job_id, (req or WaitIn()).wait))
 
 
 @app.get("/health")
 def health():
-    return {"ok": True, "checkpoint": checkpoint_path(), "device": device}
-
-
-@app.exception_handler(HTTPException)
-async def _http_error(_request, exc: HTTPException):
-    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+    return {"ok": live is not None, "version": live.version if live else None, "device": device}
 
 
 if __name__ == "__main__":
