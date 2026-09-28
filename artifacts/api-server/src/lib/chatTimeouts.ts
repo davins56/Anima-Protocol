@@ -231,6 +231,12 @@ export function shouldAbortAbandonedGenerate(input: {
  */
 export const COMPANION_REPLY_MAX_TOKENS = 1024;
 
+/**
+ * Settings → Short (1-2 sentences). About two short sentences on the 0.5B
+ * model. Medium and long keep the path's existing cap.
+ */
+export const SHORT_REPLY_MAX_TOKENS = 90;
+
 export function companionReplyMaxTokens(routedMax: number): number {
   if (!Number.isFinite(routedMax) || routedMax <= 0) {
     return COMPANION_REPLY_MAX_TOKENS;
@@ -241,18 +247,24 @@ export function companionReplyMaxTokens(routedMax: number): number {
 /**
  * 1:1 companion turns stay capped for TTFT / stop-early. Group and explicit
  * deep-mode keep the router budget so long-form sessions are not truncated.
+ * `responseLength: "short"` lowers that result to {@link SHORT_REPLY_MAX_TOKENS}.
+ * A crisis turn keeps the uncapped result so the care reply is not shortened.
  */
 export function chatReplyMaxTokens(
   routedMax: number,
-  opts: { mode?: string; deepMode?: boolean } = {},
+  opts: { mode?: string; deepMode?: boolean; responseLength?: string | null; crisis?: boolean } = {},
 ): number {
-  if (opts.mode === "group" || opts.deepMode) {
-    if (!Number.isFinite(routedMax) || routedMax <= 0) {
-      return COMPANION_REPLY_MAX_TOKENS;
-    }
-    return Math.floor(routedMax);
+  const full =
+    opts.mode === "group" || opts.deepMode
+      ? !Number.isFinite(routedMax) || routedMax <= 0
+        ? COMPANION_REPLY_MAX_TOKENS
+        : Math.floor(routedMax)
+      : companionReplyMaxTokens(routedMax);
+  if (opts.crisis) return full;
+  if (String(opts.responseLength || "").trim().toLowerCase() === "short") {
+    return Math.min(full, SHORT_REPLY_MAX_TOKENS);
   }
-  return companionReplyMaxTokens(routedMax);
+  return full;
 }
 
 export function llmOpenTimeoutMs(opts: { freeTierCascade?: boolean } = {}): number {

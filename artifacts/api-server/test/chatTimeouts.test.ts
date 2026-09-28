@@ -33,6 +33,7 @@ import {
   COMPANION_REPLY_MAX_TOKENS,
   companionReplyMaxTokens,
   chatReplyMaxTokens,
+  SHORT_REPLY_MAX_TOKENS,
 } from "../src/lib/chatTimeouts";
 import { WORKER_API_TIMEOUT_MS } from "../src/lib/workerApiGuard";
 
@@ -58,6 +59,25 @@ describe("llmOpenTimeoutMs", () => {
     expect(chatReplyMaxTokens(8192, { mode: "group" })).toBe(8192);
     expect(chatReplyMaxTokens(4096, { deepMode: true })).toBe(4096);
     expect(chatReplyMaxTokens(0, { mode: "group" })).toBe(1024);
+  });
+
+  it("maps Short (1-2 sentences) to about 90 tokens and leaves longer settings alone", () => {
+    expect(SHORT_REPLY_MAX_TOKENS).toBe(90);
+    expect(chatReplyMaxTokens(8192, { mode: "solo", responseLength: "short" })).toBe(90);
+    expect(chatReplyMaxTokens(8192, { mode: "solo", responseLength: "medium" })).toBe(1024);
+    expect(chatReplyMaxTokens(8192, { mode: "solo", responseLength: "long" })).toBe(1024);
+    expect(chatReplyMaxTokens(8192, { mode: "solo" })).toBe(1024);
+    expect(chatReplyMaxTokens(8192, { mode: "group", responseLength: "short" })).toBe(90);
+    expect(chatReplyMaxTokens(8192, { mode: "group", responseLength: "medium" })).toBe(8192);
+    expect(chatReplyMaxTokens(8192, { deepMode: true, responseLength: "short" })).toBe(90);
+    expect(chatReplyMaxTokens(8192, { deepMode: true, responseLength: "long" })).toBe(8192);
+    expect(chatReplyMaxTokens(8192, { mode: "solo", responseLength: " Short " })).toBe(90);
+    expect(chatReplyMaxTokens(8192, { mode: "solo", responseLength: "short", crisis: true })).toBe(
+      1024,
+    );
+    expect(chatReplyMaxTokens(8192, { mode: "group", responseLength: "short", crisis: true })).toBe(
+      8192,
+    );
   });
 
   it("gives free-tier multi-candidate failover an 80s open budget", () => {

@@ -7,6 +7,7 @@ import {
   OLLAMA_CHAT_SAMPLING,
   OLLAMA_MAX_TEMPERATURE,
   OLLAMA_NUM_PREDICT_CAP,
+  capOllamaNumPredict,
   OLLAMA_UNAVAILABLE_HINT,
   createOllamaChatCompletion,
   createOllamaChatStream,
@@ -59,6 +60,12 @@ describe("ollamaChat adapter", () => {
   afterEach(() => {
     process.env = { ...SAVED };
     resetLlmClientsForTests();
+  });
+
+  it("sets num_predict to a short reply cap and keeps the 200 ceiling otherwise", () => {
+    expect(capOllamaNumPredict(90)).toBe(90);
+    expect(capOllamaNumPredict(1024)).toBe(OLLAMA_NUM_PREDICT_CAP);
+    expect(OLLAMA_NUM_PREDICT_CAP).toBe(200);
   });
 
   it("reads model name and native /api/chat URL from env (never a VITE_ var)", () => {
