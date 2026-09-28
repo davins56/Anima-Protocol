@@ -250,9 +250,10 @@ describe("companion prompt prefill budget", () => {
     expect(sections.staticText).toContain(persona);
     expect(sections.moodText.length).toBeGreaterThan(0);
     expect(packed.includes(sections.staticText)).toBe(true);
-    // Mood is shortened from the tail so persona and the kept history fit
-    // the local cap. The opening of the block stays.
-    expect(packed.includes(sections.moodText.slice(0, 80))).toBe(true);
+    // The synchro paragraph yields first. The current-feeling line and the
+    // atmosphere line stay even when earlier resonance coloring is shed.
+    expect(packed).toContain("You feel quiet-watchful");
+    expect(packed).toContain("Current emotional atmosphere:");
     expect(messages.at(-1)).toEqual({ role: "user", content: latest });
     expect(tokens).toBeLessThanOrEqual(LOCAL_PROMPT_MAX_TOKENS);
     expect(tokens).toBeLessThanOrEqual(localPromptHardMaxTokens());
@@ -325,14 +326,136 @@ describe("companion prompt prefill budget", () => {
     expect(calmMessages[0]?.content).not.toBe(stirredMessages[0]?.content);
     expect(calmMessages[0]?.content).toContain("MEMORY_CALM");
     expect(stirredMessages[0]?.content).toContain("MEMORY_STIRRED");
-    // Self-state ("quiet-watchful") sits after the long synchro paragraph.
-    // On a full persona that paragraph is shortened so the memory still fits,
-    // and the emotional-atmosphere line — earlier in the same mood block —
-    // is what still differs between the two turns.
+    expect(calmMessages[0]?.content).toContain("quiet-watchful");
+    expect(stirredMessages[0]?.content).toContain("fierce-alert");
     expect(calmMessages[0]?.content).toContain("Current emotional atmosphere: measured");
     expect(stirredMessages[0]?.content).toContain("Current emotional atmosphere: fierce");
     expect(calmMessages[0]?.content.indexOf("MEMORY_CALM")).toBeLessThan(
-      calmMessages[0]?.content.indexOf("Current emotional atmosphere: measured") ?? -1,
+      calmMessages[0]?.content.indexOf("quiet-watchful") ?? -1,
+    );
+    const calmLocal = messagesForLocalOllama(calmMessages);
+    const calmUser = String(calmLocal.at(-1)?.content || "");
+    expect(calmUser).toContain("quiet-watchful");
+    expect(calmUser.indexOf("quiet-watchful")).toBeLessThan(
+      calmUser.indexOf("Answer the user's last message"),
+    );
+    expect(calmUser.endsWith("However you wish to move Natasha.")).toBe(true);
+  });
+
+  it("drops the synchro paragraph sentence by sentence from its end", () => {
+    const tail = "Show willingness to deepen — curiosity, attentiveness, measured warmth.";
+    const earlier = "Be genuinely present but don't presume deep familiarity yet.";
+    const build = (count: number) => {
+      const character = {
+        ...natasha,
+        personality: `mark ${"word ".repeat(count)}`,
+        backstory: "B",
+        speaking_style: "S",
+      };
+      return composeCompanionChatMessages({
+        characters: [character],
+        activeCharacter: character,
+        recentMessages: [],
+        memories: [],
+        mode: "solo",
+        content: "Hi",
+        synchroState: turn.synchroState,
+        companionAffect: turn.companionAffect,
+      });
+    };
+    const unshrunk = companionLocalSections({
+      characters: [{ ...natasha, personality: "mark", backstory: "B", speaking_style: "S" }],
+      activeCharacter: { ...natasha, personality: "mark", backstory: "B", speaking_style: "S" },
+      recentMessages: [],
+      memories: [],
+      mode: "solo",
+      content: "Hi",
+      synchroState: turn.synchroState,
+      companionAffect: turn.companionAffect,
+    });
+    expect(unshrunk.moodText).toContain(tail);
+    expect(unshrunk.moodText).toContain(earlier);
+    expect(unshrunk.moodText.indexOf(earlier)).toBeLessThan(unshrunk.moodText.indexOf(tail));
+
+    let packed = "";
+    for (let count = 200; count <= 250; count += 1) {
+      const text = build(count)
+        .map((message) => message.content)
+        .join("\n");
+      if (
+        text.includes(earlier) &&
+        !text.includes(tail) &&
+        text.includes("You feel quiet-watchful") &&
+        text.includes("Current emotional atmosphere: measured") &&
+        text.includes("CONVERSATIONAL WEATHER")
+      ) {
+        packed = text;
+        break;
+      }
+    }
+    expect(packed).not.toBe("");
+    expect(estimateLocalPromptTokens(packed)).toBeLessThanOrEqual(LOCAL_PROMPT_MAX_TOKENS);
+    expect(packed.indexOf("SYNCHRO:")).toBeLessThan(packed.indexOf(earlier));
+    expect(packed.indexOf(earlier)).toBeLessThan(packed.indexOf("You feel quiet-watchful"));
+    expect(packed.indexOf("You feel quiet-watchful")).toBeLessThan(
+      packed.indexOf("CONVERSATIONAL WEATHER"),
+    );
+  });
+
+  it("shortens the synchro paragraph before the current-feeling line when the budget is tight", () => {
+    const squeezed = {
+      characters: [natasha],
+      activeCharacter: natasha,
+      recentMessages: history.slice(0, 2),
+      mode: "solo" as const,
+      content: "However you wish to move Natasha.",
+      memories: [
+        {
+          characterId: "natasha",
+          summary: "MEMORY_CALM she is listening.",
+          facts: [{ type: "factual", text: "MEMORY_CALM she is listening." }],
+        },
+      ],
+      synchroState: {
+        ...turn.synchroState,
+        emotionalTone: "measured",
+        vector: { ...turn.synchroState.vector, intimacy: 22 },
+      },
+      companionAffect: { ...turn.companionAffect, mood: "quiet-watchful", primary: "neutral" as const },
+    };
+    const sections = companionLocalSections(squeezed);
+    const synchroMatch = sections.moodText.match(/\n\n(SYNCHRO:[\s\S]*?)(?=\n\n|$)/);
+    const synchro = synchroMatch?.[1]?.trim() ?? "";
+    const sentences = (synchro.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [])
+      .map((sentence) => sentence.trim())
+      .filter(Boolean);
+    const synchroTail = sentences[sentences.length - 1] ?? "";
+    expect(synchro.startsWith("SYNCHRO:")).toBe(true);
+    expect(synchroTail.length).toBeGreaterThan(20);
+    expect(sections.moodText).toContain(synchroTail);
+    expect(sections.moodText).toContain("You feel quiet-watchful");
+
+    const messages = composeCompanionChatMessages(squeezed);
+    const packed = messages.map((message) => message.content).join("\n");
+    const tokens = estimateLocalPromptTokens(packed);
+    expect(tokens).toBeLessThanOrEqual(LOCAL_PROMPT_MAX_TOKENS);
+    expect(packed).toContain("You feel quiet-watchful");
+    expect(packed).toContain("Current emotional atmosphere: measured");
+    expect(packed).not.toContain(synchroTail);
+    const keptSynchro = packed.includes("SYNCHRO:")
+      ? (packed.match(/SYNCHRO:[\s\S]*?(?=\n\nSELF-STATE|\n\nYou feel|$)/)?.[0] ?? "")
+      : "";
+    expect(keptSynchro.length).toBeLessThan(synchro.length);
+    expect(synchro.startsWith(keptSynchro.trim()) || keptSynchro === "").toBe(true);
+
+    const localUser = String(messagesForLocalOllama(messages).at(-1)?.content || "");
+    const feelingAt = localUser.indexOf("You feel quiet-watchful");
+    const answerAt = localUser.indexOf("[Answer ");
+    expect(feelingAt).toBeGreaterThan(-1);
+    expect(answerAt).toBeGreaterThan(feelingAt);
+    expect(localUser.slice(feelingAt, answerAt)).not.toContain("\n[");
+    expect(localUser.slice(answerAt)).toMatch(
+      /^\[Answer [^\]]+\]\nHowever you wish to move Natasha\.$/,
     );
   });
 
