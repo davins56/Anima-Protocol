@@ -7,10 +7,12 @@ import {
   claimChatTurnLease,
   classifyChatTurnReuse,
   decideDurableTurnJoin,
+  latestOpenChatTurn,
   markTurnCommitted,
   markTurnFailed,
   readChatTurn,
   retryableChatTurns,
+  STALE_PENDING_TURN_MS,
   turnMessageIds,
 } from "../src/lib/chatTurnLedger";
 
@@ -232,5 +234,46 @@ describe("chat turn ledger", () => {
     }
     const retryable = await retryableChatTurns(userId, retrySession, 10);
     expect(retryable.map((turn) => turn.id)).toEqual([newer]);
+  });
+
+  it("live-turn skips a pending turn abandoned past the stale window", async () => {
+    const liveSession = `${sessionId}_live`;
+    const now = new Date();
+    const old = new Date(now.getTime() - STALE_PENDING_TURN_MS - 60_000);
+    const insert = (id: string, fields: Partial<typeof chatTurns.$inferInsert>) =>
+      db.insert(chatTurns).values({
+        id,
+        sessionId: liveSession,
+        userId,
+        userMessageId: `${id}:user`,
+        assistantMessageId: `${id}:assistant`,
+        persistenceOwner: "server",
+        status: "pending",
+        userContent: "hello",
+        ...fields,
+      });
+    const older = `${prefix}_live_older`;
+    const deadLease = `${prefix}_live_dead_lease`;
+    const deadNoLease = `${prefix}_live_dead_nolease`;
+    await insert(older, {
+      createdAt: new Date(now.getTime() - 3_000),
+      updatedAt: now,
+      leaseExpiresAt: new Date(now.getTime() + 30_000),
+    });
+    await insert(deadLease, {
+      createdAt: new Date(now.getTime() - 2_000),
+      updatedAt: old,
+      leaseExpiresAt: old,
+    });
+    await insert(deadNoLease, {
+      createdAt: new Date(now.getTime() - 1_000),
+      updatedAt: old,
+      leaseExpiresAt: null,
+    });
+    const live = await latestOpenChatTurn(userId, liveSession, now);
+    expect(live?.id).toBe(older);
+
+    await db.update(chatTurns).set({ status: "failed" }).where(eq(chatTurns.id, older));
+    expect(await latestOpenChatTurn(userId, liveSession, now)).toBeNull();
   });
 });

@@ -159,6 +159,32 @@ export function mergeLateReplyIntoMessages(messages, turn) {
 }
 
 /**
+ * How long the page waits on a late reply before taking the "..." bubble
+ * down. Covers the server's 90s first-token budget plus decode slack on a
+ * CPU host (`LLM_LOCAL_FIRST_TOKEN_MS` + `LLM_LOCAL_DECODE_SLACK_MS`).
+ */
+export const LATE_REPLY_POLL_MS = 150_000;
+
+/**
+ * Remove the placeholder bubble added while waiting on `turnId`. Bubbles for
+ * other turns (a send that started meanwhile) stay.
+ *
+ * @param {Record<string, unknown>[] | null | undefined} messages
+ * @param {string} turnId
+ */
+export function dropLateTurnPlaceholder(messages, turnId) {
+  return (messages || []).filter(
+    (message) =>
+      !(
+        message &&
+        (message.character_name === "__typing__" ||
+          message.character_name === "__thinking__") &&
+        message.late_turn_id === turnId
+      ),
+  );
+}
+
+/**
  * Poll until the turn has assistant text, fails, or the window ends.
  *
  * @param {{
