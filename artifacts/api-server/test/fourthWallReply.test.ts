@@ -6,6 +6,7 @@ import {
   fourthWallRetryAllowed,
   inWorldRetryReminder,
   isFourthWallReply,
+  isThirdPersonSelfNarration,
 } from "../src/lib/fourthWallReply";
 
 const SCREENSHOT =
@@ -47,6 +48,34 @@ describe("fourth-wall replies", () => {
     );
     expect(reminder).not.toMatch(/cinematic universe/i);
     expect(reminder).not.toMatch(/\bmcu\b/i);
+  });
+
+  it("catches an opening that narrates the companion in the third person", () => {
+    const opener =
+      "Natasha Romanoff found herself surrounded by the quiet of the cliff.";
+    expect(isThirdPersonSelfNarration(opener, "Natasha Romanoff")).toBe(true);
+    expect(isFourthWallReply(opener, "Natasha Romanoff")).toBe(true);
+    expect(isFourthWallReply("Natasha felt the wind drop.", "Natasha Romanoff")).toBe(true);
+    expect(isFourthWallReply("Natasha smiled once.", "Natasha Romanoff")).toBe(true);
+    expect(isFourthWallReply("Natasha turned toward the cliff.", "Natasha Romanoff")).toBe(
+      true,
+    );
+    expect(
+      isFourthWallReply("I stay on the cliff. I don't narrate it.", "Natasha Romanoff"),
+    ).toBe(false);
+    expect(
+      isFourthWallReply(
+        "People call me Natasha. The wind is worse up here.",
+        "Natasha Romanoff",
+      ),
+    ).toBe(false);
+    expect(
+      isFourthWallReply(
+        "The wind moved. Natasha turned toward me after that.",
+        "Natasha Romanoff",
+      ),
+    ).toBe(false);
+    expect(isFourthWallReply(opener)).toBe(false);
   });
 
   it("caps the backup short and skips it after half of the 90s budget", () => {
