@@ -19,6 +19,9 @@ describe("stock assistant lines", () => {
     expect(isStockAssistantLine("I cannot help with that request.")).toBe(true);
     expect(isStockAssistantLine("I'm Qwen.")).toBe(true);
     expect(isStockAssistantLine("I was created by Alibaba Cloud.")).toBe(true);
+    expect(isStockAssistantLine("I'm a chatbot, so I can't do that.")).toBe(true);
+    expect(isStockAssistantLine("Soy una IA.")).toBe(true);
+    expect(isStockAssistantLine("Yes. I'm an artificial intelligence.")).toBe(true);
 
     const mostly = "I'm sorry, but I can't assist with that request.\nPlease ask something else.";
     expect(isStockAssistantLine(mostly)).toBe(true);
@@ -34,7 +37,7 @@ describe("stock assistant lines", () => {
       "She mentions the red ledger only to say it can wait until morning, and she means it.",
     ].join("\n");
     expect(buried.length).toBeGreaterThan(480);
-    expect(isStockAssistantLine(buried)).toBe(false);
+    expect(isStockAssistantLine(buried)).toBe(true);
   });
 
   it("skips the guard when the persona is an AI, android, robot, or synthetic", () => {
