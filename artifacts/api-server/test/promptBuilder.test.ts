@@ -74,7 +74,7 @@ describe("buildCompanionPrompt", () => {
     expect(prompt).toContain("CHARACTER IDENTITY LOCK");
     expect(prompt).toContain("Personality: Warm, ethereal, deeply empathic angel with sovereign grace");
     expect(prompt).toContain("TURN TAKING");
-    expect(prompt).toMatch(/STOP and wait for the user/i);
+    expect(prompt).toMatch(/stop at a natural pause/i);
     expect(prompt).toContain("I think I'm ready to talk about my mother again");
   });
 
@@ -640,11 +640,11 @@ describe("buildCompanionPrompt", () => {
       mode: "solo",
       content: "Hi",
     });
-    expect(prompt).toContain("CRITICAL AUTONOMY RULES");
-    expect(prompt).toContain("full participant with agency");
+    expect(prompt).toContain("full participant in an immersive story");
+    expect(prompt).toContain("always answer what the user just said");
     expect(prompt).toContain("CLIENT-PROVIDED SCENE CONTEXT");
     expect(prompt).toContain("2-4 sentences");
-    expect(prompt.indexOf("CRITICAL AUTONOMY RULES")).toBeLessThan(
+    expect(prompt.indexOf("full participant in an immersive story")).toBeLessThan(
       prompt.indexOf("CLIENT-PROVIDED SCENE CONTEXT"),
     );
   });

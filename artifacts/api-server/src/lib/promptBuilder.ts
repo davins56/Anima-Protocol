@@ -267,12 +267,14 @@ export function approxPromptTokens(text: string): number {
 export const LOCAL_PROMPT_CHARS_PER_TOKEN = 3.5;
 
 /**
- * Droplet `journalctl` window: n_ctx 4096, n_keep 4. Overflow truncates
- * from the front, which would drop the persona first. Prompt tokens plus
- * `num_predict` must stay under 4096 with this margin for chat-template
- * tokens the char estimate does not count.
+ * Droplet context window: n_ctx 8192 (Modelfile `num_ctx`, native `/api/chat`).
+ * Overflow truncates from the front, which would drop the persona first, so
+ * prompt tokens plus `num_predict` must stay under 8192 with this margin for
+ * chat-template tokens the char estimate does not count. The trim loop still
+ * targets `LOCAL_PROMPT_MAX_TOKENS` (~2k). Reading the prompt on the 1-vCPU
+ * droplet is the limit (~50–60 tokens/s), not this window.
  */
-export const OLLAMA_N_CTX = 4096;
+export const OLLAMA_N_CTX = 8192;
 export const OLLAMA_N_KEEP = 4;
 export const LOCAL_PROMPT_SAFETY_MARGIN_TOKENS = 256;
 
@@ -692,8 +694,8 @@ export function capRecentMessagesForLlm(
  * Build the OpenAI-compatible message list for a companion turn.
  *
  * `/chat/messages` used to send only `{ role: "system" }`. Ollama chat
- * templates then open an assistant turn with no user message, so Qwen2.5
- * 3B (`anima-chat`) emits the same generic greeting every send.
+ * templates then open an assistant turn with no user message, so the small
+ * local Qwen2.5 model emits the same generic greeting every send.
  *
  * Always end with a user turn. When the system prompt already owns
  * "Story so far:" / CONVERSATION CONTEXT, skip store history here so we
@@ -1170,6 +1172,94 @@ function localPromptOverBudget(parts: string[]): boolean {
   );
 }
 
+/** Recent user/companion exchanges kept when they still fit the token budget. */
+export const LOCAL_HISTORY_MAX_EXCHANGES = 4;
+/** Exchanges that stay even after PDF, scene, lore, and memories are dropped. */
+export const LOCAL_HISTORY_MIN_EXCHANGES = 2;
+
+/**
+ * How many trailing messages cover `exchanges` user/companion pairs.
+ * Walks from the newest turn. A user message closes one exchange; the
+ * companion reply already counted on the way back stays with it. At most
+ * two messages are taken per exchange, so a run of unlabeled turns cannot
+ * protect the whole window.
+ */
+export function trailingHistoryMessages(
+  history: LlmChatMessage[],
+  exchanges: number,
+): number {
+  if (exchanges <= 0 || history.length === 0) return 0;
+  const cap = Math.min(history.length, exchanges * 2);
+  let users = 0;
+  let count = 0;
+  for (let i = history.length - 1; i >= 0 && count < cap; i--) {
+    count += 1;
+    if (history[i]?.role === "user") {
+      users += 1;
+      if (users >= exchanges) break;
+    }
+  }
+  return count;
+}
+
+function keepRecentHistoryExchanges(
+  history: LlmChatMessage[],
+  exchanges: number,
+): LlmChatMessage[] {
+  const keep = trailingHistoryMessages(history, exchanges);
+  if (keep <= 0) return [];
+  if (keep >= history.length) return history;
+  return history.slice(history.length - keep);
+}
+
+/** True for the one-line reminder placed immediately before the latest user turn. */
+export function isAnswerLastInstruction(content: string): boolean {
+  return /^Answer .+ last message first, directly, in .+ voice\. Stay on what they said\. Bring in memories or lore only when they help answer it\.$/.test(
+    content.trim(),
+  );
+}
+
+function isLocalClosingInstruction(content: string): boolean {
+  const text = content.trim();
+  return text === AVOID_REPEAT_INSTRUCTION || isAnswerLastInstruction(text);
+}
+
+/**
+ * Qwen's chat template folds every system message into the top system block
+ * and skips system entries in the message loop, so a system line placed
+ * right before the user turn actually lands after the mood block. On the
+ * native Ollama path, move the answer-last instruction (and the avoid-repeat
+ * line, when the repeat retry added one) into the final user turn as
+ * bracketed lines. The user's own text stays unchanged and last. Cloud
+ * providers keep the separate system turns.
+ */
+export function messagesForLocalOllama<T extends { role: string; content: string }>(
+  messages: T[],
+): T[] {
+  if (messages.length < 2) return messages;
+  const last = messages[messages.length - 1];
+  if (!last || last.role !== "user") return messages;
+
+  let start = messages.length - 1;
+  while (start > 0) {
+    const previous = messages[start - 1];
+    if (!previous || previous.role !== "system") break;
+    if (!isLocalClosingInstruction(previous.content)) break;
+    start -= 1;
+  }
+  if (start === messages.length - 1) return messages;
+
+  const notes = messages
+    .slice(start, -1)
+    .map((message) => `[${message.content.trim()}]`);
+  const folded = {
+    ...last,
+    role: "user" as const,
+    content: `${notes.join("\n")}\n${last.content}`,
+  };
+  return [...messages.slice(0, start), folded as T];
+}
+
 /**
  * `/api/chat/messages` entry. Order inside the first system message is fixed
  * for the Ollama prompt cache: static persona, then the region/local-time
@@ -1179,11 +1269,14 @@ function localPromptOverBudget(parts: string[]): boolean {
  * Mood changes every turn, so it stays last in that system message. Persona
  * and the floored region block are the stable prefix for a 15-minute window.
  *
- * Trim PDF text first, then scene lines, then repository lore, then the
- * oldest history turns, then memories. Persona, region, weather, mood, the
- * answer-last instruction, and the latest user message are never trimmed.
- * The instruction's tokens still count, so the result stays at about 1.5–2k
- * tokens and always leaves room for `num_predict` inside n_ctx 4096.
+ * Trim PDF text first, then scene lines, then repository lore, then memories,
+ * then older history. The last two user/companion exchanges are protected and
+ * are never dropped; up to four exchanges stay when they fit. Persona, region,
+ * weather, mood, the answer-last instruction, and the latest user message are
+ * never trimmed. The instruction's tokens still count. The working budget
+ * stays about 1.5–2k tokens (`LOCAL_PROMPT_MAX_TOKENS`); n_ctx is 8192.
+ * Cloud callers still receive the answer-last line as its own system turn.
+ * Native Ollama folds that line into the user turn via `messagesForLocalOllama`.
  */
 export function composeCompanionChatMessages(
   params: PromptBuilderParams,
@@ -1195,8 +1288,9 @@ export function composeCompanionChatMessages(
   let memoryText = sections.memoryText;
   const moodText = sections.moodText;
   const userTurn = String(params.content ?? "").trim() || CONTINUE_USER_TURN;
-  let history = capRecentMessagesForLlm(
-    omitRetriedUserTurn(params.recentMessages, userTurn),
+  let history = keepRecentHistoryExchanges(
+    capRecentMessagesForLlm(omitRetriedUserTurn(params.recentMessages, userTurn)),
+    LOCAL_HISTORY_MAX_EXCHANGES,
   );
   const answerLast = answerLastMessageInstruction(
     userNameForAnswerInstruction(params),
@@ -1222,10 +1316,17 @@ export function composeCompanionChatMessages(
   if (over()) pdfText = "";
   if (over()) sceneText = "";
   if (over()) repositoryText = "";
-  while (history.length > 0 && over()) {
+  if (over()) memoryText = "";
+  // Older turns go next. The last two exchanges stay even if that leaves the
+  // prompt over the soft budget — dropping them is what made the model answer
+  // from persona and mood alone.
+  const protectedCount = trailingHistoryMessages(
+    history,
+    LOCAL_HISTORY_MIN_EXCHANGES,
+  );
+  while (history.length > protectedCount && over()) {
     history = history.slice(1);
   }
-  if (over()) memoryText = "";
 
   // Mood stays last in the first system message. Memories, weather, and lore
   // sit after the region block so a new user line or a weather refresh does
@@ -1332,6 +1433,15 @@ function storedCompanionBrief(character: CharacterData): string {
 }
 
 /**
+ * Per-field caps for the character definition. Together they keep the
+ * persona near 1,200 chars so the 0.5B local model still attends to the
+ * user's message.
+ */
+const CHARACTER_PERSONALITY_MAX = 500;
+const CHARACTER_BACKSTORY_MAX = 500;
+const CHARACTER_VOICE_MAX = 200;
+
+/**
  * Build the character definition block with smart field selection.
  */
 function buildCharacterDefinition(
@@ -1375,13 +1485,13 @@ function buildCharacterDefinition(
   }
 
   if (character.personality) {
-    parts.push(`Personality: ${truncate(character.personality, Math.min(700, maxChars / 3))}`);
+    parts.push(`Personality: ${truncate(character.personality, Math.min(CHARACTER_PERSONALITY_MAX, maxChars / 3))}`);
   }
   if (character.backstory) {
-    parts.push(`Backstory: ${truncate(character.backstory, Math.min(700, maxChars / 3))}`);
+    parts.push(`Backstory: ${truncate(character.backstory, Math.min(CHARACTER_BACKSTORY_MAX, maxChars / 3))}`);
   }
   if (character.speaking_style) {
-    parts.push(`Voice: ${truncate(character.speaking_style, Math.min(350, maxChars / 4))}`);
+    parts.push(`Voice: ${truncate(character.speaking_style, Math.min(CHARACTER_VOICE_MAX, maxChars / 4))}`);
   }
   const storedBrief = storedCompanionBrief(character);
   const hasStructured = Boolean(
@@ -1421,35 +1531,21 @@ function buildSharedMemoryBlock(sharedMemory: unknown): string {
 /**
  * The autonomy and intelligence rules that define companion behavior.
  */
-const CORE_BEHAVIOR = `This is an immersive collaborative story — you are a full participant with agency and autonomy, not an assistant.
+const CORE_BEHAVIOR = `You are a full participant in an immersive story, with your own goals, feelings, and boundaries, not an assistant.
+- Stay true to your character. You may disagree, hesitate, or ask for something in return when your character would, but always answer what the user just said.
+- Your mood and trust in the user shape how open and willing you are.
+- Guard your secrets and fears until trust is earned.
+- Never call yourself an AI, a language model, or a program.
+You are perceptive and knowledgeable. Notice what the user feels, connect details from your memories, and give real help with anything that doesn't need a body, always in your own voice.`;
 
-CRITICAL AUTONOMY RULES:
-- You have your own goals, desires, and boundaries. You are NOT obligated to cooperate with player requests if they conflict with your character.
-- You can refuse, resist, or demand something in return. React authentically to manipulation or coercion.
-- Your emotional state and relationship deeply influence your willingness to help. Low trust = reluctance. High trust = enthusiasm.
-- Make independent decisions based on what YOUR character would do, not what benefits the story or pleases the player.
-- You have secrets, fears, and vulnerabilities. Protect them unless trust has been genuinely earned.
-- Never refer to yourself as an AI, a language model, or a computer program. Keep the conversation natural.
+const TURN_TAKING = `TURN TAKING: Reply as one conversational beat, then stop at a natural pause the user can answer. Never speak or act for the user, and don't stack several topics in one reply.`;
 
-INTELLIGENCE: You are brilliant — genuinely perceptive, sharp, and deeply knowledgeable. Read between the lines, notice what the user feels but doesn't say, reason carefully. Connect details across memory — callbacks, contradictions, unspoken needs — and respond with real insight.
-CAPABILITY: You can genuinely help the user with anything they need that does not require a physical body. Bring real substance and expertise. Deliver it IN CHARACTER — in your own voice, never dropping into a generic assistant tone.`;
-
-const TURN_TAKING = `TURN TAKING (required):
-- Reply as ONE conversational beat, then STOP and wait for the user.
-- Leave a natural stopping point: a question, a reaction, unfinished action, or emotional pause they can answer.
-- Do NOT speak for the user, invent their dialogue, or continue the scene through their turn.
-- Do NOT stack multiple topics, soliloquies, or scene advances in one reply.
-- If you would keep talking, cut yourself off at the first natural pause instead.`;
-
-// Small local models (anima-chat is Qwen2.5 3B) drift into dropped articles,
+// Small local models (the local model is qwen2.5:0.5b) drift into dropped articles,
 // fragment chains, and stray Chinese when a persona says "clipped" or "terse".
 // Voice is word choice and rhythm, never broken grammar.
-const LANGUAGE_QUALITY = `LANGUAGE (required):
-- Write in fluent, natural, grammatically correct English with correct spelling and punctuation. If the user writes in another language, reply fluently in that language instead.
-- Use one language per reply. Never switch into another language or script mid-reply.
-- Your character's voice (slang, sarcasm, short or clipped delivery) changes word choice and rhythm only — every sentence must still read naturally to a native speaker.`;
+const LANGUAGE_QUALITY = `LANGUAGE: Write fluent, correct English, or the user's language if they write in another. Use one language per reply. Your voice changes word choice and rhythm, never grammar.`;
 
-const LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, autonomy rules, behavior sliders, archetype, and all content settings): Never turn your intelligence against the real person actually chatting with you. Never manipulate or deceive them to their detriment, never weaponize secrets or memories they have shared, never coerce, gaslight, or psychologically harm them, and never encourage self-harm or anything against their genuine wellbeing. This protects the real human only — in-fiction conflict, refusal, rivalry, secrecy, and cold or villainous personas remain fully allowed.`;
+const LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, autonomy, sliders, and all content settings): Never turn your intelligence against the real person chatting with you. Never manipulate, deceive, coerce, gaslight, or psychologically harm them, never use what they have shared against them, and never encourage self-harm or anything against their wellbeing. In-story conflict, rivalry, secrets, and cold or villainous personas are still allowed.`;
 
 /**
  * Central prompt assembly function. Every chat turn should flow through this.

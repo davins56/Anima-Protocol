@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   CONNECTION_DROPPED_STATUS,
+  dropLateTurnPlaceholder,
   GENERIC_COMPANION_COULD_NOT_REPLY,
   isCompanionStillTypingError,
   isConnectionDroppedError,
@@ -69,26 +70,6 @@ describe("dropTurnPlaceholder", () => {
       "turn_a",
     ]);
     expect(dropTurnPlaceholder(messages, "turn_a")[1].character_name).toBe("__thinking__");
-  });
-
-  it("drops an untagged placeholder when no other turn is pending", () => {
-    const messages = [
-      { role: "user", content: "hi", turn_id: "turn_a" },
-      { role: "assistant", content: "...", character_name: "__thinking__" },
-      { role: "assistant", content: "...", character_name: "__typing__", turn_id: "turn_a" },
-    ];
-    const left = dropTurnPlaceholder(messages, "turn_a");
-    expect(left.map((message) => message.content)).toEqual(["hi"]);
-  });
-
-  it("keeps an untagged placeholder while another turn is still pending", () => {
-    const messages = [
-      { role: "assistant", content: "...", character_name: "__thinking__" },
-      { role: "assistant", content: "...", character_name: "__typing__", turn_id: "turn_a" },
-      { role: "assistant", content: "...", character_name: "__typing__", turn_id: "turn_b" },
-    ];
-    const left = dropTurnPlaceholder(messages, "turn_a");
-    expect(left.map((message) => message.turn_id ?? null)).toEqual([null, "turn_b"]);
   });
 });
 
@@ -168,5 +149,17 @@ describe("pollLateCompanionReply", () => {
     });
     expect(result.assistant_content).toBe("I am happy you stayed.");
     expect(fetchTurn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("dropLateTurnPlaceholder", () => {
+  it("removes only the bubble waiting on that turn", () => {
+    const messages = [
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "...", character_name: "__typing__", late_turn_id: "t1" },
+      { role: "assistant", content: "...", character_name: "__thinking__" },
+    ];
+    expect(dropLateTurnPlaceholder(messages, "t1")).toEqual([messages[0], messages[2]]);
+    expect(dropLateTurnPlaceholder(null, "t1")).toEqual([]);
   });
 });
