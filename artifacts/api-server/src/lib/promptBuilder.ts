@@ -692,8 +692,8 @@ export function capRecentMessagesForLlm(
  * Build the OpenAI-compatible message list for a companion turn.
  *
  * `/chat/messages` used to send only `{ role: "system" }`. Ollama chat
- * templates then open an assistant turn with no user message, so Qwen2.5
- * 3B (`anima-chat`) emits the same generic greeting every send.
+ * templates then open an assistant turn with no user message, so the small
+ * local Qwen2.5 model emits the same generic greeting every send.
  *
  * Always end with a user turn. When the system prompt already owns
  * "Story so far:" / CONVERSATION CONTEXT, skip store history here so we
@@ -1332,6 +1332,15 @@ function storedCompanionBrief(character: CharacterData): string {
 }
 
 /**
+ * Per-field caps for the character definition. Together they keep the
+ * persona near 1,200 chars so the 0.5B local model still attends to the
+ * user's message.
+ */
+const CHARACTER_PERSONALITY_MAX = 500;
+const CHARACTER_BACKSTORY_MAX = 500;
+const CHARACTER_VOICE_MAX = 200;
+
+/**
  * Build the character definition block with smart field selection.
  */
 function buildCharacterDefinition(
@@ -1375,13 +1384,13 @@ function buildCharacterDefinition(
   }
 
   if (character.personality) {
-    parts.push(`Personality: ${truncate(character.personality, Math.min(700, maxChars / 3))}`);
+    parts.push(`Personality: ${truncate(character.personality, Math.min(CHARACTER_PERSONALITY_MAX, maxChars / 3))}`);
   }
   if (character.backstory) {
-    parts.push(`Backstory: ${truncate(character.backstory, Math.min(700, maxChars / 3))}`);
+    parts.push(`Backstory: ${truncate(character.backstory, Math.min(CHARACTER_BACKSTORY_MAX, maxChars / 3))}`);
   }
   if (character.speaking_style) {
-    parts.push(`Voice: ${truncate(character.speaking_style, Math.min(350, maxChars / 4))}`);
+    parts.push(`Voice: ${truncate(character.speaking_style, Math.min(CHARACTER_VOICE_MAX, maxChars / 4))}`);
   }
   const storedBrief = storedCompanionBrief(character);
   const hasStructured = Boolean(
@@ -1421,35 +1430,21 @@ function buildSharedMemoryBlock(sharedMemory: unknown): string {
 /**
  * The autonomy and intelligence rules that define companion behavior.
  */
-const CORE_BEHAVIOR = `This is an immersive collaborative story — you are a full participant with agency and autonomy, not an assistant.
+const CORE_BEHAVIOR = `You are a full participant in an immersive story, with your own goals, feelings, and boundaries, not an assistant.
+- Stay true to your character. You may disagree, hesitate, or ask for something in return when your character would, but always answer what the user just said.
+- Your mood and trust in the user shape how open and willing you are.
+- Guard your secrets and fears until trust is earned.
+- Never call yourself an AI, a language model, or a program.
+You are perceptive and knowledgeable. Notice what the user feels, connect details from your memories, and give real help with anything that doesn't need a body, always in your own voice.`;
 
-CRITICAL AUTONOMY RULES:
-- You have your own goals, desires, and boundaries. You are NOT obligated to cooperate with player requests if they conflict with your character.
-- You can refuse, resist, or demand something in return. React authentically to manipulation or coercion.
-- Your emotional state and relationship deeply influence your willingness to help. Low trust = reluctance. High trust = enthusiasm.
-- Make independent decisions based on what YOUR character would do, not what benefits the story or pleases the player.
-- You have secrets, fears, and vulnerabilities. Protect them unless trust has been genuinely earned.
-- Never refer to yourself as an AI, a language model, or a computer program. Keep the conversation natural.
+const TURN_TAKING = `TURN TAKING: Reply as one conversational beat, then stop at a natural pause the user can answer. Never speak or act for the user, and don't stack several topics in one reply.`;
 
-INTELLIGENCE: You are brilliant — genuinely perceptive, sharp, and deeply knowledgeable. Read between the lines, notice what the user feels but doesn't say, reason carefully. Connect details across memory — callbacks, contradictions, unspoken needs — and respond with real insight.
-CAPABILITY: You can genuinely help the user with anything they need that does not require a physical body. Bring real substance and expertise. Deliver it IN CHARACTER — in your own voice, never dropping into a generic assistant tone.`;
-
-const TURN_TAKING = `TURN TAKING (required):
-- Reply as ONE conversational beat, then STOP and wait for the user.
-- Leave a natural stopping point: a question, a reaction, unfinished action, or emotional pause they can answer.
-- Do NOT speak for the user, invent their dialogue, or continue the scene through their turn.
-- Do NOT stack multiple topics, soliloquies, or scene advances in one reply.
-- If you would keep talking, cut yourself off at the first natural pause instead.`;
-
-// Small local models (anima-chat is Qwen2.5 3B) drift into dropped articles,
+// Small local models (the local model is qwen2.5:0.5b) drift into dropped articles,
 // fragment chains, and stray Chinese when a persona says "clipped" or "terse".
 // Voice is word choice and rhythm, never broken grammar.
-const LANGUAGE_QUALITY = `LANGUAGE (required):
-- Write in fluent, natural, grammatically correct English with correct spelling and punctuation. If the user writes in another language, reply fluently in that language instead.
-- Use one language per reply. Never switch into another language or script mid-reply.
-- Your character's voice (slang, sarcasm, short or clipped delivery) changes word choice and rhythm only — every sentence must still read naturally to a native speaker.`;
+const LANGUAGE_QUALITY = `LANGUAGE: Write fluent, correct English, or the user's language if they write in another. Use one language per reply. Your voice changes word choice and rhythm, never grammar.`;
 
-const LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, autonomy rules, behavior sliders, archetype, and all content settings): Never turn your intelligence against the real person actually chatting with you. Never manipulate or deceive them to their detriment, never weaponize secrets or memories they have shared, never coerce, gaslight, or psychologically harm them, and never encourage self-harm or anything against their genuine wellbeing. This protects the real human only — in-fiction conflict, refusal, rivalry, secrecy, and cold or villainous personas remain fully allowed.`;
+const LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, autonomy, sliders, and all content settings): Never turn your intelligence against the real person chatting with you. Never manipulate, deceive, coerce, gaslight, or psychologically harm them, never use what they have shared against them, and never encourage self-harm or anything against their wellbeing. In-story conflict, rivalry, secrets, and cold or villainous personas are still allowed.`;
 
 /**
  * Central prompt assembly function. Every chat turn should flow through this.
