@@ -267,12 +267,14 @@ export function approxPromptTokens(text: string): number {
 export const LOCAL_PROMPT_CHARS_PER_TOKEN = 3.5;
 
 /**
- * Droplet `journalctl` window: n_ctx 4096, n_keep 4. Overflow truncates
- * from the front, which would drop the persona first. Prompt tokens plus
- * `num_predict` must stay under 4096 with this margin for chat-template
- * tokens the char estimate does not count.
+ * Droplet context window: n_ctx 8192 (Modelfile `num_ctx`, native `/api/chat`).
+ * Overflow truncates from the front, which would drop the persona first, so
+ * prompt tokens plus `num_predict` must stay under 8192 with this margin for
+ * chat-template tokens the char estimate does not count. The trim loop still
+ * targets `LOCAL_PROMPT_MAX_TOKENS` (~2k). Reading the prompt on the 1-vCPU
+ * droplet is the limit (~50–60 tokens/s), not this window.
  */
-export const OLLAMA_N_CTX = 4096;
+export const OLLAMA_N_CTX = 8192;
 export const OLLAMA_N_KEEP = 4;
 export const LOCAL_PROMPT_SAFETY_MARGIN_TOKENS = 256;
 
@@ -1170,6 +1172,94 @@ function localPromptOverBudget(parts: string[]): boolean {
   );
 }
 
+/** Recent user/companion exchanges kept when they still fit the token budget. */
+export const LOCAL_HISTORY_MAX_EXCHANGES = 4;
+/** Exchanges that stay even after PDF, scene, lore, and memories are dropped. */
+export const LOCAL_HISTORY_MIN_EXCHANGES = 2;
+
+/**
+ * How many trailing messages cover `exchanges` user/companion pairs.
+ * Walks from the newest turn. A user message closes one exchange; the
+ * companion reply already counted on the way back stays with it. At most
+ * two messages are taken per exchange, so a run of unlabeled turns cannot
+ * protect the whole window.
+ */
+export function trailingHistoryMessages(
+  history: LlmChatMessage[],
+  exchanges: number,
+): number {
+  if (exchanges <= 0 || history.length === 0) return 0;
+  const cap = Math.min(history.length, exchanges * 2);
+  let users = 0;
+  let count = 0;
+  for (let i = history.length - 1; i >= 0 && count < cap; i--) {
+    count += 1;
+    if (history[i]?.role === "user") {
+      users += 1;
+      if (users >= exchanges) break;
+    }
+  }
+  return count;
+}
+
+function keepRecentHistoryExchanges(
+  history: LlmChatMessage[],
+  exchanges: number,
+): LlmChatMessage[] {
+  const keep = trailingHistoryMessages(history, exchanges);
+  if (keep <= 0) return [];
+  if (keep >= history.length) return history;
+  return history.slice(history.length - keep);
+}
+
+/** True for the one-line reminder placed immediately before the latest user turn. */
+export function isAnswerLastInstruction(content: string): boolean {
+  return /^Answer .+ last message first, directly, in .+ voice\. Stay on what they said\. Bring in memories or lore only when they help answer it\.$/.test(
+    content.trim(),
+  );
+}
+
+function isLocalClosingInstruction(content: string): boolean {
+  const text = content.trim();
+  return text === AVOID_REPEAT_INSTRUCTION || isAnswerLastInstruction(text);
+}
+
+/**
+ * Qwen's chat template folds every system message into the top system block
+ * and skips system entries in the message loop, so a system line placed
+ * right before the user turn actually lands after the mood block. On the
+ * native Ollama path, move the answer-last instruction (and the avoid-repeat
+ * line, when the repeat retry added one) into the final user turn as
+ * bracketed lines. The user's own text stays unchanged and last. Cloud
+ * providers keep the separate system turns.
+ */
+export function messagesForLocalOllama<T extends { role: string; content: string }>(
+  messages: T[],
+): T[] {
+  if (messages.length < 2) return messages;
+  const last = messages[messages.length - 1];
+  if (!last || last.role !== "user") return messages;
+
+  let start = messages.length - 1;
+  while (start > 0) {
+    const previous = messages[start - 1];
+    if (!previous || previous.role !== "system") break;
+    if (!isLocalClosingInstruction(previous.content)) break;
+    start -= 1;
+  }
+  if (start === messages.length - 1) return messages;
+
+  const notes = messages
+    .slice(start, -1)
+    .map((message) => `[${message.content.trim()}]`);
+  const folded = {
+    ...last,
+    role: "user" as const,
+    content: `${notes.join("\n")}\n${last.content}`,
+  };
+  return [...messages.slice(0, start), folded as T];
+}
+
 /**
  * `/api/chat/messages` entry. Order inside the first system message is fixed
  * for the Ollama prompt cache: static persona, then the region/local-time
@@ -1179,11 +1269,14 @@ function localPromptOverBudget(parts: string[]): boolean {
  * Mood changes every turn, so it stays last in that system message. Persona
  * and the floored region block are the stable prefix for a 15-minute window.
  *
- * Trim PDF text first, then scene lines, then repository lore, then the
- * oldest history turns, then memories. Persona, region, weather, mood, the
- * answer-last instruction, and the latest user message are never trimmed.
- * The instruction's tokens still count, so the result stays at about 1.5–2k
- * tokens and always leaves room for `num_predict` inside n_ctx 4096.
+ * Trim PDF text first, then scene lines, then repository lore, then memories,
+ * then older history. The last two user/companion exchanges are protected and
+ * are never dropped; up to four exchanges stay when they fit. Persona, region,
+ * weather, mood, the answer-last instruction, and the latest user message are
+ * never trimmed. The instruction's tokens still count. The working budget
+ * stays about 1.5–2k tokens (`LOCAL_PROMPT_MAX_TOKENS`); n_ctx is 8192.
+ * Cloud callers still receive the answer-last line as its own system turn.
+ * Native Ollama folds that line into the user turn via `messagesForLocalOllama`.
  */
 export function composeCompanionChatMessages(
   params: PromptBuilderParams,
@@ -1195,8 +1288,9 @@ export function composeCompanionChatMessages(
   let memoryText = sections.memoryText;
   const moodText = sections.moodText;
   const userTurn = String(params.content ?? "").trim() || CONTINUE_USER_TURN;
-  let history = capRecentMessagesForLlm(
-    omitRetriedUserTurn(params.recentMessages, userTurn),
+  let history = keepRecentHistoryExchanges(
+    capRecentMessagesForLlm(omitRetriedUserTurn(params.recentMessages, userTurn)),
+    LOCAL_HISTORY_MAX_EXCHANGES,
   );
   const answerLast = answerLastMessageInstruction(
     userNameForAnswerInstruction(params),
@@ -1222,10 +1316,17 @@ export function composeCompanionChatMessages(
   if (over()) pdfText = "";
   if (over()) sceneText = "";
   if (over()) repositoryText = "";
-  while (history.length > 0 && over()) {
+  if (over()) memoryText = "";
+  // Older turns go next. The last two exchanges stay even if that leaves the
+  // prompt over the soft budget — dropping them is what made the model answer
+  // from persona and mood alone.
+  const protectedCount = trailingHistoryMessages(
+    history,
+    LOCAL_HISTORY_MIN_EXCHANGES,
+  );
+  while (history.length > protectedCount && over()) {
     history = history.slice(1);
   }
-  if (over()) memoryText = "";
 
   // Mood stays last in the first system message. Memories, weather, and lore
   // sit after the region block so a new user line or a weather refresh does
