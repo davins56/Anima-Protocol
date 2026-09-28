@@ -3,6 +3,7 @@ import {
   backgroundLlmSignal,
   beginCompanionLlmTurn,
   companionLlmTurnOpen,
+  tryBeginCompanionLlmTurn,
   isPostTurnSidecarFunction,
   localCallSignal,
   resetCompanionLlmTurnForTests,
@@ -38,6 +39,16 @@ describe("sidecar LLM occupancy", () => {
     release();
     expect(companionLlmTurnOpen()).toBe(false);
     expect(shouldSkipSidecarLlm()).toBe(false);
+  });
+
+  it("gives the local slot to only one holder at a time", () => {
+    const first = tryBeginCompanionLlmTurn("probe");
+    expect(typeof first).toBe("function");
+    expect(tryBeginCompanionLlmTurn("other")).toBeNull();
+    first?.();
+    const next = tryBeginCompanionLlmTurn("other");
+    expect(typeof next).toBe("function");
+    next?.();
   });
 
   it("releases occupancy only once", () => {

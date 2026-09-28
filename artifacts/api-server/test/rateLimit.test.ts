@@ -8,9 +8,11 @@ vi.mock("@clerk/express", () => ({
 }));
 
 import {
+  clientIp,
   createRateLimit,
   rateLimitKey,
   resetRateLimitStateForTests,
+  stripIpPort,
 } from "../src/lib/rateLimit";
 
 function mockRes() {
@@ -57,6 +59,17 @@ describe("rateLimitKey", () => {
   it("falls back to IP when unsigned", () => {
     const req = mockReq({ ip: "198.51.100.20" });
     expect(rateLimitKey(req, "chat")).toBe("chat:ip:198.51.100.20");
+  });
+
+  it("keeps a plain IPv6 address and only strips a real port", () => {
+    expect(stripIpPort("2001:db8::1234")).toBe("2001:db8::1234");
+    expect(clientIp(mockReq({ ip: "2001:db8::1234" }))).toBe("2001:db8::1234");
+    expect(clientIp(mockReq({ ip: "2001:db8::5678" }))).not.toBe(
+      clientIp(mockReq({ ip: "2001:db8::1234" })),
+    );
+    expect(stripIpPort("203.0.113.10:443")).toBe("203.0.113.10");
+    expect(stripIpPort("[2001:db8::1234]:443")).toBe("2001:db8::1234");
+    expect(clientIp(mockReq({ ip: "[2001:db8::9]:8443" }))).toBe("2001:db8::9");
   });
 });
 
