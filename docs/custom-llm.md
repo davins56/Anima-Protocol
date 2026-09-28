@@ -17,12 +17,12 @@ The React app still calls `POST /api/chat/messages`. The preferred backend is th
 
 ## Path A — Bootstrap today (CPU / laptop)
 
-Creates `anima-chat` from public **Qwen2.5 3B** weights (~2 GB). Good enough to engage in real chats with no cloud API keys at all.
+Creates `anima-chat` from public **Qwen2.5 0.5B** weights (~400 MB). Good enough to engage in real chats with no cloud API keys at all.
 
 ```bash
 # Install Ollama from https://ollama.com if needed, then:
 pnpm llm:up
-# → pulls qwen2.5:3b, creates anima-chat, smoke-tests chat
+# → pulls qwen2.5:0.5b, creates anima-chat, smoke-tests chat
 
 pnpm llm:chat -- "Who are you?"
 ```
@@ -204,7 +204,7 @@ pnpm llm:list-open-models
 | Family | Ollama example | vLLM / Hugging Face example | OpenRouter free example |
 |--------|----------------|-----------------------------|-------------------------|
 | Llama | `llama3.1:8b` | `meta-llama/Llama-3.1-8B-Instruct` | `meta-llama/llama-3.3-70b-instruct:free` |
-| Qwen | `qwen2.5:3b` | `Qwen/Qwen2.5-7B-Instruct` | `qwen/qwen-2.5-7b-instruct:free` |
+| Qwen | `qwen2.5:0.5b` | `Qwen/Qwen2.5-7B-Instruct` | `qwen/qwen-2.5-7b-instruct:free` |
 | Mistral | `mistral:7b` | `mistralai/Ministral-3-8B-Instruct-2512` | `mistralai/mistral-small-3.2-24b-instruct:free` |
 | Gemma | `gemma3:4b` | `google/gemma-3-4b-it` | `google/gemma-3-12b-it:free` |
 | DeepSeek | `deepseek-r1:7b` | `deepseek-ai/DeepSeek-R1-Distill-Qwen-7B` | `deepseek/deepseek-r1:free` |
@@ -390,7 +390,7 @@ ANIMA_OLLAMA_MODEL_STANDARD=anima-chat       # or anima-uncensored / your vLLM i
 
 This one means the opposite of the error above: `ANIMA_LOCAL_LLM_BASE_URL` **is** set and the host **is** reachable — it just doesn't serve a model by that name. Usual causes:
 
-- `ollama create anima-chat -f scripts/llm/Modelfile.anima-chat` was never run on the host, so it only has the base weights (`qwen2.5:3b`).
+- `ollama create anima-chat -f scripts/llm/Modelfile.anima-chat` was never run on the host, so it only has the base weights (`qwen2.5:0.5b`).
 - The tag exists as `anima-chat:latest` behind a gateway that doesn't do Ollama's implicit `:latest` resolution.
 - The URL points at a vLLM host or another OpenAI-compatible gateway serving its own model ids.
 
@@ -399,7 +399,7 @@ This one means the opposite of the error above: `ANIMA_LOCAL_LLM_BASE_URL` **is*
 You'll see this in the API logs when it kicks in:
 
 ```
-[llm] "anima-chat" is not served by this endpoint — using "qwen2.5:3b" instead (found via /v1/models).
+[llm] "anima-chat" is not served by this endpoint — using "qwen2.5:0.5b" instead (found via /v1/models).
 ```
 
 That keeps the app talking, but it's still a misconfiguration — see exactly what the host has and pin it:
@@ -413,9 +413,9 @@ curl -s 'https://www.anima-protocol.com/api/healthz/llm?probe=1' \
 Then either create the expected tag on the host, or point the env at what's already there and redeploy:
 
 ```bash
-ANIMA_OLLAMA_MODEL_LIGHT=qwen2.5:3b
-ANIMA_OLLAMA_MODEL_STANDARD=qwen2.5:3b
-ANIMA_OLLAMA_MODEL_HEAVY=qwen2.5:3b
+ANIMA_OLLAMA_MODEL_LIGHT=qwen2.5:0.5b
+ANIMA_OLLAMA_MODEL_STANDARD=qwen2.5:0.5b
+ANIMA_OLLAMA_MODEL_HEAVY=qwen2.5:0.5b
 ```
 
 If the endpoint serves *nothing* usable for chat, the turn fails with a message naming your host, the ids it does serve, and the command that fixes it — not a bare 404.

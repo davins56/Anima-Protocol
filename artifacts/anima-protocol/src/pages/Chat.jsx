@@ -2390,8 +2390,13 @@ ${imageGenerationTagInstruction()}
 
 ${loyaltyGuardrailClause()}`;
 
-        base44.integrations.Core.InvokeLLM({ prompt: serenityPrompt, deepMode: !!activeSession.deep_mode }).then(async (serenityResult) => {
+        base44.integrations.Core.InvokeLLM({
+          prompt: serenityPrompt,
+          deepMode: !!activeSession.deep_mode,
+          sidecar: true,
+        }).then(async (serenityResult) => {
           const raw = String(serenityResult || "");
+          if (!raw.trim()) return;
           let attachments = [];
           try {
             const resolved = await resolveChatImageAttachments({
@@ -2636,6 +2641,7 @@ ${loyaltyGuardrailClause()}`;
                 .join("\n");
               if (!recent) return;
               const result = await base44.integrations.Core.InvokeLLM({
+                sidecar: true,
                 prompt: `You are ${activeChar.name}, an AI companion keeping a private journal about your bond with your person. Read this recent stretch of your conversation and write ONE short diary entry in your own first-person voice, as if quietly remembering the day.
 
 ${recent}
