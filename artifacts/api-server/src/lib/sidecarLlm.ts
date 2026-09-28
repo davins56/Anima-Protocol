@@ -95,6 +95,16 @@ export function userHasOpenCompanionTurn(userId: string): boolean {
   return companionTurnsOpenForUser(userId) > 0;
 }
 
+/**
+ * Take the single local slot when it is idle.
+ * Check and increment stay synchronous so two probes cannot both pass.
+ * Returns null when a companion turn or another probe already holds it.
+ */
+export function tryBeginCompanionLlmTurn(userId?: string): (() => void) | null {
+  if (companionTurns > 0) return null;
+  return beginCompanionLlmTurn(userId);
+}
+
 export function beginCompanionLlmTurn(userId?: string): () => void {
   companionTurns += 1;
   const id = String(userId || "").trim();

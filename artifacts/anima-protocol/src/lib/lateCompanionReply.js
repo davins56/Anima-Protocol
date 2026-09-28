@@ -96,6 +96,25 @@ function messageBelongsToTurn(message, turnId, userId, assistantId) {
   return message.turn_id === turnId;
 }
 
+/**
+ * Remove only the typing/thinking bubble for this turn.
+ * Other in-flight placeholders in the session stay.
+ *
+ * @param {Array<Record<string, unknown>> | null | undefined} messages
+ * @param {unknown} turnId
+ */
+export function dropTurnPlaceholder(messages, turnId) {
+  const id = String(turnId || "");
+  if (!id) return messages || [];
+  return (messages || []).filter((message) => {
+    if (!message) return true;
+    const placeholder =
+      message.character_name === "__typing__" || message.character_name === "__thinking__";
+    if (placeholder && message.turn_id === id) return false;
+    return true;
+  });
+}
+
 export function mergeLateReplyIntoMessages(messages, turn) {
   const turnId = String(turn.turnId || "");
   const userId = `${turnId}:user`;
@@ -156,6 +175,32 @@ export function mergeLateReplyIntoMessages(messages, turn) {
   }
   kept.splice(insertAt, 0, ...block);
   return kept;
+}
+
+/**
+ * How long the page waits on a late reply before taking the "..." bubble
+ * down. Covers the server's 90s first-token budget plus decode slack on a
+ * CPU host (`LLM_LOCAL_FIRST_TOKEN_MS` + `LLM_LOCAL_DECODE_SLACK_MS`).
+ */
+export const LATE_REPLY_POLL_MS = 150_000;
+
+/**
+ * Remove the placeholder bubble added while waiting on `turnId`. Bubbles for
+ * other turns (a send that started meanwhile) stay.
+ *
+ * @param {Record<string, unknown>[] | null | undefined} messages
+ * @param {string} turnId
+ */
+export function dropLateTurnPlaceholder(messages, turnId) {
+  return (messages || []).filter(
+    (message) =>
+      !(
+        message &&
+        (message.character_name === "__typing__" ||
+          message.character_name === "__thinking__") &&
+        message.late_turn_id === turnId
+      ),
+  );
 }
 
 /**

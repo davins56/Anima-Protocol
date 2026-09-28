@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   CONNECTION_DROPPED_STATUS,
+  dropLateTurnPlaceholder,
   GENERIC_COMPANION_COULD_NOT_REPLY,
   isCompanionStillTypingError,
   isConnectionDroppedError,
+  dropTurnPlaceholder,
   lateTurnFailedWithoutReply,
   mergeLateReplyIntoMessages,
   pollLateCompanionReply,
@@ -51,6 +53,23 @@ describe("isCompanionStillTypingError", () => {
     const err = new Error("Not signed in — your session may have expired.");
     err.status = 401;
     expect(isCompanionStillTypingError(err)).toBe(false);
+  });
+});
+
+describe("dropTurnPlaceholder", () => {
+  it("removes only the placeholder for that turn", () => {
+    const messages = [
+      { role: "user", content: "hi", turn_id: "turn_a" },
+      { role: "assistant", content: "...", character_name: "__typing__", turn_id: "turn_a" },
+      { role: "assistant", content: "...", character_name: "__thinking__", turn_id: "turn_b" },
+      { role: "assistant", content: "still here", turn_id: "turn_a" },
+    ];
+    expect(dropTurnPlaceholder(messages, "turn_a").map((message) => message.turn_id)).toEqual([
+      "turn_a",
+      "turn_b",
+      "turn_a",
+    ]);
+    expect(dropTurnPlaceholder(messages, "turn_a")[1].character_name).toBe("__thinking__");
   });
 });
 
@@ -130,5 +149,17 @@ describe("pollLateCompanionReply", () => {
     });
     expect(result.assistant_content).toBe("I am happy you stayed.");
     expect(fetchTurn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("dropLateTurnPlaceholder", () => {
+  it("removes only the bubble waiting on that turn", () => {
+    const messages = [
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "...", character_name: "__typing__", late_turn_id: "t1" },
+      { role: "assistant", content: "...", character_name: "__thinking__" },
+    ];
+    expect(dropLateTurnPlaceholder(messages, "t1")).toEqual([messages[0], messages[2]]);
+    expect(dropLateTurnPlaceholder(null, "t1")).toEqual([]);
   });
 });
