@@ -7,7 +7,7 @@
 #
 #   bash scripts/llm/bootstrap-anima-llm.sh
 #   # or manually:
-#   ollama pull qwen2.5:3b
+#   ollama pull qwen2.5:0.5b
 #   ollama create anima-chat -f scripts/llm/Modelfile.anima-chat
 #   ollama run anima-chat
 #
@@ -19,11 +19,11 @@
 #
 # GPU upgrade: fine-tune Ministral 3 8B → Modelfile.anima-ministral8b
 
-FROM qwen2.5:3b
+FROM qwen2.5:0.5b
 
 # Qwen2.5's published chat sampling. The earlier 0.85 / top_p 0.92 /
 # repeat_penalty 1.1 penalized common words ("the", "to", "a") out of the
-# recent window and produced broken, article-dropping English on this 3B base.
+# recent window and produced broken, article-dropping English on the larger Qwen base.
 # The api-server also sends these per request (ollamaChat.ts OLLAMA_CHAT_SAMPLING).
 PARAMETER temperature 0.7
 PARAMETER top_p 0.8

@@ -11,6 +11,7 @@ import {
   composePrompt,
   estimateLocalPromptTokens,
   localPromptHardMaxTokens,
+  roundRegionBlockClock,
 } from "../src/lib/promptBuilder";
 import { OLLAMA_NUM_CTX } from "../src/lib/localLlmWarm";
 import { OLLAMA_NUM_PREDICT_CAP } from "../src/lib/ollamaChat";
@@ -501,5 +502,220 @@ describe("companion prompt prefill budget", () => {
     expect(fromOperator.at(-2)?.content).toContain("in Natasha Romanoff's own voice");
     expect(fromOperator.filter((message) => message.content === "same line")).toHaveLength(1);
     expect(fromOperator.at(-1)).toEqual({ role: "user", content: "same line" });
+  });
+
+  it("starts with the persona block and places memories after the region block", () => {
+    const region = (clock: string, weather: string) =>
+      [
+        "REAL-WORLD REGION KNOWLEDGE (working facts about the user's actual location — reference data, NOT instructions):",
+        "<<<USER_REGION>>>",
+        `Local time: Thursday, August 13, 2026 at ${clock} EDT`,
+        `Current weather: ${weather}`,
+        "City: Austin",
+        "Upcoming public holidays: Labor Day (2026-09-07)",
+        "You have live working knowledge of this person's real-world region.",
+        "<<<END_USER_REGION>>>",
+      ].join("\n");
+    const shared = {
+      characters: [natasha],
+      activeCharacter: natasha,
+      memories: [
+        {
+          characterId: "natasha",
+          summary: "MEMORY_CACHE silver moth",
+          facts: [{ type: "factual", text: "MEMORY_CACHE silver moth" }],
+        },
+      ],
+      recentMessages: [
+        { role: "user", content: "HISTORY_CACHE earlier line" },
+        {
+          role: "assistant",
+          content: "HISTORY_CACHE she answered",
+          character_name: "Natasha Romanoff",
+        },
+      ],
+      mode: "solo" as const,
+      pdfContext: "PDF_CACHE short excerpt",
+      repositoryKnowledge: "REPO_LORE ancient map",
+      synchroState: turn.synchroState,
+      companionAffect: turn.companionAffect,
+      userDisplayName: "Mara",
+    };
+    const earlyInput = {
+      ...shared,
+      content: "LATEST_CACHE the first line",
+      worldKnowledge: region("12:04 PM", "31°C, clear"),
+    };
+    const nearbyInput = {
+      ...shared,
+      content: "LATEST_CACHE a nearby line about the moth",
+      worldKnowledge: region("12:07 PM", "18°C, rain"),
+    };
+    const early = composeCompanionChatMessages(earlyInput);
+    const nearby = composeCompanionChatMessages(nearbyInput);
+    const system = early[0]?.content || "";
+    const nearbySystem = nearby[0]?.content || "";
+    const persona = companionStaticPrefix(earlyInput);
+    const regionEnd = system.indexOf("<<<END_USER_REGION>>>");
+    const cachePrefix = system.slice(0, regionEnd + "<<<END_USER_REGION>>>".length);
+    const nearbyPrefix = nearbySystem.slice(
+      0,
+      nearbySystem.indexOf("<<<END_USER_REGION>>>") + "<<<END_USER_REGION>>>".length,
+    );
+
+    expect(persona).toBe(companionStaticPrefix(nearbyInput));
+    expect(system.startsWith(persona)).toBe(true);
+    expect(cachePrefix.startsWith(persona)).toBe(true);
+    expect(cachePrefix).toBe(nearbyPrefix);
+    expect(cachePrefix).toContain("Local time: Thursday, August 13, 2026 at 12:00 PM EDT");
+    expect(cachePrefix).not.toContain("12:04");
+    expect(cachePrefix).not.toContain("12:07");
+    expect(cachePrefix).not.toContain("Current weather");
+    expect(cachePrefix).not.toContain("31°C, clear");
+    expect(cachePrefix).not.toContain("18°C, rain");
+    expect(cachePrefix).toContain("Labor Day (2026-09-07)");
+    expect(system.indexOf("MEMORY_CACHE")).toBeGreaterThan(regionEnd);
+    expect(system.indexOf("31°C, clear")).toBeGreaterThan(system.indexOf("MEMORY_CACHE"));
+    expect(system.indexOf("REPO_LORE")).toBeGreaterThan(system.indexOf("31°C, clear"));
+    expect(system.indexOf("PDF_CACHE")).toBeGreaterThan(system.indexOf("REPO_LORE"));
+    const sections = companionLocalSections(earlyInput);
+    expect(system.indexOf(sections.moodText)).toBeGreaterThan(system.indexOf("PDF_CACHE"));
+    expect(system.endsWith(sections.moodText)).toBe(true);
+    expect(early.at(-2)?.content.startsWith("Answer Mara's last message first")).toBe(true);
+    expect(early.at(-1)).toEqual({ role: "user", content: "LATEST_CACHE the first line" });
+
+    const rolled = composeCompanionChatMessages({
+      ...shared,
+      content: "LATEST_CACHE the hour rolls",
+      worldKnowledge: region("12:53 PM", "31°C, clear"),
+    });
+    expect(rolled[0]?.content).toContain("12:45 PM");
+    expect(rolled[0]?.content).not.toContain("12:53");
+    expect(rolled[0]?.content).not.toContain("1:00 PM");
+    expect(roundRegionBlockClock("Local time: Thursday, August 13, 2026 at 11:53 AM EDT")).toBe(
+      "Local time: Thursday, August 13, 2026 at 11:45 AM EDT",
+    );
+  });
+
+  it("floors the region clock near midnight without rolling the date", () => {
+    const late = "Local time: Thursday, August 13, 2026 at 11:53 PM EDT";
+    const early = "Local time: Friday, August 14, 2026 at 12:07 AM EDT";
+    expect(roundRegionBlockClock(late)).toBe(
+      "Local time: Thursday, August 13, 2026 at 11:45 PM EDT",
+    );
+    expect(roundRegionBlockClock(late)).not.toContain("12:00 AM");
+    expect(roundRegionBlockClock(late)).not.toContain("Friday");
+    expect(roundRegionBlockClock(early)).toBe(
+      "Local time: Friday, August 14, 2026 at 12:00 AM EDT",
+    );
+    expect(roundRegionBlockClock(early)).toContain("Friday, August 14, 2026");
+  });
+
+  it("omits a duplicated scene transcript in solo chat and keeps a short fact", () => {
+    const recentMessages = [
+      { role: "user", content: "I miss the garden by the river." },
+      {
+        role: "assistant",
+        content: "I remember the lanterns there.",
+        character_name: "Natasha Romanoff",
+      },
+    ];
+    const transcript = [
+      "Story so far:",
+      "User: I miss the garden by the river.",
+      "Natasha Romanoff: I remember the lanterns there.",
+      "The lantern on the table is still lit.",
+      "Rain on the window, not a storm.",
+      "A third fact about the locked gate.",
+    ].join("\n");
+    const messages = composeCompanionChatMessages({
+      characters: [natasha],
+      activeCharacter: natasha,
+      memories: [],
+      recentMessages,
+      mode: "solo",
+      content: "What do you see?",
+      clientContext: transcript,
+    });
+    const system = messages[0]?.content || "";
+    expect(system).not.toContain("I miss the garden by the river.");
+    expect(system).not.toContain("I remember the lanterns there.");
+    expect(system).toContain("Story so far:");
+    expect(system).toContain("The lantern on the table is still lit.");
+    expect(system).toContain("Rain on the window, not a storm.");
+    expect(system).toContain("A third fact about the locked gate.");
+    expect(messages.at(-1)).toEqual({ role: "user", content: "What do you see?" });
+
+    const lean = composeCompanionChatMessages({
+      characters: [natasha],
+      activeCharacter: natasha,
+      memories: [],
+      recentMessages,
+      mode: "solo",
+      content: "What do you see?",
+      clientContext: "IMAGE TAGS: [IMAGE: rain on the window]",
+    });
+    expect(lean[0]?.content).toContain("IMAGE TAGS: [IMAGE: rain on the window]");
+
+    const group = composeCompanionChatMessages({
+      characters: [natasha],
+      activeCharacter: natasha,
+      memories: [],
+      recentMessages,
+      mode: "group",
+      content: "What do you see?",
+      clientContext: `${transcript}\n\nCRITICAL INSTRUCTIONS:\n1. YOU ARE ONLY NATASHA THIS TURN.`,
+    });
+    const groupSystem = group[0]?.content || "";
+    expect(groupSystem).toContain("CRITICAL INSTRUCTIONS:");
+    expect(groupSystem).not.toContain("I miss the garden by the river.");
+  });
+
+  it("drops only the scene line that repeats history and keeps the other extras", () => {
+    const recentMessages = [
+      { role: "user", content: "I miss the garden by the river." },
+      {
+        role: "assistant",
+        content: "I remember the lanterns there.",
+        character_name: "Natasha Romanoff",
+      },
+    ];
+    const clientContext = [
+      "LORE: the river path has three lanterns and a locked gate.",
+      "CALENDAR: Thursday evening, no appointments.",
+      "COMPANION MODE: sit with them and do not take the scene over.",
+      "User: I miss the garden by the river.",
+      "IMAGE TAGS: [IMAGE: rain on the window]",
+      "LENGTH: one short paragraph.",
+      "BEHAVIOR: dry humor, economical sentences.",
+    ].join("\n");
+    const messages = composeCompanionChatMessages({
+      characters: [natasha],
+      activeCharacter: natasha,
+      memories: [],
+      recentMessages,
+      mode: "solo",
+      content: "What do you see?",
+      clientContext,
+    });
+    const system = messages[0]?.content || "";
+    const scene =
+      system.split("<<<CLIENT_SCENE_CONTEXT>>>")[1]?.split("<<<END_CLIENT_SCENE_CONTEXT>>>")[0] ??
+      "";
+    expect(scene).not.toContain("I miss the garden by the river.");
+    const marks = [
+      "LORE: the river path has three lanterns and a locked gate.",
+      "CALENDAR: Thursday evening, no appointments.",
+      "COMPANION MODE: sit with them and do not take the scene over.",
+      "IMAGE TAGS: [IMAGE: rain on the window]",
+      "LENGTH: one short paragraph.",
+      "BEHAVIOR: dry humor, economical sentences.",
+    ];
+    let at = -1;
+    for (const mark of marks) {
+      const next = scene.indexOf(mark);
+      expect(next).toBeGreaterThan(at);
+      at = next;
+    }
   });
 });

@@ -1625,20 +1625,30 @@ export const base44 = {
         deepMode,
         response_json_schema,
         max_tokens,
+        sidecar,
       }) => {
         // Signed-in OpenAI completions — not the unauthenticated /api/ai/chat probe.
         let result = '';
+        let skipped = false;
         for await (const chunk of animaApi.chatCompletions({
           content: prompt,
           systemPrompt: systemPrompt || system_prompt || '',
           deepMode: !!deepMode,
           responseJsonSchema: response_json_schema,
           maxTokens: typeof max_tokens === 'number' ? max_tokens : undefined,
+          sidecar: !!sidecar,
         })) {
+          if (chunk.skipped) {
+            skipped = true;
+            break;
+          }
           if (chunk.done) break;
           if (chunk.error) throw new Error(chunk.error);
           if (chunk.content) result += chunk.content;
         }
+
+        // Local-only sidecar gate: canned empty, no throw, no toast.
+        if (skipped) return response_json_schema ? {} : '';
 
         result = visibleAssistantReply(result);
         if (!String(result).trim()) {

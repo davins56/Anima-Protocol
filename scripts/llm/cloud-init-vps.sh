@@ -13,13 +13,15 @@
 #
 # What it does:
 #   1. Installs Ollama (official installer) and enables it as a systemd service
-#   2. Pulls the public Qwen2.5 3B weights and creates the branded `anima-chat`
-#      model (same Modelfile as scripts/llm/Modelfile.anima-chat)
+#   2. Pulls the public Qwen2.5 0.5B weights and creates the branded `anima-chat`
+#      model (same parameters as scripts/llm/Modelfile.anima-chat).
+#      Override the base with ANIMA_CHAT_BASE_MODEL (ANIMA_BOOTSTRAP_BASE still
+#      works). qwen2.5:3b needs a droplet with at least 2 vCPU / 4 GB.
 #   3. Installs cloudflared and runs a quick tunnel as a systemd service so it
 #      survives reboots/crashes, logging the public HTTPS URL to a file
 #   4. Prints the exact Vercel env vars to paste in once the URL is up
 #
-# This is Stage 1 (CPU, Qwen2.5 3B) from docs/llm-deploy.md. For the GPU
+# This is Stage 1 (CPU, Qwen2.5 0.5B) from docs/llm-deploy.md. For the GPU
 # upgrade (Ministral 3 8B via vLLM) see that doc's Stage 2 — it needs a GPU
 # pod, which this CPU-VPS script intentionally does not attempt.
 #
@@ -28,7 +30,9 @@
 set -euo pipefail
 
 ANIMA_TAG="${ANIMA_OLLAMA_CHAT_TAG:-anima-chat}"
-BASE_MODEL="${ANIMA_BOOTSTRAP_BASE:-qwen2.5:3b}"
+# Default fits a 1 vCPU / 2 GB host. qwen2.5:3b needs at least 2 vCPU / 4 GB.
+# ANIMA_CHAT_BASE_MODEL wins; ANIMA_BOOTSTRAP_BASE remains a fallback.
+BASE_MODEL="${ANIMA_CHAT_BASE_MODEL:-${ANIMA_BOOTSTRAP_BASE:-qwen2.5:0.5b}}"
 TUNNEL_LOG="/var/log/anima-tunnel.log"
 
 die() { echo "error: $*" >&2; exit 1; }
@@ -53,7 +57,7 @@ for _ in $(seq 1 30); do
 done
 curl -sf http://127.0.0.1:11434/api/tags >/dev/null 2>&1 || die "ollama did not come up on :11434"
 
-echo "== 2/4: anima-chat model (public Qwen2.5 3B weights, ~2GB) =="
+echo "== 2/4: anima-chat model (base ${BASE_MODEL}) =="
 ollama pull "${BASE_MODEL}"
 
 MODELFILE="$(mktemp)"

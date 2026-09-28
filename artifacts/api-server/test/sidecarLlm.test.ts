@@ -17,6 +17,7 @@ afterEach(() => {
 describe("sidecar LLM occupancy", () => {
   it("classifies post-turn chat helpers as sidecars", () => {
     expect(isPostTurnSidecarFunction("updateCharacterEmotion")).toBe(true);
+    expect(isPostTurnSidecarFunction("aggregatePersonalityShifts")).toBe(true);
     expect(isPostTurnSidecarFunction("updateInventory")).toBe(true);
     expect(isPostTurnSidecarFunction("characterMemory")).toBe(true);
     expect(isPostTurnSidecarFunction("extractLore")).toBe(true);
