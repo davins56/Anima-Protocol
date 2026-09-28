@@ -2639,6 +2639,12 @@ router.post("/messages", async (req, res) => {
       // is not shown that text. Hosted providers still stream as they go.
       const localHost = usedProvider === "local";
       const priorReplies = recentAssistantReplies(recentMessages);
+      const personaParts = [
+        activeChar?.personality,
+        activeChar?.backstory,
+        activeChar?.speaking_style,
+      ];
+      const replyIsStock = (text: unknown) => isStockAssistantLine(text, personaParts);
       let held = "";
       let flushed = false;
       let cutReason: "repeat" | "stock" | null = null;
@@ -2655,7 +2661,7 @@ router.post("/messages", async (req, res) => {
             cutReason = "repeat";
             return;
           }
-          if (isStockAssistantLine(held)) {
+          if (replyIsStock(held)) {
             cutReason = "stock";
             return;
           }
@@ -2687,7 +2693,7 @@ router.post("/messages", async (req, res) => {
         (cutReason === "repeat" ? matchingRepeatedReply(held, priorReplies) : null);
       const repeated = Boolean(copiedReply) || isRepeatedReply(fullResponse, priorReplies);
       const stockLine =
-        cutReason === "stock" || isStockAssistantLine(fullResponse) || isStockAssistantLine(held);
+        cutReason === "stock" || replyIsStock(fullResponse) || replyIsStock(held);
       let otherWorkQueued = false;
       const wantsExtra =
         (repeated || stockLine) &&
@@ -2786,7 +2792,9 @@ router.post("/messages", async (req, res) => {
           const retry = await createChatStreamWithFailover({
             tier: routed.tier,
             model: routed.model,
-            maxTokens: Math.min(replyMaxTokens, LOCAL_EXTRA_GENERATION_MAX_TOKENS),
+            maxTokens: localHost
+              ? Math.min(replyMaxTokens, LOCAL_EXTRA_GENERATION_MAX_TOKENS)
+              : replyMaxTokens,
             messages: appendFinalUserReminder(
               messages,
               inCharacterRetryReminder(activeChar?.name),
@@ -2806,7 +2814,7 @@ router.post("/messages", async (req, res) => {
               ? trimToLastCompleteSentence(retried.content)
               : retried.content,
           );
-          if (retriedText.trim() && !isStockAssistantLine(retriedText)) {
+          if (retriedText.trim() && !replyIsStock(retriedText)) {
             fullResponse = retriedText;
             flushed = false;
             usedModel = retry.model;
@@ -2822,9 +2830,9 @@ router.post("/messages", async (req, res) => {
         }
       }
       const unresolvedStock =
-        isStockAssistantLine(fullResponse) ||
+        replyIsStock(fullResponse) ||
         (cutReason === "stock" &&
-          isStockAssistantLine(held) &&
+          replyIsStock(held) &&
           !String(fullResponse || "").trim());
       if (unresolvedStock) {
         const personaPronoun = pronounFromPersona([

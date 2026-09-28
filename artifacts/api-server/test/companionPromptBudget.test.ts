@@ -1041,4 +1041,77 @@ describe("companion prompt prefill budget", () => {
     expect(afterTrim.some((message) => message.content.includes("STABLE_USER_6"))).toBe(true);
     expect(afterTrim.some((message) => message.content.includes("STABLE_USER_7"))).toBe(true);
   });
+
+  it("keeps guardrails in the local system message and leads the notes with a crisis policy", () => {
+    const local = messagesForLocalOllama(
+      composeCompanionChatMessages({
+        characters: [natasha],
+        activeCharacter: natasha,
+        memories: [],
+        recentMessages: [],
+        mode: "solo",
+        content: "Hello",
+      }),
+    );
+    const system = local[0]?.content || "";
+    const user = String(local.at(-1)?.content || "");
+    expect(system).toContain("HIGHEST-PRIORITY RULE");
+    expect(system).toContain("Never call yourself an AI");
+    expect(system).toContain("Adult or sexual behavior is not permitted");
+    expect(user).not.toContain("HIGHEST-PRIORITY RULE");
+    expect(user).not.toContain("Never call yourself an AI");
+
+    const therapyBase = {
+      characters: [natasha],
+      activeCharacter: natasha,
+      memories: [],
+      recentMessages: [],
+      mode: "therapy",
+      content: "I had a long day",
+    };
+    const calm = messagesForLocalOllama(
+      composeCompanionChatMessages({
+        ...therapyBase,
+        therapyAssessment: {
+          level: "none",
+          confidence: "low",
+          signals: [],
+          requiresDirectSafetyResponse: false,
+        },
+      }),
+    );
+    expect(calm[0]?.content).toContain("THERAPY CARE CONTRACT");
+    expect(calm[0]?.content).toContain("HIGHEST-PRIORITY RULE");
+    expect(String(calm.at(-1)?.content)).not.toContain("THERAPY CARE CONTRACT");
+    expect(String(calm.at(-1)?.content)).not.toContain("CRISIS RESPONSE POLICY");
+
+    const crisis = messagesForLocalOllama(
+      composeCompanionChatMessages({
+        ...therapyBase,
+        content: "I am going to hurt myself tonight",
+        therapyAssessment: {
+          level: "urgent",
+          confidence: "high",
+          signals: ["plan"],
+          requiresDirectSafetyResponse: true,
+        },
+        crisisResource: {
+          countryCode: "US",
+          label: "988 Suicide & Crisis Lifeline",
+          contact: "call or text 988",
+          emergency: "call 911",
+        },
+      }),
+    );
+    const crisisSystem = crisis[0]?.content || "";
+    const crisisUser = String(crisis.at(-1)?.content || "");
+    expect(crisisSystem).toContain("HIGHEST-PRIORITY RULE");
+    expect(crisisSystem).toContain("Never call yourself an AI");
+    expect(crisisSystem).toContain("THERAPY CARE CONTRACT");
+    expect(crisisSystem).not.toContain("CRISIS RESPONSE POLICY");
+    expect(crisisUser.startsWith("[CRISIS RESPONSE POLICY")).toBe(true);
+    expect(crisisUser.indexOf("CRISIS RESPONSE POLICY")).toBeLessThan(
+      crisisUser.indexOf("I am going to hurt myself tonight"),
+    );
+  });
 });

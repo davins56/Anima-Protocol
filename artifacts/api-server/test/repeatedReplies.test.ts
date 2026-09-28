@@ -40,6 +40,16 @@ describe("isRepeatedReply", () => {
     ).toBe(false);
   });
 
+  it("does not flag a longer reply that only starts with a short earlier beat", () => {
+    const prior = "She nods once.";
+    expect(prior.length).toBeGreaterThanOrEqual(12);
+    expect(prior.length).toBeLessThan(LOCAL_REPEAT_DETECT_CHARS);
+    const reply =
+      "She nods once. The harbor bell is late, and she keeps the watch from the gate.";
+    expect(reply.startsWith(prior)).toBe(true);
+    expect(visiblePrefixRepeatsHistory(reply, [prior])).toBe(false);
+  });
+
   it("does not match a different reply or a short one", () => {
     expect(isRepeatedReply("Blue, like the sky over the harbor.", [GREETING])).toBe(false);
     expect(isRepeatedReply("Okay.", ["Okay."])).toBe(false);

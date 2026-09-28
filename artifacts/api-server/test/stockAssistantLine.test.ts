@@ -37,6 +37,15 @@ describe("stock assistant lines", () => {
     expect(isStockAssistantLine(buried)).toBe(false);
   });
 
+  it("skips the guard when the persona is an AI, android, robot, or synthetic", () => {
+    const line = "As an AI, I should not do that.";
+    expect(isStockAssistantLine(line)).toBe(true);
+    expect(isStockAssistantLine(line, ["She is an android built for the harbor."])).toBe(false);
+    expect(isStockAssistantLine(line, ["A synthetic being with a quiet voice."])).toBe(false);
+    expect(isStockAssistantLine(line, ["He was built as a robot and still keeps watch."])).toBe(false);
+    expect(isStockAssistantLine(line, ["Natasha reads rooms and rarely explains herself."])).toBe(true);
+  });
+
   it("lets in-story refusals through", () => {
     expect(isStockAssistantLine("I won't tell you that.")).toBe(false);
     expect(isStockAssistantLine("Not until I trust you.")).toBe(false);

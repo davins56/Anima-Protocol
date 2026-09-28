@@ -45,13 +45,27 @@ function lineIsStock(line: string): boolean {
   return STOCK_LINE_PATTERNS.some((pattern) => pattern.test(line));
 }
 
+/** Persona text that already presents the character as a machine. "as an AI" can be in character. */
+const PERSONA_MACHINE_RE = /\b(ai|android|robot|synthetic)\b/i;
+
+export function personaDescribesMachine(
+  parts: Array<string | null | undefined> | undefined,
+): boolean {
+  const blob = (parts || []).map((part) => String(part || "")).join("\n");
+  return PERSONA_MACHINE_RE.test(blob);
+}
+
 /**
  * True for assistant / model-identity lines. Case-insensitive.
  * Short replies match on the phrase. Longer replies match only when the
  * stock line is at least half of the reply, so a passing mention inside a
  * scene does not trip the guard.
  */
-export function isStockAssistantLine(reply: unknown): boolean {
+export function isStockAssistantLine(
+  reply: unknown,
+  personaParts?: Array<string | null | undefined>,
+): boolean {
+  if (personaDescribesMachine(personaParts)) return false;
   const text = String(reply ?? "").trim();
   if (!text) return false;
   const lines = text

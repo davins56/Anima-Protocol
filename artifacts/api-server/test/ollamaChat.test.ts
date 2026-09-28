@@ -531,6 +531,7 @@ describe("probeOllamaModelListed", () => {
     const { server, origin } = await listenStub((req, res) => {
       paths.push(req.url || "");
       if (req.url === "/api/ps") {
+        expect(req.method).toBe("GET");
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ models: [{ name: "qwen2.5:0.5b", model: "qwen2.5:0.5b" }] }));
         return;
