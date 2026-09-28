@@ -76,6 +76,22 @@ describe("fourth-wall replies", () => {
       ),
     ).toBe(false);
     expect(isFourthWallReply(opener)).toBe(false);
+    expect(
+      isThirdPersonSelfNarration(
+        "*Natasha found herself at the edge*",
+        "Natasha Romanoff",
+      ),
+    ).toBe(true);
+    expect(
+      isFourthWallReply("**Natasha:** Natasha turned toward the cliff.", "Natasha Romanoff"),
+    ).toBe(true);
+    expect(
+      isFourthWallReply(
+        "**Natasha Romanoff:** Natasha Romanoff found herself at the edge.",
+        "Natasha Romanoff",
+      ),
+    ).toBe(true);
+    expect(isFourthWallReply("**Natasha:** I stay here.", "Natasha Romanoff")).toBe(false);
   });
 
   it("caps the backup short and skips it after half of the 90s budget", () => {

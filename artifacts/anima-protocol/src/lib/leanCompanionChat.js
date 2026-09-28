@@ -18,7 +18,7 @@ export const LEAN_SOLO_CLIENT_CONTEXT_MAX = 2000;
  * per-turn extra. Must match the server CONTINUE_USER_TURN string.
  */
 export const CONTINUE_IN_FIRST_PERSON =
-  "I'm here with you. Go on in your own first person.";
+  "I'm here with you. Go on in your own first person, then pause for me.";
 
 function trimBlock(value) {
   return String(value || "").trim();

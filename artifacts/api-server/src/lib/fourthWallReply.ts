@@ -39,6 +39,18 @@ function openingSentence(reply: string): string {
 }
 
 /**
+ * Group replies open with `**Name:**`. Action lines open with one `*`.
+ * Drop those before the name check. One label, then one action mark.
+ */
+function narrationOpening(reply: string): string {
+  let text = reply.trim().replace(/^\*\*[^*\n]+?:\*\*\s*/, "");
+  if (text.startsWith("*") && !text.startsWith("**")) {
+    text = text.slice(1).trimStart();
+  }
+  return openingSentence(text);
+}
+
+/**
  * The opening sentence starts with the companion's own name and then narrates
  * her in the third person ("Natasha Romanoff found herself"). A later mention
  * ("people call me Natasha") is not this.
@@ -53,7 +65,7 @@ export function isThirdPersonSelfNarration(
     .trim();
   const text = String(reply ?? "").trim();
   if (!who || who.length < 2 || !text) return false;
-  const sentence = openingSentence(text);
+  const sentence = narrationOpening(text);
   const first = who.split(/\s+/)[0] || "";
   const names = [who];
   if (first.length >= 2 && first.toLowerCase() !== who.toLowerCase()) names.push(first);
