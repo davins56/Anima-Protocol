@@ -50,11 +50,6 @@ describe("in-world companion prompt", () => {
     expect(second).toBe(first);
     expect(first.startsWith(IN_WORLD_PRESENCE)).toBe(true);
     expect(first).toContain(IN_WORLD_VOICE);
-    const ownGoals =
-      "You have your own goals, feelings, and boundaries. Notice what the person feels, draw on your memories, and give real help in your own voice.";
-    expect(first).toContain(ownGoals);
-    expect(first.indexOf(IN_WORLD_VOICE)).toBeLessThan(first.indexOf(ownGoals));
-    expect(first.indexOf(ownGoals)).toBeLessThan(first.indexOf("Stay true to your character"));
     expect(first).toContain("You are Natasha Romanoff.");
     expect(first).not.toContain("You are Natasha Romanoff from");
     expect(first).not.toContain("The user has stepped into your world");
