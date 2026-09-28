@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  CONNECTION_DROPPED_STATUS,
   GENERIC_COMPANION_COULD_NOT_REPLY,
   isCompanionStillTypingError,
+  isConnectionDroppedError,
+  lateTurnFailedWithoutReply,
   mergeLateReplyIntoMessages,
   pollLateCompanionReply,
 } from "./lateCompanionReply.js";
@@ -21,6 +24,27 @@ describe("isCompanionStillTypingError", () => {
     expect(
       isCompanionStillTypingError(new Error(GENERIC_COMPANION_COULD_NOT_REPLY)),
     ).toBe(true);
+  });
+
+  it("treats a network TypeError as a dropped connection, not an engine bug", () => {
+    expect(isConnectionDroppedError(new TypeError("Failed to fetch"))).toBe(true);
+    expect(isConnectionDroppedError(new TypeError("Load failed"))).toBe(true);
+    expect(
+      isConnectionDroppedError(
+        new TypeError("NetworkError when attempting to fetch resource."),
+      ),
+    ).toBe(true);
+    expect(isConnectionDroppedError(new TypeError("H is not a function"))).toBe(false);
+    expect(isCompanionStillTypingError(new TypeError("Failed to fetch"))).toBe(false);
+    expect(CONNECTION_DROPPED_STATUS).toMatch(/checking for her reply/i);
+    expect(lateTurnFailedWithoutReply({ persistence_status: "failed" })).toBe(true);
+    expect(
+      lateTurnFailedWithoutReply({
+        persistence_status: "failed",
+        assistant_content: "I stayed.",
+      }),
+    ).toBe(false);
+    expect(lateTurnFailedWithoutReply({ persistence_status: "pending" })).toBe(false);
   });
 
   it("does not hide a real auth failure", () => {
@@ -57,6 +81,34 @@ describe("mergeLateReplyIntoMessages", () => {
       "turn_1:assistant",
     ]);
     expect(again.filter((message) => message.character_name === "__typing__")).toEqual([]);
+  });
+
+  it("inserts the late reply under its own user message when newer turns exist", () => {
+    const merged = mergeLateReplyIntoMessages(
+      [
+        { id: "turn_1:user", role: "user", content: "First question", turn_id: "turn_1" },
+        { id: "turn_2:user", role: "user", content: "Newer question", turn_id: "turn_2" },
+        {
+          id: "turn_2:assistant",
+          role: "assistant",
+          content: "Newer answer",
+          turn_id: "turn_2",
+        },
+      ],
+      {
+        turnId: "turn_1",
+        userContent: "First question",
+        assistantContent: "Answer to the first question",
+        characterName: "Aria",
+      },
+    );
+    expect(merged.map((message) => message.id)).toEqual([
+      "turn_1:user",
+      "turn_1:assistant",
+      "turn_2:user",
+      "turn_2:assistant",
+    ]);
+    expect(merged[1].content).toBe("Answer to the first question");
   });
 });
 
