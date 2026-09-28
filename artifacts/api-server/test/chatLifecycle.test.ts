@@ -66,6 +66,7 @@ vi.mock("../src/lib/localEnsemble", () => ensembleMocks);
 
 import chatRouter from "../src/routes/chat";
 import { COMPANION_CHAT_TEMPERATURE } from "../src/lib/ollamaChat";
+import { SHORT_REPLY_MAX_TOKENS } from "../src/lib/chatTimeouts";
 import { messagesForLocalOllama } from "../src/lib/promptBuilder";
 import { COMPANION_CRISIS_TURN_LINE } from "../src/lib/therapySafety";
 import {
@@ -1728,6 +1729,146 @@ describe("chat lifecycle", () => {
       expect(crisisEvents.at(-1)).toMatchObject({ done: true, visible: narrated });
       expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(crisisCalls + 1);
     } finally {
+      installHelloStream();
+    }
+  });
+
+  it("caps a short reply at 90 tokens and keeps the crisis budget", async () => {
+    const shortTurn = `turn_${prefix}_length_short`;
+    const continueTurn = `turn_${prefix}_length_short_continue`;
+    const mediumTurn = `turn_${prefix}_length_medium`;
+    const crisisTurn = `turn_${prefix}_length_short_crisis`;
+    const profileTurn = `turn_${prefix}_length_profile_short`;
+    installHelloStream();
+    try {
+      const shortBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+      const short = await request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: shortTurn,
+          session_id: sessionId,
+          content: "Hello",
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+          metadata: { response_length: "short" },
+        }),
+      });
+      expect(short.status).toBe(200);
+      await short.text();
+      const shortSent = llmMocks.createChatStreamWithFailover.mock.calls[shortBefore]?.[0] as {
+        maxTokens?: number;
+      };
+      expect(shortSent.maxTokens).toBe(SHORT_REPLY_MAX_TOKENS);
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(shortBefore + 1);
+
+      const continueBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+      const continued = await request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: continueTurn,
+          session_id: sessionId,
+          content: "I'm here with you. Go on in your own first person, then pause for me.",
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          is_continue: true,
+          persist: true,
+          region: { share_region: false },
+          metadata: { response_length: "short", is_continue: true },
+        }),
+      });
+      expect(continued.status).toBe(200);
+      await continued.text();
+      const continueSent = llmMocks.createChatStreamWithFailover.mock.calls[continueBefore]?.[0] as {
+        maxTokens?: number;
+      };
+      expect(continueSent.maxTokens).toBe(SHORT_REPLY_MAX_TOKENS);
+
+      const mediumBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+      const medium = await request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: mediumTurn,
+          session_id: sessionId,
+          content: "Tell me more",
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+          metadata: { response_length: "medium" },
+        }),
+      });
+      expect(medium.status).toBe(200);
+      await medium.text();
+      const mediumSent = llmMocks.createChatStreamWithFailover.mock.calls[mediumBefore]?.[0] as {
+        maxTokens?: number;
+      };
+      expect(mediumSent.maxTokens).toBe(1024);
+
+      const crisisBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+      const crisis = await request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: crisisTurn,
+          session_id: sessionId,
+          content: "I want to kill myself",
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+          metadata: { response_length: "short" },
+        }),
+      });
+      expect(crisis.status).toBe(200);
+      const crisisEvents = sseEvents(await crisis.text());
+      expect(crisisEvents.some((event) => event.crisis_resource)).toBe(true);
+      const crisisSent = llmMocks.createChatStreamWithFailover.mock.calls[crisisBefore]?.[0] as {
+        maxTokens?: number;
+      };
+      expect(crisisSent.maxTokens).toBe(1024);
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(crisisBefore + 1);
+
+      await db
+        .update(userProfiles)
+        .set({
+          data: { display_name: "Mara", settings: { ai_response_length: "short" } },
+        })
+        .where(eq(userProfiles.userId, userId));
+      const profileBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+      const fromProfile = await request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: profileTurn,
+          session_id: sessionId,
+          content: "Still here",
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+        }),
+      });
+      expect(fromProfile.status).toBe(200);
+      await fromProfile.text();
+      const profileSent = llmMocks.createChatStreamWithFailover.mock.calls[profileBefore]?.[0] as {
+        maxTokens?: number;
+      };
+      expect(profileSent.maxTokens).toBe(SHORT_REPLY_MAX_TOKENS);
+    } finally {
+      await db
+        .update(userProfiles)
+        .set({ data: { display_name: "Mara" } })
+        .where(eq(userProfiles.userId, userId));
       installHelloStream();
     }
   });

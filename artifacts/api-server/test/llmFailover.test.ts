@@ -357,6 +357,7 @@ import {
   resolveLocalModel,
   resolveOpenRouterModel,
   honorCallerMaxTokens,
+  localOllamaMaxTokens,
   chatCompletionHttpFailure,
 } from "../src/lib/llmFailover";
 
@@ -1376,6 +1377,12 @@ describe("createChatStreamWithFailover", () => {
     expect(honorCallerMaxTokens(0.7, 8192)).toBe(1);
     expect(honorCallerMaxTokens(1024.9, 8192)).toBe(1024);
     expect(honorCallerMaxTokens(undefined, 8192)).toBe(8192);
+  });
+
+  it("passes a 90-token short reply through the Ollama num_predict ceiling", () => {
+    expect(localOllamaMaxTokens(90, 8192)).toBe(90);
+    expect(localOllamaMaxTokens(1024, 8192)).toBe(200);
+    expect(localOllamaMaxTokens(8192, 8192)).toBe(200);
   });
 
   it("throws a local-only setup error when the self-hosted LLM is missing", async () => {
