@@ -26,7 +26,7 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const { isMemoryReference, memoryDetail } = useMemoryHighlight(message, characterMemories);
-  const { loreContext } = useLoreDetection(message.content, sessionId);
+  const { loreContext } = useLoreDetection(message, sessionId);
 
   // Extract media from message attachments
   const images = (message.attachments || []).filter((a) => a.type === "image").map((a) => a.url);

@@ -17,7 +17,20 @@ export type RateLimitOptions = {
   windowMs?: number;
   /** Optional bucket prefix so different route groups don't share counters. */
   name?: string;
+  /** "ip" does not collapse a signed-in user into one bucket. Default prefers the user. */
+  identity?: "user" | "ip";
 };
+
+/** Best-effort client IP. The first X-Forwarded-For hop is the caller. */
+export function clientIp(req: Request): string {
+  const forwarded = String(req.headers["x-forwarded-for"] || "")
+    .split(",")[0]
+    ?.trim();
+  const realIp = String(req.headers["x-real-ip"] || "").trim();
+  const ip = (req.ip || realIp || forwarded || req.socket?.remoteAddress || "unknown")
+    .replace(/:\d+$/, "");
+  return ip || "unknown";
+}
 
 /** Test helper — clears in-memory counters between cases. */
 export function resetRateLimitStateForTests(): void {
@@ -29,31 +42,31 @@ export function resetRateLimitStateForTests(): void {
  * Prefer the signed-in Clerk user so serverless/proxy IP collapse cannot
  * lock every visitor behind one shared bucket.
  */
-export function rateLimitKey(req: Request, name = "default"): string {
-  try {
-    const { userId } = getAuth(req);
-    if (userId) return `${name}:user:${userId}`;
-  } catch {
-    // getAuth throws when Clerk middleware did not run; fall through to IP.
+export function rateLimitKey(
+  req: Request,
+  name = "default",
+  identity: "user" | "ip" = "user",
+): string {
+  if (identity !== "ip") {
+    try {
+      const { userId } = getAuth(req);
+      if (userId) return `${name}:user:${userId}`;
+    } catch {
+      // getAuth throws when Clerk middleware did not run; fall through to IP.
+    }
   }
 
-  const forwarded = String(req.headers["x-forwarded-for"] || "")
-    .split(",")[0]
-    ?.trim();
-  const realIp = String(req.headers["x-real-ip"] || "").trim();
-  const ip = (req.ip || realIp || forwarded || req.socket.remoteAddress || "unknown")
-    // Some proxies append :port — strip so the same client keeps one bucket.
-    .replace(/:\d+$/, "");
-  return `${name}:ip:${ip || "unknown"}`;
+  return `${name}:ip:${clientIp(req)}`;
 }
 
 export function createRateLimit(options: RateLimitOptions = {}) {
   const max = options.max ?? DEFAULT_MAX_REQUESTS;
   const windowMs = options.windowMs ?? DEFAULT_WINDOW_MS;
   const name = options.name ?? "default";
+  const identity = options.identity ?? "user";
 
   return function rateLimit(req: Request, res: Response, next: NextFunction) {
-    const key = rateLimitKey(req, name);
+    const key = rateLimitKey(req, name, identity);
     const now = Date.now();
     const entry = counts.get(key);
 
