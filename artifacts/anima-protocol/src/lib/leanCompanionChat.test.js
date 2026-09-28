@@ -115,6 +115,7 @@ describe("Chat.jsx lean 1:1 wiring", () => {
     expect(chat).toContain("userProfileContext,");
     expect(chat).toContain("behaviorConfigPromise");
     expect(chat).toContain("companionChatDeepMode(activeSession)");
+    expect(chat).toContain("response_length: user?.settings?.ai_response_length || undefined");
     expect(chat).not.toMatch(
       /prompt = `You are \$\{char\.name\}[\s\S]*CHARACTER IDENTITY LOCK/,
     );
