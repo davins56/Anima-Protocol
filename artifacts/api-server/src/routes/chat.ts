@@ -2165,20 +2165,13 @@ router.post("/messages", async (req, res) => {
   ] = await telemetry.measure(
     "context_load_ms",
     Promise.all([
-      optionalChatContext(
-        "characters",
-        () => loadCharacters(userId, characterIds),
-        [],
-      ),
+      // Identity and conversation history are required. The lean client prompt
+      // no longer includes either; a failed read must not become an empty chat.
+      loadCharacters(userId, characterIds),
       memoriesPromise,
-      optionalChatContext(
-        "recent_messages",
-        () =>
-          readRecentStoreMessages(userId, sessionId, 24, {
-            skipMigrate: Boolean(sessionData.messages_migrated),
-          }),
-        [],
-      ),
+      readRecentStoreMessages(userId, sessionId, 24, {
+        skipMigrate: Boolean(sessionData.messages_migrated),
+      }),
       memoriesPromise.then((rows) => {
         const adapted = adaptMemories(rows);
         // Local companion_memories + stored vectors only. Remote supermemory
