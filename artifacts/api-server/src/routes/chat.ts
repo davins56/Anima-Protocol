@@ -2456,9 +2456,14 @@ router.post("/messages", async (req, res) => {
     deepMode: Boolean(body.deep_mode),
     conversationDepth: recentMessages.length,
   });
+  const requestedLength = String(
+    body.metadata?.response_length ?? profileSettings.ai_response_length ?? "",
+  );
   const replyMaxTokens = chatReplyMaxTokens(routed.maxTokens, {
     mode,
     deepMode: Boolean(body.deep_mode),
+    responseLength: requestedLength,
+    crisis: Boolean(crisisResourceCard),
   });
   // The own model runs in the browser; the client sends the reply it
   // wrote and this turn records it like any other. Honoured only while the

@@ -2094,6 +2094,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
               scene_mind_speaker_id: activeChar?.id || null,
               therapy_mode: therapyActive,
               adult_mode: adultMode,
+              response_length: user?.settings?.ai_response_length || undefined,
               hidden_sequences: hiddenThread.hidden,
               conversational_weather: hiddenThread.weather,
             },
