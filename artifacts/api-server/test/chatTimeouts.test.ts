@@ -18,6 +18,8 @@ import {
   llmChatMessagesFirstChunkMs,
   llmChatMessagesOpenTimeoutMs,
   llmChatMessagesStreamTotalMs,
+  REPEAT_RETRY_MIN_MS,
+  repeatRetryBudgetMs,
   CLIENT_DISCONNECT_GRACE_MS,
   LLM_LATE_PERSIST_BUDGET_MS,
   llmCompanionDurableWaitMs,
@@ -356,5 +358,30 @@ describe("shouldAbortAbandonedGenerate", () => {
         elapsedMs: LLM_LATE_PERSIST_BUDGET_MS,
       }),
     ).toBe(true);
+  });
+});
+
+describe("repeatRetryBudgetMs", () => {
+  const window = CHAT_STREAM_TIMEOUT_MS - CHAT_MESSAGES_CONTEXT_SLACK_MS;
+
+  it("spends only what is left of the browser fetch window", () => {
+    expect(repeatRetryBudgetMs(0)).toBe(window);
+    expect(repeatRetryBudgetMs(30_000)).toBe(window - 30_000);
+  });
+
+  it("skips the regenerate when a slow first reply used the window", () => {
+    // Local CPU first reply: 90s first token + decode.
+    expect(
+      repeatRetryBudgetMs(LLM_LOCAL_FIRST_TOKEN_MS + LLM_LOCAL_DECODE_SLACK_MS),
+    ).toBe(0);
+    expect(repeatRetryBudgetMs(window - REPEAT_RETRY_MIN_MS + 1)).toBe(0);
+    expect(repeatRetryBudgetMs(window - REPEAT_RETRY_MIN_MS)).toBe(REPEAT_RETRY_MIN_MS);
+  });
+
+  it("never gives the regenerate more than the time before the browser abort", () => {
+    for (const elapsed of [0, 5_000, 60_000, 100_000]) {
+      const budget = repeatRetryBudgetMs(elapsed);
+      expect(elapsed + budget).toBeLessThanOrEqual(CHAT_STREAM_TIMEOUT_MS);
+    }
   });
 });
