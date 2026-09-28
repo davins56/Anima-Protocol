@@ -265,7 +265,7 @@ def trim_to_sentence(text: str, min_keep_ratio: float = 0.3) -> str:
 
 
 @torch.no_grad()
-def generate_tokens(
+def iter_tokens(
     prompt_ids,
     max_new_tokens=256,
     temperature=0.8,
@@ -274,7 +274,7 @@ def generate_tokens(
     min_new_tokens=8,
     soft_stop_ratio=0.75,
 ):
-    """Sample a reply for an already-encoded prompt ending in <|anima|>.
+    """Yield reply token ids one at a time for a prompt ending in <|anima|>.
 
     - The prompt must fit the window with room left for the reply; the loop
       never lets the prompt slide out of view (that is what made the model
@@ -283,7 +283,7 @@ def generate_tokens(
       `min_new_tokens` so a nervous model cannot answer with a fragment.
     - Repeated tokens are penalized; past `soft_stop_ratio` of the budget the
       first sentence end stops generation cleanly.
-    Returns (token_ids, finish_reason) where finish_reason is "stop" or "length".
+    The generator's return value is the finish_reason: "stop" or "length".
     """
     if model is None or cfg is None:
         raise RuntimeError("model is not loaded")
@@ -304,7 +304,6 @@ def generate_tokens(
 
     idx = torch.tensor([prompt_ids], dtype=torch.long, device=device)
     out = []
-    finish_reason = "length"
     for step in range(budget):
         logits, _ = model(idx)
         logits = logits[:, -1, :] / temperature
@@ -322,21 +321,51 @@ def generate_tokens(
         nxt = torch.multinomial(probs, 1)
         t = nxt.item()
         if t in stop_ids:
-            finish_reason = "stop"
-            break
+            return "stop"
         out.append(t)
+        yield t
         idx = torch.cat([idx, nxt], dim=1)
         if step >= soft_stop_at and ends_sentence(tok.decode(out[-8:])):
-            finish_reason = "stop"
-            break
-    return out, finish_reason
+            return "stop"
+    return "length"
+
+
+def generate_tokens(prompt_ids, max_new_tokens=256, temperature=0.8, top_k=40, **kw):
+    """Sample a whole reply (see iter_tokens). Returns (token_ids, finish_reason)."""
+    out = []
+    steps = iter_tokens(prompt_ids, max_new_tokens, temperature, top_k, **kw)
+    while True:
+        try:
+            out.append(next(steps))
+        except StopIteration as done:
+            return out, done.value
+
+
+def prompt_for_reply(messages, max_new_tokens=256):
+    """Encode a conversation for generation and open Anima's turn.
+
+    Oldest turns are dropped first (fit_conversation). If the newest message
+    alone still overflows the window, keep its tail: the end of a long paste
+    is usually where the question is, and generate_tokens would otherwise
+    refuse a prompt with no room left for the reply.
+    """
+    init_tokenizer()
+    reserve = min(int(max_new_tokens), cfg.block_size // 2) + 1
+    budget = cfg.block_size - reserve
+    ids, _, kept = fit_conversation(messages, cfg.block_size, reserve=reserve)
+    if len(ids) > budget and kept:
+        last = kept[-1]
+        text_ids = encode_text(last["content"])
+        keep = max(0, budget - 3)  # <|endoftext|> <|role|> text <|endoftext|>
+        tail = text_ids[max(0, len(text_ids) - keep):] if keep else []
+        ids = [eot_id, _role_token_id(last["role"]), *tail, eot_id]
+    ids.append(role_ids["anima"])
+    return ids
 
 
 def generate_reply(messages, max_new_tokens=256, temperature=0.8, top_k=40, **kw):
     """Encode a conversation, open Anima's turn, sample, and tidy the ending."""
-    reserve = min(int(max_new_tokens), cfg.block_size // 2) + 1
-    ids, _, _ = fit_conversation(messages, cfg.block_size, reserve=reserve)
-    ids.append(role_ids["anima"])
+    ids = prompt_for_reply(messages, max_new_tokens)
     out, finish_reason = generate_tokens(ids, max_new_tokens, temperature, top_k, **kw)
     text = tok.decode(out).strip()
     if finish_reason == "length":

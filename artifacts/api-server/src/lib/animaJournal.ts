@@ -129,7 +129,6 @@ Output ONLY the journal body text, no title prefix.`;
   try {
     const completion = await createChatCompletionWithFailover({
       tier: "light",
-      model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
       maxTokens: 320,
       temperature: 0.85,
       messages: [{ role: "system", content: prompt }],
