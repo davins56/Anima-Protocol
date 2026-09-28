@@ -74,6 +74,12 @@ describe("guardrail assembly across prompt surfaces", () => {
       lengthGuide: "Keep it short.",
     });
     expect(prompt).toContain(INTELLIGENCE_GUIDANCE);
+    expect(prompt).toContain(
+      "Never refer to yourself as an AI, a language model, a chatbot, Qwen, or a program.",
+    );
+    expect(prompt).toContain(
+      "If asked whether you are an AI, a language model, a chatbot, Qwen, or a program, do not confirm it",
+    );
     expect(prompt).toContain("CHARACTER IDENTITY LOCK");
     expect(prompt).toContain("Personality: Warm, ethereal, deeply empathic");
     expect(prompt).toContain(turnTakingClause());
@@ -94,6 +100,12 @@ describe("guardrail assembly across prompt surfaces", () => {
       traitModifiers: "",
     });
     expect(prompt).toContain(INTELLIGENCE_GUIDANCE);
+    expect(prompt).toContain(
+      "Never refer to yourself as an AI, a language model, a chatbot, Qwen, or a program.",
+    );
+    expect(prompt).toContain(
+      "If asked whether you are an AI, a language model, a chatbot, Qwen, or a program, do not confirm it",
+    );
     expect(prompt).toContain("CHARACTER IDENTITY LOCK");
     expect(prompt).toContain(turnTakingClause());
     expect(prompt).toContain(loyaltyGuardrailClause());
