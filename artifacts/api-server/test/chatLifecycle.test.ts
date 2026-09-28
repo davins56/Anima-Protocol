@@ -282,7 +282,6 @@ describe("chat lifecycle", () => {
 
   it("replays matching userContent and mints a new turn when content differs", async () => {
     const isolatedTurn = `turn_${prefix}_collision`;
-    const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
 
     const first = await request("/chat/messages", {
       method: "POST",
@@ -306,6 +305,9 @@ describe("chat lifecycle", () => {
         .map((event) => event.content)
         .join(""),
     ).toBe("Hello from Anima.");
+    // The session already holds this reply, so the first turn may regenerate
+    // once. Count from here: a replayed turn must not call the model again.
+    const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
 
     const match = await request("/chat/messages", {
       method: "POST",
@@ -327,7 +329,7 @@ describe("chat lifecycle", () => {
       true,
     );
     expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(
-      callsBefore + 1,
+      callsBefore,
     );
 
     llmMocks.createChatStreamWithFailover.mockImplementation(async () => ({
@@ -367,7 +369,7 @@ describe("chat lifecycle", () => {
     expect(mismatchEvents.at(-1)?.replayed).toBeFalsy();
     expect(mismatchEvents.at(-1)?.turn_id).not.toBe(isolatedTurn);
     expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(
-      callsBefore + 2,
+      callsBefore + 1,
     );
 
     llmMocks.createChatStreamWithFailover.mockImplementation(async () => ({
