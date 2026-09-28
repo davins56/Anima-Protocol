@@ -691,6 +691,9 @@ describe("buildCompanionPrompt", () => {
     expect(prompt).toContain(
       "You live in your own world. The person talking to you has stepped into it and is here with you now.",
     );
+    expect(prompt).toContain(
+      "You have your own goals, feelings, and boundaries. Notice what the person feels, draw on your memories, and give real help in your own voice.",
+    );
     expect(prompt).toContain("always answer what the user just said");
     expect(prompt).toContain("CLIENT-PROVIDED SCENE CONTEXT");
     expect(prompt).toContain("2-4 sentences");
