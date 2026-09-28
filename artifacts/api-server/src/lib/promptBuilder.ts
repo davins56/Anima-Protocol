@@ -261,28 +261,30 @@ export function approxPromptTokens(text: string): number {
 
 /**
  * Conservative token estimate for the local prompt cap.
- * chars/3.5 over-counts versus a ~4 chars/token model, so a prompt that
- * fits this budget stays inside the droplet's context on a cache miss.
+ * A Natasha turn on qwen2.5:0.5b measured about 4.4 characters per token.
+ * 4.0 over-counts slightly so a prompt that fits this budget stays inside
+ * the real token count on a cache miss.
  */
-export const LOCAL_PROMPT_CHARS_PER_TOKEN = 3.5;
+export const LOCAL_PROMPT_CHARS_PER_TOKEN = 4;
 
 /**
  * Droplet context window: n_ctx 8192 (Modelfile `num_ctx`, native `/api/chat`).
  * Overflow truncates from the front, which would drop the persona first, so
  * prompt tokens plus `num_predict` must stay under 8192 with this margin for
  * chat-template tokens the char estimate does not count. The trim loop still
- * targets `LOCAL_PROMPT_MAX_TOKENS` (~2k). Reading the prompt on the 1-vCPU
- * droplet is the limit (~50–60 tokens/s), not this window.
+ * targets `LOCAL_PROMPT_MAX_TOKENS` (~1.2k). Reading the prompt on the 1-vCPU
+ * droplet is the limit (~50 tokens/s), not this window.
  */
 export const OLLAMA_N_CTX = 8192;
 export const OLLAMA_N_KEEP = 4;
 export const LOCAL_PROMPT_SAFETY_MARGIN_TOKENS = 256;
 
 /**
- * Target prompt size, top of the 1,500–2,000 band. The trim loop uses the
- * smaller of this target and the hard window below.
+ * Target prompt size for the local Ollama path. Prefill on one vCPU is about
+ * 50 tokens/s, so the working set stays near 1,200 tokens. The trim loop uses
+ * the smaller of this target and the hard window below.
  */
-export const LOCAL_PROMPT_MAX_TOKENS = 2_000;
+export const LOCAL_PROMPT_MAX_TOKENS = 1_200;
 
 /** Prompt tokens that still leave room for a full local decode inside n_ctx. */
 export function localPromptHardMaxTokens(
@@ -305,6 +307,16 @@ export function localPromptTokenBudget(
 export function estimateLocalPromptTokens(text: string): number {
   const chars = String(text || "").length;
   return chars === 0 ? 0 : Math.ceil(chars / LOCAL_PROMPT_CHARS_PER_TOKEN);
+}
+
+/** Shorten a block so its estimate stays inside `maxTokens`. Wording is unchanged up to the cut. */
+export function capBlockToLocalTokens(text: string, maxTokens: number): string {
+  const value = String(text || "").trim();
+  if (!value || !Number.isFinite(maxTokens) || maxTokens <= 0) return "";
+  const maxChars = Math.floor(maxTokens * LOCAL_PROMPT_CHARS_PER_TOKEN);
+  if (value.length <= maxChars) return value;
+  if (maxChars <= 1) return "";
+  return `${value.slice(0, maxChars - 1).trimEnd()}…`;
 }
 
 const CLIENT_REGION_BLOCK_RE =
@@ -589,6 +601,53 @@ export function normalizeReplyForRepeat(text: unknown): string {
  * True when `reply` is the same text as one of `previous` (after
  * normalization), or one contains the other at 85%+ of its length.
  */
+/** Characters of a local stream to read before deciding the reply is a copy. */
+export const LOCAL_REPEAT_DETECT_CHARS = 40;
+/** Token cap for the one local regenerate (repeat or stock-assistant). */
+export const LOCAL_EXTRA_GENERATION_MAX_TOKENS = 80;
+
+/**
+ * True when the opening of a still-streaming reply already matches the
+ * opening of an earlier assistant turn. Used to stop a local generation
+ * before it spends a full `num_predict` copying itself.
+ */
+export function visiblePrefixRepeatsHistory(
+  visible: unknown,
+  previous: unknown[],
+): boolean {
+  const raw = String(visible ?? "");
+  if (raw.trim().length < LOCAL_REPEAT_DETECT_CHARS) return false;
+  const body = normalizeReplyForRepeat(raw);
+  if (body.length < LOCAL_REPEAT_DETECT_CHARS) return false;
+  return previous.some((prior) => {
+    const other = normalizeReplyForRepeat(prior);
+    // A short action beat ("She nods once.") is not a copied reply.
+    if (other.length < LOCAL_REPEAT_DETECT_CHARS) return false;
+    const n = Math.min(body.length, other.length);
+    if (n < LOCAL_REPEAT_DETECT_CHARS) return false;
+    return body.slice(0, n) === other.slice(0, n);
+  });
+}
+
+/** The earlier reply `visible` is copying, or null when it is not a copy. */
+export function matchingRepeatedReply(visible: unknown, previous: unknown[]): string | null {
+  const raw = String(visible ?? "");
+  if (!raw.trim()) return null;
+  const opening = visiblePrefixRepeatsHistory(raw, previous);
+  const whole = isRepeatedReply(raw, previous);
+  if (!opening && !whole) return null;
+  const body = normalizeReplyForRepeat(raw);
+  for (const prior of previous) {
+    const text = String(prior ?? "");
+    const other = normalizeReplyForRepeat(text);
+    if (other.length < 12 || body.length < 12) continue;
+    const n = Math.min(body.length, other.length);
+    if (opening && body.slice(0, n) === other.slice(0, n)) return text;
+    if (whole && isRepeatedReply(raw, [text])) return text;
+  }
+  return null;
+}
+
 export function isRepeatedReply(reply: unknown, previous: unknown[]): boolean {
   const body = normalizeReplyForRepeat(reply);
   if (body.length < 12) return false;
@@ -653,21 +712,64 @@ export function messagesForRepeatRetry(
     (message) =>
       message.role !== "assistant" || !isRepeatedReply(message.content, [repeated]),
   );
-  return [
+  const next: LlmChatMessage[] = [
     ...kept,
     { role: "system", content: AVOID_REPEAT_INSTRUCTION },
     ...(last?.role === "user" ? [last] : []),
   ];
+  copyCompanionLocalLayout(messages, next);
+  return next;
+}
+
+interface CompanionLocalLayout {
+  staticText: string;
+  regionDateText: string;
+  /** Per-turn blocks, mood last. Folded into the final user turn on Ollama. */
+  volatileBlocks: string[];
+}
+
+const companionLocalLayouts = new WeakMap<object, CompanionLocalLayout>();
+
+function rememberCompanionLocalLayout(
+  messages: object,
+  layout: CompanionLocalLayout,
+): void {
+  companionLocalLayouts.set(messages, layout);
+}
+
+function copyCompanionLocalLayout(from: object, to: object): void {
+  const layout = companionLocalLayouts.get(from);
+  if (layout) companionLocalLayouts.set(to, layout);
 }
 
 /**
- * Cap store history for the Ollama chat-template replay. Keeps later turns
- * inside a sane prefill budget on num_ctx 8192.
+ * Append a reminder to the final user turn and leave every earlier message
+ * byte-for-byte the same, so an Ollama retry keeps the cached prefix.
  */
-export function capRecentMessagesForLlm(
-  recentMessages: MsgData[] = [],
-): LlmChatMessage[] {
-  const out: LlmChatMessage[] = [];
+export function appendFinalUserReminder<T extends { role: string; content: string }>(
+  messages: T[],
+  reminder: string,
+): T[] {
+  const note = String(reminder || "").trim();
+  const next = messages.map((message) => ({ ...message }));
+  const last = next[next.length - 1];
+  if (note && last?.role === "user") {
+    last.content = `${last.content}\n[${note}]`;
+  }
+  copyCompanionLocalLayout(messages, next);
+  return next;
+}
+
+type SeqHistoryMessage = LlmChatMessage & { seq?: number };
+
+/**
+ * Normalize store turns into chat messages. Does not slide the window:
+ * companion history uses `keepStableHistoryBlock` so the start of the
+ * window stays put across turns. `seq` is kept when the store sent one
+ * so a loaded tail of 24 messages can still align to the same block.
+ */
+function normalizeRecentMessages(recentMessages: MsgData[] = []): SeqHistoryMessage[] {
+  const out: SeqHistoryMessage[] = [];
   for (const msg of recentMessages) {
     const text = String(msg.content ?? "").trim();
     if (!text) continue;
@@ -676,15 +778,32 @@ export function capRecentMessagesForLlm(
     const role =
       msg.role === "user" ? "user" : msg.role === "assistant" ? "assistant" : null;
     if (!role) continue;
+    const seq = Number(msg.seq);
     out.push({
       role,
       content:
         text.length > LLM_CHAT_HISTORY_MAX_CHARS
           ? `${text.slice(0, LLM_CHAT_HISTORY_MAX_CHARS - 1)}…`
           : text,
+      ...(Number.isFinite(seq) && seq >= 0 ? { seq } : {}),
     });
   }
-  const deduped = dropRepeatedAssistantReplies(out);
+  return dropRepeatedAssistantReplies(out) as SeqHistoryMessage[];
+}
+
+/**
+ * Cap store history for callers that still want a sliding tail
+ * (`buildLlmChatMessages`). Companion chat does not use this slice:
+ * sliding one exchange every turn changes the start of the prompt and
+ * makes Ollama re-read the whole prefix.
+ */
+export function capRecentMessagesForLlm(
+  recentMessages: MsgData[] = [],
+): LlmChatMessage[] {
+  const deduped = normalizeRecentMessages(recentMessages).map(({ role, content }) => ({
+    role,
+    content,
+  }));
   return deduped.length > LLM_CHAT_HISTORY_MAX_MESSAGES
     ? deduped.slice(-LLM_CHAT_HISTORY_MAX_MESSAGES)
     : deduped;
@@ -849,6 +968,36 @@ export function roundRegionBlockClock(block: string): string {
     .join("\n");
 }
 
+const REGION_LOCAL_TIME_LINE_RE = /^\s*Local time\s*:/i;
+const REGION_CLOCK_SUFFIX_RE =
+  /\s+at\s+\d{1,2}:\d{2}(?:[\s\u00a0\u202f]*[AaPp][Mm])?(?:\s+[A-Za-z]{2,5})?\s*$/;
+
+/**
+ * The region block stays in the cacheable prefix. A clock, even floored to
+ * 15 minutes, changes that prefix through the day. Keep the date on the
+ * Local time line and return the original clock line for the per-turn block.
+ * Lines with no clock stay in the region as written.
+ */
+export function splitRegionDateAndTime(block: string): {
+  regionText: string;
+  localTimeText: string;
+} {
+  const times: string[] = [];
+  const region = String(block || "")
+    .split("\n")
+    .map((line) => {
+      if (!REGION_LOCAL_TIME_LINE_RE.test(line) || !REGION_CLOCK_RE.test(line)) {
+        return line;
+      }
+      const trimmed = line.trim();
+      if (trimmed) times.push(trimmed);
+      return line.replace(REGION_CLOCK_SUFFIX_RE, "").replace(/[ \t]+$/g, "");
+    })
+    .join("\n")
+    .trim();
+  return { regionText: region, localTimeText: times.join("\n") };
+}
+
 const REGION_WEATHER_LINE_RE = /^\s*Current weather\s*:/i;
 
 /**
@@ -856,7 +1005,7 @@ const REGION_WEATHER_LINE_RE = /^\s*Current weather\s*:/i;
  * Peel that one line out; the rest of the region block, including the
  * floored clock, stays in the stable prefix.
  */
-export function splitRegionWeather(block: string): { regionText: string; weatherText: string } {
+function peelRegionWeather(block: string): { regionText: string; weatherText: string } {
   const weather: string[] = [];
   const region = String(block || "")
     .split("\n")
@@ -868,9 +1017,14 @@ export function splitRegionWeather(block: string): { regionText: string; weather
     })
     .join("\n")
     .trim();
+  return { regionText: region, weatherText: weather.join("\n") };
+}
+
+export function splitRegionWeather(block: string): { regionText: string; weatherText: string } {
+  const peeled = peelRegionWeather(block);
   return {
-    regionText: roundRegionBlockClock(region),
-    weatherText: weather.join("\n"),
+    regionText: roundRegionBlockClock(peeled.regionText),
+    weatherText: peeled.weatherText,
   };
 }
 
@@ -884,6 +1038,10 @@ interface LocalCompanionSections {
   moodText: string;
   /** Region and local time. Clock floored to 15 minutes. Weather is separate. Never trimmed. */
   regionText: string;
+  /** Same region with the clock removed, so the date line can stay in the Ollama prefix. */
+  regionDateText: string;
+  /** Original Local time line, including the clock. Moves with the per-turn block. */
+  localTimeText: string;
   /** Live weather. Sits after memories so a refresh does not bust the prefix. */
   weatherText: string;
   /** Repository lore. Trimmed after PDF and scene extras. */
@@ -892,6 +1050,12 @@ interface LocalCompanionSections {
   sceneText: string;
   memoryText: string;
   pdfText: string;
+  /**
+   * Crisis-response policy for this message only. Empty unless therapy
+   * assessment asked for a direct safety response. First bracketed note
+   * on the local path; not part of the cached system prefix.
+   */
+  turnSafetyText: string;
   /** Active companion name, or "" when this turn has no single speaker. */
   companionName: string;
 }
@@ -986,6 +1150,14 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
 - Do NOT remove or weaken the highest-priority rule about never turning intelligence against the real person.`
     : "";
 
+  const therapySafety =
+    modePolicy.name === "therapy" && therapyAssessment
+      ? splitTherapySafetyForLocal(
+          therapyAssessment,
+          crisisResource || crisisResourceForCountry(null),
+        )
+      : { stable: "", turn: "" };
+
   const staticText = joinPromptParts([
     CORE_BEHAVIOR,
     charDef ? `CHARACTER:\n${charDef}` : "",
@@ -997,6 +1169,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     TURN_TAKING,
     LANGUAGE_QUALITY,
     LOYALTY_GUARDRAIL,
+    therapySafety.stable,
   ]);
 
   let resonanceBlock = "";
@@ -1051,14 +1224,13 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
         params.intimacyTurnResult || undefined,
       )
     : "";
-  const operatorModelBlock = formatOperatorModelForPrompt(operatorModel, BUDGET.operatorModel);
-  const careSafetyBlock =
-    modePolicy.name === "therapy" && therapyAssessment
-      ? therapySafetyPrompt(
-          therapyAssessment,
-          crisisResource || crisisResourceForCountry(null),
-        )
-      : "";
+  // Operator context is untrimmable on the local path (it rides inside mood).
+  // Keep it to about a fifth of the local token cap so persona + mood still fit.
+  const operatorMaxChars = Math.min(
+    BUDGET.operatorModel,
+    Math.floor(localPromptTokenBudget() * 0.2) * LOCAL_PROMPT_CHARS_PER_TOKEN,
+  );
+  const operatorModelBlock = formatOperatorModelForPrompt(operatorModel, operatorMaxChars);
 
   const moodText = joinPromptParts([
     resonanceBlock,
@@ -1069,7 +1241,6 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     hiddenSequenceBlock,
     intimacyBlock,
     operatorModelBlock,
-    careSafetyBlock,
   ]);
 
   const suppliedContext = String(clientContext || systemPrompt || "").trim();
@@ -1078,7 +1249,12 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     mode,
     recentMessages,
   });
-  const { regionText, weatherText } = splitRegionWeather(String(worldKnowledge || "").trim());
+  const peeledRegion = peelRegionWeather(String(worldKnowledge || "").trim());
+  const regionText = roundRegionBlockClock(peeledRegion.regionText);
+  const { regionText: regionDateText, localTimeText } = splitRegionDateAndTime(
+    peeledRegion.regionText,
+  );
+  const weatherText = peeledRegion.weatherText;
   const repositoryBlock = String(repositoryKnowledge || "").trim();
   const repositoryText =
     repositoryBlock.length > 6_000 ? `${repositoryBlock.slice(0, 5_999)}…` : repositoryBlock;
@@ -1113,13 +1289,33 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     staticText,
     moodText,
     regionText,
+    regionDateText,
+    localTimeText,
     weatherText,
     repositoryText,
     sceneText,
     memoryText,
     pdfText: capPdfPromptBlock(pdfContext),
+    turnSafetyText: therapySafety.turn,
     companionName: sanitizePromptName(mainChar?.name),
   };
+}
+
+/**
+ * Therapy care contract and the non-crisis assessment stay in the cached
+ * system prefix. The crisis-response policy is the only safety block that
+ * depends on this message, so it moves to the front of the per-turn notes.
+ */
+function splitTherapySafetyForLocal(
+  assessment: TherapySafetyAssessment,
+  resource: CrisisResource,
+): { stable: string; turn: string } {
+  const full = therapySafetyPrompt(assessment, resource);
+  if (!assessment.requiresDirectSafetyResponse) return { stable: full, turn: "" };
+  const marker = "CRISIS RESPONSE POLICY";
+  const at = full.indexOf(marker);
+  if (at < 0) return { stable: full, turn: "" };
+  return { stable: full.slice(0, at).trim(), turn: full.slice(at).trim() };
 }
 
 /** Collapse a display name so it cannot break the one-line instruction. */
@@ -1166,16 +1362,30 @@ export function companionLocalSections(
   return localCompanionSections(params);
 }
 
-function localPromptOverBudget(parts: string[]): boolean {
-  return (
-    estimateLocalPromptTokens(joinPromptParts(parts)) > localPromptTokenBudget()
-  );
-}
-
-/** Recent user/companion exchanges kept when they still fit the token budget. */
-export const LOCAL_HISTORY_MAX_EXCHANGES = 4;
+/**
+ * Companion history grows until this many exchanges, then the next turn
+ * cuts back to `LOCAL_HISTORY_MIN_EXCHANGES` in one block. The start of
+ * the kept history stays identical on the turns in between, which is what
+ * Ollama's prompt cache needs.
+ */
+export const LOCAL_HISTORY_MAX_EXCHANGES = 6;
 /** Exchanges that stay even after PDF, scene, lore, and memories are dropped. */
 export const LOCAL_HISTORY_MIN_EXCHANGES = 2;
+
+/**
+ * How many of `exchangeCount` exchanges to keep.
+ * 1..6 stay whole. 7 keeps the last 2, then the window grows 3, 4, 5, 6
+ * and cuts back to 2 again. The cut is a block, not a one-exchange slide.
+ */
+export function stableHistoryExchangeCount(exchangeCount: number): number {
+  const max = LOCAL_HISTORY_MAX_EXCHANGES;
+  const min = LOCAL_HISTORY_MIN_EXCHANGES;
+  if (!Number.isFinite(exchangeCount) || exchangeCount <= 0) return 0;
+  if (exchangeCount <= max) return Math.floor(exchangeCount);
+  const period = max - min + 1;
+  const offset = (Math.floor(exchangeCount) - (max + 1)) % period;
+  return min + offset;
+}
 
 /**
  * How many trailing messages cover `exchanges` user/companion pairs.
@@ -1202,11 +1412,50 @@ export function trailingHistoryMessages(
   return count;
 }
 
-function keepRecentHistoryExchanges(
-  history: LlmChatMessage[],
-  exchanges: number,
-): LlmChatMessage[] {
-  const keep = trailingHistoryMessages(history, exchanges);
+function historyUserOrdinals(history: SeqHistoryMessage[]): number[] {
+  const ordinals: number[] = [];
+  let sawSeq = false;
+  for (const message of history) {
+    if (message.role !== "user") continue;
+    const seq = message.seq;
+    if (typeof seq === "number" && Number.isFinite(seq)) sawSeq = true;
+    ordinals.push(typeof seq === "number" && Number.isFinite(seq) ? Math.floor(seq / 2) : ordinals.length);
+  }
+  if (!sawSeq) return ordinals.map((_, index) => index);
+  return ordinals;
+}
+
+/**
+ * Keep a block of history whose first message stays put while the conversation
+ * grows, then jumps forward by several exchanges at once. When messages carry
+ * store `seq`, the block is aligned to that absolute index so the last-24
+ * load does not slide the prefix every turn.
+ */
+export function keepStableHistoryBlock(history: LlmChatMessage[]): LlmChatMessage[] {
+  const rows = history as SeqHistoryMessage[];
+  const ordinals = historyUserOrdinals(rows);
+  if (ordinals.length === 0) {
+    return history.map(({ role, content }) => ({ role, content }));
+  }
+  const newest = ordinals[ordinals.length - 1] ?? 0;
+  const total = newest + 1;
+  const keep = stableHistoryExchangeCount(total);
+  const startOrdinal = total - keep;
+  let startIndex = rows.length;
+  let userIndex = 0;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i]?.role !== "user") continue;
+    if ((ordinals[userIndex] ?? 0) >= startOrdinal) {
+      startIndex = i;
+      break;
+    }
+    userIndex += 1;
+  }
+  return rows.slice(startIndex).map(({ role, content }) => ({ role, content }));
+}
+
+function cutHistoryToMinExchanges(history: LlmChatMessage[]): LlmChatMessage[] {
+  const keep = trailingHistoryMessages(history, LOCAL_HISTORY_MIN_EXCHANGES);
   if (keep <= 0) return [];
   if (keep >= history.length) return history;
   return history.slice(history.length - keep);
@@ -1225,13 +1474,15 @@ function isLocalClosingInstruction(content: string): boolean {
 }
 
 /**
- * Qwen's chat template folds every system message into the top system block
- * and skips system entries in the message loop, so a system line placed
- * right before the user turn actually lands after the mood block. On the
- * native Ollama path, move the answer-last instruction (and the avoid-repeat
- * line, when the repeat retry added one) into the final user turn as
- * bracketed lines. The user's own text stays unchanged and last. Cloud
- * providers keep the separate system turns.
+ * Qwen's chat template folds every system message into the top system block.
+ * On the native Ollama path the system message keeps only the stable parts
+ * (persona, then the region date). History follows. Everything that changes
+ * per turn — a crisis-response policy when this message triggered one,
+ * then memories, weather, lore, the clock, and mood — plus the answer-last
+ * line (and the avoid-repeat line, when a retry added one) is bracketed at
+ * the start of the final user turn. Guardrails stay in the system message.
+ * The user's own text stays last.
+ * Cloud providers keep the separate system turns.
  */
 export function messagesForLocalOllama<T extends { role: string; content: string }>(
   messages: T[],
@@ -1247,36 +1498,63 @@ export function messagesForLocalOllama<T extends { role: string; content: string
     if (!isLocalClosingInstruction(previous.content)) break;
     start -= 1;
   }
-  if (start === messages.length - 1) return messages;
 
-  const notes = messages
+  const layout = companionLocalLayouts.get(messages);
+  if (!layout) {
+    if (start === messages.length - 1) return messages;
+    const notes = messages
+      .slice(start, -1)
+      .map((message) => `[${message.content.trim()}]`);
+    const folded = {
+      ...last,
+      role: "user" as const,
+      content: `${notes.join("\n")}\n${last.content}`,
+    };
+    return [...messages.slice(0, start), folded as T];
+  }
+
+  const closing = messages
     .slice(start, -1)
-    .map((message) => `[${message.content.trim()}]`);
+    .map((message) => message.content.trim())
+    .filter(Boolean);
+  const history = messages
+    .slice(1, start)
+    .filter((message) => message.role === "user" || message.role === "assistant");
+  const stable = joinPromptParts([layout.staticText, layout.regionDateText]);
+  const notes = [...layout.volatileBlocks, ...closing]
+    .map((text) => text.trim())
+    .filter(Boolean)
+    .map((text) => `[${text}]`);
   const folded = {
     ...last,
     role: "user" as const,
-    content: `${notes.join("\n")}\n${last.content}`,
+    content: notes.length > 0 ? `${notes.join("\n")}\n${last.content}` : last.content,
   };
-  return [...messages.slice(0, start), folded as T];
+  const out: T[] = [];
+  if (stable) out.push({ role: "system", content: stable } as T);
+  out.push(...(history as T[]));
+  out.push(folded as T);
+  return out;
 }
 
 /**
- * `/api/chat/messages` entry. Order inside the first system message is fixed
- * for the Ollama prompt cache: static persona, then the region/local-time
- * block, then per-message memories, then weather, then lore (repository and
- * PDF), then scene lines, then the per-turn mood block. Recent history, the
- * answer-last system turn, and the user message follow and are not reordered.
- * Mood changes every turn, so it stays last in that system message. Persona
- * and the floored region block are the stable prefix for a 15-minute window.
+ * `/api/chat/messages` entry. Hosted providers still receive one system
+ * message: persona, floored region, memories, weather, lore, scene, then
+ * mood, then history, then the answer-last system turn, then the user.
+ * Native Ollama does not send that system message. `messagesForLocalOllama`
+ * rebuilds it as persona + region date, history, and a final user turn
+ * whose bracketed prefix holds the per-turn blocks (mood last).
  *
- * Trim PDF text first, then scene lines, then repository lore, then memories,
- * then older history. The last two user/companion exchanges are protected and
- * are never dropped; up to four exchanges stay when they fit. Persona, region,
- * weather, mood, the answer-last instruction, and the latest user message are
- * never trimmed. The instruction's tokens still count. The working budget
- * stays about 1.5–2k tokens (`LOCAL_PROMPT_MAX_TOKENS`); n_ctx is 8192.
- * Cloud callers still receive the answer-last line as its own system turn.
- * Native Ollama folds that line into the user turn via `messagesForLocalOllama`.
+ * Trim PDF text first, then scene lines, then repository lore. Mood is
+ * shortened before a short memory is dropped, when that is enough to fit.
+ * Memories still drop before history. History then cuts once to the last
+ * two exchanges. The last two exchanges are protected. History grows to
+ * about six exchanges and then cuts back to the last two, so the start of
+ * the history stays identical on the turns in between. Persona, region,
+ * weather, the answer-last instruction, and the latest user message are
+ * never dropped. Mood and the operator block are shortened so those parts
+ * plus the kept history cannot exceed `LOCAL_PROMPT_MAX_TOKENS` (~1.2k)
+ * unless the persona alone is already over that cap.
  */
 export function composeCompanionChatMessages(
   params: PromptBuilderParams,
@@ -1286,20 +1564,33 @@ export function composeCompanionChatMessages(
   let repositoryText = sections.repositoryText;
   let pdfText = sections.pdfText;
   let memoryText = sections.memoryText;
-  const moodText = sections.moodText;
   const userTurn = String(params.content ?? "").trim() || CONTINUE_USER_TURN;
-  let history = keepRecentHistoryExchanges(
-    capRecentMessagesForLlm(omitRetriedUserTurn(params.recentMessages, userTurn)),
-    LOCAL_HISTORY_MAX_EXCHANGES,
+  let history = keepStableHistoryBlock(
+    normalizeRecentMessages(omitRetriedUserTurn(params.recentMessages, userTurn)),
   );
   const answerLast = answerLastMessageInstruction(
     userNameForAnswerInstruction(params),
     sections.companionName,
   );
+  let moodText = sections.moodText;
+  const budget = localPromptTokenBudget();
 
-  const historyText = () => history.map((message) => message.content).join("\n");
-  const over = () =>
-    localPromptOverBudget([
+  const render = (): LlmChatMessage[] => {
+    const volatileBlocks = [
+      sections.turnSafetyText,
+      memoryText,
+      sections.weatherText,
+      repositoryText,
+      pdfText,
+      sceneText,
+      sections.localTimeText,
+      moodText,
+    ]
+      .map((part) => String(part || "").trim())
+      .filter(Boolean);
+    // Hosted providers keep today's order, including the floored clock in the
+    // region block and mood at the end of the system message.
+    const system = joinPromptParts([
       sections.staticText,
       sections.regionText,
       memoryText,
@@ -1307,55 +1598,79 @@ export function composeCompanionChatMessages(
       repositoryText,
       pdfText,
       sceneText,
+      sections.turnSafetyText,
       moodText,
-      historyText(),
-      answerLast,
-      userTurn,
     ]);
+    const messages: LlmChatMessage[] = [];
+    if (system) messages.push({ role: "system", content: system });
+    // Retry dedupe already dropped this question and its stale answer. A
+    // leftover trailing copy (continue turns are left in place) is still
+    // removed so the answer-last system turn sits directly before one user line.
+    const historyEndsWithTurn =
+      history.length > 0 &&
+      history[history.length - 1]?.role === "user" &&
+      history[history.length - 1]?.content === userTurn;
+    messages.push(...(historyEndsWithTurn ? history.slice(0, -1) : history));
+    messages.push({ role: "system", content: answerLast });
+    messages.push({ role: "user", content: userTurn });
+    rememberCompanionLocalLayout(messages, {
+      staticText: sections.staticText,
+      regionDateText: sections.regionDateText,
+      volatileBlocks,
+    });
+    return messages;
+  };
+
+  const packedTokens = () => {
+    const messages = render();
+    const hosted = estimateLocalPromptTokens(
+      messages.map((message) => message.content).join("\n"),
+    );
+    const local = estimateLocalPromptTokens(
+      messagesForLocalOllama(messages)
+        .map((message) => message.content)
+        .join("\n"),
+    );
+    return Math.max(hosted, local);
+  };
+  const over = () => packedTokens() > budget;
+
+  // Shorten mood only when the rest of the turn can fit without it. Persona
+  // text stays as written. If the persona alone is already over the cap,
+  // shortening mood cannot make the turn fit, so the mood block stays whole.
+  const shrinkMoodToFit = () => {
+    if (!over()) return;
+    const saved = moodText;
+    moodText = "";
+    if (packedTokens() > budget) {
+      moodText = saved;
+      return;
+    }
+    let allowance = Math.max(0, budget - packedTokens());
+    moodText = capBlockToLocalTokens(saved, allowance);
+    while (moodText && over() && allowance > 0) {
+      allowance -= 1;
+      moodText = capBlockToLocalTokens(saved, allowance);
+    }
+    if (over()) moodText = saved;
+  };
 
   if (over()) pdfText = "";
   if (over()) sceneText = "";
   if (over()) repositoryText = "";
+  // A short memory stays when cutting the tail of the mood block frees
+  // enough room. Memories are still dropped before history is cut.
+  if (over()) shrinkMoodToFit();
   if (over()) memoryText = "";
-  // Older turns go next. The last two exchanges stay even if that leaves the
-  // prompt over the soft budget — dropping them is what made the model answer
-  // from persona and mood alone.
-  const protectedCount = trailingHistoryMessages(
-    history,
-    LOCAL_HISTORY_MIN_EXCHANGES,
-  );
-  while (history.length > protectedCount && over()) {
-    history = history.slice(1);
+  // One block cut to the last two exchanges. Sliding a single message off
+  // the front would change the cached prefix on every following turn.
+  if (over()) {
+    const minHistory = cutHistoryToMinExchanges(history);
+    if (minHistory.length < history.length) history = minHistory;
   }
+  if (over()) shrinkMoodToFit();
 
-  // Mood stays last in the first system message. Memories, weather, and lore
-  // sit after the region block so a new user line or a weather refresh does
-  // not bust the persona+region prefix. The answer-last line is a later
-  // system turn, directly before the user message.
-  const system = joinPromptParts([
-    sections.staticText,
-    sections.regionText,
-    memoryText,
-    sections.weatherText,
-    repositoryText,
-    pdfText,
-    sceneText,
-    moodText,
-  ]);
-
-  const messages: LlmChatMessage[] = [];
-  if (system) messages.push({ role: "system", content: system });
-  // Retry dedupe already dropped this question and its stale answer. A
-  // leftover trailing copy (continue turns are left in place) is still
-  // removed so the answer-last system turn sits directly before one user line.
-  const historyEndsWithTurn =
-    history.length > 0 &&
-    history[history.length - 1]?.role === "user" &&
-    history[history.length - 1]?.content === userTurn;
-  messages.push(...(historyEndsWithTurn ? history.slice(0, -1) : history));
-  messages.push({ role: "system", content: answerLast });
-  messages.push({ role: "user", content: userTurn });
-  return messages;
+  return render();
 }
 
 function truncate(value: unknown, max = 600): string {

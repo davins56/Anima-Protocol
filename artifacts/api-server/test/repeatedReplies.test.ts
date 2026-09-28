@@ -7,6 +7,8 @@ import {
   messagesForLocalOllama,
   messagesForRepeatRetry,
   recentAssistantReplies,
+  visiblePrefixRepeatsHistory,
+  LOCAL_REPEAT_DETECT_CHARS,
 } from "../src/lib/promptBuilder";
 
 const GREETING = "Hello! I'm so glad you're here. How are you feeling today?";
@@ -22,6 +24,30 @@ describe("isRepeatedReply", () => {
   it("matches the same reply across speaker labels, case, and punctuation", () => {
     expect(isRepeatedReply(`**Nova:** ${GREETING.toUpperCase()}`, [GREETING])).toBe(true);
     expect(isRepeatedReply(`${GREETING}!!`, ["x", GREETING])).toBe(true);
+  });
+
+  it("detects a copy in the first streamed characters", () => {
+    const prior = "The room stays quiet while she watches the door and does not answer yet.";
+    const opening = prior.slice(0, LOCAL_REPEAT_DETECT_CHARS + 8);
+    expect(opening.length).toBeGreaterThanOrEqual(LOCAL_REPEAT_DETECT_CHARS);
+    expect(visiblePrefixRepeatsHistory(opening, [prior])).toBe(true);
+    expect(visiblePrefixRepeatsHistory(prior.slice(0, 12), [prior])).toBe(false);
+    expect(
+      visiblePrefixRepeatsHistory(
+        "Blue, like the sky over the harbor, and nothing like that greeting.",
+        [prior],
+      ),
+    ).toBe(false);
+  });
+
+  it("does not flag a longer reply that only starts with a short earlier beat", () => {
+    const prior = "She nods once.";
+    expect(prior.length).toBeGreaterThanOrEqual(12);
+    expect(prior.length).toBeLessThan(LOCAL_REPEAT_DETECT_CHARS);
+    const reply =
+      "She nods once. The harbor bell is late, and she keeps the watch from the gate.";
+    expect(reply.startsWith(prior)).toBe(true);
+    expect(visiblePrefixRepeatsHistory(reply, [prior])).toBe(false);
   });
 
   it("does not match a different reply or a short one", () => {
