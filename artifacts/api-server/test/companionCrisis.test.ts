@@ -148,7 +148,8 @@ describe("crisis care stays out of the cached prefix and the transcript", () => 
     const blob = messages.map((message) => message.content).join("\n");
     expect(system).not.toContain(COMPANION_CRISIS_TURN_LINE);
     expect(system.indexOf("CHARACTER:")).toBeLessThan(system.indexOf("HIGHEST-PRIORITY RULE"));
-    expect(user.indexOf(COMPANION_CRISIS_TURN_LINE)).toBeGreaterThanOrEqual(0);
+    expect(user.startsWith(`[${COMPANION_CRISIS_TURN_LINE}]`)).toBe(true);
+    expect(blob.split(COMPANION_CRISIS_TURN_LINE).length - 1).toBe(1);
     expect(user.indexOf(COMPANION_CRISIS_TURN_LINE)).toBeLessThan(
       user.indexOf("I want to kill myself"),
     );
