@@ -7,7 +7,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 MODELFILE="${ROOT}/scripts/llm/Modelfile.anima-chat"
-BASE_MODEL="${ANIMA_BOOTSTRAP_BASE:-qwen2.5:3b}"
+BASE_MODEL="${ANIMA_BOOTSTRAP_BASE:-qwen2.5:0.5b}"
 ANIMA_TAG="${ANIMA_OLLAMA_CHAT_TAG:-anima-chat}"
 OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"
 # Applies only when this script starts `ollama serve`. An already-running

@@ -192,6 +192,7 @@ export const animaApi = {
     responseJsonSchema,
     maxTokens,
     stream = true,
+    sidecar = false,
   } = {}) {
     yield* postAuthedSse(
       "/openai/v1/chat/completions",
@@ -203,6 +204,7 @@ export const animaApi = {
         stream: stream !== false,
         ...(responseJsonSchema ? { responseJsonSchema } : {}),
         ...(typeof maxTokens === "number" ? { maxTokens } : {}),
+        ...(sidecar ? { sidecar: true } : {}),
       }),
     );
   },

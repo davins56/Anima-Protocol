@@ -164,7 +164,7 @@ const CLOUD_FLAGSHIP_SETUP_HINT =
 
 const LOCAL_LLM_SETUP_HINT =
   "ANIMA_LLM_PROVIDER=custom requires a self-hosted Anima LLM. " +
-  "On local Node: install Ollama (https://ollama.com), run `ollama pull qwen2.5:3b` or `pnpm llm:up`, then set " +
+  "On local Node: install Ollama (https://ollama.com), run `ollama pull qwen2.5:0.5b` or `pnpm llm:up`, then set " +
   "ANIMA_LOCAL_LLM_BASE_URL=http://localhost:11434/v1 and ANIMA_OLLAMA_MODEL_STANDARD=anima-chat. " +
   "On the Cloudflare Worker / Vercel, localhost is unreachable — set a public HTTPS …/v1 URL instead. " +
   "See docs/custom-llm.md.";
