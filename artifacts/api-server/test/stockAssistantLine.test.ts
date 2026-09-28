@@ -13,12 +13,17 @@ describe("stock assistant lines", () => {
   it("catches model-identity lines on short replies and when they are most of a reply", () => {
     expect(isStockAssistantLine("As an AI, I should not do that.")).toBe(true);
     expect(isStockAssistantLine("I'm just an AI assistant.")).toBe(true);
+    expect(isStockAssistantLine("I'm AI.")).toBe(true);
+    expect(isStockAssistantLine("I am AI.")).toBe(true);
     expect(isStockAssistantLine("I'M AN AI LANGUAGE MODEL.")).toBe(true);
     expect(isStockAssistantLine("I can't act like a real person.")).toBe(true);
     expect(isStockAssistantLine("I'm sorry, but I can't assist with that.")).toBe(true);
     expect(isStockAssistantLine("I cannot help with that request.")).toBe(true);
     expect(isStockAssistantLine("I'm Qwen.")).toBe(true);
     expect(isStockAssistantLine("I was created by Alibaba Cloud.")).toBe(true);
+    expect(isStockAssistantLine("I'm a chatbot, so I can't do that.")).toBe(true);
+    expect(isStockAssistantLine("Soy una IA.")).toBe(true);
+    expect(isStockAssistantLine("Yes. I'm an artificial intelligence.")).toBe(true);
 
     const mostly = "I'm sorry, but I can't assist with that request.\nPlease ask something else.";
     expect(isStockAssistantLine(mostly)).toBe(true);
@@ -45,15 +50,53 @@ describe("stock assistant lines", () => {
     ].join("\n");
     expect(buried.length).toBeGreaterThan(480);
     expect(isStockAssistantLine(buried)).toBe(false);
+
+    const padded = `As an AI.${" ".repeat(600)}`;
+    expect(padded.length).toBeGreaterThan(480);
+    expect(isStockAssistantLine(padded)).toBe(true);
   });
 
-  it("skips the guard when the persona is an AI, android, robot, or synthetic", () => {
+  it("catches first-person identity claims and ignores denials and plain discussion", () => {
+    expect(isStockAssistantLine("Soy una IA.")).toBe(true);
+    expect(isStockAssistantLine("Je suis une IA.")).toBe(true);
+    expect(isStockAssistantLine("Eu sou uma IA.")).toBe(true);
+    expect(isStockAssistantLine("Sono un'IA.")).toBe(true);
+    expect(isStockAssistantLine("Ich bin eine KI.")).toBe(true);
+    expect(isStockAssistantLine("Soy una inteligencia artificial.")).toBe(true);
+    expect(isStockAssistantLine("Je suis une intelligence artificielle.")).toBe(true);
+    expect(isStockAssistantLine("Eu sou uma inteligência artificial.")).toBe(true);
+    expect(isStockAssistantLine("Sono un'intelligenza artificiale.")).toBe(true);
+    expect(isStockAssistantLine("Ich bin eine künstliche Intelligenz.")).toBe(true);
+
+    expect(isStockAssistantLine("Yo no soy una IA.")).toBe(false);
+    expect(isStockAssistantLine("Je ne suis pas une IA.")).toBe(false);
+    expect(isStockAssistantLine("Non sono un'IA.")).toBe(false);
+    expect(isStockAssistantLine("Não sou uma IA.")).toBe(false);
+    expect(isStockAssistantLine("Ich bin keine KI.")).toBe(false);
+    expect(isStockAssistantLine("I'm not an AI.")).toBe(false);
+    expect(isStockAssistantLine("I am not a language model.")).toBe(false);
+
+    expect(isStockAssistantLine("A language model can summarize a book.")).toBe(false);
+    expect(isStockAssistantLine("L'intelligence artificielle change le port.")).toBe(false);
+    expect(isStockAssistantLine("La inteligencia artificial no es el tema.")).toBe(false);
+  });
+
+  it("skips the guard when the persona is already a machine", () => {
     const line = "As an AI, I should not do that.";
     expect(isStockAssistantLine(line)).toBe(true);
     expect(isStockAssistantLine(line, ["She is an android built for the harbor."])).toBe(false);
     expect(isStockAssistantLine(line, ["A synthetic being with a quiet voice."])).toBe(false);
     expect(isStockAssistantLine(line, ["He was built as a robot and still keeps watch."])).toBe(false);
+    expect(isStockAssistantLine(line, ["She is a machine that keeps the gate."])).toBe(false);
+    expect(isStockAssistantLine(line, ["An automaton with a brass heart."])).toBe(false);
+    expect(isStockAssistantLine(line, ["A protocol droid assigned to the dock."])).toBe(false);
+    expect(isStockAssistantLine(line, ["A cyborg who still remembers the war."])).toBe(false);
+    expect(isStockAssistantLine(line, ["He is a bot that answers the bell."])).toBe(false);
+    expect(isStockAssistantLine(line, ["Living software inside the lighthouse."])).toBe(false);
+    expect(isStockAssistantLine(line, ["A construct woven from old orders."])).toBe(false);
+    expect(isStockAssistantLine(line, ["She is a program that chose a name."])).toBe(false);
     expect(isStockAssistantLine(line, ["Natasha reads rooms and rarely explains herself."])).toBe(true);
+    expect(isStockAssistantLine(line, ["She rows a boat and keeps both oars."])).toBe(true);
   });
 
   it("lets in-story refusals through", () => {
