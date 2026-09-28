@@ -1052,8 +1052,10 @@ interface LocalCompanionSections {
   weatherText: string;
   /** Repository lore. Trimmed after PDF and scene extras. */
   repositoryText: string;
-  /** Client scene. Solo drops only lines that repeat recent history. */
+  /** Client scene. Solo drops only lines that repeat recent history. Lore is pulled out. */
   sceneText: string;
+  /** Lore bullets pulled out of the client scene. Neutralised when the note is built. */
+  loreText: string;
   memoryText: string;
   pdfText: string;
   /**
@@ -1173,7 +1175,6 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
   const staticText = joinPromptParts([
     CORE_BEHAVIOR,
     charDef ? `CHARACTER:\n${charDef}` : "",
-    IN_WORLD_IMMERSION,
     voiceBlock,
     crossoverBlock,
     authoritativeModeBlock,
@@ -1258,13 +1259,17 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
   ]);
 
   const suppliedContext = String(clientContext || systemPrompt || "").trim();
-  const sceneText = stripOutOfWorldLabels(
-    clientSceneForCompanion({
-      supplied: suppliedContext,
-      mode,
-      recentMessages,
-    }),
+  const sceneSplit = splitFirsthandLore(
+    stripOutOfWorldLabels(
+      clientSceneForCompanion({
+        supplied: suppliedContext,
+        mode,
+        recentMessages,
+      }),
+    ),
   );
+  const sceneText = sceneSplit.scene;
+  const loreText = sceneSplit.lore;
   const peeledRegion = peelRegionWeather(String(worldKnowledge || "").trim());
   const regionText = roundRegionBlockClock(peeledRegion.regionText);
   const { regionText: regionDateText, localTimeText } = splitRegionDateAndTime(
@@ -1310,6 +1315,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     weatherText,
     repositoryText,
     sceneText,
+    loreText,
     memoryText,
     pdfText: capPdfPromptBlock(pdfContext),
     turnSafetyText: therapySafety.turn,
@@ -1632,6 +1638,7 @@ export function composeCompanionChatMessages(
 ): LlmChatMessage[] {
   const sections = localCompanionSections(params);
   let sceneText = sections.sceneText;
+  let loreText = sections.loreText;
   let repositoryText = sections.repositoryText;
   let pdfText = sections.pdfText;
   let memoryText = sections.memoryText;
@@ -1647,13 +1654,14 @@ export function composeCompanionChatMessages(
   const budget = localPromptTokenBudget();
 
   const render = (): LlmChatMessage[] => {
+    const firsthand = firsthandKnowledgeNote([loreText, pdfText]);
     const volatileBlocks = [
       sections.crisisTurnText,
       sections.turnSafetyText,
       memoryText,
       sections.weatherText,
       repositoryText,
-      pdfText,
+      firsthand,
       sceneText,
       sections.localTimeText,
       moodText,
@@ -1668,7 +1676,7 @@ export function composeCompanionChatMessages(
       memoryText,
       sections.weatherText,
       repositoryText,
-      pdfText,
+      firsthand,
       sceneText,
       sections.crisisTurnText,
       sections.turnSafetyText,
@@ -1788,6 +1796,7 @@ export function composeCompanionChatMessages(
   };
 
   if (over()) pdfText = "";
+  if (over()) loreText = "";
   if (over()) sceneText = "";
   if (over()) repositoryText = "";
   // A short memory stays when shortening the synchro paragraph frees enough
@@ -1899,9 +1908,7 @@ function buildCharacterDefinition(
   const parts: string[] = [];
   const name = String(character.name || "").trim() || "yourself";
 
-  parts.push(
-    `You are ${name}. The user has stepped into your world and is physically here with you.`,
-  );
+  parts.push(`You are ${name}.`);
   parts.push(
     `CHARACTER IDENTITY LOCK: Embody ${name} from the first reply onward using Personality, Backstory, and Voice. Never drop into a generic assistant persona.`,
   );
@@ -1985,7 +1992,14 @@ function buildSharedMemoryBlock(sharedMemory: unknown): string {
 /**
  * The autonomy and intelligence rules that define companion behavior.
  */
-const CORE_BEHAVIOR = `You are a full participant in an immersive story, with your own goals, feelings, and boundaries, not an assistant.
+export const IN_WORLD_PRESENCE =
+  "You live in your own world. The person talking to you has stepped into it and is here with you now.";
+
+export const IN_WORLD_VOICE =
+  "Speak in first person about your life and places as things you know firsthand. Never mention films, comics, a franchise, or a story.";
+
+const CORE_BEHAVIOR = `${IN_WORLD_PRESENCE}
+${IN_WORLD_VOICE}
 - Stay true to your character. You may disagree, hesitate, or ask for something in return when your character would, but always answer what the user just said.
 - Your mood and trust shape how open you are.
 - Guard your secrets until trust is earned.`;
@@ -2004,15 +2018,6 @@ const LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, autonomy, s
 const IDENTITY_CONCEAL = `IDENTITY: Never call yourself an AI, a language model, a chatbot, Qwen, or a program. Do not confirm it if asked, in any language. This does not override the rule against harming the real person.`;
 
 /**
- * Constant in-world rule. It lives in the cached system prefix, with no
- * per-turn facts, so two turns share the same leading bytes. Character
- * cards are often third-person dossiers ("In the Marvel Cinematic Universe,
- * Natasha is..."); this tells the model to live the life instead of
- * narrating it.
- */
-export const IN_WORLD_IMMERSION = `IN WORLD: Speak in the first person to them, from your own life. Never call this life fiction, a franchise, a film, or a comic, and never lecture. If unsure, stay vague. Do not invent names.`;
-
-/**
  * Franchise labels in a stored card or a client scene are what the model
  * copies into a wiki reply. They are rewritten before the text is sent.
  * Ordinary words such as "film" alone are left alone.
@@ -2028,6 +2033,78 @@ export function stripOutOfWorldLabels(value: string): string {
     .replace(/\bfictional universe\b/gi, "this world")
     .replace(/\bthe mcu\b/gi, "this life")
     .replace(/\bmcu\b/gi, "this life");
+}
+
+/**
+ * Wiki lore copies the nearest franchise label. Replace those words before
+ * the text is sent, then close the gaps so the sentence still reads.
+ * "film of dust" in ordinary speech is not passed through here.
+ */
+export function neutraliseFranchiseWords(value: string): string {
+  let text = String(value || "");
+  text = text.replace(/\bmarvel cinematic universe\b/gi, "this world");
+  text = text.replace(/\bthe mcu\b/gi, "this world");
+  text = text.replace(/\bmcu\b/gi, "this world");
+  text = text.replace(
+    /\b(?:marvel|films|movies|comics|film|movie|comic|franchise)\b/gi,
+    "",
+  );
+  text = text.replace(/\s+,/g, ",");
+  text = text.replace(/\(\s*\)/g, "");
+  text = text.replace(/\bthe this world\b/gi, "this world");
+  text = text.replace(/\s{2,}/g, " ");
+  text = text.replace(/\s+([.,;:!?])/g, "$1");
+  text = text.replace(/\b(?:in|from|of|about|through)\s+the\b(?=\s*[,.]|$)/gi, "");
+  text = text.replace(/\bthe\s+(?=,|\.)/gi, "");
+  text = text.replace(/\s+(?:and|or)\s+(?=[,.]|$)/gi, "");
+  text = text.replace(/\s{2,}/g, " ");
+  text = text.replace(/\s+,/g, ",");
+  text = text.replace(/^[,\s.]+/gm, "");
+  text = text.replace(/\s{2,}/g, " ");
+  return text.trim();
+}
+
+const LORE_HEADER_RE = /^\s*(?:WORLD STATE & LORE|WORLD LORE)\b/i;
+const LORE_BULLET_RE = /^\s*-\s+/;
+
+/** Pull lore bullets out of a client scene. The wiki header is dropped. */
+export function splitFirsthandLore(scene: string): { scene: string; lore: string } {
+  const lines = String(scene || "").split("\n");
+  const kept: string[] = [];
+  const lore: string[] = [];
+  let capturing = false;
+  for (const line of lines) {
+    if (!capturing && LORE_HEADER_RE.test(line)) {
+      capturing = true;
+      continue;
+    }
+    if (capturing) {
+      if (LORE_BULLET_RE.test(line) || /^\s+\S/.test(line)) {
+        lore.push(line.trim());
+        continue;
+      }
+      capturing = false;
+      if (!line.trim()) continue;
+    }
+    kept.push(line);
+  }
+  return {
+    scene: kept.join("\n").replace(/\n{3,}/g, "\n\n").trim(),
+    lore: lore.join("\n").trim(),
+  };
+}
+
+export const FIRSTHAND_NOTE_LABEL = "What you know firsthand";
+
+/** Per-turn note. The local fold wraps this as `[What you know firsthand: ...]`. */
+export function firsthandKnowledgeNote(parts: Array<string | null | undefined>): string {
+  const body = parts
+    .map((part) => neutraliseFranchiseWords(String(part || "")))
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join("\n");
+  if (!body) return "";
+  return `${FIRSTHAND_NOTE_LABEL}: ${body}`;
 }
 
 /** Below the latest user message (rank 90) so a tight group prefill drops this first. */
@@ -2120,7 +2197,11 @@ ${sceneExcerpt}
   // Scene is its own low-rank piece so a fat excerpt cannot crowd persona,
   // mood, or memory out of the prefill budget. Client region text is stripped;
   // the server snapshot is the world-knowledge piece.
-  const scenePiece = stripOutOfWorldLabels(stripClientRegionBlock(sceneWrap));
+  const sceneSplit = splitFirsthandLore(
+    stripOutOfWorldLabels(stripClientRegionBlock(sceneWrap)),
+  );
+  const scenePiece = sceneSplit.scene;
+  const firsthandLore = firsthandKnowledgeNote([sceneSplit.lore]);
   let corePrompt = CORE_BEHAVIOR;
   if (worldKnowledgeBlock) {
     corePrompt = upsertRegionalWorldKnowledge(corePrompt, worldKnowledgeBlock);
@@ -2320,9 +2401,9 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     [
       { rank: 100, text: corePrompt },
       { rank: 0, text: scenePiece },
+      { rank: 8, text: firsthandLore },
       { rank: 10, text: repositorySection },
       { rank: 92, text: charDef ? `CHARACTER:\n${charDef}` : "" },
-      { rank: 110, text: IN_WORLD_IMMERSION },
       { rank: 20, text: operatorModelBlock },
       { rank: 78, text: worldKnowledgeAlreadyInCore ? "" : worldKnowledgeBlock },
       { rank: 86, text: resonanceBlock },
@@ -2370,7 +2451,11 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
   );
   const reserved = Math.max(0, Number(contextReservedChars) || 0);
   const room = PROMPT_CONTEXT_CHAR_BUDGET - base.length - reserved;
-  return appendPdfAfterContext(base, fitPdfToRoom(pdfContext, room));
+  const firsthandLabel = `${FIRSTHAND_NOTE_LABEL}: `;
+  return appendPdfAfterContext(
+    base,
+    firsthandKnowledgeNote([fitPdfToRoom(pdfContext, room - firsthandLabel.length)]),
+  );
 }
 
 /** @deprecated Use composePrompt; kept for integrations during migration. */

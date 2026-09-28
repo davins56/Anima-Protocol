@@ -85,7 +85,8 @@ import {
 import { beginCompanionLlmTurn, companionTurnsOpenForUser } from "../lib/sidecarLlm";
 import { localLlmSlotEnabled, waitForLocalChatSlot } from "../lib/localLlmSlot";
 import {
-  inWorldFourthWallDeflection,
+  FOURTH_WALL_RETRY_MAX_TOKENS,
+  fourthWallRetryAllowed,
   inWorldRetryReminder,
   isFourthWallReply,
 } from "../lib/fourthWallReply";
@@ -2588,7 +2589,14 @@ router.post("/messages", async (req, res) => {
       !crisisTurn && isFourthWallReply(text);
     const stockDeflection = () =>
       stockAssistantDeflection(activeChar?.name, pronounFromPersona(personaParts));
-    const worldDeflection = () => inWorldFourthWallDeflection(activeChar?.name);
+    const fourthWallRetryOpen = () =>
+      fourthWallRetryAllowed(Date.now() - generationStartedAt);
+    const guardedRetryMaxTokens = (localHost: boolean, fourthWall: boolean) => {
+      const base = localHost
+        ? Math.min(replyMaxTokens, LOCAL_EXTRA_GENERATION_MAX_TOKENS)
+        : replyMaxTokens;
+      return fourthWall ? Math.min(base, FOURTH_WALL_RETRY_MAX_TOKENS) : base;
+    };
     const regenerateGuardedReply = async (
       maxTokens: number,
       reminder: string,
@@ -2618,6 +2626,9 @@ router.post("/messages", async (req, res) => {
             ? trimToLastCompleteSentence(retried.content)
             : retried.content,
         );
+        // A fourth-wall backup that times out keeps the original reply.
+        // A stock retry may still keep a trimmed sentence.
+        if (retried.timedOut && !noteStock) return null;
         if (
           retriedText.trim() &&
           !replyIsStock(retriedText) &&
@@ -2706,7 +2717,7 @@ router.post("/messages", async (req, res) => {
           : streamed.content;
       }
       const ensembleStock = !crisisTurn && replyIsStock(fullResponse);
-      const ensembleFourth = replyBreaksFourthWall(fullResponse);
+      const ensembleFourth = replyBreaksFourthWall(fullResponse) && fourthWallRetryOpen();
       if (ensembleStock || ensembleFourth) {
         const retryBudgetMs = repeatRetryBudgetMs(Date.now() - requestStartedAt);
         let otherWorkQueued = companionTurnsOpenForUser(userId) > 1;
@@ -2724,7 +2735,7 @@ router.post("/messages", async (req, res) => {
         const recovered =
           retryBudgetMs > 0 && !generateSignal.aborted && !otherWorkQueued
             ? await regenerateGuardedReply(
-                Math.min(replyMaxTokens, LOCAL_EXTRA_GENERATION_MAX_TOKENS),
+                guardedRetryMaxTokens(true, ensembleFourth),
                 guardReminder(ensembleStock, ensembleFourth),
                 ensembleStock,
               )
@@ -2734,8 +2745,6 @@ router.post("/messages", async (req, res) => {
         } else if (ensembleStock) {
           fullResponse = stockDeflection();
           noteStockAssistantLine("deflect");
-        } else {
-          fullResponse = worldDeflection();
         }
       }
       if (fullResponse.trim()) emitDelta(fullResponse);
@@ -2771,7 +2780,8 @@ router.post("/messages", async (req, res) => {
       const priorReplies = recentAssistantReplies(recentMessages);
       let held = "";
       let flushed = false;
-      let cutReason: "repeat" | "stock" | "fourth" | null = null;
+      let suppressFourthWall = false;
+      let cutReason: "repeat" | "stock" | null = null;
       const streamed = await consumeLlmStream(completion.stream, {
         ...consumeOpts,
         onDelta: (delta) => {
@@ -2786,10 +2796,12 @@ router.post("/messages", async (req, res) => {
             return;
           }
           held += delta;
-          if (cutReason) return;
+          if (cutReason || suppressFourthWall) return;
           const visible = held.trim();
+          // Keep the whole reply. A clear narration is not shown until the
+          // one short backup finishes, or until we decide to keep it.
           if (replyBreaksFourthWall(visible)) {
-            cutReason = "fourth";
+            suppressFourthWall = true;
             return;
           }
           if (visible.length < LOCAL_REPEAT_DETECT_CHARS) return;
@@ -2835,10 +2847,7 @@ router.post("/messages", async (req, res) => {
         !crisisTurn &&
         (cutReason === "stock" || replyIsStock(fullResponse) || replyIsStock(held));
       const fourthWall =
-        !crisisTurn &&
-        (cutReason === "fourth" ||
-          replyBreaksFourthWall(fullResponse) ||
-          replyBreaksFourthWall(held));
+        replyBreaksFourthWall(fullResponse) && fourthWallRetryOpen();
       let otherWorkQueued = false;
       const wantsExtra =
         (repeated || stockLine || fourthWall) &&
@@ -2931,9 +2940,7 @@ router.post("/messages", async (req, res) => {
       } else if (canRegenerate && (stockLine || fourthWall) && !extraGenerationUsed) {
         extraGenerationUsed = true;
         const recovered = await regenerateGuardedReply(
-          localHost
-            ? Math.min(replyMaxTokens, LOCAL_EXTRA_GENERATION_MAX_TOKENS)
-            : replyMaxTokens,
+          guardedRetryMaxTokens(localHost, fourthWall),
           guardReminder(stockLine, fourthWall),
           stockLine,
         );
@@ -2958,14 +2965,6 @@ router.post("/messages", async (req, res) => {
           fullResponse = stockDeflection();
           flushed = false;
           noteStockAssistantLine("deflect");
-        } else if (
-          replyBreaksFourthWall(fullResponse) ||
-          (cutReason === "fourth" &&
-            replyBreaksFourthWall(held) &&
-            !String(fullResponse || "").trim())
-        ) {
-          fullResponse = worldDeflection();
-          flushed = false;
         }
       }
       if (localHost && !flushed && fullResponse.trim()) {

@@ -64,7 +64,7 @@ describe("local-only companion lore", () => {
       .join("\n");
 
     expect(system).toContain("Budapest safehouse key is under the third stair");
-    expect(system).toContain("WORLD STATE & LORE");
+    expect(system).toContain("What you know firsthand:");
     expect(messages.at(-1)?.content).toContain("Budapest safehouse key");
   });
 });

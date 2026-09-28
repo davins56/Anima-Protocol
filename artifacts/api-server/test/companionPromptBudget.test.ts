@@ -712,10 +712,11 @@ describe("companion prompt prefill budget", () => {
     expect(cachePrefix).toContain("Labor Day (2026-09-07)");
     expect(system.indexOf("MEMORY_CACHE")).toBeGreaterThan(regionEnd);
     expect(system.indexOf("31°C, clear")).toBeGreaterThan(system.indexOf("MEMORY_CACHE"));
-    // Short lore and PDF yield before mood is cut to nothing. On this
-    // persona they do not fit beside region, memory, weather, and mood.
-    expect(system).not.toContain("REPO_LORE");
+    // PDF still yields first. The in-world lines are short enough that a
+    // one-line repository note now fits beside region, memory, weather, and mood.
+    expect(system).toContain("REPO_LORE");
     expect(system).not.toContain("PDF_CACHE");
+    expect(estimateLocalPromptTokens(system)).toBeLessThanOrEqual(LOCAL_PROMPT_MAX_TOKENS);
     const sections = companionLocalSections(earlyInput);
     const moodAt = system.indexOf(sections.moodText.slice(0, 80));
     expect(moodAt).toBeGreaterThan(system.indexOf("31°C, clear"));
