@@ -122,7 +122,7 @@ class ChatApiTests(unittest.TestCase):
 
     def test_rejects_empty_and_oversized_requests(self):
         self.assertEqual(self.client.post("/v1/chat/completions", json={"messages": []}).status_code, 422)
-        huge = {"messages": [{"role": "user", "content": "x" * (5 * 1024 * 1024)}]}
+        huge = {"messages": [{"role": "user", "content": "x" * (server.MAX_BODY_BYTES + 1)}]}
         self.assertEqual(self.client.post("/v1/chat/completions", json=huge).status_code, 413)
 
     def test_bearer_token_guards_every_v1_route(self):

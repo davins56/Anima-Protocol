@@ -170,6 +170,8 @@ import {
   dropTurnPlaceholder,
   mergeLateReplyIntoMessages,
   pollLateCompanionReply,
+  LATE_REPLY_POLL_MS,
+  dropLateTurnPlaceholder,
 } from "@/lib/lateCompanionReply";
 import { INTELLIGENCE_GUIDANCE, loyaltyGuardrailClause, turnTakingClause } from "@/lib/companionGuardrail";
 import {
@@ -1330,23 +1332,26 @@ export default function Chat() {
                 role: "assistant",
                 content: "...",
                 character_name: "__typing__",
-                turn_id: live.turn_id,
+                late_turn_id: live.turn_id,
                 timestamp: new Date().toISOString(),
               },
             ],
           };
         });
-        const pendingTurnId = live.turn_id;
+        const waitingTurnId = live.turn_id;
         live = await pollLateCompanionReply({
-          fetchTurn: () => animaApi.chat.turnStatus(pendingTurnId),
+          fetchTurn: () => animaApi.chat.turnStatus(waitingTurnId),
+          timeoutMs: LATE_REPLY_POLL_MS,
         });
         if (cancelled) return;
         if (!String(live?.assistant_content || "").trim()) {
+          // The turn failed or never produced text. Take down only the
+          // bubble this effect added; otherwise it spins forever.
           setActiveSession((prev) => {
             if (!prev || prev.id !== sid) return prev;
             return {
               ...prev,
-              messages: dropTurnPlaceholder(prev.messages, pendingTurnId),
+              messages: dropLateTurnPlaceholder(prev.messages, waitingTurnId),
             };
           });
           return;
@@ -2870,13 +2875,14 @@ Return JSON:
               role: "assistant",
               content: connectionDropped ? CONNECTION_DROPPED_STATUS : "...",
               character_name: "__typing__",
-              turn_id: turnId,
+              late_turn_id: turnId,
               timestamp: new Date().toISOString(),
             },
           ],
         }));
         const late = await pollLateCompanionReply({
           fetchTurn: () => animaApi.chat.turnStatus(turnId),
+          timeoutMs: LATE_REPLY_POLL_MS,
         });
         const lateText = String(late?.assistant_content || "").trim();
         if (lateText) {
@@ -2903,11 +2909,14 @@ Return JSON:
             }),
           }));
           lateTurnRef.current = null;
-        } else if (lateTurnFailedWithoutReply(late)) {
+        } else {
+          // Failed, or still no text after the full wait. Either way the
+          // bubble comes down. A reply saved later is painted by the
+          // live-turn check the next time this chat opens.
           lateTurnRef.current = null;
           applyIfSendSession((prev) => ({
             ...prev,
-            messages: dropTurnPlaceholder(prev.messages, turnId),
+            messages: dropLateTurnPlaceholder(prev.messages, turnId),
           }));
           toast.error(GENERIC_COMPANION_COULD_NOT_REPLY);
         }

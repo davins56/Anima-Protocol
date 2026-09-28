@@ -8,10 +8,13 @@ import {
   companionLocalSections,
   companionStaticPrefix,
   CLIENT_SCENE_CONTEXT_MAX,
+  answerLastMessageInstruction,
   composeCompanionChatMessages,
   composePrompt,
   estimateLocalPromptTokens,
   localPromptHardMaxTokens,
+  localPromptTokenBudget,
+  messagesForLocalOllama,
   roundRegionBlockClock,
 } from "../src/lib/promptBuilder";
 import { OLLAMA_NUM_CTX } from "../src/lib/localLlmWarm";
@@ -145,8 +148,9 @@ describe("companion prompt prefill budget", () => {
     expect(fullTokens).toBeGreaterThan(probeTokens * 10);
     expect(fullTokens).toBeLessThanOrEqual(LOCAL_PROMPT_MAX_TOKENS);
     expect(fullTokens).toBeLessThan(OLLAMA_NUM_CTX);
-    expect(uncapped.length).toBeGreaterThan(8_000);
-    expect(capped.length).toBeGreaterThan(5_000);
+    // Slimmer shared persona blocks (0.5B local model) shrank this fixture.
+    expect(uncapped.length).toBeGreaterThan(6_500);
+    expect(capped.length).toBeGreaterThan(4_000);
     expect(messageChars(messages)).toBeGreaterThan(0);
   });
 
@@ -768,5 +772,132 @@ describe("companion prompt prefill budget", () => {
     expect(scene.indexOf(imageLine)).toBeLessThan(scene.indexOf(lengthLine));
     expect(scene).not.toContain(repeated);
     expect(scene).not.toContain("I remember the lanterns there.");
+  });
+
+  it("keeps the last exchanges, drops memories before them, and folds answer-last into the local user turn", () => {
+    const userText = "USER_TEXT_EXACT what did I just say about the harbor";
+    const persona = "PERSONA_LONG_MARK " + "violet lantern identity ".repeat(80);
+    const character = {
+      ...natasha,
+      personality: persona,
+      backstory: "BACKSTORY_LONG_MARK " + "red room ledger ".repeat(80),
+      speaking_style: "VOICE_LONG_MARK " + "dry diagnostic question ".repeat(40),
+    };
+    const exchanges = [
+      ["EX_1_USER the docks at dawn", "EX_1_COMPANION she watched the tide"],
+      ["EX_2_USER the second bell", "EX_2_COMPANION she named the bell"],
+      ["EX_3_USER the lantern by the gate", "EX_3_COMPANION she left it lit"],
+      ["EX_4_USER the locked gate", "EX_4_COMPANION she did not open it"],
+    ];
+    const input = {
+      characters: [character],
+      activeCharacter: character,
+      userDisplayName: "Mara",
+      memories: [
+        {
+          characterId: "natasha",
+          summary: `MEMORY_DROP_FIRST ${"remembered fact ".repeat(400)}`,
+          facts: [
+            {
+              type: "factual" as const,
+              text: `MEMORY_DROP_FIRST ${"remembered fact ".repeat(400)}`,
+            },
+          ],
+        },
+      ],
+      recentMessages: exchanges.flatMap(([user, companion]) => [
+        { role: "user", content: user },
+        {
+          role: "assistant",
+          content: companion,
+          character_name: "Natasha Romanoff",
+        },
+      ]),
+      mode: "solo",
+      content: userText,
+      pdfContext: `PDF_DROP_FIRST ${"excerpt word ".repeat(400)}`,
+      clientContext: `SCENE_DROP_FIRST ${"stage direction ".repeat(200)}`,
+      repositoryKnowledge: `LORE_DROP_FIRST ${"ancient map ".repeat(400)}`,
+      synchroState: turn.synchroState,
+      companionAffect: turn.companionAffect,
+    };
+    const sections = companionLocalSections(input);
+    const messages = composeCompanionChatMessages(input);
+    const packed = messages.map((message) => message.content).join("\n");
+    const instruction = answerLastMessageInstruction("Mara", "Natasha Romanoff");
+
+    expect(OLLAMA_N_CTX).toBe(8192);
+    expect(localPromptTokenBudget()).toBe(LOCAL_PROMPT_MAX_TOKENS);
+    expect(sections.staticText).toContain("PERSONA_LONG_MARK");
+    expect(sections.moodText.length).toBeGreaterThan(0);
+    expect(packed.startsWith(sections.staticText)).toBe(true);
+    expect(messages[0]?.content.endsWith(sections.moodText)).toBe(true);
+    expect(packed).not.toContain("MEMORY_DROP_FIRST");
+    expect(packed).not.toContain("PDF_DROP_FIRST");
+    expect(packed).not.toContain("SCENE_DROP_FIRST");
+    expect(packed).not.toContain("LORE_DROP_FIRST");
+    expect(packed).toContain("EX_3_USER");
+    expect(packed).toContain("EX_3_COMPANION");
+    expect(packed).toContain("EX_4_USER");
+    expect(packed).toContain("EX_4_COMPANION");
+
+    const local = messagesForLocalOllama(messages);
+    const last = local.at(-1);
+    expect(last?.role).toBe("user");
+    expect(last?.content).toBe(`[${instruction}]\n${userText}`);
+    expect(last?.content.endsWith(userText)).toBe(true);
+    expect(local.map((message) => message.content).join("\n").split(userText).length - 1).toBe(1);
+    expect(local.filter((message) => message.role === "system" && message.content === instruction)).toHaveLength(0);
+    expect(messages.at(-1)).toEqual({ role: "user", content: userText });
+    expect(messages.at(-2)).toEqual({ role: "system", content: instruction });
+  });
+
+  it("drops memories before trimming history when four exchanges fit without them", () => {
+    const userText = "USER_TEXT_EXACT the fifth thing I asked";
+    const exchanges = [
+      ["KEEP_1_USER the docks at dawn", "KEEP_1_COMPANION she watched the tide"],
+      ["KEEP_2_USER the second bell", "KEEP_2_COMPANION she named the bell"],
+      ["KEEP_3_USER the lantern by the gate", "KEEP_3_COMPANION she left it lit"],
+      ["KEEP_4_USER the locked gate", "KEEP_4_COMPANION she did not open it"],
+    ];
+    const input = {
+      characters: [natasha],
+      activeCharacter: natasha,
+      userDisplayName: "Mara",
+      memories: [
+        {
+          characterId: "natasha",
+          summary: `MEMORY_DROP_FIRST ${"bond summary ".repeat(40)}`,
+          resonanceNotes: `MEMORY_DROP_FIRST ${"resonance note ".repeat(20)}`,
+          facts: Array.from({ length: 12 }, (_, i) => ({
+            type: "factual" as const,
+            text: `MEMORY_DROP_FIRST fact ${i} ${"remembered detail ".repeat(12)}`,
+          })),
+        },
+      ],
+      recentMessages: exchanges.flatMap(([user, companion]) => [
+        { role: "user", content: user },
+        {
+          role: "assistant",
+          content: companion,
+          character_name: "Natasha Romanoff",
+        },
+      ]),
+      mode: "solo",
+      content: userText,
+      synchroState: turn.synchroState,
+      companionAffect: turn.companionAffect,
+    };
+    const messages = composeCompanionChatMessages(input);
+    const packed = messages.map((message) => message.content).join("\n");
+    const tokens = estimateLocalPromptTokens(packed);
+
+    expect(packed).not.toContain("MEMORY_DROP_FIRST");
+    for (const [user, companion] of exchanges) {
+      expect(packed).toContain(user);
+      expect(packed).toContain(companion);
+    }
+    expect(tokens).toBeLessThanOrEqual(LOCAL_PROMPT_MAX_TOKENS);
+    expect(messages.at(-1)).toEqual({ role: "user", content: userText });
   });
 });
