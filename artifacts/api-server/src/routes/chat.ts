@@ -49,6 +49,7 @@ import {
   llmChatMessagesStreamTotalMs,
   llmCompanionDurableWaitMs,
   openStreamAbort,
+  repeatRetryBudgetMs,
   watchClientLeave,
 } from "../lib/chatTimeouts";
 import { hintLocalLlmWarm } from "../lib/localLlmWarm";
@@ -1885,6 +1886,7 @@ router.post("/turns/:turnId/retry", async (req, res) => {
 });
 
 router.post("/messages", async (req, res) => {
+  const requestStartedAt = Date.now();
   const userId = requireUser(req, res);
   if (!userId) return;
 
@@ -2547,16 +2549,23 @@ router.post("/messages", async (req, res) => {
       );
 
       // A small local model copies its own earlier reply and then keeps
-      // copying it. Regenerate once without that reply in context. Deltas
-      // are not streamed; `done.visible` replaces the painted bubble.
+      // copying it. Regenerate once without that reply in context, inside
+      // what is left of the browser's fetch window. Deltas are not streamed
+      // and the first reply stays painted; `done.visible` swaps it in.
+      const retryBudgetMs = repeatRetryBudgetMs(Date.now() - requestStartedAt);
       if (
+        retryBudgetMs > 0 &&
         !generateSignal.aborted &&
         !streamed.timedOut &&
         isRepeatedReply(fullResponse, recentAssistantReplies(recentMessages))
       ) {
-        logger.warn({ turnId }, "Companion reply repeated recent history; regenerating once");
-        writeSse(res, { status: "thinking" });
-        const retryOpen = openStreamAbort(generationBudgetMs);
+        logger.warn(
+          { turnId, retryBudgetMs },
+          "Companion reply repeated recent history; regenerating once",
+        );
+        // Hard stop for open + consume together, so `done` always goes out
+        // before the browser abort.
+        const retryOpen = openStreamAbort(retryBudgetMs);
         try {
           const retry = await createChatStreamWithFailover({
             tier: routed.tier,
@@ -2566,17 +2575,22 @@ router.post("/messages", async (req, res) => {
             temperature: OLLAMA_MAX_TEMPERATURE,
             signal: combineAbortSignals(retryOpen.signal, abandoned.signal),
           });
-          retryOpen.cancel();
           const retried = await consumeLlmStream(retry.stream, {
             ...consumeOpts,
             onDelta: () => {},
+            onReasoning: () => {},
+            firstChunkMs: Math.min(consumeOpts.firstChunkMs, retryBudgetMs),
+            totalMs: Math.min(consumeOpts.totalMs, retryBudgetMs),
           });
           const retriedText = finalizeAssistantReply(
             retried.timedOut
               ? trimToLastCompleteSentence(retried.content)
               : retried.content,
           );
-          if (retriedText.trim()) {
+          if (
+            retriedText.trim() &&
+            !isRepeatedReply(retriedText, [fullResponse])
+          ) {
             fullResponse = retriedText;
             usedModel = retry.model;
             usedTier = retry.tier;

@@ -284,6 +284,21 @@ export function llmChatMessagesStreamTotalMs(
   );
 }
 
+/** Shortest window worth spending on the one repeat regenerate. */
+export const REPEAT_RETRY_MIN_MS = 20_000;
+
+/**
+ * Time left for the repeat regenerate before the browser aborts the
+ * `/chat/messages` fetch (`CHAT_STREAM_TIMEOUT_MS`, counted from the request).
+ * 0 means skip the regenerate and deliver the first reply: a fresh full
+ * budget used to run past the browser abort, so the turn never resolved.
+ */
+export function repeatRetryBudgetMs(elapsedMs: number): number {
+  const left =
+    CHAT_STREAM_TIMEOUT_MS - CHAT_MESSAGES_CONTEXT_SLACK_MS - Math.max(0, elapsedMs);
+  return left >= REPEAT_RETRY_MIN_MS ? left : 0;
+}
+
 export {
   CHAT_MESSAGES_MAX_TOKENS,
   clampChatMessagesMaxTokens,
