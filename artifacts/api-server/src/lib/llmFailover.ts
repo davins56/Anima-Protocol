@@ -66,7 +66,9 @@ import {
   openStreamAbort,
 } from "./chatTimeouts";
 import { localChatKeepAliveFields } from "./localLlmWarm";
+import { companionLlmTurnOpen, localCallSignal } from "./sidecarLlm";
 import {
+  capOllamaNumPredict,
   createOllamaChatCompletion,
   createOllamaChatStream,
   isOllamaNativeChatEnabled,
@@ -299,6 +301,17 @@ export function honorCallerMaxTokens(
     return cap;
   }
   return Math.min(Math.max(Math.floor(requested), 1), cap);
+}
+
+/**
+ * Every local generate, native or `/v1`, stops at `OLLAMA_NUM_PREDICT_CAP`
+ * (200). A longer decode on the single-CPU droplet holds the only slot.
+ */
+export function localOllamaMaxTokens(
+  requested: number | undefined,
+  modelMax: number,
+): number {
+  return capOllamaNumPredict(honorCallerMaxTokens(requested, modelMax));
 }
 
 export interface ChatStreamResult {
@@ -1789,7 +1802,19 @@ async function probeOneProvider(
   }
 
   const resolved = resolveLocalModel(tier);
+  if (companionLlmTurnOpen()) {
+    return {
+      provider: "local",
+      configured: true,
+      ok: false,
+      errorKind: "busy",
+      message: "Skipped while a companion reply is in progress.",
+      model: resolved.model,
+      configuredModel: resolved.model,
+    };
+  }
   const started = Date.now();
+  const probeSignal = localCallSignal();
   try {
     const client = requireLocalClient();
     const { resolved: used } = await withModelFallback(
@@ -1802,6 +1827,7 @@ async function probeOneProvider(
             messages: [{ role: "user", content: "Reply with the single word: ok" }],
             maxTokens: m.maxTokens,
             temperature: 0,
+            signal: probeSignal,
           });
           return;
         }
@@ -1813,7 +1839,7 @@ async function probeOneProvider(
             temperature: 0,
             ...localChatKeepAliveFields(),
           },
-          localRequestOptions(),
+          localRequestOptions(probeSignal),
         );
       },
     );
@@ -2235,14 +2261,14 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
               ? createOllamaChatStream({
                   model: m.model,
                   messages: req.messages,
-                  maxTokens: honorCallerMaxTokens(req.maxTokens, m.maxTokens),
+                  maxTokens: localOllamaMaxTokens(req.maxTokens, m.maxTokens),
                   temperature: req.temperature,
                   signal: attempt.signal,
                 })
               : client.chat.completions.create(
                   {
                     model: m.model,
-                    max_tokens: honorCallerMaxTokens(req.maxTokens, m.maxTokens),
+                    max_tokens: localOllamaMaxTokens(req.maxTokens, m.maxTokens),
                     messages: req.messages,
                     stream: true,
                     ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
@@ -2361,7 +2387,7 @@ export async function createChatCompletionWithFailover(
         const client = requireLocalClient();
         const preferred = resolveLocalModel(req.tier);
         const hasNext = chain.indexOf(provider) < chain.length - 1;
-        const attempt = localAttemptSignal(req.signal, hasNext);
+        const attempt = localAttemptSignal(localCallSignal(req.signal), hasNext);
         const hasTools = Boolean(req.tools && req.tools.length);
         try {
           const { value: completion, resolved } = await withModelFallback(
@@ -2372,7 +2398,7 @@ export async function createChatCompletionWithFailover(
                 const native = await createOllamaChatCompletion({
                   model: m.model,
                   messages: req.messages,
-                  maxTokens: honorCallerMaxTokens(req.maxTokens, m.maxTokens),
+                  maxTokens: localOllamaMaxTokens(req.maxTokens, m.maxTokens),
                   temperature: req.temperature,
                   signal: attempt.signal,
                 });
@@ -2390,7 +2416,7 @@ export async function createChatCompletionWithFailover(
               return client.chat.completions.create(
                 {
                   model: m.model,
-                  max_tokens: honorCallerMaxTokens(req.maxTokens, m.maxTokens),
+                  max_tokens: localOllamaMaxTokens(req.maxTokens, m.maxTokens),
                   messages: req.messages,
                   ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
                   ...(hasTools

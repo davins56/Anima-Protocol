@@ -4,8 +4,8 @@
  * Production chat prefers local anima-chat (`chain: ["local"]`). Signed-in
  * `/api/openai` uses the 35s single-model open budget, or 80s when
  * `usesFreeTierOpenBudget()` is true. POST `/api/chat/messages` uses the
- * 45s local-only SSE cap unless OpenRouter is actually in the chain, then
- * the 80s free-tier cascade so workersai 4006 + :free hops are not aborted.
+ * 90s local-only first-token cap unless OpenRouter is actually in the chain,
+ * then the 80s free-tier cascade so workersai 4006 + :free hops are not aborted.
  *
  * POST `/api/ai/chat` is NOT long-lived. An 80s (or even 35s) open abort
  * outlives the Worker ~20s wall, so the client sees 0 bytes instead of
@@ -46,12 +46,37 @@ export const LLM_OPEN_TIMEOUT_FREE_TIER_MS = 80_000;
 export const LLM_OPEN_TIMEOUT_AI_CHAT_MS = 18_000;
 
 /**
- * SSE `/api/chat/messages` open budget when the chain is local-only.
- * Cold Ollama (weights off RAM, tunnel handshake) routinely exceeds the
- * 18s `/api/ai/chat` wall. This path is wall-exempt; 45s still fails
- * clearly before the browser abort, without waiting the 80s cascade.
+ * First token from the self-hosted Anima LLM on a small CPU.
+ *
+ * Ollama does not emit tokens during prompt prefill. Depending on the
+ * server build, HTTP headers arrive either with the first token or before
+ * it. The open abort covers the late-header case; `consumeLlmStream`'s
+ * first-chunk timer covers the early-header case. Both use this budget.
+ * After visible text, `LLM_STREAM_STALL_MS` is the idle gap. There is no
+ * OpenRouter hop on this path, so a short wall only turns a slow prefill
+ * into the "took too long" toast.
+ *
+ * 90s stays under Cloudflare's ~100s origin timeout (HTML 524). Decode of
+ * the short reply uses `LLM_LOCAL_DECODE_SLACK_MS` on top of that, still
+ * inside the 140s browser abort. `/api/ai/chat` stays at 18s (Worker wall).
+ * Do not raise that probe.
  */
-export const LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS = 45_000;
+export const LLM_LOCAL_FIRST_TOKEN_MS = 90_000;
+
+/**
+ * Tokens after prefill on the local-only path. Added to the first-token
+ * budget for the consume hard cap so a slow CPU prefill does not eat the
+ * whole window and cut the reply at the first token. Idle gaps after
+ * visible text still use `LLM_STREAM_STALL_MS`.
+ */
+export const LLM_LOCAL_DECODE_SLACK_MS = 30_000;
+
+/**
+ * SSE `/api/chat/messages` open budget when the chain is local-only.
+ * Same clock as `LLM_LOCAL_FIRST_TOKEN_MS`: time-to-first-byte, which is
+ * CPU prefill when the host withholds headers until the first token.
+ */
+export const LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS = LLM_LOCAL_FIRST_TOKEN_MS;
 
 /**
  * Local-provider attempt when a next hop exists. Shorter than the `/api/ai/chat`
@@ -78,7 +103,7 @@ export const LLM_STREAM_TOTAL_MS = 90_000;
 
 /**
  * Slack for `/chat/messages` context load + Clerk before LLM timers.
- * Later turns grow this work slightly; keep it off the 45s open clock.
+ * Later turns grow this work slightly; keep it off the first-token clock.
  */
 export const CHAT_MESSAGES_CONTEXT_SLACK_MS = 10_000;
 
@@ -148,14 +173,15 @@ export function llmAiChatOpenTimeoutMs(): number {
 /**
  * Open budget for Chat.jsx POST `/api/chat/messages`.
  *
- * Local-only stays on the 45s SSE cap so a cold anima-chat load can open
- * without waiting the 80s cascade. When OpenRouter is actually in the
+ * Local-only uses `LLM_LOCAL_FIRST_TOKEN_MS` (90s) so CPU prefill of a
+ * capped companion prompt can emit a first token. This abort is cancelled
+ * once `createChatStreamWithFailover` returns (headers received). When
+ * headers arrive before the first token, `llmChatMessagesFirstChunkMs`
+ * keeps the same first-token budget. When OpenRouter is actually in the
  * chain (`usesFreeTierOpenBudget()` / `freeTierCascade: true`), use the
  * 80s budget so workersai 4006 + m2.7→m3→Gemma hops share one signal
- * without aborting mid-cascade. Streaming after open is unchanged — this
- * abort is cancelled once `createChatStreamWithFailover` returns. When a
- * next provider exists, `LLM_LOCAL_FAILOVER_ATTEMPT_MS` (12s) still aborts
- * the local attempt first.
+ * without aborting mid-cascade. When a next provider exists,
+ * `LLM_LOCAL_FAILOVER_ATTEMPT_MS` (12s) still aborts the local attempt first.
  */
 export function llmChatMessagesOpenTimeoutMs(
   opts: { freeTierCascade?: boolean } = {},
@@ -168,16 +194,38 @@ export function llmChatMessagesOpenTimeoutMs(
 }
 
 /**
+ * First-chunk wait for POST `/api/chat/messages` after HTTP headers arrive.
+ *
+ * Local-only matches `LLM_LOCAL_FIRST_TOKEN_MS`. Headers from Ollama / the
+ * tunnel proxy can flush before prefill finishes; this is the clock that
+ * then waits for the first token. Idle time between later tokens is
+ * `LLM_STREAM_STALL_MS`, not this budget.
+ */
+export function llmChatMessagesFirstChunkMs(
+  opts: { freeTierCascade?: boolean } = {},
+): number {
+  return opts.freeTierCascade ? LLM_STREAM_FIRST_CHUNK_MS : LLM_LOCAL_FIRST_TOKEN_MS;
+}
+
+/**
  * Consume budget for POST `/api/chat/messages` after the stream is open.
  *
- * Must fit with the chosen open cap and context slack under the browser
- * abort. Later turns (longer prompt, prefill) use this window for
- * first-chunk wait — not turn_id replay. Default `LLM_STREAM_TOTAL_MS` (90s)
- * plus an 80s free-tier open would outlive the client fetch.
+ * Local-only does not subtract the open budget. The open abort and the
+ * first-chunk timer cover the same prefill (headers withheld vs headers
+ * early); they overlap instead of stacking. The consume hard cap is the
+ * first-token budget plus decode slack, so a 90s prefill can still finish
+ * a short beat. Free-tier cascade still fits open + consume + context
+ * slack under the browser abort.
  */
 export function llmChatMessagesStreamTotalMs(
   opts: { freeTierCascade?: boolean } = {},
 ): number {
+  if (!opts.freeTierCascade) {
+    return Math.min(
+      CHAT_STREAM_TIMEOUT_MS - CHAT_MESSAGES_CONTEXT_SLACK_MS,
+      LLM_LOCAL_FIRST_TOKEN_MS + LLM_LOCAL_DECODE_SLACK_MS,
+    );
+  }
   return Math.max(
     LLM_STREAM_FIRST_CHUNK_MS,
     CHAT_STREAM_TIMEOUT_MS -
@@ -224,5 +272,31 @@ export function openStreamAbort(ms: number): { signal: AbortSignal; cancel: () =
   return {
     signal: controller.signal,
     cancel: () => clearTimeout(timer),
+  };
+}
+
+/**
+ * Abort when the SSE client disconnects before the response finishes.
+ *
+ * Listen on the response, not the request. Node fires `req` "close" when the
+ * body has been read, which is before generation starts and would cancel
+ * Ollama immediately. `res` "close" also fires after a normal `end`;
+ * `writableEnded` is the finished-reply case and must not abort.
+ */
+export function abortWhenClientLeaves(res: {
+  on: (event: string, listener: () => void) => void;
+  off?: (event: string, listener: () => void) => void;
+  writableEnded: boolean;
+}): { signal: AbortSignal; cancel: () => void } {
+  const controller = new AbortController();
+  const onClose = () => {
+    if (!res.writableEnded) controller.abort();
+  };
+  res.on("close", onClose);
+  return {
+    signal: controller.signal,
+    cancel: () => {
+      res.off?.("close", onClose);
+    },
   };
 }

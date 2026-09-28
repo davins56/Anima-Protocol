@@ -125,8 +125,8 @@ describe("PDF retrieval and prompt budget", () => {
   });
 
   it("keeps chat and lore excerpts inside one word budget", () => {
-    const chatWords = Array.from({ length: 800 }, (_, i) => `chat${i}`).join(" ");
-    const loreWords = Array.from({ length: 800 }, (_, i) => `lore${i}`).join(" ");
+    const chatWords = Array.from({ length: 180 }, (_, i) => `chat${i}`).join(" ");
+    const loreWords = Array.from({ length: 180 }, (_, i) => `lore${i}`).join(" ");
     const packed = packPdfContext({
       files: [
         { filename: "notes.pdf", scope: "chat", pageCount: 2 },
@@ -152,7 +152,7 @@ describe("PDF retrieval and prompt budget", () => {
       ],
     });
     expect(pdfWordCount(packed)).toBeLessThanOrEqual(PDF_CONTEXT_WORD_BUDGET);
-    expect(pdfWordCount(packed)).toBeGreaterThan(700);
+    expect(pdfWordCount(packed)).toBeGreaterThan(Math.floor(PDF_CONTEXT_WORD_BUDGET * 0.6));
     expect(packed).toContain("chat0");
     expect(packed).toContain("lore0");
     expect(packed).toContain("notes.pdf");
@@ -168,10 +168,10 @@ describe("PDF retrieval and prompt budget", () => {
   it("adds the capped excerpt to the system prompt and not to replayed history", () => {
     const marker = "SILVERKEYUNIQUE";
     const pdfContext = `${marker} ${"y ".repeat(PDF_CONTEXT_WORD_BUDGET + 400)}`;
-    const recent = Array.from({ length: 20 }, (_, i) => ({
-      role: i % 2 === 0 ? "user" : "assistant",
-      content: `turn ${i} ${"h".repeat(800)}`,
-    }));
+    const recent = [
+      { role: "user", content: "turn 0 hello" },
+      { role: "assistant", content: "turn 1 hello back" },
+    ];
     const messages = composeCompanionChatMessages({
       characters: [character],
       activeCharacter: character,

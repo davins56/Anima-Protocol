@@ -97,8 +97,9 @@ describe("POST /llm/warm", () => {
     expect(String(url)).not.toMatch(/openrouter|api\.openai\.com/i);
     expect(JSON.parse(String(init.body))).toEqual({
       model: "anima-chat",
-      keep_alive: "30m",
+      prompt: "",
       stream: false,
+      options: { num_ctx: 8192, num_predict: 1 },
     });
 
     const again = await fetch(`${baseUrl}/llm/warm`, {
