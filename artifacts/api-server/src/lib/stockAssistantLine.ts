@@ -83,7 +83,8 @@ function lineTriggersStock(line: string): boolean {
   const covered = stockMatchCoverage(line);
   if (covered === 0) return false;
   if (line.length <= STOCK_ASSISTANT_SHORT_REPLY_CHARS) return true;
-  return covered * 2 >= line.length;
+  const contentLength = line.replace(/\s+/g, "").length;
+  return covered * 2 >= Math.max(contentLength, 1);
 }
 
 /**
