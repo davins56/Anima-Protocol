@@ -102,6 +102,34 @@ describe("streamChatReply", () => {
     expect(onDelta.mock.calls.at(-1)[0]).toBe("Hi");
   });
 
+  it("returns a crisis resource card beside the companion reply", async () => {
+    const card = {
+      role: "system",
+      type: "crisis_resource",
+      content: "If you're thinking about suicide or self-harm, you can call or text 988 (US, Suicide & Crisis Lifeline) or text HOME to 741741. If you're outside the US, contact local emergency services.",
+    };
+    const result = await streamChatReply(
+      fromEvents([
+        { crisis_resource: card },
+        { content: "I'm here with you." },
+        { done: true, visible: "I'm here with you.", crisis_resource: card },
+      ]),
+    );
+    expect(result.content).toBe("I'm here with you.");
+    expect(result.crisis_resource).toEqual(card);
+  });
+
+  it("keeps the crisis card when the stream errors after sending it", async () => {
+    const card = { role: "system", type: "crisis_resource", content: "call or text 988" };
+    let caught;
+    try {
+      await streamChatReply(fromEvents([{ crisis_resource: card }, { error: "cut" }]));
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught.crisisResource).toEqual(card);
+  });
+
   it("throws when the stream reports an error", async () => {
     await expect(
       streamChatReply(fromEvents([{ error: "boom" }])),
