@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { resetLocalLlmSlotForTests } from "../src/lib/localLlmSlot";
 import {
   APP_OPEN_LLM_WARM_COOLDOWN_MS,
   APP_OPEN_LLM_WARM_FAILURE_BACKOFF_MS,
@@ -18,6 +19,7 @@ describe("localLlmWarm", () => {
   afterEach(() => {
     process.env = { ...SAVED };
     resetLocalLlmWarmForTests();
+    resetLocalLlmSlotForTests();
   });
 
   it("omits keep_alive unless ANIMA_OLLAMA_KEEP_ALIVE is set", () => {
@@ -188,7 +190,11 @@ describe("localLlmWarm", () => {
       workerGlobal,
     );
     expect(second).toEqual({ ok: true, warmed: false, skipped: "in_flight" });
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    // Slot acquire yields before the native generate, so the in-flight flag
+    // is visible one turn before fetchImpl runs.
+    await vi.waitFor(() => {
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    });
     release(new Response("{}", { status: 200 }));
     await expect(first).resolves.toEqual({ ok: true, warmed: true });
   });

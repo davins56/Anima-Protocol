@@ -16,6 +16,7 @@ import {
   shouldSkipSidecarLlm,
   userHasOpenCompanionTurn,
 } from "../../lib/sidecarLlm";
+import { acquireLocalLlmBackground } from "../../lib/localLlmSlot";
 import { abortWhenClientLeaves, combineAbortSignals } from "../../lib/chatTimeouts";
 import { matchLoreKeywordContext, type LoreMatchEntry } from "../../lib/loreKeywordMatch";
 import { visibleAssistantReply } from "../../lib/visibleAssistantReply";
@@ -101,27 +102,35 @@ async function llm(
   ) {
     return "";
   }
-  const timeoutMs =
-    typeof opts?.timeoutMs === "number" && opts.timeoutMs > 0
-      ? opts.timeoutMs
-      : GENERIC_LLM_TIMEOUT_MS;
-  const signals = [AbortSignal.timeout(timeoutMs)];
-  if (scope?.signal) signals.push(scope.signal);
-  if (opts?.signal) signals.push(opts.signal);
-  const result = await createChatCompletionWithFailover({
-    tier: "standard",
-    maxTokens,
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    signal: combineAbortSignals(...signals),
-  });
-  const visible = visibleAssistantReply(result.content);
-  if (!String(visible).trim()) {
-    throw new Error("The companion returned an empty reply. Please try again.");
+  const background = opts?.sidecar
+    ? await acquireLocalLlmBackground("sidecar")
+    : null;
+  if (opts?.sidecar && !background) return "";
+  try {
+    const timeoutMs =
+      typeof opts?.timeoutMs === "number" && opts.timeoutMs > 0
+        ? opts.timeoutMs
+        : GENERIC_LLM_TIMEOUT_MS;
+    const signals = [AbortSignal.timeout(timeoutMs)];
+    if (scope?.signal) signals.push(scope.signal);
+    if (opts?.signal) signals.push(opts.signal);
+    const result = await createChatCompletionWithFailover({
+      tier: "standard",
+      maxTokens,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      signal: combineAbortSignals(...signals),
+    });
+    const visible = visibleAssistantReply(result.content);
+    if (!String(visible).trim()) {
+      throw new Error("The companion returned an empty reply. Please try again.");
+    }
+    return visible;
+  } finally {
+    await background?.release();
   }
-  return visible;
 }
 
 async function loadSessionLoreEntries(

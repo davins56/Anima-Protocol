@@ -57,9 +57,10 @@ export const LLM_OPEN_TIMEOUT_AI_CHAT_MS = 18_000;
  * into the "took too long" toast.
  *
  * 90s stays under Cloudflare's ~100s origin timeout (HTML 524). Decode of
- * the short reply uses `LLM_LOCAL_DECODE_SLACK_MS` on top of that, still
- * inside the 140s browser abort. `/api/ai/chat` stays at 18s (Worker wall).
- * Do not raise that probe.
+ * the short reply uses `LLM_LOCAL_DECODE_SLACK_MS` on top of that. This
+ * clock starts when the turn takes the local slot, not while it is queued.
+ * The browser fetch abort is `CHAT_FETCH_ABORT_MS` (queue + this budget).
+ * `/api/ai/chat` stays at 18s (Worker wall). Do not raise that probe.
  */
 export const LLM_LOCAL_FIRST_TOKEN_MS = 90_000;
 
@@ -70,6 +71,29 @@ export const LLM_LOCAL_FIRST_TOKEN_MS = 90_000;
  * visible text still use `LLM_STREAM_STALL_MS`.
  */
 export const LLM_LOCAL_DECODE_SLACK_MS = 30_000;
+
+/**
+ * How long a chat turn will wait for the single local Ollama slot.
+ * Separate from the first-token budget: queue time must not burn the 90s.
+ */
+export const LLM_LOCAL_SLOT_WAIT_MS = 180_000;
+
+/**
+ * Lease lifetime for the local slot. A little above the generation cap
+ * (first token + decode slack) so a live turn can finish, and short enough
+ * that a crashed holder cannot wedge the host. Heartbeats extend it.
+ */
+export const LLM_LOCAL_SLOT_TTL_MS =
+  LLM_LOCAL_FIRST_TOKEN_MS + LLM_LOCAL_DECODE_SLACK_MS + 30_000;
+
+/** Drop a queued chat turn that stopped polling (isolate died in line). */
+export const LLM_LOCAL_SLOT_QUEUE_TTL_MS = LLM_LOCAL_SLOT_WAIT_MS + 15_000;
+
+/** How often a holder refreshes the lease while it is generating. */
+export const LLM_LOCAL_SLOT_HEARTBEAT_MS = 15_000;
+
+/** How often a waiting chat turn asks the slot for its place in line. */
+export const LLM_LOCAL_SLOT_POLL_MS = 1_000;
 
 /**
  * SSE `/api/chat/messages` open budget when the chain is local-only.
@@ -119,6 +143,27 @@ export const CHAT_STREAM_TIMEOUT_MS =
   CHAT_MESSAGES_CONTEXT_SLACK_MS;
 
 /**
+ * Browser `fetch` abort for `/chat/messages` on the local host.
+ * Covers the slot queue, the first-token budget, decode slack, and context
+ * load. Free-tier hops still fit under `CHAT_STREAM_TIMEOUT_MS`; the client
+ * uses this longer cap so a queued turn is not aborted while it is waiting.
+ * Repeat-retry leftover time stays on `CHAT_STREAM_TIMEOUT_MS`.
+ */
+export const CHAT_FETCH_ABORT_MS =
+  LLM_LOCAL_SLOT_WAIT_MS +
+  LLM_LOCAL_FIRST_TOKEN_MS +
+  LLM_LOCAL_DECODE_SLACK_MS +
+  CHAT_MESSAGES_CONTEXT_SLACK_MS;
+
+/**
+ * Hard cap for a local generate that is already emitting tokens.
+ * A browser disconnect does not abort that generate before this cap.
+ */
+export function llmProducingGenerateHardCapMs(): number {
+  return LLM_LOCAL_FIRST_TOKEN_MS + LLM_LOCAL_DECODE_SLACK_MS;
+}
+
+/**
  * Cloudflare `waitUntil` grace after the browser disconnects.
  * Wall time is unlimited while the client is still connected. After
  * disconnect the runtime keeps background work for 30 seconds.
@@ -151,7 +196,11 @@ export function llmCompanionDurableWaitMs(): number {
 /**
  * Abort an upstream generate that no longer has a live client or a retry
  * waiting on it. A turn still inside the disconnect grace keeps running.
- * Past the late-persist ceiling, a disconnected turn stops even sooner.
+ * Past the late-persist ceiling, a disconnected turn that has not yet
+ * produced tokens stops even sooner.
+ *
+ * Once tokens are flowing, a disconnect does not abort the generate.
+ * It runs until the hard cap so the late-reply poll can save the beat.
  */
 export function shouldAbortAbandonedGenerate(input: {
   clientLeft: boolean;
@@ -160,8 +209,14 @@ export function shouldAbortAbandonedGenerate(input: {
   elapsedMs: number;
   graceMs?: number;
   lateBudgetMs?: number;
+  producingTokens?: boolean;
+  hardCapMs?: number;
 }): boolean {
   if (!input.clientLeft || input.hasWaiter) return false;
+  if (input.producingTokens) {
+    const cap = input.hardCapMs ?? llmProducingGenerateHardCapMs();
+    return input.elapsedMs >= cap;
+  }
   const grace = input.graceMs ?? CLIENT_DISCONNECT_GRACE_MS;
   const late = input.lateBudgetMs ?? LLM_LATE_PERSIST_BUDGET_MS;
   if (input.elapsedMs >= late) return true;
@@ -423,11 +478,14 @@ export function armAbandonedGenerateAbort(args: {
   startedAt?: number;
   graceMs?: number;
   lateBudgetMs?: number;
+  producingTokens?: () => boolean;
+  hardCapMs?: number;
 }): { signal: AbortSignal; cancel: () => void } {
   const controller = new AbortController();
   const startedAt = args.startedAt ?? Date.now();
   const graceMs = args.graceMs ?? CLIENT_DISCONNECT_GRACE_MS;
   const lateBudgetMs = args.lateBudgetMs ?? LLM_LATE_PERSIST_BUDGET_MS;
+  const hardCapMs = args.hardCapMs ?? llmProducingGenerateHardCapMs();
   let disconnectedAt: number | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let cancelled = false;
@@ -458,6 +516,7 @@ export function armAbandonedGenerateAbort(args: {
     }
     const disconnectedForMs = now - disconnectedAt;
     const elapsedMs = now - startedAt;
+    const producing = args.producingTokens?.() ?? false;
     if (
       shouldAbortAbandonedGenerate({
         clientLeft: true,
@@ -466,9 +525,15 @@ export function armAbandonedGenerateAbort(args: {
         elapsedMs,
         graceMs,
         lateBudgetMs,
+        producingTokens: producing,
+        hardCapMs,
       })
     ) {
       controller.abort();
+      return;
+    }
+    if (producing) {
+      schedule(hardCapMs - elapsedMs);
       return;
     }
     if (waiting) {
@@ -484,6 +549,10 @@ export function armAbandonedGenerateAbort(args: {
     if (args.res.writableEnded || disconnectedAt != null) return;
     disconnectedAt = Date.now();
     const elapsedMs = disconnectedAt - startedAt;
+    if (args.producingTokens?.()) {
+      schedule(Math.max(1, hardCapMs - elapsedMs));
+      return;
+    }
     const untilGrace = graceMs;
     const untilCap = lateBudgetMs - elapsedMs;
     schedule(Math.min(untilGrace, Math.max(1, untilCap)));
