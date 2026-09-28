@@ -56,6 +56,9 @@ export {
   STORE_SESSION_CREATE_TIMEOUT_MS,
 };
 
+/** Bound for base44.functions.invoke. A hung sidecar must not sit on the model. */
+export const FUNCTION_INVOKE_TIMEOUT_MS = 12_000;
+
 const DEFAULT_STORE_TIMEOUT_MESSAGE =
   'The server took too long to respond. Check your connection or try again in a moment.';
 
@@ -1711,12 +1714,18 @@ export const base44 = {
     {},
     {
       get: (_, fnName) => {
-        const callFn = async (nameOrData, data) => {
+        const callFn = async (nameOrData, data, options) => {
           // Support both call styles:
-          // base44.functions.invoke("fnName", data)
+          // base44.functions.invoke("fnName", data, options)
           // base44.functions.realName.invoke(data)
           const realName = fnName === 'invoke' ? nameOrData : fnName;
           const payload = fnName === 'invoke' ? data : nameOrData;
+          const invokeOptions = fnName === 'invoke' ? options : undefined;
+          const timeoutMs =
+            typeof invokeOptions?.timeoutMs === 'number' && invokeOptions.timeoutMs > 0
+              ? invokeOptions.timeoutMs
+              : FUNCTION_INVOKE_TIMEOUT_MS;
+          const signal = createStoreAbortSignal(timeoutMs, invokeOptions?.signal);
           try {
             let headers = await requireChatAuthHeaders();
             const postOnce = (requestHeaders) =>
@@ -1725,6 +1734,7 @@ export const base44 = {
                 headers: requestHeaders,
                 credentials: 'same-origin',
                 body: JSON.stringify(payload || {}),
+                signal,
               });
             let res = await postOnce(headers);
             if (res.status === 401) {

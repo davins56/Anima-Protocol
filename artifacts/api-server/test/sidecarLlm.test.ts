@@ -21,6 +21,8 @@ describe("sidecar LLM occupancy", () => {
     expect(isPostTurnSidecarFunction("updateInventory")).toBe(true);
     expect(isPostTurnSidecarFunction("characterMemory")).toBe(true);
     expect(isPostTurnSidecarFunction("extractLore")).toBe(true);
+    expect(isPostTurnSidecarFunction("scanAndLinkLoreKeywords")).toBe(true);
+    expect(isPostTurnSidecarFunction("generateDivergentPaths")).toBe(true);
     expect(isPostTurnSidecarFunction("generateCompanionFromPrompt")).toBe(false);
     expect(isPostTurnSidecarFunction("codespaceAgentStep")).toBe(false);
   });

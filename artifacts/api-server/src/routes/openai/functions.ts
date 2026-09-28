@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { Router } from "express";
 import { toFile } from "openai";
 import { getAuth } from "@clerk/express";
@@ -13,7 +14,10 @@ import {
 import {
   isPostTurnSidecarFunction,
   shouldSkipSidecarLlm,
+  userHasOpenCompanionTurn,
 } from "../../lib/sidecarLlm";
+import { abortWhenClientLeaves, combineAbortSignals } from "../../lib/chatTimeouts";
+import { matchLoreKeywordContext, type LoreMatchEntry } from "../../lib/loreKeywordMatch";
 import { visibleAssistantReply } from "../../lib/visibleAssistantReply";
 import { getOpenAIClient, hasOpenAIKey, hasOpenRouterKey } from "../../lib/openaiClient";
 import { searchMemoriesSemantically } from "../../lib/memoryEmbeddings";
@@ -32,6 +36,18 @@ import {
 import { logger } from "../../lib/logger";
 import { buildInBrowserCodespaceSystemPrompt } from "../../lib/codespaceAgentPrompt";
 
+/**
+ * Partial test mocks omit this export and throw on access.
+ * Missing or unreadable means "not known local-only".
+ */
+function chainIsLocalOnly(): boolean {
+  try {
+    return typeof isLocalOnlyProviderChain === "function" && isLocalOnlyProviderChain();
+  } catch {
+    return false;
+  }
+}
+
 const router = Router();
 // Invoke helpers are chatty during UI bootstrap; key by user and allow headroom.
 router.use(createRateLimit({ name: "openai-functions", max: 180 }));
@@ -46,6 +62,15 @@ router.use((req, res, next) => {
 
 /** Sidecar location flavor. A slow call is dropped instead of holding the chat slot. */
 export const LOCATION_CONTEXT_TIMEOUT_MS = 3_000;
+
+/**
+ * Cap for every `llm()` helper call. A disconnected client aborts sooner.
+ * Companion chat does not use this helper.
+ */
+export const GENERIC_LLM_TIMEOUT_MS = 12_000;
+
+type InvokeLlmScope = { signal: AbortSignal; userId: string };
+const invokeLlmScope = new AsyncLocalStorage<InvokeLlmScope>();
 
 function namedLocation(data: Record<string, unknown>): string {
   const loc = typeof data.location === "string" ? data.location.trim() : "";
@@ -63,16 +88,26 @@ async function llm(
   systemPrompt: string,
   userPrompt: string,
   maxTokens = 1024,
-  opts?: { sidecar?: boolean; timeoutMs?: number },
+  opts?: { sidecar?: boolean; timeoutMs?: number; signal?: AbortSignal },
 ): Promise<string> {
   if (opts?.sidecar && shouldSkipSidecarLlm()) {
     return "";
   }
-  const timeoutMs = opts?.timeoutMs;
-  const signal =
-    typeof timeoutMs === "number" && timeoutMs > 0
-      ? AbortSignal.timeout(timeoutMs)
-      : undefined;
+  const scope = invokeLlmScope.getStore();
+  if (
+    chainIsLocalOnly() &&
+    scope?.userId &&
+    userHasOpenCompanionTurn(scope.userId)
+  ) {
+    return "";
+  }
+  const timeoutMs =
+    typeof opts?.timeoutMs === "number" && opts.timeoutMs > 0
+      ? opts.timeoutMs
+      : GENERIC_LLM_TIMEOUT_MS;
+  const signals = [AbortSignal.timeout(timeoutMs)];
+  if (scope?.signal) signals.push(scope.signal);
+  if (opts?.signal) signals.push(opts.signal);
   const result = await createChatCompletionWithFailover({
     tier: "standard",
     maxTokens,
@@ -80,13 +115,37 @@ async function llm(
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ],
-    ...(signal ? { signal } : {}),
+    signal: combineAbortSignals(...signals),
   });
   const visible = visibleAssistantReply(result.content);
   if (!String(visible).trim()) {
     throw new Error("The companion returned an empty reply. Please try again.");
   }
   return visible;
+}
+
+async function loadSessionLoreEntries(
+  userId: string,
+  sessionId: string,
+): Promise<LoreMatchEntry[]> {
+  const rows = await db
+    .select()
+    .from(userEntities)
+    .where(
+      and(eq(userEntities.userId, userId), eq(userEntities.entityName, "WorldState")),
+    )
+    .limit(200);
+  const entries: LoreMatchEntry[] = [];
+  for (const row of rows) {
+    const data = (row.data && typeof row.data === "object" ? row.data : {}) as LoreMatchEntry & {
+      session_id?: string;
+      is_active?: boolean;
+    };
+    if (data.is_active === false) continue;
+    if (sessionId && data.session_id && data.session_id !== sessionId) continue;
+    entries.push({ ...data, id: row.entityId });
+  }
+  return entries;
 }
 
 type WebSearchResult = {
@@ -909,6 +968,12 @@ export function buildContextPromptString(records: Record<string, unknown>[]): st
 router.post("/invoke/:fnName", async (req, res) => {
   const { fnName } = req.params;
   const data = req.body as Record<string, unknown>;
+  const clientLeft = abortWhenClientLeaves(res);
+  const auth = getAuth(req) as { userId?: string | null };
+  invokeLlmScope.enterWith({
+    signal: clientLeft.signal,
+    userId: auth.userId || "",
+  });
 
   try {
     let result: unknown = null;
@@ -1013,7 +1078,7 @@ router.post("/invoke/:fnName", async (req, res) => {
       case "injectLocationContext": {
         // Local-only chat has one Ollama slot. A model call here is served
         // before the companion reply. Use the named place, or nothing.
-        if (isLocalOnlyProviderChain()) {
+        if (chainIsLocalOnly()) {
           result = cheapLocationContext(data);
           break;
         }
@@ -1477,7 +1542,29 @@ router.post("/invoke/:fnName", async (req, res) => {
         break;
       }
 
+      case "detectLoreKeywords": {
+        const content = typeof data.content === "string" ? data.content : "";
+        const sessionId = typeof data.session_id === "string" ? data.session_id : "";
+        let entries: LoreMatchEntry[] = [];
+        if (Array.isArray(data.lore_entries)) {
+          entries = data.lore_entries as LoreMatchEntry[];
+        } else if (auth.userId) {
+          try {
+            entries = await loadSessionLoreEntries(auth.userId, sessionId);
+          } catch (err) {
+            logger.warn({ err }, "Lore keyword lookup skipped");
+            entries = [];
+          }
+        }
+        result = { data: { context: matchLoreKeywordContext(content, entries) } };
+        break;
+      }
+
       default: {
+        if (chainIsLocalOnly()) {
+          result = null;
+          break;
+        }
         if (isPostTurnSidecarFunction(fnName) && shouldSkipSidecarLlm()) {
           result = null;
           break;
@@ -1494,7 +1581,11 @@ router.post("/invoke/:fnName", async (req, res) => {
     res.json({ result });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: msg });
+    if (!res.headersSent) {
+      res.status(500).json({ error: msg });
+    }
+  } finally {
+    clientLeft.cancel();
   }
 });
 
