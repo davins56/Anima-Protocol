@@ -181,7 +181,6 @@ OUTPUT SCHEMA:
 
   const completion = await createChatCompletionWithFailover({
     tier: "light",
-    model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
     maxTokens: 2048,
     temperature: 0.4,
     messages: [{ role: "system", content: evolutionPrompt }],
