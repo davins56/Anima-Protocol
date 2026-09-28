@@ -96,21 +96,34 @@ function messageBelongsToTurn(message, turnId, userId, assistantId) {
   return message.turn_id === turnId;
 }
 
+function isTurnPlaceholder(message) {
+  return (
+    message?.character_name === "__typing__" || message?.character_name === "__thinking__"
+  );
+}
+
 /**
- * Remove only the typing/thinking bubble for this turn.
- * Other in-flight placeholders in the session stay.
+ * Remove the typing/thinking bubble for this turn.
+ * An untagged placeholder is removed too, but only when no other turn in the
+ * session still has its own placeholder — that untagged "..." may belong to
+ * a send that started before its id was known.
  *
  * @param {Array<Record<string, unknown>> | null | undefined} messages
  * @param {unknown} turnId
  */
 export function dropTurnPlaceholder(messages, turnId) {
   const id = String(turnId || "");
-  if (!id) return messages || [];
-  return (messages || []).filter((message) => {
-    if (!message) return true;
-    const placeholder =
-      message.character_name === "__typing__" || message.character_name === "__thinking__";
-    if (placeholder && message.turn_id === id) return false;
+  const list = messages || [];
+  if (!id) return list;
+  const otherTurnPending = list.some((message) => {
+    if (!isTurnPlaceholder(message)) return false;
+    const otherId = String(message.turn_id || "");
+    return Boolean(otherId) && otherId !== id;
+  });
+  return list.filter((message) => {
+    if (!message || !isTurnPlaceholder(message)) return true;
+    if (message.turn_id === id) return false;
+    if (!message.turn_id && !otherTurnPending) return false;
     return true;
   });
 }

@@ -70,6 +70,26 @@ describe("dropTurnPlaceholder", () => {
     ]);
     expect(dropTurnPlaceholder(messages, "turn_a")[1].character_name).toBe("__thinking__");
   });
+
+  it("drops an untagged placeholder when no other turn is pending", () => {
+    const messages = [
+      { role: "user", content: "hi", turn_id: "turn_a" },
+      { role: "assistant", content: "...", character_name: "__thinking__" },
+      { role: "assistant", content: "...", character_name: "__typing__", turn_id: "turn_a" },
+    ];
+    const left = dropTurnPlaceholder(messages, "turn_a");
+    expect(left.map((message) => message.content)).toEqual(["hi"]);
+  });
+
+  it("keeps an untagged placeholder while another turn is still pending", () => {
+    const messages = [
+      { role: "assistant", content: "...", character_name: "__thinking__" },
+      { role: "assistant", content: "...", character_name: "__typing__", turn_id: "turn_a" },
+      { role: "assistant", content: "...", character_name: "__typing__", turn_id: "turn_b" },
+    ];
+    const left = dropTurnPlaceholder(messages, "turn_a");
+    expect(left.map((message) => message.turn_id ?? null)).toEqual([null, "turn_b"]);
+  });
 });
 
 describe("mergeLateReplyIntoMessages", () => {
