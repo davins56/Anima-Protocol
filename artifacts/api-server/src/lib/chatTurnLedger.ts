@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import {
   chatTurns,
   db,
@@ -173,6 +173,28 @@ export async function readChatTurn(
       .select()
       .from(chatTurns)
       .where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId)))
+      .limit(1),
+  );
+  return turn ?? null;
+}
+
+/** Newest pending or generated turn for this session, if the reply is not committed yet. */
+export async function latestOpenChatTurn(
+  userId: string,
+  sessionId: string,
+): Promise<ChatTurn | null> {
+  const [turn] = await withTransientDbRetry(() =>
+    db
+      .select()
+      .from(chatTurns)
+      .where(
+        and(
+          eq(chatTurns.userId, userId),
+          eq(chatTurns.sessionId, sessionId),
+          inArray(chatTurns.status, ["pending", "generated"]),
+        ),
+      )
+      .orderBy(desc(chatTurns.createdAt))
       .limit(1),
   );
   return turn ?? null;
