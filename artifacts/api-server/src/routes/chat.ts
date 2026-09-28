@@ -2693,6 +2693,10 @@ router.post("/messages", async (req, res) => {
       tier: usedTier,
       provider: usedProvider,
       brand: usedBrand,
+      // POST /model/auto-lesson only learns from own-model turns marked here:
+      // never therapy, adult, or continuation turns.
+      own_model_learnable:
+        usedBrand === "own" && !therapyActive && !adultActive && !body.is_continue,
       failed_over: failedOver,
       ensemble_minds: ensembleMinds,
       ensemble_combined: ensembleCombined,
