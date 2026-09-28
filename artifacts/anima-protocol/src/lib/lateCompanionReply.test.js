@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   CONNECTION_DROPPED_STATUS,
+  dropLateTurnPlaceholder,
   GENERIC_COMPANION_COULD_NOT_REPLY,
   isCompanionStillTypingError,
   isConnectionDroppedError,
@@ -148,5 +149,17 @@ describe("pollLateCompanionReply", () => {
     });
     expect(result.assistant_content).toBe("I am happy you stayed.");
     expect(fetchTurn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("dropLateTurnPlaceholder", () => {
+  it("removes only the bubble waiting on that turn", () => {
+    const messages = [
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "...", character_name: "__typing__", late_turn_id: "t1" },
+      { role: "assistant", content: "...", character_name: "__thinking__" },
+    ];
+    expect(dropLateTurnPlaceholder(messages, "t1")).toEqual([messages[0], messages[2]]);
+    expect(dropLateTurnPlaceholder(null, "t1")).toEqual([]);
   });
 });
