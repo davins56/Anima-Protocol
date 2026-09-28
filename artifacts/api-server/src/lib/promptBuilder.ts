@@ -279,7 +279,7 @@ export const LOCAL_PROMPT_CHARS_PER_TOKEN = 4;
  * Overflow truncates from the front, which would drop the persona first, so
  * prompt tokens plus `num_predict` must stay under 8192 with this margin for
  * chat-template tokens the char estimate does not count. The trim loop still
- * targets `LOCAL_PROMPT_MAX_TOKENS` (~1.2k). Reading the prompt on the 1-vCPU
+ * targets `LOCAL_PROMPT_MAX_TOKENS` (1,240). Reading the prompt on the 1-vCPU
  * droplet is the limit (~50 tokens/s), not this window.
  */
 export const OLLAMA_N_CTX = 8192;
@@ -288,10 +288,10 @@ export const LOCAL_PROMPT_SAFETY_MARGIN_TOKENS = 256;
 
 /**
  * Target prompt size for the local Ollama path. Prefill on one vCPU is about
- * 50 tokens/s, so the working set stays near 1,200 tokens. The trim loop uses
+ * 50 tokens/s, so the working set stays near 1,240 tokens. The trim loop uses
  * the smaller of this target and the hard window below.
  */
-export const LOCAL_PROMPT_MAX_TOKENS = 1_200;
+export const LOCAL_PROMPT_MAX_TOKENS = 1_240;
 
 /** Prompt tokens that still leave room for a full local decode inside n_ctx. */
 export function localPromptHardMaxTokens(
@@ -1591,7 +1591,7 @@ export function messagesForLocalOllama<T extends { role: string; content: string
  * sentences from its end (or the whole paragraph) so the current-feeling
  * line and the atmosphere line stay. Mood remains the last bracket before
  * the user's words. Those parts plus the kept history stay inside
- * `LOCAL_PROMPT_MAX_TOKENS` (~1.2k) unless the persona alone is already
+ * `LOCAL_PROMPT_MAX_TOKENS` (1,240) unless the persona alone is already
  * over that cap.
  */
 
