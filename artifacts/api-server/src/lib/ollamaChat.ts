@@ -153,7 +153,9 @@ export function toOllamaMessages(
 /**
  * Qwen2.5's published chat sampling (temperature 0.7, top_p 0.8, top_k 20,
  * repetition penalty 1.05). The old Modelfile ran top_p 0.92 with
- * repeat_penalty 1.1 and the chat route asks for 0.85 (ensemble up to 1.15).
+ * repeat_penalty 1.1. Companion chat now asks for COMPANION_CHAT_TEMPERATURE
+ * (one step under the 0.75 this ceiling used to apply to a 0.85 request).
+ * Ensemble minds still ask up to 1.15 and stay clamped here.
  * On a 3B model that combination penalizes "the", "a", "to" out of the recent
  * window and samples the long tail: dropped articles, odd word swaps, and
  * stray Chinese tokens. Sent per request because the Fly volume keeps an
@@ -167,6 +169,16 @@ export const OLLAMA_CHAT_SAMPLING = {
 
 /** Ceiling for caller temperatures. Override with ANIMA_OLLAMA_MAX_TEMPERATURE. */
 export const OLLAMA_MAX_TEMPERATURE = 0.75;
+
+/**
+ * Companion chat reply temperature on the local model path.
+ * The chat route used to request 0.85, and native Ollama clamped that to
+ * this ceiling (0.75), so the model sampled companion replies at 0.75.
+ * 0.65 is one 0.1 step below that applied temperature and stays under the
+ * ceiling, so the clamp does not undo it. Journal, proactive, summaries,
+ * and ensemble minds do not read this constant.
+ */
+export const COMPANION_CHAT_TEMPERATURE = 0.65;
 
 /**
  * Hard ceiling for `num_predict` on every native Ollama call.

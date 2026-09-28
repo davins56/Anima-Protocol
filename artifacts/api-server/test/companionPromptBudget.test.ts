@@ -15,6 +15,7 @@ import {
 import { OLLAMA_NUM_CTX } from "../src/lib/localLlmWarm";
 import { OLLAMA_NUM_PREDICT_CAP } from "../src/lib/ollamaChat";
 import { PDF_CONTEXT_WORD_BUDGET } from "../src/lib/pdf/limits";
+import { emptyOperatorModel } from "../src/lib/operatorModel";
 
 const PROBE_PROMPT = "Reply with the single word: ok";
 
@@ -364,5 +365,141 @@ describe("companion prompt prefill budget", () => {
     );
     expect(messages.at(-1)).toEqual({ role: "user", content: "LATEST_ORDER the new line" });
     expect(sections.staticText.includes(sections.moodText)).toBe(false);
+    expect(messages.at(-2)?.role).toBe("system");
+    expect(messages.at(-2)?.content.startsWith("Answer ")).toBe(true);
+  });
+
+  it("answers the last message by name, after mood and directly before the user turn", () => {
+    const instruction =
+      "Answer Mara's last message first, directly, in Natasha Romanoff's own voice. Stay on what they said. Bring in memories or lore only when they help answer it.";
+    const input = {
+      characters: [natasha],
+      activeCharacter: natasha,
+      memories: [
+        {
+          characterId: "natasha",
+          summary: "MEMORY_ORDER silver moth",
+          facts: [{ type: "factual", text: "MEMORY_ORDER silver moth" }],
+        },
+      ],
+      recentMessages: [
+        { role: "user", content: "HISTORY_ORDER earlier line" },
+        {
+          role: "assistant",
+          content: "HISTORY_ORDER she answered",
+          character_name: "Natasha Romanoff",
+        },
+      ],
+      mode: "solo",
+      content: "LATEST_ORDER the new line",
+      pdfContext: "PDF_ORDER short excerpt",
+      synchroState: turn.synchroState,
+      companionAffect: turn.companionAffect,
+      userDisplayName: "Mara",
+    };
+    const sections = companionLocalSections(input);
+    const messages = composeCompanionChatMessages(input);
+    const packed = messages.map((message) => message.content).join("\n");
+    const moodAt = packed.indexOf(sections.moodText);
+    const instructionAt = packed.indexOf(instruction);
+    const historyAt = packed.indexOf("HISTORY_ORDER");
+    const latestAt = packed.lastIndexOf("LATEST_ORDER the new line");
+
+    expect(sections.staticText).not.toContain(instruction);
+    expect(companionStaticPrefix(input)).toBe(
+      companionStaticPrefix({ ...input, userDisplayName: "Someone Else" }),
+    );
+    expect(packed.split(instruction).length - 1).toBe(1);
+    expect(moodAt).toBeGreaterThan(sections.staticText.length);
+    expect(historyAt).toBeGreaterThan(moodAt);
+    expect(instructionAt).toBeGreaterThan(historyAt);
+    expect(latestAt).toBeGreaterThan(instructionAt);
+    expect(messages.at(-2)).toEqual({ role: "system", content: instruction });
+    expect(messages.at(-1)).toEqual({
+      role: "user",
+      content: "LATEST_ORDER the new line",
+    });
+    expect(messages[0]?.content.endsWith(sections.moodText)).toBe(true);
+  });
+
+  it("keeps the answer-last instruction when the prompt is heavily over budget", () => {
+    const instruction =
+      "Answer Mara's last message first, directly, in Natasha Romanoff's own voice. Stay on what they said. Bring in memories or lore only when they help answer it.";
+    const persona = "PERSONA_FULL_MARK the identity lock stays intact";
+    const latest = "LATEST_WORST_MARK the newest line";
+    const character = { ...natasha, personality: persona };
+    const input = {
+      characters: [character],
+      activeCharacter: character,
+      userDisplayName: "  Mara \n",
+      memories: Array.from({ length: 24 }, (_, i) => ({
+        characterId: "natasha",
+        summary: `MEMORY_WORST_${i} ${"long remembered fact ".repeat(40)}`,
+        facts: [
+          {
+            type: "factual",
+            text: `MEMORY_WORST_${i} ${"long remembered fact ".repeat(40)}`,
+          },
+        ],
+      })),
+      recentMessages: Array.from({ length: 60 }, (_, i) => ({
+        role: i % 2 === 0 ? "user" : "assistant",
+        content: `OLD_HISTORY_${i} ${"earlier beat ".repeat(120)}`,
+        character_name: i % 2 === 0 ? undefined : "Natasha Romanoff",
+      })),
+      mode: "solo",
+      content: latest,
+      pdfContext: `PDF_WORST ${"excerpt word ".repeat(PDF_CONTEXT_WORD_BUDGET + 400)}`,
+      clientContext: `SCENE_EXCERPT_SHOULD_YIELD ${"lore ".repeat(400)}`,
+      synchroState: turn.synchroState,
+      companionAffect: turn.companionAffect,
+    };
+    const sections = companionLocalSections(input);
+    const messages = composeCompanionChatMessages(input);
+    const packed = messages.map((message) => message.content).join("\n");
+    const tokens = estimateLocalPromptTokens(packed);
+
+    expect(packed.split(instruction).length - 1).toBe(1);
+    expect(messages.at(-2)).toEqual({ role: "system", content: instruction });
+    expect(messages.at(-1)).toEqual({ role: "user", content: latest });
+    expect(packed.indexOf(sections.moodText)).toBeLessThan(packed.indexOf(instruction));
+    expect(packed).toContain(persona);
+    expect(packed).not.toContain("OLD_HISTORY_0");
+    expect(sections.staticText).not.toContain(instruction);
+    expect(tokens).toBeLessThanOrEqual(LOCAL_PROMPT_MAX_TOKENS);
+    expect(tokens).toBeLessThanOrEqual(localPromptHardMaxTokens());
+    expect(tokens + OLLAMA_NUM_PREDICT_CAP).toBeLessThan(OLLAMA_N_CTX);
+  });
+
+  it("falls back when the user or companion name is missing", () => {
+    const unnamed = composeCompanionChatMessages({
+      characters: [{ id: "x", personality: "quiet" }],
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "Hello there",
+    });
+    expect(unnamed.at(-2)).toEqual({
+      role: "system",
+      content:
+        "Answer the user's last message first, directly, in your own voice. Stay on what they said. Bring in memories or lore only when they help answer it.",
+    });
+
+    const operatorModel = emptyOperatorModel();
+    operatorModel.identity.name = "Ivo";
+    const fromOperator = composeCompanionChatMessages({
+      characters: [natasha],
+      activeCharacter: natasha,
+      memories: [],
+      recentMessages: [{ role: "user", content: "same line" }],
+      mode: "solo",
+      content: "same line",
+      operatorModel,
+    });
+    const packed = fromOperator.map((message) => message.content).join("\n");
+    expect(packed.split("Answer Ivo's last message first").length - 1).toBe(1);
+    expect(fromOperator.at(-2)?.content).toContain("in Natasha Romanoff's own voice");
+    expect(fromOperator.filter((message) => message.content === "same line")).toHaveLength(1);
+    expect(fromOperator.at(-1)).toEqual({ role: "user", content: "same line" });
   });
 });
