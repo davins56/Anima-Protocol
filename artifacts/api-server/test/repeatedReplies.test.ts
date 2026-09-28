@@ -4,6 +4,7 @@ import {
   capRecentMessagesForLlm,
   composeCompanionChatMessages,
   isRepeatedReply,
+  matchingRepeatedReply,
   messagesForLocalOllama,
   messagesForRepeatRetry,
   recentAssistantReplies,
@@ -48,6 +49,9 @@ describe("isRepeatedReply", () => {
       "She nods once. The harbor bell is late, and she keeps the watch from the gate.";
     expect(reply.startsWith(prior)).toBe(true);
     expect(visiblePrefixRepeatsHistory(reply, [prior])).toBe(false);
+    expect(matchingRepeatedReply(reply, [prior])).toBeNull();
+    const long = "The room stays quiet while she watches the door and does not answer yet.";
+    expect(matchingRepeatedReply(long.slice(0, LOCAL_REPEAT_DETECT_CHARS + 8), [long])).toBe(long);
   });
 
   it("does not match a different reply or a short one", () => {
