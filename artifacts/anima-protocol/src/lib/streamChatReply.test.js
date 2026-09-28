@@ -180,6 +180,23 @@ describe("streamChatReply", () => {
     expect(onDelta.mock.calls.at(-1)[0]).toBe("Stay with me. I hear you.");
   });
 
+  it("replaces a streamed cutoff with the shorter done.visible reply", async () => {
+    const onDelta = vi.fn();
+    const result = await streamChatReply(
+      fromEvents([
+        { content: "The room stays quiet and the lamp keeps burning. " },
+        { content: "undist" },
+        { done: true, visible: "The room stays quiet and the lamp keeps burning." },
+      ]),
+      { onDelta },
+    );
+    expect(result.content).toBe("The room stays quiet and the lamp keeps burning.");
+    expect(onDelta.mock.calls.at(-1)[0]).toBe(
+      "The room stays quiet and the lamp keeps burning.",
+    );
+    expect(onDelta.mock.calls.at(-1)[0]).not.toContain("undist");
+  });
+
   it("uses done.visible when Safari dropped the last content frame", async () => {
     const onDelta = vi.fn();
     const result = await streamChatReply(

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { initCompanionAffect } from "../src/lib/companionAffect";
 import {
+  CONTINUE_USER_TURN,
   FIRSTHAND_NOTE_LABEL,
   IN_WORLD_PRESENCE,
   IN_WORLD_VOICE,
@@ -9,6 +11,7 @@ import {
   neutraliseFranchiseWords,
   stripOutOfWorldLabels,
 } from "../src/lib/promptBuilder";
+import { COMPANION_CRISIS_TURN_LINE } from "../src/lib/therapySafety";
 import { buildCrossoverAwareness } from "../src/lib/voiceAnchors";
 
 const natasha = {
@@ -73,6 +76,28 @@ describe("in-world companion prompt", () => {
     expect(String(calm.at(-1)?.content)).toContain("Tell me about Vormir.");
   });
 
+  it("asks an empty continue turn to speak in first person without touching the prefix", () => {
+    const spoken = companionStaticPrefix({ ...base, content: "Tell me about Vormir." });
+    const empty = companionStaticPrefix({ ...base, content: "" });
+    expect(empty).toBe(spoken);
+    expect(empty).not.toContain(CONTINUE_USER_TURN);
+    const spokenFold = messagesForLocalOllama(
+      composeCompanionChatMessages({ ...base, content: "Tell me about Vormir." }),
+    );
+    const folded = messagesForLocalOllama(
+      composeCompanionChatMessages({ ...base, content: "" }),
+    );
+    expect(String(folded[0]?.content)).toBe(String(spokenFold[0]?.content));
+    expect(String(folded[0]?.content)).not.toContain(CONTINUE_USER_TURN);
+    const user = String(folded.at(-1)?.content || "");
+    expect(user).toContain(CONTINUE_USER_TURN);
+    expect(CONTINUE_USER_TURN).toBe(
+      "I'm here with you. Go on in your own first person, then pause for me.",
+    );
+    expect(user).not.toMatch(/continue the scene/i);
+    expect(user).not.toMatch(/Continue as /);
+  });
+
   it("rewrites franchise labels in the card and does not name another world's title", () => {
     expect(stripOutOfWorldLabels("In the Marvel Cinematic Universe, Vormir is a place.")).toBe(
       "In this world, Vormir is a place.",
@@ -119,5 +144,37 @@ describe("in-world companion prompt", () => {
     expect(withoutVoiceRule).not.toMatch(FRANCHISE_WORD);
     expect(folded).not.toContain("WORLD STATE & LORE");
     expect(folded).not.toContain("established story canon");
+  });
+
+  it("keeps the crisis care line first and mood last when lore is attached", () => {
+    const folded = messagesForLocalOllama(
+      composeCompanionChatMessages({
+        ...base,
+        content: "I want to kill myself",
+        companionCrisis: true,
+        clientContext: WIKI_LORE,
+        companionAffect: initCompanionAffect({
+          selfState: {
+            primary: "tender",
+            intensity: 58,
+            energy: 44,
+            mood: "tender-aching",
+            intent: "comfort",
+            focus: "steward",
+          },
+        }),
+      }),
+    );
+    const user = String(folded.at(-1)?.content || "");
+    const careAt = user.indexOf(`[${COMPANION_CRISIS_TURN_LINE}]`);
+    const loreAt = user.indexOf(`[${FIRSTHAND_NOTE_LABEL}:`);
+    const moodAt = user.indexOf("You feel tender-aching");
+    const wordsAt = user.lastIndexOf("I want to kill myself");
+    expect(careAt).toBe(0);
+    expect(loreAt).toBeGreaterThan(careAt);
+    expect(moodAt).toBeGreaterThan(loreAt);
+    expect(wordsAt).toBeGreaterThan(moodAt);
+    expect(user.slice(moodAt, wordsAt)).not.toContain(`[${FIRSTHAND_NOTE_LABEL}:`);
+    expect(String(folded[0]?.content)).not.toContain(COMPANION_CRISIS_TURN_LINE);
   });
 });

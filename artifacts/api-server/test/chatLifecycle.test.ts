@@ -72,6 +72,7 @@ import {
   beginChatTurn,
   checkpointGeneratedTurn,
   claimChatTurnLease,
+  readChatTurn,
 } from "../src/lib/chatTurnLedger";
 import { resetChatTurnFlightsForTests } from "../src/lib/chatTurnFlight";
 import {
@@ -1536,6 +1537,197 @@ describe("chat lifecycle", () => {
       ensembleMocks.isLocalEnsembleEnabled.mockReturnValue(false);
       ensembleMocks.draftLocalMinds.mockReset();
       ensembleMocks.combineLocalDrafts.mockReset();
+      installHelloStream();
+    }
+  });
+
+  function lengthCappedStream(parts: string[], provider: "local" | "openrouter" = "local") {
+    return {
+      stream: (async function* () {
+        for (let i = 0; i < parts.length; i += 1) {
+          const last = i === parts.length - 1;
+          yield {
+            choices: [
+              {
+                delta: { content: parts[i] },
+                finish_reason: last ? "length" : null,
+              },
+            ],
+          };
+        }
+      })(),
+      model: "test-anima",
+      tier: "standard" as const,
+      provider,
+      brand: "anima" as const,
+      failedOver: false,
+    };
+  }
+
+  async function postTurn(turn: string, content: string) {
+    return request("/chat/messages", {
+      method: "POST",
+      body: JSON.stringify({
+        turn_id: turn,
+        session_id: sessionId,
+        content,
+        character_id: characterId,
+        character_ids: [characterId],
+        assistant_character_id: characterId,
+        mode: "solo",
+        persist: true,
+        region: { share_region: false },
+      }),
+    });
+  }
+
+  it("trims a length-capped reply before it is saved when nothing was streamed", async () => {
+    const capTurn = `turn_${prefix}_length_hold`;
+    const raw = "The room is quiet. undist";
+    expect(raw.length).toBeLessThan(40);
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () =>
+      lengthCappedStream([raw]),
+    );
+    try {
+      const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+      const res = await postTurn(capTurn, "Stay with me");
+      expect(res.status).toBe(200);
+      const events = sseEvents(await res.text());
+      const shown = events
+        .filter((event) => typeof event.content === "string")
+        .map((event) => String(event.content))
+        .join("");
+      expect(shown).toBe("The room is quiet.");
+      expect(shown).not.toContain("undist");
+      expect(events.at(-1)).toMatchObject({ done: true, visible: "The room is quiet." });
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(callsBefore + 1);
+      const saved = await readChatTurn(capTurn, userId);
+      expect(saved?.assistantContent).toBe("The room is quiet.");
+    } finally {
+      installHelloStream();
+    }
+  });
+
+  it("replaces a streamed length-capped tail with the finished sentence", async () => {
+    const capTurn = `turn_${prefix}_length_stream`;
+    const opening = "The room stays quiet and the lamp keeps burning. ";
+    const tail = "undist";
+    expect(opening.trim().length).toBeGreaterThanOrEqual(40);
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () =>
+      lengthCappedStream([opening, tail], "openrouter"),
+    );
+    try {
+      const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+      const res = await postTurn(capTurn, "Keep the lamp");
+      expect(res.status).toBe(200);
+      const events = sseEvents(await res.text());
+      const streamed = events
+        .filter((event) => typeof event.content === "string")
+        .map((event) => String(event.content))
+        .join("");
+      expect(streamed).toContain("undist");
+      expect(events.at(-1)).toMatchObject({
+        done: true,
+        visible: "The room stays quiet and the lamp keeps burning.",
+      });
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(callsBefore + 1);
+      const saved = await readChatTurn(capTurn, userId);
+      expect(saved?.assistantContent).toBe(
+        "The room stays quiet and the lamp keeps burning.",
+      );
+    } finally {
+      installHelloStream();
+    }
+  });
+
+  it("trims a length-capped action line back to the last closed action", async () => {
+    const capTurn = `turn_${prefix}_length_action`;
+    const raw = "I stay. *She looks across the room* and the quiet, undist";
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () =>
+      lengthCappedStream([raw], "openrouter"),
+    );
+    try {
+      const res = await postTurn(capTurn, "Look across");
+      expect(res.status).toBe(200);
+      const events = sseEvents(await res.text());
+      expect(events.at(-1)).toMatchObject({
+        done: true,
+        visible: "I stay. *She looks across the room*",
+      });
+      const saved = await readChatTurn(capTurn, userId);
+      expect(saved?.assistantContent).toBe("I stay. *She looks across the room*");
+    } finally {
+      installHelloStream();
+    }
+  });
+
+  it("closes an open action when a length cap leaves no sentence", async () => {
+    const capTurn = `turn_${prefix}_length_open_action`;
+    const raw = "*reaches toward the quiet undist";
+    expect(raw.length).toBeLessThan(40);
+    expect(raw).not.toMatch(/[.!?]/);
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () =>
+      lengthCappedStream([raw]),
+    );
+    try {
+      const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+      const res = await postTurn(capTurn, "I want to kill myself");
+      expect(res.status).toBe(200);
+      const events = sseEvents(await res.text());
+      const shown = events
+        .filter((event) => typeof event.content === "string")
+        .map((event) => String(event.content))
+        .join("");
+      expect(shown).toBe("*reaches toward the quiet undist*");
+      expect(events.at(-1)).toMatchObject({
+        done: true,
+        visible: "*reaches toward the quiet undist*",
+      });
+      expect(events.some((event) => event.crisis_resource)).toBe(true);
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(callsBefore + 1);
+      const saved = await readChatTurn(capTurn, userId);
+      expect(saved?.assistantContent).toBe("*reaches toward the quiet undist*");
+    } finally {
+      installHelloStream();
+    }
+  });
+
+  it("regenerates a third-person self-narration once and skips that on a crisis turn", async () => {
+    const narrated = "Aria found herself surrounded by the quiet of the room.";
+    const lived = "I stay beside you. The quiet is enough.";
+    const wallTurn = `turn_${prefix}_third_person`;
+    const crisisTurn = `turn_${prefix}_third_person_crisis`;
+    let generated = 0;
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => {
+      generated += 1;
+      return streamOf(generated === 1 ? narrated : lived);
+    });
+    try {
+      const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+      const res = await postTurn(wallTurn, "Stay with me");
+      expect(res.status).toBe(200);
+      const events = sseEvents(await res.text());
+      const shown = events
+        .filter((event) => typeof event.content === "string")
+        .map((event) => String(event.content))
+        .join("");
+      expect(shown).toBe(lived);
+      expect(events.at(-1)).toMatchObject({ done: true, visible: lived });
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(callsBefore + 2);
+      const retry = llmMocks.createChatStreamWithFailover.mock.calls[callsBefore + 1]?.[0] as {
+        maxTokens: number;
+      };
+      expect(retry.maxTokens).toBe(fourthWallReply.FOURTH_WALL_RETRY_MAX_TOKENS);
+
+      generated = 0;
+      llmMocks.createChatStreamWithFailover.mockImplementation(async () => streamOf(narrated));
+      const crisisCalls = llmMocks.createChatStreamWithFailover.mock.calls.length;
+      const crisis = await postTurn(crisisTurn, "I want to kill myself");
+      expect(crisis.status).toBe(200);
+      const crisisEvents = sseEvents(await crisis.text());
+      expect(crisisEvents.at(-1)).toMatchObject({ done: true, visible: narrated });
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(crisisCalls + 1);
+    } finally {
       installHelloStream();
     }
   });
