@@ -13,7 +13,7 @@ import {
   createChatCompletionWithFailover,
 } from "./lib/llmFailover";
 import { llmAiChatOpenTimeoutMs, openStreamAbort } from "./lib/chatTimeouts";
-import { companionLlmTurnOpen } from "./lib/sidecarLlm";
+import { tryBeginCompanionLlmTurn } from "./lib/sidecarLlm";
 import { createRateLimit } from "./lib/rateLimit";
 import {
   AI_CHAT_RATE_LIMIT_MAX,
@@ -162,7 +162,8 @@ app.post("/api/ai/chat", async (req: Request, res: Response) => {
   });
   if (res.headersSent) return;
 
-  if (companionLlmTurnOpen()) {
+  const releaseSlot = tryBeginCompanionLlmTurn();
+  if (!releaseSlot) {
     res.status(429).json({
       error: "The companion is using the model. Try again in a moment.",
       code: "llm_busy",
@@ -207,6 +208,7 @@ app.post("/api/ai/chat", async (req: Request, res: Response) => {
     });
   } finally {
     open.cancel();
+    releaseSlot();
   }
 });
 

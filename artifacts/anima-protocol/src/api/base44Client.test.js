@@ -900,4 +900,58 @@ describe("functions.invoke timeout", () => {
     expect(result).toBeNull();
     expect(signal?.aborted).toBe(true);
   });
+
+  it("does not put the sidecar timeout on a foreground invoke", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
+    global.fetch = vi.fn(async () => Response.json({ result: { name: "Nyx" } }));
+    const result = await base44.functions.invoke("generateCompanionFromPrompt", {
+      prompt: "a quiet fox",
+    });
+    expect(result).toEqual({ name: "Nyx" });
+    expect(timeoutSpy).not.toHaveBeenCalled();
+  });
+
+  it("bounds a background sidecar at 12 seconds", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation(
+      () => new AbortController().signal,
+    );
+    global.fetch = vi.fn(async () => Response.json({ result: null }));
+    await base44.functions.invoke("generateDivergentPaths", { session_id: "s" });
+    expect(timeoutSpy).toHaveBeenCalledWith(12_000);
+  });
+
+  it("aborts a sidecar when AbortSignal.timeout is unavailable", async () => {
+    const original = AbortSignal.timeout;
+    Object.defineProperty(AbortSignal, "timeout", {
+      configurable: true,
+      writable: true,
+      value: undefined,
+    });
+    let signal;
+    global.fetch = vi.fn((_url, options = {}) => {
+      signal = options.signal;
+      return new Promise((_resolve, reject) => {
+        options.signal?.addEventListener("abort", () => {
+          const err = new Error("aborted");
+          err.name = "AbortError";
+          reject(err);
+        });
+      });
+    });
+    try {
+      const result = await base44.functions.invoke(
+        "scanAndLinkLoreKeywords",
+        { messages: [] },
+        { timeoutMs: 30 },
+      );
+      expect(result).toBeNull();
+      expect(signal?.aborted).toBe(true);
+    } finally {
+      Object.defineProperty(AbortSignal, "timeout", {
+        configurable: true,
+        writable: true,
+        value: original,
+      });
+    }
+  });
 });

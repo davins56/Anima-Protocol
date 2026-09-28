@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import {
   chatTurns,
   db,
@@ -255,8 +255,32 @@ export async function readChatTurn(
 export async function latestOpenChatTurn(
   userId: string,
   sessionId: string,
+  now = new Date(),
 ): Promise<ChatTurn | null> {
-  const rows = await withTransientDbRetry(() =>
+  const staleBefore = new Date(now.getTime() - STALE_PENDING_LEASE_MS);
+  // Drop expired pending rows before the limit, or eight stale leases hide
+  // an older turn that is still open.
+  await withTransientDbRetry(() =>
+    db
+      .update(chatTurns)
+      .set({
+        status: "failed",
+        retryCount: sql`${chatTurns.retryCount} + 1`,
+        lastError: "Companion turn lease expired",
+        leaseExpiresAt: null,
+        waitingUntil: null,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(chatTurns.userId, userId),
+          eq(chatTurns.sessionId, sessionId),
+          eq(chatTurns.status, "pending"),
+          lte(chatTurns.leaseExpiresAt, staleBefore),
+        ),
+      ),
+  );
+  const [open] = await withTransientDbRetry(() =>
     db
       .select()
       .from(chatTurns)
@@ -270,15 +294,7 @@ export async function latestOpenChatTurn(
       .orderBy(desc(chatTurns.createdAt))
       .limit(8),
   );
-  let open: ChatTurn | null = null;
-  for (const turn of rows) {
-    if (pendingTurnLeaseIsStale(turn)) {
-      await markTurnFailed(turn.id, userId, new Error("Companion turn lease expired"));
-      continue;
-    }
-    if (!open) open = turn;
-  }
-  return open;
+  return open ?? null;
 }
 
 /**
