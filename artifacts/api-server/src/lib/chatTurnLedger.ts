@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import {
   chatTurns,
   db,
@@ -42,6 +42,25 @@ export type ChatTurnReuse = "replay" | "conflict" | "in_flight";
  * stops renewing, so the turn cannot stay pending forever.
  */
 export const CHAT_TURN_LEASE_MS = 45_000;
+
+/**
+ * A pending row whose lease expired this long ago is abandoned. The chat
+ * page must not keep a "..." bubble for it.
+ */
+export const STALE_PENDING_LEASE_MS = 3 * 60 * 1000;
+
+export function pendingTurnLeaseIsStale(
+  turn: { status?: string | null; leaseExpiresAt?: Date | string | null },
+  now = Date.now(),
+): boolean {
+  if (turn.status !== "pending") return false;
+  if (!turn.leaseExpiresAt) return false;
+  const at =
+    turn.leaseExpiresAt instanceof Date
+      ? turn.leaseExpiresAt.getTime()
+      : Date.parse(String(turn.leaseExpiresAt));
+  return Number.isFinite(at) && at <= now - STALE_PENDING_LEASE_MS;
+}
 
 export type DurableTurnJoin = "replay" | "join" | "claim" | "conflict";
 
@@ -229,47 +248,77 @@ export async function readChatTurn(
 }
 
 /**
- * A pending turn whose lease (or, before any lease, its last update) is older
- * than this is abandoned: no isolate is generating it and no heartbeat will
- * renew it. Well past the 140s browser abort and the late-persist budget.
- */
-export const STALE_PENDING_TURN_MS = 3 * 60 * 1000;
-
-/**
  * Newest pending or generated turn for this session, if the reply is not
- * committed yet. Abandoned pending turns (see `STALE_PENDING_TURN_MS`) are skipped
- * so reopening the chat does not show a "..." bubble for a dead generate.
+ * committed yet. Abandoned pending rows (lease, or before any lease the last
+ * update, older than `STALE_PENDING_LEASE_MS`) are marked failed first, so
+ * reopening the chat does not show a "..." bubble for a dead generate. Both
+ * steps filter in SQL, so a run of abandoned rows cannot hide a live one.
  */
 export async function latestOpenChatTurn(
   userId: string,
   sessionId: string,
   now = new Date(),
 ): Promise<ChatTurn | null> {
-  const staleBefore = new Date(now.getTime() - STALE_PENDING_TURN_MS);
+  const staleBefore = new Date(now.getTime() - STALE_PENDING_LEASE_MS);
+  const scope = and(eq(chatTurns.userId, userId), eq(chatTurns.sessionId, sessionId));
+  await withTransientDbRetry(() =>
+    db
+      .update(chatTurns)
+      .set({
+        status: "failed",
+        retryCount: sql`${chatTurns.retryCount} + 1`,
+        lastError: "Companion turn lease expired",
+        leaseExpiresAt: null,
+        waitingUntil: null,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          scope,
+          eq(chatTurns.status, "pending"),
+          or(
+            lt(chatTurns.leaseExpiresAt, staleBefore),
+            and(isNull(chatTurns.leaseExpiresAt), lt(chatTurns.updatedAt, staleBefore)),
+          ),
+        ),
+      ),
+  );
   const [turn] = await withTransientDbRetry(() =>
     db
       .select()
       .from(chatTurns)
-      .where(
-        and(
-          eq(chatTurns.userId, userId),
-          eq(chatTurns.sessionId, sessionId),
-          or(
-            eq(chatTurns.status, "generated"),
-            and(
-              eq(chatTurns.status, "pending"),
-              or(
-                gt(chatTurns.leaseExpiresAt, staleBefore),
-                and(isNull(chatTurns.leaseExpiresAt), gt(chatTurns.updatedAt, staleBefore)),
-              ),
-            ),
-          ),
-        ),
-      )
+      .where(and(scope, inArray(chatTurns.status, ["pending", "generated"])))
       .orderBy(desc(chatTurns.createdAt))
       .limit(1),
   );
   return turn ?? null;
+}
+
+/**
+ * Another pending turn for this user is waiting on the model. A long-expired
+ * lease does not count — that row is abandoned, not queued.
+ */
+export async function userHasOtherPendingChatTurn(
+  userId: string,
+  exceptTurnId: string,
+  now = new Date(),
+): Promise<boolean> {
+  const staleBefore = new Date(now.getTime() - STALE_PENDING_LEASE_MS);
+  const [row] = await withTransientDbRetry(() =>
+    db
+      .select({ id: chatTurns.id })
+      .from(chatTurns)
+      .where(
+        and(
+          eq(chatTurns.userId, userId),
+          eq(chatTurns.status, "pending"),
+          ne(chatTurns.id, exceptTurnId),
+          or(isNull(chatTurns.leaseExpiresAt), gt(chatTurns.leaseExpiresAt, staleBefore)),
+        ),
+      )
+      .limit(1),
+  );
+  return Boolean(row);
 }
 
 /**
