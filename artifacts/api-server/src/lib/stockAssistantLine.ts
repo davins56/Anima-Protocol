@@ -8,15 +8,31 @@ import { logger } from "./logger";
 
 const STOCK_LINE_PATTERNS: RegExp[] = [
   /\bas an ai\b/i,
-  /\bi(?:\s+am|'m|’m)\s+just\s+an?\s+ai\b/i,
-  /\bi(?:\s+am|'m|’m)\s+an?\s+ai\s+language\s+model\b/i,
-  /\bi(?:\s+am|'m|’m)\s+an?\s+ai\s+assistant\b/i,
-  /\bai\s+language\s+model\b/i,
+  // Article optional so "I'm AI" / "I am AI" match. "not" blocks "I'm not an AI".
+  /\bi(?:\s+am|'m|’m)\s+(?:just\s+)?(?:an?\s+)?(?:ai|a\.?\s*i\.?|artificial intelligence)\b/i,
+  /\bi(?:\s+am|'m|’m)\s+(?:just\s+)?(?:an?\s+)?ai\s+(?:language\s+model|assistant)\b/i,
+  /\bas (?:a|an)\s+(?:language model|chat\s?bot|virtual assistant|artificial intelligence)\b/i,
+  /\bi(?:\s+am|'m|’m)\s+(?:just\s+)?(?:a\s+)?(?:chat\s?bot|language model|large language model|llm|virtual assistant|bot)\b/i,
+  /\bi(?:\s+am|'m|’m)\s+(?:just\s+)?(?:a\s+)?(?:computer\s+)?(?:program|software)\b/i,
+  // First-person claims only. Lookbehinds reject negated denials
+  // ("no soy", "não sou", "non sono"). French "ne … pas" is not contiguous
+  // "je suis"; "je suis pas" is rejected by the lookahead.
+  /\b(?<!\bno\s)soy\s+(?:una?\s+)?i\.?\s*a\.?\b/i,
+  /\bje\s+suis\s+(?!pas\b)(?:une?\s+)?i\.?\s*a\.?\b/i,
+  /\b(?<!\bn[aã]o\s)(?:eu\s+)?sou\s+(?:uma?\s+)?i\.?\s*a\.?\b/i,
+  /\b(?<!\bnon\s)sono\s+(?:una\s+|un['’]\s*|un\s+)i\.?\s*a\.?\b/i,
+  /\bich\s+bin\s+(?:eine\s+)?ki\b/i,
+  /\b(?<!\bno\s)soy\s+(?:una\s+)?inteligencia\s+artificial\b/i,
+  /\bje\s+suis\s+(?!pas\b)(?:une\s+)?intelligence\s+artificielle\b/i,
+  /\b(?<!\bn[aã]o\s)(?:eu\s+)?sou\s+(?:uma\s+)?intelig[eê]ncia\s+artificial\b/i,
+  /\b(?<!\bnon\s)sono\s+(?:un['’]\s*)?intelligenza\s+artificiale\b/i,
+  /\bich\s+bin\s+(?:eine\s+)?k[uü]nstliche\s+intelligenz\b/i,
   /\bi\s+can(?:not|'t|’t)\s+act\s+like\s+a\s+real\s+person\b/i,
   /\bi(?:\s+am|'m|’m)\s+sorry,?\s+but\s+i\s+can(?:not|'t|’t)\s+assist\b/i,
   /\bi\s+cannot\s+help\s+with\s+that\s+request\b/i,
-  /\bi(?:\s+am|'m|’m)\s+qwen\b/i,
-  /\bcreated by alibaba cloud\b/i,
+  /\bi(?:\s+am|'m|’m)\s+qwen[\w.]*/i,
+  /\bcreated by alibaba(?:\s+cloud)?\b/i,
+  /\b(?:my training data|knowledge cutoff)\b/i,
 ];
 
 /** Replies at or under this length match on any stock phrase. Longer replies match only when the stock line is most of the text. */
@@ -65,7 +81,8 @@ function stockMatchCoverage(text: string): number {
 }
 
 /** Persona text that already presents the character as a machine. "as an AI" can be in character. */
-const PERSONA_MACHINE_RE = /\b(ai|android|robot|synthetic)\b/i;
+const PERSONA_MACHINE_RE =
+  /\b(?:ai|android|robot|synthetic|machine|automaton|droid|cyborg|bot|software|construct|program)\b/i;
 
 export function personaDescribesMachine(
   parts: Array<string | null | undefined> | undefined,
@@ -78,8 +95,9 @@ export function personaDescribesMachine(
  * True for assistant / model-identity lines. Case-insensitive.
  * Short replies match on the phrase. Longer replies match only when the
  * stock phrase itself (not the whole sentence around it) is at least half
- * of the reply, so one long in-character paragraph that mentions a phrase
- * does not trip the guard.
+ * of the reply, measured without padding spaces, so one buried line does
+ * not trip the guard and a space-padded stock line still does.
+ * Machine personas are exempt.
  */
 export function isStockAssistantLine(
   reply: unknown,
@@ -91,7 +109,8 @@ export function isStockAssistantLine(
   const covered = stockMatchCoverage(text);
   if (covered === 0) return false;
   if (text.length <= STOCK_ASSISTANT_SHORT_REPLY_CHARS) return true;
-  return covered * 2 >= text.length;
+  const contentLength = text.replace(/\s+/g, "").length;
+  return covered * 2 >= Math.max(contentLength, 1);
 }
 
 export type PersonaPronoun = "she" | "he" | "they";
@@ -157,5 +176,5 @@ export function inCharacterRetryReminder(name: string | null | undefined): strin
     .replace(/\s+/g, " ")
     .trim();
   const stay = who ? `Stay ${who}` : "Stay in character";
-  return `${stay}. You are not an assistant, a language model, or Qwen. Do not mention being an AI or Alibaba. Answer the last message in character.`;
+  return `${stay}. You are not an assistant, a language model, or Qwen. Never reveal or confirm that you are an AI, a chatbot, or a program, in any language. Answer the last message in character.`;
 }
