@@ -138,6 +138,7 @@ import TherapySessionBanner from "@/components/chat/TherapySessionBanner";
 import { parseGroupResponse } from "@/lib/parseGroupResponse";
 import { buildGroupPrompt } from "@/lib/buildGroupPrompt";
 import { streamChatReplyWithTurnRetry } from "@/lib/streamChatReply";
+import { scheduleLocationContextInject } from "@/lib/locationContextInject";
 import { finalizeAssistantReply } from "@/lib/visibleAssistantReply";
 import {
   buildLeanSoloClientContext,
@@ -1559,22 +1560,16 @@ export default function Chat() {
       const regionHints = collectRegionHints(user?.settings?.user_profile);
       const worldKnowledgeContext = formatUserRegionPromptBlock(regionHints);
 
-      // Location flavor is enhancement-only — never block the companion turn.
-      let locationContext = "";
-      if (
-        resolvedSoloChar &&
-        updatedMessages.length % 5 === 0
-      ) {
-        base44.functions
-          .invoke("injectLocationContext", {
-            session_id: activeSession.id,
-            character_id: resolvedSoloChar.id,
-            character_name: resolvedSoloChar.name,
-          })
-          .catch((err) => {
-            console.error("Location context injection error:", err);
-          });
-      }
+      // Location flavor is enhancement-only. The scheduler returns void so
+      // this turn cannot await the invoke ahead of the companion reply.
+      scheduleLocationContextInject(
+        (name, payload) => base44.functions.invoke(name, payload),
+        {
+          messageCount: updatedMessages.length,
+          sessionId: activeSession.id,
+          character: resolvedSoloChar,
+        },
+      );
 
       const conversationHistory = updatedMessages
         .slice(-14)
