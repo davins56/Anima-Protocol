@@ -867,3 +867,37 @@ describe("auth.updateMe profile persist", () => {
     });
   });
 });
+
+describe("functions.invoke timeout", () => {
+  beforeEach(() => {
+    setAuthTokenGetter(() => "test-token");
+  });
+
+  afterEach(() => {
+    clearAuthTokenGetter();
+    vi.restoreAllMocks();
+    delete global.fetch;
+  });
+
+  it("aborts the request when the timeout fires", async () => {
+    let signal;
+    global.fetch = vi.fn((_url, options = {}) => {
+      signal = options.signal;
+      return new Promise((_resolve, reject) => {
+        options.signal?.addEventListener("abort", () => {
+          const err = new Error("aborted");
+          err.name = "AbortError";
+          reject(err);
+        });
+      });
+    });
+
+    const result = await base44.functions.invoke(
+      "detectLoreKeywords",
+      { content: "hi" },
+      { timeoutMs: 30 },
+    );
+    expect(result).toBeNull();
+    expect(signal?.aborted).toBe(true);
+  });
+});

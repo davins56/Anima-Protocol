@@ -1317,7 +1317,21 @@ export default function Chat() {
         live = await pollLateCompanionReply({
           fetchTurn: () => animaApi.chat.turnStatus(live.turn_id),
         });
-        if (cancelled || !live) return;
+        if (cancelled) return;
+        if (!String(live?.assistant_content || "").trim()) {
+          setActiveSession((prev) => {
+            if (!prev || prev.id !== sid) return prev;
+            return {
+              ...prev,
+              messages: (prev.messages || []).filter(
+                (message) =>
+                  message.character_name !== "__typing__" &&
+                  message.character_name !== "__thinking__",
+              ),
+            };
+          });
+          return;
+        }
       }
       if (!String(live.assistant_content || "").trim()) return;
       if (live.persistence_status !== "committed") {
