@@ -835,6 +835,11 @@ describe("composeCompanionChatMessages", () => {
     expect(messages.slice(1)).toEqual([
       { role: "user", content: "I miss the garden" },
       { role: "assistant", content: "I remember it with you." },
+      {
+        role: "system",
+        content:
+          "Answer the user's last message first, directly, in Serenity's own voice. Stay on what they said. Bring in memories or lore only when they help answer it.",
+      },
       { role: "user", content: "Take me back there." },
     ]);
   });

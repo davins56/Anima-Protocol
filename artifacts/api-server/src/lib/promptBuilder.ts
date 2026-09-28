@@ -129,6 +129,11 @@ export interface PromptBuilderParams {
   mode: string;
   /** The latest user message content */
   content: string;
+  /**
+   * Signed-in display name. Used only by the answer-last instruction.
+   * When empty, the operator-model identity name is the next fallback.
+   */
+  userDisplayName?: string | null;
   /** User's relationship tier with the active character */
   relationshipTier?: string | null;
   /** Whether this is a crossover session */
@@ -657,6 +662,8 @@ interface LocalCompanionSections {
   excerptText: string;
   memoryText: string;
   pdfText: string;
+  /** Active companion name, or "" when this turn has no single speaker. */
+  companionName: string;
 }
 
 /**
@@ -881,7 +888,40 @@ ${stripClientRegionBlock(sceneExcerpt)}
     excerptText,
     memoryText,
     pdfText: capPdfPromptBlock(pdfContext),
+    companionName: sanitizePromptName(mainChar?.name),
   };
+}
+
+/** Collapse a display name so it cannot break the one-line instruction. */
+function sanitizePromptName(value: unknown): string {
+  const text = String(value ?? "")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return "";
+  return text.length > 80 ? text.slice(0, 80).trimEnd() : text;
+}
+
+/**
+ * Static reminder placed after history, as its own system turn, immediately
+ * before the latest user message. Names come from this turn; missing user
+ * name becomes "the user", and a missing companion name drops out of the line.
+ */
+export function answerLastMessageInstruction(
+  userName: string | null | undefined,
+  companionName: string | null | undefined,
+): string {
+  const user = sanitizePromptName(userName) || "the user";
+  const companion = sanitizePromptName(companionName);
+  const voice = companion ? `in ${companion}'s own voice` : "in your own voice";
+  return `Answer ${user}'s last message first, directly, ${voice}. Stay on what they said. Bring in memories or lore only when they help answer it.`;
+}
+
+function userNameForAnswerInstruction(params: PromptBuilderParams): string {
+  return (
+    sanitizePromptName(params.userDisplayName) ||
+    sanitizePromptName(params.operatorModel?.identity?.name)
+  );
 }
 
 /** Leading static block for a companion turn. Identical when only mood or memory changes. */
@@ -905,12 +945,16 @@ function localPromptOverBudget(parts: string[]): boolean {
 /**
  * `/api/chat/messages` entry. Order is fixed for the Ollama prompt cache:
  * static persona, long-term memories, PDF excerpts, then the per-turn mood
- * block, then recent history, then the new user message. Mood changes every
- * turn, so it sits immediately before history and not near the top.
+ * block, then recent history, then a short system instruction to answer the
+ * latest user message, then that user message. Mood changes every turn, so
+ * it sits immediately before history and not near the top. The answer-last
+ * line is its own system turn after history, so the cacheable prefix is
+ * unchanged.
  *
  * Trim PDF text first, then other excerpts, then the oldest history turns,
- * then memories. Persona, mood, and the latest user message are never trimmed.
- * The result stays at about 1.5–2k tokens and always leaves room for
+ * then memories. Persona, mood, the answer-last instruction, and the latest
+ * user message are never trimmed. The instruction's tokens still count, so
+ * the result stays at about 1.5–2k tokens and always leaves room for
  * `num_predict` inside n_ctx 4096.
  */
 export function composeCompanionChatMessages(
@@ -925,6 +969,10 @@ export function composeCompanionChatMessages(
   let history = capRecentMessagesForLlm(
     omitRetriedUserTurn(params.recentMessages, userTurn),
   );
+  const answerLast = answerLastMessageInstruction(
+    userNameForAnswerInstruction(params),
+    sections.companionName,
+  );
 
   const historyText = () => history.map((message) => message.content).join("\n");
   const over = () =>
@@ -935,6 +983,7 @@ export function composeCompanionChatMessages(
       excerptText,
       moodText,
       historyText(),
+      answerLast,
       userTurn,
     ]);
 
@@ -945,8 +994,9 @@ export function composeCompanionChatMessages(
   }
   if (over()) memoryText = "";
 
-  // Mood stays last in the system text so a turn-to-turn change does not
-  // invalidate the persona, memory, or PDF prefix.
+  // Mood stays last in the first system message so a turn-to-turn change
+  // does not invalidate the persona, memory, or PDF prefix. The answer-last
+  // line is a later system turn, directly before the user message.
   const system = joinPromptParts([
     sections.staticText,
     memoryText,
@@ -957,9 +1007,15 @@ export function composeCompanionChatMessages(
 
   const messages: LlmChatMessage[] = [];
   if (system) messages.push({ role: "system", content: system });
-  messages.push(...history);
-  // The newest user line is always last. History no longer carries a second
-  // copy of this question or the stale answer that followed it.
+  // Retry dedupe already dropped this question and its stale answer. A
+  // leftover trailing copy (continue turns are left in place) is still
+  // removed so the answer-last system turn sits directly before one user line.
+  const historyEndsWithTurn =
+    history.length > 0 &&
+    history[history.length - 1]?.role === "user" &&
+    history[history.length - 1]?.content === userTurn;
+  messages.push(...(historyEndsWithTurn ? history.slice(0, -1) : history));
+  messages.push({ role: "system", content: answerLast });
   messages.push({ role: "user", content: userTurn });
   return messages;
 }

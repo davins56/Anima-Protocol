@@ -52,6 +52,7 @@ import {
   watchClientLeave,
 } from "../lib/chatTimeouts";
 import { hintLocalLlmWarm } from "../lib/localLlmWarm";
+import { COMPANION_CHAT_TEMPERATURE } from "../lib/ollamaChat";
 import {
   combineLocalDrafts,
   draftLocalMinds,
@@ -748,6 +749,17 @@ async function loadMemories(userId: string, characterIds: string[]) {
       queryCompanionMemories(userId, characterIds),
     );
   }
+}
+
+/** Profile display name for the answer-last instruction. Never an email. */
+function profileDisplayName(
+  profile: Record<string, unknown>,
+  settings: Record<string, unknown>,
+): string {
+  for (const value of [profile.display_name, settings.display_name, profile.full_name]) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
 }
 
 /**
@@ -2302,6 +2314,7 @@ router.post("/messages", async (req, res) => {
   }
   const profileData = asObject(worldKnowledgeResult.profile);
   const profileSettings = asObject(profileData.settings);
+  const userDisplayName = profileDisplayName(profileData, profileSettings);
   const therapyActive =
     sessionData.therapy_mode === true ||
     sessionData.companion_mode === "therapy" ||
@@ -2381,6 +2394,7 @@ router.post("/messages", async (req, res) => {
       intimacyScene,
       intimacyTurnResult: intimacyResult,
       operatorModel,
+      userDisplayName,
     }),
   );
 
@@ -2509,7 +2523,7 @@ router.post("/messages", async (req, res) => {
           model: routed.model,
           maxTokens: replyMaxTokens,
           messages,
-          temperature: 0.85,
+          temperature: COMPANION_CHAT_TEMPERATURE,
           signal: generateSignal,
         });
       } finally {

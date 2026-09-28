@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { resetLlmClientsForTests } from "../src/lib/openaiClient";
 import {
+  COMPANION_CHAT_TEMPERATURE,
   OLLAMA_CHAT_SAMPLING,
   OLLAMA_MAX_TEMPERATURE,
   OLLAMA_NUM_PREDICT_CAP,
@@ -226,6 +227,12 @@ describe("ollamaChat adapter", () => {
       await createOllamaChatCompletion({ model: "anima-chat", messages });
       process.env.ANIMA_OLLAMA_MAX_TEMPERATURE = "1";
       await createOllamaChatCompletion({ model: "anima-chat", messages, temperature: 0.9 });
+      delete process.env.ANIMA_OLLAMA_MAX_TEMPERATURE;
+      await createOllamaChatCompletion({
+        model: "anima-chat",
+        messages,
+        temperature: COMPANION_CHAT_TEMPERATURE,
+      });
 
       expect(received[0]!.options).toEqual({
         ...OLLAMA_CHAT_SAMPLING,
@@ -239,6 +246,9 @@ describe("ollamaChat adapter", () => {
         num_predict: OLLAMA_NUM_PREDICT_CAP,
       });
       expect((received[2]!.options as { temperature: number }).temperature).toBe(0.9);
+      expect(COMPANION_CHAT_TEMPERATURE).toBe(0.65);
+      expect(OLLAMA_MAX_TEMPERATURE - COMPANION_CHAT_TEMPERATURE).toBeCloseTo(0.1);
+      expect((received[3]!.options as { temperature: number }).temperature).toBe(0.65);
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((err) => (err ? reject(err) : resolve())),
