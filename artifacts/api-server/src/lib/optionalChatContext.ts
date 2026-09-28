@@ -1,9 +1,9 @@
 import { logger } from "./logger";
 
 /**
- * Best-effort chat context. Hyperdrive / Worker socket blips must not abort
- * the LLM after the typing indicator is already on screen — the client already
- * sent conversation history in `system_prompt`.
+ * Best-effort enrichment only (memories, weather, and derived state).
+ * Character identity and conversation history must not use this fallback:
+ * lean client prompts do not contain a backup of those required inputs.
  */
 export async function optionalChatContext<T>(
   label: string,

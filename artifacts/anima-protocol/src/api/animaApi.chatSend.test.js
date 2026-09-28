@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { chatAuthRequiredError, chatHttpError } from "./animaApi.js";
+import { animaApi, chatAuthRequiredError, chatHttpError } from "./animaApi.js";
 
 const authHeaders = vi.fn();
 const fetchMock = vi.fn();
@@ -213,5 +213,24 @@ describe("chat send auth and HTTP errors", () => {
       model: "anima-chat",
       failed_over: false,
     });
+  });
+});
+
+
+describe("completeMessage final response", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it.each([
+    [[], { done: true, visible: "Complete answer", turn_id: "turn-1" }],
+    [[{ content: "Complete" }], { done: true, visible: "Complete answer", turn_id: "turn-1" }],
+    [[{ content: "Complete" }], { done: true, content: "Complete answer", turn_id: "turn-1" }],
+  ])("uses the completed snapshot after deltas %j", async (deltas, terminal) => {
+    vi.spyOn(animaApi.chat, "sendMessage").mockImplementation(async function* () {
+      for (const delta of deltas) yield delta;
+      yield terminal;
+      throw new Error("Must stop consuming after done");
+    });
+    await expect(animaApi.chat.completeMessage({ sessionId: "s1", content: "Question" }))
+      .resolves.toMatchObject({ content: "Complete answer", turn_id: "turn-1" });
   });
 });
