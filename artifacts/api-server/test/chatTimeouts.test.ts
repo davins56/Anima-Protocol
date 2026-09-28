@@ -24,6 +24,7 @@ import {
   CLIENT_DISCONNECT_GRACE_MS,
   LLM_LATE_PERSIST_BUDGET_MS,
   llmCompanionDurableWaitMs,
+  llmProducingGenerateHardCapMs,
   shouldAbortAbandonedGenerate,
   WORKER_WAIT_UNTIL_GRACE_MS,
   abortWhenClientLeaves,
@@ -357,6 +358,29 @@ describe("shouldAbortAbandonedGenerate", () => {
         disconnectedForMs: 1_000,
         hasWaiter: false,
         elapsedMs: LLM_LATE_PERSIST_BUDGET_MS,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not abort a generate that is already producing tokens until the hard cap", () => {
+    const cap = llmProducingGenerateHardCapMs();
+    expect(cap).toBe(LLM_LOCAL_FIRST_TOKEN_MS + LLM_LOCAL_DECODE_SLACK_MS);
+    expect(
+      shouldAbortAbandonedGenerate({
+        clientLeft: true,
+        disconnectedForMs: CLIENT_DISCONNECT_GRACE_MS,
+        hasWaiter: false,
+        elapsedMs: LLM_LATE_PERSIST_BUDGET_MS,
+        producingTokens: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAbortAbandonedGenerate({
+        clientLeft: true,
+        disconnectedForMs: 1_000,
+        hasWaiter: false,
+        elapsedMs: cap,
+        producingTokens: true,
       }),
     ).toBe(true);
   });

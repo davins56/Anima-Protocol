@@ -244,6 +244,16 @@ export function resolveDatabaseUrl(
  * Read a binding from the current isolate: process.env, the last mirrored
  * cache, the current request `env`, then `import { env } from "cloudflare:workers"`.
  */
+/**
+ * Non-string Worker bindings (Durable Object namespaces, Hyperdrive).
+ * String secrets still go through `readRuntimeEnv`.
+ */
+export function readRuntimeBinding(name: string): unknown {
+  const fromRequest = lastRequestEnv?.[name];
+  if (fromRequest != null) return fromRequest;
+  return importableEnv?.[name];
+}
+
 export function readRuntimeEnv(name: string): string | undefined {
   const fromProcess = unwrapBindingString(process.env[name]);
   if (fromProcess) return fromProcess;

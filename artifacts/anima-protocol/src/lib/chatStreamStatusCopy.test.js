@@ -25,6 +25,18 @@ describe("chatStreamStatusCopy", () => {
     ).toBe("Combining mind drafts…");
   });
 
+  it("shows a short waiting line with the queue position", () => {
+    expect(chatStreamStatusCopy({ status: "waiting", queue_position: 1 })).toBe(
+      "Still here — one reply ahead.",
+    );
+    expect(chatStreamStatusCopy({ status: "waiting" })).toBe(
+      "Still here — one reply ahead.",
+    );
+    expect(chatStreamStatusCopy({ status: "waiting", queue_position: 3 })).toBe(
+      "Still here — 3 ahead.",
+    );
+  });
+
   it("ignores unknown events", () => {
     expect(chatStreamStatusCopy({})).toBeNull();
     expect(chatStreamStatusCopy({ status: "nope" })).toBeNull();
