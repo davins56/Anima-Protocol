@@ -17,13 +17,13 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat/completio
 import { combineAbortSignals } from "./chatTimeouts";
 import {
   localChatKeepAliveFields,
+  localLlmAuthorizationHeader,
   ollamaNativeOrigin,
   ollamaNumCtx,
 } from "./localLlmWarm";
 import {
   hasLocalLlm,
   localLlmBaseUrl,
-  normalizeApiKey,
 } from "./openaiClient";
 import { messagesForLocalOllama } from "./promptBuilder";
 
@@ -136,13 +136,36 @@ export interface OllamaModelPresence {
   via: "ps" | "tags" | null;
   status?: number;
   message?: string;
+  /**
+   * Both list routes answered 404. The proxy in front of Ollama is not
+   * forwarding `/api/ps` or `/api/tags`. The caller should use the tiny
+   * generate probe instead of reporting the model missing.
+   */
+  listBlocked?: boolean;
+}
+
+async function discardResponseBody(response: Response): Promise<void> {
+  const body = response.body;
+  if (!body) return;
+  try {
+    await body.cancel();
+  } catch {
+    try {
+      await response.arrayBuffer();
+    } catch {
+      // Already closed.
+    }
+  }
 }
 
 /**
  * Health check for the local Ollama host that does not generate.
  * A generate of "Reply with the single word: ok" replaces the cached
- * companion prompt. GET `/api/ps` (then `/api/tags` if the model is not
- * loaded) only confirms the tag is present.
+ * companion prompt. GET `/api/ps` first. A non-2xx answer is drained and
+ * the probe continues with GET `/api/tags`, which the tunnel answers
+ * without taking the model slot. `/api/tags` is also used when `/api/ps`
+ * is 2xx but the model is installed and not loaded. Every list body is
+ * read or cancelled.
  */
 export async function probeOllamaModelListed(opts: {
   model: string;
@@ -164,7 +187,7 @@ export async function probeOllamaModelListed(opts: {
     };
   }
   const headers: Record<string, string> = { Accept: "application/json" };
-  const auth = ollamaAuthHeader(env);
+  const auth = localLlmAuthorizationHeader(env);
   if (auth) headers.Authorization = auth;
 
   const read = async (
@@ -184,10 +207,24 @@ export async function probeOllamaModelListed(opts: {
       }
       throw connectionError(err);
     }
+    // Read the body on every status. A 2xx is the model list. A non-2xx
+    // still has to be drained before the /api/tags fallback, or before
+    // the probe returns.
+    let raw = "";
+    try {
+      raw = await response.text();
+    } catch {
+      await discardResponseBody(response);
+    }
     if (!response.ok) {
       return { ok: false, status: response.status, models: [] };
     }
-    const body = (await response.json().catch(() => null)) as unknown;
+    let body: unknown = null;
+    try {
+      body = raw ? JSON.parse(raw) : null;
+    } catch {
+      body = null;
+    }
     return { ok: true, status: response.status, models: modelNamesFromOllamaList(body) };
   };
 
@@ -202,6 +239,16 @@ export async function probeOllamaModelListed(opts: {
   }
   if (!ps.ok && !tags.ok) {
     const status = tags.status || ps.status;
+    if (ps.status === 404 && tags.status === 404) {
+      return {
+        ok: false,
+        models: [],
+        via: null,
+        status,
+        listBlocked: true,
+        message: "Ollama model list endpoints are not available.",
+      };
+    }
     throw new OllamaChatError(
       status
         ? `Ollama model list failed (HTTP ${status})`
@@ -216,16 +263,6 @@ export async function probeOllamaModelListed(opts: {
     status: tags.status || ps.status,
     message: `Model ${opts.model} is not listed by Ollama.`,
   };
-}
-
-function ollamaAuthHeader(
-  env: NodeJS.ProcessEnv = process.env,
-): string | null {
-  const key =
-    normalizeApiKey(env.ANIMA_LOCAL_LLM_API_KEY) ||
-    normalizeApiKey(env.VLLM_API_KEY);
-  if (!key || key === "local") return null;
-  return `Bearer ${key}`;
 }
 
 function textFromContent(content: unknown): string {
@@ -258,20 +295,18 @@ function normalizeRole(role: unknown): OllamaChatMessage["role"] {
 export function toOllamaMessages(
   messages: ChatCompletionMessageParam[],
 ): OllamaChatMessage[] {
-  const out: OllamaChatMessage[] = [];
+  const normalized: Array<{ role: OllamaChatMessage["role"]; content: string }> = [];
   for (const message of messages) {
     if (!message || typeof message !== "object") continue;
-    const content = textFromContent(
-      (message as { content?: unknown }).content,
-    );
-    out.push({
+    normalized.push({
       role: normalizeRole((message as { role?: unknown }).role),
-      content,
+      content: textFromContent((message as { content?: unknown }).content),
     });
   }
-  // Qwen hoists system turns into the top block. Closing instructions have
-  // to ride inside the final user turn or they never sit next to it.
-  return messagesForLocalOllama(out);
+  // Fold on the original array's layout. Normalizing into `normalized`
+  // first would miss companionLocalLayouts and send the volatile system
+  // message on every turn.
+  return messagesForLocalOllama(normalized, messages);
 }
 
 /**
@@ -455,7 +490,7 @@ async function postOllamaChat(
     "Content-Type": "application/json",
     Accept: stream ? "application/x-ndjson, application/json" : "application/json",
   };
-  const auth = ollamaAuthHeader(env);
+  const auth = localLlmAuthorizationHeader(env);
   if (auth) headers.Authorization = auth;
 
   let res: Response;

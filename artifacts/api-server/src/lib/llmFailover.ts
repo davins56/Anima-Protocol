@@ -76,6 +76,7 @@ import {
   createOllamaChatCompletion,
   createOllamaChatStream,
   isOllamaNativeChatEnabled,
+  OllamaChatError,
   probeOllamaModelListed,
 } from "./ollamaChat";
 import {
@@ -1893,34 +1894,50 @@ async function probeOneProvider(
   try {
     const client = requireLocalClient();
     // Native Ollama keeps one cached prompt. A generate here would replace
-    // it, so the probe only checks that the model is listed.
+    // it, so the probe only checks that the model is listed — unless the
+    // proxy rejects both list routes, in which case the tiny generate below
+    // is the only signal that the model can answer.
     if (useOllamaNativeChat()) {
-      const presence = await probeOllamaModelListed({
-        model: resolved.model,
-        signal: probeSignal,
-      });
-      if (!presence.ok) {
+      try {
+        const { value: presence, resolved: used } = await withModelFallback(
+          client,
+          resolved,
+          async (candidate) => {
+            const listed = await probeOllamaModelListed({
+              model: candidate.model,
+              signal: probeSignal,
+            });
+            if (listed.listBlocked) {
+              throw new OllamaChatError(
+                listed.message || "Ollama model list endpoints are not available.",
+                { code: "probe_paths_blocked", status: 501 },
+              );
+            }
+            if (!listed.ok) {
+              throw new OllamaChatError(
+                listed.message || `Model ${candidate.model} is not listed by Ollama.`,
+                { status: 404, code: "model_not_found" },
+              );
+            }
+            return listed;
+          },
+        );
         return {
           provider: "local",
           configured: true,
-          ok: false,
-          errorKind: "other",
-          message: presence.message,
-          model: resolved.model,
+          ok: true,
+          model: used.model,
           configuredModel: resolved.model,
           availableModels: presence.models,
           latencyMs: Date.now() - started,
         };
+      } catch (err) {
+        const code =
+          err && typeof err === "object" && "code" in err
+            ? String((err as { code?: unknown }).code || "")
+            : "";
+        if (code !== "probe_paths_blocked") throw err;
       }
-      return {
-        provider: "local",
-        configured: true,
-        ok: true,
-        model: resolved.model,
-        configuredModel: resolved.model,
-        availableModels: presence.models,
-        latencyMs: Date.now() - started,
-      };
     }
     const { resolved: used } = await withModelFallback(
       client,

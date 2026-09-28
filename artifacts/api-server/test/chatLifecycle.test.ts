@@ -14,6 +14,12 @@ const llmMocks = vi.hoisted(() => ({
   createChatStreamWithFailover: vi.fn(),
 }));
 
+const ensembleMocks = vi.hoisted(() => ({
+  isLocalEnsembleEnabled: vi.fn(() => false),
+  draftLocalMinds: vi.fn(),
+  combineLocalDrafts: vi.fn(),
+}));
+
 vi.mock("../src/lib/llmFailover", () => ({
   createChatStreamWithFailover: llmMocks.createChatStreamWithFailover,
   createChatCompletionWithFailover: vi.fn(async () => ({
@@ -55,11 +61,7 @@ vi.mock("../src/lib/modelRouter", async (importOriginal) => {
   };
 });
 
-vi.mock("../src/lib/localEnsemble", () => ({
-  isLocalEnsembleEnabled: () => false,
-  draftLocalMinds: vi.fn(),
-  combineLocalDrafts: vi.fn(),
-}));
+vi.mock("../src/lib/localEnsemble", () => ensembleMocks);
 
 import chatRouter from "../src/routes/chat";
 import { COMPANION_CHAT_TEMPERATURE } from "../src/lib/ollamaChat";
@@ -112,14 +114,7 @@ async function request(path: string, init: RequestInit = {}) {
   });
 }
 
-function sseEvents(text: string): Array<Record<string, unknown>> {
-  return text
-    .split("\n")
-    .filter((line) => line.startsWith("data: "))
-    .map((line) => JSON.parse(line.slice(6)) as Record<string, unknown>);
-}
-
-beforeAll(async () => {
+function installHelloStream() {
   llmMocks.createChatStreamWithFailover.mockImplementation(async () => ({
     stream: (async function* () {
       yield { choices: [{ delta: { content: "Hello " } }] };
@@ -131,6 +126,17 @@ beforeAll(async () => {
     brand: "anima",
     failedOver: false,
   }));
+}
+
+function sseEvents(text: string): Array<Record<string, unknown>> {
+  return text
+    .split("\n")
+    .filter((line) => line.startsWith("data: "))
+    .map((line) => JSON.parse(line.slice(6)) as Record<string, unknown>);
+}
+
+beforeAll(async () => {
+  installHelloStream();
   await ensureSchemaOnce();
   await db.insert(userProfiles).values({
     userId,
@@ -936,6 +942,184 @@ describe("chat lifecycle", () => {
     } finally {
       restoreFastStream();
       resetChatTurnFlightsForTests();
+    }
+  });
+
+  it("does not save a repeat-prefix fragment when the retry fails", async () => {
+    const prior =
+      "The room stays quiet while she watches the door and does not answer yet.";
+    const fragmentTurn = `turn_${prefix}_fragment_seed`;
+    const copyTurn = `turn_${prefix}_fragment_copy`;
+    const post = (turn: string, content: string) =>
+      request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: turn,
+          session_id: sessionId,
+          content,
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+        }),
+      });
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => ({
+      stream: (async function* () {
+        yield { choices: [{ delta: { content: prior } }] };
+      })(),
+      model: "test-anima",
+      tier: "standard",
+      provider: "local",
+      brand: "anima",
+      failedOver: false,
+    }));
+    try {
+      const seed = await post(fragmentTurn, "Look at the door");
+      expect(seed.status).toBe(200);
+      const seedEvents = sseEvents(await seed.text());
+      expect(seedEvents.at(-1)).toMatchObject({ done: true, visible: prior });
+      const seedRetry = await request(`/chat/turns/${fragmentTurn}/retry`, {
+        method: "POST",
+        body: "{}",
+      });
+      expect(seedRetry.status).toBe(200);
+
+      let calls = 0;
+      llmMocks.createChatStreamWithFailover.mockImplementation(async () => {
+        calls += 1;
+        if (calls > 1) throw new Error("retry failed");
+        return {
+          stream: (async function* () {
+            yield { choices: [{ delta: { content: prior.slice(0, 55) } }] };
+            yield {
+              choices: [{ delta: { content: " and then the rest that must not ship." } }],
+            };
+          })(),
+          model: "test-anima",
+          tier: "standard",
+          provider: "local",
+          brand: "anima",
+          failedOver: false,
+        };
+      });
+      const copy = await post(copyTurn, "Look again");
+      expect(copy.status).toBe(200);
+      const events = sseEvents(await copy.text());
+      const shown = events
+        .filter((event) => typeof event.content === "string")
+        .map((event) => String(event.content))
+        .join("");
+      expect(shown).not.toContain("The room stays quiet");
+      expect(shown).not.toContain("must not ship");
+      expect(shown).toContain("studies you");
+      expect(events.at(-1)).toMatchObject({ done: true, visible: shown });
+    } finally {
+      installHelloStream();
+    }
+  });
+
+  it("keeps a later stock mention once the opening has already streamed", async () => {
+    const opening = "She stays by the window and does not turn around. ";
+    const tail = `${"The harbor stays quiet and the second bell has not rung. ".repeat(8)}As an AI, the line is only a mention.`;
+    expect(opening.trim().length).toBeGreaterThanOrEqual(40);
+    expect((opening + tail).length).toBeGreaterThan(480);
+    const lateTurn = `turn_${prefix}_late_stock`;
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => ({
+      stream: (async function* () {
+        yield { choices: [{ delta: { content: opening } }] };
+        yield { choices: [{ delta: { content: tail } }] };
+      })(),
+      model: "test-anima",
+      tier: "standard",
+      provider: "local",
+      brand: "anima",
+      failedOver: false,
+    }));
+    try {
+      const res = await request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: lateTurn,
+          session_id: sessionId,
+          content: "Stay by the window",
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+        }),
+      });
+      expect(res.status).toBe(200);
+      const events = sseEvents(await res.text());
+      const shown = events
+        .filter((event) => typeof event.content === "string")
+        .map((event) => String(event.content))
+        .join("");
+      expect(shown).toBe(opening + tail);
+      expect(events.at(-1)).toMatchObject({ done: true, visible: opening + tail });
+    } finally {
+      installHelloStream();
+    }
+  });
+
+  it("applies the stock-line guard to a local ensemble reply", async () => {
+    const ensembleTurn = `turn_${prefix}_ensemble_stock`;
+    ensembleMocks.isLocalEnsembleEnabled.mockReturnValue(true);
+    ensembleMocks.draftLocalMinds.mockResolvedValue([
+      { label: "Steady", content: "She nods once.", model: "test-anima" },
+      { label: "Vivid", content: "She waits by the gate.", model: "test-anima" },
+    ]);
+    ensembleMocks.combineLocalDrafts.mockResolvedValue({
+      stream: (async function* () {
+        yield {
+          choices: [
+            {
+              delta: { content: "I'm sorry, but I can't assist with that request." },
+            },
+          ],
+        };
+      })(),
+      model: "test-anima",
+      tier: "standard",
+      provider: "local",
+      brand: "anima",
+      failedOver: false,
+    });
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => {
+      throw new Error("retry failed");
+    });
+    try {
+      const res = await request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: ensembleTurn,
+          session_id: sessionId,
+          content: "Ask the hard question",
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+        }),
+      });
+      expect(res.status).toBe(200);
+      const events = sseEvents(await res.text());
+      const shown = events
+        .filter((event) => typeof event.content === "string")
+        .map((event) => String(event.content))
+        .join("");
+      expect(shown).not.toContain("can't assist");
+      expect(shown).toContain("studies you");
+      expect(String(events.at(-1)?.visible || "")).toContain("studies you");
+    } finally {
+      ensembleMocks.isLocalEnsembleEnabled.mockReturnValue(false);
+      ensembleMocks.draftLocalMinds.mockReset();
+      ensembleMocks.combineLocalDrafts.mockReset();
+      installHelloStream();
     }
   });
 });

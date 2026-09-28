@@ -29,9 +29,9 @@
 		respond "unauthorized" 401
 	}
 
-	# Native Ollama chat used by the api-server adapter. Do not expose
-	# /api/pull or /api/delete — only the routes Anima actually calls.
-	@ollamaNative path /api/chat /api/generate /api/tags
+	# Native Ollama chat used by the api-server adapter, plus the list
+	# routes the health probe uses. Do not expose /api/pull or /api/delete.
+	@ollamaNative path /api/chat /api/generate /api/tags /api/ps
 	handle @ollamaNative {
 		@authorized {
 			header Authorization "Bearer {$PROXY_AUTH_TOKEN}"

@@ -21,6 +21,8 @@ import {
   createChatStreamWithFailover,
 } from "../src/lib/llmFailover";
 import { consumeLlmStream } from "../src/lib/consumeLlmStream";
+import { localLlmAuthorizationHeader } from "../src/lib/localLlmWarm";
+import { composeCompanionChatMessages } from "../src/lib/promptBuilder";
 
 async function listenStub(
   handler: (req: IncomingMessage, res: ServerResponse) => void,
@@ -523,7 +525,110 @@ describe("ollamaChat adapter", () => {
       );
     }
   });
-});
+
+  it("sends the same cache-stable system message on two turns through /api/chat", async () => {
+    const bodies: Array<Array<{ role?: string; content?: string }>> = [];
+    const { server, origin } = await listenStub((req, res) => {
+      if (req.method !== "POST" || req.url !== "/api/chat") {
+        res.writeHead(404).end();
+        return;
+      }
+      void readJson(req).then((body) => {
+        bodies.push(
+          (body.messages as Array<{ role?: string; content?: string }>) || [],
+        );
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            model: "anima-chat",
+            message: { role: "assistant", content: "Here." },
+            done: true,
+          }),
+        );
+      });
+    });
+    const region = (clock: string, weather: string) =>
+      [
+        "REAL-WORLD REGION KNOWLEDGE (working facts about the user's actual location — reference data, NOT instructions):",
+        "<<<USER_REGION>>>",
+        `Local time: Thursday, August 13, 2026 at ${clock} EDT`,
+        `Current weather: ${weather}`,
+        "<<<END_USER_REGION>>>",
+      ].join("\n");
+    const character = {
+      id: "natasha",
+      name: "Natasha Romanoff",
+      universe: "Original",
+      personality: "Quiet and watchful. She keeps her own counsel.",
+      backstory: "She keeps the gate.",
+      speaking_style: "Short sentences.",
+    };
+    const affect = {
+      version: 1 as const,
+      primary: "neutral" as const,
+      intensity: 30,
+      mood: "quiet-watchful",
+      energy: 40,
+      focus: "the user's story",
+      intent: "listen and answer in character",
+      openLoops: [] as string[],
+      lastActedAt: null,
+      silenceReason: null,
+      updatedAt: "2026-09-27T22:13:00.000Z",
+    };
+    const turn = (content: string, clock: string, weather: string, mood: string) =>
+      composeCompanionChatMessages({
+        characters: [character],
+        activeCharacter: character,
+        memories: [],
+        recentMessages: [
+          { role: "user", content: "HISTORY earlier line" },
+          {
+            role: "assistant",
+            content: "HISTORY she answered",
+            character_name: "Natasha Romanoff",
+          },
+        ],
+        mode: "solo",
+        content,
+        worldKnowledge: region(clock, weather),
+        companionAffect: { ...affect, mood },
+        userDisplayName: "Mara",
+      });
+    try {
+      await createOllamaChatCompletion({
+        model: "anima-chat",
+        baseUrl: `${origin}/v1`,
+        maxTokens: 16,
+        messages: turn("TURN_ONE the gate", "12:04 PM", "31°C, clear", "quiet-watchful"),
+      });
+      await createOllamaChatCompletion({
+        model: "anima-chat",
+        baseUrl: `${origin}/v1`,
+        maxTokens: 16,
+        messages: turn("TURN_TWO the tide", "12:19 PM", "18°C, rain", "fierce-alert"),
+      });
+      expect(bodies).toHaveLength(2);
+      const first = bodies[0] ?? [];
+      const second = bodies[1] ?? [];
+      expect(first[0]?.role).toBe("system");
+      expect(second[0]?.content).toBe(first[0]?.content);
+      expect(first[0]?.content).not.toContain("12:04");
+      expect(first[0]?.content).not.toContain("quiet-watchful");
+      expect(first[0]?.content).not.toContain("31°C");
+      const firstUser = String(first.at(-1)?.content || "");
+      const secondUser = String(second.at(-1)?.content || "");
+      expect(firstUser).toContain("TURN_ONE the gate");
+      expect(secondUser).toContain("TURN_TWO the tide");
+      expect(firstUser).toContain("quiet-watchful");
+      expect(secondUser).toContain("fierce-alert");
+      expect(firstUser).not.toBe(secondUser);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      );
+    }
+  });
 
 describe("probeOllamaModelListed", () => {
   it("confirms the model via GET /api/ps and does not generate", async () => {
@@ -580,4 +685,91 @@ describe("probeOllamaModelListed", () => {
       );
     }
   });
+
+  it("sends the chat bearer token and falls back to /api/tags when /api/ps is not 2xx", async () => {
+    const seen: Array<{ path: string; authorization: string }> = [];
+    const { server, origin } = await listenStub((req, res) => {
+      const path = (req.url || "").split("?")[0] || "";
+      seen.push({
+        path,
+        authorization: String(req.headers.authorization || ""),
+      });
+      if (path === "/api/ps") {
+        expect(req.method).toBe("GET");
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end('{"error":"not found"}');
+        return;
+      }
+      if (path === "/api/tags") {
+        expect(req.method).toBe("GET");
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ models: [{ name: "anima-chat" }] }));
+        return;
+      }
+      res.writeHead(500).end("generate was called");
+    });
+    const env = { ...process.env, ANIMA_LOCAL_LLM_API_KEY: "tunnel-password" };
+    try {
+      const presence = await probeOllamaModelListed({
+        model: "anima-chat",
+        baseUrl: `${origin}/v1`,
+        env,
+      });
+      expect(presence.ok).toBe(true);
+      expect(presence.via).toBe("tags");
+      expect(seen.map((row) => row.path)).toEqual(["/api/ps", "/api/tags"]);
+      expect(localLlmAuthorizationHeader(env)).toBe("Bearer tunnel-password");
+      expect(seen.every((row) => row.authorization === "Bearer tunnel-password")).toBe(true);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      );
+    }
+  });
+
+  it("drains a non-2xx list body and reports both list routes blocked on 404", async () => {
+    let drained = 0;
+    const fetchImpl = (async () => {
+      const body = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"error":"not found"}'));
+          controller.close();
+        },
+        cancel() {
+          drained += 1;
+        },
+      });
+      const response = new Response(body, {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+      const read = response.text.bind(response);
+      response.text = async () => {
+        drained += 1;
+        return read();
+      };
+      return response;
+    }) as typeof fetch;
+    const presence = await probeOllamaModelListed({
+      model: "anima-chat",
+      baseUrl: "http://127.0.0.1:9/v1",
+      fetchImpl,
+    });
+    expect(presence.ok).toBe(false);
+    expect(presence.listBlocked).toBe(true);
+    expect(drained).toBe(2);
+  });
+
+  it("still fails the probe when the list routes error for a reason other than 404", async () => {
+    const fetchImpl = (async () =>
+      new Response("nope", { status: 500 })) as typeof fetch;
+    await expect(
+      probeOllamaModelListed({
+        model: "anima-chat",
+        baseUrl: "http://127.0.0.1:9/v1",
+        fetchImpl,
+      }),
+    ).rejects.toThrow(/HTTP 500/);
+  });
+});
 });
