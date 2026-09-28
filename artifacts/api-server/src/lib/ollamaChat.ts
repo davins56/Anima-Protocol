@@ -25,6 +25,7 @@ import {
   localLlmBaseUrl,
   normalizeApiKey,
 } from "./openaiClient";
+import { messagesForLocalOllama } from "./promptBuilder";
 
 export const OLLAMA_UNAVAILABLE_HINT =
   "The Ollama model server is not running or not reachable. " +
@@ -149,7 +150,9 @@ export function toOllamaMessages(
       content,
     });
   }
-  return out;
+  // Qwen hoists system turns into the top block. Closing instructions have
+  // to ride inside the final user turn or they never sit next to it.
+  return messagesForLocalOllama(out);
 }
 
 /**
