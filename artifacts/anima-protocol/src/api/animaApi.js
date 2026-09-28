@@ -261,6 +261,8 @@ export const animaApi = {
       persistenceOwner,
       metadata,
       region,
+      ownModelReply,
+      ownModelVersion,
     }) {
       // Resolve Clerk before arming the stream abort — a late OTP mint must
       // not consume the reply budget (same isolation as ChatSession create).
@@ -286,6 +288,10 @@ export const animaApi = {
           persistence_owner: persistenceOwner,
           metadata,
           region,
+          // Written on this device by the own model (src/lib/ownModel/).
+          ...(typeof ownModelReply === "string"
+            ? { own_model_reply: ownModelReply, own_model_version: ownModelVersion }
+            : {}),
         }),
       );
     },
@@ -420,5 +426,84 @@ export const animaApi = {
       }).then((r) => r.json()),
     list: () => request("/protocol-upgrade").then((r) => r.json()),
     get: (id) => request(`/protocol-upgrade/${id}`).then((r) => r.json()),
+  },
+
+  /** Model Tutor — the steward teaches their own model (steward-only API). */
+  /** The own model, running on this device (src/lib/ownModel/). */
+  model: {
+    config: () => request("/model/config").then((r) => r.json()),
+    /** One 512 KiB piece of the weights (sent as base64), as an ArrayBuffer. */
+    chunk: (version, idx) =>
+      request(`/model/v/${encodeURIComponent(version)}/inference/${encodeURIComponent(idx)}`)
+        .then((r) => r.text())
+        .then((text) => base64ToBytes(text).buffer),
+    setConsent: (share) =>
+      request("/model/consent", {
+        method: "PUT",
+        body: JSON.stringify({ share_for_training: !!share }),
+      }).then((r) => r.json()),
+    autoLesson: ({ turnId, context }) =>
+      request("/model/auto-lesson", {
+        method: "POST",
+        body: JSON.stringify({ turn_id: turnId, context }),
+      }).then((r) => r.json()),
+  },
+  tutor: {
+    status: () => request("/tutor/status").then((r) => r.json()),
+    setOwnModelChat: (enabled) =>
+      request("/tutor/preferences", {
+        method: "PUT",
+        body: JSON.stringify({ own_model_chat: !!enabled }),
+      }).then((r) => r.json()),
+    lessons: ({ limit = 100 } = {}) =>
+      request(`/tutor/lessons?limit=${encodeURIComponent(limit)}`).then((r) => r.json()),
+    teach: (lesson) =>
+      request("/tutor/lessons", {
+        method: "POST",
+        body: JSON.stringify(lesson),
+      }).then((r) => r.json()),
+    retry: (lessonId) =>
+      request(`/tutor/lessons/${encodeURIComponent(lessonId)}/retry`, { method: "POST" }).then((r) =>
+        r.json(),
+      ),
+    forget: (lessonId) =>
+      request(`/tutor/lessons/${encodeURIComponent(lessonId)}`, { method: "DELETE" }).then((r) =>
+        r.json(),
+      ),
+    draft: ({ context, rejected, note }) =>
+      request("/tutor/lessons/draft", {
+        method: "POST",
+        body: JSON.stringify({ context, rejected, note }),
+      }).then((r) => r.json()),
+    sync: () => request("/tutor/sync", { method: "POST" }).then((r) => r.json()),
+    learnNow: () => request("/tutor/learn-now", { method: "POST" }).then((r) => r.json()),
+    /** @param {{ answer_everyone?: boolean, always_learning?: boolean, learn_from_opted_in?: boolean }} patch */
+    setSettings: (patch) =>
+      request("/tutor/settings", { method: "PUT", body: JSON.stringify(patch) }).then((r) => r.json()),
+    startUpload: (payload) =>
+      request("/tutor/uploads", { method: "POST", body: JSON.stringify(payload) }).then((r) => r.json()),
+    uploadChunk: (version, kind, idx, bytes) =>
+      request(`/tutor/uploads/${version}/${kind}/${idx}`, {
+        method: "PUT",
+        headers: { "Content-Type": "text/plain" },
+        body: bytesToBase64(bytes),
+      }).then((r) => r.json()),
+    finishUpload: (version) =>
+      request(`/tutor/uploads/${version}/finish`, { method: "POST" }).then((r) => r.json()),
+    cancelUpload: (version) =>
+      request(`/tutor/uploads/${version}`, { method: "DELETE" }).then((r) => r.json()),
+    advice: () => request("/tutor/advice").then((r) => r.json()),
+    addAdvice: (text) =>
+      request("/tutor/advice", {
+        method: "POST",
+        body: JSON.stringify({ text }),
+      }).then((r) => r.json()),
+    removeAdvice: (id) =>
+      request(`/tutor/advice/${encodeURIComponent(id)}`, { method: "DELETE" }).then((r) =>
+        r.json(),
+      ),
+    /** @param {"sft" | "dpo"} format */
+    exportLessons: (format) =>
+      request(`/tutor/export?format=${format === "dpo" ? "dpo" : "sft"}`).then((r) => r.text()),
   },
 };

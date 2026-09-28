@@ -170,10 +170,11 @@ const LOCAL_LLM_SETUP_HINT =
   "See docs/custom-llm.md.";
 
 /** Self-hosted Anima LLM, or OpenRouter open-weight models (not flagship BYOK). */
-export type LlmProviderId = "local" | "minimax" | "deepshi" | "openrouter" | "workersai";
+/** `own` is the steward's own model (ownModel.ts), never part of the failover chain. */
+export type LlmProviderId = "local" | "minimax" | "deepshi" | "openrouter" | "workersai" | "own";
 
 /** Brand for chat replies. */
-export type LlmBrand = "anima" | "minimax" | "deepshi" | "openrouter" | "workersai";
+export type LlmBrand = "anima" | "minimax" | "deepshi" | "openrouter" | "workersai" | "own";
 
 /** Public, secret-free snapshot of chat routing (for /api/healthz/llm). */
 export interface LlmRoutingStatus {

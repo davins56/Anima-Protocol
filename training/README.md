@@ -17,7 +17,7 @@ research / preview model.
 | 1 — Pretrain | `training/phase1/train.py` (+ `data_pipeline.py`) | `out/anima-tiny/ckpt.pt` |
 | 2 — SFT | `training/phase2/sft.py` | `out/anima-sft/ckpt.pt` |
 | 3 — DPO | `training/phase3/dpo.py` | `out/anima-dpo/ckpt.pt` |
-| 4 — Serve | `server/server.py` | Local OpenAI-style API on 127.0.0.1:8000 |
+| 4 — Into the app | `server/export_web.py` | `anima-model.bin`, uploaded in Settings → Model Tutor; runs in the browser, learns via `server/trainer.py` |
 
 Paths are anchored at the repo root, so the commands below work from any cwd.
 Checkpoints and tokenizer outputs (`out/`, `data/anima_tokens/`, `data/anima_corpus.txt`) are gitignored.
@@ -27,7 +27,7 @@ Checkpoints and tokenizer outputs (`out/`, `data/anima_tokens/`, `data/anima_cor
 1. `mkdir -p data/raw data/sft data/prefs` and add your corpus + datasets.
 2. `python training/phase1/data_pipeline.py` → `python training/phase1/train.py`
 3. `python training/phase2/sft.py` → `python training/phase3/dpo.py`
-4. `python server/server.py` (listens on 127.0.0.1:8000 only).
+4. `python server/export_web.py` → upload `out/anima-model.bin` in Settings → Model Tutor.
 
 ## Why replies used to come out as incomplete thoughts
 

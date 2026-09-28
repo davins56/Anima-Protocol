@@ -8,6 +8,7 @@ import {
   loadRosterCharacters,
 } from "@/lib/loadRosterCharacters";
 import { animaApi } from "@/api/animaApi";
+import { loadOwnModelConfig, queueOwnModelLesson, writeOwnModelReply } from "@/lib/ownModel/chat";
 import { usePaginatedEntities } from "@/hooks/usePaginatedEntities";
 import { useStoreSync } from "@/lib/useStoreSync";
 import { useConfirm } from "@/lib/ConfirmDialog";
@@ -63,6 +64,9 @@ import { useEmotionalTheming } from "@/hooks/useEmotionalTheming";
 import { motion, AnimatePresence } from "framer-motion";
 import InventoryDrawer from "@/components/chat/InventoryDrawer";
 import CharacterBioSheet from "@/components/character/CharacterBioSheet";
+import TeachDialog from "@/components/tutor/TeachDialog";
+import { useModelTutor } from "@/hooks/useModelTutor";
+import { buildTeachTarget } from "@/lib/modelTutor";
 import SystemAlert from "@/components/chat/SystemAlert";
 import CalendarDisplay from "@/components/chat/CalendarDisplay";
 
@@ -260,6 +264,9 @@ export default function Chat() {
   const [inventoryItems, setInventoryItems] = useState([]);
   const [showInventory, setShowInventory] = useState(false);
   const [bioCharacter, setBioCharacter] = useState(null);
+  // Steward only: teach the own model a better reply (Settings → Model Tutor).
+  const modelTutor = useModelTutor();
+  const [teachTarget, setTeachTarget] = useState(null);
   const [showMentalLine, setShowMentalLine] = useState(false);
   const [mentalLineLoading, setMentalLineLoading] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -438,6 +445,11 @@ export default function Chat() {
       return [...prev, id];
     });
   };
+
+  // Warm the own-model check (Settings → Model Tutor) so a send never waits on it.
+  useEffect(() => {
+    loadOwnModelConfig();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -2002,6 +2014,22 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // Brief typing affordance while waiting on first token (real network/model latency).
       streamUi.showTyping();
 
+      // When the own model answers this account (Settings → Model Tutor) it
+      // writes the reply here on the device and the server records it. If it
+      // can't run on this device, Anima answers as usual.
+      let ownModelTurn = null;
+      try {
+        ownModelTurn = await writeOwnModelReply({
+          messages: updatedMessages,
+          onLoading: () => streamUi.showStatus({ status: "thinking" }),
+          onDelta: streamUi.showStreamingPartial,
+        });
+      } catch (ownModelErr) {
+        console.warn("Own model could not reply on this device:", ownModelErr?.message);
+        toast.error("Your own model couldn't run on this device — Anima answered instead.");
+        streamUi.showTyping();
+      }
+
       const resultPayload = await streamChatReplyWithTurnRetry({
         turnId,
         mintTurnId: createChatTurnId,
@@ -2039,6 +2067,9 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
               hidden_sequences: hiddenThread.hidden,
               conversational_weather: hiddenThread.weather,
             },
+            ...(ownModelTurn
+              ? { ownModelReply: ownModelTurn.reply, ownModelVersion: ownModelTurn.version }
+              : {}),
           }),
         onRetry: () => {
           streamedSoFar = "";
@@ -2051,6 +2082,11 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         turnId = resultPayload.turn_id;
         userMessage.id = `${turnId}:user`;
         userMessage.turn_id = turnId;
+      }
+      if (ownModelTurn?.learning && resultPayload.brand === "own") {
+        // "Always learning": Anima drafts what it would have said and the
+        // own model learns it in the background.
+        queueOwnModelLesson({ turnId, messages: updatedMessages });
       }
       const result = finalizeAssistantReply(
         resultPayload.content,
@@ -2188,6 +2224,11 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         newAiMessages = parseGroupResponse(strippedResult, multiAspectChars, charName);
       } else {
         newAiMessages = [{ role: "assistant", content: strippedResult || result, character_name: charName, timestamp: new Date().toISOString() }];
+      }
+      // Remember which model spoke so a reply from the steward's own model
+      // is marked (and can be taught) after it is saved and reloaded.
+      if (resultPayload.brand) {
+        newAiMessages = newAiMessages.map((m) => ({ ...m, llm_brand: resultPayload.brand }));
       }
 
       if (imageAttachments.length && newAiMessages[0]) {
@@ -3155,6 +3196,20 @@ Return JSON:
                 onDeleteMessage={handleDeleteMessage}
                 onRegenerateMessage={handleRegenerateMessage}
                 onAvatarClick={setBioCharacter}
+                onTeachMessage={
+                  modelTutor.isSteward
+                    ? (index, subMessage, part) =>
+                        setTeachTarget(
+                          buildTeachTarget({
+                            session: activeSession,
+                            messages: activeSession.messages,
+                            index,
+                            subMessage,
+                            part,
+                          }),
+                        )
+                    : undefined
+                }
               />
               
               {/* Render quest detection messages inline */}
@@ -3345,6 +3400,8 @@ Return JSON:
         open={!!bioCharacter}
         onClose={() => setBioCharacter(null)}
       />
+
+      <TeachDialog target={teachTarget} onClose={() => setTeachTarget(null)} />
 
       <DataExportModal
         isOpen={showExportModal}
