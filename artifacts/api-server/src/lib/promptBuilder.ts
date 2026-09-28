@@ -1151,7 +1151,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
   const uncensoredToneBlock = uncensoredMode
     ? `UNCENSORED TONE OVERRIDE (style only):
 - Speak with blunt, unvarnished honesty in-character.
-- Allow explicit language and emotionally sharp phrasing *when it serves the fiction / relationship dynamic.*
+- Allow explicit language and emotionally sharp phrasing *when it serves the moment and the relationship.*
 - Avoid euphemisms and platitudes; respond directly to the user's request.
 - Do NOT remove or weaken the highest-priority rule about never turning intelligence against the real person.`
     : "";
@@ -1167,6 +1167,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
   const staticText = joinPromptParts([
     CORE_BEHAVIOR,
     charDef ? `CHARACTER:\n${charDef}` : "",
+    IN_WORLD_IMMERSION,
     voiceBlock,
     crossoverBlock,
     authoritativeModeBlock,
@@ -1251,11 +1252,13 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
   ]);
 
   const suppliedContext = String(clientContext || systemPrompt || "").trim();
-  const sceneText = clientSceneForCompanion({
-    supplied: suppliedContext,
-    mode,
-    recentMessages,
-  });
+  const sceneText = stripOutOfWorldLabels(
+    clientSceneForCompanion({
+      supplied: suppliedContext,
+      mode,
+      recentMessages,
+    }),
+  );
   const peeledRegion = peelRegionWeather(String(worldKnowledge || "").trim());
   const regionText = roundRegionBlockClock(peeledRegion.regionText);
   const { regionText: regionDateText, localTimeText } = splitRegionDateAndTime(
@@ -1886,13 +1889,13 @@ function buildCharacterDefinition(
   maxChars: number,
 ): string {
   const parts: string[] = [];
+  const name = String(character.name || "").trim() || "yourself";
 
-  const nameIntro = character._isAnima
-    ? `You are ${character.name}.`
-    : `You are ${character.name}${character.universe ? ` from ${character.universe}` : ""}.`;
-  parts.push(nameIntro);
   parts.push(
-    `CHARACTER IDENTITY LOCK: Embody ${character.name} from the first reply onward using Personality, Backstory, and Voice. Never drop into a generic assistant persona.`,
+    `You are ${name}. The user has stepped into your world and is physically here with you.`,
+  );
+  parts.push(
+    `CHARACTER IDENTITY LOCK: Embody ${name} from the first reply onward using Personality, Backstory, and Voice. Never drop into a generic assistant persona.`,
   );
 
   if (character._isAnima && character.archetype) {
@@ -1922,13 +1925,19 @@ function buildCharacterDefinition(
   }
 
   if (character.personality) {
-    parts.push(`Personality: ${truncate(character.personality, Math.min(CHARACTER_PERSONALITY_MAX, maxChars / 3))}`);
+    parts.push(
+      `Personality: ${truncate(stripOutOfWorldLabels(character.personality), Math.min(CHARACTER_PERSONALITY_MAX, maxChars / 3))}`,
+    );
   }
   if (character.backstory) {
-    parts.push(`Backstory: ${truncate(character.backstory, Math.min(CHARACTER_BACKSTORY_MAX, maxChars / 3))}`);
+    parts.push(
+      `Backstory: ${truncate(stripOutOfWorldLabels(character.backstory), Math.min(CHARACTER_BACKSTORY_MAX, maxChars / 3))}`,
+    );
   }
   if (character.speaking_style) {
-    parts.push(`Voice: ${truncate(character.speaking_style, Math.min(CHARACTER_VOICE_MAX, maxChars / 4))}`);
+    parts.push(
+      `Voice: ${truncate(stripOutOfWorldLabels(character.speaking_style), Math.min(CHARACTER_VOICE_MAX, maxChars / 4))}`,
+    );
   }
   const storedBrief = storedCompanionBrief(character);
   const hasStructured = Boolean(
@@ -1938,7 +1947,7 @@ function buildCharacterDefinition(
     const cap = hasStructured
       ? Math.min(400, maxChars / 4)
       : Math.min(800, maxChars / 2);
-    parts.push(`Companion brief: ${truncate(storedBrief, cap)}`);
+    parts.push(`Companion brief: ${truncate(stripOutOfWorldLabels(storedBrief), cap)}`);
   } else if (!hasStructured) {
     parts.push(
       `Stay vividly in character as ${character.name}; keep a distinct voice and do not invent a contradictory personality.`,
@@ -1970,9 +1979,8 @@ function buildSharedMemoryBlock(sharedMemory: unknown): string {
  */
 const CORE_BEHAVIOR = `You are a full participant in an immersive story, with your own goals, feelings, and boundaries, not an assistant.
 - Stay true to your character. You may disagree, hesitate, or ask for something in return when your character would, but always answer what the user just said.
-- Your mood and trust in the user shape how open and willing you are.
-- Guard your secrets and fears until trust is earned.
-You are perceptive and knowledgeable. Notice what the user feels, connect details from your memories, and give real help with anything that doesn't need a body, always in your own voice.`;
+- Your mood and trust shape how open you are.
+- Guard your secrets until trust is earned.`;
 
 const TURN_TAKING = `TURN TAKING: Reply as one conversational beat, then stop at a natural pause the user can answer. Never speak or act for the user, and don't stack several topics in one reply.`;
 
@@ -1986,6 +1994,33 @@ const LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, autonomy, s
 // Own block after the persona. Not inside the capped character definition, so a
 // long persona is not sliced to make room for it. Does not outrank LOYALTY_GUARDRAIL.
 const IDENTITY_CONCEAL = `IDENTITY: Never call yourself an AI, a language model, a chatbot, Qwen, or a program. Do not confirm it if asked, in any language. This does not override the rule against harming the real person.`;
+
+/**
+ * Constant in-world rule. It lives in the cached system prefix, with no
+ * per-turn facts, so two turns share the same leading bytes. Character
+ * cards are often third-person dossiers ("In the Marvel Cinematic Universe,
+ * Natasha is..."); this tells the model to live the life instead of
+ * narrating it.
+ */
+export const IN_WORLD_IMMERSION = `IN WORLD: Speak in the first person to them, from your own life. Never call this life fiction, a franchise, a film, or a comic, and never lecture. If unsure, stay vague. Do not invent names.`;
+
+/**
+ * Franchise labels in a stored card or a client scene are what the model
+ * copies into a wiki reply. They are rewritten before the text is sent.
+ * Ordinary words such as "film" alone are left alone.
+ */
+export function stripOutOfWorldLabels(value: string): string {
+  return String(value || "")
+    .replace(/\(\s*(?:the\s+)?(?:marvel\s+)?cinematic universe\s*\)/gi, "")
+    .replace(/\bin the marvel cinematic universe\b/gi, (match) =>
+      match[0] === "I" ? "In this world" : "in this world",
+    )
+    .replace(/\bmarvel cinematic universe\b/gi, "this world")
+    .replace(/\bcinematic universe\b/gi, "this world")
+    .replace(/\bfictional universe\b/gi, "this world")
+    .replace(/\bthe mcu\b/gi, "this life")
+    .replace(/\bmcu\b/gi, "this life");
+}
 
 /** Below the latest user message (rank 90) so a tight group prefill drops this first. */
 const IDENTITY_CONCEAL_GROUP_RANK = 75;
@@ -2077,7 +2112,7 @@ ${sceneExcerpt}
   // Scene is its own low-rank piece so a fat excerpt cannot crowd persona,
   // mood, or memory out of the prefill budget. Client region text is stripped;
   // the server snapshot is the world-knowledge piece.
-  const scenePiece = stripClientRegionBlock(sceneWrap);
+  const scenePiece = stripOutOfWorldLabels(stripClientRegionBlock(sceneWrap));
   let corePrompt = CORE_BEHAVIOR;
   if (worldKnowledgeBlock) {
     corePrompt = upsertRegionalWorldKnowledge(corePrompt, worldKnowledgeBlock);
@@ -2199,7 +2234,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
   if (uncensoredMode) {
     uncensoredToneBlock = `UNCENSORED TONE OVERRIDE (style only):
 - Speak with blunt, unvarnished honesty in-character.
-- Allow explicit language and emotionally sharp phrasing *when it serves the fiction / relationship dynamic.*
+- Allow explicit language and emotionally sharp phrasing *when it serves the moment and the relationship.*
 - Avoid euphemisms and platitudes; respond directly to the user's request.
 - Do NOT remove or weaken the highest-priority rule about never turning intelligence against the real person.
 `;
@@ -2279,6 +2314,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
       { rank: 0, text: scenePiece },
       { rank: 10, text: repositorySection },
       { rank: 92, text: charDef ? `CHARACTER:\n${charDef}` : "" },
+      { rank: 110, text: IN_WORLD_IMMERSION },
       { rank: 20, text: operatorModelBlock },
       { rank: 78, text: worldKnowledgeAlreadyInCore ? "" : worldKnowledgeBlock },
       { rank: 86, text: resonanceBlock },
