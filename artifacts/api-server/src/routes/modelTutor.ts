@@ -1,4 +1,4 @@
-import { Router, type IRouter, type Request, type Response } from "express";
+import express, { Router, type IRouter, type Request, type Response } from "express";
 import { getAuth } from "@clerk/express";
 import { createRateLimit } from "../lib/rateLimit";
 import { logger } from "../lib/logger";
@@ -6,7 +6,6 @@ import { createChatCompletionWithFailover } from "../lib/llmFailover";
 import { finalizeAssistantReply } from "../lib/visibleAssistantReply";
 import {
   TutorInputError,
-  applyLearnJob,
   buildDraftMessages,
   cleanDraft,
   lessonsToDpoJsonl,
@@ -14,8 +13,6 @@ import {
   newLesson,
   normalizeLessonContext,
   parseLessonInput,
-  reconcileLesson,
-  toOwnModelPayload,
   MAX_NOTE_CHARS,
   MAX_REPLY_CHARS,
   type ModelLesson,
@@ -23,42 +20,48 @@ import {
 import {
   MAX_STORED_LESSONS,
   addAdvice,
-  countLessons,
   deleteAdvice,
   deleteLesson,
   getLesson,
+  lessonCounts,
   listAdvice,
   listLessons,
-  readOwnModelChatPreference,
+  readModelTutorPrefs,
   saveLesson,
-  writeOwnModelChatPreference,
+  writeModelTutorPrefs,
 } from "../lib/modelTutorStore";
 import {
-  OWN_MODEL_NOT_CONFIGURED_HINT,
+  BLOB_CHUNK_BYTES,
+  BLOB_KINDS,
+  MAX_MODEL_BYTES,
   OwnModelError,
-  asOwnModelError,
+  base64ByteLength,
+  blobStats,
   callerIsStewardCached,
-  forgetOwnModelLesson,
-  ownModelConfigured,
-  ownModelJob,
-  ownModelStatus,
-  rollbackOwnModel,
-  syncOwnModelLessons,
-  teachOwnModel,
-  type OwnModelJob,
-  type OwnModelStatus,
+  currentVersion,
+  discardUpload,
+  dispatchTrainer,
+  installBaseVersion,
+  mergeModelState,
+  nextModelVersion,
+  readModelState,
+  requestRelearn,
+  trainerDispatchConfigured,
+  writeBlobChunk,
+  type BlobKind,
+  type ModelState,
+  type ModelVersionEntry,
+  type PendingUpload,
 } from "../lib/ownModel";
 
 /**
- * /api/tutor — the steward teaches their own model (see lib/modelTutor.ts).
- * Every route except /status is steward-only: lessons change the model's
- * weights, so letting any account teach would let any account poison it.
+ * /api/tutor — the steward runs and teaches the own model (lib/ownModel.ts,
+ * lib/modelTutor.ts). Every route except /status is steward-only: lessons
+ * and uploads change what the model says to everyone it answers.
  */
 const router: IRouter = Router();
-router.use(createRateLimit({ name: "model-tutor", max: 60, windowMs: 60_000 }));
+router.use(createRateLimit({ name: "model-tutor", max: 120, windowMs: 60_000 }));
 
-/** Seconds a teach call waits for learning before handing back a job to poll. */
-const TEACH_WAIT_SECONDS = 15;
 const DRAFT_TIMEOUT_MS = 25_000;
 
 async function requireSteward(req: Request, res: Response): Promise<string | null> {
@@ -83,41 +86,38 @@ function sendError(res: Response, err: unknown, fallback: string): void {
     return;
   }
   if (err instanceof OwnModelError) {
-    const status = err.code === "not_configured" ? 409 : err.status && err.status < 500 ? err.status : 502;
-    res.status(status).json({ error: err.message, code: err.code ?? "own_model_error" });
+    res.status(err.status).json({ error: err.message, code: err.code });
     return;
   }
   logger.warn({ err }, fallback);
   res.status(500).json({ error: fallback });
 }
 
-/** A failed learning job comes back as HTTP 500 with the job in the body. */
-async function readJob(call: () => Promise<OwnModelJob>): Promise<OwnModelJob> {
-  try {
-    return await call();
-  } catch (err) {
-    const body = (err as { body?: unknown }).body as Partial<OwnModelJob> | undefined;
-    if (body && body.status === "failed" && typeof body.job_id === "string") {
-      return body as OwnModelJob;
-    }
-    throw asOwnModelError(err);
-  }
+function modelSummary(state: ModelState) {
+  const current = currentVersion(state);
+  return {
+    published: Boolean(current),
+    base_version: state.base_version,
+    current_version: current?.version ?? null,
+    config: current?.entry.config ?? state.versions[String(state.base_version)]?.config ?? null,
+    versions: Object.entries(state.versions)
+      .map(([version, entry]) => ({
+        version: Number(version),
+        kind: entry.kind,
+        created_at: entry.created_at,
+        lessons: entry.lessons,
+        bytes: (entry.inference?.bytes ?? 0) + (entry.master?.bytes ?? 0),
+      }))
+      .sort((a, b) => b.version - a.version),
+  };
 }
 
-/** Make stored statuses match what the live weights actually know. */
-async function reconcileLessons(status: OwnModelStatus): Promise<void> {
-  if (status.training) return;
-  const learned = new Set(status.learned_ids ?? []);
-  const lessons = await listLessons(MAX_STORED_LESSONS);
-  for (const lesson of lessons) {
-    const next = reconcileLesson(lesson, learned.has(lesson.id), status.version);
-    if (next) await saveLesson(next);
-  }
-}
-
-function publicModelStatus(status: OwnModelStatus) {
-  const { learned_ids: _ids, ...rest } = status;
-  return rest;
+function settingsOf(state: ModelState) {
+  return {
+    answer_everyone: state.answer_everyone,
+    always_learning: state.always_learning,
+    learn_from_opted_in: state.learn_from_opted_in,
+  };
 }
 
 router.get("/status", async (req, res) => {
@@ -131,41 +131,49 @@ router.get("/status", async (req, res) => {
       res.json({ isSteward: false });
       return;
     }
-    const configured = ownModelConfigured();
-    const [lessonsTotal, advice, ownModelChat] = await Promise.all([
-      countLessons(),
+    const [state, lessons, advice, preferences] = await Promise.all([
+      readModelState(),
+      lessonCounts(),
       listAdvice(),
-      readOwnModelChatPreference(userId),
+      readModelTutorPrefs(userId),
     ]);
-    let model: OwnModelStatus | null = null;
-    let error: string | null = configured ? null : OWN_MODEL_NOT_CONFIGURED_HINT;
-    if (configured) {
-      try {
-        model = await ownModelStatus();
-        await reconcileLessons(model).catch((err) =>
-          logger.warn({ err }, "Model Tutor lesson reconcile failed"),
-        );
-      } catch (err) {
-        error = asOwnModelError(err).message;
-      }
-    }
     res.json({
       isSteward: true,
-      configured,
-      reachable: Boolean(model),
-      error,
-      model: model ? publicModelStatus(model) : null,
-      lessons_total: lessonsTotal,
+      model: modelSummary(state),
+      settings: settingsOf(state),
+      trainer: {
+        last_run: state.trainer,
+        checked_at: state.trainer_checked_at,
+        dispatched_at: state.trainer_dispatched_at,
+        dispatch_configured: trainerDispatchConfigured(),
+        relearn_pending: state.rebuild_seq > state.rebuilt_seq,
+      },
+      lessons,
       advice_total: advice.length,
-      needs_sync: Boolean(
-        model &&
-          !model.training &&
-          (model.lessons_learned < lessonsTotal || (model.forgotten_pending ?? 0) > 0),
-      ),
-      preferences: { own_model_chat: ownModelChat },
+      preferences,
     });
   } catch (err) {
     sendError(res, err, "Could not read the Model Tutor status.");
+  }
+});
+
+router.put("/settings", async (req, res) => {
+  if (!(await requireSteward(req, res))) return;
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const patch: Partial<ModelState> = {};
+  for (const key of ["answer_everyone", "always_learning", "learn_from_opted_in"] as const) {
+    if (typeof body[key] === "boolean") patch[key] = body[key] as boolean;
+  }
+  try {
+    if (!Object.keys(patch).length) throw new TutorInputError("Nothing to change.");
+    const state = await readModelState();
+    if (patch.answer_everyone && !currentVersion(state)) {
+      throw new OwnModelError("Upload your model before it answers anyone.", 409, "no_model");
+    }
+    await mergeModelState(patch);
+    res.json({ settings: settingsOf({ ...state, ...patch }) });
+  } catch (err) {
+    sendError(res, err, "Could not save those settings.");
   }
 });
 
@@ -174,21 +182,162 @@ router.put("/preferences", async (req, res) => {
   if (!userId) return;
   const enabled = (req.body as { own_model_chat?: unknown } | undefined)?.own_model_chat === true;
   try {
-    if (enabled && !ownModelConfigured()) {
-      throw new OwnModelError(OWN_MODEL_NOT_CONFIGURED_HINT, { code: "not_configured" });
+    if (enabled && !currentVersion(await readModelState())) {
+      throw new OwnModelError("Upload your model before chatting with it.", 409, "no_model");
     }
-    await writeOwnModelChatPreference(userId, enabled);
-    res.json({ preferences: { own_model_chat: enabled } });
+    await writeModelTutorPrefs(userId, { own_model_chat: enabled });
+    res.json({ preferences: await readModelTutorPrefs(userId) });
   } catch (err) {
     sendError(res, err, "Could not save that preference.");
   }
 });
 
+// ------------------------------------------------------------------ uploads
+
+/**
+ * A model file from server/export_web.py ("anima-model-1") is split by the
+ * browser into its two parts and sent in 512 KiB chunks, base64-encoded (see
+ * readBlobChunk) — small enough for any host's request limit. Nothing is
+ * served until /finish checks that every byte arrived.
+ */
+function blobInfo(raw: unknown, withHash: boolean): { bytes: number; chunks: number; sha256?: string } {
+  const record = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const bytes = Number(record.bytes);
+  if (!Number.isInteger(bytes) || bytes <= 0 || bytes > MAX_MODEL_BYTES) {
+    throw new TutorInputError("The model file sizes do not look right.");
+  }
+  const info: { bytes: number; chunks: number; sha256?: string } = {
+    bytes,
+    chunks: Math.ceil(bytes / BLOB_CHUNK_BYTES),
+  };
+  if (withHash) {
+    const sha = String(record.sha256 ?? "").toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(sha)) throw new TutorInputError("The model file checksum is missing.");
+    info.sha256 = sha;
+  }
+  return info;
+}
+
+function modelShape(raw: unknown): Record<string, number> {
+  const record = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const shape: Record<string, number> = {};
+  for (const key of ["vocab_size", "block_size", "n_layer", "n_head", "n_embd"]) {
+    const value = Number(record[key]);
+    if (!Number.isInteger(value) || value <= 0 || value > 1_000_000) {
+      throw new TutorInputError("The model file's config is incomplete.");
+    }
+    shape[key] = value;
+  }
+  return shape;
+}
+
+router.post("/uploads", async (req, res) => {
+  if (!(await requireSteward(req, res))) return;
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  try {
+    const upload: PendingUpload = {
+      started_at: new Date().toISOString(),
+      config: modelShape(body.config),
+      inference: blobInfo(body.inference, true),
+      master: blobInfo(body.master, false),
+    };
+    const state = await readModelState();
+    const version = await nextModelVersion(state);
+    // Older unfinished uploads are abandoned; only one at a time.
+    for (const stale of Object.keys(state.uploads)) await discardUpload(Number(stale));
+    await mergeModelState({ uploads: { [String(version)]: upload } });
+    res.status(201).json({ version, chunk_bytes: BLOB_CHUNK_BYTES, upload });
+  } catch (err) {
+    sendError(res, err, "Could not start the upload.");
+  }
+});
+
+async function pendingUpload(version: number): Promise<PendingUpload> {
+  const upload = (await readModelState()).uploads[String(version)];
+  if (!upload) throw new OwnModelError("That upload is gone — start it again.", 404, "upload_missing");
+  return upload;
+}
+
+router.put(
+  "/uploads/:version/:kind/:idx",
+  express.text({ type: "text/plain", limit: Math.ceil((BLOB_CHUNK_BYTES * 4) / 3) + 1024 }),
+  async (req, res) => {
+    if (!(await requireSteward(req, res))) return;
+    const version = Number(req.params.version);
+    const kind = String(req.params.kind) as BlobKind;
+    const idx = Number(req.params.idx);
+    try {
+      if (!BLOB_KINDS.includes(kind) || !Number.isInteger(idx) || idx < 0) {
+        throw new TutorInputError("Bad chunk address.");
+      }
+      const upload = await pendingUpload(version);
+      const info = upload[kind];
+      if (idx >= info.chunks) throw new TutorInputError("That chunk is past the end of the file.");
+      const expected =
+        idx === info.chunks - 1 ? info.bytes - BLOB_CHUNK_BYTES * (info.chunks - 1) : BLOB_CHUNK_BYTES;
+      const text = typeof req.body === "string" ? req.body.trim() : "";
+      if (base64ByteLength(text) !== expected) {
+        throw new TutorInputError(`Chunk ${idx} should be ${expected} bytes of base64.`);
+      }
+      await writeBlobChunk(version, kind, idx, text);
+      res.json({ ok: true });
+    } catch (err) {
+      sendError(res, err, "Could not store that part of the model.");
+    }
+  },
+);
+
+router.post("/uploads/:version/finish", async (req, res) => {
+  if (!(await requireSteward(req, res))) return;
+  const version = Number(req.params.version);
+  try {
+    const upload = await pendingUpload(version);
+    for (const kind of BLOB_KINDS) {
+      const stats = await blobStats(version, kind);
+      if (stats.chunks !== upload[kind].chunks || stats.bytes !== upload[kind].bytes) {
+        throw new OwnModelError(
+          `The ${kind} part is incomplete (${stats.chunks}/${upload[kind].chunks} chunks). Upload it again.`,
+          409,
+          "upload_incomplete",
+        );
+      }
+    }
+    const entry: ModelVersionEntry = {
+      kind: "base",
+      created_at: new Date().toISOString(),
+      lessons: 0,
+      inference: upload.inference,
+      master: upload.master,
+      config: upload.config,
+    };
+    await installBaseVersion(version, entry);
+    // Lessons it already learned are queued again on the new base.
+    const dispatched = await dispatchTrainer();
+    res.json({ version, model: modelSummary(await readModelState()), trainer_started: dispatched });
+  } catch (err) {
+    sendError(res, err, "Could not publish the model.");
+  }
+});
+
+router.delete("/uploads/:version", async (req, res) => {
+  if (!(await requireSteward(req, res))) return;
+  try {
+    await discardUpload(Number(req.params.version));
+    res.json({ discarded: true });
+  } catch (err) {
+    sendError(res, err, "Could not cancel the upload.");
+  }
+});
+
+// ------------------------------------------------------------------ lessons
+
 router.get("/lessons", async (req, res) => {
   if (!(await requireSteward(req, res))) return;
   const limit = Number(req.query.limit);
+  const source = req.query.source === "auto" || req.query.source === "manual" ? req.query.source : null;
   try {
-    const lessons = await listLessons(Number.isFinite(limit) && limit > 0 ? limit : 200);
+    let lessons = await listLessons(Number.isFinite(limit) && limit > 0 ? limit : 200);
+    if (source) lessons = lessons.filter((l) => (l.source ?? "manual") === source);
     res.json({ lessons });
   } catch (err) {
     sendError(res, err, "Could not load lessons.");
@@ -200,53 +349,42 @@ router.post("/lessons", async (req, res) => {
   if (!userId) return;
   try {
     const input = parseLessonInput(req.body);
-    let lesson = newLesson(input, userId);
+    let lesson: ModelLesson = newLesson(input, userId);
     const existing = await getLesson(lesson.id);
     if (existing) {
       lesson = { ...lesson, created_date: existing.created_date };
-    } else if ((await countLessons()) >= MAX_STORED_LESSONS) {
+    } else if ((await lessonCounts()).total >= MAX_STORED_LESSONS) {
       res.status(409).json({ error: `The model can hold up to ${MAX_STORED_LESSONS} lessons.` });
       return;
     }
-    if (!ownModelConfigured()) {
-      await saveLesson({ ...lesson, error: OWN_MODEL_NOT_CONFIGURED_HINT });
-      res.status(201).json({ lesson: { ...lesson, error: OWN_MODEL_NOT_CONFIGURED_HINT } });
-      return;
-    }
-    lesson = { ...lesson, status: "learning" };
     await saveLesson(lesson);
-    try {
-      const job = await readJob(() =>
-        teachOwnModel(toOwnModelPayload(lesson), TEACH_WAIT_SECONDS),
-      );
-      lesson = applyLearnJob(lesson, job);
-    } catch (err) {
-      // Saved either way: the next sync teaches it once the model is back.
-      lesson = { ...lesson, status: "saved", error: asOwnModelError(err).message };
-    }
-    await saveLesson(lesson);
-    res.status(201).json({ lesson });
+    const trainerStarted = await dispatchTrainer();
+    res.status(201).json({ lesson, trainer_started: trainerStarted });
   } catch (err) {
     sendError(res, err, "Could not save that lesson.");
   }
 });
 
-router.get("/jobs/:jobId", async (req, res) => {
+router.post("/lessons/:id/retry", async (req, res) => {
   if (!(await requireSteward(req, res))) return;
   try {
-    const job = await readJob(() => ownModelJob(String(req.params.jobId)));
-    let lesson: ModelLesson | null = null;
-    const lessonId = typeof req.query.lesson_id === "string" ? req.query.lesson_id : "";
-    if (lessonId) {
-      lesson = await getLesson(lessonId);
-      if (lesson && lesson.job_id === job.job_id && (job.status === "done" || job.status === "failed")) {
-        lesson = applyLearnJob(lesson, job);
-        await saveLesson(lesson);
-      }
+    const lesson = await getLesson(String(req.params.id));
+    if (!lesson) {
+      res.status(404).json({ error: "Lesson not found." });
+      return;
     }
-    res.json({ job, lesson });
+    const next: ModelLesson = {
+      ...lesson,
+      status: "saved",
+      attempts: 0,
+      error: null,
+      updated_date: new Date().toISOString(),
+    };
+    await saveLesson(next);
+    await dispatchTrainer();
+    res.json({ lesson: next });
   } catch (err) {
-    sendError(res, err, "Could not read that learning job.");
+    sendError(res, err, "Could not queue that lesson again.");
   }
 });
 
@@ -260,15 +398,13 @@ router.delete("/lessons/:id", async (req, res) => {
       return;
     }
     await deleteLesson(id);
-    let wasLearned = lesson.status === "learned";
-    if (ownModelConfigured()) {
-      try {
-        wasLearned = (await forgetOwnModelLesson(id)).was_learned || wasLearned;
-      } catch (err) {
-        logger.warn({ err, id }, "Own model did not drop a deleted lesson; the next sync will");
-      }
+    // Learned weights can't drop one lesson; relearn the rest from the base.
+    const relearning = lesson.status === "learned";
+    if (relearning) {
+      await requestRelearn();
+      await dispatchTrainer();
     }
-    res.json({ deleted: true, needs_sync: wasLearned });
+    res.json({ deleted: true, relearning });
   } catch (err) {
     sendError(res, err, "Could not delete that lesson.");
   }
@@ -305,31 +441,38 @@ router.post("/lessons/draft", async (req, res) => {
   }
 });
 
+/** Relearn every lesson from the base model (after deletions, or to start fresh). */
 router.post("/sync", async (req, res) => {
   if (!(await requireSteward(req, res))) return;
   try {
-    if (!ownModelConfigured()) {
-      throw new OwnModelError(OWN_MODEL_NOT_CONFIGURED_HINT, { code: "not_configured" });
+    if (!currentVersion(await readModelState())) {
+      throw new OwnModelError("Upload your model first.", 409, "no_model");
     }
-    const lessons = await listLessons(MAX_STORED_LESSONS);
-    const job = await readJob(() => syncOwnModelLessons(lessons.map(toOwnModelPayload), 0));
-    res.status(202).json({ job, lessons: lessons.length });
+    await requestRelearn();
+    const trainerStarted = await dispatchTrainer();
+    res.status(202).json({ relearning: true, trainer_started: trainerStarted });
   } catch (err) {
     sendError(res, err, "Could not start relearning.");
   }
 });
 
-router.post("/rollback", async (req, res) => {
+/** Run the trainer now instead of at its next 15-minute slot. */
+router.post("/learn-now", async (req, res) => {
   if (!(await requireSteward(req, res))) return;
-  try {
-    if (!ownModelConfigured()) {
-      throw new OwnModelError(OWN_MODEL_NOT_CONFIGURED_HINT, { code: "not_configured" });
-    }
-    const job = await readJob(() => rollbackOwnModel(10));
-    res.json({ job });
-  } catch (err) {
-    sendError(res, err, "Could not undo the last lesson.");
+  if (!trainerDispatchConfigured()) {
+    res.status(409).json({
+      error:
+        "Set GITHUB_TRAINER_TOKEN on the API host to start the trainer on demand. " +
+        "Until then it runs every 15 minutes.",
+      code: "dispatch_not_configured",
+    });
+    return;
   }
+  const started = await dispatchTrainer();
+  res.status(started ? 202 : 429).json({
+    trainer_started: started,
+    ...(started ? {} : { error: "The trainer was just started — give it a minute." }),
+  });
 });
 
 router.get("/advice", async (req, res) => {

@@ -9,11 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { animaApi } from "@/api/animaApi";
 import { track } from "@/lib/analytics";
-import {
-  LONG_REPLY_CHARS,
-  describeLearning,
-  waitForLesson,
-} from "@/lib/modelTutor";
+import { LONG_REPLY_CHARS } from "@/lib/modelTutor";
 
 const label = "block font-mono text-[9px] uppercase tracking-[0.2em] text-primary/50";
 const field =
@@ -36,6 +32,7 @@ export default function TeachDialog({ target, onClose, api = animaApi.tutor }) {
   const [drafting, setDrafting] = useState(false);
   const [teaching, setTeaching] = useState(false);
   const [lesson, setLesson] = useState(null);
+  const [trainerStarted, setTrainerStarted] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -76,7 +73,7 @@ export default function TeachDialog({ target, onClose, api = animaApi.tutor }) {
     setTeaching(true);
     setError("");
     try {
-      const { lesson: saved } = await api.teach({
+      const { lesson: saved, trainer_started: started } = await api.teach({
         session_id: target.session_id,
         message_id: target.message_id,
         part: target.part,
@@ -90,20 +87,16 @@ export default function TeachDialog({ target, onClose, api = animaApi.tutor }) {
         has_note: Boolean(note.trim()),
         is_drafted: Boolean(drafted) && drafted.trim() === better,
         is_own_model_reply: target.source_brand === "own",
-        is_learned: saved?.status === "learned",
+        is_trainer_started: Boolean(started),
       });
+      setTrainerStarted(Boolean(started));
       setLesson(saved);
-      if (saved?.status === "learning") {
-        setLesson(await waitForLesson(api, saved));
-      }
     } catch (err) {
       setError(errorText(err, "That lesson didn't save. Try again."));
     } finally {
       setTeaching(false);
     }
   };
-
-  const learnedLine = lesson ? describeLearning(lesson) : null;
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && !busy && onClose?.()}>
@@ -113,8 +106,8 @@ export default function TeachDialog({ target, onClose, api = animaApi.tutor }) {
             <GraduationCap className="h-4 w-4" /> Teach your model
           </DialogTitle>
           <DialogDescription className="text-left text-xs leading-relaxed text-primary/50">
-            Show it what it should have said. It practises your reply until it sticks, and learns
-            to steer away from this one.
+            Show it what it should have said. In the background it practises your reply until it
+            sticks, and learns to steer away from this one.
           </DialogDescription>
         </DialogHeader>
 
@@ -192,54 +185,22 @@ export default function TeachDialog({ target, onClose, api = animaApi.tutor }) {
                 className={`${button} border-fuchsia-400/50 bg-fuchsia-500/15 text-fuchsia-100 hover:bg-fuchsia-500/25`}
               >
                 {teaching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GraduationCap className="h-3.5 w-3.5" />}
-                {teaching ? "Practising…" : "Teach"}
+                {teaching ? "Saving…" : "Teach"}
               </button>
             </div>
-            {teaching && (
-              <p className="text-[10px] text-primary/40">
-                Your model is practising this reply. It usually takes 10–30 seconds.
-              </p>
-            )}
           </div>
         )}
 
         {lesson && (
           <div className="space-y-3" data-testid="teach-result">
-            {lesson.status === "learned" && (
-              <>
-                <p className="font-mono text-xs text-emerald-300/90">
-                  Learned — now on version {lesson.version ?? "?"}
-                  {lesson.steps ? `, after ${lesson.steps} practice rounds` : ""}.
-                </p>
-                {learnedLine && (
-                  <p className="text-xs text-primary/60">
-                    How likely it found your reply: <span className="text-primary/90">{learnedLine}</span>
-                  </p>
-                )}
-                {lesson.after_reply && (
-                  <div>
-                    <span className={label}>Asked the same thing, it now says</span>
-                    <div className="mt-1 border border-emerald-400/20 bg-emerald-500/5 p-2.5 font-mono text-xs leading-relaxed text-emerald-100/80 whitespace-pre-wrap">
-                      {lesson.after_reply}
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-            {lesson.status === "learning" && (
-              <p className="text-xs text-primary/60">
-                Still practising. The lesson is saved — check Settings → Model Tutor in a minute.
-              </p>
-            )}
-            {lesson.status === "saved" && (
-              <p className="text-xs text-amber-200/80">
-                Saved, but not learned yet. {lesson.error} It will learn this when you re-teach all
-                lessons from Settings → Model Tutor.
-              </p>
-            )}
-            {lesson.status === "failed" && (
-              <p className="text-xs text-red-300/80">Learning failed: {lesson.error}</p>
-            )}
+            <p className="font-mono text-xs text-emerald-300/90">Lesson saved.</p>
+            <p className="text-xs leading-relaxed text-primary/60">
+              {trainerStarted
+                ? "Your model is learning it now — usually a few minutes."
+                : "Your model learns it on its next practice run, within about 15 minutes."}{" "}
+              The next version downloads by itself on your next chat. Progress is in Settings → Model
+              Tutor.
+            </p>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button
                 type="button"

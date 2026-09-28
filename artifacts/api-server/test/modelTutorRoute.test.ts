@@ -1,4 +1,5 @@
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { createHash } from "node:crypto";
+import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
   afterAll,
@@ -28,101 +29,32 @@ vi.mock("../src/lib/llmFailover", async (importOriginal) => ({
   createChatCompletionWithFailover: (...args: unknown[]) => draftCompletion(...args),
 }));
 
-import { and, eq, like } from "drizzle-orm";
-import { db, userEntities, userProfiles } from "@workspace/db";
+import { eq, like, sql } from "drizzle-orm";
+import { db, ownModelBlobs, userEntities, userProfiles } from "@workspace/db";
 import modelTutorRouter from "../src/routes/modelTutor";
 import {
   MODEL_LESSON_ENTITY,
   MODEL_TUTOR_PARTITION,
-  readOwnModelChatPreference,
+  getLesson,
+  readModelTutorPrefs,
+  saveLesson,
 } from "../src/lib/modelTutorStore";
-import { lessonIdFor, type ModelLesson } from "../src/lib/modelTutor";
-import { OWN_MODEL_NOT_CONFIGURED_HINT, resetOwnModelForTests } from "../src/lib/ownModel";
+import { lessonIdFor } from "../src/lib/modelTutor";
+import {
+  BLOB_CHUNK_BYTES,
+  ensureOwnModelBlobsTable,
+  readModelState,
+  resetOwnModelForTests,
+} from "../src/lib/ownModel";
 
 const PREFIX = `tutor_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_`;
 const STEWARD = `${PREFIX}steward`;
 const SAVED_ENV = { ...process.env };
-
-// ---- stub of server/server.py's lesson API -------------------------------
-
-type Handler = (body: Record<string, unknown>) => { status: number; body: unknown };
-const calls: { method: string; path: string; body: Record<string, unknown>; auth?: string }[] = [];
-const routes = new Map<string, Handler>();
-let stub: Server;
-let stubOrigin = "";
-
-function setRoute(method: string, path: string, handler: Handler) {
-  routes.set(`${method} ${path}`, handler);
-}
-
-function modelStatus(overrides: Record<string, unknown> = {}) {
-  return {
-    model: "anima-own",
-    version: 3,
-    base: "ckpt.pt",
-    params: 13_400_000,
-    block_size: 256,
-    device: "cpu",
-    lessons_stored: 0,
-    lessons_learned: 0,
-    learned_ids: [],
-    forgotten_pending: 0,
-    training: false,
-    queue: 0,
-    current_job: null,
-    recent_jobs: [],
-    can_rollback: true,
-    ...overrides,
-  };
-}
-
-function resetStub() {
-  calls.length = 0;
-  routes.clear();
-  setRoute("GET", "/v1/lessons/status", () => ({ status: 200, body: modelStatus() }));
-  setRoute("POST", "/v1/lessons", (body) => ({
-    status: 200,
-    body: {
-      status: "done",
-      job_id: "job-learn",
-      kind: "learn",
-      result: {
-        version: 4,
-        lesson_id: body.id,
-        loss_before: 5.25,
-        loss_after: 0.31,
-        steps: 14,
-        after_reply: body.chosen,
-      },
-    },
-  }));
-}
-
-beforeAll(async () => {
-  stub = createServer((req: IncomingMessage, res: ServerResponse) => {
-    let raw = "";
-    req.on("data", (c) => (raw += c));
-    req.on("end", () => {
-      const path = (req.url || "").split("?")[0]!;
-      const body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
-      calls.push({ method: req.method || "GET", path, body, auth: req.headers.authorization });
-      const key = `${req.method} ${path}`;
-      const handler =
-        routes.get(key) ??
-        [...routes.entries()].find(([k]) => k.endsWith("*") && key.startsWith(k.slice(0, -1)))?.[1];
-      const out = handler ? handler(body) : { status: 404, body: { detail: "no stub route" } };
-      res.writeHead(out.status, { "Content-Type": "application/json" });
-      res.end(JSON.stringify(out.body));
-    });
-  });
-  await new Promise<void>((resolve) => stub.listen(0, "127.0.0.1", resolve));
-  stubOrigin = `http://127.0.0.1:${(stub.address() as AddressInfo).port}`;
-});
-
-// ---- app ---------------------------------------------------------------
+const realFetch = globalThis.fetch;
 
 let server: Server;
 let baseUrl = "";
+const githubCalls: { url: string; body: unknown; auth: string | null }[] = [];
 
 beforeAll(async () => {
   const app: Express = express();
@@ -137,21 +69,32 @@ beforeAll(async () => {
 async function clearTutorData() {
   await db.delete(userEntities).where(eq(userEntities.userId, MODEL_TUTOR_PARTITION));
   await db.delete(userProfiles).where(like(userProfiles.userId, `${PREFIX}%`));
+  await ensureOwnModelBlobsTable();
+  await db.delete(ownModelBlobs);
 }
 
 beforeEach(async () => {
-  process.env.ANIMA_RUNTIME = "node";
-  process.env.ANIMA_OWN_LLM_BASE_URL = `${stubOrigin}/v1`;
-  process.env.ANIMA_OWN_LLM_API_KEY = "own-token";
   process.env.PROTOCOL_UPGRADE_ADMIN_USER_IDS = STEWARD;
   delete process.env.CLERK_SECRET_KEY;
+  delete process.env.GITHUB_TRAINER_TOKEN;
   resetOwnModelForTests();
-  resetStub();
   draftCompletion.mockReset();
+  githubCalls.length = 0;
+  // GitHub's workflow-dispatch API, stubbed; everything else is real.
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const url = String(input instanceof Request ? input.url : input);
+    if (url.startsWith("https://api.github.com/")) {
+      const headers = new Headers(init?.headers);
+      githubCalls.push({ url, body: JSON.parse(String(init?.body ?? "{}")), auth: headers.get("authorization") });
+      return new Response(null, { status: 204 });
+    }
+    return realFetch(input, init);
+  });
   await clearTutorData();
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   process.env = { ...SAVED_ENV };
   resetOwnModelForTests();
 });
@@ -159,15 +102,18 @@ afterEach(() => {
 afterAll(async () => {
   await clearTutorData();
   await new Promise<void>((resolve) => server.close(() => resolve()));
-  stub.closeAllConnections();
-  await new Promise<void>((resolve) => stub.close(() => resolve()));
 });
 
 async function call(method: string, path: string, body?: unknown, user = STEWARD) {
+  // Model chunks go up as base64 text, like the Model Tutor panel sends them.
+  const binary = body instanceof Uint8Array;
   const res = await fetch(`${baseUrl}/tutor${path}`, {
     method,
-    headers: { "Content-Type": "application/json", "x-test-user": user },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    headers: {
+      "Content-Type": binary ? "text/plain" : "application/json",
+      "x-test-user": user,
+    },
+    body: body === undefined ? undefined : binary ? Buffer.from(body).toString("base64") : JSON.stringify(body),
   });
   const text = await res.text();
   let json: any = null;
@@ -194,15 +140,45 @@ const LESSON = {
   source_brand: "own",
 };
 
+const CONFIG = { vocab_size: 300, block_size: 48, n_layer: 2, n_head: 2, n_embd: 32 };
+
+function bytes(n: number, seed: number): Uint8Array {
+  const out = new Uint8Array(n);
+  for (let i = 0; i < n; i++) out[i] = (i * 31 + seed) & 0xff;
+  return out;
+}
+
+/** Upload a model the way the Model Tutor panel does. */
+async function uploadModel(inference: Uint8Array, master: Uint8Array, opts: { finish?: boolean } = {}) {
+  const started = await call("POST", "/uploads", {
+    config: CONFIG,
+    inference: { bytes: inference.length, sha256: createHash("sha256").update(inference).digest("hex") },
+    master: { bytes: master.length },
+  });
+  expect(started.status, started.text).toBe(201);
+  const version = started.body.version as number;
+  for (const [kind, data] of [["inference", inference], ["master", master]] as const) {
+    for (let idx = 0; idx * BLOB_CHUNK_BYTES < data.length; idx++) {
+      const chunk = data.subarray(idx * BLOB_CHUNK_BYTES, (idx + 1) * BLOB_CHUNK_BYTES);
+      const put = await call("PUT", `/uploads/${version}/${kind}/${idx}`, chunk);
+      expect(put.status, put.text).toBe(200);
+    }
+  }
+  if (opts.finish === false) return { version, finished: null };
+  const finished = await call("POST", `/uploads/${version}/finish`);
+  return { version, finished };
+}
+
 // ---- tests ---------------------------------------------------------------
 
 describe("who may teach", () => {
-  it("tells a non-steward they are not one, and refuses their lessons", async () => {
-    const status = await call("GET", "/status", undefined, `${PREFIX}visitor`);
-    expect(status.body).toEqual({ isSteward: false });
-    const teach = await call("POST", "/lessons", LESSON, `${PREFIX}visitor`);
-    expect(teach.status).toBe(403);
-    expect(calls.filter((c) => c.path === "/v1/lessons")).toHaveLength(0);
+  it("tells a non-steward they are not one, and refuses their lessons and uploads", async () => {
+    expect((await call("GET", "/status", undefined, `${PREFIX}visitor`)).body).toEqual({ isSteward: false });
+    const res = await call("POST", "/lessons", LESSON, `${PREFIX}visitor`);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("not_steward");
+    expect((await call("POST", "/uploads", {}, `${PREFIX}visitor`)).status).toBe(403);
+    expect((await call("PUT", "/settings", { answer_everyone: true }, `${PREFIX}visitor`)).status).toBe(403);
   });
 
   it("requires a signed-in user", async () => {
@@ -211,49 +187,165 @@ describe("who may teach", () => {
   });
 });
 
+describe("uploading the model", () => {
+  it("publishes a model sent in chunks, and says so in the status", async () => {
+    const inference = bytes(BLOB_CHUNK_BYTES * 2 + 1234, 1);
+    const master = bytes(BLOB_CHUNK_BYTES + 7, 2);
+    const { version, finished } = await uploadModel(inference, master);
+    expect(finished!.status, finished!.text).toBe(200);
+    expect(finished!.body.model).toMatchObject({ published: true, base_version: version, current_version: version });
+
+    const state = await readModelState();
+    expect(state.versions[String(version)]).toMatchObject({
+      kind: "base",
+      config: CONFIG,
+      inference: { bytes: inference.length, chunks: 3 },
+      master: { bytes: master.length, chunks: 2 },
+    });
+    expect(state.uploads).toEqual({});
+
+    const status = await call("GET", "/status");
+    expect(status.body).toMatchObject({
+      isSteward: true,
+      model: { published: true, current_version: version, config: CONFIG },
+      settings: { answer_everyone: false, always_learning: false, learn_from_opted_in: false },
+      trainer: { dispatch_configured: false, relearn_pending: false },
+      lessons: { total: 0, pending: 0 },
+    });
+  });
+
+  it("refuses chunks of the wrong size and will not publish a partial upload", async () => {
+    const inference = bytes(BLOB_CHUNK_BYTES + 10, 3);
+    const master = bytes(100, 4);
+    const started = await call("POST", "/uploads", {
+      config: CONFIG,
+      inference: { bytes: inference.length, sha256: "a".repeat(64) },
+      master: { bytes: master.length },
+    });
+    const version = started.body.version;
+    expect((await call("PUT", `/uploads/${version}/inference/0`, inference.subarray(0, 10))).status).toBe(400);
+    expect((await call("PUT", `/uploads/${version}/inference/5`, inference.subarray(0, 10))).status).toBe(400);
+    expect((await call("PUT", `/uploads/${version}/weights/0`, master)).status).toBe(400);
+    const notBase64 = await fetch(`${baseUrl}/tutor/uploads/${version}/master/0`, {
+      method: "PUT",
+      headers: { "Content-Type": "text/plain", "x-test-user": STEWARD },
+      body: "!".repeat(136),
+    });
+    expect(notBase64.status).toBe(400);
+    await call("PUT", `/uploads/${version}/inference/0`, inference.subarray(0, BLOB_CHUNK_BYTES));
+    const finish = await call("POST", `/uploads/${version}/finish`);
+    expect(finish.status).toBe(409);
+    expect(finish.body.code).toBe("upload_incomplete");
+    expect((await readModelState()).current_version).toBeNull();
+  });
+
+  it("rejects a file without a config or checksum", async () => {
+    expect((await call("POST", "/uploads", { inference: { bytes: 10 }, master: { bytes: 10 } })).status).toBe(400);
+    const noHash = await call("POST", "/uploads", {
+      config: CONFIG,
+      inference: { bytes: 10 },
+      master: { bytes: 10 },
+    });
+    expect(noHash.status).toBe(400);
+  });
+
+  it("makes a new upload the base: learned lessons are queued again and old weights dropped", async () => {
+    const first = await uploadModel(bytes(1000, 5), bytes(2000, 6));
+    await call("POST", "/lessons", LESSON);
+    const id = lessonIdFor({ sessionId: "sess-1", messageId: "turn_1:assistant", part: null });
+    const saved = (await getLesson(id))!;
+    await saveLesson({ ...saved, status: "learned", version: first.version });
+
+    const second = await uploadModel(bytes(1500, 7), bytes(2500, 8));
+    expect(second.version).toBeGreaterThan(first.version);
+    expect((await getLesson(id))!.status).toBe("saved");
+    const versions = await db
+      .selectDistinct({ version: ownModelBlobs.version })
+      .from(ownModelBlobs);
+    expect(versions.map((v) => v.version)).toEqual([second.version]);
+    expect(Object.keys((await readModelState()).versions)).toEqual([String(second.version)]);
+  });
+});
+
+describe("switches", () => {
+  it("won't answer anyone before a model is uploaded", async () => {
+    const res = await call("PUT", "/settings", { answer_everyone: true });
+    expect(res.status).toBe(409);
+    expect((await call("PUT", "/preferences", { own_model_chat: true })).status).toBe(409);
+  });
+
+  it("stores the global switches and the steward's own switch", async () => {
+    await uploadModel(bytes(100, 1), bytes(100, 2));
+    const res = await call("PUT", "/settings", {
+      answer_everyone: true,
+      always_learning: true,
+      learn_from_opted_in: false,
+      ignored: "x",
+    });
+    expect(res.body.settings).toEqual({ answer_everyone: true, always_learning: true, learn_from_opted_in: false });
+    expect(await readModelState()).toMatchObject({ answer_everyone: true, always_learning: true });
+    expect((await call("PUT", "/settings", {})).status).toBe(400);
+
+    await db.insert(userProfiles).values({
+      userId: STEWARD,
+      data: { settings: { theme_mode: "light" }, display_name: "Dàvīn" },
+    });
+    const pref = await call("PUT", "/preferences", { own_model_chat: true });
+    expect(pref.body.preferences).toEqual({ own_model_chat: true, share_for_training: false });
+    const [row] = await db.select().from(userProfiles).where(eq(userProfiles.userId, STEWARD));
+    expect(row!.data).toMatchObject({
+      settings: { theme_mode: "light" },
+      display_name: "Dàvīn",
+      model_tutor: { own_model_chat: true },
+    });
+    await call("PUT", "/preferences", { own_model_chat: false });
+    expect((await readModelTutorPrefs(STEWARD)).own_model_chat).toBe(false);
+  });
+});
+
 describe("teaching", () => {
-  it("stores the lesson, teaches the model, and records what it learned", async () => {
+  it("queues the lesson for the trainer", async () => {
     const res = await call("POST", "/lessons", LESSON);
     expect(res.status).toBe(201);
-    const lesson = res.body.lesson as ModelLesson;
-    expect(lesson).toMatchObject({
-      id: lessonIdFor({ sessionId: "sess-1", messageId: "turn_1:assistant", part: null }),
-      status: "learned",
-      version: 4,
-      loss_before: 5.25,
-      loss_after: 0.31,
-      steps: 14,
-      after_reply: LESSON.chosen,
-      note: LESSON.note,
+    expect(res.body.lesson).toMatchObject({
+      status: "saved",
+      source: "manual",
+      attempts: 0,
+      chosen: LESSON.chosen,
+      rejected: LESSON.rejected,
       taught_by: STEWARD,
     });
-    expect(lesson.context).toEqual([
+    expect(res.body.lesson.context).toEqual([
       { role: "user", content: "I had a rough day." },
       { role: "assistant", content: "The day number 1746 was kind." },
       { role: "user", content: "Can you just listen?" },
     ]);
+    expect(res.body.trainer_started).toBe(false);
+    expect(githubCalls).toHaveLength(0);
+    expect((await call("GET", "/status")).body.lessons).toMatchObject({ total: 1, pending: 1, learned: 0 });
+  });
 
-    const sent = calls.find((c) => c.method === "POST" && c.path === "/v1/lessons")!;
-    expect(sent.auth).toBe("Bearer own-token");
-    expect(sent.body).toMatchObject({
-      id: lesson.id,
-      chosen: LESSON.chosen,
-      rejected: LESSON.rejected,
-      messages: lesson.context,
-      wait: 15,
-    });
-
-    const listed = await call("GET", "/lessons");
-    expect(listed.body.lessons.map((l: ModelLesson) => l.id)).toEqual([lesson.id]);
+  it("starts the trainer at once when a GitHub token is set", async () => {
+    process.env.GITHUB_TRAINER_TOKEN = "ghp_test";
+    const res = await call("POST", "/lessons", LESSON);
+    expect(res.body.trainer_started).toBe(true);
+    expect(githubCalls).toEqual([
+      {
+        url: "https://api.github.com/repos/davins56/Anima-Protocol/actions/workflows/own-model-trainer.yml/dispatches",
+        body: { ref: "main" },
+        auth: "Bearer ghp_test",
+      },
+    ]);
+    // Debounced: a burst of lessons starts one run.
+    await call("POST", "/lessons", { ...LESSON, message_id: "turn_2:assistant" });
+    expect(githubCalls).toHaveLength(1);
+    expect((await readModelState()).trainer_dispatched_at).toBeTruthy();
   });
 
   it("refines the same reply's lesson instead of stacking a second one", async () => {
-    const first = (await call("POST", "/lessons", LESSON)).body.lesson as ModelLesson;
-    const second = (await call("POST", "/lessons", { ...LESSON, chosen: "I'm listening." }))
-      .body.lesson as ModelLesson;
-    expect(second.id).toBe(first.id);
-    expect(second.created_date).toBe(first.created_date);
-    expect(second.chosen).toBe("I'm listening.");
+    await call("POST", "/lessons", LESSON);
+    const again = await call("POST", "/lessons", { ...LESSON, chosen: "I'm listening." });
+    expect(again.body.lesson.chosen).toBe("I'm listening.");
     expect((await call("GET", "/lessons")).body.lessons).toHaveLength(1);
   });
 
@@ -262,122 +354,50 @@ describe("teaching", () => {
     expect(res.status).toBe(400);
   });
 
-  it("hands back a job to poll when learning takes longer", async () => {
-    setRoute("POST", "/v1/lessons", () => ({
-      status: 202,
-      body: { status: "running", job_id: "job-slow", kind: "learn" },
-    }));
-    const taught = await call("POST", "/lessons", LESSON);
-    expect(taught.body.lesson).toMatchObject({ status: "learning", job_id: "job-slow" });
-
-    setRoute("GET", "/v1/lessons/jobs/job-slow", () => ({
-      status: 200,
-      body: {
-        status: "done",
-        job_id: "job-slow",
-        kind: "learn",
-        result: { version: 7, loss_before: 4, loss_after: 0.3, steps: 30, after_reply: "ok" },
-      },
-    }));
-    const polled = await call("GET", `/jobs/job-slow?lesson_id=${taught.body.lesson.id}`);
-    expect(polled.body.job.status).toBe("done");
-    expect(polled.body.lesson).toMatchObject({ status: "learned", version: 7, after_reply: "ok" });
-  });
-
-  it("records a failed learning job on the lesson", async () => {
-    setRoute("POST", "/v1/lessons", () => ({
-      status: 500,
-      body: { status: "failed", job_id: "job-bad", kind: "learn", error: "out of memory", detail: "out of memory" },
-    }));
-    const res = await call("POST", "/lessons", LESSON);
-    expect(res.body.lesson).toMatchObject({ status: "failed", error: "out of memory" });
-  });
-
-  it("keeps the lesson when the model is offline, to teach on the next sync", async () => {
-    process.env.ANIMA_OWN_LLM_BASE_URL = "http://127.0.0.1:1/v1";
-    const res = await call("POST", "/lessons", LESSON);
-    expect(res.status).toBe(201);
-    expect(res.body.lesson.status).toBe("saved");
-    expect(res.body.lesson.error).toContain("isn't reachable");
-  });
-
-  it("saves lessons even before a model is connected", async () => {
-    delete process.env.ANIMA_OWN_LLM_BASE_URL;
-    const res = await call("POST", "/lessons", LESSON);
-    expect(res.body.lesson).toMatchObject({ status: "saved", error: OWN_MODEL_NOT_CONFIGURED_HINT });
+  it("filters lessons by where they came from, and retries a failed one", async () => {
+    await call("POST", "/lessons", LESSON);
+    const id = lessonIdFor({ sessionId: "sess-1", messageId: "turn_1:assistant", part: null });
+    await saveLesson({ ...(await getLesson(id))!, status: "failed", attempts: 3, error: "boom" });
+    expect((await call("GET", "/lessons?source=auto")).body.lessons).toEqual([]);
+    expect((await call("GET", "/lessons?source=manual")).body.lessons).toHaveLength(1);
+    const retried = await call("POST", `/lessons/${id}/retry`);
+    expect(retried.body.lesson).toMatchObject({ status: "saved", attempts: 0, error: null });
   });
 });
 
-describe("forgetting, relearning and undo", () => {
-  it("deletes a lesson and says a sync is needed to forget it", async () => {
-    const lesson = (await call("POST", "/lessons", LESSON)).body.lesson as ModelLesson;
-    setRoute("DELETE", `/v1/lessons/${lesson.id}`, () => ({
-      status: 200,
-      body: { removed: true, was_learned: true },
-    }));
-    const res = await call("DELETE", `/lessons/${lesson.id}`);
-    expect(res.body).toEqual({ deleted: true, needs_sync: true });
-    expect((await call("GET", "/lessons")).body.lessons).toHaveLength(0);
-    expect((await call("DELETE", `/lessons/${lesson.id}`)).status).toBe(404);
-  });
-
-  it("relearns every stored lesson from the base checkpoint", async () => {
+describe("forgetting and relearning", () => {
+  it("deletes a pending lesson without relearning", async () => {
     await call("POST", "/lessons", LESSON);
-    await call("POST", "/lessons", { ...LESSON, message_id: "turn_2:assistant", chosen: "Hi." });
-    setRoute("POST", "/v1/lessons/sync", () => ({
-      status: 202,
-      body: { status: "queued", job_id: "job-sync", kind: "rebuild" },
-    }));
-    const res = await call("POST", "/sync");
-    expect(res.status).toBe(202);
-    expect(res.body).toMatchObject({ lessons: 2, job: { job_id: "job-sync" } });
-    const sent = calls.find((c) => c.path === "/v1/lessons/sync")!;
-    expect(sent.body.rebuild).toBe(true);
-    expect((sent.body.lessons as unknown[]).length).toBe(2);
+    const id = lessonIdFor({ sessionId: "sess-1", messageId: "turn_1:assistant", part: null });
+    const res = await call("DELETE", `/lessons/${id}`);
+    expect(res.body).toEqual({ deleted: true, relearning: false });
+    expect((await readModelState()).rebuild_seq).toBe(0);
+    expect((await call("DELETE", `/lessons/${id}`)).status).toBe(404);
   });
 
-  it("undoes the last lesson", async () => {
-    setRoute("POST", "/v1/lessons/rollback", () => ({
-      status: 200,
-      body: { status: "done", job_id: "job-undo", kind: "rollback", result: { version: 3, undid: 4 } },
-    }));
-    const res = await call("POST", "/rollback");
-    expect(res.body.job).toMatchObject({ status: "done", result: { undid: 4 } });
+  it("relearns from the base when a learned lesson is deleted", async () => {
+    await uploadModel(bytes(100, 1), bytes(100, 2));
+    await call("POST", "/lessons", LESSON);
+    const id = lessonIdFor({ sessionId: "sess-1", messageId: "turn_1:assistant", part: null });
+    await saveLesson({ ...(await getLesson(id))!, status: "learned", version: 2 });
+    const res = await call("DELETE", `/lessons/${id}`);
+    expect(res.body).toEqual({ deleted: true, relearning: true });
+    const state = await readModelState();
+    expect(state.rebuild_seq).toBe(1);
+    expect((await call("GET", "/status")).body.trainer.relearn_pending).toBe(true);
+
+    expect((await call("POST", "/sync")).status).toBe(202);
+    expect((await readModelState()).rebuild_seq).toBe(2);
   });
 
-  it("brings stored statuses in line with what the weights know", async () => {
-    const lesson = (await call("POST", "/lessons", LESSON)).body.lesson as ModelLesson;
-    expect(lesson.status).toBe("learned");
-    // The model server restarted on a fresh volume: it knows nothing.
-    const status = await call("GET", "/status");
-    expect(status.body).toMatchObject({
-      isSteward: true,
-      configured: true,
-      reachable: true,
-      lessons_total: 1,
-      needs_sync: true,
-      model: { version: 3, block_size: 256 },
-    });
-    expect(status.body.model.learned_ids).toBeUndefined();
-    const [row] = await db
-      .select({ data: userEntities.data })
-      .from(userEntities)
-      .where(
-        and(
-          eq(userEntities.userId, MODEL_TUTOR_PARTITION),
-          eq(userEntities.entityName, MODEL_LESSON_ENTITY),
-          eq(userEntities.entityId, lesson.id),
-        ),
-      );
-    expect((row!.data as ModelLesson).status).toBe("saved");
-  });
-
-  it("reports an unreachable model without failing the panel", async () => {
-    process.env.ANIMA_OWN_LLM_BASE_URL = "http://127.0.0.1:1/v1";
-    const status = await call("GET", "/status");
-    expect(status.status).toBe(200);
-    expect(status.body).toMatchObject({ configured: true, reachable: false, model: null });
-    expect(status.body.error).toContain("isn't reachable");
+  it("will not relearn before a model exists, and explains learn-now without a token", async () => {
+    expect((await call("POST", "/sync")).status).toBe(409);
+    const res = await call("POST", "/learn-now");
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe("dispatch_not_configured");
+    process.env.GITHUB_TRAINER_TOKEN = "ghp_test";
+    expect((await call("POST", "/learn-now")).status).toBe(202);
+    expect((await call("POST", "/learn-now")).status).toBe(429);
   });
 });
 
@@ -420,31 +440,7 @@ describe("advice and drafting", () => {
   });
 });
 
-describe("preferences and export", () => {
-  it("switches the steward's chats to their model without touching other settings", async () => {
-    await db.insert(userProfiles).values({
-      userId: STEWARD,
-      data: { settings: { theme_mode: "light" }, display_name: "Dàvīn" },
-    });
-    const res = await call("PUT", "/preferences", { own_model_chat: true });
-    expect(res.body).toEqual({ preferences: { own_model_chat: true } });
-    expect(await readOwnModelChatPreference(STEWARD)).toBe(true);
-    const [row] = await db.select().from(userProfiles).where(eq(userProfiles.userId, STEWARD));
-    expect(row!.data).toMatchObject({
-      settings: { theme_mode: "light" },
-      display_name: "Dàvīn",
-      model_tutor: { own_model_chat: true },
-    });
-    await call("PUT", "/preferences", { own_model_chat: false });
-    expect(await readOwnModelChatPreference(STEWARD)).toBe(false);
-  });
-
-  it("will not switch chats to a model that is not connected", async () => {
-    delete process.env.ANIMA_OWN_LLM_BASE_URL;
-    const res = await call("PUT", "/preferences", { own_model_chat: true });
-    expect(res.status).toBe(409);
-  });
-
+describe("export", () => {
   it("exports lessons in the formats phases 2 and 3 read", async () => {
     await call("POST", "/lessons", LESSON);
     const sftRes = await call("GET", "/export?format=sft");
@@ -463,4 +459,13 @@ describe("preferences and export", () => {
       rejected: LESSON.rejected,
     });
   });
+});
+
+it("keeps lesson rows inside the model partition", async () => {
+  await call("POST", "/lessons", LESSON);
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(userEntities)
+    .where(eq(userEntities.entityName, MODEL_LESSON_ENTITY));
+  expect(row!.count).toBe(1);
 });

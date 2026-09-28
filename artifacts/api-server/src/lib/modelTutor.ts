@@ -3,9 +3,13 @@
  *
  * A lesson is one correction: the conversation up to a reply, the reply the
  * model gave (rejected), and the reply the steward wanted (chosen), with an
- * optional note saying what went wrong. Lessons live in Postgres (the source
- * of truth, see modelTutorStore.ts) and are sent to the model server, which
- * fine-tunes on them (server/learning.py).
+ * optional note saying what went wrong. Lessons queue in Postgres
+ * (modelTutorStore.ts); server/trainer.py learns them in the background and
+ * publishes the next version of the model (see ownModel.ts).
+ *
+ * Automatic lessons ("always learning") come from ordinary own-model chat
+ * turns: the main Anima model writes the reply it would have given, and the
+ * own model learns from that — see buildTeacherMessages.
  *
  * Advice is standing guidance ("ask a follow-up question when I'm sad").
  * The own model is far too small to follow written instructions, so advice
@@ -16,7 +20,6 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import type { OwnModelLessonPayload } from "./ownModel";
 
 export const MAX_CONTEXT_MESSAGES = 12;
 export const MAX_CONTEXT_CHARS = 2000;
@@ -25,7 +28,9 @@ export const MAX_NOTE_CHARS = 1000;
 export const MAX_ADVICE_CHARS = 500;
 export const MAX_ADVICE_ITEMS = 50;
 
-export type LessonStatus = "learned" | "learning" | "saved" | "failed";
+/** saved = waiting for the trainer; failed lessons are retried a few times. */
+export type LessonStatus = "saved" | "learned" | "failed";
+export type LessonSource = "manual" | "auto";
 
 export interface LessonTurn {
   role: "user" | "assistant";
@@ -43,10 +48,11 @@ export interface ModelLesson {
   part: number | null;
   source_brand: string | null;
   taught_by: string;
+  source: LessonSource;
   created_date: string;
   updated_date: string;
   status: LessonStatus;
-  job_id: string | null;
+  attempts: number;
   version: number | null;
   loss_before: number | null;
   loss_after: number | null;
@@ -142,16 +148,22 @@ export function parseLessonInput(body: unknown): LessonInput {
   };
 }
 
-export function newLesson(input: LessonInput, taughtBy: string, now = new Date()): ModelLesson {
+export function newLesson(
+  input: LessonInput,
+  taughtBy: string,
+  now = new Date(),
+  source: LessonSource = "manual",
+): ModelLesson {
   const iso = now.toISOString();
   return {
     id: lessonIdFor({ sessionId: input.session_id, messageId: input.message_id, part: input.part }),
     ...input,
     taught_by: taughtBy,
+    source,
     created_date: iso,
     updated_date: iso,
     status: "saved",
-    job_id: null,
+    attempts: 0,
     version: null,
     loss_before: null,
     loss_after: null,
@@ -159,67 +171,6 @@ export function newLesson(input: LessonInput, taughtBy: string, now = new Date()
     after_reply: null,
     error: null,
   };
-}
-
-export function toOwnModelPayload(lesson: ModelLesson): OwnModelLessonPayload {
-  const created = Date.parse(lesson.created_date);
-  return {
-    id: lesson.id,
-    messages: lesson.context,
-    chosen: lesson.chosen,
-    rejected: lesson.rejected,
-    ...(Number.isFinite(created) ? { created_at: created / 1000 } : {}),
-  };
-}
-
-function finiteOrNull(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-/** Fold a model-server job for this lesson back into the stored record. */
-export function applyLearnJob(
-  lesson: ModelLesson,
-  job: { status: string; job_id?: string; result?: Record<string, unknown> | null; error?: string | null },
-  now = new Date(),
-): ModelLesson {
-  const next: ModelLesson = { ...lesson, updated_date: now.toISOString(), job_id: job.job_id ?? lesson.job_id };
-  if (job.status === "done") {
-    const result = job.result ?? {};
-    return {
-      ...next,
-      status: "learned",
-      version: finiteOrNull(result.version),
-      loss_before: finiteOrNull(result.loss_before),
-      loss_after: finiteOrNull(result.loss_after),
-      steps: finiteOrNull(result.steps),
-      after_reply: typeof result.after_reply === "string" ? result.after_reply : null,
-      error: null,
-    };
-  }
-  if (job.status === "failed") {
-    return { ...next, status: "failed", error: (job.error || "Learning failed").slice(0, 300) };
-  }
-  return { ...next, status: "learning", error: null };
-}
-
-/**
- * Bring a stored lesson in line with what the model server says its current
- * weights know (after a relearn, a rollback, or a restart on a fresh volume).
- * Returns null when nothing changed. Only call while the server is idle.
- */
-export function reconcileLesson(
-  lesson: ModelLesson,
-  learned: boolean,
-  version: number,
-  now = new Date(),
-): ModelLesson | null {
-  if (learned && lesson.status !== "learned") {
-    return { ...lesson, status: "learned", version, error: null, updated_date: now.toISOString() };
-  }
-  if (!learned && (lesson.status === "learned" || lesson.status === "learning")) {
-    return { ...lesson, status: "saved", updated_date: now.toISOString() };
-  }
-  return null;
 }
 
 // ------------------------------------------------------------------ export
@@ -314,4 +265,38 @@ export function cleanDraft(raw: string): string {
   const quoted = out.match(/^["“](.*)["”]$/s);
   if (quoted) out = quoted[1]!.trim();
   return out.slice(0, MAX_REPLY_CHARS);
+}
+
+/**
+ * "Always learning": the main Anima model answers the same moment the own
+ * model just did, and the own model learns that answer. Given the recent
+ * conversation only — the character sheet and memories the main chat prompt
+ * carries would not fit in the own model's context anyway, so the lesson
+ * teaches what the student can actually see.
+ */
+export function buildTeacherMessages(input: {
+  context: LessonTurn[];
+  advice: string[];
+}): ChatCompletionMessageParam[] {
+  const guidance = input.advice.filter(Boolean);
+  const system = [
+    "You are Anima, a warm, emotionally present companion. You are writing an example reply " +
+      "for a very small companion model to learn from.",
+    `Reply to the user's last message in under ${DRAFT_MAX_WORDS} words, naturally and in character. ` +
+      "Answer with the reply text only: no preamble, no quotation marks, no notes.",
+    guidance.length
+      ? `Standing guidance from the steward:\n${guidance.map((a) => `- ${a}`).join("\n")}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  return [
+    { role: "system", content: system },
+    ...input.context.map(
+      (turn): ChatCompletionMessageParam =>
+        turn.role === "user"
+          ? { role: "user", content: turn.content }
+          : { role: "assistant", content: turn.content },
+    ),
+  ];
 }

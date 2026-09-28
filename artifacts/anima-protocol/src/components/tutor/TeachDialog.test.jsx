@@ -58,19 +58,12 @@ describe("TeachDialog", () => {
     expect(byText("Teach").disabled).toBe(true);
   });
 
-  it("drafts a better reply from the note, then teaches it and shows what it learned", async () => {
+  it("drafts a better reply from the note, then queues it for the model to learn", async () => {
     const api = {
       draft: vi.fn().mockResolvedValue({ draft: "I'm here. What happened?" }),
       teach: vi.fn().mockResolvedValue({
-        lesson: {
-          id: "lsn_1",
-          status: "learned",
-          version: 4,
-          steps: 14,
-          loss_before: 5.25,
-          loss_after: 0.31,
-          after_reply: "I'm here. What happened?",
-        },
+        lesson: { id: "lsn_1", status: "saved", source: "manual" },
+        trainer_started: true,
       }),
     };
     render(api);
@@ -102,27 +95,27 @@ describe("TeachDialog", () => {
       has_note: true,
       is_drafted: true,
       is_own_model_reply: true,
-      is_learned: true,
+      is_trainer_started: true,
     });
     const result = document.body.querySelector('[data-testid="teach-result"]');
-    expect(result.textContent).toContain("Learned — now on version 4");
-    expect(result.textContent).toContain("0.52% → 73% per word");
-    expect(result.textContent).toContain("it now says");
+    expect(result.textContent).toContain("Lesson saved.");
+    expect(result.textContent).toContain("learning it now");
   });
 
-  it("explains when the lesson is saved but the model is offline", async () => {
+  it("says when the next practice run will pick the lesson up", async () => {
     const api = {
-      teach: vi.fn().mockResolvedValue({
-        lesson: { id: "lsn_1", status: "saved", error: "Your own model isn't reachable right now." },
-      }),
+      teach: vi.fn().mockResolvedValue({ lesson: { id: "lsn_1", status: "saved" }, trainer_started: false }),
     };
     render(api);
     const chosen = document.body.querySelector('textarea[aria-label="What it should have said"]');
     await act(async () => setValue(chosen, "Hello."));
     await act(async () => byText("Teach").click());
     await flush();
-    expect(document.body.textContent).toContain("Saved, but not learned yet");
-    expect(track).toHaveBeenCalledWith("model_lesson_taught", expect.objectContaining({ is_learned: false }));
+    expect(document.body.textContent).toContain("within about 15 minutes");
+    expect(track).toHaveBeenCalledWith(
+      "model_lesson_taught",
+      expect.objectContaining({ is_trainer_started: false }),
+    );
   });
 
   it("shows the API's reason when teaching fails", async () => {

@@ -123,12 +123,9 @@ import { classifyDbError, errorCauseBlob } from "../lib/dbErrors";
 import { finalizeAssistantReply } from "../lib/visibleAssistantReply";
 import {
   OWN_MODEL_EMPTY_REPLY,
-  OWN_MODEL_TEMPERATURE,
-  asOwnModelError,
-  buildOwnModelMessages,
-  createOwnModelChatStream,
-  ownModelId,
-  wantsOwnModelReply,
+  OWN_MODEL_ID,
+  ownModelAccess,
+  readModelState,
 } from "../lib/ownModel";
 import {
   beginChatTurn,
@@ -1493,6 +1490,9 @@ router.post("/messages", async (req, res) => {
     system_prompt?: string;
     include_repository_knowledge?: boolean;
     deep_mode?: boolean;
+    /** Reply the own model wrote in the browser (see lib/ownModel.ts). */
+    own_model_reply?: string;
+    own_model_version?: number;
     persist?: boolean;
     turn_id?: string;
     persistence_owner?: PersistenceOwner;
@@ -1938,17 +1938,31 @@ router.post("/messages", async (req, res) => {
     mode,
     deepMode: Boolean(body.deep_mode),
   });
-  // A steward who switched on "Answer my chats with my model" (Settings →
-  // Model Tutor) gets their own model instead of the Anima chain. The check
-  // reads the profile loaded above; nobody else pays for it.
-  const ownModelTurn = await wantsOwnModelReply({
-    userId,
-    sessionClaims: getAuth(req).sessionClaims,
-    profile: worldKnowledgeResult.profile,
-  }).catch((error) => {
-    logger.warn({ error }, "Own-model routing check failed; using the Anima chain");
-    return false;
-  });
+  // The own model runs in the browser; the client sends the reply it
+  // wrote and this turn records it like any other. Honoured only while the
+  // own model answers this user (Settings → Model Tutor) — otherwise the
+  // Anima chain replies as usual. Only requests carrying a reply pay for the
+  // state read.
+  const ownModelReply =
+    typeof body.own_model_reply === "string"
+      ? body.own_model_reply.slice(0, 8000)
+      : null;
+  const ownModelTurn =
+    ownModelReply !== null &&
+    (await readModelState()
+      .then((state) =>
+        ownModelAccess({
+          userId,
+          sessionClaims: getAuth(req).sessionClaims,
+          profile: worldKnowledgeResult.profile,
+          state,
+        }),
+      )
+      .then((access) => access.enabled)
+      .catch((error) => {
+        logger.warn({ error }, "Own-model access check failed; using the Anima chain");
+        return false;
+      }));
 
   preStreamPersist = (async () => {
     await syncTypedSession({
@@ -2003,35 +2017,14 @@ router.post("/messages", async (req, res) => {
     if (ownModelTurn) {
       usedProvider = "own";
       usedBrand = "own";
-      usedModel = ownModelId();
-      sse.setPhase("waking");
-      const open = openStreamAbort(llmChatMessagesOpenTimeoutMs({ freeTierCascade: false }));
-      try {
-        const completion = await createOwnModelChatStream({
-          messages: buildOwnModelMessages(recentMessages, content),
-          maxTokens: replyMaxTokens,
-          // Cooler than the Anima chain's 0.85: a tiny model's freshly taught
-          // replies only show reliably with less sampling noise.
-          temperature: OWN_MODEL_TEMPERATURE,
-          signal: open.signal,
-        });
-        open.cancel();
-        sse.setPhase("generating");
-        usedModel = completion.model;
-        usedTier = completion.tier;
-        usedProvider = completion.provider;
-        usedBrand = completion.brand;
-        const streamed = await consumeLlmStream(completion.stream, consumeOpts);
-        // A tiny model sometimes closes its turn at once. Keep the bubble so
-        // the steward can teach it what to say there.
-        const replied = finalizeAssistantReply(streamed.content);
-        fullResponse = replied || OWN_MODEL_EMPTY_REPLY;
-        if (!replied) emitDelta(OWN_MODEL_EMPTY_REPLY);
-      } catch (error) {
-        throw asOwnModelError(error);
-      } finally {
-        open.cancel();
-      }
+      usedTier = "standard";
+      const version = Number(body.own_model_version);
+      usedModel = Number.isInteger(version) && version > 0 ? `${OWN_MODEL_ID} v${version}` : OWN_MODEL_ID;
+      sse.setPhase("generating");
+      // A tiny model sometimes closes its turn at once. Keep the bubble so
+      // it can still be taught what to say there.
+      fullResponse = finalizeAssistantReply(ownModelReply ?? "") || OWN_MODEL_EMPTY_REPLY;
+      emitDelta(fullResponse);
     } else if (isLocalEnsembleEnabled()) {
       writeSse(res, { status: "ensemble", phase: "gathering", minds: [] });
       const drafts = await draftLocalMinds({
@@ -2126,6 +2119,11 @@ router.post("/messages", async (req, res) => {
       failed_over: failedOver,
       ensemble_minds: ensembleMinds,
       ensemble_combined: ensembleCombined,
+      // Own-model turns outside therapy, adult scenes and "continue" may
+      // become automatic lessons (routes/ownModel.ts).
+      ...(ownModelTurn
+        ? { own_model_learnable: !therapyActive && !adultActive && !body.is_continue }
+        : {}),
     };
     try {
       await telemetry.measure(

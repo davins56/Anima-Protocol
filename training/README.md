@@ -9,7 +9,7 @@ From-scratch LLM for the Anima Protocol app, sized for free-tier GPUs.
 | 1 — Pretrain | `training/phase1/train.py` (+ `data_pipeline.py`) | `out/anima-tiny/ckpt.pt` |
 | 2 — SFT | `training/phase2/sft.py` | `out/anima-sft/ckpt.pt` |
 | 3 — DPO | `training/phase3/dpo.py` | `out/anima-dpo/ckpt.pt` |
-| 4 — Serve + learn | `server/server.py` | OpenAI-compatible API that learns from lessons taught in the app |
+| 4 — Into the app | `server/export_web.py` | `anima-model.bin`, uploaded in Settings → Model Tutor; runs in the browser, learns via `server/trainer.py` |
 
 Paths are anchored at the repo root, so the commands below work from any cwd.
 Checkpoints and tokenizer outputs (`out/`, `data/anima_tokens/`, `data/anima_corpus.txt`) are gitignored.
@@ -19,25 +19,26 @@ Checkpoints and tokenizer outputs (`out/`, `data/anima_tokens/`, `data/anima_cor
 1. `mkdir -p data/raw data/sft data/prefs` and add your corpus + datasets.
 2. `python training/phase1/data_pipeline.py` → `python training/phase1/train.py`
 3. `python training/phase2/sft.py` → `python training/phase3/dpo.py`
-4. `python server/server.py` (listens on 127.0.0.1:8000 only).
+4. `python server/export_web.py` → upload `out/anima-model.bin` in Settings → Model Tutor.
 
-## Serving, and teaching it from the app
+## In the app, and teaching it
 
-`server/server.py` serves this checkpoint as an OpenAI-compatible API
-(`/v1/chat/completions`, streaming or not) and fine-tunes it on lessons the
-steward teaches in the app — **Teach** under a chat reply, and Settings → Model
-Tutor. The steward can route their own chats to it; everyone else stays on the
-self-hosted `anima-chat` model. Setup, deploy and how learning works:
+The exported model runs inside the app, on each person's device. Lessons
+taught in the app (**Teach** under a chat reply, plus automatic ones when
+"Always learning" is on) are learned by `server/trainer.py` on a GitHub Actions
+schedule, which publishes the next version. Setup and how learning works:
 [`docs/own-model.md`](../docs/own-model.md).
 
-To listen beyond localhost, set `ANIMA_SERVER_TOKEN` and `ANIMA_HOST=0.0.0.0`.
-Clients then send `Authorization: Bearer <token>`.
+`server/server.py` still serves a checkpoint as an OpenAI-compatible API for
+local experiments (127.0.0.1:8000; set `ANIMA_SERVER_TOKEN` and
+`ANIMA_HOST=0.0.0.0` to listen wider).
 
 Lessons downloaded from the app (`steward_lessons.jsonl`,
 `steward_preferences.jsonl`) go in `data/sft/` and `data/prefs/`; phases 2 and 3
 train on them alongside your datasets.
 
-Tests: `pip install -r server/requirements-test.txt && python -m unittest discover -s server/tests`.
+Tests: `pip install -r server/requirements-test.txt -r server/requirements-trainer.txt && python -m unittest discover -s server/tests`
+(the trainer tests also need `DATABASE_URL`; they use a throwaway schema).
 
 ## Status
 

@@ -8,6 +8,7 @@ import {
   loadRosterCharacters,
 } from "@/lib/loadRosterCharacters";
 import { animaApi } from "@/api/animaApi";
+import { loadOwnModelConfig, queueOwnModelLesson, writeOwnModelReply } from "@/lib/ownModel/chat";
 import { usePaginatedEntities } from "@/hooks/usePaginatedEntities";
 import { useStoreSync } from "@/lib/useStoreSync";
 import { useConfirm } from "@/lib/ConfirmDialog";
@@ -427,6 +428,11 @@ export default function Chat() {
       return [...prev, id];
     });
   };
+
+  // Warm the own-model check (Settings → Model Tutor) so a send never waits on it.
+  useEffect(() => {
+    loadOwnModelConfig();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1837,6 +1843,22 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // Brief typing affordance while waiting on first token (real network/model latency).
       streamUi.showTyping();
 
+      // When the own model answers this account (Settings → Model Tutor) it
+      // writes the reply here on the device and the server records it. If it
+      // can't run on this device, Anima answers as usual.
+      let ownModelTurn = null;
+      try {
+        ownModelTurn = await writeOwnModelReply({
+          messages: updatedMessages,
+          onLoading: () => streamUi.showStatus({ status: "thinking" }),
+          onDelta: streamUi.showStreamingPartial,
+        });
+      } catch (ownModelErr) {
+        console.warn("Own model could not reply on this device:", ownModelErr?.message);
+        toast.error("Your own model couldn't run on this device — Anima answered instead.");
+        streamUi.showTyping();
+      }
+
       const resultPayload = await streamChatReplyWithTurnRetry({
         turnId,
         mintTurnId: createChatTurnId,
@@ -1874,6 +1896,9 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
               hidden_sequences: hiddenThread.hidden,
               conversational_weather: hiddenThread.weather,
             },
+            ...(ownModelTurn
+              ? { ownModelReply: ownModelTurn.reply, ownModelVersion: ownModelTurn.version }
+              : {}),
           }),
         onRetry: () => {
           streamedSoFar = "";
@@ -1886,6 +1911,11 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         turnId = resultPayload.turn_id;
         userMessage.id = `${turnId}:user`;
         userMessage.turn_id = turnId;
+      }
+      if (ownModelTurn?.learning && resultPayload.brand === "own") {
+        // "Always learning": Anima drafts what it would have said and the
+        // own model learns it in the background.
+        queueOwnModelLesson({ turnId, messages: updatedMessages });
       }
       const result = finalizeAssistantReply(
         resultPayload.content,
