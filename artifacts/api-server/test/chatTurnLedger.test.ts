@@ -276,6 +276,43 @@ describe("chat turn ledger", () => {
 
     const open = await latestOpenChatTurn(userId, staleSession);
     expect(open?.id).toBe(freshId);
+
+    const buriedSession = `${sessionId}_buried`;
+    const olderId = `turn_${prefix}_buried_open`;
+    await beginChatTurn({
+      id: olderId,
+      sessionId: buriedSession,
+      userId,
+      userContent: "still open",
+      persistenceOwner: "server",
+    });
+    await db
+      .update(chatTurns)
+      .set({
+        createdAt: new Date(Date.now() - 10 * 60_000),
+        leaseExpiresAt: null,
+        status: "pending",
+      })
+      .where(eq(chatTurns.id, olderId));
+    for (let i = 0; i < 8; i += 1) {
+      const id = `turn_${prefix}_buried_stale_${i}`;
+      await beginChatTurn({
+        id,
+        sessionId: buriedSession,
+        userId,
+        userContent: `stale ${i}`,
+        persistenceOwner: "server",
+      });
+      await db
+        .update(chatTurns)
+        .set({
+          leaseExpiresAt: longAgo,
+          status: "pending",
+          createdAt: new Date(Date.now() - i * 1000),
+        })
+        .where(eq(chatTurns.id, id));
+    }
+    expect((await latestOpenChatTurn(userId, buriedSession))?.id).toBe(olderId);
     expect(await readChatTurn(staleId, userId)).toMatchObject({
       status: "failed",
       lastError: "Companion turn lease expired",
