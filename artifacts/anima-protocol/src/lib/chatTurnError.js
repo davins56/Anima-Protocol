@@ -1,3 +1,8 @@
+import {
+  CONNECTION_DROPPED_STATUS,
+  isConnectionDroppedError,
+} from "./lateCompanionReply.js";
+
 const GENERIC_PROVIDER_RETURNED_RE = /(?:\b\d{3}\s+)?provider returned error/i;
 const OPENROUTER_ZDR_DUMP_RE =
   /zdr violation|guardrail restrictions|0 endpoints out of/i;
@@ -32,6 +37,7 @@ const OPENROUTER_ZDR_PRIVACY_HINT =
  * @returns {string}
  */
 export function chatTurnErrorMessage(err) {
+  if (isConnectionDroppedError(err)) return CONNECTION_DROPPED_STATUS;
   const raw = err instanceof Error && err.message ? String(err.message).trim() : "";
   const isEngineError =
     err instanceof ReferenceError ||

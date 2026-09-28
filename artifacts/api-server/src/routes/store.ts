@@ -22,6 +22,33 @@ import type { Request, Response, NextFunction } from "express";
 import { addClient, removeClient, notifyUser } from "../lib/storeEvents";
 import { presentEntityData } from "../lib/entityRecord";
 import { logger } from "../lib/logger";
+import {
+  deleteAllPdfDocumentsForUser,
+  deleteChatPdfsForSession,
+  deleteLorePdfsForCharacter,
+} from "../lib/pdf/store";
+
+/**
+ * PDF rows are cleaned up before a companion delete, a chat-session delete,
+ * or a replace restore. Any failure here — a missing table, a dropped
+ * connection, a statement timeout — must be logged and ignored. The entity
+ * delete and the restore have already been requested and must still finish.
+ * Chunks stay tied to documents by ON DELETE CASCADE; this only keeps the
+ * cleanup from blocking that delete.
+ */
+async function bestEffortPdfCleanup(
+  action: "companion_delete" | "chat_session_delete" | "replace_restore",
+  run: () => Promise<void>,
+): Promise<void> {
+  try {
+    await run();
+  } catch (err) {
+    logger.error(
+      { err, action },
+      "PDF cleanup failed; the delete or restore will continue",
+    );
+  }
+}
 
 const router = Router();
 
@@ -614,6 +641,15 @@ router.post("/restore", async (req, res) => {
 
     return count;
   });
+
+  if (mode === "replace") {
+    // PDF chunks are not part of the entity backup. A full replace should
+    // not leave the previous account's files attached to the new data.
+    // Failure here must not undo the restore that just committed.
+    await bestEffortPdfCleanup("replace_restore", () =>
+      deleteAllPdfDocumentsForUser(userId),
+    );
+  }
 
   res.json({ restored: true, mode, count: result });
 });
@@ -1369,6 +1405,15 @@ router.put("/:entity/:id", async (req, res) => {
 router.delete("/:entity/:id", async (req, res) => {
   const userId = getUserId(req);
   const { entity, id } = req.params;
+  if (entity === "Character" || entity === "Anima") {
+    await bestEffortPdfCleanup("companion_delete", () =>
+      deleteLorePdfsForCharacter(userId, id),
+    );
+  } else if (entity === CHAT_SESSION) {
+    await bestEffortPdfCleanup("chat_session_delete", () =>
+      deleteChatPdfsForSession(userId, id),
+    );
+  }
   await db
     .delete(userEntities)
     .where(

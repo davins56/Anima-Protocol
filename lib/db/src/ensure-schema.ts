@@ -20,14 +20,26 @@ export const REQUIRED_TABLES = [
   "companion_memories",
   "memory_embeddings",
   "uploaded_images",
+  "pdf_documents",
+  "pdf_chunks",
   // Companion state used on every /api/chat/messages turn. Missing these
   // previously 500'd the whole reply before the LLM was even called.
   "anima_evolution",
   "anima_relationships",
   "anima_narrative_arcs",
+  "resonance_memories",
 ] as const;
 
 export type RequiredTable = (typeof REQUIRED_TABLES)[number];
+
+/** Created on demand. A missing pair must not replay the rest of the schema. */
+const PDF_SCHEMA_TABLES = ["pdf_documents", "pdf_chunks"] as const satisfies readonly RequiredTable[];
+
+function isPdfSchemaTable(
+  table: string,
+): table is (typeof PDF_SCHEMA_TABLES)[number] {
+  return (PDF_SCHEMA_TABLES as readonly string[]).includes(table);
+}
 
 export type SchemaInspection = {
   ok: boolean;
@@ -167,7 +179,131 @@ export async function ensureSchema(
   return withTransientDbRetry(() => runEnsureSchema(getPool()));
 }
 
+async function ensurePdfSchema(
+  run: (sql: string, label: string) => Promise<void>,
+): Promise<void> {
+  // Companion / chat PDFs. Original bytes are not kept — text is extracted
+  // at upload and stored as chunks. search_vector is Postgres full-text
+  // (no extra model call on the chat droplet).
+  await run(
+    `CREATE TABLE IF NOT EXISTS "pdf_documents" (
+      "id" text PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "scope" text NOT NULL,
+      "session_id" text,
+      "character_id" text,
+      "filename" text NOT NULL,
+      "byte_size" integer DEFAULT 0 NOT NULL,
+      "page_count" integer DEFAULT 0 NOT NULL,
+      "chunk_count" integer DEFAULT 0 NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "updated_at" timestamp DEFAULT now() NOT NULL
+    )`,
+    "table:pdf_documents",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "pdf_documents_user_session_idx"
+       ON "pdf_documents" USING btree ("user_id", "scope", "session_id")`,
+    "index:pdf_documents_user_session_idx",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "pdf_documents_user_character_idx"
+       ON "pdf_documents" USING btree ("user_id", "scope", "character_id")`,
+    "index:pdf_documents_user_character_idx",
+  );
+  await run(
+    `CREATE TABLE IF NOT EXISTS "pdf_chunks" (
+      "id" text PRIMARY KEY NOT NULL,
+      "document_id" text NOT NULL,
+      "user_id" text NOT NULL,
+      "chunk_index" integer NOT NULL,
+      "page_start" integer DEFAULT 1 NOT NULL,
+      "page_end" integer DEFAULT 1 NOT NULL,
+      "content" text NOT NULL,
+      "search_vector" tsvector NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL
+    )`,
+    "table:pdf_chunks",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "pdf_chunks_document_idx"
+       ON "pdf_chunks" USING btree ("user_id", "document_id", "chunk_index")`,
+    "index:pdf_chunks_document_idx",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "pdf_chunks_search_idx"
+       ON "pdf_chunks" USING gin ("search_vector")`,
+    "index:pdf_chunks_search_idx",
+  );
+  await run(
+    `DO $$ BEGIN
+       ALTER TABLE "pdf_chunks"
+         ADD CONSTRAINT "pdf_chunks_document_id_fk"
+         FOREIGN KEY ("document_id")
+         REFERENCES "pdf_documents"("id")
+         ON DELETE CASCADE;
+     EXCEPTION
+       WHEN duplicate_object THEN NULL;
+       WHEN undefined_table THEN NULL;
+     END $$`,
+    "fk:pdf_chunks_document_id",
+  );
+}
+
+function tablesCreatedByRun(
+  before: SchemaInspection,
+  after: SchemaInspection,
+): RequiredTable[] {
+  const createdTables: RequiredTable[] = [];
+  for (const table of after.presentTables) {
+    if (before.missingTables.includes(table)) createdTables.push(table);
+  }
+  return createdTables;
+}
+
+/**
+ * Existing databases already have `chat_turns` from the fast path, which
+ * skips CREATE TABLE. The lease columns still have to land or a retry join
+ * cannot see the owner across isolates. A complete schema is left untouched.
+ */
+async function ensureChatTurnLeaseColumns(db: Queryable): Promise<void> {
+  let names = new Set<string>();
+  try {
+    const found = await db.query(
+      `SELECT column_name
+         FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'chat_turns'
+          AND column_name IN ('id', 'lease_expires_at', 'waiting_until')`,
+    );
+    names = new Set(
+      (found.rows ?? []).map((row) =>
+        String((row as { column_name?: string }).column_name || ""),
+      ),
+    );
+  } catch {
+    return;
+  }
+  if (!names.has("id")) return;
+  const statements = [
+    !names.has("lease_expires_at")
+      ? `ALTER TABLE "chat_turns" ADD COLUMN IF NOT EXISTS "lease_expires_at" timestamp`
+      : "",
+    !names.has("waiting_until")
+      ? `ALTER TABLE "chat_turns" ADD COLUMN IF NOT EXISTS "waiting_until" timestamp`
+      : "",
+  ].filter(Boolean);
+  for (const statement of statements) {
+    try {
+      await db.query(statement);
+    } catch {
+      // The CREATE TABLE path below includes these columns on a fresh database.
+    }
+  }
+}
+
 async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
+  await ensureChatTurnLeaseColumns(db);
   // Inspect must not gate DDL when it throws (Hyperdrive/postgres.js array-bind
   // used to skip every CREATE IF NOT EXISTS). When inspect succeeds and every
   // required table is already present, skip the ~50 sequential CREATE
@@ -184,6 +320,29 @@ async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
     };
   }
   const errors: string[] = [];
+  const missingPdf = before.missingTables.filter(isPdfSchemaTable);
+  const missingOther = before.missingTables.filter((table) => !isPdfSchemaTable(table));
+  // Opening a chat must not replay every CREATE/INDEX because the PDF tables
+  // are the only ones missing (the first request after they were added).
+  if (missingOther.length === 0 && missingPdf.length > 0) {
+    const run = async (sql: string, label: string): Promise<void> => {
+      try {
+        await db.query(sql);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        errors.push(`${label}: ${message.slice(0, 240)}`);
+      }
+    };
+    await ensurePdfSchema(run);
+    const after = await inspectSchema(db);
+    return {
+      ok: after.ok,
+      missingBefore: before.missingTables,
+      createdTables: tablesCreatedByRun(before, after),
+      hasPgTrgm: before.hasPgTrgm,
+      errors,
+    };
+  }
   const createdTables: RequiredTable[] = [];
 
   const run = async (sql: string, label: string): Promise<void> => {
@@ -289,6 +448,10 @@ async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
     "index:uploaded_images_user_idx",
   );
 
+  if (missingPdf.length > 0) {
+    await ensurePdfSchema(run);
+  }
+
   await run(
     `CREATE TABLE IF NOT EXISTS "chat_sessions" (
       "id" text PRIMARY KEY NOT NULL,
@@ -334,6 +497,8 @@ async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
       "assistant_content" text DEFAULT '' NOT NULL,
       "metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
       "last_error" text,
+      "lease_expires_at" timestamp,
+      "waiting_until" timestamp,
       "created_at" timestamp DEFAULT now() NOT NULL,
       "updated_at" timestamp DEFAULT now() NOT NULL,
       "committed_at" timestamp
@@ -408,6 +573,29 @@ async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
     `CREATE UNIQUE INDEX IF NOT EXISTS "anima_relationships_user_anima_uq"
        ON "anima_relationships" USING btree ("user_id","anima_id")`,
     "index:anima_relationships_user_anima_uq",
+  );
+
+  await run(
+    `CREATE TABLE IF NOT EXISTS "resonance_memories" (
+      "id" text PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "anima_id" text NOT NULL,
+      "session_id" text,
+      "title" text DEFAULT '' NOT NULL,
+      "body" text DEFAULT '' NOT NULL,
+      "resonance_snapshot" jsonb DEFAULT '{"intimacy":30,"powerDynamic":0,"spiritualAttunement":20,"primalIntensity":15,"crossoverOpenness":50}'::jsonb NOT NULL,
+      "emotional_tone" text DEFAULT 'neutral' NOT NULL,
+      "tags" jsonb DEFAULT '[]'::jsonb NOT NULL,
+      "intensity" integer DEFAULT 60 NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "last_recalled_at" timestamp
+    )`,
+    "table:resonance_memories",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "resonance_mem_user_anima_idx"
+       ON "resonance_memories" USING btree ("user_id","anima_id","created_at")`,
+    "index:resonance_mem_user_anima_idx",
   );
 
   await run(

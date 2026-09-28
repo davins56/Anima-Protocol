@@ -9,6 +9,7 @@ import LoreKeywordHighlighter from "@/components/lore/LoreKeywordHighlighter";
 import MediaLightbox from "./MediaLightbox";
 import AudioPlayer from "./AudioPlayer";
 import DeviceScanCard from "./DeviceScanCard";
+import PdfFileChip from "@/components/pdf/PdfFileChip";
 import { renderItalicText } from "./renderItalicText";
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
@@ -30,6 +31,7 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
   // Extract media from message attachments
   const images = (message.attachments || []).filter((a) => a.type === "image").map((a) => a.url);
   const audioClips = (message.attachments || []).filter((a) => a.type === "audio");
+  const pdfFiles = (message.attachments || []).filter((a) => a.type === "pdf");
 
   const handleEditSave = () => {
     if (editText.trim() && onEditMessage) {
@@ -166,6 +168,18 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
                />
              )}
            </>
+           )}
+
+           {pdfFiles.length > 0 && (
+            <div className="mt-2 space-y-1.5">
+              {pdfFiles.map((file, idx) => (
+                <PdfFileChip
+                  key={file.id || idx}
+                  name={file.name || file.filename || "PDF"}
+                  pageCount={file.page_count || file.pageCount}
+                />
+              ))}
+            </div>
            )}
 
            {/* Media attachments */}

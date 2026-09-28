@@ -8,7 +8,6 @@ import {
   boolean,
   uniqueIndex,
   index,
-  primaryKey,
   customType,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -104,6 +103,11 @@ export type ChatMessage = typeof chatMessages.$inferSelect;
  * Durable chat-turn ledger. A generated reply is checkpointed here before the
  * SSE `done` event, then idempotent message persistence advances it to
  * `committed`. Failed/client-interrupted writes remain retryable.
+ *
+ * `lease_expires_at` is the running-owner lease. A pending turn whose lease
+ * has expired can be claimed by another isolate. `waiting_until` is set by a
+ * retry that is joined to that owner so a disconnect does not abort the slot
+ * while someone is still waiting.
  */
 export const chatTurns = pgTable(
   "chat_turns",
@@ -120,6 +124,8 @@ export const chatTurns = pgTable(
     assistantContent: text("assistant_content").notNull().default(""),
     metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
     lastError: text("last_error"),
+    leaseExpiresAt: timestamp("lease_expires_at"),
+    waitingUntil: timestamp("waiting_until"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
     committedAt: timestamp("committed_at"),
@@ -388,38 +394,74 @@ export const uploadedImages = pgTable(
 
 export type UploadedImage = typeof uploadedImages.$inferSelect;
 
-/** Raw bytes. node-pg and postgres.js both hand back a Buffer for bytea. */
-const bytea = customType<{ data: Uint8Array; driverData: Uint8Array | string }>({
+/** Postgres full-text column. Populated in SQL with to_tsvector — not by Drizzle. */
+const tsvector = customType<{ data: string }>({
   dataType() {
-    return "bytea";
-  },
-  fromDriver(value) {
-    if (typeof value === "string") {
-      return Buffer.from(value.startsWith("\\x") ? value.slice(2) : value, "hex");
-    }
-    return value;
+    return "tsvector";
   },
 });
 
 /**
- * Weights of the steward's own model, in 512 KiB chunks per version:
- * "inference" (what browsers download and run) and "master" (fp16 weights
- * the background trainer resumes from). Written by the Model Tutor upload and
- * by server/trainer.py, which creates the same table if it is missing — keep
- * the two definitions in step (server/trainer.py BLOBS_DDL).
+ * PDF text the user shared in a chat or attached to a companion's lore.
+ * The original file bytes are not stored. `pdf_chunks.search_vector` is
+ * filled at insert time for Postgres full-text retrieval.
  */
-export const ownModelBlobs = pgTable(
-  "own_model_blobs",
+export const pdfDocuments = pgTable(
+  "pdf_documents",
   {
-    version: integer("version").notNull(),
-    kind: text("kind").notNull(),
-    idx: integer("idx").notNull(),
-    data: bytea("data").notNull(),
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    /** "chat" (this conversation) or "lore" (every chat with the companion). */
+    scope: text("scope").notNull(),
+    sessionId: text("session_id"),
+    characterId: text("character_id"),
+    filename: text("filename").notNull(),
+    byteSize: integer("byte_size").notNull().default(0),
+    pageCount: integer("page_count").notNull().default(0),
+    chunkCount: integer("chunk_count").notNull().default(0),
     createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => ({
-    pk: primaryKey({ name: "own_model_blobs_pk", columns: [t.version, t.kind, t.idx] }),
+    pdfDocumentsUserSessionIdx: index("pdf_documents_user_session_idx").on(
+      t.userId,
+      t.scope,
+      t.sessionId,
+    ),
+    pdfDocumentsUserCharacterIdx: index("pdf_documents_user_character_idx").on(
+      t.userId,
+      t.scope,
+      t.characterId,
+    ),
   }),
 );
 
-export type OwnModelBlob = typeof ownModelBlobs.$inferSelect;
+export type PdfDocument = typeof pdfDocuments.$inferSelect;
+
+export const pdfChunks = pgTable(
+  "pdf_chunks",
+  {
+    id: text("id").primaryKey(),
+    documentId: text("document_id").notNull(),
+    userId: text("user_id").notNull(),
+    chunkIndex: integer("chunk_index").notNull(),
+    pageStart: integer("page_start").notNull().default(1),
+    pageEnd: integer("page_end").notNull().default(1),
+    content: text("content").notNull(),
+    searchVector: tsvector("search_vector").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    pdfChunksDocumentIdx: index("pdf_chunks_document_idx").on(
+      t.userId,
+      t.documentId,
+      t.chunkIndex,
+    ),
+    pdfChunksSearchIdx: index("pdf_chunks_search_idx").using(
+      "gin",
+      sql`search_vector`,
+    ),
+  }),
+);
+
+export type PdfChunk = typeof pdfChunks.$inferSelect;

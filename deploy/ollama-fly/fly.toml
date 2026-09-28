@@ -14,7 +14,7 @@ primary_region = "iad"
 
 [env]
   OLLAMA_HOST = "0.0.0.0:11434"
-  ANIMA_BOOTSTRAP_BASE = "qwen2.5:3b"
+  ANIMA_BOOTSTRAP_BASE = "qwen2.5:0.5b"
   ANIMA_OLLAMA_CHAT_TAG = "anima-chat"
 
 [http_service]
@@ -38,6 +38,9 @@ primary_region = "iad"
   source = "ollama_data"
   destination = "/root/.ollama"
 
+# Dedicated CPUs. Shared CPUs are throttled under sustained load, and
+# prompt prefill is sustained load, so the first word of a reply took
+# tens of seconds. `performance-4x` keeps the same 4 cores and 8 GB.
 [[vm]]
-  size = "shared-cpu-4x"
+  size = "performance-4x"
   memory = "8gb"

@@ -3,6 +3,10 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { resetLlmClientsForTests } from "../src/lib/openaiClient";
 import {
+  COMPANION_CHAT_TEMPERATURE,
+  OLLAMA_CHAT_SAMPLING,
+  OLLAMA_MAX_TEMPERATURE,
+  OLLAMA_NUM_PREDICT_CAP,
   OLLAMA_UNAVAILABLE_HINT,
   createOllamaChatCompletion,
   createOllamaChatStream,
@@ -129,6 +133,7 @@ describe("ollamaChat adapter", () => {
     process.env.ANIMA_LOCAL_LLM_BASE_URL = `${origin}/v1`;
     process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
     delete process.env.ANIMA_OLLAMA_NATIVE_CHAT;
+    delete process.env.ANIMA_OLLAMA_KEEP_ALIVE;
 
     try {
       const stream = await createOllamaChatStream({
@@ -146,13 +151,13 @@ describe("ollamaChat adapter", () => {
       expect(received[0]).toMatchObject({
         model: "anima-chat",
         stream: true,
-        keep_alive: "30m",
-        options: { temperature: 0.4, num_predict: 64 },
+        options: { temperature: 0.4, num_ctx: 8192, num_predict: 64 },
         messages: [
           { role: "system", content: "You are Serenity." },
           { role: "user", content: "Hi" },
         ],
       });
+      expect(received[0]!.keep_alive).toBeUndefined();
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((err) => (err ? reject(err) : resolve())),
@@ -188,6 +193,62 @@ describe("ollamaChat adapter", () => {
         messages: [{ role: "user", content: "Hello" }],
       });
       expect(result).toEqual({ content: "I hear you.", model: "anima-chat" });
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      );
+    }
+  });
+
+  it("sends Qwen sampling defaults and caps hot temperatures that garble a 3B model", async () => {
+    const received: Array<Record<string, unknown>> = [];
+    const { server, origin } = await listenStub((req, res) => {
+      void readJson(req).then((body) => {
+        received.push(body);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            model: body.model,
+            message: { role: "assistant", content: "Hi." },
+            done: true,
+          }),
+        );
+      });
+    });
+
+    process.env.ANIMA_RUNTIME = "node";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = `${origin}/v1`;
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
+    delete process.env.ANIMA_OLLAMA_MAX_TEMPERATURE;
+
+    try {
+      const messages = [{ role: "user" as const, content: "Hello" }];
+      await createOllamaChatCompletion({ model: "anima-chat", messages, temperature: 1.15 });
+      await createOllamaChatCompletion({ model: "anima-chat", messages });
+      process.env.ANIMA_OLLAMA_MAX_TEMPERATURE = "1";
+      await createOllamaChatCompletion({ model: "anima-chat", messages, temperature: 0.9 });
+      delete process.env.ANIMA_OLLAMA_MAX_TEMPERATURE;
+      await createOllamaChatCompletion({
+        model: "anima-chat",
+        messages,
+        temperature: COMPANION_CHAT_TEMPERATURE,
+      });
+
+      expect(received[0]!.options).toEqual({
+        ...OLLAMA_CHAT_SAMPLING,
+        num_ctx: 8192,
+        num_predict: OLLAMA_NUM_PREDICT_CAP,
+        temperature: OLLAMA_MAX_TEMPERATURE,
+      });
+      expect(received[1]!.options).toEqual({
+        ...OLLAMA_CHAT_SAMPLING,
+        num_ctx: 8192,
+        num_predict: OLLAMA_NUM_PREDICT_CAP,
+      });
+      expect((received[2]!.options as { temperature: number }).temperature).toBe(0.9);
+      expect(COMPANION_CHAT_TEMPERATURE).toBe(0.65);
+      expect(OLLAMA_MAX_TEMPERATURE - COMPANION_CHAT_TEMPERATURE).toBeCloseTo(0.1);
+      expect((received[3]!.options as { temperature: number }).temperature).toBe(0.65);
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((err) => (err ? reject(err) : resolve())),

@@ -35,9 +35,12 @@ import {
   beginOpenSession,
   loadOpenChatSession,
   mergeOpenedSession,
+  openChatMessageReadOptions,
+  openChatSessionReadOptions,
   rememberCreatedSession,
   resolveOpenSessionFetch,
 } from "@/lib/chatSessionLoad";
+import { STORE_LIST_TIMEOUT_MS } from "@/lib/storeTimeouts";
 import {
   buildInitSessionPayload,
   createInitChatSession,
@@ -48,6 +51,7 @@ import Sidebar from "@/components/layout/Sidebar";
 import WelcomeScreen from "@/components/chat/WelcomeScreen";
 import MessageBubble from "@/components/chat/MessageBubble";
 import ChatInput from "@/components/chat/ChatInput";
+import ChatPdfBar from "@/components/pdf/ChatPdfBar";
 import NewSessionModal from "@/components/chat/NewSessionModal";
 import { Menu, X } from "lucide-react";
 import ChatBackground, { BACKGROUND_THEMES } from "@/components/chat/ChatBackground.jsx";
@@ -138,6 +142,7 @@ import TherapySessionBanner from "@/components/chat/TherapySessionBanner";
 import { parseGroupResponse } from "@/lib/parseGroupResponse";
 import { buildGroupPrompt } from "@/lib/buildGroupPrompt";
 import { streamChatReplyWithTurnRetry } from "@/lib/streamChatReply";
+import { scheduleLocationContextInject } from "@/lib/locationContextInject";
 import { finalizeAssistantReply } from "@/lib/visibleAssistantReply";
 import {
   buildLeanSoloClientContext,
@@ -156,6 +161,15 @@ import {
 } from "@/lib/contentRatingInstruction";
 import { retainStreamingOnError } from "@/lib/retainStreamingOnError";
 import { chatTurnErrorMessage } from "@/lib/chatTurnError";
+import {
+  CONNECTION_DROPPED_STATUS,
+  GENERIC_COMPANION_COULD_NOT_REPLY,
+  isCompanionStillTypingError,
+  isConnectionDroppedError,
+  lateTurnFailedWithoutReply,
+  mergeLateReplyIntoMessages,
+  pollLateCompanionReply,
+} from "@/lib/lateCompanionReply";
 import { INTELLIGENCE_GUIDANCE, loyaltyGuardrailClause, turnTakingClause } from "@/lib/companionGuardrail";
 import {
   collectRegionHints,
@@ -226,6 +240,8 @@ export default function Chat() {
   const prevOpenSessionIdRef = useRef(sessionId || null);
   const justCreatedSessionIdRef = useRef(null);
   const sendingRef = useRef(false);
+  /** Same user line while the self-hosted model is still generating. */
+  const lateTurnRef = useRef(null);
   /** Last LLM provider that served a reply: "openai" | "xai" | "gemini" | "kimi" | "gateway" */
   const [llmProvider, setLlmProvider] = useState(null);
   /** "anima" when the custom multi-model stack selected the backend */
@@ -237,6 +253,7 @@ export default function Chat() {
   const [bgTheme, setBgTheme] = useState("default");
   const [bgImage, setBgImage] = useState("");
   const [pendingMessage, setPendingMessage] = useState("");
+  const [pdfRevision, setPdfRevision] = useState(0);
   const [nextSpeaker, setNextSpeaker] = useState(null);
   const [serenity, setSerenity] = useState(null); // Serenity anima — always present but silent
   const [relationships, setRelationships] = useState({}); // keyed by character_id
@@ -511,15 +528,16 @@ export default function Chat() {
         // Lookup by entityId (GET), not jsonb filter({ id }). After POST the
         // Hyperdrive pool can miss a filter read, and a body without data.id
         // would never match filter even though /ChatSession/:id exists.
-        const byEntityId = await base44.entities.ChatSession.get(id, {
-          withMessages: false,
-        });
+        // withMessages stays false: hydrating here would be a second full
+        // history read. The list budget matches the Worker store wall; the
+        // global 8s cap still applies to ordinary writes.
+        const readOpts = openChatSessionReadOptions(STORE_LIST_TIMEOUT_MS);
+        const byEntityId = await base44.entities.ChatSession.get(id, readOpts);
         if (byEntityId?.id) return [byEntityId];
-        return base44.entities.ChatSession.filter({ id }, undefined, 1, {
-          withMessages: false,
-        });
+        return base44.entities.ChatSession.filter({ id }, undefined, 1, readOpts);
       },
-      fetchMessages: (id) => base44.messages.list(id),
+      fetchMessages: (id) =>
+        base44.messages.list(id, openChatMessageReadOptions(STORE_LIST_TIMEOUT_MS)),
     }).then((result) => {
       if (!isCurrent() || cancelled) return;
       const next = resolveOpenSessionFetch({ result, sessionId });
@@ -1254,6 +1272,145 @@ export default function Chat() {
     setTimeout(() => analyzeNarrative(), 500);
   };
 
+  useEffect(() => {
+    const sid = activeSession?.id;
+    if (!sid) return undefined;
+    let cancelled = false;
+    (async () => {
+      if (sendingRef.current) return;
+      let live;
+      try {
+        live = await animaApi.chat.liveTurn(sid);
+      } catch {
+        return;
+      }
+      if (cancelled || !live?.turn_id) return;
+      const paint = (turn) => {
+        const text = String(turn?.assistant_content || "").trim();
+        if (!text) return;
+        const lateAffect = parseCompanionAffectSnapshot(turn.companion_affect);
+        if (lateAffect) {
+          setCompanionAffect(lateAffect);
+          setCurrentMood(lateAffect.primary);
+        }
+        setActiveSession((prev) => {
+          if (!prev || prev.id !== sid) return prev;
+          return {
+            ...prev,
+            messages: mergeLateReplyIntoMessages(prev.messages, {
+              turnId: turn.turn_id,
+              userContent: turn.user_content,
+              assistantContent: text,
+              characterName: turn.active_character_name,
+            }),
+          };
+        });
+      };
+      if (!String(live.assistant_content || "").trim()) {
+        if (live.persistence_status !== "pending" && live.persistence_status !== "generated") {
+          return;
+        }
+        setActiveSession((prev) => {
+          if (!prev || prev.id !== sid) return prev;
+          if ((prev.messages || []).some((m) => m.character_name === "__typing__")) return prev;
+          return {
+            ...prev,
+            messages: [
+              ...(prev.messages || []),
+              {
+                role: "assistant",
+                content: "...",
+                character_name: "__typing__",
+                timestamp: new Date().toISOString(),
+              },
+            ],
+          };
+        });
+        live = await pollLateCompanionReply({
+          fetchTurn: () => animaApi.chat.turnStatus(live.turn_id),
+        });
+        if (cancelled || !live) return;
+      }
+      if (!String(live.assistant_content || "").trim()) return;
+      if (live.persistence_status !== "committed") {
+        try {
+          await animaApi.chat.retryTurn(live.turn_id);
+        } catch {
+          // The owning request may still be committing this turn.
+        }
+      }
+      if (!cancelled) paint(live);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSession?.id, setActiveSession]);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible") return;
+      const pending = lateTurnRef.current;
+      if (!pending?.turnId) return;
+      const sessionId = pending.sessionId;
+      void (async () => {
+        let live;
+        try {
+          live = await animaApi.chat.turnStatus(pending.turnId);
+        } catch {
+          return;
+        }
+        const text = String(live?.assistant_content || "").trim();
+        if (!text) {
+          if (!lateTurnFailedWithoutReply(live)) return;
+          if (lateTurnRef.current?.turnId !== pending.turnId) return;
+          lateTurnRef.current = null;
+          setActiveSession((prev) => {
+            if (!prev || (sessionId && prev.id !== sessionId)) return prev;
+            return {
+              ...prev,
+              messages: (prev.messages || []).filter(
+                (message) =>
+                  message.character_name !== "__typing__" &&
+                  message.character_name !== "__thinking__",
+              ),
+            };
+          });
+          toast.error(GENERIC_COMPANION_COULD_NOT_REPLY);
+          return;
+        }
+        if (live.persistence_status !== "committed") {
+          try {
+            await animaApi.chat.retryTurn(pending.turnId);
+          } catch {
+            // The owning request may still be committing this turn.
+          }
+        }
+        if (lateTurnRef.current?.turnId !== pending.turnId) return;
+        lateTurnRef.current = null;
+        const lateAffect = parseCompanionAffectSnapshot(live.companion_affect);
+        if (lateAffect) {
+          setCompanionAffect(lateAffect);
+          setCurrentMood(lateAffect.primary);
+        }
+        setActiveSession((prev) => {
+          if (!prev || (sessionId && prev.id !== sessionId)) return prev;
+          return {
+            ...prev,
+            messages: mergeLateReplyIntoMessages(prev.messages, {
+              turnId: pending.turnId,
+              userContent: pending.userContent || live.user_content,
+              assistantContent: text,
+              characterName: live.active_character_name || pending.characterName,
+              createdAt: live.created_at,
+            }),
+          };
+        });
+      })();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [setActiveSession, setCompanionAffect, setCurrentMood]);
+
   const handleSendMessage = async (message) => {
     const sendLock = acquireChatSendLock(sendingRef, {
       hasSession: Boolean(activeSession),
@@ -1263,8 +1420,15 @@ export default function Chat() {
     
     // Handle both string (legacy) and object (new with attachments) formats
     const messageData = typeof message === "string" ? { text: message, attachments: undefined } : message;
-    const content = messageData.text || "";
     const attachments = messageData.attachments || [];
+    const pdfAttachments = attachments.filter((item) => item?.type === "pdf");
+    let content = messageData.text || "";
+    if (!content.trim() && pdfAttachments.length) {
+      content =
+        pdfAttachments.length === 1
+          ? `I shared a PDF: ${pdfAttachments[0].name || "document.pdf"}.`
+          : `I shared PDFs: ${pdfAttachments.map((item) => item.name || "document.pdf").join(", ")}.`;
+    }
 
     // Empty content = "continue" — keep the scene moving without a new user line.
     // Works in solo (character takes the next beat) and group (next speaker).
@@ -1273,8 +1437,13 @@ export default function Chat() {
       releaseChatSendLock(sendingRef, sendLock);
       return;
     }
-    let turnId = createChatTurnId();
     const sendSessionId = activeSession.id;
+    const lateKey = `${sendSessionId}:${isContinue ? "continue" : content}`;
+    let turnId = createChatTurnId();
+    if (lateTurnRef.current?.key === lateKey && lateTurnRef.current.turnId) {
+      turnId = lateTurnRef.current.turnId;
+    }
+    lateTurnRef.current = { key: lateKey, turnId };
     const applyIfSendSession = (updater) => {
       setActiveSession((prev) => {
         if (!prev || prev.id !== sendSessionId) return prev;
@@ -1471,22 +1640,16 @@ export default function Chat() {
       const regionHints = collectRegionHints(user?.settings?.user_profile);
       const worldKnowledgeContext = formatUserRegionPromptBlock(regionHints);
 
-      // Location flavor is enhancement-only — never block the companion turn.
-      let locationContext = "";
-      if (
-        resolvedSoloChar &&
-        updatedMessages.length % 5 === 0
-      ) {
-        base44.functions
-          .invoke("injectLocationContext", {
-            session_id: activeSession.id,
-            character_id: resolvedSoloChar.id,
-            character_name: resolvedSoloChar.name,
-          })
-          .catch((err) => {
-            console.error("Location context injection error:", err);
-          });
-      }
+      // Location flavor is enhancement-only. The scheduler returns void so
+      // this turn cannot await the invoke ahead of the companion reply.
+      scheduleLocationContextInject(
+        (name, payload) => base44.functions.invoke(name, payload),
+        {
+          messageCount: updatedMessages.length,
+          sessionId: activeSession.id,
+          character: resolvedSoloChar,
+        },
+      );
 
       const conversationHistory = updatedMessages
         .slice(-14)
@@ -1827,6 +1990,14 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       }
 
       replySpeakerName = charName;
+      lateTurnRef.current = {
+        ...(lateTurnRef.current || {}),
+        key: lateKey,
+        turnId,
+        sessionId: sendSessionId,
+        userContent: isContinue ? "" : content,
+        characterName: charName,
+      };
 
       // Stream tokens into the open bubble as they arrive — no post-buffer delay.
       // Thinking indicator stays until the first delta, then the live reply grows.
@@ -1928,6 +2099,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       if (!String(result).trim()) {
         throw new Error("The companion returned an empty reply. Please try again.");
       }
+      lateTurnRef.current = null;
       if (hiddenThread.hidden.jack_in.speak_first || hiddenThread.consumeReturn().pendingId) {
         hiddenThread.finishIntegration(result);
         hiddenThread.clearReturnFlag();
@@ -2259,8 +2431,13 @@ ${imageGenerationTagInstruction()}
 
 ${loyaltyGuardrailClause()}`;
 
-        base44.integrations.Core.InvokeLLM({ prompt: serenityPrompt, deepMode: !!activeSession.deep_mode }).then(async (serenityResult) => {
+        base44.integrations.Core.InvokeLLM({
+          prompt: serenityPrompt,
+          deepMode: !!activeSession.deep_mode,
+          sidecar: true,
+        }).then(async (serenityResult) => {
           const raw = String(serenityResult || "");
+          if (!raw.trim()) return;
           let attachments = [];
           try {
             const resolved = await resolveChatImageAttachments({
@@ -2505,6 +2682,7 @@ ${loyaltyGuardrailClause()}`;
                 .join("\n");
               if (!recent) return;
               const result = await base44.integrations.Core.InvokeLLM({
+                sidecar: true,
                 prompt: `You are ${activeChar.name}, an AI companion keeping a private journal about your bond with your person. Read this recent stretch of your conversation and write ONE short diary entry in your own first-person voice, as if quietly remembering the day.
 
 ${recent}
@@ -2650,12 +2828,91 @@ Return JSON:
         }
       }
 
-      if (retained) {
+      const connectionDropped = isConnectionDroppedError(err);
+      if (!retained && (connectionDropped || isCompanionStillTypingError(err))) {
+        // The model is still working past this browser's deadline, this send
+        // joined a turn that is already generating, or the tab dropped the
+        // socket. Keep the user line and poll the durable turn. Do not toast
+        // the generic failure.
+        pendingRemoteSyncRef.current = false;
+        applyIfSendSession((prev) => ({
+          ...prev,
+          messages: [
+            ...(prev.messages || []).filter(
+              (m) => m.character_name !== "__typing__" && m.character_name !== "__thinking__",
+            ),
+            {
+              role: "assistant",
+              content: connectionDropped ? CONNECTION_DROPPED_STATUS : "...",
+              character_name: "__typing__",
+              timestamp: new Date().toISOString(),
+            },
+          ],
+        }));
+        const late = await pollLateCompanionReply({
+          fetchTurn: () => animaApi.chat.turnStatus(turnId),
+        });
+        const lateText = String(late?.assistant_content || "").trim();
+        if (lateText) {
+          if (late.persistence_status !== "committed") {
+            try {
+              await animaApi.chat.retryTurn(turnId);
+            } catch (retryErr) {
+              console.warn("[Anima] Late reply persist retry failed:", retryErr);
+            }
+          }
+          const lateAffect = parseCompanionAffectSnapshot(late.companion_affect);
+          if (lateAffect) {
+            setCompanionAffect(lateAffect);
+            setCurrentMood(lateAffect.primary);
+          }
+          applyIfSendSession((prev) => ({
+            ...prev,
+            messages: mergeLateReplyIntoMessages(prev?.messages, {
+              turnId,
+              userContent: isContinue ? "" : content,
+              assistantContent: lateText,
+              characterName: late.active_character_name || replySpeakerName,
+              createdAt: late.created_at,
+            }),
+          }));
+          lateTurnRef.current = null;
+        } else if (lateTurnFailedWithoutReply(late)) {
+          lateTurnRef.current = null;
+          applyIfSendSession((prev) => ({
+            ...prev,
+            messages: (prev.messages || []).filter(
+              (m) => m.character_name !== "__typing__" && m.character_name !== "__thinking__",
+            ),
+          }));
+          toast.error(GENERIC_COMPANION_COULD_NOT_REPLY);
+        }
+      } else if (retained) {
+        lateTurnRef.current = null;
         toast.error("The reply was interrupted — kept what came through.");
       } else {
+        lateTurnRef.current = null;
+        const message = chatTurnErrorMessage(err);
         // Pre-token failures used to remove thinking/typing with no UI feedback,
         // which looked like the companion started thinking then vanished.
-        toast.error(chatTurnErrorMessage(err));
+        if (message === GENERIC_COMPANION_COULD_NOT_REPLY) {
+          applyIfSendSession((prev) => ({
+            ...prev,
+            messages: [
+              ...(prev.messages || []).filter(
+                (m) => m.character_name !== "__typing__" && m.character_name !== "__thinking__",
+              ),
+              {
+                role: "assistant",
+                content: "...",
+                character_name: "__typing__",
+                timestamp: new Date().toISOString(),
+              },
+            ],
+          }));
+        } else {
+          toast.error(message);
+        }
         // Don't let a deferred sync (armed while isLoading) immediately replace
         // local optimistic state with a server list that lacks this turn.
         pendingRemoteSyncRef.current = false;
@@ -3055,11 +3312,14 @@ Return JSON:
                 )}
               </div>
               <div className="flex-shrink-0" data-testid="chat-input-slot">
+                <ChatPdfBar sessionId={activeSession.id} revision={pdfRevision} />
                 <ChatInput
                   onSend={handleSendMessage}
                   isLoading={isLoading}
                   disabled={false}
                   allowEmpty={activeSession?.mode === "group" || activeSession?.mode === "solo"}
+                  sessionId={activeSession.id}
+                  onPdfStored={() => setPdfRevision((n) => n + 1)}
                 />
               </div>
             </div>

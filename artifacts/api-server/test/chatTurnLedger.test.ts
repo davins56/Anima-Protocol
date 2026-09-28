@@ -4,10 +4,13 @@ import { chatTurns, db, ensureSchemaOnce } from "@workspace/db";
 import {
   beginChatTurn,
   checkpointGeneratedTurn,
+  claimChatTurnLease,
   classifyChatTurnReuse,
+  decideDurableTurnJoin,
   markTurnCommitted,
   markTurnFailed,
   readChatTurn,
+  retryableChatTurns,
   turnMessageIds,
 } from "../src/lib/chatTurnLedger";
 
@@ -103,5 +106,131 @@ describe("chat turn ledger", () => {
         "second thought",
       ),
     ).toBe("conflict");
+  });
+
+  it("joins a live lease and claims an expired one for the same user text", () => {
+    const pending = {
+      status: "pending" as const,
+      assistantContent: "",
+      userContent: "hello",
+      leaseExpiresAt: new Date(Date.now() + 30_000),
+    };
+    expect(decideDurableTurnJoin(pending, "hello")).toBe("join");
+    expect(
+      decideDurableTurnJoin(
+        { ...pending, leaseExpiresAt: new Date(Date.now() - 1_000) },
+        "hello",
+      ),
+    ).toBe("claim");
+    expect(
+      decideDurableTurnJoin(
+        {
+          status: "generated",
+          assistantContent: "prior reply",
+          userContent: "hello",
+          leaseExpiresAt: new Date(Date.now() + 30_000),
+        },
+        "hello",
+      ),
+    ).toBe("replay");
+    expect(decideDurableTurnJoin(pending, "different")).toBe("conflict");
+  });
+
+  it("claims a lease only while it is free or expired", async () => {
+    const leaseTurn = `turn_${prefix}_lease`;
+    await beginChatTurn({
+      id: leaseTurn,
+      sessionId,
+      userId,
+      userContent: "lease me",
+      persistenceOwner: "server",
+    });
+    const start = new Date("2020-01-01T00:00:00.000Z");
+    expect(await claimChatTurnLease(leaseTurn, userId, 1_000, start)).toBe(true);
+    expect(
+      await claimChatTurnLease(
+        leaseTurn,
+        userId,
+        1_000,
+        new Date(start.getTime() + 500),
+      ),
+    ).toBe(false);
+    expect(
+      await claimChatTurnLease(
+        leaseTurn,
+        userId,
+        1_000,
+        new Date(start.getTime() + 1_500),
+      ),
+    ).toBe(true);
+  });
+
+  it("skips client-owned turns and turns older than the last commit", async () => {
+    const retrySession = `${sessionId}_retry`;
+    const base = new Date("2021-06-01T00:00:00.000Z");
+    const older = `turn_${prefix}_older`;
+    const committed = `turn_${prefix}_committed`;
+    const clientOwned = `turn_${prefix}_client`;
+    const newer = `turn_${prefix}_newer`;
+    const emptyFailed = `turn_${prefix}_empty`;
+    const rows = [
+      {
+        id: older,
+        createdAt: new Date(base.getTime()),
+        status: "generated",
+        persistenceOwner: "server",
+        assistantContent: "stale",
+        userContent: "old question",
+      },
+      {
+        id: committed,
+        createdAt: new Date(base.getTime() + 1_000),
+        status: "committed",
+        persistenceOwner: "server",
+        assistantContent: "kept",
+        userContent: "middle",
+      },
+      {
+        id: clientOwned,
+        createdAt: new Date(base.getTime() + 2_000),
+        status: "generated",
+        persistenceOwner: "client",
+        assistantContent: "client reply",
+        userContent: "client question",
+      },
+      {
+        id: newer,
+        createdAt: new Date(base.getTime() + 3_000),
+        status: "generated",
+        persistenceOwner: "server",
+        assistantContent: "fresh",
+        userContent: "new question",
+      },
+      {
+        id: emptyFailed,
+        createdAt: new Date(base.getTime() + 4_000),
+        status: "failed",
+        persistenceOwner: "server",
+        assistantContent: "",
+        userContent: "no reply",
+      },
+    ];
+    for (const row of rows) {
+      await db.insert(chatTurns).values({
+        id: row.id,
+        sessionId: retrySession,
+        userId,
+        userMessageId: `${row.id}:user`,
+        assistantMessageId: `${row.id}:assistant`,
+        persistenceOwner: row.persistenceOwner,
+        status: row.status,
+        userContent: row.userContent,
+        assistantContent: row.assistantContent,
+        createdAt: row.createdAt,
+        updatedAt: row.createdAt,
+      });
+    }
+    const retryable = await retryableChatTurns(userId, retrySession, 10);
+    expect(retryable.map((turn) => turn.id)).toEqual([newer]);
   });
 });

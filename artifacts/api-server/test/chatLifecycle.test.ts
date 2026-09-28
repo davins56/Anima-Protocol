@@ -62,7 +62,24 @@ vi.mock("../src/lib/localEnsemble", () => ({
 }));
 
 import chatRouter from "../src/routes/chat";
-import { beginChatTurn } from "../src/lib/chatTurnLedger";
+import { COMPANION_CHAT_TEMPERATURE } from "../src/lib/ollamaChat";
+import {
+  beginChatTurn,
+  checkpointGeneratedTurn,
+  claimChatTurnLease,
+} from "../src/lib/chatTurnLedger";
+import { resetChatTurnFlightsForTests } from "../src/lib/chatTurnFlight";
+import {
+  evolveCompanionAffectFromCompanion,
+  evolveCompanionAffectFromUser,
+  initCompanionAffect,
+} from "../src/lib/companionAffect";
+import {
+  evolveSynchroFromCompanion,
+  evolveSynchroFromUser,
+  initSynchroState,
+} from "../src/lib/synchroEngine";
+import { db as legacyDb, resonanceMemories } from "../src/db/index";
 import {
   CHAT_MESSAGE,
   CHAT_SESSION,
@@ -73,6 +90,7 @@ import {
   db,
   ensureSchemaOnce,
   userEntities,
+  userProfiles,
 } from "@workspace/db";
 
 const prefix = `chat_lifecycle_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -114,6 +132,10 @@ beforeAll(async () => {
     failedOver: false,
   }));
   await ensureSchemaOnce();
+  await db.insert(userProfiles).values({
+    userId,
+    data: { display_name: "Mara" },
+  });
   await db.insert(userEntities).values([
     {
       userId,
@@ -155,6 +177,11 @@ afterAll(async () => {
   await db.delete(chatSessions).where(eq(chatSessions.userId, userId));
   await db.delete(chatTurns).where(eq(chatTurns.userId, userId));
   await db.delete(companionMemories).where(eq(companionMemories.userId, userId));
+  await legacyDb
+    .delete(resonanceMemories)
+    .where(eq(resonanceMemories.userId, userId))
+    .catch(() => {});
+  await db.delete(userProfiles).where(eq(userProfiles.userId, userId));
   await db.delete(userEntities).where(like(userEntities.userId, `${prefix}%`));
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
@@ -202,7 +229,14 @@ describe("chat lifecycle", () => {
     expect(sent.messages?.some((message) => message.role === "user" && message.content === "Hello")).toBe(
       true,
     );
-    expect(sent.temperature).toBe(0.85);
+    expect(COMPANION_CHAT_TEMPERATURE).toBe(0.65);
+    expect(sent.temperature).toBe(COMPANION_CHAT_TEMPERATURE);
+    expect(sent.messages?.at(-2)).toEqual({
+      role: "system",
+      content:
+        "Answer Mara's last message first, directly, in Aria's own voice. Stay on what they said. Bring in memories or lore only when they help answer it.",
+    });
+    expect(sent.messages?.at(-1)).toEqual({ role: "user", content: "Hello" });
     expect(sent.maxTokens).toBe(1024);
     expect(sent.signal).toBeInstanceOf(AbortSignal);
 
@@ -248,7 +282,6 @@ describe("chat lifecycle", () => {
 
   it("replays matching userContent and mints a new turn when content differs", async () => {
     const isolatedTurn = `turn_${prefix}_collision`;
-    const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
 
     const first = await request("/chat/messages", {
       method: "POST",
@@ -272,6 +305,9 @@ describe("chat lifecycle", () => {
         .map((event) => event.content)
         .join(""),
     ).toBe("Hello from Anima.");
+    // The session already holds this reply, so the first turn may regenerate
+    // once. Count from here: a replayed turn must not call the model again.
+    const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
 
     const match = await request("/chat/messages", {
       method: "POST",
@@ -293,7 +329,7 @@ describe("chat lifecycle", () => {
       true,
     );
     expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(
-      callsBefore + 1,
+      callsBefore,
     );
 
     llmMocks.createChatStreamWithFailover.mockImplementation(async () => ({
@@ -333,7 +369,7 @@ describe("chat lifecycle", () => {
     expect(mismatchEvents.at(-1)?.replayed).toBeFalsy();
     expect(mismatchEvents.at(-1)?.turn_id).not.toBe(isolatedTurn);
     expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(
-      callsBefore + 2,
+      callsBefore + 1,
     );
 
     llmMocks.createChatStreamWithFailover.mockImplementation(async () => ({
@@ -349,7 +385,7 @@ describe("chat lifecycle", () => {
     }));
   });
 
-  it("returns 409 when the same turn is still pending", async () => {
+  it("joins a leased pending turn and replays the saved reply", async () => {
     const pendingId = `turn_${prefix}_pending`;
     const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
     await beginChatTurn({
@@ -359,7 +395,9 @@ describe("chat lifecycle", () => {
       userContent: "Hello",
       persistenceOwner: "server",
     });
-    const res = await request("/chat/messages", {
+    expect(await claimChatTurnLease(pendingId, userId)).toBe(true);
+
+    const pending = request("/chat/messages", {
       method: "POST",
       body: JSON.stringify({
         turn_id: pendingId,
@@ -369,12 +407,28 @@ describe("chat lifecycle", () => {
         mode: "solo",
       }),
     });
-    expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({
-      error: "This chat turn is already being processed.",
-      code: "turn_in_flight",
+    // The joiner polls the ledger. Save the owner's reply during that wait
+    // so this request replays instead of claiming the turn and generating.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await checkpointGeneratedTurn({
+      id: pendingId,
+      userId,
+      assistantContent: "Already on the way.",
+    });
+
+    const res = await pending;
+    expect(res.status).toBe(200);
+    const events = sseEvents(await res.text());
+    const text = events
+      .filter((event) => typeof event.content === "string" && !event.done)
+      .map((event) => event.content)
+      .join("");
+    expect(text).toBe("Already on the way.");
+    expect(events.at(-1)).toMatchObject({
+      done: true,
+      replayed: true,
+      joined: true,
       turn_id: pendingId,
-      persistence_status: "pending",
     });
     expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(
       callsBefore,
@@ -440,5 +494,448 @@ describe("chat lifecycle", () => {
       );
     expect(stored.map((row) => row.entityId)).not.toContain(`${clientTurnId}:user`);
     expect(stored.map((row) => row.entityId)).not.toContain(`${clientTurnId}:assistant`);
+  });
+
+  function restoreFastStream() {
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => ({
+      stream: (async function* () {
+        yield { choices: [{ delta: { content: "Hello " } }] };
+        yield { choices: [{ delta: { content: "from Anima." } }] };
+      })(),
+      model: "test-anima",
+      tier: "standard",
+      provider: "local",
+      brand: "anima",
+      failedOver: false,
+    }));
+  }
+
+  async function waitForMood(turn: string) {
+    const started = Date.now();
+    while (Date.now() - started < 5_000) {
+      const [memory] = await db
+        .select()
+        .from(companionMemories)
+        .where(
+          and(
+            eq(companionMemories.userId, userId),
+            eq(companionMemories.characterId, characterId),
+          ),
+        )
+        .limit(1);
+      const state = memory?.emotionalState as
+        | { moodTurnId?: string; selfState?: { primary?: string; intensity?: number } }
+        | null
+        | undefined;
+      if (state?.moodTurnId === turn && state.selfState) return state;
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    }
+    return null;
+  }
+
+  it("saves a late reply and its mood after the client leaves", async () => {
+    resetChatTurnFlightsForTests();
+    const lateTurnId = `turn_${prefix}_late`;
+    const reply = "I am glad you stayed. [EMOTION: happy]";
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      return {
+        stream: (async function* () {
+          yield { choices: [{ delta: { content: reply } }] };
+        })(),
+        model: "test-anima",
+        tier: "standard",
+        provider: "local",
+        brand: "anima",
+        failedOver: false,
+      };
+    });
+    try {
+      const controller = new AbortController();
+      const pending = request("/chat/messages", {
+        method: "POST",
+        signal: controller.signal,
+        body: JSON.stringify({
+          turn_id: lateTurnId,
+          idempotency_key: lateTurnId,
+          session_id: sessionId,
+          content: "Hello",
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: false,
+          persistence_owner: "client",
+          region: { share_region: false },
+        }),
+      });
+      const headers = await pending;
+      expect(headers.status).toBe(200);
+      controller.abort();
+      await headers.text().catch(() => {});
+
+      const mood = await waitForMood(lateTurnId);
+      expect(mood?.moodTurnId).toBe(lateTurnId);
+      expect(mood?.selfState?.primary).toBe("happy");
+      const once = evolveCompanionAffectFromCompanion(
+        evolveCompanionAffectFromUser(initCompanionAffect(null), "Hello"),
+        reply,
+      );
+      const twice = evolveCompanionAffectFromCompanion(once, reply);
+      expect(mood?.selfState?.intensity).toBe(once.intensity);
+      expect(twice.intensity).not.toBe(once.intensity);
+
+      const stored = await db
+        .select()
+        .from(userEntities)
+        .where(
+          and(
+            eq(userEntities.userId, userId),
+            eq(userEntities.entityName, CHAT_MESSAGE),
+          ),
+        );
+      expect(stored.map((row) => row.entityId)).toContain(`${lateTurnId}:assistant`);
+      expect(
+        stored.filter((row) => row.entityId === `${lateTurnId}:assistant`),
+      ).toHaveLength(1);
+
+      const status = await request(`/chat/turns/${lateTurnId}`);
+      expect(status.status).toBe(200);
+      expect(await status.json()).toMatchObject({
+        turn_id: lateTurnId,
+        assistant_content: reply,
+        persistence_status: "committed",
+      });
+
+      const again = await request(`/chat/turns/${lateTurnId}/retry`, {
+        method: "POST",
+        body: "{}",
+      });
+      expect(again.status).toBe(200);
+      const moodAfter = await waitForMood(lateTurnId);
+      expect(moodAfter?.selfState?.intensity).toBe(once.intensity);
+    } finally {
+      restoreFastStream();
+      resetChatTurnFlightsForTests();
+    }
+  });
+
+  it("joins a retry of the same turn instead of generating twice", async () => {
+    resetChatTurnFlightsForTests();
+    const joinTurnId = `turn_${prefix}_join`;
+    const reply = "I am glad we are still here. [EMOTION: happy]";
+    const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      return {
+        stream: (async function* () {
+          yield { choices: [{ delta: { content: reply } }] };
+        })(),
+        model: "test-anima",
+        tier: "standard",
+        provider: "local",
+        brand: "anima",
+        failedOver: false,
+      };
+    });
+    const body = {
+      session_id: sessionId,
+      content: "Stay",
+      character_id: characterId,
+      character_ids: [characterId],
+      assistant_character_id: characterId,
+      mode: "solo",
+      persist: true,
+      region: { share_region: false },
+    };
+    try {
+      const [before] = await db
+        .select()
+        .from(companionMemories)
+        .where(
+          and(
+            eq(companionMemories.userId, userId),
+            eq(companionMemories.characterId, characterId),
+          ),
+        )
+        .limit(1);
+      const once = evolveCompanionAffectFromCompanion(
+        evolveCompanionAffectFromUser(
+          initCompanionAffect(
+            (before?.emotionalState as Record<string, unknown> | null) ?? null,
+          ),
+          "Stay",
+        ),
+        reply,
+      );
+      const twice = evolveCompanionAffectFromCompanion(once, reply);
+      const first = request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          ...body,
+          turn_id: joinTurnId,
+          idempotency_key: joinTurnId,
+        }),
+      });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      const second = request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          ...body,
+          idempotency_key: joinTurnId,
+        }),
+      });
+      const [left, right] = await Promise.all([first, second]);
+      expect(left.status).toBe(200);
+      expect(right.status).toBe(200);
+      const leftEvents = sseEvents(await left.text());
+      const rightEvents = sseEvents(await right.text());
+      const textOf = (events: Array<Record<string, unknown>>) =>
+        events
+          .filter((event) => typeof event.content === "string" && !event.done)
+          .map((event) => event.content)
+          .join("");
+      expect(textOf(leftEvents)).toBe(reply);
+      expect(textOf(rightEvents)).toBe(reply);
+      expect(
+        leftEvents.some((event) => event.joined === true) ||
+          rightEvents.some((event) => event.joined === true),
+      ).toBe(true);
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(
+        callsBefore + 1,
+      );
+
+      const mood = await waitForMood(joinTurnId);
+      expect(mood?.selfState?.intensity).toBe(once.intensity);
+      expect(twice.intensity).not.toBe(once.intensity);
+
+      const stored = await db
+        .select()
+        .from(userEntities)
+        .where(
+          and(
+            eq(userEntities.userId, userId),
+            eq(userEntities.entityName, CHAT_MESSAGE),
+          ),
+        );
+      expect(
+        stored.filter((row) => row.entityId === `${joinTurnId}:assistant`),
+      ).toHaveLength(1);
+    } finally {
+      restoreFastStream();
+      resetChatTurnFlightsForTests();
+    }
+  });
+
+  function bondCharacterId(suffix: string) {
+    return `${prefix}_bond_${suffix}`;
+  }
+
+  async function seedBond(character: string) {
+    const seeded = {
+      intimacy: 70,
+      synchroStrength: 40,
+      lastInteraction: new Date().toISOString(),
+    };
+    await db.insert(userEntities).values({
+      userId,
+      entityName: "Character",
+      entityId: character,
+      data: {
+        id: character,
+        name: "Bond",
+        personality: "Warm and concise",
+        universe: "Original",
+      },
+    });
+    await db.insert(companionMemories).values({
+      userId,
+      characterId: character,
+      summary: "",
+      facts: [],
+      emotionalState: seeded,
+      resonanceNotes: "",
+    });
+    return seeded;
+  }
+
+  async function waitForBond(turn: string, character: string) {
+    const started = Date.now();
+    while (Date.now() - started < 5_000) {
+      const [memory] = await db
+        .select()
+        .from(companionMemories)
+        .where(
+          and(
+            eq(companionMemories.userId, userId),
+            eq(companionMemories.characterId, character),
+          ),
+        )
+        .limit(1);
+      const state = (memory?.emotionalState as Record<string, unknown> | null) ?? null;
+      const moments = await legacyDb
+        .select()
+        .from(resonanceMemories)
+        .where(
+          and(
+            eq(resonanceMemories.userId, userId),
+            eq(resonanceMemories.animaId, character),
+          ),
+        );
+      const saved = moments.filter(
+        (row) => Array.isArray(row.tags) && row.tags.includes(`turn:${turn}`),
+      );
+      if (
+        state?.moodTurnId === turn &&
+        state.relationshipTurnId === turn &&
+        state.savedMomentsTurnId === turn &&
+        saved.length > 0
+      ) {
+        return { state, saved };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    }
+    return null;
+  }
+
+  it("updates mood, relationship strength, and a saved moment on one server-saved turn", async () => {
+    resetChatTurnFlightsForTests();
+    const turn = `turn_${prefix}_bond`;
+    const character = bondCharacterId("once");
+    const content = "I love this moment with you";
+    const reply = "I remember staying. [EMOTION: happy]";
+    const seeded = await seedBond(character);
+    const onceBond = evolveSynchroFromCompanion(
+      evolveSynchroFromUser(initSynchroState(seeded), content),
+      reply,
+    );
+    const twiceBond = evolveSynchroFromCompanion(onceBond, reply);
+    const onceMood = evolveCompanionAffectFromCompanion(
+      evolveCompanionAffectFromUser(initCompanionAffect(seeded), content),
+      reply,
+    );
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => ({
+      stream: (async function* () {
+        yield { choices: [{ delta: { content: reply } }] };
+      })(),
+      model: "test-anima",
+      tier: "standard",
+      provider: "local",
+      brand: "anima",
+      failedOver: false,
+    }));
+    try {
+      const res = await request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: turn,
+          session_id: sessionId,
+          content,
+          character_id: character,
+          character_ids: [character],
+          assistant_character_id: character,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+        }),
+      });
+      expect(res.status).toBe(200);
+      await res.text();
+      const saved = await waitForBond(turn, character);
+      expect(saved?.state.moodTurnId).toBe(turn);
+      expect(
+        (saved?.state.selfState as { primary?: string; intensity?: number } | undefined)
+          ?.primary,
+      ).toBe("happy");
+      expect(
+        (saved?.state.selfState as { intensity?: number } | undefined)?.intensity,
+      ).toBe(onceMood.intensity);
+      expect(saved?.state.synchroStrength).toBe(onceBond.vector.synchroStrength);
+      expect(twiceBond.vector.synchroStrength).not.toBe(onceBond.vector.synchroStrength);
+      expect(saved?.saved).toHaveLength(1);
+    } finally {
+      restoreFastStream();
+      resetChatTurnFlightsForTests();
+    }
+  });
+
+  it("does not apply mood, relationship strength, or a saved moment twice on retry or join", async () => {
+    resetChatTurnFlightsForTests();
+    const turn = `turn_${prefix}_bond_retry`;
+    const character = bondCharacterId("retry");
+    const content = "I love this moment with you";
+    const reply = "I remember staying. [EMOTION: happy]";
+    await seedBond(character);
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => ({
+      stream: (async function* () {
+        yield { choices: [{ delta: { content: reply } }] };
+      })(),
+      model: "test-anima",
+      tier: "standard",
+      provider: "local",
+      brand: "anima",
+      failedOver: false,
+    }));
+    try {
+      const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+      const first = await request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: turn,
+          session_id: sessionId,
+          content,
+          character_id: character,
+          character_ids: [character],
+          assistant_character_id: character,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+        }),
+      });
+      expect(first.status).toBe(200);
+      await first.text();
+      const saved = await waitForBond(turn, character);
+      expect(saved).toBeTruthy();
+
+      const retry = await request(`/chat/turns/${turn}/retry`, {
+        method: "POST",
+        body: "{}",
+      });
+      expect(retry.status).toBe(200);
+
+      const joined = await request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: turn,
+          session_id: sessionId,
+          content,
+          character_id: character,
+          character_ids: [character],
+          assistant_character_id: character,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+        }),
+      });
+      expect(joined.status).toBe(200);
+      const joinedEvents = sseEvents(await joined.text());
+      expect(joinedEvents.at(-1)).toMatchObject({ replayed: true, turn_id: turn });
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(
+        callsBefore + 1,
+      );
+
+      const again = await waitForBond(turn, character);
+      expect(again?.state.synchroStrength).toBe(saved?.state.synchroStrength);
+      expect(
+        (again?.state.selfState as { intensity?: number } | undefined)?.intensity,
+      ).toBe(
+        (saved?.state.selfState as { intensity?: number } | undefined)?.intensity,
+      );
+      expect(again?.saved).toHaveLength(1);
+      expect(again?.state).toEqual(saved?.state);
+    } finally {
+      restoreFastStream();
+      resetChatTurnFlightsForTests();
+    }
   });
 });

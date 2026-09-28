@@ -11,7 +11,10 @@
  * create, codespace) do not use this helper.
  */
 
+import { combineAbortSignals } from "./chatTimeouts";
+
 const POST_TURN_SIDECAR_FUNCTIONS = new Set([
+  "aggregatePersonalityShifts",
   "analyzeCharacterForBehavior",
   "analyzeEmotionalClimate",
   "analyzeMessageTags",
@@ -39,6 +42,31 @@ const POST_TURN_SIDECAR_FUNCTIONS = new Set([
 ]);
 
 let companionTurns = 0;
+let backgroundAbort = new AbortController();
+
+/** Signal for LLM work that is not the companion reply. Aborted when a turn starts. */
+export function backgroundLlmSignal(): AbortSignal {
+  return backgroundAbort.signal;
+}
+
+function preemptBackgroundLlm(): void {
+  const previous = backgroundAbort;
+  backgroundAbort = new AbortController();
+  if (!previous.signal.aborted) previous.abort();
+}
+
+/**
+ * Abort signal for a local completion.
+ * Companion occupancy (ensemble drafts inside the turn) keeps the caller
+ * signal only, so the turn does not abort itself. Background completions
+ * share `backgroundLlmSignal()` and are cancelled when a chat turn begins.
+ */
+export function localCallSignal(caller?: AbortSignal): AbortSignal | undefined {
+  if (companionTurns > 0) return caller;
+  const background = backgroundAbort.signal;
+  if (!caller) return background;
+  return combineAbortSignals(caller, background);
+}
 
 function envFlagTrue(value: string | undefined): boolean {
   const raw = String(value || "").trim().toLowerCase();
@@ -55,6 +83,7 @@ export function companionLlmTurnOpen(): boolean {
 
 export function beginCompanionLlmTurn(): () => void {
   companionTurns += 1;
+  preemptBackgroundLlm();
   let released = false;
   return () => {
     if (released) return;
@@ -66,6 +95,7 @@ export function beginCompanionLlmTurn(): () => void {
 /** Test-only: drop occupancy so cases do not leak across files. */
 export function resetCompanionLlmTurnForTests(): void {
   companionTurns = 0;
+  backgroundAbort = new AbortController();
 }
 
 /**
