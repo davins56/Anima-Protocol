@@ -85,6 +85,12 @@ import {
 import { beginCompanionLlmTurn, companionTurnsOpenForUser } from "../lib/sidecarLlm";
 import { localLlmSlotEnabled, waitForLocalChatSlot } from "../lib/localLlmSlot";
 import {
+  FOURTH_WALL_RETRY_MAX_TOKENS,
+  fourthWallRetryAllowed,
+  inWorldRetryReminder,
+  isFourthWallReply,
+} from "../lib/fourthWallReply";
+import {
   inCharacterRetryReminder,
   isStockAssistantLine,
   noteStockAssistantLine,
@@ -2575,25 +2581,36 @@ router.post("/messages", async (req, res) => {
     // A self-harm turn keeps the generated reply. Swapping it for the
     // in-character dodge would drop the care the model just offered.
     // The crisis card and the care note are unchanged; this only skips
-    // the stock and repeat machinery.
+    // the stock, repeat, and fourth-wall machinery.
     const crisisTurn = Boolean(crisisResourceCard);
     const replyIsStock = (text: unknown) =>
       !crisisTurn && isStockAssistantLine(text, personaParts);
+    const replyBreaksFourthWall = (text: unknown) =>
+      !crisisTurn && isFourthWallReply(text);
     const stockDeflection = () =>
       stockAssistantDeflection(activeChar?.name, pronounFromPersona(personaParts));
-    const regenerateStockReply = async (maxTokens: number): Promise<string | null> => {
+    const fourthWallRetryOpen = () =>
+      fourthWallRetryAllowed(Date.now() - generationStartedAt);
+    const guardedRetryMaxTokens = (localHost: boolean, fourthWall: boolean) => {
+      const base = localHost
+        ? Math.min(replyMaxTokens, LOCAL_EXTRA_GENERATION_MAX_TOKENS)
+        : replyMaxTokens;
+      return fourthWall ? Math.min(base, FOURTH_WALL_RETRY_MAX_TOKENS) : base;
+    };
+    const regenerateGuardedReply = async (
+      maxTokens: number,
+      reminder: string,
+      noteStock: boolean,
+    ): Promise<string | null> => {
       const retryBudgetMs = repeatRetryBudgetMs(Date.now() - requestStartedAt);
-      noteStockAssistantLine("retry");
+      if (noteStock) noteStockAssistantLine("retry");
       const retryOpen = openStreamAbort(retryBudgetMs);
       try {
         const retry = await createChatStreamWithFailover({
           tier: routed.tier,
           model: routed.model,
           maxTokens,
-          messages: appendFinalUserReminder(
-            messages,
-            inCharacterRetryReminder(activeChar?.name),
-          ),
+          messages: appendFinalUserReminder(messages, reminder),
           temperature: COMPANION_CHAT_TEMPERATURE,
           signal: combineAbortSignals(retryOpen.signal, abandoned.signal),
         });
@@ -2609,7 +2626,14 @@ router.post("/messages", async (req, res) => {
             ? trimToLastCompleteSentence(retried.content)
             : retried.content,
         );
-        if (retriedText.trim() && !replyIsStock(retriedText)) {
+        // A fourth-wall backup that times out keeps the original reply.
+        // A stock retry may still keep a trimmed sentence.
+        if (retried.timedOut && !noteStock) return null;
+        if (
+          retriedText.trim() &&
+          !replyIsStock(retriedText) &&
+          !replyBreaksFourthWall(retriedText)
+        ) {
           usedModel = retry.model;
           usedTier = retry.tier;
           usedProvider = retry.provider;
@@ -2619,12 +2643,19 @@ router.post("/messages", async (req, res) => {
         }
         return null;
       } catch (error) {
-        logger.warn({ error, turnId }, "Stock-assistant regenerate failed");
+        logger.warn({ error, turnId }, "In-character regenerate failed");
         return null;
       } finally {
         retryOpen.cancel();
       }
     };
+    const guardReminder = (stock: boolean, fourthWall: boolean): string =>
+      [
+        stock ? inCharacterRetryReminder(activeChar?.name) : "",
+        fourthWall ? inWorldRetryReminder(activeChar?.name) : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
 
     if (ownModelTurn) {
       usedProvider = "own";
@@ -2685,7 +2716,9 @@ router.post("/messages", async (req, res) => {
           ? trimToLastCompleteSentence(streamed.content)
           : streamed.content;
       }
-      if (!crisisTurn && replyIsStock(fullResponse)) {
+      const ensembleStock = !crisisTurn && replyIsStock(fullResponse);
+      const ensembleFourth = replyBreaksFourthWall(fullResponse) && fourthWallRetryOpen();
+      if (ensembleStock || ensembleFourth) {
         const retryBudgetMs = repeatRetryBudgetMs(Date.now() - requestStartedAt);
         let otherWorkQueued = companionTurnsOpenForUser(userId) > 1;
         if (retryBudgetMs > 0 && !generateSignal.aborted && !otherWorkQueued) {
@@ -2701,12 +2734,18 @@ router.post("/messages", async (req, res) => {
         }
         const recovered =
           retryBudgetMs > 0 && !generateSignal.aborted && !otherWorkQueued
-            ? await regenerateStockReply(
-                Math.min(replyMaxTokens, LOCAL_EXTRA_GENERATION_MAX_TOKENS),
+            ? await regenerateGuardedReply(
+                guardedRetryMaxTokens(true, ensembleFourth),
+                guardReminder(ensembleStock, ensembleFourth),
+                ensembleStock,
               )
             : null;
-        fullResponse = recovered || stockDeflection();
-        if (!recovered) noteStockAssistantLine("deflect");
+        if (recovered) {
+          fullResponse = recovered;
+        } else if (ensembleStock) {
+          fullResponse = stockDeflection();
+          noteStockAssistantLine("deflect");
+        }
       }
       if (fullResponse.trim()) emitDelta(fullResponse);
     } else {
@@ -2741,6 +2780,7 @@ router.post("/messages", async (req, res) => {
       const priorReplies = recentAssistantReplies(recentMessages);
       let held = "";
       let flushed = false;
+      let suppressFourthWall = false;
       let cutReason: "repeat" | "stock" | null = null;
       const streamed = await consumeLlmStream(completion.stream, {
         ...consumeOpts,
@@ -2756,8 +2796,14 @@ router.post("/messages", async (req, res) => {
             return;
           }
           held += delta;
-          if (cutReason) return;
+          if (cutReason || suppressFourthWall) return;
           const visible = held.trim();
+          // Keep the whole reply. A clear narration is not shown until the
+          // one short backup finishes, or until we decide to keep it.
+          if (replyBreaksFourthWall(visible)) {
+            suppressFourthWall = true;
+            return;
+          }
           if (visible.length < LOCAL_REPEAT_DETECT_CHARS) return;
           const opening = visible.slice(0, LOCAL_REPEAT_DETECT_CHARS);
           if (
@@ -2800,9 +2846,11 @@ router.post("/messages", async (req, res) => {
       const stockLine =
         !crisisTurn &&
         (cutReason === "stock" || replyIsStock(fullResponse) || replyIsStock(held));
+      const fourthWall =
+        replyBreaksFourthWall(fullResponse) && fourthWallRetryOpen();
       let otherWorkQueued = false;
       const wantsExtra =
-        (repeated || stockLine) &&
+        (repeated || stockLine || fourthWall) &&
         retryBudgetMs > 0 &&
         !generateSignal.aborted &&
         !streamed.timedOut;
@@ -2820,10 +2868,11 @@ router.post("/messages", async (req, res) => {
           }
         }
       }
-      // One extra generation per turn, shared by the repeat retry and the
-      // stock-assistant retry. Repeat wins when both match: dropping the
-      // copied line is the more specific fix, and a stock result still
-      // deflects below without a second generate.
+      // One extra generation per turn, shared by the repeat retry, the
+      // stock-assistant retry, and the fourth-wall retry. Repeat wins when
+      // more than one matches: dropping the copied line is the more specific
+      // fix, and a stock or fourth-wall result still deflects below without
+      // a second generate.
       let extraGenerationUsed = false;
       let repeatResolved = false;
       const canRegenerate = wantsExtra && !otherWorkQueued;
@@ -2888,12 +2937,12 @@ router.post("/messages", async (req, res) => {
         } finally {
           retryOpen.cancel();
         }
-      } else if (canRegenerate && stockLine && !extraGenerationUsed) {
+      } else if (canRegenerate && (stockLine || fourthWall) && !extraGenerationUsed) {
         extraGenerationUsed = true;
-        const recovered = await regenerateStockReply(
-          localHost
-            ? Math.min(replyMaxTokens, LOCAL_EXTRA_GENERATION_MAX_TOKENS)
-            : replyMaxTokens,
+        const recovered = await regenerateGuardedReply(
+          guardedRetryMaxTokens(localHost, fourthWall),
+          guardReminder(stockLine, fourthWall),
+          stockLine,
         );
         if (recovered) {
           fullResponse = recovered;
