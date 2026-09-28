@@ -1,6 +1,6 @@
 # Standalone Anima LLM service for Fly.io (Docker runtime).
 #
-# Serves the self-hosted, open-weight `anima-chat` model (Qwen2.5 3B) over an
+# Serves the self-hosted, open-weight `anima-chat` model (Qwen2.5 0.5B) over an
 # OpenAI-compatible API behind a Caddy bearer-token proxy on :8080.
 # Point the api-server's ANIMA_LOCAL_LLM_BASE_URL at
 # https://anima-chat-llm.fly.dev/v1 and set ANIMA_LOCAL_LLM_API_KEY to the
@@ -10,7 +10,7 @@
 # Build from the repository root so COPY scripts/llm/Modelfile.anima-chat works:
 #   fly deploy --config deploy/ollama-fly/fly.toml --dockerfile deploy/ollama-fly/Dockerfile
 #
-# Mount a Fly volume at /root/.ollama so the ~2 GB of pulled weights survive
+# Mount a Fly volume at /root/.ollama so the ~400 MB of pulled weights survive
 # restarts/redeploys instead of re-downloading every time.
 
 # Debian Caddy (glibc) — ollama/ollama is Ubuntu/glibc. Do not copy a
@@ -20,7 +20,7 @@ FROM caddy:2 AS caddy
 FROM ollama/ollama:latest
 
 ENV OLLAMA_HOST=0.0.0.0:11434
-ENV ANIMA_BOOTSTRAP_BASE=qwen2.5:3b
+ENV ANIMA_BOOTSTRAP_BASE=qwen2.5:0.5b
 ENV ANIMA_OLLAMA_CHAT_TAG=anima-chat
 
 COPY --from=caddy /usr/bin/caddy /usr/local/bin/caddy

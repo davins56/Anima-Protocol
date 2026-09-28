@@ -14,6 +14,7 @@ import {
   LlmStreamTimeoutError,
 } from "../../lib/consumeLlmStream";
 import { llmOpenTimeoutMs, openStreamAbort } from "../../lib/chatTimeouts";
+import { shouldSkipSidecarLlm } from "../../lib/sidecarLlm";
 import { visibleAssistantReply } from "../../lib/visibleAssistantReply";
 
 const router = Router();
@@ -166,6 +167,32 @@ async function streamSignedInCompletion(
   }
 }
 
+/**
+ * Book of Echoes and Serenity ambient replies are post-turn sidecar
+ * completions. Local-only chat skips them with the same gate as emotion
+ * and memory extraction so they do not take the single Ollama slot.
+ */
+function respondSkippedSidecar(res: Response, stream: boolean): void {
+  if (!stream) {
+    res.json({
+      id: "chatcmpl-anima",
+      object: "chat.completion",
+      choices: [
+        {
+          index: 0,
+          message: { role: "assistant", content: "" },
+          finish_reason: "stop",
+        },
+      ],
+      skipped: true,
+    });
+    return;
+  }
+  beginSse(res);
+  writeSse(res, { done: true, skipped: true });
+  res.end();
+}
+
 function jsonSystemPrompt(
   systemPrompt: string | undefined,
   responseJsonSchema: Record<string, unknown> | undefined,
@@ -302,7 +329,13 @@ router.post("/v1/chat/completions", async (req, res) => {
     max_tokens?: number;
     maxTokens?: number;
     stream?: boolean;
+    sidecar?: boolean;
   };
+
+  if (body.sidecar === true && shouldSkipSidecarLlm()) {
+    respondSkippedSidecar(res, body.stream !== false);
+    return;
+  }
 
   const systemPrompt = jsonSystemPrompt(
     body.systemPrompt || body.system_prompt,

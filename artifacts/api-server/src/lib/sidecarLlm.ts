@@ -14,6 +14,7 @@
 import { combineAbortSignals } from "./chatTimeouts";
 
 const POST_TURN_SIDECAR_FUNCTIONS = new Set([
+  "aggregatePersonalityShifts",
   "analyzeCharacterForBehavior",
   "analyzeEmotionalClimate",
   "analyzeMessageTags",

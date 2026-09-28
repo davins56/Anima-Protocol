@@ -17,7 +17,7 @@ if [ -z "${PROXY_AUTH_TOKEN:-}" ]; then
 fi
 
 OLLAMA_HOST="${OLLAMA_HOST:-0.0.0.0:11434}"
-ANIMA_BOOTSTRAP_BASE="${ANIMA_BOOTSTRAP_BASE:-qwen2.5:3b}"
+ANIMA_BOOTSTRAP_BASE="${ANIMA_BOOTSTRAP_BASE:-qwen2.5:0.5b}"
 ANIMA_OLLAMA_CHAT_TAG="${ANIMA_OLLAMA_CHAT_TAG:-anima-chat}"
 # /v1/chat/completions drops keep_alive. This default still applies to those
 # requests so anima-chat stays resident for 30m after the last hit.
@@ -66,7 +66,7 @@ bootstrap_model() {
   echo "Bootstrap complete: ${ANIMA_OLLAMA_CHAT_TAG}"
 }
 
-# Do not block health checks on the ~2 GB first pull.
+# Do not block health checks on the ~400 MB first pull.
 bootstrap_model &
 BOOTSTRAP_PID=$!
 
