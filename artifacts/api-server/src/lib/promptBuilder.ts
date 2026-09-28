@@ -513,6 +513,57 @@ export function clientSceneExcerpt(supplied: string): string {
 /** Instruct-style chat models (Qwen2.5 / anima-chat) require a user turn. */
 export const CONTINUE_USER_TURN = "(Continue the scene naturally.)";
 
+function messageTurnKey(message: MsgData): string | null {
+  const id = String(message.id || "");
+  if (id.endsWith(":user")) return id.slice(0, -":user".length);
+  if (id.endsWith(":assistant")) return id.slice(0, -":assistant".length);
+  const metadata = message.metadata;
+  if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
+    const turnId = (metadata as { turn_id?: unknown }).turn_id;
+    if (turnId) return String(turnId);
+  }
+  if (message.turn_id) return String(message.turn_id);
+  return null;
+}
+
+/**
+ * Drop an earlier copy of this user line and the assistant reply that belongs
+ * to it. A retry must not show the model the same question twice, with a
+ * stale answer between the copies. The caller appends the newest user line
+ * once, at the end.
+ */
+export function omitRetriedUserTurn(
+  recentMessages: MsgData[] = [],
+  userTurn: string,
+): MsgData[] {
+  const needle = userTurn.trim();
+  if (!needle || needle === CONTINUE_USER_TURN) return recentMessages;
+  const droppedTurns = new Set<string>();
+  for (const message of recentMessages) {
+    if (message.role !== "user") continue;
+    if (String(message.content ?? "").trim() !== needle) continue;
+    const key = messageTurnKey(message);
+    if (key) droppedTurns.add(key);
+  }
+  const kept: MsgData[] = [];
+  for (let i = 0; i < recentMessages.length; i++) {
+    const message = recentMessages[i]!;
+    const key = messageTurnKey(message);
+    const isDuplicateUser =
+      message.role === "user" && String(message.content ?? "").trim() === needle;
+    if ((key && droppedTurns.has(key)) || isDuplicateUser) {
+      if (message.role === "user") {
+        const next = recentMessages[i + 1];
+        const nextKey = next ? messageTurnKey(next) : null;
+        if (next?.role === "assistant" && (!nextKey || nextKey === key)) i += 1;
+      }
+      continue;
+    }
+    kept.push(message);
+  }
+  return kept;
+}
+
 /** Last N store turns replayed as chat messages (not the full 24-row load). */
 export const LLM_CHAT_HISTORY_MAX_MESSAGES = 8;
 /** Per-message cap for replayed history. */
@@ -914,8 +965,10 @@ export function composeCompanionChatMessages(
   let pdfText = sections.pdfText;
   let memoryText = sections.memoryText;
   const moodText = sections.moodText;
-  let history = capRecentMessagesForLlm(params.recentMessages);
   const userTurn = String(params.content ?? "").trim() || CONTINUE_USER_TURN;
+  let history = capRecentMessagesForLlm(
+    omitRetriedUserTurn(params.recentMessages, userTurn),
+  );
   const answerLast = answerLastMessageInstruction(
     userNameForAnswerInstruction(params),
     sections.companionName,
@@ -954,6 +1007,9 @@ export function composeCompanionChatMessages(
 
   const messages: LlmChatMessage[] = [];
   if (system) messages.push({ role: "system", content: system });
+  // Retry dedupe already dropped this question and its stale answer. A
+  // leftover trailing copy (continue turns are left in place) is still
+  // removed so the answer-last system turn sits directly before one user line.
   const historyEndsWithTurn =
     history.length > 0 &&
     history[history.length - 1]?.role === "user" &&

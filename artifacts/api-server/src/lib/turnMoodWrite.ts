@@ -7,13 +7,39 @@
  */
 
 export const MOOD_TURN_ID_KEY = "moodTurnId";
+/** Bond strength for this turn was persisted. A retry must not add it again. */
+export const RELATIONSHIP_TURN_ID_KEY = "relationshipTurnId";
+/** Saved-moment pass for this turn already ran, whether or not one crystallized. */
+export const SAVED_MOMENTS_TURN_ID_KEY = "savedMomentsTurnId";
+
+function turnStampMatches(
+  emotionalState: Record<string, unknown> | null | undefined,
+  key: string,
+  turnId: string,
+): boolean {
+  if (!emotionalState || typeof emotionalState !== "object" || !turnId) return false;
+  return emotionalState[key] === turnId;
+}
 
 export function moodTurnAlreadyWritten(
   emotionalState: Record<string, unknown> | null | undefined,
   turnId: string,
 ): boolean {
-  if (!emotionalState || typeof emotionalState !== "object") return false;
-  return emotionalState[MOOD_TURN_ID_KEY] === turnId;
+  return turnStampMatches(emotionalState, MOOD_TURN_ID_KEY, turnId);
+}
+
+export function relationshipTurnAlreadyWritten(
+  emotionalState: Record<string, unknown> | null | undefined,
+  turnId: string,
+): boolean {
+  return turnStampMatches(emotionalState, RELATIONSHIP_TURN_ID_KEY, turnId);
+}
+
+export function savedMomentsTurnAlreadyWritten(
+  emotionalState: Record<string, unknown> | null | undefined,
+  turnId: string,
+): boolean {
+  return turnStampMatches(emotionalState, SAVED_MOMENTS_TURN_ID_KEY, turnId);
 }
 
 /**
@@ -41,4 +67,74 @@ export function emotionalStateWithTurnMood(
     },
     wrote: true,
   };
+}
+
+/**
+ * Apply relationship strength and the saved-moment stamp without rewriting a
+ * mood this turn already stored. Each part stamps the turn id, so a retry or
+ * join of the same turn leaves all three untouched.
+ */
+export function emotionalStateWithTurnBond(
+  emotionalState: Record<string, unknown> | null | undefined,
+  turnId: string,
+  input: {
+    synchro?: Record<string, unknown> | null;
+    selfState?: Record<string, unknown> | null;
+    /** True once this turn's saved-moment pass has run. */
+    saveMoment?: boolean;
+  },
+): {
+  state: Record<string, unknown>;
+  wroteMood: boolean;
+  wroteRelationship: boolean;
+  wroteSavedMoments: boolean;
+} {
+  const base =
+    emotionalState && typeof emotionalState === "object" ? { ...emotionalState } : {};
+  if (!turnId) {
+    return {
+      state: base,
+      wroteMood: false,
+      wroteRelationship: false,
+      wroteSavedMoments: false,
+    };
+  }
+
+  let state = base;
+  let wroteMood = false;
+  if (input.selfState && typeof input.selfState === "object") {
+    const mood = emotionalStateWithTurnMood(state, turnId, input.selfState);
+    state = mood.state;
+    wroteMood = mood.wrote;
+  }
+
+  let wroteRelationship = false;
+  if (
+    input.synchro &&
+    typeof input.synchro === "object" &&
+    !relationshipTurnAlreadyWritten(state, turnId)
+  ) {
+    const synchro = { ...input.synchro };
+    delete synchro.selfState;
+    delete synchro[MOOD_TURN_ID_KEY];
+    delete synchro[RELATIONSHIP_TURN_ID_KEY];
+    delete synchro[SAVED_MOMENTS_TURN_ID_KEY];
+    state = {
+      ...state,
+      ...synchro,
+      [RELATIONSHIP_TURN_ID_KEY]: turnId,
+    };
+    wroteRelationship = true;
+  }
+
+  let wroteSavedMoments = false;
+  if (input.saveMoment && !savedMomentsTurnAlreadyWritten(state, turnId)) {
+    state = {
+      ...state,
+      [SAVED_MOMENTS_TURN_ID_KEY]: turnId,
+    };
+    wroteSavedMoments = true;
+  }
+
+  return { state, wroteMood, wroteRelationship, wroteSavedMoments };
 }
