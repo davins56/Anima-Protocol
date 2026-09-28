@@ -27,6 +27,8 @@ import {
 } from "./modelRouter";
 import {
   getLocalLlmClient,
+  getLocalLlmClientForBase,
+  localLlmBaseUrl,
   getDeepshiApiKeySource,
   getDeepshiClient,
   getMinimaxApiKeySource,
@@ -63,8 +65,10 @@ import { LlmStreamTimeoutError } from "./consumeLlmStream";
 import {
   combineAbortSignals,
   LLM_LOCAL_FAILOVER_ATTEMPT_MS,
+  LLM_LOCAL_FIRST_TOKEN_MS,
   openStreamAbort,
 } from "./chatTimeouts";
+import { usableLocalLlmBackupBaseUrl } from "./localLlmBackup";
 import { localChatKeepAliveFields } from "./localLlmWarm";
 import { companionLlmTurnOpen, localCallSignal } from "./sidecarLlm";
 import {
@@ -546,6 +550,75 @@ export function shouldTryNextProvider(
     return shouldTryNextOpenRouterFreeModel(err, model);
   }
   return true;
+}
+
+function errorHttpStatus(err: unknown): number | null {
+  const seen = new Set<unknown>();
+  let current: unknown = err;
+  for (let depth = 0; depth < 5 && current && typeof current === "object"; depth += 1) {
+    if (seen.has(current)) break;
+    seen.add(current);
+    const status = (current as { status?: unknown }).status;
+    if (typeof status === "number" && status > 0) return status;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return null;
+}
+
+/**
+ * Primary Ollama is saturated or refusing new work. Distinct from an auth
+ * failure, which must not be retried against the backup with the same key.
+ */
+export function isLocalLlmBusyError(err: unknown): boolean {
+  const status = errorHttpStatus(err);
+  if (status === 429 || status === 503) return true;
+  const msg = errorFieldLower(
+    err && typeof err === "object" ? (err as { message?: unknown }).message : err,
+  );
+  return /busy|overloaded|queue|too many requests|model is loading|server is busy/.test(msg);
+}
+
+/**
+ * Switch to `ANIMA_LOCAL_LLM_BACKUP_BASE_URL` after the primary self-hosted
+ * host times out, errors, or is busy. Auth failures stay on the primary so a
+ * bad bearer is not retried as if the host were down. Subrequest-limit
+ * failures are this isolate, not the host. Never used to select OpenRouter
+ * or OpenAI — callers only pass the backup URL when it is configured.
+ */
+export function shouldFailoverToLocalBackup(err: unknown): boolean {
+  if (!err) return false;
+  if (isProviderAuthError(err)) return false;
+  if (isWorkerSubrequestLimitError(err)) return false;
+  const status = errorHttpStatus(err);
+  if (status === 400 || status === 422) return false;
+  if (isLlmAbortOrTimeoutError(err)) return true;
+  if (isProviderConnectionError(err)) return true;
+  if (isLocalLlmBusyError(err)) return true;
+  if (status != null && status >= 500) return true;
+  if (status === 404) return true;
+  return false;
+}
+
+/**
+ * Separate from the parent budget so a primary timeout can still open the
+ * backup host. Does not abort the parent signal.
+ */
+function localBackupHostSignal(parent?: AbortSignal): {
+  signal: AbortSignal;
+  cancel: () => void;
+} {
+  const attempt = openStreamAbort(LLM_LOCAL_FIRST_TOKEN_MS);
+  if (!parent || parent.aborted) return attempt;
+  return {
+    signal: combineAbortSignals(parent, attempt.signal),
+    cancel: attempt.cancel,
+  };
+}
+
+function openAiClientForLocalBase(baseUrl: string): OpenAI | null {
+  const primary = localLlmBaseUrl();
+  if (primary && primary === baseUrl.replace(/\/$/, "")) return getLocalLlmClient();
+  return getLocalLlmClientForBase(baseUrl);
 }
 
 /** Caller abort / stream-open timeout — hoppable when a next provider exists. */
@@ -2210,6 +2283,168 @@ async function runDeepshiCompletion(
   };
 }
 
+async function streamFromLocalHost(
+  req: ChatStreamRequest,
+  baseUrl: string,
+  signal: AbortSignal | undefined,
+  failedOver: boolean,
+): Promise<ChatStreamResult> {
+  const client = openAiClientForLocalBase(baseUrl);
+  if (!client) throw new Error(LOCAL_LLM_SETUP_HINT);
+  const preferred = resolveLocalModel(req.tier);
+  const { value: stream, resolved } = await withModelFallback(client, preferred, (m) =>
+    useOllamaNativeChat()
+      ? createOllamaChatStream({
+          model: m.model,
+          messages: req.messages,
+          maxTokens: localOllamaMaxTokens(req.maxTokens, m.maxTokens),
+          temperature: req.temperature,
+          signal,
+          baseUrl,
+        })
+      : client.chat.completions.create(
+          {
+            model: m.model,
+            max_tokens: localOllamaMaxTokens(req.maxTokens, m.maxTokens),
+            messages: req.messages,
+            stream: true,
+            ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
+            ...localChatKeepAliveFields(),
+          },
+          localRequestOptions(signal),
+        ),
+  );
+  return {
+    stream,
+    provider: "local",
+    brand: "anima",
+    model: resolved.model,
+    tier: resolved.tier,
+    failedOver,
+  };
+}
+
+async function completeFromLocalHost(
+  req: ChatCompletionRequest,
+  baseUrl: string,
+  signal: AbortSignal | undefined,
+  failedOver: boolean,
+): Promise<ChatCompletionResult> {
+  const client = openAiClientForLocalBase(baseUrl);
+  if (!client) throw new Error(LOCAL_LLM_SETUP_HINT);
+  const preferred = resolveLocalModel(req.tier);
+  const hasTools = Boolean(req.tools && req.tools.length);
+  const { value: completion, resolved } = await withModelFallback(client, preferred, async (m) => {
+    if (useOllamaNativeChat(hasTools)) {
+      const native = await createOllamaChatCompletion({
+        model: m.model,
+        messages: req.messages,
+        maxTokens: localOllamaMaxTokens(req.maxTokens, m.maxTokens),
+        temperature: req.temperature,
+        signal,
+        baseUrl,
+      });
+      return {
+        choices: [
+          {
+            message: {
+              content: native.content,
+              tool_calls: null,
+            },
+          },
+        ],
+      };
+    }
+    return client.chat.completions.create(
+      {
+        model: m.model,
+        max_tokens: localOllamaMaxTokens(req.maxTokens, m.maxTokens),
+        messages: req.messages,
+        ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
+        ...(hasTools ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" } : {}),
+        ...localChatKeepAliveFields(),
+      },
+      localRequestOptions(signal),
+    );
+  });
+  const content = completion.choices?.[0]?.message?.content ?? "";
+  return {
+    content: typeof content === "string" ? content : "",
+    provider: "local",
+    brand: "anima",
+    model: resolved.model,
+    tier: resolved.tier,
+    failedOver,
+    toolCalls: completion.choices?.[0]?.message?.tool_calls ?? null,
+  };
+}
+
+/**
+ * Primary self-hosted host, then the optional backup URL. With no backup
+ * configured this is the existing single attempt (including the 12s hop
+ * only when a later chain provider exists). Backup failures never select
+ * OpenRouter or OpenAI.
+ */
+async function runLocalStreamWithOptionalBackup(
+  req: ChatStreamRequest,
+  hasNextChain: boolean,
+): Promise<ChatStreamResult> {
+  const primary = localLlmBaseUrl();
+  if (!primary) throw new Error(LOCAL_LLM_SETUP_HINT);
+  const backup = usableLocalLlmBackupBaseUrl(process.env, primary);
+  const primarySignal = backup
+    ? localBackupHostSignal(req.signal)
+    : localAttemptSignal(req.signal, hasNextChain);
+  try {
+    return await streamFromLocalHost(req, primary, primarySignal.signal, false);
+  } catch (err) {
+    if (!backup || !shouldFailoverToLocalBackup(err)) throw err;
+    console.warn(
+      `[llm] local primary failed (${summarizeError(err)}); trying backup self-hosted host`,
+    );
+    const backupSignal = localBackupHostSignal(
+      req.signal?.aborted ? undefined : req.signal,
+    );
+    try {
+      return await streamFromLocalHost(req, backup, backupSignal.signal, true);
+    } finally {
+      backupSignal.cancel();
+    }
+  } finally {
+    primarySignal.cancel();
+  }
+}
+
+async function runLocalCompletionWithOptionalBackup(
+  req: ChatCompletionRequest,
+  hasNextChain: boolean,
+): Promise<ChatCompletionResult> {
+  const primary = localLlmBaseUrl();
+  if (!primary) throw new Error(LOCAL_LLM_SETUP_HINT);
+  const backup = usableLocalLlmBackupBaseUrl(process.env, primary);
+  const primarySignal = backup
+    ? localBackupHostSignal(req.signal)
+    : localAttemptSignal(localCallSignal(req.signal), hasNextChain);
+  try {
+    return await completeFromLocalHost(req, primary, primarySignal.signal, false);
+  } catch (err) {
+    if (!backup || !shouldFailoverToLocalBackup(err)) throw err;
+    console.warn(
+      `[llm] local primary failed (${summarizeError(err)}); trying backup self-hosted host`,
+    );
+    const backupSignal = localBackupHostSignal(
+      req.signal?.aborted ? undefined : req.signal,
+    );
+    try {
+      return await completeFromLocalHost(req, backup, backupSignal.signal, true);
+    } finally {
+      backupSignal.cancel();
+    }
+  } finally {
+    primarySignal.cancel();
+  }
+}
+
 /** Open a streaming chat completion (Workers AI when bound, else local Anima LLM). */
 export async function createChatStreamWithFailover(req: ChatStreamRequest): Promise<ChatStreamResult> {
   beginChatProviderTurn();
@@ -2251,43 +2486,8 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
 
       if (provider === "local") {
         triedLocal = true;
-        const client = requireLocalClient();
-        const preferred = resolveLocalModel(req.tier);
         const hasNext = chain.indexOf(provider) < chain.length - 1;
-        const attempt = localAttemptSignal(req.signal, hasNext);
-        try {
-          const { value: stream, resolved } = await withModelFallback(client, preferred, (m) =>
-            useOllamaNativeChat()
-              ? createOllamaChatStream({
-                  model: m.model,
-                  messages: req.messages,
-                  maxTokens: localOllamaMaxTokens(req.maxTokens, m.maxTokens),
-                  temperature: req.temperature,
-                  signal: attempt.signal,
-                })
-              : client.chat.completions.create(
-                  {
-                    model: m.model,
-                    max_tokens: localOllamaMaxTokens(req.maxTokens, m.maxTokens),
-                    messages: req.messages,
-                    stream: true,
-                    ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
-                    ...localChatKeepAliveFields(),
-                  },
-                  localRequestOptions(attempt.signal),
-                ),
-          );
-          return {
-            stream,
-            provider: "local",
-            brand: "anima",
-            model: resolved.model,
-            tier: resolved.tier,
-            failedOver: false,
-          };
-        } finally {
-          attempt.cancel();
-        }
+        return await runLocalStreamWithOptionalBackup(req, hasNext);
       }
 
       if (provider === "minimax") {
@@ -2384,63 +2584,8 @@ export async function createChatCompletionWithFailover(
 
       if (provider === "local") {
         triedLocal = true;
-        const client = requireLocalClient();
-        const preferred = resolveLocalModel(req.tier);
         const hasNext = chain.indexOf(provider) < chain.length - 1;
-        const attempt = localAttemptSignal(localCallSignal(req.signal), hasNext);
-        const hasTools = Boolean(req.tools && req.tools.length);
-        try {
-          const { value: completion, resolved } = await withModelFallback(
-            client,
-            preferred,
-            async (m) => {
-              if (useOllamaNativeChat(hasTools)) {
-                const native = await createOllamaChatCompletion({
-                  model: m.model,
-                  messages: req.messages,
-                  maxTokens: localOllamaMaxTokens(req.maxTokens, m.maxTokens),
-                  temperature: req.temperature,
-                  signal: attempt.signal,
-                });
-                return {
-                  choices: [
-                    {
-                      message: {
-                        content: native.content,
-                        tool_calls: null,
-                      },
-                    },
-                  ],
-                };
-              }
-              return client.chat.completions.create(
-                {
-                  model: m.model,
-                  max_tokens: localOllamaMaxTokens(req.maxTokens, m.maxTokens),
-                  messages: req.messages,
-                  ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
-                  ...(hasTools
-                    ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" }
-                    : {}),
-                  ...localChatKeepAliveFields(),
-                },
-                localRequestOptions(attempt.signal),
-              );
-            },
-          );
-          const content = completion.choices?.[0]?.message?.content ?? "";
-          return {
-            content: typeof content === "string" ? content : "",
-            provider: "local",
-            brand: "anima",
-            model: resolved.model,
-            tier: resolved.tier,
-            failedOver: false,
-            toolCalls: completion.choices?.[0]?.message?.tool_calls ?? null,
-          };
-        } finally {
-          attempt.cancel();
-        }
+        return await runLocalCompletionWithOptionalBackup(req, hasNext);
       }
 
       if (provider === "minimax") {

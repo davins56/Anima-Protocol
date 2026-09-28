@@ -17,6 +17,10 @@ import {
 } from "./lib/workerApiGuard";
 import { apexRedirectForWww } from "./lib/wwwHostRedirect";
 import { setAiBinding } from "./lib/aiBinding";
+import {
+  clearWorkerWaitUntil,
+  registerWorkerWaitUntil,
+} from "./lib/workerBackground";
 
 interface Env {
   ASSETS: { fetch: (request: Request) => Promise<Response> };
@@ -60,11 +64,18 @@ export default {
 
     if (isWorkerApiPath(url.pathname)) {
       setAiBinding(env.AI);
+      const backgroundToken = crypto.randomUUID();
+      registerWorkerWaitUntil(backgroundToken, (promise) => ctx.waitUntil(promise));
+      const headers = new Headers(request.headers);
+      headers.set("x-anima-bg", backgroundToken);
+      const forwarded = new Request(request, { headers });
       try {
         await applyCloudflareRequestEnv(env);
-        return await fetchApiThroughExpress(request, env, ctx, expressHandler);
+        return await fetchApiThroughExpress(forwarded, env, ctx, expressHandler);
       } catch (err) {
         return jsonApiErrorResponse(err, 503, url.pathname);
+      } finally {
+        clearWorkerWaitUntil(backgroundToken);
       }
     }
 

@@ -40,13 +40,13 @@ import {
   LlmStreamTimeoutError,
 } from "../lib/consumeLlmStream.js";
 import {
-  abortWhenClientLeaves,
   chatReplyMaxTokens,
-  combineAbortSignals,
   llmChatMessagesFirstChunkMs,
   llmChatMessagesOpenTimeoutMs,
   llmChatMessagesStreamTotalMs,
+  llmCompanionDurableWaitMs,
   openStreamAbort,
+  watchClientLeave,
 } from "../lib/chatTimeouts";
 import { hintLocalLlmWarm } from "../lib/localLlmWarm";
 import {
@@ -133,6 +133,7 @@ import {
   beginChatTurn,
   checkpointGeneratedTurn,
   classifyChatTurnReuse,
+  latestOpenChatTurn,
   markTurnCommitted,
   markTurnFailed,
   normalizeTurnId,
@@ -140,6 +141,16 @@ import {
   retryableChatTurns,
   type PersistenceOwner,
 } from "../lib/chatTurnLedger";
+import {
+  isChatTurnFlightElsewhere,
+  reserveChatTurnFlight,
+  type ChatTurnFlightOutcome,
+} from "../lib/chatTurnFlight";
+import {
+  emotionalStateWithTurnMood,
+  moodTurnAlreadyWritten,
+} from "../lib/turnMoodWrite";
+import { scheduleWorkerBackground } from "../lib/workerBackground";
 import { logger } from "../lib/logger";
 import {
   shouldCrystallize,
@@ -208,8 +219,63 @@ function flushSse(res: Response) {
 
 function writeSse(res: Response, payload: unknown) {
   if (res.writableEnded) return;
-  res.write(`data: ${JSON.stringify(payload)}\n\n`);
-  flushSse(res);
+  try {
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    flushSse(res);
+  } catch {
+    // The browser left. Keep generating and save the reply when it arrives.
+  }
+}
+
+function replayFlightOutcome(turn: ChatTurn): ChatTurnFlightOutcome {
+  const content = String(turn.assistantContent || "");
+  return {
+    content,
+    done: {
+      done: true,
+      visible: content,
+      turn_id: turn.id,
+      persistence_status: turn.status,
+      replayed: true,
+      joined: true,
+    },
+  };
+}
+
+function writeFlightSse(res: Response, outcome: ChatTurnFlightOutcome) {
+  const sse = openChatSse(res);
+  try {
+    if (outcome.content) writeSse(res, { content: outcome.content });
+    writeSse(res, outcome.done);
+  } finally {
+    sse.stop();
+    if (!res.writableEnded) res.end();
+  }
+}
+
+async function writeJoinedTurn(
+  res: Response,
+  result: Promise<ChatTurnFlightOutcome>,
+) {
+  try {
+    const outcome = await result;
+    writeFlightSse(res, { ...outcome, done: { ...outcome.done, joined: true } });
+  } catch (err) {
+    if (isChatTurnFlightElsewhere(err)) {
+      res.status(409).json({
+        error: "This chat turn is already being processed.",
+        code: "turn_in_flight",
+      });
+      return;
+    }
+    const sse = openChatSse(res);
+    try {
+      writeSse(res, { error: streamErrorMessage(err) });
+    } finally {
+      sse.stop();
+      if (!res.writableEnded) res.end();
+    }
+  }
 }
 
 function writeSseComment(res: Response, comment: string) {
@@ -772,7 +838,63 @@ async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
   });
 
   await recordTurnContinuity(turn);
+  await writeTurnMoodFromMetadata(turn);
   await markTurnCommitted(turn.id, turn.userId);
+}
+
+/**
+ * Mood lands in the same persist as the assistant row. `moodTurnId` makes a
+ * retry of this turn a no-op so the felt state cannot shift twice.
+ */
+async function writeTurnMoodFromMetadata(turn: ChatTurn): Promise<void> {
+  const metadata = asObject(turn.metadata);
+  const selfState = asObject(metadata.mood_self_state);
+  if (!selfState || Object.keys(selfState).length === 0) return;
+  const characterIds = asStringArray(metadata.character_ids);
+  if (characterIds.length === 0) return;
+  const now = new Date();
+  for (const characterId of characterIds) {
+    const [existing] = await withTransientDbRetry(() =>
+      db
+        .select({
+          summary: companionMemories.summary,
+          facts: companionMemories.facts,
+          emotionalState: companionMemories.emotionalState,
+          resonanceNotes: companionMemories.resonanceNotes,
+        })
+        .from(companionMemories)
+        .where(
+          and(
+            eq(companionMemories.userId, turn.userId),
+            eq(companionMemories.characterId, characterId),
+          ),
+        )
+        .limit(1),
+    );
+    const current = (existing?.emotionalState as Record<string, unknown> | null) ?? {};
+    const next = emotionalStateWithTurnMood(current, turn.id, selfState);
+    if (!next.wrote) continue;
+    await withTransientDbRetry(() =>
+      db
+        .insert(companionMemories)
+        .values({
+          userId: turn.userId,
+          characterId,
+          summary: existing?.summary ?? "",
+          facts: Array.isArray(existing?.facts) ? existing.facts : [],
+          emotionalState: next.state,
+          resonanceNotes: existing?.resonanceNotes ?? "",
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [companionMemories.userId, companionMemories.characterId],
+          set: {
+            emotionalState: next.state,
+            updatedAt: now,
+          },
+        }),
+    );
+  }
 }
 
 /**
@@ -873,6 +995,28 @@ async function applyRelationshipPostProcess(params: {
     }
   }
   if ((synchroState || companionAffect) && assistantContent) {
+    const [moodRow] = characterIds.length
+      ? await withTransientDbRetry(() =>
+          db
+            .select({ emotionalState: companionMemories.emotionalState })
+            .from(companionMemories)
+            .where(
+              and(
+                eq(companionMemories.userId, userId),
+                eq(companionMemories.characterId, characterIds[0]!),
+              ),
+            )
+            .limit(1),
+        )
+      : [undefined];
+    if (
+      moodTurnAlreadyWritten(
+        (moodRow?.emotionalState as Record<string, unknown> | null) ?? null,
+        turnId,
+      )
+    ) {
+      return;
+    }
     const evolved = synchroState
       ? evolveSynchroFromCompanion(synchroState, assistantContent)
       : null;
@@ -1395,6 +1539,36 @@ router.post("/scene-mind", async (req, res) => {
   });
 });
 
+function turnStatusPayload(turn: ChatTurn) {
+  const metadata = asObject(turn.metadata);
+  return {
+    turn_id: turn.id,
+    session_id: turn.sessionId,
+    persistence_owner: turn.persistenceOwner,
+    persistence_status: turn.status,
+    retry_count: turn.retryCount,
+    last_error: turn.lastError,
+    committed_at: turn.committedAt,
+    user_content: turn.userContent,
+    assistant_content: turn.assistantContent || "",
+    assistant_message_id: turn.assistantMessageId,
+    user_message_id: turn.userMessageId,
+    companion_affect: metadata.companion_affect ?? null,
+    active_character_name: metadata.active_character_name ?? null,
+  };
+}
+
+router.get("/sessions/:sessionId/live-turn", async (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const turn = await latestOpenChatTurn(userId, req.params.sessionId);
+  if (!turn) {
+    res.json({ turn_id: null, persistence_status: null });
+    return;
+  }
+  res.json(turnStatusPayload(turn));
+});
+
 router.get("/turns/:turnId", async (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
@@ -1403,15 +1577,7 @@ router.get("/turns/:turnId", async (req, res) => {
     res.status(404).json({ error: "Turn not found" });
     return;
   }
-  res.json({
-    turn_id: turn.id,
-    session_id: turn.sessionId,
-    persistence_owner: turn.persistenceOwner,
-    persistence_status: turn.status,
-    retry_count: turn.retryCount,
-    last_error: turn.lastError,
-    committed_at: turn.committedAt,
-  });
+  res.json(turnStatusPayload(turn));
 });
 
 router.post("/turns/:turnId/commit", async (req, res) => {
@@ -1492,6 +1658,7 @@ router.post("/messages", async (req, res) => {
     deep_mode?: boolean;
     persist?: boolean;
     turn_id?: string;
+    idempotency_key?: string;
     persistence_owner?: PersistenceOwner;
     metadata?: Record<string, unknown>;
     region?: RegionHints | null;
@@ -1522,7 +1689,7 @@ router.post("/messages", async (req, res) => {
   ];
   const mode = body.mode || String(sessionData.mode || "solo");
   const content = String(body.content ?? "");
-  let turnId = normalizeTurnId(body.turn_id);
+  let turnId = normalizeTurnId(body.turn_id || body.idempotency_key);
   const persistenceOwner: PersistenceOwner =
     body.persistence_owner === "client" || body.persist === false
       ? "client"
@@ -1537,6 +1704,15 @@ router.post("/messages", async (req, res) => {
     sessionId,
     mode,
   });
+  let flight = reserveChatTurnFlight(turnId, content);
+  if (flight.mismatched) {
+    turnId = normalizeTurnId("");
+    flight = reserveChatTurnFlight(turnId, content);
+  }
+  if (flight.joined) {
+    await writeJoinedTurn(res, flight.result);
+    return;
+  }
   let turnStart = await beginChatTurn({
     id: turnId,
     sessionId,
@@ -1549,26 +1725,16 @@ router.post("/messages", async (req, res) => {
   if (!turnStart.created) {
     const reuse = classifyChatTurnReuse(turnStart.turn, content);
     if (reuse === "replay") {
-      res.writeHead(200, {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
-        "X-Accel-Buffering": "no",
-      });
-      writeSse(res, { content: String(turnStart.turn.assistantContent || "") });
-      writeSse(res, {
-        done: true,
-        visible: String(turnStart.turn.assistantContent || ""),
-        turn_id: turnId,
-        persistence_status: turnStart.turn.status,
-        replayed: true,
-      });
-      res.end();
+      const outcome = replayFlightOutcome(turnStart.turn);
+      flight.resolve(outcome);
+      writeFlightSse(res, outcome);
       return;
     }
     if (reuse === "conflict") {
       // Same turn_id, different user text — never stream the prior reply.
+      flight.abandon();
       turnId = normalizeTurnId("");
+      flight = reserveChatTurnFlight(turnId, content);
       turnStart = await beginChatTurn({
         id: turnId,
         sessionId,
@@ -1579,6 +1745,7 @@ router.post("/messages", async (req, res) => {
       });
     }
     if (!turnStart.created) {
+      flight.abandon();
       res.status(409).json({
         error: "This chat turn is already being processed.",
         code: "turn_in_flight",
@@ -1593,9 +1760,17 @@ router.post("/messages", async (req, res) => {
   // prompt compose. User-perceived TTFT used to include all of that work.
   const sse = openChatSse(res);
   const stopHeartbeat = sse.stop;
+  let clientLeft: () => boolean = () => false;
+  const clientWatch = watchClientLeave(res);
+  clientLeft = clientWatch.left;
   hintLocalLlmWarm();
   let streamSucceeded = false;
   let fullResponse = "";
+  let releaseBackground = () => {};
+  const backgroundDone = new Promise<void>((resolve) => {
+    releaseBackground = resolve;
+  });
+  scheduleWorkerBackground(backgroundDone, req.header("x-anima-bg"));
   let usedModel = "";
   let usedTier: string = "";
   let usedProvider: LlmProviderId = "local";
@@ -1995,15 +2170,22 @@ router.post("/messages", async (req, res) => {
   };
   const emitReasoning = () => writeSse(res, { status: "thinking" });
   const freeTierCascade = usesFreeTierOpenBudget();
+  const generationBudgetMs = freeTierCascade
+    ? llmChatMessagesOpenTimeoutMs({ freeTierCascade })
+    : llmCompanionDurableWaitMs();
   const consumeOpts = {
     onDelta: emitDelta,
     onReasoning: emitReasoning,
-    firstChunkMs: llmChatMessagesFirstChunkMs({ freeTierCascade }),
-    totalMs: llmChatMessagesStreamTotalMs({ freeTierCascade }),
+    firstChunkMs: freeTierCascade
+      ? llmChatMessagesFirstChunkMs({ freeTierCascade })
+      : generationBudgetMs,
+    totalMs: freeTierCascade
+      ? llmChatMessagesStreamTotalMs({ freeTierCascade })
+      : generationBudgetMs,
   };
 
   telemetry.startGeneration();
-    const clientGone = abortWhenClientLeaves(res);
+    const open = openStreamAbort(generationBudgetMs);
     const releaseCompanionLlm = beginCompanionLlmTurn();
     try {
     if (isLocalEnsembleEnabled()) {
@@ -2012,7 +2194,7 @@ router.post("/messages", async (req, res) => {
         tier: routed.tier,
         maxTokens: replyMaxTokens,
         messages,
-        signal: clientGone.signal,
+        signal: open.signal,
       });
       if (!drafts.length) {
         throw new Error("The companion returned an empty reply. Please try again.");
@@ -2036,7 +2218,7 @@ router.post("/messages", async (req, res) => {
         const completion = await combineLocalDrafts(drafts, messages, {
           tier: routed.tier,
           maxTokens: replyMaxTokens,
-          signal: clientGone.signal,
+          signal: open.signal,
         });
         usedModel = completion.model;
         usedTier = completion.tier;
@@ -2052,7 +2234,6 @@ router.post("/messages", async (req, res) => {
       }
     } else {
       sse.setPhase("waking");
-      const open = openStreamAbort(llmChatMessagesOpenTimeoutMs({ freeTierCascade }));
       let completion;
       try {
         completion = await createChatStreamWithFailover({
@@ -2061,9 +2242,11 @@ router.post("/messages", async (req, res) => {
           maxTokens: replyMaxTokens,
           messages,
           temperature: 0.85,
-          signal: combineAbortSignals(open.signal, clientGone.signal),
+          signal: open.signal,
         });
       } finally {
+        // Headers are in. Consume owns the rest of the durable budget so a
+        // slow prefill is not cut off when the browser abort fires.
         open.cancel();
       }
       sse.setPhase("generating");
@@ -2083,7 +2266,8 @@ router.post("/messages", async (req, res) => {
       );
     }
     } finally {
-      clientGone.cancel();
+      open.cancel();
+      clientWatch.cancel();
       releaseCompanionLlm();
     }
 
@@ -2095,6 +2279,20 @@ router.post("/messages", async (req, res) => {
     }
 
     streamSucceeded = true;
+    const evolvedCompanion = companionAffect
+      ? evolveCompanionAffectFromCompanion(companionAffect, fullResponse)
+      : null;
+    const evolvedAffectSnapshot = evolvedCompanion
+      ? toCompanionAffectSnapshot(
+          evolvedCompanion,
+          synchroState
+            ? synchroStrengthFromEmotionalState(serializeSynchroState(synchroState))
+            : null,
+        )
+      : null;
+    const evolvedMoodSelfState = evolvedCompanion
+      ? serializeCompanionAffect(evolvedCompanion)
+      : null;
     const generatedMetadata = {
       ...(body.metadata ?? {}),
       mode,
@@ -2111,6 +2309,8 @@ router.post("/messages", async (req, res) => {
       failed_over: failedOver,
       ensemble_minds: ensembleMinds,
       ensemble_combined: ensembleCombined,
+      companion_affect: evolvedAffectSnapshot,
+      mood_self_state: evolvedMoodSelfState,
     };
     try {
       await telemetry.measure(
@@ -2158,16 +2358,31 @@ router.post("/messages", async (req, res) => {
       assistant_message_id: turnStart.turn.assistantMessageId,
       persistence_status: "generated",
       persistence_owner: persistenceOwner,
-      companion_affect: companionAffect
-        ? toCompanionAffectSnapshot(
-            evolveCompanionAffectFromCompanion(companionAffect, fullResponse),
-            synchroState
-              ? synchroStrengthFromEmotionalState(
-                  serializeSynchroState(synchroState),
-                )
-              : null,
-          )
-        : null,
+      companion_affect: evolvedAffectSnapshot,
+    });
+    flight.resolve({
+      content: fullResponse,
+      done: {
+        done: true,
+        visible: fullResponse,
+        model: usedModel,
+        tier: usedTier,
+        provider: usedProvider,
+        brand: usedBrand,
+        failed_over: failedOver,
+        ensemble_minds: ensembleMinds,
+        ensemble_combined: ensembleCombined,
+        is_crossover: isCrossover,
+        assistant_character_id: activeCharacterId,
+        assistant_character_name: activeCharacterName,
+        turn_id: turnId,
+        user_message_id: turnStart.turn.userMessageId,
+        assistant_message_id: turnStart.turn.assistantMessageId,
+        persistence_status: "generated",
+        persistence_owner: persistenceOwner,
+        companion_affect: evolvedAffectSnapshot,
+        joined: true,
+      },
     });
     telemetry.report("completed", {
       provider: usedProvider,
@@ -2178,6 +2393,7 @@ router.post("/messages", async (req, res) => {
     });
   } catch (err) {
     logger.error({ err }, "Chat message stream failed");
+    flight.fail(err);
     await markTurnFailed(turnId, userId, err).catch(() => {});
     writeSse(res, { error: streamErrorMessage(err) });
     telemetry.report("failed", {
@@ -2187,18 +2403,25 @@ router.post("/messages", async (req, res) => {
     });
   } finally {
     stopHeartbeat();
-    if (!res.writableEnded) res.end();
+    try {
+      if (!res.writableEnded) res.end();
+    } catch {
+      // The browser already left. Persistence below still saves the reply.
+    }
   }
 
   void (async () => {
     try {
-      await preStreamPersist;
-    } catch (error) {
-      logger.warn({ error, turnId }, "Pre-stream chat persistence failed");
-    }
-    if (!streamSucceeded || !String(fullResponse).trim()) return;
+      try {
+        await preStreamPersist;
+      } catch (error) {
+        logger.warn({ error, turnId }, "Pre-stream chat persistence failed");
+      }
+      if (!streamSucceeded || !String(fullResponse).trim()) return;
 
-    if (persistenceOwner === "server" && shouldPersist) {
+      const lateClient = clientLeft();
+      const serverPersist = persistenceOwner === "server" && shouldPersist;
+      if (serverPersist || lateClient) {
       const persistenceStartedAt = Date.now();
       try {
         const generatedTurn = await readChatTurn(turnId, userId);
@@ -2228,7 +2451,7 @@ router.post("/messages", async (req, res) => {
         return;
       }
     }
-    if (persistenceOwner !== "server" || !shouldPersist) return;
+    if (!(persistenceOwner === "server" && shouldPersist) && !clientLeft()) return;
 
     // Save intimacy profile and scene updates if intimacy engine ran
     if (intimacyProfile) {
@@ -2266,6 +2489,9 @@ router.post("/messages", async (req, res) => {
         { postProcessError, turnId, sessionId },
         "Chat relationship/evolution post-processing failed",
       );
+    }
+    } finally {
+      releaseBackground();
     }
   })();
 });
