@@ -246,7 +246,7 @@ Affirmations / Hyperdrive / schema inspect (PR #303 era): **healthy on this snap
 | ID | What’s wrong | Where | Approach | Effort |
 |----|--------------|-------|----------|--------|
 | P2-1 | `AnimaLLM` client unused by api-server; defaults to localhost + `OPENAI_API_KEY` | `lib/llm/src/client.ts` | Mark CLI-only or delete | S |
-| P2-2 | `llmEnsemble.ts` dead; still calls OpenAI chat | `artifacts/api-server/src/lib/llmEnsemble.ts` | Delete; `localEnsemble.ts` is the live multi-draft path | S |
+| P2-2 | `llmEnsemble.ts` dead; still calls OpenAI chat | `artifacts/api-server/src/lib/llmEnsemble.ts` | Deleted with its test; `localEnsemble.ts` is the live multi-draft path | S |
 | P2-3 | `useSeedCharacters.ts` calls nonexistent `/api/seed-characters` | `artifacts/anima-protocol/src/hooks/useSeedCharacters.ts` | Delete | S |
 | P2-4 | Root `pnpm lint` is `echo 'No lint errors'` | `package.json`, `.github/workflows/ci.yml` | Wire ESLint or drop the job | S |
 | P2-5 | CI does not run `@workspace/llm` tests | `.github/workflows/ci.yml` | Add `pnpm --filter @workspace/llm run test` | S |

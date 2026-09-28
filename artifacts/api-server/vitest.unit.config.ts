@@ -17,7 +17,6 @@ export default defineConfig({
       "test/modelRouter.test.ts",
       "test/openaiClientKey.test.ts",
       "test/openaiClientCloudHost.test.ts",
-      "test/llmEnsemble.test.ts",
       "test/protocolUpgradeRoute.test.ts",
       "test/protocolUpgrade.test.ts",
       "test/repoCodespace.test.ts",

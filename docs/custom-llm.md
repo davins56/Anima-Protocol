@@ -192,6 +192,74 @@ concrete failure mode, not a vague "be better." Full walkthrough:
 
 ---
 
+## Your own trained model (`training/` → `server/server.py`)
+
+The from-scratch Anima model (`training/`, Phases 1–3) can answer companion
+chat directly. `server/server.py` speaks the OpenAI chat-completions protocol
+the api-server uses for non-Ollama hosts, streaming included. No cloud key is
+involved at any point.
+
+On the model host, after Phase 3 has written `out/anima-dpo/ckpt.pt`:
+
+```bash
+pip install -r server/requirements.txt
+ANIMA_SERVER_TOKEN=<long random string> python server/server.py   # 127.0.0.1:8000
+```
+
+`ANIMA_CKPT` and `ANIMA_TOK_DIR` override the checkpoint and tokenizer paths
+when the host keeps them somewhere other than `out/` and `data/anima_tokens/`.
+
+Point the api-server at it:
+
+```bash
+export ANIMA_LLM_PROVIDER=custom
+export ANIMA_LOCAL_LLM_BACKEND=vllm        # the generic OpenAI-compatible /v1 backend
+export ANIMA_LOCAL_LLM_BASE_URL=http://127.0.0.1:8000/v1
+export ANIMA_LOCAL_LLM_API_KEY=<same value as ANIMA_SERVER_TOKEN>
+export ANIMA_VLLM_MODEL_LIGHT=anima ANIMA_VLLM_MODEL_STANDARD=anima ANIMA_VLLM_MODEL_HEAVY=anima
+```
+
+`curl -s 'localhost:8080/api/healthz/llm?probe=1'` should report
+`"preferred":"local"`, `"brand":"anima"`, `"chain":["local"]`, and a passing
+probe on model `anima`.
+
+How the server handles a companion request:
+
+- It streams `chat.completion.chunk` events a sentence at a time. A
+  length-capped reply is still cut back to its last finished sentence, so
+  the streamed text matches the non-streaming reply.
+- It keeps the newest turns that fit the 1024-token window. The long
+  companion system prompt is usually the first thing dropped. A final message
+  that overflows on its own keeps its tail.
+- It reads text only. Image parts are ignored, tool-call turns with no text
+  are skipped, and `tools` are accepted but never called.
+- It clamps `max_tokens` to 768 instead of rejecting larger values. The
+  api-server already sends 200 or fewer.
+
+**Production (Worker).** The Worker cannot reach localhost. Expose the server
+over public HTTPS with the same tunnel used for Ollama in
+[`docs/llm-deploy.md`](./llm-deploy.md), aimed at the model server
+(`ANIMA_TUNNEL_PORT=8000 pnpm llm:tunnel`). Then:
+
+1. Set Secrets Store `ANIMA_LOCAL_LLM_BASE_URL` to that `https://…/v1` and
+   `ANIMA_LOCAL_LLM_API_KEY` to the server token.
+2. In `wrangler.jsonc` `vars`, change `ANIMA_LOCAL_LLM_BACKEND` from `ollama`
+   to `vllm`, add `ANIMA_VLLM_MODEL_STANDARD` (plus `_LIGHT` / `_HEAVY`) set to
+   `anima`, and redeploy.
+
+Do step 2 only once the new host answers. Until then production stays on
+`anima-chat`.
+
+Tests: `python3 server/test_server.py` builds a tiny random-weight model, so it
+needs no trained checkpoint (requires `torch`, `tokenizers`, `fastapi`,
+`httpx`).
+
+At about 34M parameters this model is a research and preview voice (see
+[`training/README.md`](../training/README.md)). `anima-chat` and
+`anima-scribe` on open weights remain the fluent option.
+
+---
+
 ## Other supported open-weight families
 
 Anima now keeps a source-of-truth catalog for Llama, Qwen, Mistral, Gemma,
