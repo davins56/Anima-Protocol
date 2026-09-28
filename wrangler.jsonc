@@ -173,10 +173,11 @@
   // Chat turns queue FIFO; background callers skip while it is held or a
   // chat turn is waiting. The lease TTL is inside the object (no new secret).
   //
-  // BEFORE merging / deploying: Durable Objects need Workers Paid. On the
-  // Free plan `wrangler deploy` fails closed and the previous Worker stays
-  // up. Do not rename LocalLlmSlot without a new migration tag. The object
-  // name in code is getByName("ollama") — one slot for the droplet.
+  // LocalLlmSlot uses the SQLite backend (new_sqlite_classes). Workers Free
+  // includes SQLite-backed Durable Objects, so this migration does not need
+  // Workers Paid. Keep the class in new_sqlite_classes — do not move it to
+  // new_classes. Do not rename LocalLlmSlot without a new migration tag.
+  // The object name in code is getByName("ollama") — one slot for the droplet.
   "durable_objects": {
     "bindings": [
       {
