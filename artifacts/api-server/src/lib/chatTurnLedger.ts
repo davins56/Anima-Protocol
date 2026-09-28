@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import {
   chatTurns,
   db,
@@ -249,36 +249,49 @@ export async function readChatTurn(
 
 /**
  * Newest pending or generated turn for this session, if the reply is not
- * committed yet. Pending rows whose lease expired more than
- * `STALE_PENDING_LEASE_MS` ago are marked failed and ignored.
+ * committed yet. Abandoned pending rows (lease, or before any lease the last
+ * update, older than `STALE_PENDING_LEASE_MS`) are marked failed first, so
+ * reopening the chat does not show a "..." bubble for a dead generate. Both
+ * steps filter in SQL, so a run of abandoned rows cannot hide a live one.
  */
 export async function latestOpenChatTurn(
   userId: string,
   sessionId: string,
+  now = new Date(),
 ): Promise<ChatTurn | null> {
-  const rows = await withTransientDbRetry(() =>
+  const staleBefore = new Date(now.getTime() - STALE_PENDING_LEASE_MS);
+  const scope = and(eq(chatTurns.userId, userId), eq(chatTurns.sessionId, sessionId));
+  await withTransientDbRetry(() =>
+    db
+      .update(chatTurns)
+      .set({
+        status: "failed",
+        retryCount: sql`${chatTurns.retryCount} + 1`,
+        lastError: "Companion turn lease expired",
+        leaseExpiresAt: null,
+        waitingUntil: null,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          scope,
+          eq(chatTurns.status, "pending"),
+          or(
+            lt(chatTurns.leaseExpiresAt, staleBefore),
+            and(isNull(chatTurns.leaseExpiresAt), lt(chatTurns.updatedAt, staleBefore)),
+          ),
+        ),
+      ),
+  );
+  const [turn] = await withTransientDbRetry(() =>
     db
       .select()
       .from(chatTurns)
-      .where(
-        and(
-          eq(chatTurns.userId, userId),
-          eq(chatTurns.sessionId, sessionId),
-          inArray(chatTurns.status, ["pending", "generated"]),
-        ),
-      )
+      .where(and(scope, inArray(chatTurns.status, ["pending", "generated"])))
       .orderBy(desc(chatTurns.createdAt))
-      .limit(8),
+      .limit(1),
   );
-  let open: ChatTurn | null = null;
-  for (const turn of rows) {
-    if (pendingTurnLeaseIsStale(turn)) {
-      await markTurnFailed(turn.id, userId, new Error("Companion turn lease expired"));
-      continue;
-    }
-    if (!open) open = turn;
-  }
-  return open;
+  return turn ?? null;
 }
 
 /**
