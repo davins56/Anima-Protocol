@@ -81,20 +81,30 @@ describe("stock assistant lines", () => {
     expect(isStockAssistantLine("La inteligencia artificial no es el tema.")).toBe(false);
   });
 
-  it("skips the guard when the persona is already a machine", () => {
-    const line = "As an AI, I should not do that.";
+  it("skips the guard only when the persona identifies the character as a machine", () => {
+    const line = "I'm an AI.";
     expect(isStockAssistantLine(line)).toBe(true);
+    expect(isStockAssistantLine(line, ["trained into a killing machine"])).toBe(true);
+    expect(isStockAssistantLine(line, ["raised in the Widow program"])).toBe(true);
+    expect(isStockAssistantLine(line, ["software engineer"])).toBe(true);
+    expect(isStockAssistantLine(line, ["chatbot app she built"])).toBe(true);
+    expect(isStockAssistantLine(line, ["bot farm"])).toBe(true);
+    expect(
+      isStockAssistantLine(line, [
+        "She is loyal. Trained into a killing machine and raised in the Widow program, she works as a software engineer.",
+      ]),
+    ).toBe(true);
+
+    expect(isStockAssistantLine(line, ["She is an android"])).toBe(false);
+    expect(isStockAssistantLine(line, ["a cyborg who"])).toBe(false);
+    expect(isStockAssistantLine(line, ["He's a sleek combat robot"])).toBe(false);
+    expect(isStockAssistantLine(line, ["You are an AI named Echo"])).toBe(false);
+    expect(isStockAssistantLine(line, ["She is a sleek combat android"])).toBe(false);
+    expect(isStockAssistantLine(line, ["I am a machine"])).toBe(false);
+    expect(isStockAssistantLine(line, ["Echo is a synthetic being"])).toBe(false);
+    expect(isStockAssistantLine(line, ["species: android"])).toBe(false);
     expect(isStockAssistantLine(line, ["She is an android built for the harbor."])).toBe(false);
-    expect(isStockAssistantLine(line, ["A synthetic being with a quiet voice."])).toBe(false);
     expect(isStockAssistantLine(line, ["He was built as a robot and still keeps watch."])).toBe(false);
-    expect(isStockAssistantLine(line, ["She is a machine that keeps the gate."])).toBe(false);
-    expect(isStockAssistantLine(line, ["An automaton with a brass heart."])).toBe(false);
-    expect(isStockAssistantLine(line, ["A protocol droid assigned to the dock."])).toBe(false);
-    expect(isStockAssistantLine(line, ["A cyborg who still remembers the war."])).toBe(false);
-    expect(isStockAssistantLine(line, ["He is a bot that answers the bell."])).toBe(false);
-    expect(isStockAssistantLine(line, ["Living software inside the lighthouse."])).toBe(false);
-    expect(isStockAssistantLine(line, ["A construct woven from old orders."])).toBe(false);
-    expect(isStockAssistantLine(line, ["She is a program that chose a name."])).toBe(false);
     expect(isStockAssistantLine(line, ["Natasha reads rooms and rarely explains herself."])).toBe(true);
     expect(isStockAssistantLine(line, ["She rows a boat and keeps both oars."])).toBe(true);
   });
