@@ -15,6 +15,12 @@ describe("chatTurnErrorMessage", () => {
     expect(chatTurnErrorMessage(new TypeError("H is not a function"))).toBe(
       "The companion could not reply. Please try again.",
     );
+    expect(chatTurnErrorMessage(new TypeError("Failed to fetch"))).toMatch(
+      /connection dropped, checking for her reply/i,
+    );
+    expect(chatTurnErrorMessage(new TypeError("Load failed"))).toMatch(
+      /connection dropped, checking for her reply/i,
+    );
   });
 
   it("falls back when the failure has no message", () => {

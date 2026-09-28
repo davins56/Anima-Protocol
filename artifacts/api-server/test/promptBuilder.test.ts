@@ -839,6 +839,39 @@ describe("composeCompanionChatMessages", () => {
     ]);
   });
 
+  it("keeps the newest user message last and drops a retried question plus its stale answer", () => {
+    const question = "What is the tide today?";
+    const messages = composeCompanionChatMessages({
+      characters: [character],
+      activeCharacter: character,
+      memories: [],
+      recentMessages: [
+        { role: "user", content: "Hello" },
+        { role: "assistant", content: "Hi." },
+        { id: "turn_old:user", role: "user", content: question },
+        {
+          id: "turn_old:assistant",
+          role: "assistant",
+          content: "The garden is quiet.",
+        },
+        { id: "turn_retry:user", role: "user", content: question },
+      ],
+      mode: "solo",
+      content: question,
+    });
+
+    const conversation = messages.filter((message) => message.role !== "system");
+    expect(conversation.at(-1)).toEqual({ role: "user", content: question });
+    expect(conversation.filter((message) => message.content === question)).toHaveLength(1);
+    expect(conversation.some((message) => message.content === "The garden is quiet.")).toBe(
+      false,
+    );
+    expect(conversation.slice(0, 2)).toEqual([
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "Hi." },
+    ]);
+  });
+
   it("omits inlined history from composePrompt when asked", () => {
     const prompt = composePrompt({
       characters: [character],

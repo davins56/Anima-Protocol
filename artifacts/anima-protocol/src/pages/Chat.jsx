@@ -157,8 +157,11 @@ import {
 import { retainStreamingOnError } from "@/lib/retainStreamingOnError";
 import { chatTurnErrorMessage } from "@/lib/chatTurnError";
 import {
+  CONNECTION_DROPPED_STATUS,
   GENERIC_COMPANION_COULD_NOT_REPLY,
   isCompanionStillTypingError,
+  isConnectionDroppedError,
+  lateTurnFailedWithoutReply,
   mergeLateReplyIntoMessages,
   pollLateCompanionReply,
 } from "@/lib/lateCompanionReply";
@@ -1330,6 +1333,71 @@ export default function Chat() {
     };
   }, [activeSession?.id, setActiveSession]);
 
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible") return;
+      const pending = lateTurnRef.current;
+      if (!pending?.turnId) return;
+      const sessionId = pending.sessionId;
+      void (async () => {
+        let live;
+        try {
+          live = await animaApi.chat.turnStatus(pending.turnId);
+        } catch {
+          return;
+        }
+        const text = String(live?.assistant_content || "").trim();
+        if (!text) {
+          if (!lateTurnFailedWithoutReply(live)) return;
+          if (lateTurnRef.current?.turnId !== pending.turnId) return;
+          lateTurnRef.current = null;
+          setActiveSession((prev) => {
+            if (!prev || (sessionId && prev.id !== sessionId)) return prev;
+            return {
+              ...prev,
+              messages: (prev.messages || []).filter(
+                (message) =>
+                  message.character_name !== "__typing__" &&
+                  message.character_name !== "__thinking__",
+              ),
+            };
+          });
+          toast.error(GENERIC_COMPANION_COULD_NOT_REPLY);
+          return;
+        }
+        if (live.persistence_status !== "committed") {
+          try {
+            await animaApi.chat.retryTurn(pending.turnId);
+          } catch {
+            // The owning request may still be committing this turn.
+          }
+        }
+        if (lateTurnRef.current?.turnId !== pending.turnId) return;
+        lateTurnRef.current = null;
+        const lateAffect = parseCompanionAffectSnapshot(live.companion_affect);
+        if (lateAffect) {
+          setCompanionAffect(lateAffect);
+          setCurrentMood(lateAffect.primary);
+        }
+        setActiveSession((prev) => {
+          if (!prev || (sessionId && prev.id !== sessionId)) return prev;
+          return {
+            ...prev,
+            messages: mergeLateReplyIntoMessages(prev.messages, {
+              turnId: pending.turnId,
+              userContent: pending.userContent || live.user_content,
+              assistantContent: text,
+              characterName: live.active_character_name || pending.characterName,
+              createdAt: live.created_at,
+            }),
+          };
+        });
+      })();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [setActiveSession, setCompanionAffect, setCurrentMood]);
+
   const handleSendMessage = async (message) => {
     const sendLock = acquireChatSendLock(sendingRef, {
       hasSession: Boolean(activeSession),
@@ -1915,6 +1983,14 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       }
 
       replySpeakerName = charName;
+      lateTurnRef.current = {
+        ...(lateTurnRef.current || {}),
+        key: lateKey,
+        turnId,
+        sessionId: sendSessionId,
+        userContent: isContinue ? "" : content,
+        characterName: charName,
+      };
 
       // Stream tokens into the open bubble as they arrive — no post-buffer delay.
       // Thinking indicator stays until the first delta, then the live reply grows.
@@ -2710,10 +2786,12 @@ Return JSON:
         }
       }
 
-      if (!retained && isCompanionStillTypingError(err)) {
-        // The model is still working past this browser's deadline, or this
-        // send joined a turn that is already generating. Keep the user line
-        // and the typing affordance. Do not toast a failure.
+      const connectionDropped = isConnectionDroppedError(err);
+      if (!retained && (connectionDropped || isCompanionStillTypingError(err))) {
+        // The model is still working past this browser's deadline, this send
+        // joined a turn that is already generating, or the tab dropped the
+        // socket. Keep the user line and poll the durable turn. Do not toast
+        // the generic failure.
         pendingRemoteSyncRef.current = false;
         applyIfSendSession((prev) => ({
           ...prev,
@@ -2723,7 +2801,7 @@ Return JSON:
             ),
             {
               role: "assistant",
-              content: "...",
+              content: connectionDropped ? CONNECTION_DROPPED_STATUS : "...",
               character_name: "__typing__",
               timestamp: new Date().toISOString(),
             },
@@ -2753,9 +2831,19 @@ Return JSON:
               userContent: isContinue ? "" : content,
               assistantContent: lateText,
               characterName: late.active_character_name || replySpeakerName,
+              createdAt: late.created_at,
             }),
           }));
           lateTurnRef.current = null;
+        } else if (lateTurnFailedWithoutReply(late)) {
+          lateTurnRef.current = null;
+          applyIfSendSession((prev) => ({
+            ...prev,
+            messages: (prev.messages || []).filter(
+              (m) => m.character_name !== "__typing__" && m.character_name !== "__thinking__",
+            ),
+          }));
+          toast.error(GENERIC_COMPANION_COULD_NOT_REPLY);
         }
       } else if (retained) {
         lateTurnRef.current = null;
