@@ -1922,7 +1922,7 @@ ${lewdityGuide}`;
           // Build a rich character sheet for each character
           const allCharSheets = groupChars.map(c => {
             const rel = getRelationshipContext(c.id, relationships);
-            return `=== ${c.name}${c.universe ? ` (${c.universe})` : ""} ===
+            return `=== ${c.name} ===
 ${c.personality ? `Personality: ${c.personality}` : ""}
 ${c.backstory ? `Backstory: ${c.backstory}` : ""}
 ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;

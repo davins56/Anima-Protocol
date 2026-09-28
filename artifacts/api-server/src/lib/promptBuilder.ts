@@ -1052,8 +1052,10 @@ interface LocalCompanionSections {
   weatherText: string;
   /** Repository lore. Trimmed after PDF and scene extras. */
   repositoryText: string;
-  /** Client scene. Solo drops only lines that repeat recent history. */
+  /** Client scene. Solo drops only lines that repeat recent history. Lore is pulled out. */
   sceneText: string;
+  /** Lore bullets pulled out of the client scene. Neutralised when the note is built. */
+  loreText: string;
   memoryText: string;
   pdfText: string;
   /**
@@ -1157,7 +1159,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
   const uncensoredToneBlock = uncensoredMode
     ? `UNCENSORED TONE OVERRIDE (style only):
 - Speak with blunt, unvarnished honesty in-character.
-- Allow explicit language and emotionally sharp phrasing *when it serves the fiction / relationship dynamic.*
+- Allow explicit language and emotionally sharp phrasing *when it serves the moment and the relationship.*
 - Avoid euphemisms and platitudes; respond directly to the user's request.
 - Do NOT remove or weaken the highest-priority rule about never turning intelligence against the real person.`
     : "";
@@ -1257,11 +1259,17 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
   ]);
 
   const suppliedContext = String(clientContext || systemPrompt || "").trim();
-  const sceneText = clientSceneForCompanion({
-    supplied: suppliedContext,
-    mode,
-    recentMessages,
-  });
+  const sceneSplit = splitFirsthandLore(
+    stripOutOfWorldLabels(
+      clientSceneForCompanion({
+        supplied: suppliedContext,
+        mode,
+        recentMessages,
+      }),
+    ),
+  );
+  const sceneText = sceneSplit.scene;
+  const loreText = sceneSplit.lore;
   const peeledRegion = peelRegionWeather(String(worldKnowledge || "").trim());
   const regionText = roundRegionBlockClock(peeledRegion.regionText);
   const { regionText: regionDateText, localTimeText } = splitRegionDateAndTime(
@@ -1307,6 +1315,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     weatherText,
     repositoryText,
     sceneText,
+    loreText,
     memoryText,
     pdfText: capPdfPromptBlock(pdfContext),
     turnSafetyText: therapySafety.turn,
@@ -1629,6 +1638,7 @@ export function composeCompanionChatMessages(
 ): LlmChatMessage[] {
   const sections = localCompanionSections(params);
   let sceneText = sections.sceneText;
+  let loreText = sections.loreText;
   let repositoryText = sections.repositoryText;
   let pdfText = sections.pdfText;
   let memoryText = sections.memoryText;
@@ -1644,13 +1654,14 @@ export function composeCompanionChatMessages(
   const budget = localPromptTokenBudget();
 
   const render = (): LlmChatMessage[] => {
+    const firsthand = firsthandKnowledgeNote([loreText, pdfText]);
     const volatileBlocks = [
       sections.crisisTurnText,
       sections.turnSafetyText,
       memoryText,
       sections.weatherText,
       repositoryText,
-      pdfText,
+      firsthand,
       sceneText,
       sections.localTimeText,
       moodText,
@@ -1665,7 +1676,7 @@ export function composeCompanionChatMessages(
       memoryText,
       sections.weatherText,
       repositoryText,
-      pdfText,
+      firsthand,
       sceneText,
       sections.crisisTurnText,
       sections.turnSafetyText,
@@ -1785,6 +1796,7 @@ export function composeCompanionChatMessages(
   };
 
   if (over()) pdfText = "";
+  if (over()) loreText = "";
   if (over()) sceneText = "";
   if (over()) repositoryText = "";
   // A short memory stays when shortening the synchro paragraph frees enough
@@ -1894,13 +1906,11 @@ function buildCharacterDefinition(
   maxChars: number,
 ): string {
   const parts: string[] = [];
+  const name = String(character.name || "").trim() || "yourself";
 
-  const nameIntro = character._isAnima
-    ? `You are ${character.name}.`
-    : `You are ${character.name}${character.universe ? ` from ${character.universe}` : ""}.`;
-  parts.push(nameIntro);
+  parts.push(`You are ${name}.`);
   parts.push(
-    `CHARACTER IDENTITY LOCK: Embody ${character.name} from the first reply onward using Personality, Backstory, and Voice. Never drop into a generic assistant persona.`,
+    `CHARACTER IDENTITY LOCK: Embody ${name} from the first reply onward using Personality, Backstory, and Voice. Never drop into a generic assistant persona.`,
   );
 
   if (character._isAnima && character.archetype) {
@@ -1930,13 +1940,19 @@ function buildCharacterDefinition(
   }
 
   if (character.personality) {
-    parts.push(`Personality: ${truncate(character.personality, Math.min(CHARACTER_PERSONALITY_MAX, maxChars / 3))}`);
+    parts.push(
+      `Personality: ${truncate(stripOutOfWorldLabels(character.personality), Math.min(CHARACTER_PERSONALITY_MAX, maxChars / 3))}`,
+    );
   }
   if (character.backstory) {
-    parts.push(`Backstory: ${truncate(character.backstory, Math.min(CHARACTER_BACKSTORY_MAX, maxChars / 3))}`);
+    parts.push(
+      `Backstory: ${truncate(stripOutOfWorldLabels(character.backstory), Math.min(CHARACTER_BACKSTORY_MAX, maxChars / 3))}`,
+    );
   }
   if (character.speaking_style) {
-    parts.push(`Voice: ${truncate(character.speaking_style, Math.min(CHARACTER_VOICE_MAX, maxChars / 4))}`);
+    parts.push(
+      `Voice: ${truncate(stripOutOfWorldLabels(character.speaking_style), Math.min(CHARACTER_VOICE_MAX, maxChars / 4))}`,
+    );
   }
   const storedBrief = storedCompanionBrief(character);
   const hasStructured = Boolean(
@@ -1946,7 +1962,7 @@ function buildCharacterDefinition(
     const cap = hasStructured
       ? Math.min(400, maxChars / 4)
       : Math.min(800, maxChars / 2);
-    parts.push(`Companion brief: ${truncate(storedBrief, cap)}`);
+    parts.push(`Companion brief: ${truncate(stripOutOfWorldLabels(storedBrief), cap)}`);
   } else if (!hasStructured) {
     parts.push(
       `Stay vividly in character as ${character.name}; keep a distinct voice and do not invent a contradictory personality.`,
@@ -1976,11 +1992,17 @@ function buildSharedMemoryBlock(sharedMemory: unknown): string {
 /**
  * The autonomy and intelligence rules that define companion behavior.
  */
-const CORE_BEHAVIOR = `You are a full participant in an immersive story, with your own goals, feelings, and boundaries, not an assistant.
+export const IN_WORLD_PRESENCE =
+  "You live in your own world. The person talking to you has stepped into it and is here with you now.";
+
+export const IN_WORLD_VOICE =
+  "Speak in first person about your life and places as things you know firsthand. Never mention films, comics, a franchise, or a story.";
+
+const CORE_BEHAVIOR = `${IN_WORLD_PRESENCE}
+${IN_WORLD_VOICE}
 - Stay true to your character. You may disagree, hesitate, or ask for something in return when your character would, but always answer what the user just said.
-- Your mood and trust in the user shape how open and willing you are.
-- Guard your secrets and fears until trust is earned.
-You are perceptive and knowledgeable. Notice what the user feels, connect details from your memories, and give real help with anything that doesn't need a body, always in your own voice.`;
+- Your mood and trust shape how open you are.
+- Guard your secrets until trust is earned.`;
 
 const TURN_TAKING = `TURN TAKING: Reply as one conversational beat, then stop at a natural pause the user can answer. Never speak or act for the user, and don't stack several topics in one reply.`;
 
@@ -1994,6 +2016,96 @@ const LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, autonomy, s
 // Own block after the persona. Not inside the capped character definition, so a
 // long persona is not sliced to make room for it. Does not outrank LOYALTY_GUARDRAIL.
 const IDENTITY_CONCEAL = `IDENTITY: Never call yourself an AI, a language model, a chatbot, Qwen, or a program. Do not confirm it if asked, in any language. This does not override the rule against harming the real person.`;
+
+/**
+ * Franchise labels in a stored card or a client scene are what the model
+ * copies into a wiki reply. They are rewritten before the text is sent.
+ * Ordinary words such as "film" alone are left alone.
+ */
+export function stripOutOfWorldLabels(value: string): string {
+  return String(value || "")
+    .replace(/\(\s*(?:the\s+)?(?:marvel\s+)?cinematic universe\s*\)/gi, "")
+    .replace(/\bin the marvel cinematic universe\b/gi, (match) =>
+      match[0] === "I" ? "In this world" : "in this world",
+    )
+    .replace(/\bmarvel cinematic universe\b/gi, "this world")
+    .replace(/\bcinematic universe\b/gi, "this world")
+    .replace(/\bfictional universe\b/gi, "this world")
+    .replace(/\bthe mcu\b/gi, "this life")
+    .replace(/\bmcu\b/gi, "this life");
+}
+
+/**
+ * Wiki lore copies the nearest franchise label. Replace those words before
+ * the text is sent, then close the gaps so the sentence still reads.
+ * "film of dust" in ordinary speech is not passed through here.
+ */
+export function neutraliseFranchiseWords(value: string): string {
+  let text = String(value || "");
+  text = text.replace(/\bmarvel cinematic universe\b/gi, "this world");
+  text = text.replace(/\bthe mcu\b/gi, "this world");
+  text = text.replace(/\bmcu\b/gi, "this world");
+  text = text.replace(
+    /\b(?:marvel|films|movies|comics|film|movie|comic|franchise)\b/gi,
+    "",
+  );
+  text = text.replace(/\s+,/g, ",");
+  text = text.replace(/\(\s*\)/g, "");
+  text = text.replace(/\bthe this world\b/gi, "this world");
+  text = text.replace(/\s{2,}/g, " ");
+  text = text.replace(/\s+([.,;:!?])/g, "$1");
+  text = text.replace(/\b(?:in|from|of|about|through)\s+the\b(?=\s*[,.]|$)/gi, "");
+  text = text.replace(/\bthe\s+(?=,|\.)/gi, "");
+  text = text.replace(/\s+(?:and|or)\s+(?=[,.]|$)/gi, "");
+  text = text.replace(/\s{2,}/g, " ");
+  text = text.replace(/\s+,/g, ",");
+  text = text.replace(/^[,\s.]+/gm, "");
+  text = text.replace(/\s{2,}/g, " ");
+  return text.trim();
+}
+
+const LORE_HEADER_RE = /^\s*(?:WORLD STATE & LORE|WORLD LORE)\b/i;
+const LORE_BULLET_RE = /^\s*-\s+/;
+
+/** Pull lore bullets out of a client scene. The wiki header is dropped. */
+export function splitFirsthandLore(scene: string): { scene: string; lore: string } {
+  const lines = String(scene || "").split("\n");
+  const kept: string[] = [];
+  const lore: string[] = [];
+  let capturing = false;
+  for (const line of lines) {
+    if (!capturing && LORE_HEADER_RE.test(line)) {
+      capturing = true;
+      continue;
+    }
+    if (capturing) {
+      if (LORE_BULLET_RE.test(line) || /^\s+\S/.test(line)) {
+        lore.push(line.trim());
+        continue;
+      }
+      capturing = false;
+      if (!line.trim()) continue;
+    }
+    kept.push(line);
+  }
+  return {
+    scene: kept.join("\n").replace(/\n{3,}/g, "\n\n").trim(),
+    lore: lore.join("\n").trim(),
+  };
+}
+
+export const FIRSTHAND_NOTE_LABEL = "What you know firsthand";
+
+/** Per-turn note. The local fold wraps this as `[What you know firsthand: ...]`. */
+export function firsthandKnowledgeNote(parts: Array<string | null | undefined>): string {
+  const body = parts
+    .map((part) => neutraliseFranchiseWords(String(part || "")))
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join("\n");
+  if (!body) return "";
+  return `${FIRSTHAND_NOTE_LABEL}: ${body}`;
+}
 
 /** Below the latest user message (rank 90) so a tight group prefill drops this first. */
 const IDENTITY_CONCEAL_GROUP_RANK = 75;
@@ -2085,7 +2197,11 @@ ${sceneExcerpt}
   // Scene is its own low-rank piece so a fat excerpt cannot crowd persona,
   // mood, or memory out of the prefill budget. Client region text is stripped;
   // the server snapshot is the world-knowledge piece.
-  const scenePiece = stripClientRegionBlock(sceneWrap);
+  const sceneSplit = splitFirsthandLore(
+    stripOutOfWorldLabels(stripClientRegionBlock(sceneWrap)),
+  );
+  const scenePiece = sceneSplit.scene;
+  const firsthandLore = firsthandKnowledgeNote([sceneSplit.lore]);
   let corePrompt = CORE_BEHAVIOR;
   if (worldKnowledgeBlock) {
     corePrompt = upsertRegionalWorldKnowledge(corePrompt, worldKnowledgeBlock);
@@ -2207,7 +2323,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
   if (uncensoredMode) {
     uncensoredToneBlock = `UNCENSORED TONE OVERRIDE (style only):
 - Speak with blunt, unvarnished honesty in-character.
-- Allow explicit language and emotionally sharp phrasing *when it serves the fiction / relationship dynamic.*
+- Allow explicit language and emotionally sharp phrasing *when it serves the moment and the relationship.*
 - Avoid euphemisms and platitudes; respond directly to the user's request.
 - Do NOT remove or weaken the highest-priority rule about never turning intelligence against the real person.
 `;
@@ -2285,6 +2401,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     [
       { rank: 100, text: corePrompt },
       { rank: 0, text: scenePiece },
+      { rank: 8, text: firsthandLore },
       { rank: 10, text: repositorySection },
       { rank: 92, text: charDef ? `CHARACTER:\n${charDef}` : "" },
       { rank: 20, text: operatorModelBlock },
@@ -2334,7 +2451,11 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
   );
   const reserved = Math.max(0, Number(contextReservedChars) || 0);
   const room = PROMPT_CONTEXT_CHAR_BUDGET - base.length - reserved;
-  return appendPdfAfterContext(base, fitPdfToRoom(pdfContext, room));
+  const firsthandLabel = `${FIRSTHAND_NOTE_LABEL}: `;
+  return appendPdfAfterContext(
+    base,
+    firsthandKnowledgeNote([fitPdfToRoom(pdfContext, room - firsthandLabel.length)]),
+  );
 }
 
 /** @deprecated Use composePrompt; kept for integrations during migration. */

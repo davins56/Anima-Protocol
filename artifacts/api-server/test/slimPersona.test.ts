@@ -59,7 +59,8 @@ describe("slim companion persona", () => {
       expect(prompt).toContain("Never turn your intelligence against the real person");
       expect(prompt).toContain("always answer what the user just said");
       expect(prompt).toContain("SELF-STATE");
-      expect(prompt).toContain("WORLD STATE & LORE");
+      expect(prompt).toContain("What you know firsthand:");
+      expect(prompt).toContain("The toaster is in the kitchen");
       expect(prompt).toContain("CONVERSATIONAL WEATHER: lull");
     }
   });
