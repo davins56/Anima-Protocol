@@ -688,13 +688,17 @@ describe("buildCompanionPrompt", () => {
       mode: "solo",
       content: "Hi",
     });
-    expect(prompt).toContain("full participant in an immersive story");
+    expect(prompt).toContain(
+      "You live in your own world. The person talking to you has stepped into it and is here with you now.",
+    );
     expect(prompt).toContain("always answer what the user just said");
     expect(prompt).toContain("CLIENT-PROVIDED SCENE CONTEXT");
     expect(prompt).toContain("2-4 sentences");
-    expect(prompt.indexOf("full participant in an immersive story")).toBeLessThan(
-      prompt.indexOf("CLIENT-PROVIDED SCENE CONTEXT"),
-    );
+    expect(
+      prompt.indexOf(
+        "You live in your own world. The person talking to you has stepped into it and is here with you now.",
+      ),
+    ).toBeLessThan(prompt.indexOf("CLIENT-PROVIDED SCENE CONTEXT"));
   });
 
   it("includes Anima soulprint and evolution path in CHARACTER", () => {

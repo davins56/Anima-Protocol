@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import * as fourthWallReply from "../src/lib/fourthWallReply";
 import express, { type Express } from "express";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
@@ -1309,16 +1310,96 @@ describe("chat lifecycle", () => {
         messages: Array<{ role: string; content: string }>;
       };
       const retry = llmMocks.createChatStreamWithFailover.mock.calls[callsBefore + 1]?.[0] as {
+        maxTokens: number;
         messages: Array<{ role: string; content: string }>;
       };
       const firstSystem = messagesForLocalOllama(first.messages)[0]?.content;
       const retrySystem = messagesForLocalOllama(retry.messages)[0]?.content;
       expect(retrySystem).toBe(firstSystem);
-      expect(retrySystem).toContain("IN WORLD:");
-      expect(retrySystem).not.toContain("from what you have lived");
-      expect(String(messagesForLocalOllama(retry.messages).at(-1)?.content)).toContain(
-        "from what you have lived",
+      expect(retrySystem).toContain(
+        "You live in your own world. The person talking to you has stepped into it and is here with you now.",
       );
+      expect(retrySystem).not.toContain("Stay Aria.");
+      expect(retry.maxTokens).toBe(fourthWallReply.FOURTH_WALL_RETRY_MAX_TOKENS);
+      expect(String(messagesForLocalOllama(retry.messages).at(-1)?.content)).toContain(
+        "Stay Aria.",
+      );
+    } finally {
+      installHelloStream();
+    }
+  });
+
+  it("skips the fourth-wall retry after half the time budget and keeps the reply", async () => {
+    const lateTurn = `turn_${prefix}_fourth_wall_late`;
+    const allowed = vi.spyOn(fourthWallReply, "fourthWallRetryAllowed").mockReturnValue(false);
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => streamOf(encyclopedia));
+    try {
+      const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+      const res = await request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: lateTurn,
+          session_id: sessionId,
+          content: "Tell me about Vormir",
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+        }),
+      });
+      expect(res.status).toBe(200);
+      const events = sseEvents(await res.text());
+      const shown = events
+        .filter((event) => typeof event.content === "string")
+        .map((event) => String(event.content))
+        .join("");
+      expect(shown).toBe(encyclopedia);
+      expect(events.at(-1)).toMatchObject({ done: true, visible: encyclopedia });
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(callsBefore + 1);
+    } finally {
+      allowed.mockRestore();
+      installHelloStream();
+    }
+  });
+
+  it("keeps the original reply when the fourth-wall retry fails", async () => {
+    const failedTurn = `turn_${prefix}_fourth_wall_failed`;
+    let generated = 0;
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => {
+      generated += 1;
+      if (generated === 1) return streamOf(encyclopedia);
+      throw new Error("retry timed out");
+    });
+    try {
+      const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+      const res = await request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: failedTurn,
+          session_id: sessionId,
+          content: "Tell me about Vormir",
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+        }),
+      });
+      expect(res.status).toBe(200);
+      const events = sseEvents(await res.text());
+      const shown = events
+        .filter((event) => typeof event.content === "string")
+        .map((event) => String(event.content))
+        .join("");
+      expect(shown).toBe(encyclopedia);
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(callsBefore + 2);
+      const retry = llmMocks.createChatStreamWithFailover.mock.calls[callsBefore + 1]?.[0] as {
+        maxTokens: number;
+      };
+      expect(retry.maxTokens).toBe(fourthWallReply.FOURTH_WALL_RETRY_MAX_TOKENS);
     } finally {
       installHelloStream();
     }
@@ -1326,7 +1407,8 @@ describe("chat lifecycle", () => {
 
   it("does not regenerate when only the user mentions the films", async () => {
     const userTurn = `turn_${prefix}_user_mentions_films`;
-    llmMocks.createChatStreamWithFailover.mockImplementation(async () => streamOf(lived));
+    const quiet = "The wind on that cliff is enough. I won't dress it up.";
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => streamOf(quiet));
     try {
       const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
       const res = await request("/chat/messages", {
@@ -1349,7 +1431,7 @@ describe("chat lifecycle", () => {
         .filter((event) => typeof event.content === "string")
         .map((event) => String(event.content))
         .join("");
-      expect(shown).toBe(lived);
+      expect(shown).toBe(quiet);
       expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(callsBefore + 1);
     } finally {
       installHelloStream();

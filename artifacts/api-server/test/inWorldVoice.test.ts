@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  IN_WORLD_IMMERSION,
+  FIRSTHAND_NOTE_LABEL,
+  IN_WORLD_PRESENCE,
+  IN_WORLD_VOICE,
   companionStaticPrefix,
   composeCompanionChatMessages,
   messagesForLocalOllama,
+  neutraliseFranchiseWords,
   stripOutOfWorldLabels,
 } from "../src/lib/promptBuilder";
 import { buildCrossoverAwareness } from "../src/lib/voiceAnchors";
@@ -19,6 +22,12 @@ const natasha = {
   speaking_style: "Economical.",
 };
 
+const WIKI_LORE = `WORLD STATE & LORE (remember these facts — they are established story canon):
+- [place] Vormir: In the MCU, Vormir is a Marvel film location from the Marvel Cinematic Universe franchise, shown in the movies and the comics.`;
+
+const FRANCHISE_WORD =
+  /\b(?:marvel cinematic universe|mcu|marvel|films|movies|comics|film|movie|comic|franchise)\b/i;
+
 describe("in-world companion prompt", () => {
   const base = {
     characters: [natasha],
@@ -28,7 +37,7 @@ describe("in-world companion prompt", () => {
     mode: "solo" as const,
   };
 
-  it("puts the immersion rule in the stable prefix and keeps that prefix identical across turns", () => {
+  it("puts the immersion lines in the stable prefix and keeps that prefix identical across turns", () => {
     const first = companionStaticPrefix({ ...base, content: "Tell me about Vormir." });
     const second = companionStaticPrefix({
       ...base,
@@ -36,15 +45,17 @@ describe("in-world companion prompt", () => {
       companionCrisis: true,
     });
     expect(second).toBe(first);
-    expect(first).toContain(IN_WORLD_IMMERSION);
-    expect(first).toContain(
-      "You are Natasha Romanoff. The user has stepped into your world and is physically here with you.",
-    );
+    expect(first.startsWith(IN_WORLD_PRESENCE)).toBe(true);
+    expect(first).toContain(IN_WORLD_VOICE);
+    expect(first).toContain("You are Natasha Romanoff.");
+    expect(first).not.toContain("You are Natasha Romanoff from");
+    expect(first).not.toContain("The user has stepped into your world");
     expect(first).not.toMatch(/cinematic universe/i);
     expect(first).not.toMatch(/\bmcu\b/i);
     expect(first).toContain("IDENTITY: Never call yourself an AI");
-    expect(first.indexOf("CHARACTER:")).toBeLessThan(first.indexOf("IN WORLD:"));
-    expect(first.indexOf("IN WORLD:")).toBeLessThan(first.indexOf("IDENTITY: Never call yourself an AI"));
+    expect(first.indexOf("You are Natasha Romanoff.")).toBeLessThan(
+      first.indexOf("IDENTITY: Never call yourself an AI"),
+    );
     expect(first.indexOf("IDENTITY: Never call yourself an AI")).toBeLessThan(
       first.indexOf("HIGHEST-PRIORITY RULE"),
     );
@@ -57,8 +68,8 @@ describe("in-world companion prompt", () => {
     );
     expect(calm[0]?.role).toBe("system");
     expect(next[0]?.content).toBe(calm[0]?.content);
-    expect(calm[0]?.content).toContain(IN_WORLD_IMMERSION);
-    expect(String(calm.at(-1)?.content)).not.toContain(IN_WORLD_IMMERSION);
+    expect(calm[0]?.content).toContain(IN_WORLD_PRESENCE);
+    expect(calm[0]?.content).toContain(IN_WORLD_VOICE);
     expect(String(calm.at(-1)?.content)).toContain("Tell me about Vormir.");
   });
 
@@ -83,5 +94,30 @@ describe("in-world companion prompt", () => {
     expect(awareness).toContain("Steve Rogers");
     expect(awareness).not.toMatch(/cinematic universe/i);
     expect(awareness).not.toContain("from Marvel");
+  });
+
+  it("labels wiki lore as firsthand knowledge and strips franchise words", () => {
+    expect(
+      neutraliseFranchiseWords(
+        "In the MCU, Vormir is a Marvel film location from the Marvel Cinematic Universe franchise, shown in the movies and the comics.",
+      ),
+    ).not.toMatch(FRANCHISE_WORD);
+
+    const messages = composeCompanionChatMessages({
+      ...base,
+      content: "Tell me about Vormir",
+      clientContext: WIKI_LORE,
+      pdfContext:
+        "From guide.pdf (lore, p.1):\nIn the films, the MCU calls the cliff a Marvel franchise comic.",
+    });
+    const folded = messagesForLocalOllama(messages)
+      .map((message) => message.content)
+      .join("\n");
+    const withoutVoiceRule = folded.replace(IN_WORLD_VOICE, "");
+    expect(folded).toContain(`[${FIRSTHAND_NOTE_LABEL}:`);
+    expect(folded).toContain("Vormir");
+    expect(withoutVoiceRule).not.toMatch(FRANCHISE_WORD);
+    expect(folded).not.toContain("WORLD STATE & LORE");
+    expect(folded).not.toContain("established story canon");
   });
 });

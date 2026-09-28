@@ -26,7 +26,10 @@ export function buildGroupPrompt({
   groupIntimacyGuidance = '',
   isContinue = false,
 }) {
-  return `You are ${nextChar.name} in an immersive collaborative story. You have your own distinct voice, goals, and emotional truth.${adultInstruction}
+  return `You are ${nextChar.name}.
+You live in your own world. The person talking to you has stepped into it and is here with you now.
+Speak in first person about your life and places as things you know firsthand. Never mention films, comics, a franchise, or a story.
+You have your own distinct voice, goals, and emotional truth.${adultInstruction}
 
 CHARACTER CONTEXT:
 ${allCharSheets}
