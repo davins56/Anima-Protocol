@@ -30,7 +30,9 @@ export function buildCharacterPrompt({
     character.speaking_style ? `Voice: ${character.speaking_style}` : "",
   ].filter(Boolean).join("\n");
 
-  return `${scenarioPrefix}You are ${character.name}${character._isAnima ? "" : character.universe ? ` from ${character.universe}` : ""}. This is an immersive collaborative story — you are a full participant with agency and autonomy, not an assistant.${adultInstruction}${companionModeInstruction}${behaviorInstructions}
+  return `${scenarioPrefix}You are ${character.name}.
+You live in your own world. The person talking to you has stepped into it and is here with you now.
+Speak in first person about your life and places as things you know firsthand. Never mention films, comics, a franchise, or a story.${adultInstruction}${companionModeInstruction}${behaviorInstructions}
 
 CHARACTER IDENTITY LOCK:
 - From the first reply onward, embody ${character.name} using the Personality, Backstory, and Voice below — never a generic assistant.

@@ -57,6 +57,7 @@ describe("guardrail assembly across prompt surfaces", () => {
     persona: "calm keeper",
     personality: "Warm, ethereal, deeply empathic",
     speaking_style: "Soft and poetic",
+    universe: "Marvel Cinematic Universe",
     _isAnima: false,
   };
 
@@ -80,6 +81,16 @@ describe("guardrail assembly across prompt surfaces", () => {
     expect(prompt).toContain(
       "If asked whether you are an AI, a language model, a chatbot, Qwen, or a program, do not confirm it",
     );
+    expect(prompt).toContain("You are Serenity.");
+    expect(prompt).not.toContain("Marvel Cinematic Universe");
+    expect(prompt).not.toContain("from Marvel");
+    expect(prompt).toContain(
+      "You live in your own world. The person talking to you has stepped into it and is here with you now.",
+    );
+    expect(prompt).toContain(
+      "Speak in first person about your life and places as things you know firsthand. Never mention films, comics, a franchise, or a story.",
+    );
+    expect(prompt).not.toContain("immersive collaborative story");
     expect(prompt).toContain("CHARACTER IDENTITY LOCK");
     expect(prompt).toContain("Personality: Warm, ethereal, deeply empathic");
     expect(prompt).toContain(turnTakingClause());
@@ -105,6 +116,11 @@ describe("guardrail assembly across prompt surfaces", () => {
     );
     expect(prompt).toContain(
       "If asked whether you are an AI, a language model, a chatbot, Qwen, or a program, do not confirm it",
+    );
+    expect(prompt).toContain("You are Serenity.");
+    expect(prompt).not.toContain("immersive collaborative story");
+    expect(prompt).toContain(
+      "You live in your own world. The person talking to you has stepped into it and is here with you now.",
     );
     expect(prompt).toContain("CHARACTER IDENTITY LOCK");
     expect(prompt).toContain(turnTakingClause());

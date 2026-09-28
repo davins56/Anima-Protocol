@@ -262,7 +262,10 @@ describe("PDF retrieval and prompt budget", () => {
     expect(pdfWordCount(fullPdfSlice)).toBeLessThanOrEqual(PDF_CONTEXT_WORD_BUDGET);
 
     const withoutPdf = (prompt: string) =>
-      prompt.replace(/\n\npdfword0[\s\S]*?\n\n(?=HIGHEST-PRIORITY RULE)/, "\n\n");
+      prompt.replace(
+        /\n\nWhat you know firsthand: pdfword0[\s\S]*?\n\n(?=HIGHEST-PRIORITY RULE)/,
+        "\n\n",
+      );
     expect(withoutPdf(withPdf)).toBe(bare);
 
     const squeezed = composePrompt({
