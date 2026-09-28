@@ -574,6 +574,90 @@ export type LlmChatMessage = {
   content: string;
 };
 
+/** Speaker label, punctuation, and case do not make a reply new. */
+export function normalizeReplyForRepeat(text: unknown): string {
+  return String(text ?? "")
+    .replace(/^\s*\*{0,2}[^:*\n]{1,80}:\*{0,2}\s+/, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+/**
+ * True when `reply` is the same text as one of `previous` (after
+ * normalization), or one contains the other at 85%+ of its length.
+ */
+export function isRepeatedReply(reply: unknown, previous: unknown[]): boolean {
+  const body = normalizeReplyForRepeat(reply);
+  if (body.length < 12) return false;
+  return previous.some((prior) => {
+    const other = normalizeReplyForRepeat(prior);
+    if (other.length < 12) return false;
+    if (other === body) return true;
+    const shorter = Math.min(other.length, body.length);
+    const longer = Math.max(other.length, body.length);
+    if (shorter / longer < 0.85) return false;
+    return other.includes(body) || body.includes(other);
+  });
+}
+
+/**
+ * A small model that repeats itself once sees two copies of that reply in
+ * history, copies them as a pattern, and repeats forever. Drop every
+ * assistant turn whose text shows up more than once in the window. The user
+ * turns stay, so the conversation still reads in order.
+ */
+export function dropRepeatedAssistantReplies(
+  messages: LlmChatMessage[],
+): LlmChatMessage[] {
+  const assistant = messages.filter((message) => message.role === "assistant");
+  return messages.filter(
+    (message) =>
+      message.role !== "assistant" ||
+      !isRepeatedReply(
+        message.content,
+        assistant.filter((other) => other !== message).map((other) => other.content),
+      ),
+  );
+}
+
+/** System turn for the one regenerate after a reply repeated recent history. */
+export const AVOID_REPEAT_INSTRUCTION =
+  "Your last draft repeated an earlier reply word for word. Write a new reply to the latest message. Do not reuse earlier wording.";
+
+/** Recent assistant replies the new reply is checked against. */
+export function recentAssistantReplies(
+  recentMessages: MsgData[] = [],
+  limit = 4,
+): string[] {
+  return recentMessages
+    .filter((message) => message.role === "assistant")
+    .map((message) => String(message.content ?? ""))
+    .filter((text) => text.trim())
+    .slice(-limit);
+}
+
+/**
+ * Messages for the one regenerate: drop history turns that match the
+ * repeated reply, and put the avoid-repeat line directly before the user turn.
+ */
+export function messagesForRepeatRetry(
+  messages: LlmChatMessage[],
+  repeated: string,
+): LlmChatMessage[] {
+  const last = messages[messages.length - 1];
+  const body = last?.role === "user" ? messages.slice(0, -1) : messages;
+  const kept = body.filter(
+    (message) =>
+      message.role !== "assistant" || !isRepeatedReply(message.content, [repeated]),
+  );
+  return [
+    ...kept,
+    { role: "system", content: AVOID_REPEAT_INSTRUCTION },
+    ...(last?.role === "user" ? [last] : []),
+  ];
+}
+
 /**
  * Cap store history for the Ollama chat-template replay. Keeps later turns
  * inside a sane prefill budget on num_ctx 8192.
@@ -598,9 +682,10 @@ export function capRecentMessagesForLlm(
           : text,
     });
   }
-  return out.length > LLM_CHAT_HISTORY_MAX_MESSAGES
-    ? out.slice(-LLM_CHAT_HISTORY_MAX_MESSAGES)
-    : out;
+  const deduped = dropRepeatedAssistantReplies(out);
+  return deduped.length > LLM_CHAT_HISTORY_MAX_MESSAGES
+    ? deduped.slice(-LLM_CHAT_HISTORY_MAX_MESSAGES)
+    : deduped;
 }
 
 /**
