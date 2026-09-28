@@ -18,7 +18,10 @@ import {
   llmChatMessagesFirstChunkMs,
   llmChatMessagesOpenTimeoutMs,
   llmChatMessagesStreamTotalMs,
+  CLIENT_DISCONNECT_GRACE_MS,
+  LLM_LATE_PERSIST_BUDGET_MS,
   llmCompanionDurableWaitMs,
+  shouldAbortAbandonedGenerate,
   WORKER_WAIT_UNTIL_GRACE_MS,
   abortWhenClientLeaves,
   llmOpenTimeoutMs,
@@ -246,6 +249,7 @@ describe("client/server budget lockstep", () => {
     expect(chatRoute).toContain("attachStoredEmbeddings(userId, adapted).catch(");
     expect(chatRoute).toContain("openStreamAbort(");
     expect(chatRoute).toContain("llmCompanionDurableWaitMs()");
+    expect(chatRoute).toContain("armAbandonedGenerateAbort(");
     expect(chatRoute).toContain("watchClientLeave(");
     expect(chatRoute).not.toContain("abortWhenClientLeaves(");
     expect(chatRoute).not.toContain(
@@ -291,11 +295,66 @@ describe("client/server budget lockstep", () => {
     expect(CHAT_STREAM_TIMEOUT_MS).toBe(140_000);
   });
 
-  it("lets companion chat outlast the browser abort by the Worker waitUntil grace", () => {
+  it("caps an abandoned companion generate well below the old 170s durable wait", () => {
     expect(WORKER_WAIT_UNTIL_GRACE_MS).toBe(30_000);
-    expect(llmCompanionDurableWaitMs()).toBe(170_000);
-    expect(llmCompanionDurableWaitMs()).toBeGreaterThan(CHAT_STREAM_TIMEOUT_MS);
+    expect(CLIENT_DISCONNECT_GRACE_MS).toBeGreaterThanOrEqual(20_000);
+    expect(CLIENT_DISCONNECT_GRACE_MS).toBeLessThanOrEqual(30_000);
+    expect(LLM_LATE_PERSIST_BUDGET_MS).toBe(60_000);
+    expect(llmCompanionDurableWaitMs()).toBe(LLM_LATE_PERSIST_BUDGET_MS);
+    expect(llmCompanionDurableWaitMs()).toBeLessThan(CHAT_STREAM_TIMEOUT_MS);
+    expect(llmCompanionDurableWaitMs()).toBeLessThan(170_000);
     expect(llmChatMessagesOpenTimeoutMs()).toBe(90_000);
     expect(llmChatMessagesOpenTimeoutMs()).toBeLessThan(100_000);
+  });
+});
+
+describe("shouldAbortAbandonedGenerate", () => {
+  it("keeps a connected turn and a joined retry", () => {
+    expect(
+      shouldAbortAbandonedGenerate({
+        clientLeft: false,
+        disconnectedForMs: 60_000,
+        hasWaiter: false,
+        elapsedMs: 60_000,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAbortAbandonedGenerate({
+        clientLeft: true,
+        disconnectedForMs: CLIENT_DISCONNECT_GRACE_MS,
+        hasWaiter: true,
+        elapsedMs: 90_000,
+      }),
+    ).toBe(false);
+  });
+
+  it("aborts after the disconnect grace when nobody is waiting", () => {
+    expect(
+      shouldAbortAbandonedGenerate({
+        clientLeft: true,
+        disconnectedForMs: CLIENT_DISCONNECT_GRACE_MS - 1,
+        hasWaiter: false,
+        elapsedMs: 10_000,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAbortAbandonedGenerate({
+        clientLeft: true,
+        disconnectedForMs: CLIENT_DISCONNECT_GRACE_MS,
+        hasWaiter: false,
+        elapsedMs: 30_000,
+      }),
+    ).toBe(true);
+  });
+
+  it("aborts a disconnected turn once the late-persist ceiling is reached", () => {
+    expect(
+      shouldAbortAbandonedGenerate({
+        clientLeft: true,
+        disconnectedForMs: 1_000,
+        hasWaiter: false,
+        elapsedMs: LLM_LATE_PERSIST_BUDGET_MS,
+      }),
+    ).toBe(true);
   });
 });

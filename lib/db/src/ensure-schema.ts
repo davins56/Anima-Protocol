@@ -27,6 +27,7 @@ export const REQUIRED_TABLES = [
   "anima_evolution",
   "anima_relationships",
   "anima_narrative_arcs",
+  "resonance_memories",
 ] as const;
 
 export type RequiredTable = (typeof REQUIRED_TABLES)[number];
@@ -260,7 +261,49 @@ function tablesCreatedByRun(
   return createdTables;
 }
 
+/**
+ * Existing databases already have `chat_turns` from the fast path, which
+ * skips CREATE TABLE. The lease columns still have to land or a retry join
+ * cannot see the owner across isolates. A complete schema is left untouched.
+ */
+async function ensureChatTurnLeaseColumns(db: Queryable): Promise<void> {
+  let names = new Set<string>();
+  try {
+    const found = await db.query(
+      `SELECT column_name
+         FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'chat_turns'
+          AND column_name IN ('id', 'lease_expires_at', 'waiting_until')`,
+    );
+    names = new Set(
+      (found.rows ?? []).map((row) =>
+        String((row as { column_name?: string }).column_name || ""),
+      ),
+    );
+  } catch {
+    return;
+  }
+  if (!names.has("id")) return;
+  const statements = [
+    !names.has("lease_expires_at")
+      ? `ALTER TABLE "chat_turns" ADD COLUMN IF NOT EXISTS "lease_expires_at" timestamp`
+      : "",
+    !names.has("waiting_until")
+      ? `ALTER TABLE "chat_turns" ADD COLUMN IF NOT EXISTS "waiting_until" timestamp`
+      : "",
+  ].filter(Boolean);
+  for (const statement of statements) {
+    try {
+      await db.query(statement);
+    } catch {
+      // The CREATE TABLE path below includes these columns on a fresh database.
+    }
+  }
+}
+
 async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
+  await ensureChatTurnLeaseColumns(db);
   // Inspect must not gate DDL when it throws (Hyperdrive/postgres.js array-bind
   // used to skip every CREATE IF NOT EXISTS). When inspect succeeds and every
   // required table is already present, skip the ~50 sequential CREATE
@@ -454,6 +497,8 @@ async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
       "assistant_content" text DEFAULT '' NOT NULL,
       "metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
       "last_error" text,
+      "lease_expires_at" timestamp,
+      "waiting_until" timestamp,
       "created_at" timestamp DEFAULT now() NOT NULL,
       "updated_at" timestamp DEFAULT now() NOT NULL,
       "committed_at" timestamp
@@ -528,6 +573,29 @@ async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
     `CREATE UNIQUE INDEX IF NOT EXISTS "anima_relationships_user_anima_uq"
        ON "anima_relationships" USING btree ("user_id","anima_id")`,
     "index:anima_relationships_user_anima_uq",
+  );
+
+  await run(
+    `CREATE TABLE IF NOT EXISTS "resonance_memories" (
+      "id" text PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "anima_id" text NOT NULL,
+      "session_id" text,
+      "title" text DEFAULT '' NOT NULL,
+      "body" text DEFAULT '' NOT NULL,
+      "resonance_snapshot" jsonb DEFAULT '{"intimacy":30,"powerDynamic":0,"spiritualAttunement":20,"primalIntensity":15,"crossoverOpenness":50}'::jsonb NOT NULL,
+      "emotional_tone" text DEFAULT 'neutral' NOT NULL,
+      "tags" jsonb DEFAULT '[]'::jsonb NOT NULL,
+      "intensity" integer DEFAULT 60 NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "last_recalled_at" timestamp
+    )`,
+    "table:resonance_memories",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "resonance_mem_user_anima_idx"
+       ON "resonance_memories" USING btree ("user_id","anima_id","created_at")`,
+    "index:resonance_mem_user_anima_idx",
   );
 
   await run(

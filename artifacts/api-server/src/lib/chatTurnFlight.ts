@@ -27,6 +27,8 @@ type FlightRecord = {
   resolve: (value: ChatTurnFlightOutcome) => void;
   reject: (err: unknown) => void;
   settled: boolean;
+  /** Same-isolate retries waiting on this generate. The owner is not counted. */
+  waiters: number;
 };
 
 const flights = new Map<string, FlightRecord>();
@@ -39,6 +41,8 @@ export type ChatTurnFlightReservation = {
   /** Pending in the database, but this isolate is not generating it. */
   abandon: () => void;
   fail: (err: unknown) => void;
+  /** Drop a same-isolate join so a disconnect does not keep the model slot. */
+  releaseWaiter: () => void;
 };
 
 function releaseLater(turnId: string, record: FlightRecord) {
@@ -67,8 +71,11 @@ export function reserveChatTurnFlight(
         resolve: () => {},
         abandon: () => {},
         fail: () => {},
+        releaseWaiter: () => {},
       };
     }
+    existing.waiters += 1;
+    let released = false;
     return {
       joined: true,
       mismatched: false,
@@ -76,6 +83,11 @@ export function reserveChatTurnFlight(
       resolve: () => {},
       abandon: () => {},
       fail: () => {},
+      releaseWaiter: () => {
+        if (released) return;
+        released = true;
+        existing.waiters = Math.max(0, existing.waiters - 1);
+      },
     };
   }
 
@@ -94,6 +106,7 @@ export function reserveChatTurnFlight(
     resolve: resolveOutcome,
     reject: rejectOutcome,
     settled: false,
+    waiters: 0,
   };
   flights.set(turnId, record);
 
@@ -111,7 +124,13 @@ export function reserveChatTurnFlight(
     resolve: (value) => settle(() => record.resolve(value)),
     abandon: () => settle(() => record.reject(new ChatTurnFlightElsewhere())),
     fail: (err) => settle(() => record.reject(err)),
+    releaseWaiter: () => {},
   };
+}
+
+/** Same-isolate retries subscribed to this turn. Zero when this isolate is not the owner. */
+export function chatTurnFlightWaiters(turnId: string): number {
+  return flights.get(turnId)?.waiters ?? 0;
 }
 
 export function isChatTurnFlightElsewhere(err: unknown): boolean {
