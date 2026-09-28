@@ -190,6 +190,8 @@ describe("local Ollama slot", () => {
     expect(wrangler).toContain('"name": "LOCAL_LLM_SLOT"');
     expect(wrangler).toContain('"class_name": "LocalLlmSlot"');
     expect(wrangler).toContain('"tag": "v1-local-llm-slot"');
+    expect(wrangler).toContain('"new_sqlite_classes": ["LocalLlmSlot"]');
+    expect(wrangler).not.toMatch(/Durable Objects need Workers Paid/);
   });
 
   it("gives background callers a noop lease when the feature is off", async () => {
