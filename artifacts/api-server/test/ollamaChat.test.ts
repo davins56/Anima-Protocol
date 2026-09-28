@@ -108,6 +108,29 @@ describe("ollamaChat adapter", () => {
     ]);
   });
 
+  it("folds the answer-last line into the final user turn and leaves the user text last", () => {
+    const userText = "What do you see?";
+    const instruction =
+      "Answer Mara's last message first, directly, in Natasha's own voice. Stay on what they said. Bring in memories or lore only when they help answer it.";
+    const avoid =
+      "Your last draft repeated an earlier reply word for word. Write a new reply to the latest message. Do not reuse earlier wording.";
+    const mapped = toOllamaMessages([
+      { role: "system", content: "CHARACTER IDENTITY LOCK: You are Natasha." },
+      { role: "user", content: "Earlier" },
+      { role: "assistant", content: "I remember." },
+      { role: "system", content: instruction },
+      { role: "system", content: avoid },
+      { role: "user", content: userText },
+    ]);
+    expect(mapped).toEqual([
+      { role: "system", content: "CHARACTER IDENTITY LOCK: You are Natasha." },
+      { role: "user", content: "Earlier" },
+      { role: "assistant", content: "I remember." },
+      { role: "user", content: `[${instruction}]\n[${avoid}]\n${userText}` },
+    ]);
+    expect(mapped.map((message) => message.content).join("\n").split(userText).length - 1).toBe(1);
+  });
+
   it("streams NDJSON /api/chat deltas as OpenAI-shaped chunks", async () => {
     const received: Record<string, unknown>[] = [];
     const { server, origin } = await listenStub((req, res) => {

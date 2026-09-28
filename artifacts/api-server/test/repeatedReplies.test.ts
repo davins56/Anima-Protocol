@@ -4,6 +4,7 @@ import {
   capRecentMessagesForLlm,
   composeCompanionChatMessages,
   isRepeatedReply,
+  messagesForLocalOllama,
   messagesForRepeatRetry,
   recentAssistantReplies,
 } from "../src/lib/promptBuilder";
@@ -90,5 +91,34 @@ describe("repeat regenerate", () => {
       { role: "system", content: AVOID_REPEAT_INSTRUCTION },
       { role: "user", content: "tell me a joke" },
     ]);
+  });
+
+  it("keeps the user line last when the local path folds the avoid-repeat line", () => {
+    const userLine = "tell me a joke";
+    const messages = composeCompanionChatMessages({
+      characters: [{ id: "c1", name: "Nova" }],
+      activeCharacter: { id: "c1", name: "Nova" },
+      memories: [],
+      recentMessages: loopedHistory,
+      mode: "solo",
+      content: userLine,
+      userDisplayName: "Mara",
+    } as never);
+    const retry = messagesForRepeatRetry(messages, GREETING);
+    expect(retry.at(-1)).toEqual({ role: "user", content: userLine });
+
+    const local = messagesForLocalOllama(retry);
+    const last = local.at(-1);
+    expect(last?.role).toBe("user");
+    expect(last?.content.endsWith(userLine)).toBe(true);
+    expect(last?.content).toContain(`[${AVOID_REPEAT_INSTRUCTION}]`);
+    expect(last?.content.indexOf("Answer Mara's last message first")).toBeLessThan(
+      last?.content.indexOf(AVOID_REPEAT_INSTRUCTION) ?? -1,
+    );
+    expect(last?.content.indexOf(AVOID_REPEAT_INSTRUCTION)).toBeLessThan(
+      last?.content.lastIndexOf(userLine) ?? -1,
+    );
+    expect(local.map((message) => message.content).join("\n").split(userLine).length - 1).toBe(1);
+    expect(local.slice(0, -1).some((message) => message.content.includes(userLine))).toBe(false);
   });
 });
