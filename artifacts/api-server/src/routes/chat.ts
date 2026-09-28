@@ -159,8 +159,11 @@ import {
 } from "../lib/chatTurnFlight";
 import { planTurnMessageSeqs, type SeqRow } from "../lib/chatMessageOrder";
 import {
+  emotionalStateWithTurnBond,
   emotionalStateWithTurnMood,
   moodTurnAlreadyWritten,
+  relationshipTurnAlreadyWritten,
+  savedMomentsTurnAlreadyWritten,
 } from "../lib/turnMoodWrite";
 import { scheduleWorkerBackground } from "../lib/workerBackground";
 import { logger } from "../lib/logger";
@@ -1211,7 +1214,11 @@ async function applyRelationshipPostProcess(params: {
     }
   }
   if ((synchroState || companionAffect) && assistantContent) {
-    const [moodRow] = characterIds.length
+    const anchorId =
+      activeCharacterId && characterIds.includes(activeCharacterId)
+        ? activeCharacterId
+        : characterIds[0];
+    const [anchorRow] = anchorId
       ? await withTransientDbRetry(() =>
           db
             .select({ emotionalState: companionMemories.emotionalState })
@@ -1219,26 +1226,78 @@ async function applyRelationshipPostProcess(params: {
             .where(
               and(
                 eq(companionMemories.userId, userId),
-                eq(companionMemories.characterId, characterIds[0]!),
+                eq(companionMemories.characterId, anchorId),
               ),
             )
             .limit(1),
         )
       : [undefined];
-    if (
-      moodTurnAlreadyWritten(
-        (moodRow?.emotionalState as Record<string, unknown> | null) ?? null,
-        turnId,
-      )
-    ) {
-      return;
+    const anchorState =
+      (anchorRow?.emotionalState as Record<string, unknown> | null) ?? null;
+    // The server save stamps mood before this runs. Skip only that write.
+    // Relationship strength and saved moments still land once for the turn.
+    const bondAlready = relationshipTurnAlreadyWritten(anchorState, turnId);
+    const momentsAlready = savedMomentsTurnAlreadyWritten(anchorState, turnId);
+    const evolved =
+      bondAlready || !synchroState
+        ? null
+        : evolveSynchroFromCompanion(synchroState, assistantContent);
+    const evolvedAffect =
+      moodTurnAlreadyWritten(anchorState, turnId) || !companionAffect
+        ? null
+        : evolveCompanionAffectFromCompanion(companionAffect, assistantContent);
+    if (evolved && !momentsAlready) {
+      try {
+        const intimacy = Number(
+          evolved.vector?.intimacy ?? evolved.vector?.synchroStrength ?? 0,
+        );
+        if (shouldCrystallize(intimacy, evolved.lastShift, content)) {
+          const title =
+            content.length > 56
+              ? `${content.slice(0, 53).trim()}…`
+              : content.slice(0, 56) || "A moment that settled";
+          const bodyText = [
+            `User: ${truncate(content, 280)}`,
+            `Companion: ${truncate(assistantContent, 360)}`,
+            evolved.lastShift ? `Shift: ${evolved.lastShift}` : null,
+          ]
+            .filter(Boolean)
+            .join("\n");
+          const targetIds =
+            activeCharacterId && characterIds.includes(activeCharacterId)
+              ? [activeCharacterId]
+              : characterIds.slice(0, 1);
+          for (const animaId of targetIds) {
+            await crystallizeResonanceMemory({
+              userId,
+              animaId,
+              sessionId,
+              title,
+              body: bodyText,
+              resonanceSnapshot: {
+                intimacy: evolved.vector.intimacy,
+                powerDynamic: evolved.vector.powerDynamic,
+                spiritualAttunement: evolved.vector.spiritualAttunement,
+                primalIntensity: evolved.vector.primalIntensity,
+                crossoverOpenness: evolved.vector.crossoverOpenness,
+              },
+              emotionalTone: evolved.emotionalTone,
+              tags: ["crystallized", evolved.level, mode, `turn:${turnId}`].filter(
+                Boolean,
+              ) as string[],
+              intensity: Math.round(
+                Math.max(intimacy, Number(evolved.vector.synchroStrength ?? 0)),
+              ),
+            });
+          }
+        }
+      } catch (crystalErr) {
+        logger.warn(
+          { crystalErr, turnId, sessionId },
+          "Resonance memory crystallization failed (non-blocking)",
+        );
+      }
     }
-    const evolved = synchroState
-      ? evolveSynchroFromCompanion(synchroState, assistantContent)
-      : null;
-    const evolvedAffect = companionAffect
-      ? evolveCompanionAffectFromCompanion(companionAffect, assistantContent)
-      : null;
     const now = new Date();
     for (const cid of characterIds) {
       const [existing] = await withTransientDbRetry(() =>
@@ -1258,14 +1317,16 @@ async function applyRelationshipPostProcess(params: {
           )
           .limit(1),
       );
-      const serialized = {
-        ...((existing?.emotionalState as Record<string, unknown> | undefined) ??
-          {}),
-        ...(evolved ? serializeSynchroState(evolved) : {}),
-        ...(evolvedAffect
-          ? { selfState: serializeCompanionAffect(evolvedAffect) }
-          : {}),
-      };
+      const current =
+        (existing?.emotionalState as Record<string, unknown> | null) ?? null;
+      const next = emotionalStateWithTurnBond(current, turnId, {
+        synchro: evolved ? serializeSynchroState(evolved) : null,
+        selfState: evolvedAffect ? serializeCompanionAffect(evolvedAffect) : null,
+        saveMoment: Boolean(evolved) && !savedMomentsTurnAlreadyWritten(current, turnId),
+      });
+      if (!next.wroteMood && !next.wroteRelationship && !next.wroteSavedMoments) {
+        continue;
+      }
       await withTransientDbRetry(() =>
         db
           .insert(companionMemories)
@@ -1274,66 +1335,17 @@ async function applyRelationshipPostProcess(params: {
             characterId: cid,
             summary: existing?.summary ?? "",
             facts: Array.isArray(existing?.facts) ? existing.facts : [],
-            emotionalState: serialized,
+            emotionalState: next.state,
             resonanceNotes: existing?.resonanceNotes ?? "",
             updatedAt: now,
           })
           .onConflictDoUpdate({
             target: [companionMemories.userId, companionMemories.characterId],
             set: {
-              emotionalState: serialized,
+              emotionalState: next.state,
               updatedAt: now,
             },
           }),
-      );
-    }
-
-    try {
-      if (evolved) {
-      const intimacy = Number(evolved.vector?.intimacy ?? evolved.vector?.synchroStrength ?? 0);
-      if (shouldCrystallize(intimacy, evolved.lastShift, content)) {
-        const title =
-          content.length > 56
-            ? `${content.slice(0, 53).trim()}…`
-            : content.slice(0, 56) || "A moment that settled";
-        const bodyText = [
-          `User: ${truncate(content, 280)}`,
-          `Companion: ${truncate(assistantContent, 360)}`,
-          evolved.lastShift ? `Shift: ${evolved.lastShift}` : null,
-        ]
-          .filter(Boolean)
-          .join("\n");
-        const targetIds =
-          activeCharacterId && characterIds.includes(activeCharacterId)
-            ? [activeCharacterId]
-            : characterIds.slice(0, 1);
-        for (const animaId of targetIds) {
-          await crystallizeResonanceMemory({
-            userId,
-            animaId,
-            sessionId,
-            title,
-            body: bodyText,
-            resonanceSnapshot: {
-              intimacy: evolved.vector.intimacy,
-              powerDynamic: evolved.vector.powerDynamic,
-              spiritualAttunement: evolved.vector.spiritualAttunement,
-              primalIntensity: evolved.vector.primalIntensity,
-              crossoverOpenness: evolved.vector.crossoverOpenness,
-            },
-            emotionalTone: evolved.emotionalTone,
-            tags: ["crystallized", evolved.level, mode].filter(Boolean) as string[],
-            intensity: Math.round(
-              Math.max(intimacy, Number(evolved.vector.synchroStrength ?? 0)),
-            ),
-          });
-        }
-      }
-      }
-    } catch (crystalErr) {
-      logger.warn(
-        { crystalErr, turnId, sessionId },
-        "Resonance memory crystallization failed (non-blocking)",
       );
     }
   }

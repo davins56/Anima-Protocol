@@ -27,6 +27,7 @@ export const REQUIRED_TABLES = [
   "anima_evolution",
   "anima_relationships",
   "anima_narrative_arcs",
+  "resonance_memories",
 ] as const;
 
 export type RequiredTable = (typeof REQUIRED_TABLES)[number];
@@ -572,6 +573,29 @@ async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
     `CREATE UNIQUE INDEX IF NOT EXISTS "anima_relationships_user_anima_uq"
        ON "anima_relationships" USING btree ("user_id","anima_id")`,
     "index:anima_relationships_user_anima_uq",
+  );
+
+  await run(
+    `CREATE TABLE IF NOT EXISTS "resonance_memories" (
+      "id" text PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "anima_id" text NOT NULL,
+      "session_id" text,
+      "title" text DEFAULT '' NOT NULL,
+      "body" text DEFAULT '' NOT NULL,
+      "resonance_snapshot" jsonb DEFAULT '{"intimacy":30,"powerDynamic":0,"spiritualAttunement":20,"primalIntensity":15,"crossoverOpenness":50}'::jsonb NOT NULL,
+      "emotional_tone" text DEFAULT 'neutral' NOT NULL,
+      "tags" jsonb DEFAULT '[]'::jsonb NOT NULL,
+      "intensity" integer DEFAULT 60 NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "last_recalled_at" timestamp
+    )`,
+    "table:resonance_memories",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "resonance_mem_user_anima_idx"
+       ON "resonance_memories" USING btree ("user_id","anima_id","created_at")`,
+    "index:resonance_mem_user_anima_idx",
   );
 
   await run(
