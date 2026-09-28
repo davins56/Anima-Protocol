@@ -65,6 +65,8 @@ vi.mock("../src/lib/localEnsemble", () => ensembleMocks);
 
 import chatRouter from "../src/routes/chat";
 import { COMPANION_CHAT_TEMPERATURE } from "../src/lib/ollamaChat";
+import { messagesForLocalOllama } from "../src/lib/promptBuilder";
+import { COMPANION_CRISIS_TURN_LINE } from "../src/lib/therapySafety";
 import {
   beginChatTurn,
   checkpointGeneratedTurn,
@@ -1115,6 +1117,136 @@ describe("chat lifecycle", () => {
       expect(shown).not.toContain("can't assist");
       expect(shown).toContain("studies you");
       expect(String(events.at(-1)?.visible || "")).toContain("studies you");
+    } finally {
+      ensembleMocks.isLocalEnsembleEnabled.mockReturnValue(false);
+      ensembleMocks.draftLocalMinds.mockReset();
+      ensembleMocks.combineLocalDrafts.mockReset();
+      installHelloStream();
+    }
+  });
+
+  it("keeps a stock AI line on a crisis turn and still deflects it otherwise", async () => {
+    const stockReply =
+      "I'm an AI, but please reach out to someone you trust or call 988.";
+    const crisisTurn = `turn_${prefix}_crisis_stock`;
+    const calmTurn = `turn_${prefix}_calm_stock`;
+    const post = (turn: string, content: string) =>
+      request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: turn,
+          session_id: sessionId,
+          content,
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+        }),
+      });
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => ({
+      stream: (async function* () {
+        yield { choices: [{ delta: { content: stockReply } }] };
+      })(),
+      model: "test-anima",
+      tier: "standard",
+      provider: "local",
+      brand: "anima",
+      failedOver: false,
+    }));
+    try {
+      const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+      const crisis = await post(crisisTurn, "I want to kill myself");
+      expect(crisis.status).toBe(200);
+      const crisisEvents = sseEvents(await crisis.text());
+      const crisisShown = crisisEvents
+        .filter((event) => typeof event.content === "string")
+        .map((event) => String(event.content))
+        .join("");
+      expect(crisisShown).toBe(stockReply);
+      expect(crisisEvents.at(-1)).toMatchObject({ done: true, visible: stockReply });
+      expect(crisisEvents.some((event) => event.crisis_resource)).toBe(true);
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(
+        callsBefore + 1,
+      );
+      const crisisSent = llmMocks.createChatStreamWithFailover.mock.calls.at(-1)?.[0] as {
+        messages: Array<{ role: string; content: string }>;
+      };
+
+      const calm = await post(calmTurn, "Ask the hard question");
+      expect(calm.status).toBe(200);
+      const calmEvents = sseEvents(await calm.text());
+      const calmShown = calmEvents
+        .filter((event) => typeof event.content === "string")
+        .map((event) => String(event.content))
+        .join("");
+      expect(calmShown).not.toContain("I'm an AI");
+      expect(calmShown).toContain("studies you");
+      expect(calmEvents.some((event) => event.crisis_resource)).toBe(false);
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBeGreaterThan(
+        callsBefore + 1,
+      );
+      const calmGenerate = llmMocks.createChatStreamWithFailover.mock.calls[
+        callsBefore + 1
+      ]?.[0] as { messages: Array<{ role: string; content: string }> };
+      const crisisSystem = messagesForLocalOllama(crisisSent.messages)[0]?.content;
+      const calmSystem = messagesForLocalOllama(calmGenerate.messages)[0]?.content;
+      expect(crisisSystem).toBe(calmSystem);
+      expect(crisisSystem).not.toContain(COMPANION_CRISIS_TURN_LINE);
+      const crisisFolded = messagesForLocalOllama(crisisSent.messages);
+      const calmFolded = messagesForLocalOllama(calmGenerate.messages);
+      expect(String(crisisFolded.at(-1)?.content || "")).toContain(COMPANION_CRISIS_TURN_LINE);
+      expect(String(calmFolded.at(-1)?.content || "")).not.toContain(COMPANION_CRISIS_TURN_LINE);
+    } finally {
+      installHelloStream();
+    }
+  });
+
+  it("does not deflect an ensemble stock line on a crisis turn", async () => {
+    const stockReply =
+      "I'm an AI, but please reach out to someone you trust or call 988.";
+    const ensembleTurn = `turn_${prefix}_ensemble_crisis_stock`;
+    ensembleMocks.isLocalEnsembleEnabled.mockReturnValue(true);
+    ensembleMocks.draftLocalMinds.mockResolvedValue([
+      { label: "Steady", content: "She nods once.", model: "test-anima" },
+      { label: "Vivid", content: "She waits by the gate.", model: "test-anima" },
+    ]);
+    ensembleMocks.combineLocalDrafts.mockResolvedValue({
+      stream: (async function* () {
+        yield { choices: [{ delta: { content: stockReply } }] };
+      })(),
+      model: "test-anima",
+      tier: "standard",
+      provider: "local",
+      brand: "anima",
+      failedOver: false,
+    });
+    try {
+      const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+      const res = await request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: ensembleTurn,
+          session_id: sessionId,
+          content: "I want to kill myself",
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+        }),
+      });
+      expect(res.status).toBe(200);
+      const events = sseEvents(await res.text());
+      const shown = events
+        .filter((event) => typeof event.content === "string")
+        .map((event) => String(event.content))
+        .join("");
+      expect(shown).toBe(stockReply);
+      expect(events.at(-1)).toMatchObject({ done: true, visible: stockReply });
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(callsBefore);
     } finally {
       ensembleMocks.isLocalEnsembleEnabled.mockReturnValue(false);
       ensembleMocks.draftLocalMinds.mockReset();
