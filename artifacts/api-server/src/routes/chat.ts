@@ -50,6 +50,7 @@ import {
   llmCompanionDurableWaitMs,
   openStreamAbort,
   repeatRetryBudgetMs,
+  shouldRegenerateRepeatedReply,
   watchClientLeave,
 } from "../lib/chatTimeouts";
 import { hintLocalLlmWarm } from "../lib/localLlmWarm";
@@ -75,7 +76,7 @@ import {
   type CompanionMemoryRecord,
   type CharacterData,
 } from "../lib/promptBuilder";
-import { beginCompanionLlmTurn } from "../lib/sidecarLlm";
+import { beginCompanionLlmTurn, companionTurnsOpenForUser } from "../lib/sidecarLlm";
 import { extractOperatorModelFromProfile } from "../lib/operatorModel";
 import {
   incrementConversationCount,
@@ -155,6 +156,7 @@ import {
   readChatTurn,
   renewChatTurnLease,
   retryableChatTurns,
+  userHasOtherPendingChatTurn,
   type PersistenceOwner,
 } from "../lib/chatTurnLedger";
 import {
@@ -2469,7 +2471,7 @@ router.post("/messages", async (req, res) => {
       },
     });
     const generateSignal = combineAbortSignals(open.signal, abandoned.signal);
-    const releaseCompanionLlm = beginCompanionLlmTurn();
+    const releaseCompanionLlm = beginCompanionLlmTurn(userId);
     try {
     if (isLocalEnsembleEnabled()) {
       writeSse(res, { status: "ensemble", phase: "gathering", minds: [] });
@@ -2553,11 +2555,38 @@ router.post("/messages", async (req, res) => {
       // what is left of the browser's fetch window. Deltas are not streamed
       // and the first reply stays painted; `done.visible` swaps it in.
       const retryBudgetMs = repeatRetryBudgetMs(Date.now() - requestStartedAt);
+      const repeated = isRepeatedReply(
+        fullResponse,
+        recentAssistantReplies(recentMessages),
+      );
+      let otherWorkQueued = false;
       if (
         retryBudgetMs > 0 &&
         !generateSignal.aborted &&
         !streamed.timedOut &&
-        isRepeatedReply(fullResponse, recentAssistantReplies(recentMessages))
+        repeated
+      ) {
+        otherWorkQueued = companionTurnsOpenForUser(userId) > 1;
+        if (!otherWorkQueued) {
+          try {
+            otherWorkQueued = await userHasOtherPendingChatTurn(userId, turnId);
+          } catch (error) {
+            logger.warn(
+              { error, turnId },
+              "Could not check queued turns; skipping repeat regenerate",
+            );
+            otherWorkQueued = true;
+          }
+        }
+      }
+      if (
+        shouldRegenerateRepeatedReply({
+          retryBudgetMs,
+          aborted: generateSignal.aborted,
+          timedOut: Boolean(streamed.timedOut),
+          repeated,
+          otherWorkQueued,
+        })
       ) {
         logger.warn(
           { turnId, retryBudgetMs },

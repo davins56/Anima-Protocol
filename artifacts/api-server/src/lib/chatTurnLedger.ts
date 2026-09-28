@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import {
   chatTurns,
   db,
@@ -42,6 +42,25 @@ export type ChatTurnReuse = "replay" | "conflict" | "in_flight";
  * stops renewing, so the turn cannot stay pending forever.
  */
 export const CHAT_TURN_LEASE_MS = 45_000;
+
+/**
+ * A pending row whose lease expired this long ago is abandoned. The chat
+ * page must not keep a "..." bubble for it.
+ */
+export const STALE_PENDING_LEASE_MS = 3 * 60 * 1000;
+
+export function pendingTurnLeaseIsStale(
+  turn: { status?: string | null; leaseExpiresAt?: Date | string | null },
+  now = Date.now(),
+): boolean {
+  if (turn.status !== "pending") return false;
+  if (!turn.leaseExpiresAt) return false;
+  const at =
+    turn.leaseExpiresAt instanceof Date
+      ? turn.leaseExpiresAt.getTime()
+      : Date.parse(String(turn.leaseExpiresAt));
+  return Number.isFinite(at) && at <= now - STALE_PENDING_LEASE_MS;
+}
 
 export type DurableTurnJoin = "replay" | "join" | "claim" | "conflict";
 
@@ -228,12 +247,16 @@ export async function readChatTurn(
   return turn ?? null;
 }
 
-/** Newest pending or generated turn for this session, if the reply is not committed yet. */
+/**
+ * Newest pending or generated turn for this session, if the reply is not
+ * committed yet. Pending rows whose lease expired more than
+ * `STALE_PENDING_LEASE_MS` ago are marked failed and ignored.
+ */
 export async function latestOpenChatTurn(
   userId: string,
   sessionId: string,
 ): Promise<ChatTurn | null> {
-  const [turn] = await withTransientDbRetry(() =>
+  const rows = await withTransientDbRetry(() =>
     db
       .select()
       .from(chatTurns)
@@ -245,9 +268,44 @@ export async function latestOpenChatTurn(
         ),
       )
       .orderBy(desc(chatTurns.createdAt))
+      .limit(8),
+  );
+  let open: ChatTurn | null = null;
+  for (const turn of rows) {
+    if (pendingTurnLeaseIsStale(turn)) {
+      await markTurnFailed(turn.id, userId, new Error("Companion turn lease expired"));
+      continue;
+    }
+    if (!open) open = turn;
+  }
+  return open;
+}
+
+/**
+ * Another pending turn for this user is waiting on the model. A long-expired
+ * lease does not count — that row is abandoned, not queued.
+ */
+export async function userHasOtherPendingChatTurn(
+  userId: string,
+  exceptTurnId: string,
+  now = new Date(),
+): Promise<boolean> {
+  const staleBefore = new Date(now.getTime() - STALE_PENDING_LEASE_MS);
+  const [row] = await withTransientDbRetry(() =>
+    db
+      .select({ id: chatTurns.id })
+      .from(chatTurns)
+      .where(
+        and(
+          eq(chatTurns.userId, userId),
+          eq(chatTurns.status, "pending"),
+          ne(chatTurns.id, exceptTurnId),
+          or(isNull(chatTurns.leaseExpiresAt), gt(chatTurns.leaseExpiresAt, staleBefore)),
+        ),
+      )
       .limit(1),
   );
-  return turn ?? null;
+  return Boolean(row);
 }
 
 /**

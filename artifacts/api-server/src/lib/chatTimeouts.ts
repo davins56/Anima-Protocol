@@ -299,6 +299,26 @@ export function repeatRetryBudgetMs(elapsedMs: number): number {
   return left >= REPEAT_RETRY_MIN_MS ? left : 0;
 }
 
+/**
+ * One extra local generate for a copied reply. Skip it when another turn for
+ * this user is already waiting on the single model slot.
+ */
+export function shouldRegenerateRepeatedReply(input: {
+  retryBudgetMs: number;
+  aborted: boolean;
+  timedOut: boolean;
+  repeated: boolean;
+  otherWorkQueued: boolean;
+}): boolean {
+  return (
+    input.retryBudgetMs > 0 &&
+    !input.aborted &&
+    !input.timedOut &&
+    input.repeated &&
+    !input.otherWorkQueued
+  );
+}
+
 export {
   CHAT_MESSAGES_MAX_TOKENS,
   clampChatMessagesMaxTokens,

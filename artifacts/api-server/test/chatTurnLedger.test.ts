@@ -7,10 +7,13 @@ import {
   claimChatTurnLease,
   classifyChatTurnReuse,
   decideDurableTurnJoin,
+  latestOpenChatTurn,
   markTurnCommitted,
   markTurnFailed,
+  pendingTurnLeaseIsStale,
   readChatTurn,
   retryableChatTurns,
+  STALE_PENDING_LEASE_MS,
   turnMessageIds,
 } from "../src/lib/chatTurnLedger";
 
@@ -232,5 +235,50 @@ describe("chat turn ledger", () => {
     }
     const retryable = await retryableChatTurns(userId, retrySession, 10);
     expect(retryable.map((turn) => turn.id)).toEqual([newer]);
+  });
+
+  it("ignores a pending turn whose lease expired more than three minutes ago", async () => {
+    const staleSession = `${sessionId}_stale`;
+    const staleId = `turn_${prefix}_stale`;
+    const freshId = `turn_${prefix}_fresh_lease`;
+    await beginChatTurn({
+      id: staleId,
+      sessionId: staleSession,
+      userId,
+      userContent: "still there?",
+      persistenceOwner: "server",
+    });
+    await beginChatTurn({
+      id: freshId,
+      sessionId: staleSession,
+      userId,
+      userContent: "hello again",
+      persistenceOwner: "server",
+    });
+    const longAgo = new Date(Date.now() - STALE_PENDING_LEASE_MS - 5_000);
+    const recentlyExpired = new Date(Date.now() - 30_000);
+    await db
+      .update(chatTurns)
+      .set({ leaseExpiresAt: longAgo, status: "pending", createdAt: longAgo })
+      .where(eq(chatTurns.id, staleId));
+    await db
+      .update(chatTurns)
+      .set({ leaseExpiresAt: recentlyExpired, status: "pending" })
+      .where(eq(chatTurns.id, freshId));
+
+    expect(pendingTurnLeaseIsStale({ status: "pending", leaseExpiresAt: longAgo })).toBe(true);
+    expect(
+      pendingTurnLeaseIsStale({ status: "pending", leaseExpiresAt: recentlyExpired }),
+    ).toBe(false);
+    expect(
+      pendingTurnLeaseIsStale({ status: "generated", leaseExpiresAt: longAgo }),
+    ).toBe(false);
+
+    const open = await latestOpenChatTurn(userId, staleSession);
+    expect(open?.id).toBe(freshId);
+    expect(await readChatTurn(staleId, userId)).toMatchObject({
+      status: "failed",
+      lastError: "Companion turn lease expired",
+    });
   });
 });
