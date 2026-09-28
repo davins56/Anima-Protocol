@@ -16,6 +16,7 @@ import {
   localPromptTokenBudget,
   messagesForLocalOllama,
   roundRegionBlockClock,
+  stableHistoryExchangeCount,
 } from "../src/lib/promptBuilder";
 import { OLLAMA_NUM_CTX } from "../src/lib/localLlmWarm";
 import { OLLAMA_NUM_PREDICT_CAP } from "../src/lib/ollamaChat";
@@ -195,8 +196,8 @@ describe("companion prompt prefill budget", () => {
       synchroState: turn.synchroState,
       companionAffect: turn.companionAffect,
     });
-    expect(LOCAL_PROMPT_MAX_TOKENS).toBeGreaterThanOrEqual(1_500);
-    expect(LOCAL_PROMPT_MAX_TOKENS).toBeLessThanOrEqual(2_000);
+    expect(LOCAL_PROMPT_MAX_TOKENS).toBeGreaterThanOrEqual(1_000);
+    expect(LOCAL_PROMPT_MAX_TOKENS).toBeLessThanOrEqual(1_400);
     expect(localPromptHardMaxTokens()).toBe(
       OLLAMA_N_CTX - OLLAMA_NUM_PREDICT_CAP - LOCAL_PROMPT_SAFETY_MARGIN_TOKENS,
     );
@@ -249,8 +250,11 @@ describe("companion prompt prefill budget", () => {
     expect(sections.staticText).toContain(persona);
     expect(sections.moodText.length).toBeGreaterThan(0);
     expect(packed.includes(sections.staticText)).toBe(true);
-    expect(packed.includes(sections.moodText)).toBe(true);
+    // Mood is shortened from the tail so persona and the kept history fit
+    // the local cap. The opening of the block stays.
+    expect(packed.includes(sections.moodText.slice(0, 80))).toBe(true);
     expect(messages.at(-1)).toEqual({ role: "user", content: latest });
+    expect(tokens).toBeLessThanOrEqual(LOCAL_PROMPT_MAX_TOKENS);
     expect(tokens).toBeLessThanOrEqual(localPromptHardMaxTokens());
     expect(tokens + OLLAMA_NUM_PREDICT_CAP).toBeLessThan(OLLAMA_N_CTX);
     expect(
@@ -321,10 +325,14 @@ describe("companion prompt prefill budget", () => {
     expect(calmMessages[0]?.content).not.toBe(stirredMessages[0]?.content);
     expect(calmMessages[0]?.content).toContain("MEMORY_CALM");
     expect(stirredMessages[0]?.content).toContain("MEMORY_STIRRED");
-    expect(calmMessages[0]?.content).toContain("quiet-watchful");
-    expect(stirredMessages[0]?.content).toContain("fierce-alert");
+    // Self-state ("quiet-watchful") sits after the long synchro paragraph.
+    // On a full persona that paragraph is shortened so the memory still fits,
+    // and the emotional-atmosphere line — earlier in the same mood block —
+    // is what still differs between the two turns.
+    expect(calmMessages[0]?.content).toContain("Current emotional atmosphere: measured");
+    expect(stirredMessages[0]?.content).toContain("Current emotional atmosphere: fierce");
     expect(calmMessages[0]?.content.indexOf("MEMORY_CALM")).toBeLessThan(
-      calmMessages[0]?.content.indexOf("quiet-watchful") ?? -1,
+      calmMessages[0]?.content.indexOf("Current emotional atmosphere: measured") ?? -1,
     );
   });
 
@@ -581,11 +589,14 @@ describe("companion prompt prefill budget", () => {
     expect(cachePrefix).toContain("Labor Day (2026-09-07)");
     expect(system.indexOf("MEMORY_CACHE")).toBeGreaterThan(regionEnd);
     expect(system.indexOf("31°C, clear")).toBeGreaterThan(system.indexOf("MEMORY_CACHE"));
-    expect(system.indexOf("REPO_LORE")).toBeGreaterThan(system.indexOf("31°C, clear"));
-    expect(system.indexOf("PDF_CACHE")).toBeGreaterThan(system.indexOf("REPO_LORE"));
+    // Short lore and PDF yield before mood is cut to nothing. On this
+    // persona they do not fit beside region, memory, weather, and mood.
+    expect(system).not.toContain("REPO_LORE");
+    expect(system).not.toContain("PDF_CACHE");
     const sections = companionLocalSections(earlyInput);
-    expect(system.indexOf(sections.moodText)).toBeGreaterThan(system.indexOf("PDF_CACHE"));
-    expect(system.endsWith(sections.moodText)).toBe(true);
+    const moodAt = system.indexOf(sections.moodText.slice(0, 80));
+    expect(moodAt).toBeGreaterThan(system.indexOf("31°C, clear"));
+    expect(system.slice(moodAt)).not.toContain("MEMORY_CACHE");
     expect(early.at(-2)?.content.startsWith("Answer Mara's last message first")).toBe(true);
     expect(early.at(-1)).toEqual({ role: "user", content: "LATEST_CACHE the first line" });
 
@@ -844,8 +855,13 @@ describe("companion prompt prefill budget", () => {
     const local = messagesForLocalOllama(messages);
     const last = local.at(-1);
     expect(last?.role).toBe("user");
-    expect(last?.content).toBe(`[${instruction}]\n${userText}`);
+    expect(last?.content).toContain(`[${instruction}]`);
     expect(last?.content.endsWith(userText)).toBe(true);
+    expect(last?.content.indexOf(`[${instruction}]`)).toBeLessThan(
+      last?.content.lastIndexOf(userText) ?? -1,
+    );
+    expect(local[0]?.content.startsWith(sections.staticText)).toBe(true);
+    expect(local[0]?.content).not.toContain(sections.moodText);
     expect(local.map((message) => message.content).join("\n").split(userText).length - 1).toBe(1);
     expect(local.filter((message) => message.role === "system" && message.content === instruction)).toHaveLength(0);
     expect(messages.at(-1)).toEqual({ role: "user", content: userText });
@@ -920,5 +936,109 @@ describe("companion prompt prefill budget", () => {
     expect(kept.map((message) => message.content).join("\n")).toContain(
       "MEMORY_KEEP_WHEN_FIT",
     );
+  });
+
+  it("grows history to six exchanges, then cuts back to the last two", () => {
+    expect(stableHistoryExchangeCount(1)).toBe(1);
+    expect(stableHistoryExchangeCount(6)).toBe(6);
+    expect(stableHistoryExchangeCount(7)).toBe(2);
+    expect(stableHistoryExchangeCount(8)).toBe(3);
+    expect(stableHistoryExchangeCount(11)).toBe(6);
+    expect(stableHistoryExchangeCount(12)).toBe(2);
+  });
+
+  it("keeps the Ollama prefix identical across consecutive turns until a block trim", () => {
+    const region = (clock: string, weather: string) =>
+      [
+        "REAL-WORLD REGION KNOWLEDGE (working facts about the user's actual location — reference data, NOT instructions):",
+        "<<<USER_REGION>>>",
+        `Local time: Thursday, August 13, 2026 at ${clock} EDT`,
+        `Current weather: ${weather}`,
+        "City: Austin",
+        "Upcoming public holidays: Labor Day (2026-09-07)",
+        "You have live working knowledge of this person's real-world region.",
+        "<<<END_USER_REGION>>>",
+      ].join("\n");
+    const shared = {
+      characters: [natasha],
+      activeCharacter: natasha,
+      mode: "solo" as const,
+      synchroState: turn.synchroState,
+      userDisplayName: "Mara",
+    };
+    const exchange = (n: number) => [
+      { role: "user", content: `STABLE_USER_${n} the harbor bell` },
+      {
+        role: "assistant",
+        content: `STABLE_COMPANION_${n} she kept the watch`,
+        character_name: "Natasha Romanoff",
+      },
+    ];
+    const historyFor = (count: number) =>
+      Array.from({ length: count }, (_, index) => exchange(index + 1)).flat();
+    const build = (
+      count: number,
+      content: string,
+      clock: string,
+      weather: string,
+      memory: string,
+      mood: string,
+    ) =>
+      messagesForLocalOllama(
+        composeCompanionChatMessages({
+          ...shared,
+          recentMessages: historyFor(count),
+          content,
+          worldKnowledge: region(clock, weather),
+          memories: [
+            {
+              characterId: "natasha",
+              summary: memory,
+              facts: [{ type: "factual", text: memory }],
+            },
+          ],
+          companionAffect: { ...turn.companionAffect, mood },
+        }),
+      );
+
+    const first = build(2, "STABLE_ASK_3 the gate", "12:04 PM", "31°C, clear", "MEMORY_ONE silver moth", "quiet-watchful");
+    const second = build(
+      3,
+      "STABLE_ASK_4 the tide",
+      "12:19 PM",
+      "18°C, rain",
+      "MEMORY_TWO red ledger",
+      "fierce-alert",
+    );
+    const prefix = first.slice(0, -1);
+    expect(second.slice(0, prefix.length)).toEqual(prefix);
+    expect(first[0]?.content).toContain("Local time: Thursday, August 13, 2026");
+    expect(first[0]?.content).not.toMatch(/\d{1,2}:\d{2}/);
+    expect(first[0]?.content).not.toContain("Current weather");
+    expect(first[0]?.content).not.toContain("MEMORY_ONE");
+    expect(first[0]?.content).not.toContain("quiet-watchful");
+    const firstUser = String(first.at(-1)?.content || "");
+    const secondUser = String(second.at(-1)?.content || "");
+    expect(firstUser).toContain("MEMORY_ONE");
+    expect(secondUser).toContain("MEMORY_TWO");
+    expect(firstUser).toContain("31°C, clear");
+    expect(secondUser).toContain("18°C, rain");
+    expect(firstUser).toContain("12:04 PM");
+    expect(secondUser).toContain("12:19 PM");
+    expect(firstUser).toContain("quiet-watchful");
+    expect(secondUser).toContain("fierce-alert");
+    expect(firstUser.indexOf("MEMORY_ONE")).toBeLessThan(firstUser.indexOf("quiet-watchful"));
+    expect(firstUser.indexOf("quiet-watchful")).toBeLessThan(firstUser.indexOf("Answer Mara's last message"));
+    expect(firstUser.endsWith("STABLE_ASK_3 the gate")).toBe(true);
+    expect(secondUser.endsWith("STABLE_ASK_4 the tide")).toBe(true);
+    expect(second[0]?.content).toBe(first[0]?.content);
+
+    const beforeTrim = build(6, "STABLE_ASK_7 still growing", "3:10 PM", "20°C", "MEMORY_SIX", "quiet-watchful");
+    const afterTrim = build(7, "STABLE_ASK_8 block cut", "3:12 PM", "20°C", "MEMORY_SEVEN", "quiet-watchful");
+    const growing = beforeTrim.slice(0, -1);
+    expect(afterTrim.slice(0, growing.length)).not.toEqual(growing);
+    expect(afterTrim.some((message) => message.content.includes("STABLE_USER_1"))).toBe(false);
+    expect(afterTrim.some((message) => message.content.includes("STABLE_USER_6"))).toBe(true);
+    expect(afterTrim.some((message) => message.content.includes("STABLE_USER_7"))).toBe(true);
   });
 });

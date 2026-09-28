@@ -99,6 +99,125 @@ export function resolveOllamaChatConfig(
   };
 }
 
+function normalizeOllamaModelName(name: string): string {
+  return name.trim().toLowerCase().replace(/:latest$/, "");
+}
+
+/** True when `listed` is the configured tag, ignoring Ollama's `:latest` suffix. */
+export function ollamaModelNamesMatch(wanted: string, listed: string): boolean {
+  const want = normalizeOllamaModelName(wanted);
+  const have = normalizeOllamaModelName(listed);
+  return Boolean(want) && want === have;
+}
+
+function modelNamesFromOllamaList(body: unknown): string[] {
+  const models = (body as { models?: unknown } | null)?.models;
+  if (!Array.isArray(models)) return [];
+  const names: string[] = [];
+  for (const entry of models) {
+    if (!entry || typeof entry !== "object") continue;
+    const rec = entry as { name?: unknown; model?: unknown };
+    const name =
+      typeof rec.name === "string"
+        ? rec.name
+        : typeof rec.model === "string"
+          ? rec.model
+          : "";
+    if (name.trim()) names.push(name.trim());
+  }
+  return names;
+}
+
+export interface OllamaModelPresence {
+  /** True when the configured model is in `/api/ps` or `/api/tags`. */
+  ok: boolean;
+  models: string[];
+  /** Which listing contained the model, when one did. */
+  via: "ps" | "tags" | null;
+  status?: number;
+  message?: string;
+}
+
+/**
+ * Health check for the local Ollama host that does not generate.
+ * A generate of "Reply with the single word: ok" replaces the cached
+ * companion prompt. GET `/api/ps` (then `/api/tags` if the model is not
+ * loaded) only confirms the tag is present.
+ */
+export async function probeOllamaModelListed(opts: {
+  model: string;
+  baseUrl?: string;
+  signal?: AbortSignal;
+  env?: NodeJS.ProcessEnv;
+  fetchImpl?: typeof fetch;
+}): Promise<OllamaModelPresence> {
+  const env = opts.env ?? process.env;
+  const fetchImpl = opts.fetchImpl ?? fetch;
+  const base = opts.baseUrl?.trim() || localLlmBaseUrl(env);
+  const origin = base ? ollamaNativeOrigin(base) : null;
+  if (!origin) {
+    return {
+      ok: false,
+      models: [],
+      via: null,
+      message: "ANIMA_LOCAL_LLM_BASE_URL is unset.",
+    };
+  }
+  const headers: Record<string, string> = { Accept: "application/json" };
+  const auth = ollamaAuthHeader(env);
+  if (auth) headers.Authorization = auth;
+
+  const read = async (
+    path: "/api/ps" | "/api/tags",
+  ): Promise<{ ok: boolean; status: number; models: string[] }> => {
+    let response: Response;
+    try {
+      response = await fetchImpl(`${origin}${path}`, {
+        method: "GET",
+        headers,
+        signal: opts.signal,
+      });
+    } catch (err) {
+      if (err && typeof err === "object") {
+        const name = String((err as { name?: unknown }).name || "");
+        if (name === "AbortError" || name === "TimeoutError") throw err;
+      }
+      throw connectionError(err);
+    }
+    if (!response.ok) {
+      return { ok: false, status: response.status, models: [] };
+    }
+    const body = (await response.json().catch(() => null)) as unknown;
+    return { ok: true, status: response.status, models: modelNamesFromOllamaList(body) };
+  };
+
+  const ps = await read("/api/ps");
+  if (ps.ok && ps.models.some((name) => ollamaModelNamesMatch(opts.model, name))) {
+    return { ok: true, models: ps.models, via: "ps", status: ps.status };
+  }
+  const tags = await read("/api/tags");
+  const models = tags.models.length > 0 ? tags.models : ps.models;
+  if (tags.ok && tags.models.some((name) => ollamaModelNamesMatch(opts.model, name))) {
+    return { ok: true, models: tags.models, via: "tags", status: tags.status };
+  }
+  if (!ps.ok && !tags.ok) {
+    const status = tags.status || ps.status;
+    throw new OllamaChatError(
+      status
+        ? `Ollama model list failed (HTTP ${status})`
+        : "Ollama model list failed.",
+      { status: status || undefined, connection: status === 0 },
+    );
+  }
+  return {
+    ok: false,
+    models,
+    via: null,
+    status: tags.status || ps.status,
+    message: `Model ${opts.model} is not listed by Ollama.`,
+  };
+}
+
 function ollamaAuthHeader(
   env: NodeJS.ProcessEnv = process.env,
 ): string | null {

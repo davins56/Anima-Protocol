@@ -11,6 +11,7 @@ import {
   createOllamaChatCompletion,
   createOllamaChatStream,
   isOllamaNativeChatEnabled,
+  probeOllamaModelListed,
   resolveOllamaChatConfig,
   resolveOllamaModelName,
   toOllamaMessages,
@@ -516,6 +517,62 @@ describe("ollamaChat adapter", () => {
       const consumed = await consumeLlmStream(result.stream);
       expect(consumed.content).toBe("Streamed.");
       expect(result.provider).toBe("local");
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      );
+    }
+  });
+});
+
+describe("probeOllamaModelListed", () => {
+  it("confirms the model via GET /api/ps and does not generate", async () => {
+    const paths: string[] = [];
+    const { server, origin } = await listenStub((req, res) => {
+      paths.push(req.url || "");
+      if (req.url === "/api/ps") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ models: [{ name: "qwen2.5:0.5b", model: "qwen2.5:0.5b" }] }));
+        return;
+      }
+      res.writeHead(500);
+      res.end("generate was called");
+    });
+    try {
+      const presence = await probeOllamaModelListed({
+        model: "qwen2.5:0.5b",
+        baseUrl: `${origin}/v1`,
+      });
+      expect(presence.ok).toBe(true);
+      expect(presence.via).toBe("ps");
+      expect(presence.models).toContain("qwen2.5:0.5b");
+      expect(paths).toEqual(["/api/ps"]);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      );
+    }
+  });
+
+  it("falls back to /api/tags when the model is installed but not loaded", async () => {
+    const paths: string[] = [];
+    const { server, origin } = await listenStub((req, res) => {
+      paths.push(req.url || "");
+      res.writeHead(200, { "Content-Type": "application/json" });
+      if (req.url === "/api/ps") {
+        res.end(JSON.stringify({ models: [] }));
+        return;
+      }
+      res.end(JSON.stringify({ models: [{ name: "qwen2.5:0.5b" }] }));
+    });
+    try {
+      const presence = await probeOllamaModelListed({
+        model: "qwen2.5:0.5b",
+        baseUrl: `${origin}/v1`,
+      });
+      expect(presence.ok).toBe(true);
+      expect(presence.via).toBe("tags");
+      expect(paths).toEqual(["/api/ps", "/api/tags"]);
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((err) => (err ? reject(err) : resolve())),

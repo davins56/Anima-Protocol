@@ -2504,6 +2504,39 @@ describe("probeLlmProviders", () => {
     });
     expect(createMock).not.toHaveBeenCalled();
   });
+
+  it("probes native Ollama with /api/ps and does not generate", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://127.0.0.1:11434/v1";
+    process.env.ANIMA_OLLAMA_NATIVE_CHAT = "1";
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "qwen2.5:0.5b";
+    delete process.env.ANIMA_LOCAL_LLM_BACKEND;
+    delete process.env.VERCEL;
+    const urls: string[] = [];
+    const fetchMock = vi.fn(async (url: string) => {
+      urls.push(String(url));
+      return new Response(
+        JSON.stringify({ models: [{ name: "qwen2.5:0.5b" }] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const probes = await probeLlmProviders();
+      expect(createMock).not.toHaveBeenCalled();
+      expect(urls.some((url) => url.endsWith("/api/chat"))).toBe(false);
+      expect(urls.some((url) => url.endsWith("/api/ps"))).toBe(true);
+      expect(probes[0]).toMatchObject({
+        provider: "local",
+        configured: true,
+        ok: true,
+        model: "qwen2.5:0.5b",
+        configuredModel: "qwen2.5:0.5b",
+        availableModels: ["qwen2.5:0.5b"],
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe("chatCompletionHttpFailure", () => {

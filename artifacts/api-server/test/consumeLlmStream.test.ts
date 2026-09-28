@@ -58,6 +58,25 @@ describe("chunkTextDelta / chunkIsReasoning", () => {
 });
 
 describe("consumeLlmStream", () => {
+  it("stops early when stopWhen matches and ends the upstream iterator", async () => {
+    let pulls = 0;
+    async function* source() {
+      const parts = ["The room stays ", "quiet while she ", "watches the door ", "and keeps going."];
+      for (const part of parts) {
+        pulls += 1;
+        yield { choices: [{ delta: { content: part } }] };
+      }
+    }
+    const result = await consumeLlmStream(source(), {
+      stopWhen: (visible) => visible.length >= 20,
+    });
+    expect(result.stoppedEarly).toBe(true);
+    expect(result.timedOut).toBe(false);
+    expect(result.content.length).toBeGreaterThanOrEqual(20);
+    expect(result.content).not.toContain("keeps going");
+    expect(pulls).toBeLessThan(4);
+  });
+
   it("accumulates content until the upstream iterator ends", async () => {
     const deltas: string[] = [];
     const result = await consumeLlmStream(fromChunks([{ content: "Hel" }, { content: "lo" }]), {

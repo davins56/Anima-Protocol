@@ -76,6 +76,7 @@ import {
   createOllamaChatCompletion,
   createOllamaChatStream,
   isOllamaNativeChatEnabled,
+  probeOllamaModelListed,
 } from "./ollamaChat";
 import {
   completeWorkersAi,
@@ -1891,20 +1892,40 @@ async function probeOneProvider(
   const probeSignal = localCallSignal();
   try {
     const client = requireLocalClient();
+    // Native Ollama keeps one cached prompt. A generate here would replace
+    // it, so the probe only checks that the model is listed.
+    if (useOllamaNativeChat()) {
+      const presence = await probeOllamaModelListed({
+        model: resolved.model,
+        signal: probeSignal,
+      });
+      if (!presence.ok) {
+        return {
+          provider: "local",
+          configured: true,
+          ok: false,
+          errorKind: "other",
+          message: presence.message,
+          model: resolved.model,
+          configuredModel: resolved.model,
+          availableModels: presence.models,
+          latencyMs: Date.now() - started,
+        };
+      }
+      return {
+        provider: "local",
+        configured: true,
+        ok: true,
+        model: resolved.model,
+        configuredModel: resolved.model,
+        availableModels: presence.models,
+        latencyMs: Date.now() - started,
+      };
+    }
     const { resolved: used } = await withModelFallback(
       client,
       { ...resolved, maxTokens: Math.min(resolved.maxTokens, 16) },
       async (m) => {
-        if (useOllamaNativeChat()) {
-          await createOllamaChatCompletion({
-            model: m.model,
-            messages: [{ role: "user", content: "Reply with the single word: ok" }],
-            maxTokens: m.maxTokens,
-            temperature: 0,
-            signal: probeSignal,
-          });
-          return;
-        }
         await client.chat.completions.create(
           {
             model: m.model,
