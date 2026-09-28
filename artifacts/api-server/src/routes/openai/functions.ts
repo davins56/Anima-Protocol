@@ -6,7 +6,10 @@ import { and, eq } from "drizzle-orm";
 import { createRateLimit } from "../../lib/rateLimit";
 import { notifyUser } from "../../lib/storeEvents";
 import { resolveModel } from "../../lib/modelRouter";
-import { createChatCompletionWithFailover } from "../../lib/llmFailover";
+import {
+  createChatCompletionWithFailover,
+  isLocalOnlyProviderChain,
+} from "../../lib/llmFailover";
 import {
   isPostTurnSidecarFunction,
   shouldSkipSidecarLlm,
@@ -41,15 +44,35 @@ router.use((req, res, next) => {
   next();
 });
 
+/** Sidecar location flavor. A slow call is dropped instead of holding the chat slot. */
+export const LOCATION_CONTEXT_TIMEOUT_MS = 3_000;
+
+function namedLocation(data: Record<string, unknown>): string {
+  const loc = typeof data.location === "string" ? data.location.trim() : "";
+  if (loc) return loc;
+  return typeof data.location_name === "string" ? data.location_name.trim() : "";
+}
+
+/** Place already named on the request. No model call. */
+export function cheapLocationContext(data: Record<string, unknown>): string {
+  const loc = namedLocation(data);
+  return loc ? `Setting: ${loc}.` : "";
+}
+
 async function llm(
   systemPrompt: string,
   userPrompt: string,
   maxTokens = 1024,
-  opts?: { sidecar?: boolean },
+  opts?: { sidecar?: boolean; timeoutMs?: number },
 ): Promise<string> {
   if (opts?.sidecar && shouldSkipSidecarLlm()) {
     return "";
   }
+  const timeoutMs = opts?.timeoutMs;
+  const signal =
+    typeof timeoutMs === "number" && timeoutMs > 0
+      ? AbortSignal.timeout(timeoutMs)
+      : undefined;
   const result = await createChatCompletionWithFailover({
     tier: "standard",
     model: "gpt-4o",
@@ -58,6 +81,7 @@ async function llm(
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ],
+    ...(signal ? { signal } : {}),
   });
   const visible = visibleAssistantReply(result.content);
   if (!String(visible).trim()) {
@@ -979,13 +1003,34 @@ router.post("/invoke/:fnName", async (req, res) => {
 
       case "generateAtmosphericDescription":
       case "generateLocationBackground":
-      case "extractLocationContext":
-      case "injectLocationContext": {
+      case "extractLocationContext": {
         const loc = (data.location as string) || (data.location_name as string) || "the current scene";
         result = await llm(
           "You are an atmospheric world-builder. Write a 2-sentence vivid description.",
           `Describe the atmosphere of: ${loc}`
         );
+        break;
+      }
+
+      case "injectLocationContext": {
+        // Local-only chat has one Ollama slot. A model call here is served
+        // before the companion reply. Use the named place, or nothing.
+        if (isLocalOnlyProviderChain()) {
+          result = cheapLocationContext(data);
+          break;
+        }
+        const loc = namedLocation(data) || "the current scene";
+        try {
+          const raw = await llm(
+            "You are an atmospheric world-builder. Write a 2-sentence vivid description.",
+            `Describe the atmosphere of: ${loc}`,
+            256,
+            { sidecar: true, timeoutMs: LOCATION_CONTEXT_TIMEOUT_MS },
+          );
+          result = raw.trim() || cheapLocationContext(data);
+        } catch {
+          result = cheapLocationContext(data);
+        }
         break;
       }
 

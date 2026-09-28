@@ -43,6 +43,8 @@ export interface OllamaChatRequest {
   maxTokens?: number;
   temperature?: number;
   signal?: AbortSignal;
+  /** Override `ANIMA_LOCAL_LLM_BASE_URL` for the backup host. */
+  baseUrl?: string;
 }
 
 export interface OllamaChatCompletionResult {
@@ -317,7 +319,10 @@ async function postOllamaChat(
   env: NodeJS.ProcessEnv = process.env,
   fetchImpl: typeof fetch = fetch,
 ): Promise<Response> {
-  const { chatUrl } = resolveOllamaChatConfig(env);
+  const override = req.baseUrl?.trim();
+  const chatUrl = override
+    ? `${ollamaNativeOrigin(override)}/api/chat`
+    : resolveOllamaChatConfig(env).chatUrl;
   if (!chatUrl) {
     throw new OllamaChatError(
       "ANIMA_LOCAL_LLM_BASE_URL is unset, so the API cannot reach Ollama. " +

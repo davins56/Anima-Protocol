@@ -119,8 +119,14 @@
   // 1. In Secrets Store a31e40473ef34db896b5bc1e6c1c4b86 create these
   //    secret_name entries if they do not already exist (values only in
   //    the dashboard — never commit them):
-  //      ANIMA_LOCAL_LLM_BASE_URL = https://llm.anima-protocol.com/v1
-  //      ANIMA_LOCAL_LLM_API_KEY  = tunnel / host bearer (same as PROXY_AUTH_TOKEN)
+    //      ANIMA_LOCAL_LLM_BASE_URL = https://llm.anima-protocol.com/v1
+    //      ANIMA_LOCAL_LLM_API_KEY  = tunnel / host bearer (same as PROXY_AUTH_TOKEN)
+    // Optional backup Ollama (same anima-chat model) is
+    // ANIMA_LOCAL_LLM_BACKUP_BASE_URL, read from the process env only.
+    // Do not bind it here until that secret_name exists. A missing binding
+    // fails wrangler deploy. Unset means no hop. Example:
+    // https://llm-backup.anima-protocol.com/v1
+    // Never an OpenRouter or OpenAI fallback.
   //    Do NOT bind ANIMA_LOCAL_LLM_BACKEND here — it is a committed var.
   // 2. The { binding, store_id, secret_name } objects below must match
   //    those names exactly.

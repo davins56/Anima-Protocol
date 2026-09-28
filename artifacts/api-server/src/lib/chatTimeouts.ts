@@ -119,6 +119,23 @@ export const CHAT_STREAM_TIMEOUT_MS =
   CHAT_MESSAGES_CONTEXT_SLACK_MS;
 
 /**
+ * Cloudflare `waitUntil` grace after the browser disconnects.
+ * Wall time is unlimited while the client is still connected. After
+ * disconnect the runtime keeps background work for 30 seconds.
+ */
+export const WORKER_WAIT_UNTIL_GRACE_MS = 30_000;
+
+/**
+ * How long `/api/chat/messages` may wait on the self-hosted model after the
+ * browser's 140s abort. Capped at that deadline plus the Worker grace so a
+ * slow anima-chat reply can still be saved. Does not change the 90s
+ * header-withheld budget (`LLM_LOCAL_FIRST_TOKEN_MS`) or `/api/ai/chat`.
+ */
+export function llmCompanionDurableWaitMs(): number {
+  return CHAT_STREAM_TIMEOUT_MS + WORKER_WAIT_UNTIL_GRACE_MS;
+}
+
+/**
  * Companion turns are 2–4 sentences. Route tiers still advertise 4–8k
  * max_tokens; honoring that on Ollama lets anima-chat keep generating long
  * after the user already has a complete beat. Cap here, then honor the cap
@@ -295,6 +312,28 @@ export function abortWhenClientLeaves(res: {
   res.on("close", onClose);
   return {
     signal: controller.signal,
+    cancel: () => {
+      res.off?.("close", onClose);
+    },
+  };
+}
+
+/**
+ * Note that the SSE client went away without aborting the model.
+ * Companion chat keeps the self-hosted generate running and saves the reply.
+ */
+export function watchClientLeave(res: {
+  on: (event: string, listener: () => void) => void;
+  off?: (event: string, listener: () => void) => void;
+  writableEnded: boolean;
+}): { left: () => boolean; cancel: () => void } {
+  let gone = false;
+  const onClose = () => {
+    if (!res.writableEnded) gone = true;
+  };
+  res.on("close", onClose);
+  return {
+    left: () => gone,
     cancel: () => {
       res.off?.("close", onClose);
     },

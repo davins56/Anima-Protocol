@@ -18,6 +18,8 @@ import {
   llmChatMessagesFirstChunkMs,
   llmChatMessagesOpenTimeoutMs,
   llmChatMessagesStreamTotalMs,
+  llmCompanionDurableWaitMs,
+  WORKER_WAIT_UNTIL_GRACE_MS,
   abortWhenClientLeaves,
   llmOpenTimeoutMs,
   openStreamAbort,
@@ -243,6 +245,9 @@ describe("client/server budget lockstep", () => {
     expect(chatRoute).toContain("scheduleLeftoverTurnRepair(");
     expect(chatRoute).toContain("attachStoredEmbeddings(userId, adapted).catch(");
     expect(chatRoute).toContain("openStreamAbort(");
+    expect(chatRoute).toContain("llmCompanionDurableWaitMs()");
+    expect(chatRoute).toContain("watchClientLeave(");
+    expect(chatRoute).not.toContain("abortWhenClientLeaves(");
     expect(chatRoute).not.toContain(
       "llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() })",
     );
@@ -284,5 +289,13 @@ describe("client/server budget lockstep", () => {
     );
     expect(animaApi).toMatch(/CHAT_STREAM_TIMEOUT_MS = 140_000/);
     expect(CHAT_STREAM_TIMEOUT_MS).toBe(140_000);
+  });
+
+  it("lets companion chat outlast the browser abort by the Worker waitUntil grace", () => {
+    expect(WORKER_WAIT_UNTIL_GRACE_MS).toBe(30_000);
+    expect(llmCompanionDurableWaitMs()).toBe(170_000);
+    expect(llmCompanionDurableWaitMs()).toBeGreaterThan(CHAT_STREAM_TIMEOUT_MS);
+    expect(llmChatMessagesOpenTimeoutMs()).toBe(90_000);
+    expect(llmChatMessagesOpenTimeoutMs()).toBeLessThan(100_000);
   });
 });
