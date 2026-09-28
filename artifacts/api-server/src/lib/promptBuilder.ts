@@ -650,12 +650,6 @@ function joinPromptParts(parts: Array<string | undefined>): string {
     .join("\n\n");
 }
 
-/** Non-transcript facts kept when a solo scene repeats history. */
-const SOLO_SCENE_FACT_LINES = 2;
-const SOLO_SCENE_FACT_CHARS = 180;
-
-const SCENE_DIALOGUE_LINE_RE = /^[^:\n]{1,80}:\s+\S/;
-
 function normalizeSceneOverlap(text: string): string {
   return text.toLowerCase().replace(/\s+/g, " ").trim();
 }
@@ -680,16 +674,6 @@ function lineRepeatsHistory(line: string, bodies: string[]): boolean {
   });
 }
 
-function isSceneTranscriptHeader(line: string): boolean {
-  return /^(?:Story so far|CONVERSATION CONTEXT)\s*:?\s*$/i.test(line.trim());
-}
-
-function clipSceneFact(line: string): string {
-  const text = line.trim();
-  if (text.length <= SOLO_SCENE_FACT_CHARS) return text;
-  return `${text.slice(0, SOLO_SCENE_FACT_CHARS - 1)}…`;
-}
-
 function wrapClientScene(body: string): string {
   const excerpt = stripClientRegionBlock(body).trim();
   if (!excerpt) return "";
@@ -700,10 +684,9 @@ ${excerpt}
 }
 
 /**
- * Solo chat: when recent history already contains the client transcript,
- * drop that dialogue. Keep at most two short lines that are not the transcript.
- * Lean extras that do not repeat history stay intact. Group chat uses the
- * existing excerpt, which already strips a Story-so-far body.
+ * Solo chat: drop only the client-scene lines that repeat recent history.
+ * Every other line stays, in order, including "Label: text" instructions.
+ * Group chat uses the existing excerpt, which already strips a Story-so-far body.
  */
 function clientSceneForCompanion(params: {
   supplied: string;
@@ -721,19 +704,11 @@ function clientSceneForCompanion(params: {
     .split(/\n/)
     .map((line) => line.trim())
     .filter(Boolean);
-  const hasMarker = lines.some((line) => isSceneTranscriptHeader(line));
-  const overlapsHistory = lines.some((line) => lineRepeatsHistory(line, bodies));
-  if (!hasMarker && !overlapsHistory) {
+  const kept = lines.filter((line) => !lineRepeatsHistory(line, bodies));
+  if (kept.length === lines.length) {
     return wrapClientScene(clientSceneExcerpt(value));
   }
-
-  const facts = lines
-    .filter((line) => !isSceneTranscriptHeader(line))
-    .filter((line) => !lineRepeatsHistory(line, bodies))
-    .filter((line) => !SCENE_DIALOGUE_LINE_RE.test(line))
-    .slice(0, SOLO_SCENE_FACT_LINES)
-    .map(clipSceneFact);
-  return wrapClientScene(facts.join("\n"));
+  return wrapClientScene(capSceneBudget(kept.join("\n")));
 }
 
 const REGION_CLOCK_RE = /(\d{1,2}):(\d{2})(?:[\s\u00a0\u202f]*([AaPp][Mm]))?/;
@@ -755,8 +730,8 @@ function roundClockToken(
     if (ampm === "PM") hour24 += 12;
   }
   let total = hour24 * 60 + minute;
-  total = Math.round(total / 15) * 15;
-  total = ((total % (24 * 60)) + 24 * 60) % (24 * 60);
+  // Floor so 11:53 stays 11:45 and never rolls the date to the next midnight.
+  total = Math.floor(total / 15) * 15;
   const roundedHour = Math.floor(total / 60);
   const roundedMinute = String(total % 60).padStart(2, "0");
   if (!ampm) return `${String(roundedHour).padStart(2, "0")}:${roundedMinute}`;
@@ -768,8 +743,8 @@ function roundClockToken(
 
 /**
  * The region block is part of the cacheable prefix. A minute-level clock
- * would change it every turn, so the displayed local time is rounded to
- * the nearest 15 minutes. Holiday dates and other rows are left alone.
+ * would change it every turn, so the displayed local time is floored to
+ * the current 15-minute mark. Holiday dates and other rows are left alone.
  */
 export function roundRegionBlockClock(block: string): string {
   const text = String(block || "");
@@ -785,6 +760,31 @@ export function roundRegionBlockClock(block: string): string {
     .join("\n");
 }
 
+const REGION_WEATHER_LINE_RE = /^\s*Current weather\s*:/i;
+
+/**
+ * Weather refreshes on its own and would bust the persona+region prefix.
+ * Peel that one line out; the rest of the region block, including the
+ * floored clock, stays in the stable prefix.
+ */
+export function splitRegionWeather(block: string): { regionText: string; weatherText: string } {
+  const weather: string[] = [];
+  const region = String(block || "")
+    .split("\n")
+    .filter((line) => {
+      if (!REGION_WEATHER_LINE_RE.test(line)) return true;
+      const trimmed = line.trim();
+      if (trimmed) weather.push(trimmed);
+      return false;
+    })
+    .join("\n")
+    .trim();
+  return {
+    regionText: roundRegionBlockClock(region),
+    weatherText: weather.join("\n"),
+  };
+}
+
 interface LocalCompanionSections {
   /** Byte-stable persona and system instructions. No mood, memory, or clock. */
   staticText: string;
@@ -793,11 +793,13 @@ interface LocalCompanionSections {
    * in the system text, just before recent history. Never trimmed.
    */
   moodText: string;
-  /** Region and local time. Clock rounded to 15 minutes. Never trimmed. */
+  /** Region and local time. Clock floored to 15 minutes. Weather is separate. Never trimmed. */
   regionText: string;
+  /** Live weather. Sits after memories so a refresh does not bust the prefix. */
+  weatherText: string;
   /** Repository lore. Trimmed after PDF and scene extras. */
   repositoryText: string;
-  /** Short client scene facts. A duplicated solo transcript is omitted. */
+  /** Client scene. Solo drops only lines that repeat recent history. */
   sceneText: string;
   memoryText: string;
   pdfText: string;
@@ -987,7 +989,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     mode,
     recentMessages,
   });
-  const worldKnowledgeBlock = roundRegionBlockClock(String(worldKnowledge || "").trim());
+  const { regionText, weatherText } = splitRegionWeather(String(worldKnowledge || "").trim());
   const repositoryBlock = String(repositoryKnowledge || "").trim();
   const repositoryText =
     repositoryBlock.length > 6_000 ? `${repositoryBlock.slice(0, 5_999)}…` : repositoryBlock;
@@ -1021,7 +1023,8 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
   return {
     staticText,
     moodText,
-    regionText: worldKnowledgeBlock,
+    regionText,
+    weatherText,
     repositoryText,
     sceneText,
     memoryText,
@@ -1083,17 +1086,17 @@ function localPromptOverBudget(parts: string[]): boolean {
 /**
  * `/api/chat/messages` entry. Order inside the first system message is fixed
  * for the Ollama prompt cache: static persona, then the region/local-time
- * block, then per-message memories, then lore (repository and PDF), then
- * any short scene facts, then the per-turn mood block. Recent history, the
+ * block, then per-message memories, then weather, then lore (repository and
+ * PDF), then scene lines, then the per-turn mood block. Recent history, the
  * answer-last system turn, and the user message follow and are not reordered.
  * Mood changes every turn, so it stays last in that system message. Persona
- * and the rounded region block are the stable prefix.
+ * and the floored region block are the stable prefix for a 15-minute window.
  *
- * Trim PDF text first, then scene facts, then repository lore, then the
- * oldest history turns, then memories. Persona, region, mood, the answer-last
- * instruction, and the latest user message are never trimmed. The instruction's
- * tokens still count, so the result stays at about 1.5–2k tokens and always
- * leaves room for `num_predict` inside n_ctx 4096.
+ * Trim PDF text first, then scene lines, then repository lore, then the
+ * oldest history turns, then memories. Persona, region, weather, mood, the
+ * answer-last instruction, and the latest user message are never trimmed.
+ * The instruction's tokens still count, so the result stays at about 1.5–2k
+ * tokens and always leaves room for `num_predict` inside n_ctx 4096.
  */
 export function composeCompanionChatMessages(
   params: PromptBuilderParams,
@@ -1119,6 +1122,7 @@ export function composeCompanionChatMessages(
       sections.staticText,
       sections.regionText,
       memoryText,
+      sections.weatherText,
       repositoryText,
       pdfText,
       sceneText,
@@ -1136,13 +1140,15 @@ export function composeCompanionChatMessages(
   }
   if (over()) memoryText = "";
 
-  // Mood stays last in the first system message. Memories and lore sit after
-  // the region block so a new user line does not bust the persona+region prefix.
-  // The answer-last line is a later system turn, directly before the user message.
+  // Mood stays last in the first system message. Memories, weather, and lore
+  // sit after the region block so a new user line or a weather refresh does
+  // not bust the persona+region prefix. The answer-last line is a later
+  // system turn, directly before the user message.
   const system = joinPromptParts([
     sections.staticText,
     sections.regionText,
     memoryText,
+    sections.weatherText,
     repositoryText,
     pdfText,
     sceneText,
