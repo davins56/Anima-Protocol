@@ -279,6 +279,7 @@ export const animaApi = {
           deep_mode: !!deepMode,
           persist,
           turn_id: turnId,
+          idempotency_key: turnId,
           persistence_owner: persistenceOwner,
           metadata,
           region,
@@ -299,6 +300,9 @@ export const animaApi = {
 
     turnStatus: (turnId) =>
       request(`/chat/turns/${encodeURIComponent(turnId)}`).then((r) => r.json()),
+
+    liveTurn: (sessionId) =>
+      request(`/chat/sessions/${encodeURIComponent(sessionId)}/live-turn`).then((r) => r.json()),
 
     commitTurn: (turnId) =>
       request(`/chat/turns/${encodeURIComponent(turnId)}/commit`, {
