@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { initCompanionAffect } from "../src/lib/companionAffect";
 import {
   FIRSTHAND_NOTE_LABEL,
   IN_WORLD_PRESENCE,
@@ -9,6 +10,7 @@ import {
   neutraliseFranchiseWords,
   stripOutOfWorldLabels,
 } from "../src/lib/promptBuilder";
+import { COMPANION_CRISIS_TURN_LINE } from "../src/lib/therapySafety";
 import { buildCrossoverAwareness } from "../src/lib/voiceAnchors";
 
 const natasha = {
@@ -119,5 +121,37 @@ describe("in-world companion prompt", () => {
     expect(withoutVoiceRule).not.toMatch(FRANCHISE_WORD);
     expect(folded).not.toContain("WORLD STATE & LORE");
     expect(folded).not.toContain("established story canon");
+  });
+
+  it("keeps the crisis care line first and mood last when lore is attached", () => {
+    const folded = messagesForLocalOllama(
+      composeCompanionChatMessages({
+        ...base,
+        content: "I want to kill myself",
+        companionCrisis: true,
+        clientContext: WIKI_LORE,
+        companionAffect: initCompanionAffect({
+          selfState: {
+            primary: "tender",
+            intensity: 58,
+            energy: 44,
+            mood: "tender-aching",
+            intent: "comfort",
+            focus: "steward",
+          },
+        }),
+      }),
+    );
+    const user = String(folded.at(-1)?.content || "");
+    const careAt = user.indexOf(`[${COMPANION_CRISIS_TURN_LINE}]`);
+    const loreAt = user.indexOf(`[${FIRSTHAND_NOTE_LABEL}:`);
+    const moodAt = user.indexOf("You feel tender-aching");
+    const wordsAt = user.lastIndexOf("I want to kill myself");
+    expect(careAt).toBe(0);
+    expect(loreAt).toBeGreaterThan(careAt);
+    expect(moodAt).toBeGreaterThan(loreAt);
+    expect(wordsAt).toBeGreaterThan(moodAt);
+    expect(user.slice(moodAt, wordsAt)).not.toContain(`[${FIRSTHAND_NOTE_LABEL}:`);
+    expect(String(folded[0]?.content)).not.toContain(COMPANION_CRISIS_TURN_LINE);
   });
 });
