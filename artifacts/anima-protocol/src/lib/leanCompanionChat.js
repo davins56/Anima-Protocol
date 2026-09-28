@@ -12,6 +12,14 @@
 
 export const LEAN_SOLO_CLIENT_CONTEXT_MAX = 2000;
 
+/**
+ * Empty send ("continue story"). One short line, first person, user present.
+ * Kept out of the cached system prefix — it rides the user turn and this
+ * per-turn extra. Must match the server CONTINUE_USER_TURN string.
+ */
+export const CONTINUE_IN_FIRST_PERSON =
+  "I'm here with you. Go on in your own first person, then pause for me.";
+
 function trimBlock(value) {
   return String(value || "").trim();
 }
@@ -73,10 +81,7 @@ export function buildLeanSoloClientContext({
   isContinue = false,
   characterName = "",
 } = {}) {
-  const continueLine =
-    isContinue && characterName
-      ? `The user tapped Continue — keep the scene moving as ${characterName}. Take the next natural beat, then stop at a clear pause point so they can react.`
-      : "";
+  const continueLine = isContinue ? CONTINUE_IN_FIRST_PERSON : "";
   return packLeanBlocks(
     [
       companionModeInstruction,

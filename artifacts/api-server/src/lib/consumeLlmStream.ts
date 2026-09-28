@@ -92,6 +92,11 @@ export interface ConsumeLlmStreamResult {
   timedOut: boolean;
   /** True when `stopWhen` ended the stream before the model finished. */
   stoppedEarly?: boolean;
+  /**
+   * Last provider finish reason. Ollama `done_reason: "length"` arrives as
+   * `"length"`, and cloud streams use the same `finish_reason`.
+   */
+  finishReason: string | null;
 }
 
 type WaitResult =
@@ -113,6 +118,7 @@ export async function consumeLlmStream(
   let streamedVisible = "";
   let reasoning = "";
   let sawReasoning = false;
+  let finishReason: string | null = null;
   const filter = createVisibleReplyFilter();
   const started = Date.now();
   let lastActivity = started;
@@ -146,7 +152,7 @@ export async function consumeLlmStream(
     } else if (visible && !emittedAny) {
       opts.onDelta?.(visible);
     }
-    return { content: visible, timedOut };
+    return { content: visible, timedOut, finishReason };
   };
 
   const nextWithDeadline = async (): Promise<WaitResult> => {
@@ -193,6 +199,8 @@ export async function consumeLlmStream(
 
       lastActivity = Date.now();
       const chunk = waited.result.value;
+      const reason = chunk?.choices?.[0]?.finish_reason;
+      if (typeof reason === "string" && reason) finishReason = reason;
       if (chunkIsReasoning(chunk)) {
         const think =
           chunk.choices?.[0]?.delta?.reasoning ??
@@ -222,7 +230,7 @@ export async function consumeLlmStream(
       }
     }
     await settleReturn();
-    return { content: streamedVisible, timedOut: false, stoppedEarly: true };
+    return { content: streamedVisible, timedOut: false, stoppedEarly: true, finishReason };
   } finally {
     // Don't await return() on the timeout path — a hung upstream iterator
     // would block the deadline this helper exists to provide. The early-stop

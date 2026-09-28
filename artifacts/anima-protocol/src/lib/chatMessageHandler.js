@@ -1,4 +1,5 @@
 import { animaApi } from '@/api/animaApi';
+import { CONTINUE_IN_FIRST_PERSON } from './leanCompanionChat';
 import { buildCharacterPrompt } from './buildCharacterPrompt';
 import { parseGroupResponse } from './parseGroupResponse';
 import { stripImageTags } from './chatImageGeneration';
@@ -93,9 +94,7 @@ export async function sendChatMessage({
     }
 
     const conversationId = activeSession._conversationId;
-    const userContent = isContinue
-      ? `Continue as ${charName}. Make real decisions based on who you are.`
-      : content;
+    const userContent = isContinue ? CONTINUE_IN_FIRST_PERSON : content;
 
     let fullResponse = "";
 
