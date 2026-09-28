@@ -19,9 +19,12 @@
 #   ANIMA_SERVER_TOKEN=... ANIMA_HOST=0.0.0.0 python server/server.py
 # Clients then send Authorization: Bearer <token>.
 
+import hmac
 import json
+import logging
 import math
 import os
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -30,7 +33,7 @@ from typing import Any
 import torch
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 ROOT = Path(__file__).resolve().parents[1]
 for _rel in ("training/phase1", "training/phase2"):
@@ -57,6 +60,10 @@ MAX_CONTENT_CHARS = 16000
 MAX_NEW_TOKENS = 768
 DEFAULT_MAX_TOKENS = 384
 MAX_BODY_BYTES = 8 * 1024 * 1024
+# A lesson sync can carry the whole store; chat requests stay on MAX_BODY_BYTES.
+MAX_SYNC_BODY_BYTES = 32 * 1024 * 1024
+MAX_MESSAGES = MAX_REQUEST_MESSAGES
+MAX_WAIT_SECONDS = 120
 # A run-on sentence longer than this streams at a word boundary instead of
 # waiting for its full stop.
 STREAM_FLUSH_CHARS = 160
@@ -102,16 +109,28 @@ def resolve_host(host: str | None = None) -> str:
     return host
 
 
+def _bind_serving_model() -> None:
+    """The sampler reads sft.model. Point it at the weights being served now.
+
+    Learning replaces live.model with a new object, so this has to run on
+    each request rather than once at startup.
+    """
+    if live is None:
+        return
+    sft.model = live.model
+    sft.cfg = live.cfg
+
+
 def load_runtime():
-    global model, cfg, device
+    global live, device
     sft.init_tokenizer(os.environ.get("ANIMA_TOK_DIR", "").strip() or None)
     path = checkpoint_path()
     if not os.path.isfile(path):
         raise SystemExit(f"checkpoint not found: {path} (set ANIMA_CKPT or train phase 3)")
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model.to(device).eval()
-    sft.model, sft.cfg = model, cfg
-    n_params = sum(p.numel() for p in model.parameters()) / 1e6
+    live = LiveModel(path, live_dir(), device=device)
+    _bind_serving_model()
+    n_params = sum(p.numel() for p in live.model.parameters()) / 1e6
     print(f"Anima serving: {n_params:.1f}M params on {device}")
 
 
@@ -212,6 +231,24 @@ def stream_reply(prompt_ids, max_new_tokens, temperature, top_k, **kw):
     if len(final) > len(sent) and final.startswith(sent):
         yield final[len(sent):]
     return finish_reason
+
+
+def _stream_model_reply(model, prompt_ids, max_tokens, temperature, top_k):
+    """Yield reply text from the weights being served. Return value is finish_reason.
+
+    Stops on the model's end-of-turn token, matching modeling.generate_text,
+    so a streamed reply is the same text as the non-streaming one.
+    """
+    count = 0
+
+    def counted():
+        nonlocal count
+        for token in modeling.iter_reply_tokens(model, prompt_ids, max_tokens, temperature, top_k):
+            count += 1
+            yield token
+
+    yield from modeling.iter_text_deltas(counted())
+    return "length" if count >= max(int(max_tokens), 0) else "stop"
 
 
 def _sse_chunks(deltas, completion_id: str, created: int, model_name: str):
@@ -364,6 +401,9 @@ def list_models(_auth: None = Depends(require_token)):
 
 @app.post("/v1/chat/completions")
 def chat(req: ChatRequest, _auth: None = Depends(require_token)):
+    if live is None:
+        raise HTTPException(status_code=503, detail="model is not loaded")
+    _bind_serving_model()
     messages = _api_messages([m.model_dump() for m in req.messages])
     if not messages:
         raise HTTPException(status_code=400, detail="messages carry no text for this model to read")
@@ -375,21 +415,44 @@ def chat(req: ChatRequest, _auth: None = Depends(require_token)):
     )
     completion_id = "chatcmpl-" + uuid.uuid4().hex[:12]
     created = int(time.time())
+    # Fit the prompt before the 200 goes out so a bad request still gets
+    # a real status code instead of a broken stream.
+    prompt_ids = sft.prompt_for_reply(messages, sampling["max_new_tokens"])
+    # Same stop rule as learning (modeling.generate_text): a taught reply can
+    # end as soon as the model closes the turn. The complete-thought minimum
+    # would pad a short correction.
     if req.stream:
-        # Fit the prompt before the 200 goes out so a bad request still gets
-        # a real status code instead of a broken stream.
-        prompt_ids = sft.prompt_for_reply(messages, sampling["max_new_tokens"])
         return StreamingResponse(
-            _sse_chunks(stream_reply(prompt_ids, **sampling), completion_id, created, req.model),
+            _sse_chunks(
+                _stream_model_reply(
+                    live.model,
+                    prompt_ids,
+                    sampling["max_new_tokens"],
+                    sampling["temperature"],
+                    sampling["top_k"],
+                ),
+                completion_id,
+                created,
+                req.model,
+            ),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
-    reply, finish_reason = sft.generate_reply(messages, **sampling)
-    return ChatResponse(
-        id=completion_id,
-        created=created,
-        model=req.model,
-        choices=[{
+    reply, n, hit_length = modeling.generate_text(
+        live.model,
+        prompt_ids,
+        sampling["max_new_tokens"],
+        temperature=sampling["temperature"],
+        top_k=sampling["top_k"],
+    )
+    reply = reply.strip()
+    finish_reason = "length" if hit_length else "stop"
+    return {
+        "id": completion_id,
+        "object": "chat.completion",
+        "created": created,
+        "model": req.model,
+        "choices": [{
             "index": 0,
             "message": {"role": "assistant", "content": reply},
             "finish_reason": finish_reason,
