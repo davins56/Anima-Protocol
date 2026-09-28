@@ -19,9 +19,12 @@
 #   ANIMA_SERVER_TOKEN=... ANIMA_HOST=0.0.0.0 python server/server.py
 # Clients then send Authorization: Bearer <token>.
 
+import hmac
 import json
+import logging
 import math
 import os
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -30,7 +33,7 @@ from typing import Any
 import torch
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 ROOT = Path(__file__).resolve().parents[1]
 for _rel in ("training/phase1", "training/phase2"):
@@ -56,7 +59,12 @@ MAX_CONTEXT_MESSAGES = 64
 MAX_CONTENT_CHARS = 16000
 MAX_NEW_TOKENS = 768
 DEFAULT_MAX_TOKENS = 384
-MAX_BODY_BYTES = 8 * 1024 * 1024
+# A 5 MiB chat body is rejected (see the model-server suite). Lesson sync
+# can carry the whole taught set, so it gets a larger cap.
+MAX_BODY_BYTES = 4 * 1024 * 1024
+MAX_SYNC_BODY_BYTES = 32 * 1024 * 1024
+MAX_MESSAGES = 512
+MAX_WAIT_SECONDS = 120
 # A run-on sentence longer than this streams at a word boundary instead of
 # waiting for its full stop.
 STREAM_FLUSH_CHARS = 160
@@ -103,16 +111,28 @@ def resolve_host(host: str | None = None) -> str:
 
 
 def load_runtime():
-    global model, cfg, device
+    global live, device
     sft.init_tokenizer(os.environ.get("ANIMA_TOK_DIR", "").strip() or None)
     path = checkpoint_path()
     if not os.path.isfile(path):
         raise SystemExit(f"checkpoint not found: {path} (set ANIMA_CKPT or train phase 3)")
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model.to(device).eval()
-    sft.model, sft.cfg = model, cfg
-    n_params = sum(p.numel() for p in model.parameters()) / 1e6
+    live = LiveModel(path, live_dir(), device=device)
+    _serve_live_weights()
+    n_params = sum(p.numel() for p in live.model.parameters()) / 1e6
     print(f"Anima serving: {n_params:.1f}M params on {device}")
+
+
+def _serve_live_weights() -> None:
+    """Point generation at the weights currently being served.
+
+    Learning swaps in a new module; a snapshot taken at startup would keep
+    answering with the weights from before the lesson.
+    """
+    if live is None:
+        raise HTTPException(status_code=503, detail="model is not loaded")
+    sft.model = live.model
+    sft.cfg = live.cfg
 
 
 # --------------------- Conversation encoding ---------------------
@@ -321,8 +341,20 @@ class ChatRequest(BaseModel):
     max_tokens: int | None = Field(default=None, ge=1)
     max_completion_tokens: int | None = Field(default=None, ge=1)
     repetition_penalty: float = Field(default=1.15, ge=1.0, le=2.0)
-    min_tokens: int = Field(default=8, ge=0, le=128)
+    # 0 lets the model end on its stop token. A higher floor is for callers
+    # that want to block one-word fragments; the default must not force a
+    # short taught reply to keep talking past its stop.
+    min_tokens: int = Field(default=0, ge=0, le=128)
     stream: bool = False
+
+
+class ChatResponse(BaseModel):
+    id: str
+    object: str = "chat.completion"
+    created: int
+    model: str
+    choices: list[dict[str, Any]]
+    usage: dict[str, int]
 
 
 def _sse(payload: dict) -> str:
@@ -364,6 +396,7 @@ def list_models(_auth: None = Depends(require_token)):
 
 @app.post("/v1/chat/completions")
 def chat(req: ChatRequest, _auth: None = Depends(require_token)):
+    _serve_live_weights()
     messages = _api_messages([m.model_dump() for m in req.messages])
     if not messages:
         raise HTTPException(status_code=400, detail="messages carry no text for this model to read")
@@ -384,7 +417,9 @@ def chat(req: ChatRequest, _auth: None = Depends(require_token)):
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
+    prompt_ids = sft.prompt_for_reply(messages, sampling["max_new_tokens"])
     reply, finish_reason = sft.generate_reply(messages, **sampling)
+    completion_tokens = len(sft.tok.encode(reply).ids) if reply else 0
     return ChatResponse(
         id=completion_id,
         created=created,
@@ -394,12 +429,12 @@ def chat(req: ChatRequest, _auth: None = Depends(require_token)):
             "message": {"role": "assistant", "content": reply},
             "finish_reason": finish_reason,
         }],
-        "usage": {
+        usage={
             "prompt_tokens": len(prompt_ids),
-            "completion_tokens": n,
-            "total_tokens": len(prompt_ids) + n,
+            "completion_tokens": completion_tokens,
+            "total_tokens": len(prompt_ids) + completion_tokens,
         },
-    }
+    )
 
 
 # ----------------------------- Lessons -----------------------------
