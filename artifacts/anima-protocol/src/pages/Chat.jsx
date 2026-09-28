@@ -156,6 +156,12 @@ import {
 } from "@/lib/contentRatingInstruction";
 import { retainStreamingOnError } from "@/lib/retainStreamingOnError";
 import { chatTurnErrorMessage } from "@/lib/chatTurnError";
+import {
+  GENERIC_COMPANION_COULD_NOT_REPLY,
+  isCompanionStillTypingError,
+  mergeLateReplyIntoMessages,
+  pollLateCompanionReply,
+} from "@/lib/lateCompanionReply";
 import { INTELLIGENCE_GUIDANCE, loyaltyGuardrailClause, turnTakingClause } from "@/lib/companionGuardrail";
 import {
   collectRegionHints,
@@ -226,6 +232,8 @@ export default function Chat() {
   const prevOpenSessionIdRef = useRef(sessionId || null);
   const justCreatedSessionIdRef = useRef(null);
   const sendingRef = useRef(false);
+  /** Same user line while the self-hosted model is still generating. */
+  const lateTurnRef = useRef(null);
   /** Last LLM provider that served a reply: "openai" | "xai" | "gemini" | "kimi" | "gateway" */
   const [llmProvider, setLlmProvider] = useState(null);
   /** "anima" when the custom multi-model stack selected the backend */
@@ -1248,6 +1256,80 @@ export default function Chat() {
     setTimeout(() => analyzeNarrative(), 500);
   };
 
+  useEffect(() => {
+    const sid = activeSession?.id;
+    if (!sid) return undefined;
+    let cancelled = false;
+    (async () => {
+      if (sendingRef.current) return;
+      let live;
+      try {
+        live = await animaApi.chat.liveTurn(sid);
+      } catch {
+        return;
+      }
+      if (cancelled || !live?.turn_id) return;
+      const paint = (turn) => {
+        const text = String(turn?.assistant_content || "").trim();
+        if (!text) return;
+        const lateAffect = parseCompanionAffectSnapshot(turn.companion_affect);
+        if (lateAffect) {
+          setCompanionAffect(lateAffect);
+          setCurrentMood(lateAffect.primary);
+        }
+        setActiveSession((prev) => {
+          if (!prev || prev.id !== sid) return prev;
+          return {
+            ...prev,
+            messages: mergeLateReplyIntoMessages(prev.messages, {
+              turnId: turn.turn_id,
+              userContent: turn.user_content,
+              assistantContent: text,
+              characterName: turn.active_character_name,
+            }),
+          };
+        });
+      };
+      if (!String(live.assistant_content || "").trim()) {
+        if (live.persistence_status !== "pending" && live.persistence_status !== "generated") {
+          return;
+        }
+        setActiveSession((prev) => {
+          if (!prev || prev.id !== sid) return prev;
+          if ((prev.messages || []).some((m) => m.character_name === "__typing__")) return prev;
+          return {
+            ...prev,
+            messages: [
+              ...(prev.messages || []),
+              {
+                role: "assistant",
+                content: "...",
+                character_name: "__typing__",
+                timestamp: new Date().toISOString(),
+              },
+            ],
+          };
+        });
+        live = await pollLateCompanionReply({
+          fetchTurn: () => animaApi.chat.turnStatus(live.turn_id),
+        });
+        if (cancelled || !live) return;
+      }
+      if (!String(live.assistant_content || "").trim()) return;
+      if (live.persistence_status !== "committed") {
+        try {
+          await animaApi.chat.retryTurn(live.turn_id);
+        } catch {
+          // The owning request may still be committing this turn.
+        }
+      }
+      if (!cancelled) paint(live);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSession?.id, setActiveSession]);
+
   const handleSendMessage = async (message) => {
     const sendLock = acquireChatSendLock(sendingRef, {
       hasSession: Boolean(activeSession),
@@ -1274,8 +1356,13 @@ export default function Chat() {
       releaseChatSendLock(sendingRef, sendLock);
       return;
     }
-    let turnId = createChatTurnId();
     const sendSessionId = activeSession.id;
+    const lateKey = `${sendSessionId}:${isContinue ? "continue" : content}`;
+    let turnId = createChatTurnId();
+    if (lateTurnRef.current?.key === lateKey && lateTurnRef.current.turnId) {
+      turnId = lateTurnRef.current.turnId;
+    }
+    lateTurnRef.current = { key: lateKey, turnId };
     const applyIfSendSession = (updater) => {
       setActiveSession((prev) => {
         if (!prev || prev.id !== sendSessionId) return prev;
@@ -1905,6 +1992,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       if (!String(result).trim()) {
         throw new Error("The companion returned an empty reply. Please try again.");
       }
+      lateTurnRef.current = null;
       if (hiddenThread.hidden.jack_in.speak_first || hiddenThread.consumeReturn().pendingId) {
         hiddenThread.finishIntegration(result);
         hiddenThread.clearReturnFlag();
@@ -2622,12 +2710,79 @@ Return JSON:
         }
       }
 
-      if (retained) {
+      if (!retained && isCompanionStillTypingError(err)) {
+        // The model is still working past this browser's deadline, or this
+        // send joined a turn that is already generating. Keep the user line
+        // and the typing affordance. Do not toast a failure.
+        pendingRemoteSyncRef.current = false;
+        applyIfSendSession((prev) => ({
+          ...prev,
+          messages: [
+            ...(prev.messages || []).filter(
+              (m) => m.character_name !== "__typing__" && m.character_name !== "__thinking__",
+            ),
+            {
+              role: "assistant",
+              content: "...",
+              character_name: "__typing__",
+              timestamp: new Date().toISOString(),
+            },
+          ],
+        }));
+        const late = await pollLateCompanionReply({
+          fetchTurn: () => animaApi.chat.turnStatus(turnId),
+        });
+        const lateText = String(late?.assistant_content || "").trim();
+        if (lateText) {
+          if (late.persistence_status !== "committed") {
+            try {
+              await animaApi.chat.retryTurn(turnId);
+            } catch (retryErr) {
+              console.warn("[Anima] Late reply persist retry failed:", retryErr);
+            }
+          }
+          const lateAffect = parseCompanionAffectSnapshot(late.companion_affect);
+          if (lateAffect) {
+            setCompanionAffect(lateAffect);
+            setCurrentMood(lateAffect.primary);
+          }
+          applyIfSendSession((prev) => ({
+            ...prev,
+            messages: mergeLateReplyIntoMessages(prev?.messages, {
+              turnId,
+              userContent: isContinue ? "" : content,
+              assistantContent: lateText,
+              characterName: late.active_character_name || replySpeakerName,
+            }),
+          }));
+          lateTurnRef.current = null;
+        }
+      } else if (retained) {
+        lateTurnRef.current = null;
         toast.error("The reply was interrupted — kept what came through.");
       } else {
+        lateTurnRef.current = null;
+        const message = chatTurnErrorMessage(err);
         // Pre-token failures used to remove thinking/typing with no UI feedback,
         // which looked like the companion started thinking then vanished.
-        toast.error(chatTurnErrorMessage(err));
+        if (message === GENERIC_COMPANION_COULD_NOT_REPLY) {
+          applyIfSendSession((prev) => ({
+            ...prev,
+            messages: [
+              ...(prev.messages || []).filter(
+                (m) => m.character_name !== "__typing__" && m.character_name !== "__thinking__",
+              ),
+              {
+                role: "assistant",
+                content: "...",
+                character_name: "__typing__",
+                timestamp: new Date().toISOString(),
+              },
+            ],
+          }));
+        } else {
+          toast.error(message);
+        }
         // Don't let a deferred sync (armed while isLoading) immediately replace
         // local optimistic state with a server list that lacks this turn.
         pendingRemoteSyncRef.current = false;

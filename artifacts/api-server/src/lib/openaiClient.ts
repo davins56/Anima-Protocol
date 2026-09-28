@@ -506,6 +506,42 @@ export function getLocalLlmClient(): OpenAI | null {
   return localLlmClient;
 }
 
+const localLlmClientsByBase = new Map<string, OpenAI>();
+
+/**
+ * OpenAI-compatible client for a specific self-hosted base URL.
+ * Used for the optional backup Ollama host. The primary URL still goes
+ * through `getLocalLlmClient`. Cloud flagship hosts and unreachable
+ * loopback URLs return null.
+ */
+export function getLocalLlmClientForBase(baseURL: string): OpenAI | null {
+  const normalized = baseURL.trim().replace(/\/$/, "");
+  if (!normalized) return null;
+  const primary = localLlmBaseUrl();
+  if (primary && primary === normalized) return getLocalLlmClient();
+  if (isLoopbackUnreachableRuntime() && urlLooksLoopback(normalized)) return null;
+  try {
+    if (isCloudFlagshipLlmHost(new URL(normalized).hostname)) return null;
+  } catch {
+    return null;
+  }
+  const apiKey =
+    normalizeApiKey(process.env.ANIMA_LOCAL_LLM_API_KEY) ||
+    normalizeApiKey(process.env.VLLM_API_KEY) ||
+    "local";
+  const maxRetries = localLlmMaxRetries();
+  const cacheKey = `${normalized}::${apiKey}::${maxRetries}`;
+  const cached = localLlmClientsByBase.get(cacheKey);
+  if (cached) return cached;
+  const client = new OpenAI({
+    apiKey,
+    baseURL: normalized,
+    maxRetries,
+  });
+  localLlmClientsByBase.set(cacheKey, client);
+  return client;
+}
+
 /** OpenRouter API key — free signup at https://openrouter.ai/keys */
 export function hasOpenRouterKey(): boolean {
   return Boolean(getOpenRouterApiKey());
