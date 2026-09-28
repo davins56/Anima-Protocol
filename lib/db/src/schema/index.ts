@@ -9,6 +9,7 @@ import {
   uniqueIndex,
   index,
   customType,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
@@ -465,3 +466,33 @@ export const pdfChunks = pgTable(
 );
 
 export type PdfChunk = typeof pdfChunks.$inferSelect;
+
+/** Raw bytes. Reads and writes go through SQL (encode/decode), not Drizzle. */
+const bytea = customType<{ data: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
+
+/**
+ * Own-model weights: one 512 KiB chunk per row. Must match BLOBS_DDL in
+ * artifacts/api-server/src/lib/ownModel.ts and server/trainer.py.
+ */
+export const ownModelBlobs = pgTable(
+  "own_model_blobs",
+  {
+    version: integer("version").notNull(),
+    kind: text("kind").notNull(),
+    idx: integer("idx").notNull(),
+    data: bytea("data").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    ownModelBlobsPk: primaryKey({
+      name: "own_model_blobs_pk",
+      columns: [t.version, t.kind, t.idx],
+    }),
+  }),
+);
+
+export type OwnModelBlob = typeof ownModelBlobs.$inferSelect;
