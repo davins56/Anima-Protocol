@@ -78,6 +78,54 @@ describe("buildCompanionPrompt", () => {
     expect(prompt).toContain("I think I'm ready to talk about my mother again");
   });
 
+  it("puts the conceal instruction after the persona, not inside the character definition", () => {
+    const prompt = buildCompanionPrompt({
+      characters: [baseCharacter],
+      activeCharacter: baseCharacter,
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "Hello",
+    });
+    const characterAt = prompt.indexOf("CHARACTER:");
+    const identityAt = prompt.indexOf("IDENTITY: Never call yourself an AI");
+    expect(characterAt).toBeGreaterThan(-1);
+    expect(identityAt).toBeGreaterThan(characterAt);
+    const characterBlock = prompt.slice(characterAt, identityAt);
+    expect(characterBlock).toContain("CHARACTER IDENTITY LOCK");
+    expect(characterBlock).not.toContain("Never reveal that you are an AI");
+    expect(prompt).toContain("This does not override the rule against harming the real person.");
+    expect(prompt.indexOf("HIGHEST-PRIORITY RULE")).toBeGreaterThan(identityAt);
+  });
+
+  it("drops the conceal block before the latest user message in a tight group prompt", () => {
+    const userLine = "The second harbor bell is the only thing I came to ask about.";
+    const params = {
+      characters: [baseCharacter],
+      activeCharacter: baseCharacter,
+      memories: [],
+      recentMessages: [],
+      mode: "group" as const,
+      content: userLine,
+    };
+    const full = composePrompt(params);
+    expect(full).toContain("IDENTITY: Never call yourself an AI");
+    expect(full).toContain(userLine);
+    expect(full).toContain("HIGHEST-PRIORITY RULE");
+
+    let dropped = "";
+    for (let budget = full.length - 40; budget > 400; budget -= 40) {
+      const next = composePrompt(params, { maxChars: budget });
+      if (!next.includes("IDENTITY: Never call yourself an AI")) {
+        dropped = next;
+        break;
+      }
+    }
+    expect(dropped).toContain(userLine);
+    expect(dropped).toContain("HIGHEST-PRIORITY RULE");
+    expect(dropped).not.toContain("IDENTITY: Never call yourself an AI");
+  });
+
   it("includes voice anchors when speaking_style has examples", () => {
     const prompt = buildCompanionPrompt({
       characters: [baseCharacter],

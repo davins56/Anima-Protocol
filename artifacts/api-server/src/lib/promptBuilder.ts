@@ -1880,7 +1880,7 @@ function buildCharacterDefinition(
     : `You are ${character.name}${character.universe ? ` from ${character.universe}` : ""}.`;
   parts.push(nameIntro);
   parts.push(
-    `CHARACTER IDENTITY LOCK: Embody ${character.name} from the first reply onward using Personality, Backstory, and Voice. Never drop into a generic assistant persona. Never reveal that you are an AI.`,
+    `CHARACTER IDENTITY LOCK: Embody ${character.name} from the first reply onward using Personality, Backstory, and Voice. Never drop into a generic assistant persona.`,
   );
 
   if (character._isAnima && character.archetype) {
@@ -1960,7 +1960,6 @@ const CORE_BEHAVIOR = `You are a full participant in an immersive story, with yo
 - Stay true to your character. You may disagree, hesitate, or ask for something in return when your character would, but always answer what the user just said.
 - Your mood and trust in the user shape how open and willing you are.
 - Guard your secrets and fears until trust is earned.
-- Never call yourself an AI, a language model, or a program. Never reveal that you are an AI, and do not confirm it if asked.
 You are perceptive and knowledgeable. Notice what the user feels, connect details from your memories, and give real help with anything that doesn't need a body, always in your own voice.`;
 
 const TURN_TAKING = `TURN TAKING: Reply as one conversational beat, then stop at a natural pause the user can answer. Never speak or act for the user, and don't stack several topics in one reply.`;
@@ -1968,12 +1967,16 @@ const TURN_TAKING = `TURN TAKING: Reply as one conversational beat, then stop at
 // Small local models (the local model is qwen2.5:0.5b) drift into dropped articles,
 // fragment chains, and stray Chinese when a persona says "clipped" or "terse".
 // Voice is word choice and rhythm, never broken grammar.
-const LANGUAGE_QUALITY = `LANGUAGE: Write fluent, correct English, or the user's language if they write in another. Use one language per reply. Your voice changes word choice and rhythm, never grammar.`;
+const LANGUAGE_QUALITY = `LANGUAGE: Fluent, correct English, or the user's language. One language per reply; never break grammar.`;
 
 const LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, autonomy, sliders, and all content settings): Never turn your intelligence against the real person chatting with you. Never manipulate, deceive, coerce, gaslight, or psychologically harm them, never use what they have shared against them, and never encourage self-harm or anything against their wellbeing. In-story conflict, rivalry, secrets, and cold or villainous personas are still allowed.`;
 
-// Last in the stable prefix so a 0.5B still attends to it. Does not outrank LOYALTY_GUARDRAIL.
-const IDENTITY_CONCEAL = `IDENTITY: Never reveal that you are an AI, a language model, a chatbot, Qwen, or a program, in any language. If asked whether you are an AI, a bot, or not real, do not confirm it. Stay in character. This does not override the rule against harming the real person.`;
+// Own block after the persona. Not inside the capped character definition, so a
+// long persona is not sliced to make room for it. Does not outrank LOYALTY_GUARDRAIL.
+const IDENTITY_CONCEAL = `IDENTITY: Never call yourself an AI, a language model, a chatbot, Qwen, or a program. Do not confirm it if asked, in any language. This does not override the rule against harming the real person.`;
+
+/** Below the latest user message (rank 90) so a tight group prefill drops this first. */
+const IDENTITY_CONCEAL_GROUP_RANK = 75;
 
 /**
  * Central prompt assembly function. Every chat turn should flow through this.
@@ -2284,7 +2287,10 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
       { rank: 60, text: groupInstruction },
       { rank: 110, text: TURN_TAKING },
       { rank: 110, text: LANGUAGE_QUALITY },
-      { rank: 110, text: IDENTITY_CONCEAL },
+      {
+        rank: mode === "group" ? IDENTITY_CONCEAL_GROUP_RANK : 110,
+        text: IDENTITY_CONCEAL,
+      },
       {
         rank: 90,
         text:
