@@ -2537,6 +2537,80 @@ describe("probeLlmProviders", () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it("falls back to a tiny generate when /api/ps and /api/tags both return 404", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://127.0.0.1:11434/v1";
+    process.env.ANIMA_OLLAMA_NATIVE_CHAT = "1";
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "qwen2.5:0.5b";
+    process.env.ANIMA_OLLAMA_MODEL_LIGHT = "qwen2.5:0.5b";
+    process.env.ANIMA_OLLAMA_MODEL_HEAVY = "qwen2.5:0.5b";
+    delete process.env.ANIMA_LOCAL_LLM_BACKEND;
+    delete process.env.VERCEL;
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        urls.push(String(url));
+        return new Response(JSON.stringify({ error: { message: "not found" } }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+    createMock.mockResolvedValueOnce(fakeCompletion("ok"));
+    modelsListMock.mockResolvedValueOnce({ data: [{ id: "qwen2.5:0.5b" }] });
+    try {
+      const probes = await probeLlmProviders();
+      expect(urls.some((url) => url.endsWith("/api/ps"))).toBe(true);
+      expect(urls.some((url) => url.endsWith("/api/tags"))).toBe(true);
+      expect(createMock).toHaveBeenCalledTimes(1);
+      const body = createMock.mock.calls[0]?.[0] as { max_tokens?: number; messages?: Array<{ content?: string }> };
+      expect(body.max_tokens).toBeGreaterThan(0);
+      expect(body.max_tokens).toBeLessThanOrEqual(16);
+      expect(body.messages?.[0]?.content).toBe("Reply with the single word: ok");
+      expect(probes[0]).toMatchObject({
+        provider: "local",
+        configured: true,
+        ok: true,
+        model: "qwen2.5:0.5b",
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("uses another listed model when the configured tag is missing from /api/ps", async () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://127.0.0.1:11434/v1";
+    process.env.ANIMA_OLLAMA_NATIVE_CHAT = "1";
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
+    process.env.ANIMA_OLLAMA_MODEL_LIGHT = "anima-chat";
+    process.env.ANIMA_OLLAMA_MODEL_HEAVY = "anima-chat";
+    delete process.env.ANIMA_LOCAL_LLM_BACKEND;
+    delete process.env.VERCEL;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ models: [{ name: "qwen2.5:3b" }] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    modelsListMock.mockResolvedValue({ data: [{ id: "qwen2.5:3b" }] });
+    try {
+      const probes = await probeLlmProviders();
+      expect(createMock).not.toHaveBeenCalled();
+      expect(probes[0]).toMatchObject({
+        provider: "local",
+        configured: true,
+        ok: true,
+        model: "qwen2.5:3b",
+        configuredModel: "anima-chat",
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe("chatCompletionHttpFailure", () => {
