@@ -163,6 +163,15 @@ import {
 import { retainStreamingOnError } from "@/lib/retainStreamingOnError";
 import { chatTurnErrorMessage, shouldCheckBackForCompanionReply } from "@/lib/chatTurnError";
 import {
+  composerTerminalReason,
+  createComposerGate,
+  isConversationBusyError,
+  liveTurnStillBlocking,
+  omitTurnMessages,
+  sessionControlsLocked,
+} from "@/lib/heldChatSend";
+import HeldOutgoingBubble from "@/components/chat/HeldOutgoingBubble";
+import {
   CONNECTION_DROPPED_STATUS,
   GENERIC_COMPANION_COULD_NOT_REPLY,
   isConnectionDroppedError,
@@ -259,6 +268,13 @@ export default function Chat() {
   const justCreatedSessionIdRef = useRef(null);
   const sendingRef = useRef(false);
   const handleSendMessageRef = useRef(null);
+  const gateRef = useRef(null);
+  if (gateRef.current == null) gateRef.current = createComposerGate();
+  const [gateSnap, setGateSnap] = useState(() => gateRef.current.snapshot());
+  const syncGate = () => setGateSnap(gateRef.current.snapshot());
+  const busyRetryTokenRef = useRef(0);
+  const turnControlsLocked =
+    composerBusy || sessionControlsLocked(gateSnap, activeSession?.id);
   /** Same user line while the self-hosted model is still generating. */
   const lateTurnRef = useRef(null);
   /** Last LLM provider that served a reply: "openai" | "xai" | "gemini" | "kimi" | "gateway" */
@@ -512,6 +528,8 @@ export default function Chat() {
       setIsLoading(false);
       sendingRef.current = false;
       setPendingMessage("");
+      if (previousOpenId) gateRef.current.detachSession(previousOpenId);
+      setGateSnap(gateRef.current.snapshot());
     }
     const opened = beginOpenSession({
       sessionId,
@@ -589,12 +607,13 @@ export default function Chat() {
     const messages = activeSession?.messages || [];
     const currentCount = messages.length;
     const last = messages[currentCount - 1];
+    const heldText = activeSession?.id ? gateSnap.heldBySession[activeSession.id]?.text : "";
     const isLiveBubble =
       last?.is_streaming === true ||
       last?.character_name === "__typing__" ||
       last?.character_name === "__thinking__";
-    // Scroll on new messages, and keep pace while a reply is streaming in.
-    if (currentCount > lastMessageCountRef.current || isLiveBubble) {
+    // Scroll on new messages, a held follow-up, and while a reply is streaming in.
+    if (currentCount > lastMessageCountRef.current || isLiveBubble || heldText) {
       const behavior = last?.is_streaming ? "auto" : "smooth";
       requestAnimationFrame(() => {
         const container = scrollContainerRef.current;
@@ -606,7 +625,22 @@ export default function Chat() {
       });
     }
     lastMessageCountRef.current = currentCount;
-  }, [activeSession?.messages]);
+  }, [activeSession?.messages, activeSession?.id, gateSnap]);
+
+  // Send a follow-up that was held while this conversation was replying.
+  // Runs after paint so the next turn sees the reply that just landed.
+  useEffect(() => {
+    if (isLoading || awaitingCompanion || sendingRef.current) return;
+    const sid = activeSession?.id;
+    if (!sid || openSessionIdRef.current !== sid) return;
+    const snap = gateRef.current.snapshot();
+    if (snap.inFlightSessionId === sid || snap.busyRetrySessionId === sid) return;
+    if (!snap.heldBySession[sid]) return;
+    const payload = gateRef.current.takeHeld(sid);
+    setGateSnap(gateRef.current.snapshot());
+    if (payload == null || payload === "") return;
+    void handleSendMessageRef.current?.(payload);
+  }, [isLoading, awaitingCompanion, activeSession?.id, activeSession?.messages, gateSnap]);
 
   // Helper: speak a message using ElevenLabs with emotional adjustment
   const speakMessage = useCallback((content, charName) => {
@@ -1121,7 +1155,7 @@ export default function Chat() {
     regenerateMessageFlow(idx, {
       confirm,
       activeSession,
-      isLoading: composerBusy,
+      isLoading: turnControlsLocked,
       setActiveSession,
       sendMessage: handleSendMessage,
     });
@@ -1330,6 +1364,8 @@ export default function Chat() {
           return;
         }
         awaitingSessionRef.current = sid;
+        const awaitToken = gateRef.current.beginAwait(sid);
+        setGateSnap(gateRef.current.snapshot());
         setAwaitingCompanion(true);
         setActiveSession((prev) => {
           if (!prev || prev.id !== sid) return prev;
@@ -1383,6 +1419,8 @@ export default function Chat() {
           if (awaitingSessionRef.current === sid) {
             awaitingSessionRef.current = null;
             setAwaitingCompanion(false);
+            gateRef.current.release("recovery_check_ended", awaitToken);
+            setGateSnap(gateRef.current.snapshot());
           }
         }
       }
@@ -1474,12 +1512,67 @@ export default function Chat() {
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [setActiveSession, setCompanionAffect, setCurrentMood]);
 
+  const armConversationBusyRetry = (sessionId) => {
+    const token = ++busyRetryTokenRef.current;
+    void (async () => {
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const started = Date.now();
+      let live = null;
+      while (Date.now() - started <= LATE_REPLY_POLL_MS) {
+        if (busyRetryTokenRef.current !== token) return;
+        try {
+          live = await animaApi.chat.liveTurn(sessionId);
+        } catch {
+          // A dropped status check is not proof the other turn finished.
+          live = { turn_id: "unknown", persistence_status: "pending" };
+        }
+        if (!liveTurnStillBlocking(live)) break;
+        await sleep(1500);
+      }
+      if (busyRetryTokenRef.current !== token) return;
+      const lateText = String(live?.assistant_content || "").trim();
+      if (lateText && openSessionIdRef.current === sessionId) {
+        const lateAffect = parseCompanionAffectSnapshot(live.companion_affect);
+        if (lateAffect) {
+          setCompanionAffect(lateAffect);
+          setCurrentMood(lateAffect.primary);
+        }
+        setActiveSession((prev) => {
+          if (!prev || prev.id !== sessionId) return prev;
+          return {
+            ...prev,
+            messages: mergeLateReplyIntoMessages(prev.messages, {
+              turnId: live.turn_id,
+              userContent: live.user_content,
+              assistantContent: lateText,
+              characterName: live.active_character_name,
+              createdAt: live.created_at,
+            }),
+          };
+        });
+      }
+      gateRef.current.clearBusyRetry(sessionId);
+      if (openSessionIdRef.current === sessionId) setIsLoading(false);
+      syncGate();
+    })();
+  };
+
   const handleSendMessage = async (message) => {
+    if (!activeSession?.id) return;
+    const decision = gateRef.current.accept(activeSession.id, message);
+    syncGate();
+    if (decision.action !== "send") return;
+    const ownerToken = decision.ownerToken;
+
     const sendLock = acquireChatSendLock(sendingRef, {
-      hasSession: Boolean(activeSession),
-      isLoading: composerBusy,
+      hasSession: true,
+      isLoading: false,
     });
-    if (!sendLock) return;
+    if (!sendLock) {
+      gateRef.current.revertSendToHold(activeSession.id, message, ownerToken);
+      syncGate();
+      return;
+    }
     
     // Handle both string (legacy) and object (new with attachments) formats
     const messageData = typeof message === "string" ? { text: message, attachments: undefined } : message;
@@ -1498,6 +1591,8 @@ export default function Chat() {
     const isContinue = !content.trim() && !attachments.length;
     if (isContinue && activeSession.mode !== "group" && activeSession.mode !== "solo") {
       releaseChatSendLock(sendingRef, sendLock);
+      gateRef.current.release("reply_finished", ownerToken);
+      syncGate();
       return;
     }
     const sendSessionId = activeSession.id;
@@ -1516,6 +1611,26 @@ export default function Chat() {
 
     setPendingMessage(content || "");
     setIsLoading(true);
+
+    let terminalReason = "reply_finished";
+    let skipHeldFlush = false;
+    let settled = false;
+    const settleTurn = (reason, { skipFlush = false } = {}) => {
+      if (settled) return;
+      settled = true;
+      setPendingMessage("");
+      const ownLock = sendingRef.current === sendLock;
+      releaseChatSendLock(sendingRef, sendLock);
+      if (injectedMemories.length > 0) setInjectedMemories([]);
+      if (!ownLock || openSessionIdRef.current !== sendSessionId) return;
+      setIsLoading(false);
+      if (skipFlush) {
+        syncGate();
+        return;
+      }
+      const released = gateRef.current.release(reason, ownerToken);
+      if (!released.ignored) syncGate();
+    };
 
     // Multi-aspect orchestration (Lover Matrix): set in the solo prompt branch,
     // read again when parsing the response into per-aspect bubbles.
@@ -1615,10 +1730,7 @@ export default function Chat() {
           if (protocolUpgrade.message?.content) {
             speakMessage(protocolUpgrade.message.content, "Serenity");
           }
-          setPendingMessage("");
-          setIsLoading(false);
-          releaseChatSendLock(sendingRef, sendLock);
-          if (injectedMemories.length > 0) setInjectedMemories([]);
+          settleTurn("reply_finished");
           return;
         }
       }
@@ -1644,10 +1756,7 @@ export default function Chat() {
               deviceScan.message.character_name || "Anima",
             );
           }
-          setPendingMessage("");
-          setIsLoading(false);
-          releaseChatSendLock(sendingRef, sendLock);
-          if (injectedMemories.length > 0) setInjectedMemories([]);
+          settleTurn("reply_finished");
           return;
         }
       }
@@ -2326,9 +2435,9 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       );
 
       // Drop is_streaming immediately so the reply resolves even if persist is slow.
+      // The composer stays locked through persist so a held follow-up cannot
+      // start a second turn that this snapshot would overwrite.
       applyIfSendSession((prev) => ({ ...prev, messages: [...priorHistory, ...newMessages] }));
-      if (openSessionIdRef.current === sendSessionId) setIsLoading(false);
-      releaseChatSendLock(sendingRef, sendLock);
 
       const storedNew = [];
       let finalMessages = [...priorHistory, ...newMessages];
@@ -2840,7 +2949,24 @@ Return JSON:
         }, 1500);
       }
     } catch (err) {
+      if (settled) {
+        console.error(err);
+      } else if (isConversationBusyError(err)) {
+        console.error(err);
+        lateTurnRef.current = null;
+        skipHeldFlush = true;
+        terminalReason = "error";
+        pendingRemoteSyncRef.current = false;
+        applyIfSendSession((prev) => ({
+          ...prev,
+          messages: omitTurnMessages(prev?.messages, turnId),
+        }));
+        gateRef.current.noteBusy(sendSessionId, message, ownerToken);
+        syncGate();
+        armConversationBusyRetry(sendSessionId);
+      } else {
       console.error(err);
+      terminalReason = composerTerminalReason(err);
       // Remove typing/thinking indicators on error
       applyIfSendSession((prev) => ({
         ...prev,
@@ -2928,6 +3054,7 @@ Return JSON:
             },
           ],
         }));
+        terminalReason = "recovery_check_ended";
         const late = await pollLateCompanionReply({
           fetchTurn: () => animaApi.chat.turnStatus(turnId),
           timeoutMs: LATE_REPLY_POLL_MS,
@@ -2990,13 +3117,10 @@ Return JSON:
         // local optimistic state with a server list that lacks this turn.
         pendingRemoteSyncRef.current = false;
       }
+      }
+    } finally {
+      settleTurn(terminalReason, { skipFlush: skipHeldFlush });
     }
-
-    setPendingMessage("");
-    if (openSessionIdRef.current === sendSessionId) setIsLoading(false);
-    releaseChatSendLock(sendingRef, sendLock);
-    // Clear injected memories after they've been used
-    if (injectedMemories.length > 0) setInjectedMemories([]);
     };
   handleSendMessageRef.current = handleSendMessage;
 
@@ -3010,6 +3134,17 @@ Return JSON:
     // Anima speaks first after jack-out.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSession?.id, hiddenThread.hidden.jack_in.speak_first]);
+
+  const cancelHeldOutgoing = () => {
+    const sid = activeSession?.id;
+    const held = sid ? gateRef.current.snapshot().heldBySession[sid] : null;
+    if (!sid || !held) return;
+    gateRef.current.cancel(sid, held.id);
+    busyRetryTokenRef.current += 1;
+    syncGate();
+  };
+
+  const heldForThread = activeSession?.id ? gateSnap.heldBySession[activeSession.id] : null;
 
   return (
     <div className="app-page-fill flex flex-col w-full overflow-hidden bg-background scanline relative" style={{ minHeight: 0, paddingBottom: "0" }}>
@@ -3271,7 +3406,7 @@ Return JSON:
                 onSpeak={speakMessage}
                 onEditMessage={handleEditMessage}
                 onDeleteMessage={handleDeleteMessage}
-                onRegenerateMessage={composerBusy ? undefined : handleRegenerateMessage}
+                onRegenerateMessage={turnControlsLocked ? undefined : handleRegenerateMessage}
                 onAvatarClick={setBioCharacter}
                 onTeachMessage={
                   modelTutor.isSteward
@@ -3303,6 +3438,9 @@ Return JSON:
                   />
                 ))}
               </AnimatePresence>
+              {heldForThread ? (
+                <HeldOutgoingBubble text={heldForThread.text} onCancel={cancelHeldOutgoing} />
+              ) : null}
               <div ref={messagesEndRef} className="mb-4 lg:mb-2" />
             </div>
             {/*
@@ -3360,7 +3498,7 @@ Return JSON:
                   onVoiceClick={() => setShowVoiceInput(true)}
                   onContinue={() => handleSendMessage("")}
                   onNarratorExposition={handleNarratorExposition}
-                  isLoading={composerBusy}
+                  isLoading={turnControlsLocked}
                   sessionMode={activeSession?.mode}
                   activeCharacter={activeSession.mode === "solo" ? characters.find(c => c.id === activeSession.character_id) : null}
                   onSend={handleSendMessage}
@@ -3368,7 +3506,7 @@ Return JSON:
                 {activeSession.mode === "solo" && activeSession.character_id && (
                   <QuickActionChips
                     onSelect={(directive) => handleSendMessage(directive)}
-                    disabled={composerBusy}
+                    disabled={turnControlsLocked}
                   />
                 )}
                 {activeSession.mode === "solo" && activeSession.character_id && (
@@ -3378,7 +3516,7 @@ Return JSON:
                     recentMessages={activeSession.messages || []}
                     characterEmotions={characterEmotions}
                     onSelectSuggestion={(text) => handleSendMessage(text)}
-                    disabled={composerBusy}
+                    disabled={turnControlsLocked}
                   />
                 )}
                 {activeSession.mode === "solo" && activeSession.character_id && (
@@ -3396,6 +3534,7 @@ Return JSON:
                 <ChatInput
                   onSend={handleSendMessage}
                   isLoading={composerBusy}
+                  composeWhileBusy
                   disabled={false}
                   allowEmpty={activeSession?.mode === "group" || activeSession?.mode === "solo"}
                   sessionId={activeSession.id}
@@ -3610,7 +3749,7 @@ Return JSON:
           handleSendMessage(text);
           setShowVoiceInput(false);
         }}
-        isLoading={composerBusy}
+        isLoading={turnControlsLocked}
       />
 
       {/* Character Presence Panel - Show who's around */}
@@ -3686,7 +3825,7 @@ Return JSON:
         thinking={composerBusy}
         messages={activeSession?.messages}
         onSend={(text) => handleSendMessage(text)}
-        isLoading={composerBusy}
+        isLoading={turnControlsLocked}
       />
     </div>
   );
