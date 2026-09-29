@@ -256,6 +256,8 @@ export default function Chat() {
   const sendingRef = useRef(false);
   /** Same user line while the self-hosted model is still generating. */
   const lateTurnRef = useRef(null);
+  /** Bumped on every send. Background bubbles from an older turn are dropped. */
+  const sendSeqRef = useRef(0);
   /** Last LLM provider that served a reply: "openai" | "xai" | "gemini" | "kimi" | "gateway" */
   const [llmProvider, setLlmProvider] = useState(null);
   /** "anima" when the custom multi-model stack selected the backend */
@@ -1316,6 +1318,7 @@ export default function Chat() {
               userContent: turn.user_content,
               assistantContent: text,
               characterName: turn.active_character_name,
+              createdAt: turn.created_at,
             }),
           };
         });
@@ -1450,6 +1453,7 @@ export default function Chat() {
       isLoading,
     });
     if (!sendLock) return;
+    const sendSeq = ++sendSeqRef.current;
     
     // Handle both string (legacy) and object (new with attachments) formats
     const messageData = typeof message === "string" ? { text: message, attachments: undefined } : message;
@@ -1585,6 +1589,7 @@ export default function Chat() {
           if (protocolUpgrade.message?.content) {
             speakMessage(protocolUpgrade.message.content, "Serenity");
           }
+          lateTurnRef.current = null;
           setPendingMessage("");
           setIsLoading(false);
           releaseChatSendLock(sendingRef, sendLock);
@@ -1614,6 +1619,7 @@ export default function Chat() {
               deviceScan.message.character_name || "Anima",
             );
           }
+          lateTurnRef.current = null;
           setPendingMessage("");
           setIsLoading(false);
           releaseChatSendLock(sendingRef, sendLock);
@@ -2472,6 +2478,8 @@ ${loyaltyGuardrailClause()}`;
         }).then(async (serenityResult) => {
           const raw = String(serenityResult || "");
           if (!raw.trim()) return;
+          // The user already sent a newer line; this answers an old one.
+          if (sendSeqRef.current !== sendSeq) return;
           let attachments = [];
           try {
             const resolved = await resolveChatImageAttachments({
@@ -2492,6 +2500,7 @@ ${loyaltyGuardrailClause()}`;
           } catch {
             /* Serenity still speaks even if the still fails */
           }
+          if (sendSeqRef.current !== sendSeq) return;
           const serenityMsg = {
             role: "assistant",
             content: stripImageTags(raw.replace(/\[(EMOTION|LOCATION):[^\]]+\]/gi, "")).trim(),
@@ -2565,7 +2574,7 @@ ${loyaltyGuardrailClause()}`;
             session_context: activeSession.opening_scene,
             last_speaker_id: activeChar?.id,
           }).then((res) => {
-            if (res?.data?.interactions?.length > 0) {
+            if (res?.data?.interactions?.length > 0 && sendSeqRef.current === sendSeq) {
               const interaction = res.data.interactions[0];
               const interactionMsg = {
                 role: "assistant",
