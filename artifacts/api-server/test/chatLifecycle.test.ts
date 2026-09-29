@@ -738,6 +738,95 @@ describe("chat lifecycle", () => {
     }
   });
 
+  it("rejects a newer turn in the same conversation instead of queueing another generate", async () => {
+    resetChatTurnFlightsForTests();
+    const busySessionId = `${prefix}_busy_session`;
+    const firstId = `turn_${prefix}_busy_first`;
+    const secondId = `turn_${prefix}_busy_second`;
+    const thirdId = `turn_${prefix}_busy_third`;
+    await db.insert(userEntities).values({
+      userId,
+      entityName: CHAT_SESSION,
+      entityId: busySessionId,
+      data: {
+        id: busySessionId,
+        title: "Busy",
+        mode: "solo",
+        character_id: characterId,
+        messages: [],
+        messages_migrated: true,
+      },
+    });
+    let releaseGate = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => {
+      await gate;
+      return {
+        stream: (async function* () {
+          yield { choices: [{ delta: { content: "Still here." } }] };
+        })(),
+        model: "test-anima",
+        tier: "standard",
+        provider: "local",
+        brand: "anima",
+        failedOver: false,
+      };
+    });
+    const post = (turn: string, content: string) =>
+      request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: turn,
+          session_id: busySessionId,
+          content,
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+        }),
+      });
+    try {
+      const first = post(firstId, "First");
+      const started = Date.now();
+      let pending: Awaited<ReturnType<typeof readChatTurn>> = null;
+      while (Date.now() - started < 5_000) {
+        pending = await readChatTurn(firstId, userId);
+        if (pending?.status === "pending" && pending.leaseExpiresAt) break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(pending?.status).toBe("pending");
+      const second = await post(secondId, "Second");
+      expect(second.status).toBe(409);
+      const body = await second.json();
+      expect(body.code).toBe("conversation_busy");
+      expect(body.error).toMatch(/still finishing the last reply/i);
+      expect(await readChatTurn(secondId, userId)).toMatchObject({ status: "failed" });
+      releaseGate();
+      const left = await first;
+      expect(left.status).toBe(200);
+      await left.text();
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(
+        callsBefore + 1,
+      );
+      installHelloStream();
+      const third = await post(thirdId, "Third");
+      expect(third.status).toBe(200);
+      await third.text();
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(
+        callsBefore + 2,
+      );
+    } finally {
+      releaseGate();
+      installHelloStream();
+      resetChatTurnFlightsForTests();
+    }
+  });
+
   function bondCharacterId(suffix: string) {
     return `${prefix}_bond_${suffix}`;
   }

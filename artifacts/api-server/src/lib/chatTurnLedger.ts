@@ -294,6 +294,46 @@ export async function latestOpenChatTurn(
   return turn ?? null;
 }
 
+export const CONVERSATION_BUSY_CODE = "conversation_busy";
+
+export const CONVERSATION_BUSY_MESSAGE =
+  "The companion is still finishing the last reply. Wait a moment, then try again.";
+
+/**
+ * An earlier turn in this conversation is still generating.
+ * A newer send must not take the single Ollama slot behind it.
+ * A long-expired lease does not count — that row is abandoned.
+ */
+export async function sessionHasOlderPendingChatTurn(
+  userId: string,
+  sessionId: string,
+  turnId: string,
+  createdAt: Date,
+  now = new Date(),
+): Promise<boolean> {
+  const staleBefore = new Date(now.getTime() - STALE_PENDING_LEASE_MS);
+  const [row] = await withTransientDbRetry(() =>
+    db
+      .select({ id: chatTurns.id })
+      .from(chatTurns)
+      .where(
+        and(
+          eq(chatTurns.userId, userId),
+          eq(chatTurns.sessionId, sessionId),
+          eq(chatTurns.status, "pending"),
+          ne(chatTurns.id, turnId),
+          or(
+            lt(chatTurns.createdAt, createdAt),
+            and(eq(chatTurns.createdAt, createdAt), lt(chatTurns.id, turnId)),
+          ),
+          or(isNull(chatTurns.leaseExpiresAt), gt(chatTurns.leaseExpiresAt, staleBefore)),
+        ),
+      )
+      .limit(1),
+  );
+  return Boolean(row);
+}
+
 /**
  * Another pending turn for this user is waiting on the model. A long-expired
  * lease does not count — that row is abandoned, not queued.
