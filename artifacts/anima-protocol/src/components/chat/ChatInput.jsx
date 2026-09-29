@@ -1,4 +1,5 @@
-import { useState, useRef, useLayoutEffect } from "react";
+import { useState, useRef, useLayoutEffect, useEffect } from "react";
+import { mergeDraftIntoComposer } from "@/lib/heldChatSend";
 import { Send, Zap, Paperclip, Loader, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { base44 } from "@/api/base44Client";
@@ -23,6 +24,8 @@ export default function ChatInput({
   sessionId = null,
   onPdfStored,
   composeWhileBusy = false,
+  restoreDraft = null,
+  onRestoreDraftApplied,
 }) {
   // A reply can still be in flight. The follow-up is held by the page
   // instead of locking the box, so typing and Send stay available.
@@ -32,7 +35,32 @@ export default function ChatInput({
   const [pdfs, setPdfs] = useState([]);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [restoreNote, setRestoreNote] = useState("");
   const textareaRef = useRef(null);
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
+  const appliedRestoreRef = useRef(null);
+  const onRestoreDraftAppliedRef = useRef(onRestoreDraftApplied);
+  onRestoreDraftAppliedRef.current = onRestoreDraftApplied;
+
+  // A reload puts a held follow-up back in this box. It is not sent.
+  // Text already in the box is kept; the saved line is appended when it
+  // is not already there.
+  useEffect(() => {
+    if (!restoreDraft?.token) return;
+    if (appliedRestoreRef.current === restoreDraft.token) return;
+    appliedRestoreRef.current = restoreDraft.token;
+    const merged = mergeDraftIntoComposer(
+      { text: valueRef.current, attachments: attachmentsRef.current },
+      restoreDraft,
+    );
+    if (merged.placedText) setValue(merged.text);
+    if (merged.placedAttachment) setAttachments(merged.attachments);
+    if (merged.note) setRestoreNote(merged.note);
+    onRestoreDraftAppliedRef.current?.(restoreDraft);
+  }, [restoreDraft]);
 
   // Grow the textarea to fit its content (up to MAX_INPUT_HEIGHT, then it
   // scrolls internally). Runs on every value change — including the reset to ""
@@ -70,6 +98,7 @@ export default function ChatInput({
     setValue("");
     setAttachments([]);
     setPdfs([]);
+    setRestoreNote("");
   };
 
   const handlePdfUpload = async (e) => {
@@ -190,6 +219,16 @@ export default function ChatInput({
           ))}
         </div>
       )}
+
+      {restoreNote ? (
+        <p
+          data-testid="held-draft-restored"
+          role="status"
+          className="font-mono text-[10px] leading-snug text-primary/60"
+        >
+          {restoreNote}
+        </p>
+      ) : null}
 
       {attachments.length > 0 && (
         <div className="flex gap-2 flex-wrap">
