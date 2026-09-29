@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { chatStreamStatusCopy } from "@/lib/chatStreamStatusCopy";
+import { HELD_SEND_NOTE } from "@/lib/heldChatSend";
 
 /**
  * Paint a streaming/thinking bubble onto the session that started the send.
@@ -65,7 +66,7 @@ export function useChatStreaming(setActiveSession) {
           if (paintedTokens) return;
           replaceTransient({
             role: "assistant",
-            content: chatStreamStatusCopy(event) || "Still here — one reply ahead.",
+            content: chatStreamStatusCopy(event) || HELD_SEND_NOTE,
             character_name: "__thinking__",
             timestamp,
           });
