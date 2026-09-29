@@ -178,6 +178,8 @@ import {
   claimChatTurnLease,
   classifyChatTurnReuse,
   decideDurableTurnJoin,
+  CONVERSATION_BUSY_CODE,
+  CONVERSATION_BUSY_MESSAGE,
   latestOpenChatTurn,
   markChatTurnWaiting,
   markTurnCommitted,
@@ -186,6 +188,7 @@ import {
   readChatTurn,
   renewChatTurnLease,
   retryableChatTurns,
+  sessionHasOlderPendingChatTurn,
   userHasOtherPendingChatTurn,
   type PersistenceOwner,
 } from "../lib/chatTurnLedger";
@@ -2078,6 +2081,33 @@ router.post("/messages", async (req, res) => {
       const handedOff = await followDurableTurn(turnStart.turn);
       if (!handedOff) return;
     }
+  }
+
+  // A second message in this conversation must not queue another generate
+  // behind the one already on the single-CPU host. Same turn id still joins
+  // above. This only rejects a newer turn while an older one is pending.
+  if (
+    await sessionHasOlderPendingChatTurn(
+      userId,
+      sessionId,
+      turnStart.turn.id,
+      turnStart.turn.createdAt,
+    )
+  ) {
+    const busyError = new Error(CONVERSATION_BUSY_MESSAGE);
+    flight.fail(busyError);
+    try {
+      await markTurnFailed(turnStart.turn.id, userId, busyError);
+    } catch (markErr) {
+      logger.warn({ err: markErr, turnId: turnStart.turn.id }, "Failed to mark busy turn");
+    }
+    if (!res.headersSent) {
+      res.status(409).json({
+        error: CONVERSATION_BUSY_MESSAGE,
+        code: CONVERSATION_BUSY_CODE,
+      });
+    }
+    return;
   }
 
   // First SSE byte / heartbeat before memories, embeddings, weather, RAG, or
