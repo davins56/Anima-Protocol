@@ -12,8 +12,9 @@
  * The hold is also written to localStorage for this account and conversation.
  * A reload (common when iPhone Safari discards the tab) puts that text back
  * in the send box for review. It does not send on its own: her reply may
- * already have landed. The entry is removed when the hold sends, is
- * cancelled, or has been put back in the box, and after 24 hours.
+ * already have landed. The saved copy stays until the user sends from that
+ * box, clears the box, the in-memory hold sends or is cancelled, or 24 hours
+ * pass. A later reload puts it back again.
  */
 
 export const HELD_SEND_NOTE = "Sends when she's done";
@@ -576,11 +577,13 @@ export function writeHeldDraft(storage, userId, sessionId, message, now = Date.n
   if (!key) return { ok: false, reason: "missing_key" };
   if (!storage) return { ok: false, reason: "unavailable" };
   const draft = draftFromOutgoing(message, now);
+  let savedAt = draft ? draft.savedAt : null;
   try {
     if (!draft) {
       storage.removeItem(key);
     } else {
-      storage.setItem(key, JSON.stringify(draft));
+      savedAt = preservedDraftSavedAt(storage, key, draft, now);
+      storage.setItem(key, JSON.stringify({ ...draft, savedAt }));
     }
   } catch {
     return { ok: false, reason: "storage_failed" };
@@ -590,7 +593,84 @@ export function writeHeldDraft(storage, userId, sessionId, message, now = Date.n
   } catch {
     // Expiry is best-effort.
   }
-  return { ok: true };
+  return { ok: true, savedAt };
+}
+
+/**
+ * Rewriting the same follow-up should not look like a new draft. A different
+ * body, or a stamp that is already expired, gets a fresh savedAt.
+ *
+ * @param {HeldDraftStorage} storage
+ * @param {string} key
+ * @param {{ text: string, attachments: unknown[], droppedAttachmentCount: number, savedAt: number }} draft
+ * @param {number} now
+ */
+function preservedDraftSavedAt(storage, key, draft, now) {
+  try {
+    const raw = storage.getItem(key);
+    if (!raw) return draft.savedAt;
+    const prior = JSON.parse(raw);
+    const priorSavedAt = Number(prior?.savedAt);
+    if (!Number.isFinite(priorSavedAt) || now - priorSavedAt > HELD_DRAFT_MAX_AGE_MS) {
+      return draft.savedAt;
+    }
+    if (draftBodyKey(prior) !== draftBodyKey(draft)) return draft.savedAt;
+    return priorSavedAt;
+  } catch {
+    return draft.savedAt;
+  }
+}
+
+/**
+ * @param {{ text?: unknown, attachments?: unknown, droppedAttachmentCount?: unknown }} record
+ */
+function draftBodyKey(record) {
+  const text = typeof record?.text === "string" ? record.text : "";
+  const attachments = Array.isArray(record?.attachments) ? record.attachments : [];
+  const droppedAttachmentCount = Math.max(0, Number(record?.droppedAttachmentCount) || 0);
+  return JSON.stringify({ text, attachments, droppedAttachmentCount });
+}
+
+/**
+ * Remove the saved follow-up only when it is still the draft that was read.
+ * Another tab may have stored a newer one since then.
+ *
+ * @param {HeldDraftStorage | null | undefined} storage
+ * @param {unknown} userId
+ * @param {unknown} sessionId
+ * @param {unknown} savedAt
+ * @returns {{ ok: boolean, reason?: string }}
+ */
+export function clearHeldDraftIfUnchanged(storage, userId, sessionId, savedAt) {
+  const key = heldDraftStorageKey(userId, sessionId);
+  if (!key) return { ok: false, reason: "missing_key" };
+  if (!storage) return { ok: false, reason: "unavailable" };
+  const expected = Number(savedAt);
+  if (!Number.isFinite(expected)) return { ok: false, reason: "missing_saved_at" };
+  try {
+    const raw = storage.getItem(key);
+    if (!raw) return { ok: true, reason: "absent" };
+    const current = Number(JSON.parse(raw)?.savedAt);
+    if (current !== expected) return { ok: true, reason: "changed" };
+    storage.removeItem(key);
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: "storage_failed" };
+  }
+}
+
+/**
+ * Once a draft has been copied into the send box, drop that React payload.
+ * ChatInput remounts when the conversation changes, and a leftover payload
+ * would paste the same text in again.
+ *
+ * @param {{ token?: string } | null | undefined} current
+ * @param {{ token?: string } | null | undefined} applied
+ */
+export function dropAppliedComposerRestore(current, applied) {
+  if (!current) return null;
+  if (applied?.token && current.token === applied.token) return null;
+  return current;
 }
 
 /**
@@ -760,12 +840,13 @@ export function consumeHeldDraftForOpen(storage, {
 } = {}) {
   if (!userId || !sessionId) return { action: "wait", send: false, claim: false };
   if (isHoldableOutgoing(inMemoryPayload)) {
-    writeHeldDraft(storage, userId, sessionId, inMemoryPayload, now);
-    return { action: "keep_in_memory", send: false, claim: true };
+    const written = writeHeldDraft(storage, userId, sessionId, inMemoryPayload, now);
+    return { action: "keep_in_memory", send: false, claim: true, savedAt: written.savedAt ?? null };
   }
   if (alreadyClaimed) return { action: "idle", send: false, claim: false };
   if (!storage) return { action: "unavailable", send: false, claim: false };
   const draft = readHeldDraft(storage, userId, sessionId, now);
-  if (!draft) return { action: "none", send: false, claim: true };
+  // An empty look must not stick. Another tab can save a hold later.
+  if (!draft) return { action: "none", send: false, claim: false };
   return { action: "restore_to_input", send: false, claim: true, draft };
 }
