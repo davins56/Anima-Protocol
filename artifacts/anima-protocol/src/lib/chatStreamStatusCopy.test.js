@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { chatStreamStatusCopy } from "./chatStreamStatusCopy";
+import { HELD_SEND_NOTE } from "./heldChatSend";
 
 describe("chatStreamStatusCopy", () => {
   it("maps local-only progress phases to honest waiting copy", () => {
@@ -25,16 +26,11 @@ describe("chatStreamStatusCopy", () => {
     ).toBe("Combining mind drafts…");
   });
 
-  it("shows a short waiting line with the queue position", () => {
-    expect(chatStreamStatusCopy({ status: "waiting", queue_position: 1 })).toBe(
-      "Still here — one reply ahead.",
-    );
-    expect(chatStreamStatusCopy({ status: "waiting" })).toBe(
-      "Still here — one reply ahead.",
-    );
-    expect(chatStreamStatusCopy({ status: "waiting", queue_position: 3 })).toBe(
-      "Still here — 3 ahead.",
-    );
+  it("uses the held-send note for every waiting status", () => {
+    expect(chatStreamStatusCopy({ status: "waiting", queue_position: 1 })).toBe(HELD_SEND_NOTE);
+    expect(chatStreamStatusCopy({ status: "waiting" })).toBe(HELD_SEND_NOTE);
+    expect(chatStreamStatusCopy({ status: "waiting", queue_position: 3 })).toBe(HELD_SEND_NOTE);
+    expect(HELD_SEND_NOTE).not.toMatch(/one reply ahead/i);
   });
 
   it("ignores unknown events", () => {
