@@ -1,5 +1,7 @@
 import {
   CONNECTION_DROPPED_STATUS,
+  GENERIC_COMPANION_COULD_NOT_REPLY,
+  isCompanionStillTypingError,
   isConnectionDroppedError,
 } from "./lateCompanionReply.js";
 
@@ -28,6 +30,19 @@ const WORKERS_AI_FREE_QUOTA_HINT =
 const OPENROUTER_ZDR_PRIVACY_HINT =
   "OpenRouter blocked this model because of your account's Zero Data Retention (ZDR) settings. " +
   "Allow the model (or turn off ZDR) at https://openrouter.ai/settings/privacy.";
+
+/**
+ * The reply may already be saved, or still generating, even though this
+ * request failed. The page should poll the durable turn instead of leaving
+ * a typing bubble with no error.
+ *
+ * @param {unknown} err
+ * @returns {boolean}
+ */
+export function shouldCheckBackForCompanionReply(err) {
+  if (isConnectionDroppedError(err) || isCompanionStillTypingError(err)) return true;
+  return chatTurnErrorMessage(err) === GENERIC_COMPANION_COULD_NOT_REPLY;
+}
 
 /**
  * Map a failed chat turn into copy that is safe to show in the HUD.

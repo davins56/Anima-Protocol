@@ -224,7 +224,16 @@ export async function pollLateCompanionReply({
   while (Date.now() - started <= timeoutMs) {
     try {
       last = await fetchTurn();
-    } catch {
+    } catch (err) {
+      const status =
+        err && typeof err === "object"
+          ? /** @type {{ status?: unknown }} */ (err).status
+          : undefined;
+      // This turn was never saved. Waiting out the full window only leaves
+      // the typing bubble up.
+      if (status === 404) {
+        return { persistence_status: "failed", assistant_content: "" };
+      }
       // The next tick retries. A dropped poll is not a failed reply.
     }
     const text = String(last?.assistant_content || "").trim();
