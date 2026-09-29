@@ -7,11 +7,13 @@ import {
   RESTORED_HELD_NOTE,
   browserLocalStorage,
   clearHeldDraft,
+  clearHeldDraftIfUnchanged,
   combineOutgoingPayload,
   composerFullyUnlocked,
   composerTerminalReason,
   consumeHeldDraftForOpen,
   createComposerGate,
+  dropAppliedComposerRestore,
   heldDraftStorageKey,
   isConversationBusyError,
   liveTurnStillBlocking,
@@ -260,11 +262,77 @@ describe("held chat send", () => {
     expect(merged.note).toBe(RESTORED_HELD_ATTACHMENT_NOTE);
     expect(sent).toEqual([]);
     expect(reloaded.takeHeld("sess")).toBeNull();
-    clearHeldDraft(storage, "user_a", "sess");
-    expect(readHeldDraft(storage, "user_a", "sess")).toBeNull();
+    expect(readHeldDraft(storage, "user_a", "sess")?.text).toBe("look at this");
     reloaded.release("reply_finished", 1);
     expect(reloaded.takeHeld("sess")).toBeNull();
     expect(sent).toEqual([]);
+  });
+
+  it("restores again on a later reload, and drops the copy after it is sent", () => {
+    const storage = memoryStorage();
+    const savedAt = Date.now();
+    writeHeldDraft(storage, "user_a", "sess", "you there?", savedAt);
+    const first = consumeHeldDraftForOpen(storage, {
+      userId: "user_a",
+      sessionId: "sess",
+      alreadyClaimed: false,
+    });
+    expect(first.action).toBe("restore_to_input");
+    expect(first.send).toBe(false);
+    expect(readHeldDraft(storage, "user_a", "sess")?.text).toBe("you there?");
+
+    const again = consumeHeldDraftForOpen(storage, {
+      userId: "user_a",
+      sessionId: "sess",
+      alreadyClaimed: false,
+    });
+    expect(again.action).toBe("restore_to_input");
+    expect(again.draft.text).toBe("you there?");
+    expect(mergeDraftIntoComposer({ text: "you there?", attachments: [] }, again.draft).text).toBe(
+      "you there?",
+    );
+
+    clearHeldDraftIfUnchanged(storage, "user_a", "sess", first.draft.savedAt);
+    const afterSend = consumeHeldDraftForOpen(storage, {
+      userId: "user_a",
+      sessionId: "sess",
+      alreadyClaimed: false,
+    });
+    expect(afterSend.action).toBe("none");
+    expect(afterSend.claim).toBe(false);
+    expect(readHeldDraft(storage, "user_a", "sess")).toBeNull();
+  });
+
+  it("does not delete a newer draft saved by another tab", () => {
+    const storage = memoryStorage();
+    const older = Date.now() - 5_000;
+    const newer = Date.now();
+    writeHeldDraft(storage, "user_a", "sess", "first", older);
+    const read = readHeldDraft(storage, "user_a", "sess", newer);
+    expect(read.savedAt).toBe(older);
+    writeHeldDraft(storage, "user_a", "sess", "from the other tab", newer);
+    const cleared = clearHeldDraftIfUnchanged(storage, "user_a", "sess", read.savedAt);
+    expect(cleared.reason).toBe("changed");
+    expect(readHeldDraft(storage, "user_a", "sess")?.text).toBe("from the other tab");
+  });
+
+  it("does not treat an empty look as claimed, so a later save can restore", () => {
+    const storage = memoryStorage();
+    const first = consumeHeldDraftForOpen(storage, {
+      userId: "user_a",
+      sessionId: "sess",
+      alreadyClaimed: false,
+    });
+    expect(first).toMatchObject({ action: "none", claim: false, send: false });
+    writeHeldDraft(storage, "user_a", "sess", "from the other tab");
+    const later = consumeHeldDraftForOpen(storage, {
+      userId: "user_a",
+      sessionId: "sess",
+      alreadyClaimed: first.claim,
+    });
+    expect(later.action).toBe("restore_to_input");
+    expect(later.draft.text).toBe("from the other tab");
+    expect(dropAppliedComposerRestore({ token: "user_a:sess" }, { token: "user_a:sess" })).toBeNull();
   });
 
   it("keeps an in-memory hold on the auto-send path instead of copying it into the box", () => {

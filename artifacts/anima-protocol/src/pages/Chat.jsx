@@ -164,10 +164,11 @@ import { retainStreamingOnError } from "@/lib/retainStreamingOnError";
 import { chatTurnErrorMessage, shouldCheckBackForCompanionReply } from "@/lib/chatTurnError";
 import {
   browserLocalStorage,
-  clearHeldDraft,
+  clearHeldDraftIfUnchanged,
   composerTerminalReason,
   consumeHeldDraftForOpen,
   createComposerGate,
+  dropAppliedComposerRestore,
   heldDraftStorageKey,
   isConversationBusyError,
   liveTurnStillBlocking,
@@ -276,12 +277,16 @@ export default function Chat() {
   const heldDraftUserIdRef = useRef(null);
   heldDraftUserIdRef.current = authUser?.id || null;
   const claimedHeldDraftsRef = useRef(new Set());
+  const heldDraftStampRef = useRef(new Map());
   const [composerRestore, setComposerRestore] = useState(null);
   const handleHeldDraftRestored = useCallback((draft) => {
+    setComposerRestore((prev) => dropAppliedComposerRestore(prev, draft));
+  }, []);
+  const handleRestoredDraftSettled = useCallback((draft) => {
     const userId = heldDraftUserIdRef.current;
-    const sessionId = draft?.sessionId;
-    if (!userId || !sessionId) return;
-    clearHeldDraft(browserLocalStorage(), userId, sessionId);
+    if (!userId || !draft?.sessionId) return;
+    clearHeldDraftIfUnchanged(browserLocalStorage(), userId, draft.sessionId, draft.savedAt);
+    setComposerRestore((prev) => dropAppliedComposerRestore(prev, draft));
   }, []);
   const gateRef = useRef(null);
   if (gateRef.current == null) {
@@ -290,8 +295,16 @@ export default function Chat() {
         const userId = heldDraftUserIdRef.current;
         if (!userId || !sessionId) return;
         const storage = browserLocalStorage();
-        if (payload == null) clearHeldDraft(storage, userId, sessionId);
-        else writeHeldDraft(storage, userId, sessionId, payload);
+        if (payload == null) {
+          const savedAt = heldDraftStampRef.current.get(sessionId);
+          heldDraftStampRef.current.delete(sessionId);
+          if (savedAt != null) clearHeldDraftIfUnchanged(storage, userId, sessionId, savedAt);
+          return;
+        }
+        const written = writeHeldDraft(storage, userId, sessionId, payload);
+        if (written.ok && written.savedAt != null) {
+          heldDraftStampRef.current.set(sessionId, written.savedAt);
+        }
       },
     });
   }
@@ -685,6 +698,9 @@ export default function Chat() {
       alreadyClaimed: claimedHeldDraftsRef.current.has(token),
     });
     if (result.claim) claimedHeldDraftsRef.current.add(token);
+    if (result.action === "keep_in_memory" && result.savedAt != null) {
+      heldDraftStampRef.current.set(sid, result.savedAt);
+    }
     if (result.action === "restore_to_input" && result.draft) {
       const draft = result.draft;
       setComposerRestore((prev) =>
@@ -693,6 +709,7 @@ export default function Chat() {
           : {
               token,
               sessionId: sid,
+              savedAt: draft.savedAt,
               text: draft.text,
               attachments: draft.attachments,
               droppedAttachmentCount: draft.droppedAttachmentCount,
@@ -3603,6 +3620,7 @@ Return JSON:
                     composerRestore?.sessionId === activeSession.id ? composerRestore : null
                   }
                   onRestoreDraftApplied={handleHeldDraftRestored}
+                  onRestoredDraftSettled={handleRestoredDraftSettled}
                 />
               </div>
             </div>
