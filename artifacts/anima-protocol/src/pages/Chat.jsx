@@ -161,11 +161,10 @@ import {
   isIntimacyEligibleSpeaker,
 } from "@/lib/contentRatingInstruction";
 import { retainStreamingOnError } from "@/lib/retainStreamingOnError";
-import { chatTurnErrorMessage } from "@/lib/chatTurnError";
+import { chatTurnErrorMessage, shouldCheckBackForCompanionReply } from "@/lib/chatTurnError";
 import {
   CONNECTION_DROPPED_STATUS,
   GENERIC_COMPANION_COULD_NOT_REPLY,
-  isCompanionStillTypingError,
   isConnectionDroppedError,
   lateTurnFailedWithoutReply,
   dropTurnPlaceholder,
@@ -247,6 +246,11 @@ export default function Chat() {
   });
   const [characters, setCharacters] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  // True while this page is waiting on a reply the server already started
+  // (reopening a chat whose turn is still generating).
+  const [awaitingCompanion, setAwaitingCompanion] = useState(false);
+  const awaitingSessionRef = useRef(null);
+  const composerBusy = isLoading || awaitingCompanion;
   const [sessionLoad, setSessionLoad] = useState({ status: "idle" });
   const [sessionLoadNonce, setSessionLoadNonce] = useState(0);
   const sessionLoadGenRef = useRef(0);
@@ -254,6 +258,7 @@ export default function Chat() {
   const prevOpenSessionIdRef = useRef(sessionId || null);
   const justCreatedSessionIdRef = useRef(null);
   const sendingRef = useRef(false);
+  const handleSendMessageRef = useRef(null);
   /** Same user line while the self-hosted model is still generating. */
   const lateTurnRef = useRef(null);
   /** Last LLM provider that served a reply: "openai" | "xai" | "gemini" | "kimi" | "gateway" */
@@ -990,13 +995,13 @@ export default function Chat() {
   const syncFromRemote = useCallback(() => {
     loadCharacters({ retrySeed: false });
     handleRemoteSync({
-      isLoading,
+      isLoading: composerBusy,
       loadSessions,
       pendingRemoteSyncRef,
       runSync: syncActiveMessages,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoading, syncActiveMessages]);
+  }, [composerBusy, syncActiveMessages]);
 
   useStoreSync(syncFromRemote);
 
@@ -1007,11 +1012,11 @@ export default function Chat() {
   useEffect(
     () =>
       settleDeferredSync({
-        isLoading,
+        isLoading: composerBusy,
         pendingRemoteSyncRef,
         runSync: syncActiveMessages,
       }),
-    [isLoading, syncActiveMessages],
+    [composerBusy, syncActiveMessages],
   );
 
   const handleNewSession = () => setShowModal(true);
@@ -1116,7 +1121,7 @@ export default function Chat() {
     regenerateMessageFlow(idx, {
       confirm,
       activeSession,
-      isLoading,
+      isLoading: composerBusy,
       setActiveSession,
       sendMessage: handleSendMessage,
     });
@@ -1324,6 +1329,8 @@ export default function Chat() {
         if (live.persistence_status !== "pending" && live.persistence_status !== "generated") {
           return;
         }
+        awaitingSessionRef.current = sid;
+        setAwaitingCompanion(true);
         setActiveSession((prev) => {
           if (!prev || prev.id !== sid) return prev;
           if (
@@ -1344,28 +1351,39 @@ export default function Chat() {
                 content: "...",
                 character_name: "__typing__",
                 late_turn_id: live.turn_id,
+                turn_id: live.turn_id,
                 timestamp: new Date().toISOString(),
               },
             ],
           };
         });
         const waitingTurnId = live.turn_id;
-        live = await pollLateCompanionReply({
-          fetchTurn: () => animaApi.chat.turnStatus(waitingTurnId),
-          timeoutMs: LATE_REPLY_POLL_MS,
-        });
-        if (cancelled) return;
-        if (!String(live?.assistant_content || "").trim()) {
-          // The turn failed or never produced text. Take down only the
-          // bubble this effect added; otherwise it spins forever.
-          setActiveSession((prev) => {
-            if (!prev || prev.id !== sid) return prev;
-            return {
-              ...prev,
-              messages: dropLateTurnPlaceholder(prev.messages, waitingTurnId),
-            };
+        try {
+          live = await pollLateCompanionReply({
+            fetchTurn: () => animaApi.chat.turnStatus(waitingTurnId),
+            timeoutMs: LATE_REPLY_POLL_MS,
           });
-          return;
+          if (cancelled) return;
+          if (!String(live?.assistant_content || "").trim()) {
+            // The turn failed or never produced text. Take down only the
+            // bubble this effect added; otherwise it spins forever.
+            setActiveSession((prev) => {
+              if (!prev || prev.id !== sid) return prev;
+              return {
+                ...prev,
+                messages: dropTurnPlaceholder(
+                  dropLateTurnPlaceholder(prev.messages, waitingTurnId),
+                  waitingTurnId,
+                ),
+              };
+            });
+            return;
+          }
+        } finally {
+          if (awaitingSessionRef.current === sid) {
+            awaitingSessionRef.current = null;
+            setAwaitingCompanion(false);
+          }
         }
       }
       if (!String(live.assistant_content || "").trim()) return;
@@ -1405,10 +1423,22 @@ export default function Chat() {
             if (!prev || (sessionId && prev.id !== sessionId)) return prev;
             return {
               ...prev,
-              messages: dropTurnPlaceholder(prev.messages, pending.turnId),
+              messages: dropTurnPlaceholder(
+                dropLateTurnPlaceholder(prev.messages, pending.turnId),
+                pending.turnId,
+              ),
             };
           });
-          toast.error(GENERIC_COMPANION_COULD_NOT_REPLY);
+          toast.error(GENERIC_COMPANION_COULD_NOT_REPLY, {
+            id: "companion-could-not-reply",
+            duration: 20_000,
+            action: {
+              label: "Retry",
+              onClick: () => {
+                void handleSendMessageRef.current?.(pending.userContent || "");
+              },
+            },
+          });
           return;
         }
         if (live.persistence_status !== "committed") {
@@ -1447,7 +1477,7 @@ export default function Chat() {
   const handleSendMessage = async (message) => {
     const sendLock = acquireChatSendLock(sendingRef, {
       hasSession: Boolean(activeSession),
-      isLoading,
+      isLoading: composerBusy,
     });
     if (!sendLock) return;
     
@@ -2875,11 +2905,12 @@ Return JSON:
       }
 
       const connectionDropped = isConnectionDroppedError(err);
-      if (!retained && (connectionDropped || isCompanionStillTypingError(err))) {
+      if (!retained && shouldCheckBackForCompanionReply(err)) {
         // The model is still working past this browser's deadline, this send
-        // joined a turn that is already generating, or the tab dropped the
-        // socket. Keep the user line and poll the durable turn. Do not toast
-        // the generic failure.
+        // joined a turn that is already generating, the tab dropped the
+        // socket, or the failure was remapped to the generic companion
+        // message. Keep the user line and poll the durable turn. Do not toast
+        // the generic failure until that check comes back empty.
         pendingRemoteSyncRef.current = false;
         applyIfSendSession((prev) => ({
           ...prev,
@@ -2892,6 +2923,7 @@ Return JSON:
               content: connectionDropped ? CONNECTION_DROPPED_STATUS : "...",
               character_name: "__typing__",
               late_turn_id: turnId,
+              turn_id: turnId,
               timestamp: new Date().toISOString(),
             },
           ],
@@ -2932,37 +2964,28 @@ Return JSON:
           lateTurnRef.current = null;
           applyIfSendSession((prev) => ({
             ...prev,
-            messages: dropLateTurnPlaceholder(prev.messages, turnId),
+            messages: dropTurnPlaceholder(
+              dropLateTurnPlaceholder(prev.messages, turnId),
+              turnId,
+            ),
           }));
-          toast.error(GENERIC_COMPANION_COULD_NOT_REPLY);
+          toast.error(GENERIC_COMPANION_COULD_NOT_REPLY, {
+            id: "companion-could-not-reply",
+            duration: 20_000,
+            action: {
+              label: "Retry",
+              onClick: () => {
+                void handleSendMessageRef.current?.(isContinue ? "" : message);
+              },
+            },
+          });
         }
       } else if (retained) {
         lateTurnRef.current = null;
         toast.error("The reply was interrupted — kept what came through.");
       } else {
         lateTurnRef.current = null;
-        const message = chatTurnErrorMessage(err);
-        // Pre-token failures used to remove thinking/typing with no UI feedback,
-        // which looked like the companion started thinking then vanished.
-        if (message === GENERIC_COMPANION_COULD_NOT_REPLY) {
-          applyIfSendSession((prev) => ({
-            ...prev,
-            messages: [
-              ...(prev.messages || []).filter(
-                (m) => m.character_name !== "__typing__" && m.character_name !== "__thinking__",
-              ),
-              {
-                role: "assistant",
-                content: "...",
-                character_name: "__typing__",
-                turn_id: turnId,
-                timestamp: new Date().toISOString(),
-              },
-            ],
-          }));
-        } else {
-          toast.error(message);
-        }
+        toast.error(chatTurnErrorMessage(err));
         // Don't let a deferred sync (armed while isLoading) immediately replace
         // local optimistic state with a server list that lacks this turn.
         pendingRemoteSyncRef.current = false;
@@ -2975,9 +2998,10 @@ Return JSON:
     // Clear injected memories after they've been used
     if (injectedMemories.length > 0) setInjectedMemories([]);
     };
+  handleSendMessageRef.current = handleSendMessage;
 
   useEffect(() => {
-    if (!activeSession?.id || isLoading) return;
+    if (!activeSession?.id || composerBusy) return;
     if (hiddenThread.spokeFirst.current) return;
     const ret = hiddenThread.consumeReturn();
     if (!ret.speakFirst && !hiddenThread.hidden.jack_in.speak_first) return;
@@ -3247,7 +3271,7 @@ Return JSON:
                 onSpeak={speakMessage}
                 onEditMessage={handleEditMessage}
                 onDeleteMessage={handleDeleteMessage}
-                onRegenerateMessage={handleRegenerateMessage}
+                onRegenerateMessage={composerBusy ? undefined : handleRegenerateMessage}
                 onAvatarClick={setBioCharacter}
                 onTeachMessage={
                   modelTutor.isSteward
@@ -3303,7 +3327,7 @@ Return JSON:
                 {choices.length > 0 && activeSession.mode === "solo" && (
                   <NarrativeChoicesPanel
                     choices={choices}
-                    loading={isLoading}
+                    loading={composerBusy}
                     onSelectChoice={handleChoiceMade}
                     sessionId={activeSession.id}
                   />
@@ -3336,7 +3360,7 @@ Return JSON:
                   onVoiceClick={() => setShowVoiceInput(true)}
                   onContinue={() => handleSendMessage("")}
                   onNarratorExposition={handleNarratorExposition}
-                  isLoading={isLoading}
+                  isLoading={composerBusy}
                   sessionMode={activeSession?.mode}
                   activeCharacter={activeSession.mode === "solo" ? characters.find(c => c.id === activeSession.character_id) : null}
                   onSend={handleSendMessage}
@@ -3344,7 +3368,7 @@ Return JSON:
                 {activeSession.mode === "solo" && activeSession.character_id && (
                   <QuickActionChips
                     onSelect={(directive) => handleSendMessage(directive)}
-                    disabled={isLoading}
+                    disabled={composerBusy}
                   />
                 )}
                 {activeSession.mode === "solo" && activeSession.character_id && (
@@ -3354,7 +3378,7 @@ Return JSON:
                     recentMessages={activeSession.messages || []}
                     characterEmotions={characterEmotions}
                     onSelectSuggestion={(text) => handleSendMessage(text)}
-                    disabled={isLoading}
+                    disabled={composerBusy}
                   />
                 )}
                 {activeSession.mode === "solo" && activeSession.character_id && (
@@ -3371,7 +3395,7 @@ Return JSON:
                 <ChatPdfBar sessionId={activeSession.id} revision={pdfRevision} />
                 <ChatInput
                   onSend={handleSendMessage}
-                  isLoading={isLoading}
+                  isLoading={composerBusy}
                   disabled={false}
                   allowEmpty={activeSession?.mode === "group" || activeSession?.mode === "solo"}
                   sessionId={activeSession.id}
@@ -3507,7 +3531,6 @@ Return JSON:
         onClose={() => setVoiceChatOpen(false)}
         character={activeSession?.character_id ? characters.find((c) => c.id === activeSession.character_id) : null}
         onUserMessage={async (text, speakCallback) => {
-          const originalLoading = isLoading;
           await handleSendMessage(text);
           // Wait a moment for the response to be generated, then speak it
           if (speakCallback && activeSession?.character_id) {
@@ -3520,7 +3543,7 @@ Return JSON:
             }, 500);
           }
         }}
-        isLoading={isLoading}
+        isLoading={composerBusy}
       />
 
       <CreateBranchModal
@@ -3587,7 +3610,7 @@ Return JSON:
           handleSendMessage(text);
           setShowVoiceInput(false);
         }}
-        isLoading={isLoading}
+        isLoading={composerBusy}
       />
 
       {/* Character Presence Panel - Show who's around */}
@@ -3624,7 +3647,7 @@ Return JSON:
                   intensity={em.intensity ?? activeCharEmotion?.intensity ?? 5}
                   resonance={resonance.value}
                   speaking={isCompanionSpeaking && isLead}
-                  thinking={isLoading && isLead}
+                  thinking={composerBusy && isLead}
                   highlighted={isLead}
                   size={presenceCast.length > 1 ? 200 : 320}
                   onExpand={openPresenceStage}
@@ -3660,10 +3683,10 @@ Return JSON:
         characterEmotions={characterEmotions}
         resonance={resonance}
         speaking={isCompanionSpeaking}
-        thinking={isLoading}
+        thinking={composerBusy}
         messages={activeSession?.messages}
         onSend={(text) => handleSendMessage(text)}
-        isLoading={isLoading}
+        isLoading={composerBusy}
       />
     </div>
   );

@@ -12,6 +12,7 @@ import {
   markTurnFailed,
   pendingTurnLeaseIsStale,
   readChatTurn,
+  sessionHasOlderPendingChatTurn,
   retryableChatTurns,
   STALE_PENDING_LEASE_MS,
   turnMessageIds,
@@ -109,6 +110,65 @@ describe("chat turn ledger", () => {
         "second thought",
       ),
     ).toBe("conflict");
+  });
+
+  it("treats only an earlier pending turn in the same conversation as busy", async () => {
+    const olderId = `turn_${prefix}_busy_older`;
+    const newerId = `turn_${prefix}_busy_newer`;
+    const elsewhereId = `turn_${prefix}_busy_elsewhere`;
+    const busySession = `${sessionId}_busy`;
+    const otherSession = `${sessionId}_busy_other`;
+    await beginChatTurn({
+      id: olderId,
+      sessionId: busySession,
+      userId,
+      userContent: "first",
+      persistenceOwner: "server",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await beginChatTurn({
+      id: newerId,
+      sessionId: busySession,
+      userId,
+      userContent: "second",
+      persistenceOwner: "server",
+    });
+    await beginChatTurn({
+      id: elsewhereId,
+      sessionId: otherSession,
+      userId,
+      userContent: "other chat",
+      persistenceOwner: "server",
+    });
+    const newer = await readChatTurn(newerId, userId);
+    const older = await readChatTurn(olderId, userId);
+    expect(newer?.createdAt).toBeTruthy();
+    expect(older?.createdAt).toBeTruthy();
+    expect(
+      await sessionHasOlderPendingChatTurn(
+        userId,
+        busySession,
+        newerId,
+        newer!.createdAt,
+      ),
+    ).toBe(true);
+    expect(
+      await sessionHasOlderPendingChatTurn(
+        userId,
+        busySession,
+        olderId,
+        older!.createdAt,
+      ),
+    ).toBe(false);
+    await markTurnFailed(olderId, userId, new Error("finished"));
+    expect(
+      await sessionHasOlderPendingChatTurn(
+        userId,
+        busySession,
+        newerId,
+        newer!.createdAt,
+      ),
+    ).toBe(false);
   });
 
   it("joins a live lease and claims an expired one for the same user text", () => {

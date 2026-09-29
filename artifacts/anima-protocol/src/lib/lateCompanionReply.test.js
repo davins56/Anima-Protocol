@@ -45,6 +45,12 @@ describe("isCompanionStillTypingError", () => {
     ).toBe(true);
     expect(isConnectionDroppedError(new TypeError("H is not a function"))).toBe(false);
     expect(isCompanionStillTypingError(new TypeError("Failed to fetch"))).toBe(false);
+    const busy = new Error(
+      "The companion is still finishing the last reply. Wait a moment, then try again.",
+    );
+    busy.code = "conversation_busy";
+    busy.status = 409;
+    expect(isCompanionStillTypingError(busy)).toBe(false);
     expect(CONNECTION_DROPPED_STATUS).toMatch(/checking for her reply/i);
     expect(lateTurnFailedWithoutReply({ persistence_status: "failed" })).toBe(true);
     expect(
@@ -156,6 +162,23 @@ describe("pollLateCompanionReply", () => {
     });
     expect(result.assistant_content).toBe("I am happy you stayed.");
     expect(fetchTurn).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops immediately when the turn was never saved", async () => {
+    const missing = new Error("Turn not found");
+    missing.status = 404;
+    const fetchTurn = vi.fn().mockRejectedValue(missing);
+    const result = await pollLateCompanionReply({
+      fetchTurn,
+      timeoutMs: 5_000,
+      intervalMs: 1_000,
+      sleep: async () => {
+        throw new Error("should not wait");
+      },
+    });
+    expect(result.persistence_status).toBe("failed");
+    expect(String(result.assistant_content || "")).toBe("");
+    expect(fetchTurn).toHaveBeenCalledTimes(1);
   });
 });
 
