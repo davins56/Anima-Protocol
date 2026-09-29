@@ -50,6 +50,10 @@ export default function ChatInput({
   onRestoredDraftSettledRef.current = onRestoredDraftSettled;
   const pdfsRef = useRef(pdfs);
   pdfsRef.current = pdfs;
+  // Removal settles only after the new list commits. Doing it inside the
+  // state updater can clear the saved draft when React replays that updater
+  // and then drops the update.
+  const emptySettleAfterCommitRef = useRef(false);
 
   const settleRestoredDraft = () => {
     const draft = restoredDraftRef.current;
@@ -88,6 +92,12 @@ export default function ChatInput({
     settleIfComposerEmpty(nextText, nextAttachments, pdfsRef.current);
   }, [restoreDraft]);
 
+  useEffect(() => {
+    if (!emptySettleAfterCommitRef.current) return;
+    emptySettleAfterCommitRef.current = false;
+    settleIfComposerEmpty(value, attachments, pdfs);
+  }, [value, attachments, pdfs]);
+
   // Grow the textarea to fit its content (up to MAX_INPUT_HEIGHT, then it
   // scrolls internally). Runs on every value change — including the reset to ""
   // after sending — so the box shrinks back down once a message is sent.
@@ -119,13 +129,16 @@ export default function ChatInput({
       ].filter(Boolean),
     };
     if (!message.attachments.length) message.attachments = undefined;
-    
+
+    // Drop the restored copy before this send is recorded. A busy hold of
+    // the same text keeps the previous savedAt, and settling afterward
+    // would delete that live hold.
+    settleRestoredDraft();
     onSend(message);
     setValue("");
     setAttachments([]);
     setPdfs([]);
     setRestoreNote("");
-    settleRestoredDraft();
   };
 
   const handlePdfUpload = async (e) => {
@@ -175,11 +188,8 @@ export default function ChatInput({
   };
 
   const removePdf = async (pdf) => {
-    setPdfs((prev) => {
-      const next = prev.filter((item) => item.localId !== pdf.localId);
-      settleIfComposerEmpty(valueRef.current, attachmentsRef.current, next);
-      return next;
-    });
+    emptySettleAfterCommitRef.current = true;
+    setPdfs((prev) => prev.filter((item) => item.localId !== pdf.localId));
     if (pdf.id) {
       try {
         await deletePdfDocument(pdf.id);
@@ -273,11 +283,8 @@ export default function ChatInput({
               <button
                 type="button"
                 onClick={() => {
-                  setAttachments((prev) => {
-                    const next = prev.filter((_, i) => i !== idx);
-                    settleIfComposerEmpty(valueRef.current, next, pdfsRef.current);
-                    return next;
-                  });
+                  emptySettleAfterCommitRef.current = true;
+                  setAttachments((prev) => prev.filter((_, i) => i !== idx));
                 }}
                 className="absolute -top-1 -right-1 w-4 h-4 bg-destructive text-white text-[8px] flex items-center justify-center rounded-full"
               >

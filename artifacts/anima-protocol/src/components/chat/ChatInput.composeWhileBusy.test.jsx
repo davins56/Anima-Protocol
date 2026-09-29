@@ -1,7 +1,13 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { dropAppliedComposerRestore } from "@/lib/heldChatSend";
+import {
+  clearHeldDraftIfUnchanged,
+  createComposerGate,
+  dropAppliedComposerRestore,
+  readHeldDraft,
+  writeHeldDraft,
+} from "@/lib/heldChatSend";
 import ChatInput from "./ChatInput";
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
@@ -27,6 +33,85 @@ const restoredDraft = {
   attachments: [],
   droppedAttachmentCount: 0,
 };
+
+function memoryStorage() {
+  const map = new Map();
+  return {
+    getItem(key) {
+      return map.has(key) ? map.get(key) : null;
+    },
+    setItem(key, value) {
+      map.set(String(key), String(value));
+    },
+    removeItem(key) {
+      map.delete(key);
+    },
+    key(index) {
+      return [...map.keys()][index] ?? null;
+    },
+    get length() {
+      return map.size;
+    },
+  };
+}
+
+function RestoredBusySendHarness({ storage }) {
+  const sessionId = "sess";
+  const stampRef = useRef(new Map());
+  const ownerRef = useRef(0);
+  const gateRef = useRef(null);
+  if (gateRef.current == null) {
+    gateRef.current = createComposerGate({
+      onHeldChange(sid, payload) {
+        if (payload == null) {
+          const savedAt = stampRef.current.get(sid);
+          stampRef.current.delete(sid);
+          if (savedAt != null) clearHeldDraftIfUnchanged(storage, "user_a", sid, savedAt);
+          return;
+        }
+        const written = writeHeldDraft(storage, "user_a", sid, payload);
+        if (written.ok && written.savedAt != null) stampRef.current.set(sid, written.savedAt);
+      },
+    });
+    ownerRef.current = gateRef.current.accept(sessionId, "hello").ownerToken;
+  }
+  const [restoreDraft, setRestoreDraft] = useState(() => {
+    const draft = readHeldDraft(storage, "user_a", sessionId);
+    return {
+      token: "user_a:sess",
+      sessionId,
+      savedAt: draft.savedAt,
+      text: draft.text,
+      attachments: draft.attachments,
+      droppedAttachmentCount: draft.droppedAttachmentCount,
+    };
+  });
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          gateRef.current.release("reply_finished", ownerRef.current);
+          gateRef.current.takeHeld(sessionId);
+        }}
+      >
+        Flush
+      </button>
+      <ChatInput
+        isLoading
+        composeWhileBusy
+        onSend={(message) => {
+          gateRef.current.accept(sessionId, message);
+        }}
+        restoreDraft={restoreDraft}
+        onRestoredDraftSettled={(draft) => {
+          clearHeldDraftIfUnchanged(storage, "user_a", draft.sessionId, draft.savedAt);
+          setRestoreDraft((prev) => dropAppliedComposerRestore(prev, draft));
+        }}
+      />
+    </>
+  );
+}
 
 function RestoreSessionHarness() {
   const [sessionId, setSessionId] = useState("sess-a");
@@ -131,6 +216,18 @@ describe("ChatInput while a reply is in flight", () => {
     fireEvent.change(again, { target: { value: "" } });
     expect(onSettled).toHaveBeenCalledWith(restoredDraft);
     expect(onSend).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the held draft when restored text is sent unchanged while she is still replying", () => {
+    const storage = memoryStorage();
+    writeHeldDraft(storage, "user_a", "sess", "you there?");
+    render(<RestoredBusySendHarness storage={storage} />);
+    const box = screen.getByPlaceholderText(/Ask me anything/i);
+    expect(box.value).toBe("you there?");
+    fireEvent.submit(box.closest("form"));
+    expect(readHeldDraft(storage, "user_a", "sess")?.text).toBe("you there?");
+    fireEvent.click(screen.getByRole("button", { name: "Flush" }));
+    expect(readHeldDraft(storage, "user_a", "sess")).toBeNull();
   });
 
   it("keeps text the user already typed and appends the restored line", () => {
