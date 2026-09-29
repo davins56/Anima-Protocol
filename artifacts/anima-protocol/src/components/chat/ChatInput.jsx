@@ -22,7 +22,11 @@ export default function ChatInput({
   allowEmpty = false,
   sessionId = null,
   onPdfStored,
+  composeWhileBusy = false,
 }) {
+  // A reply can still be in flight. The follow-up is held by the page
+  // instead of locking the box, so typing and Send stay available.
+  const blockComposer = disabled || (isLoading && !composeWhileBusy);
   const [value, setValue] = useState("");
   const [attachments, setAttachments] = useState([]);
   const [pdfs, setPdfs] = useState([]);
@@ -42,7 +46,7 @@ export default function ChatInput({
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (isLoading || disabled) return;
+    if (blockComposer) return;
     const readyPdfs = pdfs.filter((pdf) => pdf.status === "ready");
     if (!value.trim() && !attachments.length && !readyPdfs.length && !allowEmpty) return;
     if (pdfBusy) return;
@@ -218,7 +222,7 @@ export default function ChatInput({
             type="file"
             accept=".pdf,application/pdf"
             onChange={handlePdfUpload}
-            disabled={pdfBusy || isLoading || disabled || !sessionId}
+            disabled={pdfBusy || blockComposer || !sessionId}
             className="hidden"
             aria-label="Attach a PDF"
           />
@@ -234,7 +238,7 @@ export default function ChatInput({
             multiple
             accept="image/*,audio/*"
             onChange={handleMediaUpload}
-            disabled={uploadingMedia || isLoading || disabled}
+            disabled={uploadingMedia || blockComposer}
             className="hidden"
             aria-label="Attach an image or audio clip"
           />
@@ -252,7 +256,7 @@ export default function ChatInput({
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={allowEmpty ? "Message... (or send empty to continue story)" : "Ask me anything (I'm an AI and can make mistakes)..."}
-            disabled={disabled || isLoading}
+            disabled={blockComposer}
             rows={1}
             className="w-full input-sacred text-primary/90 placeholder-primary/20 font-mono text-base sm:text-sm px-3 sm:px-4 py-2 sm:py-3 resize-none focus:outline-none transition-all hud-corner overflow-y-auto"
             style={{ minHeight: "40px", maxHeight: `${MAX_INPUT_HEIGHT}px`, fontSize: "16px", fontStyle: isInItalicContext(value) ? "italic" : "normal" }}
@@ -260,7 +264,7 @@ export default function ChatInput({
         </div>
         <button
           type="submit"
-          disabled={((!value.trim() && !attachments.length && !pdfs.some((pdf) => pdf.status === "ready") && !allowEmpty) || isLoading || disabled || uploadingMedia || pdfBusy)}
+          disabled={((!value.trim() && !attachments.length && !pdfs.some((pdf) => pdf.status === "ready") && !allowEmpty) || blockComposer || uploadingMedia || pdfBusy)}
           className="flex-shrink-0 w-10 sm:w-12 h-10 sm:h-12 btn-sacred text-primary disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center hud-corner"
         >
           <Send className="w-3.5 sm:w-4 h-3.5 sm:h-4" />
