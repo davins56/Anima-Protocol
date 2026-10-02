@@ -8,6 +8,13 @@
  * answers them together, one model run, and Cancel drops the whole burst.
  * The note on the pending bubble is the same line the stream used to show
  * for "one reply ahead", so the thread has one waiting sentence.
+ *
+ * The hold is also written to localStorage for this account and conversation.
+ * A reload (common when iPhone Safari discards the tab) puts that text back
+ * in the send box for review. It does not send on its own: her reply may
+ * already have landed. The saved copy stays until the user sends from that
+ * box, clears the box, the in-memory hold sends or is cancelled, or 24 hours
+ * pass. A later reload puts it back again.
  */
 
 export const HELD_SEND_NOTE = "Sends when she's done";
@@ -186,6 +193,12 @@ export function composerFullyUnlocked(snapshot) {
 }
 
 /**
+ * `onHeldChange` fires with the combined payload whenever a hold is written,
+ * and with `null` when that hold is taken to send or cancelled. Storage
+ * failures inside the callback must not break the composer; the gate also
+ * swallows throws.
+ *
+ * @param {{ onHeldChange?: (sessionId: string, payload: unknown | null) => void }} [options]
  * @returns {{
  *   accept: (sessionId: string, message: unknown) => { action: "send" | "held" | "ignore", ownerToken: number | null },
  *   revertSendToHold: (sessionId: string, message: unknown, ownerToken: number) => void,
@@ -209,7 +222,7 @@ export function composerFullyUnlocked(snapshot) {
  *   },
  * }}
  */
-export function createComposerGate() {
+export function createComposerGate({ onHeldChange } = {}) {
   let seq = 0;
   const heldBySession = {};
   const gate = {
@@ -251,6 +264,16 @@ export function createComposerGate() {
     gate.textLocked = false;
   };
 
+  const notifyHeld = (sessionId) => {
+    if (typeof onHeldChange !== "function") return;
+    try {
+      const held = heldBySession[sessionId];
+      onHeldChange(sessionId, held ? held.payload : null);
+    } catch {
+      // A full or blocked localStorage must not stop the send.
+    }
+  };
+
   /**
    * @param {string} sessionId
    * @param {unknown} message
@@ -271,6 +294,7 @@ export function createComposerGate() {
       payload,
       text: heldOutgoingLabel(payload),
     };
+    notifyHeld(sessionId);
   };
 
   return {
@@ -338,6 +362,7 @@ export function createComposerGate() {
       const held = heldBySession[sessionId];
       if (!held) return null;
       delete heldBySession[sessionId];
+      notifyHeld(sessionId);
       return held.payload;
     },
 
@@ -345,6 +370,7 @@ export function createComposerGate() {
       const held = heldBySession[sessionId];
       if (!held || held.id !== id) return;
       delete heldBySession[sessionId];
+      notifyHeld(sessionId);
       if (gate.busyRetrySessionId === sessionId) {
         gate.busyRetrySessionId = null;
         if (!gate.inFlight) {
@@ -362,4 +388,465 @@ export function createComposerGate() {
       return gate.ownerToken;
     },
   };
+}
+
+/** Per-account, per-conversation key so two logins on one phone do not share a draft. */
+export const HELD_DRAFT_STORAGE_PREFIX = "anima.heldChatSend.v1";
+
+/** A tab killed overnight should not resurrect a stale follow-up. */
+export const HELD_DRAFT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+export const RESTORED_HELD_NOTE = "Your unsent message is back in the box.";
+
+export const RESTORED_HELD_ATTACHMENT_NOTE =
+  "Your unsent message is back in the box. The attachment wasn't kept.";
+
+export const RESTORED_HELD_ATTACHMENT_ONLY_NOTE = "The attachment wasn't kept.";
+
+/**
+ * @param {unknown} userId
+ * @param {unknown} sessionId
+ * @returns {string | null}
+ */
+export function heldDraftStorageKey(userId, sessionId) {
+  const user = typeof userId === "string" ? userId.trim() : "";
+  const session = typeof sessionId === "string" ? sessionId.trim() : "";
+  if (!user || !session) return null;
+  return `${HELD_DRAFT_STORAGE_PREFIX}:${encodeURIComponent(user)}:${encodeURIComponent(session)}`;
+}
+
+/**
+ * localStorage is missing in some private-mode browsers and throws on access.
+ * @returns {Storage | null}
+ */
+export function browserLocalStorage() {
+  try {
+    if (typeof globalThis.localStorage === "undefined" || globalThis.localStorage == null) {
+      return null;
+    }
+    return globalThis.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Already-uploaded media only. Files, blobs, and data/blob URLs cannot
+ * survive a reload, so they are left out of storage.
+ *
+ * @param {unknown} url
+ * @returns {boolean}
+ */
+export function isUploadedAttachmentUrl(url) {
+  if (typeof url !== "string") return false;
+  const trimmed = url.trim();
+  if (!trimmed || trimmed.length > 2048 || trimmed !== url) return false;
+  if (/[\u0000-\u001F\u007F\\]/.test(trimmed)) return false;
+  if (/^(javascript|data|blob|file|vbscript):/i.test(trimmed)) return false;
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.username || parsed.password) return false;
+      return parsed.protocol === "http:" || parsed.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }
+  // Same-origin upload path (`/api/storage/objects/uploads/...`).
+  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return false;
+  if (trimmed.includes("..")) return false;
+  return true;
+}
+
+/**
+ * @param {unknown} attachment
+ * @returns {{ url: string, type: "image" | "audio", name?: string } | null}
+ */
+export function restorableAttachment(attachment) {
+  if (!attachment || typeof attachment !== "object") return null;
+  if (typeof File !== "undefined" && attachment instanceof File) return null;
+  if (typeof Blob !== "undefined" && attachment instanceof Blob) return null;
+  const record = /** @type {{ url?: unknown, type?: unknown, name?: unknown }} */ (attachment);
+  if (!isUploadedAttachmentUrl(record.url)) return null;
+  const type = record.type === "audio" ? "audio" : record.type === "image" ? "image" : null;
+  if (!type) return null;
+  const restored = { url: String(record.url).trim(), type };
+  if (typeof record.name === "string") {
+    const name = record.name.replace(/[\u0000-\u001F\u007F]/g, "").trim().slice(0, 180);
+    if (name) restored.name = name;
+  }
+  return restored;
+}
+
+/**
+ * @param {unknown} message
+ * @param {number} [now]
+ * @returns {{ savedAt: number, text: string, attachments: { url: string, type: "image" | "audio", name?: string }[], droppedAttachmentCount: number } | null}
+ */
+export function draftFromOutgoing(message, now = Date.now()) {
+  const text = outgoingText(message).trim();
+  const kept = [];
+  let droppedAttachmentCount = 0;
+  for (const attachment of outgoingAttachments(message)) {
+    const safe = restorableAttachment(attachment);
+    if (safe) kept.push(safe);
+    else droppedAttachmentCount += 1;
+  }
+  if (!text && kept.length === 0 && droppedAttachmentCount === 0) return null;
+  return { savedAt: now, text, attachments: kept, droppedAttachmentCount };
+}
+
+/**
+ * @param {HeldDraftStorage | null | undefined} storage
+ * @returns {string[]}
+ */
+function listStorageKeys(storage) {
+  if (!storage) return [];
+  try {
+    const length = storage.length;
+    if (typeof length !== "number" || typeof storage.key !== "function") return [];
+    const keys = [];
+    for (let i = 0; i < length; i += 1) {
+      const key = storage.key(i);
+      if (typeof key === "string") keys.push(key);
+    }
+    return keys;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * @param {HeldDraftStorage | null | undefined} storage
+ * @param {number} [now]
+ */
+export function sweepExpiredHeldDrafts(storage, now = Date.now()) {
+  if (!storage) return;
+  for (const key of listStorageKeys(storage)) {
+    if (!key.startsWith(`${HELD_DRAFT_STORAGE_PREFIX}:`)) continue;
+    try {
+      const raw = storage.getItem(key);
+      const savedAt = Number(JSON.parse(raw || "null")?.savedAt);
+      if (!Number.isFinite(savedAt) || now - savedAt > HELD_DRAFT_MAX_AGE_MS) {
+        storage.removeItem(key);
+      }
+    } catch {
+      try {
+        storage.removeItem(key);
+      } catch {
+        // Leave the bad entry. Chat still works.
+      }
+    }
+  }
+}
+
+/**
+ * @param {unknown} parsed
+ * @param {number} now
+ * @returns {{ savedAt: number, text: string, attachments: { url: string, type: "image" | "audio", name?: string }[], droppedAttachmentCount: number } | null}
+ */
+function normalizeStoredDraft(parsed, now) {
+  if (!parsed || typeof parsed !== "object") return null;
+  const record = /** @type {{ savedAt?: unknown, text?: unknown, droppedAttachmentCount?: unknown }} */ (
+    parsed
+  );
+  const savedAt = Number(record.savedAt);
+  if (!Number.isFinite(savedAt) || now - savedAt > HELD_DRAFT_MAX_AGE_MS) return null;
+  const draftText = typeof record.text === "string" ? record.text.trim() : "";
+  const attachments = [];
+  let droppedAttachmentCount = Math.max(0, Number(record.droppedAttachmentCount) || 0);
+  for (const attachment of outgoingAttachments(parsed)) {
+    const safe = restorableAttachment(attachment);
+    if (safe) attachments.push(safe);
+    else droppedAttachmentCount += 1;
+  }
+  if (!draftText && attachments.length === 0 && droppedAttachmentCount === 0) return null;
+  return { savedAt, text: draftText, attachments, droppedAttachmentCount };
+}
+
+/**
+ * @param {HeldDraftStorage | null | undefined} storage
+ * @param {unknown} userId
+ * @param {unknown} sessionId
+ * @param {unknown} message
+ * @param {number} [now]
+ * @returns {{ ok: boolean, reason?: string }}
+ */
+export function writeHeldDraft(storage, userId, sessionId, message, now = Date.now()) {
+  const key = heldDraftStorageKey(userId, sessionId);
+  if (!key) return { ok: false, reason: "missing_key" };
+  if (!storage) return { ok: false, reason: "unavailable" };
+  const draft = draftFromOutgoing(message, now);
+  let savedAt = draft ? draft.savedAt : null;
+  try {
+    if (!draft) {
+      storage.removeItem(key);
+    } else {
+      savedAt = preservedDraftSavedAt(storage, key, draft, now);
+      storage.setItem(key, JSON.stringify({ ...draft, savedAt }));
+    }
+  } catch {
+    return { ok: false, reason: "storage_failed" };
+  }
+  try {
+    sweepExpiredHeldDrafts(storage, now);
+  } catch {
+    // Expiry is best-effort.
+  }
+  return { ok: true, savedAt };
+}
+
+/**
+ * Rewriting the same follow-up should not look like a new draft. A different
+ * body, or a stamp that is already expired, gets a fresh savedAt.
+ *
+ * @param {HeldDraftStorage} storage
+ * @param {string} key
+ * @param {{ text: string, attachments: unknown[], droppedAttachmentCount: number, savedAt: number }} draft
+ * @param {number} now
+ */
+function preservedDraftSavedAt(storage, key, draft, now) {
+  try {
+    const raw = storage.getItem(key);
+    if (!raw) return draft.savedAt;
+    const prior = JSON.parse(raw);
+    const priorSavedAt = Number(prior?.savedAt);
+    if (!Number.isFinite(priorSavedAt) || now - priorSavedAt > HELD_DRAFT_MAX_AGE_MS) {
+      return draft.savedAt;
+    }
+    if (draftBodyKey(prior) !== draftBodyKey(draft)) return draft.savedAt;
+    return priorSavedAt;
+  } catch {
+    return draft.savedAt;
+  }
+}
+
+/**
+ * @param {{ text?: unknown, attachments?: unknown, droppedAttachmentCount?: unknown }} record
+ */
+function draftBodyKey(record) {
+  const text = typeof record?.text === "string" ? record.text : "";
+  const attachments = Array.isArray(record?.attachments) ? record.attachments : [];
+  const droppedAttachmentCount = Math.max(0, Number(record?.droppedAttachmentCount) || 0);
+  return JSON.stringify({ text, attachments, droppedAttachmentCount });
+}
+
+/**
+ * Remove the saved follow-up only when it is still the draft that was read.
+ * Another tab may have stored a newer one since then.
+ *
+ * @param {HeldDraftStorage | null | undefined} storage
+ * @param {unknown} userId
+ * @param {unknown} sessionId
+ * @param {unknown} savedAt
+ * @returns {{ ok: boolean, reason?: string }}
+ */
+export function clearHeldDraftIfUnchanged(storage, userId, sessionId, savedAt) {
+  const key = heldDraftStorageKey(userId, sessionId);
+  if (!key) return { ok: false, reason: "missing_key" };
+  if (!storage) return { ok: false, reason: "unavailable" };
+  const expected = Number(savedAt);
+  if (!Number.isFinite(expected)) return { ok: false, reason: "missing_saved_at" };
+  try {
+    const raw = storage.getItem(key);
+    if (!raw) return { ok: true, reason: "absent" };
+    const current = Number(JSON.parse(raw)?.savedAt);
+    if (current !== expected) return { ok: true, reason: "changed" };
+    storage.removeItem(key);
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: "storage_failed" };
+  }
+}
+
+/**
+ * Once a draft has been copied into the send box, drop that React payload.
+ * ChatInput remounts when the conversation changes, and a leftover payload
+ * would paste the same text in again.
+ *
+ * @param {{ token?: string } | null | undefined} current
+ * @param {{ token?: string } | null | undefined} applied
+ */
+export function dropAppliedComposerRestore(current, applied) {
+  if (!current) return null;
+  if (applied?.token && current.token === applied.token) return null;
+  return current;
+}
+
+/**
+ * @param {HeldDraftStorage | null | undefined} storage
+ * @param {unknown} userId
+ * @param {unknown} sessionId
+ * @returns {{ ok: boolean, reason?: string }}
+ */
+export function clearHeldDraft(storage, userId, sessionId) {
+  const key = heldDraftStorageKey(userId, sessionId);
+  if (!key) return { ok: false, reason: "missing_key" };
+  if (!storage) return { ok: false, reason: "unavailable" };
+  try {
+    storage.removeItem(key);
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: "storage_failed" };
+  }
+}
+
+/**
+ * @param {HeldDraftStorage | null | undefined} storage
+ * @param {unknown} userId
+ * @param {unknown} sessionId
+ * @param {number} [now]
+ */
+export function readHeldDraft(storage, userId, sessionId, now = Date.now()) {
+  const key = heldDraftStorageKey(userId, sessionId);
+  if (!key || !storage) return null;
+  let raw = null;
+  try {
+    raw = storage.getItem(key);
+  } catch {
+    return null;
+  }
+  if (!raw) {
+    try {
+      sweepExpiredHeldDrafts(storage, now);
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+  try {
+    const draft = normalizeStoredDraft(JSON.parse(raw), now);
+    if (!draft) {
+      try {
+        storage.removeItem(key);
+      } catch {
+        // ignore
+      }
+    }
+    try {
+      sweepExpiredHeldDrafts(storage, now);
+    } catch {
+      // ignore
+    }
+    return draft;
+  } catch {
+    try {
+      storage.removeItem(key);
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+}
+
+/**
+ * The saved line is already the whole box, or one of the paragraphs in it.
+ *
+ * @param {string} current
+ * @param {string} saved
+ */
+function composerHasParagraph(current, saved) {
+  if (current.trim() === saved) return true;
+  return current.split(/\n\n/).some((part) => part.trim() === saved);
+}
+
+/**
+ * @param {{ placedText: boolean, placedAttachment: boolean, droppedAttachmentCount: number }} result
+ * @returns {string}
+ */
+export function noteForRestoredDraft({ placedText, placedAttachment, droppedAttachmentCount }) {
+  const dropped = droppedAttachmentCount > 0;
+  if (!placedText && !placedAttachment && !dropped) return "";
+  if (!placedText && !placedAttachment && dropped) return RESTORED_HELD_ATTACHMENT_ONLY_NOTE;
+  if (dropped) return RESTORED_HELD_ATTACHMENT_NOTE;
+  return RESTORED_HELD_NOTE;
+}
+
+/**
+ * Put a saved follow-up back into the send box.
+ * Text the user already typed wins: the saved line is appended after a
+ * blank line when it is not already one of the paragraphs. An exact copy
+ * is left as-is so the box is not doubled.
+ *
+ * @param {{ text?: string, attachments?: unknown[] }} current
+ * @param {{ text?: string, attachments?: unknown[], droppedAttachmentCount?: number } | null | undefined} draft
+ */
+export function mergeDraftIntoComposer(current, draft) {
+  const currentText = typeof current?.text === "string" ? current.text : "";
+  const savedText = typeof draft?.text === "string" ? draft.text.trim() : "";
+  const currentAttachments = Array.isArray(current?.attachments) ? current.attachments : [];
+  const savedAttachments = Array.isArray(draft?.attachments) ? draft.attachments : [];
+  const droppedAttachmentCount = Math.max(0, Number(draft?.droppedAttachmentCount) || 0);
+
+  let text = currentText;
+  let placedText = false;
+  if (savedText) {
+    if (!currentText.trim()) {
+      text = savedText;
+      placedText = true;
+    } else if (!composerHasParagraph(currentText, savedText)) {
+      text = `${currentText.replace(/\s+$/, "")}\n\n${savedText}`;
+      placedText = true;
+    }
+  }
+
+  const seen = new Set();
+  const attachments = [];
+  for (const attachment of currentAttachments) {
+    attachments.push(attachment);
+    if (attachment && typeof attachment === "object" && typeof attachment.url === "string") {
+      seen.add(attachment.url);
+    }
+  }
+  let placedAttachment = false;
+  for (const attachment of savedAttachments) {
+    const safe = restorableAttachment(attachment);
+    if (!safe || seen.has(safe.url)) continue;
+    seen.add(safe.url);
+    attachments.push(safe);
+    placedAttachment = true;
+  }
+
+  return {
+    text,
+    attachments,
+    placedText,
+    placedAttachment,
+    changed: placedText || placedAttachment,
+    note: noteForRestoredDraft({ placedText, placedAttachment, droppedAttachmentCount }),
+  };
+}
+
+/**
+ * Decide what to do with a saved hold when a conversation opens.
+ * A draft is never sent from here. An in-memory hold stays on the auto-send
+ * path (#545). A draft found only in storage goes back to the send box.
+ *
+ * @param {HeldDraftStorage | null | undefined} storage
+ * @param {{
+ *   userId?: unknown,
+ *   sessionId?: unknown,
+ *   inMemoryPayload?: unknown,
+ *   alreadyClaimed?: boolean,
+ *   now?: number,
+ * }} [options]
+ */
+export function consumeHeldDraftForOpen(storage, {
+  userId,
+  sessionId,
+  inMemoryPayload = null,
+  alreadyClaimed = false,
+  now = Date.now(),
+} = {}) {
+  if (!userId || !sessionId) return { action: "wait", send: false, claim: false };
+  if (isHoldableOutgoing(inMemoryPayload)) {
+    const written = writeHeldDraft(storage, userId, sessionId, inMemoryPayload, now);
+    return { action: "keep_in_memory", send: false, claim: true, savedAt: written.savedAt ?? null };
+  }
+  if (alreadyClaimed) return { action: "idle", send: false, claim: false };
+  if (!storage) return { action: "unavailable", send: false, claim: false };
+  const draft = readHeldDraft(storage, userId, sessionId, now);
+  // An empty look must not stick. Another tab can save a hold later.
+  if (!draft) return { action: "none", send: false, claim: false };
+  return { action: "restore_to_input", send: false, claim: true, draft };
 }
