@@ -163,12 +163,18 @@ import {
 import { retainStreamingOnError } from "@/lib/retainStreamingOnError";
 import { chatTurnErrorMessage, shouldCheckBackForCompanionReply } from "@/lib/chatTurnError";
 import {
+  browserLocalStorage,
+  clearHeldDraftIfUnchanged,
   composerTerminalReason,
+  consumeHeldDraftForOpen,
   createComposerGate,
+  dropAppliedComposerRestore,
+  heldDraftStorageKey,
   isConversationBusyError,
   liveTurnStillBlocking,
   omitTurnMessages,
   sessionControlsLocked,
+  writeHeldDraft,
 } from "@/lib/heldChatSend";
 import HeldOutgoingBubble from "@/components/chat/HeldOutgoingBubble";
 import {
@@ -268,8 +274,40 @@ export default function Chat() {
   const justCreatedSessionIdRef = useRef(null);
   const sendingRef = useRef(false);
   const handleSendMessageRef = useRef(null);
+  const heldDraftUserIdRef = useRef(null);
+  heldDraftUserIdRef.current = authUser?.id || null;
+  const claimedHeldDraftsRef = useRef(new Set());
+  const heldDraftStampRef = useRef(new Map());
+  const [composerRestore, setComposerRestore] = useState(null);
+  const handleHeldDraftRestored = useCallback((draft) => {
+    setComposerRestore((prev) => dropAppliedComposerRestore(prev, draft));
+  }, []);
+  const handleRestoredDraftSettled = useCallback((draft) => {
+    const userId = heldDraftUserIdRef.current;
+    if (!userId || !draft?.sessionId) return;
+    clearHeldDraftIfUnchanged(browserLocalStorage(), userId, draft.sessionId, draft.savedAt);
+    setComposerRestore((prev) => dropAppliedComposerRestore(prev, draft));
+  }, []);
   const gateRef = useRef(null);
-  if (gateRef.current == null) gateRef.current = createComposerGate();
+  if (gateRef.current == null) {
+    gateRef.current = createComposerGate({
+      onHeldChange(sessionId, payload) {
+        const userId = heldDraftUserIdRef.current;
+        if (!userId || !sessionId) return;
+        const storage = browserLocalStorage();
+        if (payload == null) {
+          const savedAt = heldDraftStampRef.current.get(sessionId);
+          heldDraftStampRef.current.delete(sessionId);
+          if (savedAt != null) clearHeldDraftIfUnchanged(storage, userId, sessionId, savedAt);
+          return;
+        }
+        const written = writeHeldDraft(storage, userId, sessionId, payload);
+        if (written.ok && written.savedAt != null) {
+          heldDraftStampRef.current.set(sessionId, written.savedAt);
+        }
+      },
+    });
+  }
   const [gateSnap, setGateSnap] = useState(() => gateRef.current.snapshot());
   const syncGate = () => setGateSnap(gateRef.current.snapshot());
   const busyRetryTokenRef = useRef(0);
@@ -641,6 +679,44 @@ export default function Chat() {
     if (payload == null || payload === "") return;
     void handleSendMessageRef.current?.(payload);
   }, [isLoading, awaitingCompanion, activeSession?.id, activeSession?.messages, gateSnap]);
+
+  // A reload drops the in-memory hold. Put the saved text back in the send
+  // box instead of auto-sending — her reply may already be in the thread.
+  // This effect is registered after the flush above so a hold that just
+  // sent is already gone from the live gate and is not written back.
+  useEffect(() => {
+    const sid = activeSession?.id;
+    const userId = authUser?.id;
+    if (!sid || !userId) return;
+    const token = heldDraftStorageKey(userId, sid);
+    if (!token) return;
+    const liveHeld = gateRef.current.snapshot().heldBySession[sid];
+    const result = consumeHeldDraftForOpen(browserLocalStorage(), {
+      userId,
+      sessionId: sid,
+      inMemoryPayload: liveHeld ? liveHeld.payload : null,
+      alreadyClaimed: claimedHeldDraftsRef.current.has(token),
+    });
+    if (result.claim) claimedHeldDraftsRef.current.add(token);
+    if (result.action === "keep_in_memory" && result.savedAt != null) {
+      heldDraftStampRef.current.set(sid, result.savedAt);
+    }
+    if (result.action === "restore_to_input" && result.draft) {
+      const draft = result.draft;
+      setComposerRestore((prev) =>
+        prev?.token === token
+          ? prev
+          : {
+              token,
+              sessionId: sid,
+              savedAt: draft.savedAt,
+              text: draft.text,
+              attachments: draft.attachments,
+              droppedAttachmentCount: draft.droppedAttachmentCount,
+            },
+      );
+    }
+  }, [activeSession?.id, authUser?.id, gateSnap]);
 
   // Helper: speak a message using ElevenLabs with emotional adjustment
   const speakMessage = useCallback((content, charName) => {
@@ -3532,6 +3608,7 @@ Return JSON:
               <div className="flex-shrink-0" data-testid="chat-input-slot">
                 <ChatPdfBar sessionId={activeSession.id} revision={pdfRevision} />
                 <ChatInput
+                  key={activeSession.id}
                   onSend={handleSendMessage}
                   isLoading={composerBusy}
                   composeWhileBusy
@@ -3539,6 +3616,11 @@ Return JSON:
                   allowEmpty={activeSession?.mode === "group" || activeSession?.mode === "solo"}
                   sessionId={activeSession.id}
                   onPdfStored={() => setPdfRevision((n) => n + 1)}
+                  restoreDraft={
+                    composerRestore?.sessionId === activeSession.id ? composerRestore : null
+                  }
+                  onRestoreDraftApplied={handleHeldDraftRestored}
+                  onRestoredDraftSettled={handleRestoredDraftSettled}
                 />
               </div>
             </div>

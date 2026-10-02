@@ -1,4 +1,5 @@
-import { useState, useRef, useLayoutEffect } from "react";
+import { useState, useRef, useLayoutEffect, useEffect } from "react";
+import { mergeDraftIntoComposer } from "@/lib/heldChatSend";
 import { Send, Zap, Paperclip, Loader, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { base44 } from "@/api/base44Client";
@@ -23,6 +24,9 @@ export default function ChatInput({
   sessionId = null,
   onPdfStored,
   composeWhileBusy = false,
+  restoreDraft = null,
+  onRestoreDraftApplied,
+  onRestoredDraftSettled,
 }) {
   // A reply can still be in flight. The follow-up is held by the page
   // instead of locking the box, so typing and Send stay available.
@@ -32,7 +36,67 @@ export default function ChatInput({
   const [pdfs, setPdfs] = useState([]);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [restoreNote, setRestoreNote] = useState("");
   const textareaRef = useRef(null);
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
+  const appliedRestoreRef = useRef(null);
+  const restoredDraftRef = useRef(null);
+  const onRestoreDraftAppliedRef = useRef(onRestoreDraftApplied);
+  onRestoreDraftAppliedRef.current = onRestoreDraftApplied;
+  const onRestoredDraftSettledRef = useRef(onRestoredDraftSettled);
+  onRestoredDraftSettledRef.current = onRestoredDraftSettled;
+  const pdfsRef = useRef(pdfs);
+  pdfsRef.current = pdfs;
+  // Removal settles only after the new list commits. Doing it inside the
+  // state updater can clear the saved draft when React replays that updater
+  // and then drops the update.
+  const emptySettleAfterCommitRef = useRef(false);
+
+  const settleRestoredDraft = () => {
+    const draft = restoredDraftRef.current;
+    if (!draft) return;
+    restoredDraftRef.current = null;
+    onRestoredDraftSettledRef.current?.(draft);
+  };
+
+  const settleIfComposerEmpty = (text, nextAttachments, nextPdfs) => {
+    if (!restoredDraftRef.current) return;
+    const attachmentsLeft = Array.isArray(nextAttachments) ? nextAttachments.length : 0;
+    const pdfsLeft = Array.isArray(nextPdfs) ? nextPdfs.length : 0;
+    if (String(text || "").trim() || attachmentsLeft || pdfsLeft) return;
+    settleRestoredDraft();
+  };
+
+  // A reload puts a held follow-up back in this box. It is not sent.
+  // Text already in the box is kept; the saved line is appended when it
+  // is not already there. The saved copy stays until this box sends or
+  // is cleared.
+  useEffect(() => {
+    if (!restoreDraft?.token) return;
+    if (appliedRestoreRef.current === restoreDraft.token) return;
+    appliedRestoreRef.current = restoreDraft.token;
+    restoredDraftRef.current = restoreDraft;
+    const merged = mergeDraftIntoComposer(
+      { text: valueRef.current, attachments: attachmentsRef.current },
+      restoreDraft,
+    );
+    if (merged.placedText) setValue(merged.text);
+    if (merged.placedAttachment) setAttachments(merged.attachments);
+    if (merged.note) setRestoreNote(merged.note);
+    onRestoreDraftAppliedRef.current?.(restoreDraft);
+    const nextText = merged.placedText ? merged.text : valueRef.current;
+    const nextAttachments = merged.placedAttachment ? merged.attachments : attachmentsRef.current;
+    settleIfComposerEmpty(nextText, nextAttachments, pdfsRef.current);
+  }, [restoreDraft]);
+
+  useEffect(() => {
+    if (!emptySettleAfterCommitRef.current) return;
+    emptySettleAfterCommitRef.current = false;
+    settleIfComposerEmpty(value, attachments, pdfs);
+  }, [value, attachments, pdfs]);
 
   // Grow the textarea to fit its content (up to MAX_INPUT_HEIGHT, then it
   // scrolls internally). Runs on every value change — including the reset to ""
@@ -65,11 +129,16 @@ export default function ChatInput({
       ].filter(Boolean),
     };
     if (!message.attachments.length) message.attachments = undefined;
-    
+
+    // Drop the restored copy before this send is recorded. A busy hold of
+    // the same text keeps the previous savedAt, and settling afterward
+    // would delete that live hold.
+    settleRestoredDraft();
     onSend(message);
     setValue("");
     setAttachments([]);
     setPdfs([]);
+    setRestoreNote("");
   };
 
   const handlePdfUpload = async (e) => {
@@ -119,6 +188,7 @@ export default function ChatInput({
   };
 
   const removePdf = async (pdf) => {
+    emptySettleAfterCommitRef.current = true;
     setPdfs((prev) => prev.filter((item) => item.localId !== pdf.localId));
     if (pdf.id) {
       try {
@@ -191,6 +261,16 @@ export default function ChatInput({
         </div>
       )}
 
+      {restoreNote ? (
+        <p
+          data-testid="held-draft-restored"
+          role="status"
+          className="font-mono text-[10px] leading-snug text-primary/60"
+        >
+          {restoreNote}
+        </p>
+      ) : null}
+
       {attachments.length > 0 && (
         <div className="flex gap-2 flex-wrap">
           {attachments.map((att, idx) => (
@@ -201,7 +281,11 @@ export default function ChatInput({
                 <div className="w-full h-full flex items-center justify-center text-[10px] text-primary/50">🔊</div>
               )}
               <button
-                onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== idx))}
+                type="button"
+                onClick={() => {
+                  emptySettleAfterCommitRef.current = true;
+                  setAttachments((prev) => prev.filter((_, i) => i !== idx));
+                }}
                 className="absolute -top-1 -right-1 w-4 h-4 bg-destructive text-white text-[8px] flex items-center justify-center rounded-full"
               >
                 ×
@@ -253,7 +337,11 @@ export default function ChatInput({
           <textarea
             ref={textareaRef}
             value={value}
-            onChange={(e) => setValue(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value;
+              setValue(next);
+              settleIfComposerEmpty(next, attachmentsRef.current, pdfsRef.current);
+            }}
             onKeyDown={handleKeyDown}
             placeholder={allowEmpty ? "Message... (or send empty to continue story)" : "Ask me anything (I'm an AI and can make mistakes)..."}
             disabled={blockComposer}
