@@ -29,6 +29,45 @@ Checkpoints and tokenizer outputs (`out/`, `data/anima_tokens/`, `data/anima_cor
 3. `python training/phase2/sft.py` → `python training/phase3/dpo.py`
 4. `python server/export_web.py` → upload `out/anima-model.bin` in Settings → Model Tutor.
 
+Steward corrections (Settings → Model Tutor → **Download for retraining**) land in
+`data/sft/steward_lessons.jsonl` and `data/prefs/steward_preferences.jsonl`; both
+Phase 2 and Phase 3 fold them in automatically alongside `anima_dialogues.jsonl` /
+`anima_preferences.jsonl` whenever the files exist — no extra flag needed.
+
+## Quick CPU smoke test (no GPU)
+
+The defaults above target a free Colab/Kaggle T4. To sanity-check the whole
+pipeline on a laptop or a GPU-less CI/sandbox VM in minutes instead of hours,
+every Phase 1–3 hyperparameter can be overridden with an env var — unset vars
+keep the Colab-sized defaults, so nothing changes for a normal run:
+
+```bash
+# Phase 1 — shrink the model and the schedule
+ANIMA_TRAIN_BLOCK_SIZE=512 ANIMA_TRAIN_N_LAYER=4 ANIMA_TRAIN_N_HEAD=4 \
+ANIMA_TRAIN_N_EMBD=128 ANIMA_TRAIN_BATCH_SIZE=8 ANIMA_TRAIN_GRAD_ACCUM_STEPS=1 \
+ANIMA_TRAIN_MAX_ITERS=700 ANIMA_TRAIN_WARMUP_ITERS=30 \
+ANIMA_TRAIN_EVAL_INTERVAL=100 ANIMA_TRAIN_EVAL_ITERS=10 \
+  python training/phase1/data_pipeline.py && python training/phase1/train.py
+
+# Phase 2 — fewer epochs/smaller batches on the same tiny checkpoint
+ANIMA_SFT_EPOCHS=10 ANIMA_SFT_BATCH_SIZE=8 ANIMA_SFT_LR=3e-4 python training/phase2/sft.py
+
+# Phase 3
+ANIMA_DPO_EPOCHS=3 ANIMA_DPO_BATCH_SIZE=4 python training/phase3/dpo.py
+
+python server/export_web.py
+```
+
+On a 4-core CPU VM with ~80K tokens of corpus, this ran a real ~3M-parameter
+model through all three phases (loss falling 9.0 → 3.8 in Phase 1, DPO
+pair-accuracy reaching 1.0) in well under 10 minutes total, and the exported
+`anima-model.bin` served real completions from `server/server.py`. Point
+`ANIMA_SFT_DATA` / `ANIMA_DPO_DATA` / `ANIMA_SFT_OUT_DIR` / `ANIMA_DPO_OUT_DIR`
+(and friends — see the top of each script) at a scratch directory first if
+you don't want to touch `data/sft/anima_dialogues.jsonl` or
+`data/prefs/anima_preferences.jsonl`. This is a correctness smoke test, not a
+substitute for a real corpus and a GPU — the resulting model is not fluent.
+
 ## Why replies used to come out as incomplete thoughts
 
 The first cut of this pipeline had a 256-token window, and three things

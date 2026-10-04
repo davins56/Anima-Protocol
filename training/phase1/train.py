@@ -37,6 +37,33 @@ class GPTConfig:
     eval_interval: int = 250
     eval_iters: int = 20
 
+    @classmethod
+    def from_env(cls, vocab_size: int) -> "GPTConfig":
+        """Build a config from the defaults above, letting ANIMA_TRAIN_* env
+        vars shrink the model/schedule for a CPU-only smoke run (no GPU) —
+        see training/README.md. Unset vars keep the Colab-sized defaults, so
+        a plain `python training/phase1/train.py` is unaffected."""
+        overrides = {
+            "block_size": ("ANIMA_TRAIN_BLOCK_SIZE", int),
+            "n_layer": ("ANIMA_TRAIN_N_LAYER", int),
+            "n_head": ("ANIMA_TRAIN_N_HEAD", int),
+            "n_embd": ("ANIMA_TRAIN_N_EMBD", int),
+            "dropout": ("ANIMA_TRAIN_DROPOUT", float),
+            "batch_size": ("ANIMA_TRAIN_BATCH_SIZE", int),
+            "grad_accum_steps": ("ANIMA_TRAIN_GRAD_ACCUM_STEPS", int),
+            "max_iters": ("ANIMA_TRAIN_MAX_ITERS", int),
+            "lr": ("ANIMA_TRAIN_LR", float),
+            "warmup_iters": ("ANIMA_TRAIN_WARMUP_ITERS", int),
+            "eval_interval": ("ANIMA_TRAIN_EVAL_INTERVAL", int),
+            "eval_iters": ("ANIMA_TRAIN_EVAL_ITERS", int),
+        }
+        kwargs = {"vocab_size": vocab_size}
+        for field, (env_name, cast) in overrides.items():
+            raw = os.environ.get(env_name, "").strip()
+            if raw:
+                kwargs[field] = cast(raw)
+        return cls(**kwargs)
+
 
 def load_tokens(tok_dir: str):
     ids = np.fromfile(os.path.join(tok_dir, "train_ids.bin"), dtype=np.uint16)
@@ -199,7 +226,7 @@ def train(tok_dir=None, out_dir=None):
     ids = load_tokens(tok_dir)
     with open(os.path.join(tok_dir, "meta.json"), encoding="utf-8") as f:
         meta = json.load(f)
-    cfg = GPTConfig(vocab_size=meta["vocab_size"])
+    cfg = GPTConfig.from_env(meta["vocab_size"])
     train_ids, val_ids = train_val_split(ids, cfg)
     print(f"device={device}  tokens={len(ids):,}  vocab={cfg.vocab_size}")
 

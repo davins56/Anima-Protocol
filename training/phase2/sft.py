@@ -25,17 +25,22 @@ from train import GPT, GPTConfig  # reuse the Phase 1 model
 
 # ----------------------------- Config -----------------------------
 
-SFT_DATA = str(ROOT / "data" / "sft" / "anima_dialogues.jsonl")
+# ANIMA_SFT_* / ANIMA_TOK_DIR let a CPU-only smoke run (training/README.md)
+# point at a small demo dataset and fewer epochs without touching the real
+# data/sft/anima_dialogues.jsonl. Unset vars keep the Colab-sized defaults.
+SFT_DATA = os.environ.get("ANIMA_SFT_DATA", "").strip() or str(ROOT / "data" / "sft" / "anima_dialogues.jsonl")
 # Corrections taught in the app (Settings -> Model Tutor -> download). Optional.
-STEWARD_SFT_DATA = str(ROOT / "data" / "sft" / "steward_lessons.jsonl")
-CKPT_PATH = str(ROOT / "out" / "anima-tiny" / "ckpt.pt")
+STEWARD_SFT_DATA = (
+    os.environ.get("ANIMA_SFT_STEWARD_DATA", "").strip() or str(ROOT / "data" / "sft" / "steward_lessons.jsonl")
+)
+CKPT_PATH = os.environ.get("ANIMA_SFT_CKPT", "").strip() or str(ROOT / "out" / "anima-tiny" / "ckpt.pt")
 # ANIMA_TOK_DIR lets a hosted model server keep the tokenizer on a volume.
 TOK_DIR = os.environ.get("ANIMA_TOK_DIR", "").strip() or str(ROOT / "data" / "anima_tokens")
-OUT_DIR = str(ROOT / "out" / "anima-sft")
-MAX_EXAMPLES = 20000
-EPOCHS = 3
-BATCH_SIZE = 32
-LR = 1e-4
+OUT_DIR = os.environ.get("ANIMA_SFT_OUT_DIR", "").strip() or str(ROOT / "out" / "anima-sft")
+MAX_EXAMPLES = int(os.environ.get("ANIMA_SFT_MAX_EXAMPLES", "20000"))
+EPOCHS = int(os.environ.get("ANIMA_SFT_EPOCHS", "3"))
+BATCH_SIZE = int(os.environ.get("ANIMA_SFT_BATCH_SIZE", "32"))
+LR = float(os.environ.get("ANIMA_SFT_LR", "1e-4"))
 
 _SPECIAL_STRINGS = ("<|endoftext|>", "<|user|>", "<|anima|>")
 

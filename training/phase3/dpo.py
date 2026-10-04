@@ -34,16 +34,21 @@ from train import GPT, GPTConfig
 
 # ----------------------------- Config -----------------------------
 
-PREF_DATA = str(ROOT / "data" / "prefs" / "anima_preferences.jsonl")
+# ANIMA_DPO_* let a CPU-only smoke run (training/README.md) point at a small
+# demo preference set and fewer steps without touching the real
+# data/prefs/anima_preferences.jsonl. Unset vars keep the Colab-sized defaults.
+PREF_DATA = os.environ.get("ANIMA_DPO_DATA", "").strip() or str(ROOT / "data" / "prefs" / "anima_preferences.jsonl")
 # Corrections taught in the app, as chosen/rejected pairs. Optional.
-STEWARD_PREF_DATA = str(ROOT / "data" / "prefs" / "steward_preferences.jsonl")
-SFT_CKPT = str(ROOT / "out" / "anima-sft" / "ckpt.pt")
-OUT_DIR3 = str(ROOT / "out" / "anima-dpo")
-MAX_PAIRS = 5000
-EPOCHS = 1
-BATCH_SIZE = 8
-LR = 5e-6          # DPO needs a much smaller LR than SFT
-BETA = 0.1          # KL-penalty strength; lower = more aggressive shift
+STEWARD_PREF_DATA = (
+    os.environ.get("ANIMA_DPO_STEWARD_DATA", "").strip() or str(ROOT / "data" / "prefs" / "steward_preferences.jsonl")
+)
+SFT_CKPT = os.environ.get("ANIMA_DPO_SFT_CKPT", "").strip() or str(ROOT / "out" / "anima-sft" / "ckpt.pt")
+OUT_DIR3 = os.environ.get("ANIMA_DPO_OUT_DIR", "").strip() or str(ROOT / "out" / "anima-dpo")
+MAX_PAIRS = int(os.environ.get("ANIMA_DPO_MAX_PAIRS", "5000"))
+EPOCHS = int(os.environ.get("ANIMA_DPO_EPOCHS", "1"))
+BATCH_SIZE = int(os.environ.get("ANIMA_DPO_BATCH_SIZE", "8"))
+LR = float(os.environ.get("ANIMA_DPO_LR", "5e-6"))  # DPO needs a much smaller LR than SFT
+BETA = float(os.environ.get("ANIMA_DPO_BETA", "0.1"))  # KL-penalty strength; lower = more aggressive shift
 MAX_NEW_TOKENS_EVAL = 200
 
 
