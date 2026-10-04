@@ -29,6 +29,17 @@ Checkpoints and tokenizer outputs (`out/`, `data/anima_tokens/`, `data/anima_cor
 3. `python training/phase2/sft.py` → `python training/phase3/dpo.py`
 4. `python server/export_web.py` → upload `out/anima-model.bin` in Settings → Model Tutor.
 
+The defaults (`python training/phase1/train.py`) are the T4 recipe: ~34M
+parameters, 1024-token window, 6000 steps, learning rate `5e-4`, warmup 300
+steps (5%). A CPU box can run a smaller shape without editing the file:
+
+```bash
+python training/phase1/train.py --max-iters 400 --batch-size 4 --block-size 256 \
+  --n-layer 4 --n-head 4 --n-embd 256 --eval-interval 50
+```
+
+`--max-iters` rescales warmup to 5% unless you also pass `--warmup-iters`.
+
 ## Why replies used to come out as incomplete thoughts
 
 The first cut of this pipeline had a 256-token window, and three things

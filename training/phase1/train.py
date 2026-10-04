@@ -32,8 +32,10 @@ class GPTConfig:
     batch_size: int = 16
     grad_accum_steps: int = 4  # effective batch 64 x 1024 tokens
     max_iters: int = 6000
+    # From-scratch pretrain, not a LoRA on a foundation model — 5e-4 is the
+    # right scale here. LoRA SFT on Ministral uses 2e-4 (see unsloth_sft.py).
     lr: float = 5e-4
-    warmup_iters: int = 200
+    warmup_iters: int = 300  # 5% of max_iters; CLI rescales when max_iters changes
     eval_interval: int = 250
     eval_iters: int = 20
 
@@ -192,14 +194,22 @@ def estimate_loss(model, train_ids, val_ids, cfg: GPTConfig, device):
     return out
 
 
-def train(tok_dir=None, out_dir=None):
+def train(tok_dir=None, out_dir=None, overrides=None):
     tok_dir = tok_dir or str(ROOT / "data" / "anima_tokens")
     out_dir = out_dir or str(ROOT / "out" / "anima-tiny")
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    if device == "cpu":
+        torch.set_num_threads(os.cpu_count() or 1)
     ids = load_tokens(tok_dir)
     with open(os.path.join(tok_dir, "meta.json"), encoding="utf-8") as f:
         meta = json.load(f)
     cfg = GPTConfig(vocab_size=meta["vocab_size"])
+    for key, value in (overrides or {}).items():
+        if not hasattr(cfg, key):
+            raise SystemExit(f"unknown training override: {key}")
+        setattr(cfg, key, value)
+    if cfg.n_embd % cfg.n_head != 0:
+        raise SystemExit(f"n_embd ({cfg.n_embd}) must be divisible by n_head ({cfg.n_head})")
     train_ids, val_ids = train_val_split(ids, cfg)
     print(f"device={device}  tokens={len(ids):,}  vocab={cfg.vocab_size}")
 
@@ -249,8 +259,47 @@ def train(tok_dir=None, out_dir=None):
     return model
 
 
+def _cli_overrides(argv=None):
+    """Flags default to None so an omitted flag keeps the T4 recipe in GPTConfig."""
+    import argparse
+    parser = argparse.ArgumentParser(description="Phase 1 from-scratch Anima GPT")
+    parser.add_argument("--max-iters", type=int, default=None)
+    parser.add_argument("--batch-size", type=int, default=None)
+    parser.add_argument("--grad-accum", type=int, default=None)
+    parser.add_argument("--block-size", type=int, default=None)
+    parser.add_argument("--n-layer", type=int, default=None)
+    parser.add_argument("--n-head", type=int, default=None)
+    parser.add_argument("--n-embd", type=int, default=None)
+    parser.add_argument("--lr", type=float, default=None)
+    parser.add_argument("--warmup-iters", type=int, default=None)
+    parser.add_argument("--eval-interval", type=int, default=None)
+    parser.add_argument("--eval-iters", type=int, default=None)
+    args = parser.parse_args(argv)
+    overrides = {}
+    mapping = {
+        "max_iters": args.max_iters,
+        "batch_size": args.batch_size,
+        "grad_accum_steps": args.grad_accum,
+        "block_size": args.block_size,
+        "n_layer": args.n_layer,
+        "n_head": args.n_head,
+        "n_embd": args.n_embd,
+        "lr": args.lr,
+        "warmup_iters": args.warmup_iters,
+        "eval_interval": args.eval_interval,
+        "eval_iters": args.eval_iters,
+    }
+    for key, value in mapping.items():
+        if value is not None:
+            overrides[key] = value
+    # Keep the 5% warmup when the run is shorter than the 6000-step default.
+    if "max_iters" in overrides and "warmup_iters" not in overrides:
+        overrides["warmup_iters"] = max(1, int(round(overrides["max_iters"] * 0.05)))
+    return overrides
+
+
 if __name__ == "__main__":
-    train()
+    train(overrides=_cli_overrides())
 
 # Sample generation after training:
 #   model = train()

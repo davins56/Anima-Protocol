@@ -76,9 +76,12 @@ def main() -> None:
     parser.add_argument("--out", default=DEFAULT_OUT)
     parser.add_argument("--max-seq-len", type=int, default=4096)
     parser.add_argument("--epochs", type=float, default=1.0)
+    # LoRA SFT on a pretrained base. Full fine-tune would use ~1e-5–2e-5.
     parser.add_argument("--lr", type=float, default=2e-4)
+    # 2 × 8 = effective batch 16. Drop --batch-size to 1 on a 12 GB card.
     parser.add_argument("--batch-size", type=int, default=2)
-    parser.add_argument("--grad-accum", type=int, default=4)
+    parser.add_argument("--grad-accum", type=int, default=8)
+    parser.add_argument("--warmup-ratio", type=float, default=0.05)
     parser.add_argument("--lora-r", type=int, default=16)
     args = parser.parse_args()
 
@@ -157,6 +160,8 @@ def main() -> None:
             gradient_accumulation_steps=args.grad_accum,
             num_train_epochs=args.epochs,
             learning_rate=args.lr,
+            lr_scheduler_type="cosine",
+            warmup_ratio=args.warmup_ratio,
             logging_steps=10,
             save_strategy="epoch",
             eval_strategy="epoch" if eval_dataset is not None else "no",
@@ -164,7 +169,7 @@ def main() -> None:
             # crashes at the first step.
             bf16=torch.cuda.is_bf16_supported(),
             fp16=not torch.cuda.is_bf16_supported(),
-            optim="adamw_8bit",
+            optim="paged_adamw_8bit",
             report_to=[],
         ),
     )

@@ -62,10 +62,13 @@ def main() -> None:
     parser.add_argument("--out", default=DEFAULT_OUT)
     parser.add_argument("--max-seq-len", type=int, default=4096)
     parser.add_argument("--epochs", type=float, default=1.0)
+    # Much smaller than SFT LoRA (2e-4). DPO only nudges the policy.
     parser.add_argument("--lr", type=float, default=5e-6)
     parser.add_argument("--beta", type=float, default=0.1, help="DPO temperature")
+    # 1 × 16 = effective batch 16. DPO holds two sequences, so the microbatch stays 1.
     parser.add_argument("--batch-size", type=int, default=1)
-    parser.add_argument("--grad-accum", type=int, default=8)
+    parser.add_argument("--grad-accum", type=int, default=16)
+    parser.add_argument("--warmup-ratio", type=float, default=0.05)
     parser.add_argument("--lora-r", type=int, default=16)
     args = parser.parse_args()
 
@@ -127,13 +130,15 @@ def main() -> None:
             gradient_accumulation_steps=args.grad_accum,
             num_train_epochs=args.epochs,
             learning_rate=args.lr,
+            lr_scheduler_type="cosine",
+            warmup_ratio=args.warmup_ratio,
             logging_steps=5,
             save_strategy="epoch",
             # T4 / V100 have no bf16; Ampere+ does. Picking the wrong one
             # crashes at the first step.
             bf16=torch.cuda.is_bf16_supported(),
             fp16=not torch.cuda.is_bf16_supported(),
-            optim="adamw_8bit",
+            optim="paged_adamw_8bit",
             report_to=[],
         ),
     )
