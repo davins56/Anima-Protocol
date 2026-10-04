@@ -150,6 +150,13 @@ import type {
   IntimacyTurnResult,
 } from "../lib/intimacyTypes";
 
+type CompanionFlavorState = [
+  Awaited<ReturnType<typeof loadEvolution>> | null | undefined,
+  Awaited<ReturnType<typeof loadRelationshipState>>,
+  Awaited<ReturnType<typeof loadArcState>>,
+];
+const EMPTY_FLAVOR_STATE: CompanionFlavorState = [null, null, null];
+
 const router = Router();
 
 // Only throttle the expensive LLM stream. Lightweight context/memory GETs must
@@ -1667,8 +1674,8 @@ router.post("/messages", async (req, res) => {
       ? String(body.assistant_character_id)
       : null) ||
     (mode !== "group" && characterIds[0] ? characterIds[0] : null);
-  const hintedStatePromise = hintedCharId
-    ? optionalChatContext(
+  const hintedStatePromise: Promise<CompanionFlavorState> = hintedCharId
+    ? optionalChatContext<CompanionFlavorState>(
         "hinted_state",
         () =>
           Promise.all([
@@ -1676,9 +1683,9 @@ router.post("/messages", async (req, res) => {
             loadRelationshipState(hintedCharId, userId),
             loadArcState(hintedCharId, userId),
           ]),
-        [null, null, null] as const,
+        EMPTY_FLAVOR_STATE,
       )
-    : Promise.resolve([null, null, null] as const);
+    : Promise.resolve(EMPTY_FLAVOR_STATE);
   const [
     characters,
     memories,
@@ -1797,7 +1804,7 @@ router.post("/messages", async (req, res) => {
   const [activeEvolutionRow, activeRelationshipState, activeArcState] =
     activeCharacterId && hintedCharId && activeCharacterId === hintedCharId
       ? hintedState
-      : await optionalChatContext(
+      : await optionalChatContext<CompanionFlavorState>(
           "active_state",
           () =>
             Promise.all([
@@ -1811,7 +1818,7 @@ router.post("/messages", async (req, res) => {
                 ? loadArcState(activeCharacterId, userId)
                 : Promise.resolve(null),
             ]),
-          [null, null, null] as const,
+          EMPTY_FLAVOR_STATE,
         );
   synchroState = null;
   companionAffect = null;
