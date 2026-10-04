@@ -293,6 +293,21 @@ export const LOCAL_PROMPT_SAFETY_MARGIN_TOKENS = 256;
  */
 export const LOCAL_PROMPT_MAX_TOKENS = 1_240;
 
+/**
+ * Header over the remembered facts. The old header told the model to show it
+ * knew the person, and a small model did that every turn: it recited
+ * memories instead of answering the message in front of it.
+ */
+export const MEMORY_BACKGROUND_LINE =
+  "Background from past conversations, not a topic: use a detail only when it fits what they just said, and never list these back.";
+
+/**
+ * Most remembered facts one companion turn carries. Up to 12 facts drowned
+ * the user's words on the 0.5B local model, so it answered the memories
+ * instead. The best-scoring facts for this message still come first.
+ */
+export const COMPANION_MEMORY_TOP_K = 4;
+
 /** Prompt tokens that still leave room for a full local decode inside n_ctx. */
 export function localPromptHardMaxTokens(
   numPredict = OLLAMA_NUM_PREDICT_CAP,
@@ -1286,7 +1301,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
 
   const memConfig = synchroState
     ? synchroToMemoryConfig(synchroState)
-    : { topK: 12, preferTypes: undefined };
+    : { topK: COMPANION_MEMORY_TOP_K, preferTypes: undefined };
   const speakerMemories =
     mainChar?.id != null && String(mainChar.id)
       ? memories.filter((m) => String(m.characterId) === String(mainChar.id))
@@ -1295,7 +1310,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     buildMemorySummaryBlock(speakerMemories, characterNames),
     formatMemoriesForPrompt(
       retrieveRelevantMemories(speakerMemories, {
-        topK: memConfig.topK,
+        topK: Math.min(memConfig.topK, COMPANION_MEMORY_TOP_K),
         contextHint: content,
         preferTypes: memConfig.preferTypes,
       }),
@@ -1305,7 +1320,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
   ]);
   const memoryText = memoryBody
     ? joinPromptParts([
-        "Remember this person through the persistent memories below. Use those details naturally to show you genuinely know and understand them.",
+        MEMORY_BACKGROUND_LINE,
         memoryBody,
       ])
     : "";
@@ -1510,7 +1525,8 @@ function isLocalClosingInstruction(content: string): boolean {
  * the clock, and mood — plus the answer-last
  * line (and the avoid-repeat line, when a retry added one) is bracketed at
  * the start of the final user turn. Guardrails stay in the system message.
- * The user's own text stays last.
+ * A blank line sets the user's own text apart from those notes, and it
+ * stays last.
  * Cloud providers keep the separate system turns.
  */
 export function messagesForLocalOllama<T extends { role: string; content: string }>(
@@ -1543,7 +1559,7 @@ export function messagesForLocalOllama<T extends { role: string; content: string
     const folded = {
       ...last,
       role: "user" as const,
-      content: `${notes.join("\n")}\n${last.content}`,
+      content: `${notes.join("\n")}\n\n${last.content}`,
     };
     return [...messages.slice(0, start), folded as T];
   }
@@ -1563,7 +1579,7 @@ export function messagesForLocalOllama<T extends { role: string; content: string
   const folded = {
     ...last,
     role: "user" as const,
-    content: notes.length > 0 ? `${notes.join("\n")}\n${last.content}` : last.content,
+    content: notes.length > 0 ? `${notes.join("\n")}\n\n${last.content}` : last.content,
   };
   const out: T[] = [];
   if (stable) out.push({ role: "system", content: stable } as T);
@@ -2444,7 +2460,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
       },
       {
         rank: 110,
-        text: "Remember this person through the persistent memories above. Use those details naturally to show you genuinely know and understand them.",
+        text: MEMORY_BACKGROUND_LINE,
       },
       { rank: 110, text: LOYALTY_GUARDRAIL },
       {
