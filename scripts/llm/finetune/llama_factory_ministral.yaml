@@ -36,14 +36,15 @@ save_steps: 200
 plot_loss: true
 overwrite_output_dir: true
 
-### train
-per_device_train_batch_size: 1
+### train — same baseline as unsloth_sft.py (effective batch 16, cosine, 5% warmup)
+per_device_train_batch_size: 2
 gradient_accumulation_steps: 8
 learning_rate: 2.0e-4
 num_train_epochs: 1.0
 lr_scheduler_type: cosine
-warmup_ratio: 0.03
-bf16: true
+warmup_ratio: 0.05
+optim: paged_adamw_8bit
+bf16: true          # set fp16: true instead on T4 / V100
 ddp_timeout: 180000000
 quantization_bit: 4
 
