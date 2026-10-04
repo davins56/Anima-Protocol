@@ -119,10 +119,12 @@ function heuristicScore(
 /**
  * Words of three or more letters. Splitting on whitespace alone kept
  * punctuation, so "breakfast?" never matched a fact about "breakfast".
+ * Curly apostrophes are folded to ASCII so "can't" and "can’t" match.
  */
 function lexicalTokens(text: string): string[] {
   return text
     .toLowerCase()
+    .replace(/[’‘ʼ]/g, "'")
     .split(/[^\p{L}\p{N}']+/u)
     .filter((t) => t.length > 2);
 }
@@ -133,8 +135,9 @@ const LEXICAL_WEIGHT = 0.5;
 function lexicalOverlap(query: string, text: string): number {
   const q = new Set(lexicalTokens(query));
   if (q.size === 0) return 0;
-  const tokens = lexicalTokens(text);
-  if (tokens.length === 0) return 0;
+  // One repeated word must not earn the boost once per copy.
+  const tokens = new Set(lexicalTokens(text));
+  if (tokens.size === 0) return 0;
   let hits = 0;
   for (const t of tokens) {
     if (q.has(t)) hits += 1;
@@ -275,6 +278,11 @@ export function formatMemoriesForPrompt(
   return sections.join("\n\n");
 }
 
+/**
+ * Rolling bond summary for each loaded record, not the saved fact list.
+ * Summary is capped at 400 characters and resonance notes at 250. Facts
+ * are chosen separately by retrieveRelevantMemories.
+ */
 export function buildMemorySummaryBlock(
   memories: CompanionMemoryRecord[],
   characterNames: Map<string, string>,
