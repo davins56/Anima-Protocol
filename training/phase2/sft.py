@@ -145,26 +145,33 @@ def fit_conversation(messages, block_size, reserve=0):
 def load_dataset():
     examples = []
     dropped = 0
-    with open(SFT_DATA, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            conv = json.loads(line)["messages"]
-            if not any(m["role"] in ("anima", "assistant") for m in conv):
-                continue
-            # A conversation longer than the window used to be thrown away, so
-            # the model never saw a long, complete reply and learned to end
-            # early. Keep the tail of the conversation instead.
-            ids, targets, kept = fit_conversation(conv, cfg.block_size)
-            if len(ids) < 10 or len(ids) > cfg.block_size:
-                dropped += 1
-                continue
-            roles = {m["role"] for m in kept}
-            if not roles & {"anima", "assistant"} or not roles - {"anima", "assistant"}:
-                dropped += 1  # a reply with no prompt left teaches nothing
-                continue
-            examples.append((ids, targets))
+    # STEWARD_SFT_DATA is optional and downloaded separately (Settings ->
+    # Model Tutor -> Download for retraining), so a missing file is not an
+    # error — only SFT_DATA itself is required.
+    for path, required in ((SFT_DATA, True), (STEWARD_SFT_DATA, False)):
+        if not required and not os.path.isfile(path):
+            continue
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                conv = json.loads(line)["messages"]
+                if not any(m["role"] in ("anima", "assistant") for m in conv):
+                    continue
+                # A conversation longer than the window used to be thrown
+                # away, so the model never saw a long, complete reply and
+                # learned to end early. Keep the tail of the conversation
+                # instead.
+                ids, targets, kept = fit_conversation(conv, cfg.block_size)
+                if len(ids) < 10 or len(ids) > cfg.block_size:
+                    dropped += 1
+                    continue
+                roles = {m["role"] for m in kept}
+                if not roles & {"anima", "assistant"} or not roles - {"anima", "assistant"}:
+                    dropped += 1  # a reply with no prompt left teaches nothing
+                    continue
+                examples.append((ids, targets))
     if dropped:
         print(f"dropped {dropped} examples whose final turn alone exceeds block_size={cfg.block_size}")
     random.shuffle(examples)
