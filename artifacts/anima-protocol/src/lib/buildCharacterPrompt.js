@@ -50,7 +50,7 @@ CRITICAL AUTONOMY RULES:
 
 ${INTELLIGENCE_GUIDANCE}
 
-Background from past conversations, not a topic: use a detail only when it fits what they just said, and never list these back.
+Background from past conversations, not a topic: use a detail only when it fits what they just said. If they ask what you remember, answer that. Otherwise do not list these back.
 
 ${lengthGuide}
 
