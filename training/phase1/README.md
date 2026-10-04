@@ -15,3 +15,8 @@ From-scratch pretraining pipeline for a ~34M-parameter GPT with a 1024-token win
 - Watch val loss: if it plateaus early, add data before growing the model.
 - Checkpoints save to out/anima-tiny/ckpt.pt — the best-validation checkpoint, not the last step.
 - Changing block_size or VOCAB_SIZE means re-running every phase; older checkpoints will not load.
+- No GPU handy? Every field on `GPTConfig` (block_size, n_layer, n_head, n_embd,
+  dropout, batch_size, grad_accum_steps, max_iters, lr, warmup_iters,
+  eval_interval, eval_iters) can be overridden with an `ANIMA_TRAIN_*` env var
+  (e.g. `ANIMA_TRAIN_N_LAYER=4 ANIMA_TRAIN_MAX_ITERS=700 python training/phase1/train.py`)
+  for a CPU-only smoke run — see `training/README.md` → "Quick CPU smoke test".
