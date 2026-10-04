@@ -71,6 +71,10 @@ pnpm llm:ingest -- --from ~/Downloads/anima-backup.json
 pnpm llm:dataset                          # curate + seed + raw → ShareGPT JSONL + DPO pairs
 # pnpm llm:dataset -- --rehearse          # no real logs / no shared-box novels
 
+pnpm llm:train                            # SFT → DPO → GGUF in one go (finetune/train.sh)
+pnpm llm:train -- --smoke                 # CPU sandbox: tiny base, a few steps, proves the chain
+
+# or stage by stage:
 python scripts/llm/finetune/unsloth_sft.py \
   --data scripts/llm/output/finetune-sharegpt.jsonl \
   --eval-data scripts/llm/output/finetune-sharegpt.val.jsonl \

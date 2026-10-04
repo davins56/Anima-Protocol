@@ -126,6 +126,8 @@ jobs:
           .venv/bin/pip install -r server/requirements-test.txt -r server/requirements-trainer.txt
       - name: Model server tests
         run: .venv/bin/python -m unittest discover -s server/tests -v
+      - name: Fine-tune helper tests (scripts/llm/finetune — loaders, hparams, backend pick)
+        run: .venv/bin/python -m unittest discover -s scripts/llm/finetune/tests -v
 
   build-api:
     runs-on: ubuntu-latest

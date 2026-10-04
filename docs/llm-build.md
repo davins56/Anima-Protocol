@@ -130,6 +130,31 @@ merged by `prepare-finetune` and `prepare-dpo` at weight 1 unless
 `--no-scribe`. Validate edits with `python3 scripts/llm/data/scribe/validate.py`.
 The T4 walkthrough is `scripts/llm/finetune/colab_scribe_qlora.ipynb`.
 
+## Smoke-test the training pipeline here (CPU, no Unsloth)
+
+The train scripts pick a backend automatically: **Unsloth** when it is
+installed on a CUDA device, otherwise plain **transformers + peft + trl**.
+Same command, same adapter layout, so the whole SFT → DPO hand-off can be
+exercised on this VM with a tiny base model before renting GPU time:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install --index-url https://download.pytorch.org/whl/cpu torch
+.venv/bin/pip install transformers peft trl datasets accelerate
+
+pnpm llm:dataset -- --rehearse
+pnpm llm:train -- --smoke
+# SmolLM2-135M-Instruct · 12 SFT steps + 6 DPO steps · ~3 min on 4 cores
+# → scripts/llm/checkpoints/smoke-qlora/training_summary.json
+# → scripts/llm/checkpoints/smoke-dpo/training_summary.json
+pnpm llm:train:test          # unit tests for the loaders / hparam plumbing
+```
+
+Each stage writes `training_summary.json` (hardware, backend, hyperparameters,
+first/last train loss, eval loss, DPO reward margin, one greedy sample reply).
+The smoke model is not a usable Anima — it proves the data, templates,
+adapter resume, and trainer config are right.
+
 ## CUDA host checklist (next phase — not this VM)
 
 Need ~12–16 GB VRAM for QLoRA on Ministral 3 8B Base. Copy the repo (or at
@@ -139,6 +164,42 @@ least `scripts/llm/output/*.jsonl` + `scripts/llm/finetune/`) onto that box.
 pnpm llm:gpu-check
 # wants: finetune-sharegpt.jsonl, dpo-pairs.jsonl, nvidia-smi, python3
 ```
+
+### 1. One command (SFT → DPO → GGUF)
+
+```bash
+pip install "unsloth[colab-new]" transformers datasets trl
+huggingface-cli login            # accept mistralai/Ministral-3-8B-Base-2512
+
+pnpm llm:train                   # Ministral 3 8B, seq 4096, 1 epoch, q4_k_m GGUF
+# scribe voice on a T4 instead:
+ANIMA_TRAIN_BASE=unsloth/Qwen2.5-7B-Instruct-bnb-4bit ANIMA_TRAIN_PREFIX=anima-scribe \
+ANIMA_TRAIN_SEQ_LEN=2048 pnpm llm:train
+# extra flags for both train scripts:
+pnpm llm:train -- --epochs 2 --extra "--lora-r 32"
+```
+
+`scripts/llm/finetune/train.sh --help` lists every knob (`--skip-dpo`,
+`--sft-only`, `--skip-gguf`, `--extra`, `ANIMA_TRAIN_*`). The stages below are what it
+runs, for when you want to drive them by hand.
+
+### Baseline hyperparameters (what the scripts default to)
+
+| | SFT (`unsloth_sft.py`) | DPO (`unsloth_dpo.py`) |
+|---|---|---|
+| Learning rate | `2e-4` (LoRA) | `5e-6`, `beta 0.1` |
+| Batch | `2 × grad-accum 8` = 16 effective | `1 × 8` = 8 effective |
+| Schedule | cosine, `warmup_ratio 0.05` | cosine, `warmup_ratio 0.1` |
+| Precision | bf16 on Ampere+ · fp16 on T4/V100 · fp32 on CPU (auto) | same |
+| Optimizer | `paged_adamw_8bit` on CUDA · `adamw_torch` on CPU (`--optim`) | same |
+| Sequence length | `4096` (`--max-seq-len`; match the Modelfile `num_ctx`) | `4096` |
+| LoRA | r 16, alpha 32, dropout 0.05, all attention + MLP projections | resumes the SFT adapter |
+| Quantization | 4-bit NF4 (QLoRA) on CUDA · `--no-4bit` for full-precision LoRA | same |
+
+Lower `--lr` toward `1e-4` if the eval loss curve is noisy on real logs;
+raise `--grad-accum` rather than `--batch-size` when VRAM is tight.
+`--max-steps N` caps any run (smoke tests); `--backend transformers` forces
+the non-Unsloth path on a GPU (e.g. no `bitsandbytes` build for the card).
 
 ### 2. QLoRA SFT
 
@@ -230,5 +291,6 @@ Then `ANIMA_LOCAL_LLM_BASE_URL=https://<host>/v1` on the Worker. Never
 ## What this page does not do
 
 - It does not change chat routing, TTFT caps, or companion feelings.
-- It does not start Unsloth on a machine without CUDA.
+- It does not start Unsloth on a machine without CUDA (the CPU smoke path
+  uses plain transformers + peft on a tiny base, never the 8B model).
 - It does not commit personal logs.

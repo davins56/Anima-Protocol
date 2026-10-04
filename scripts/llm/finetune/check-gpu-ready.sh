@@ -30,11 +30,15 @@ VAL="$ROOT/scripts/llm/output/finetune-sharegpt.val.jsonl"
 DPO="$ROOT/scripts/llm/output/dpo-pairs.jsonl"
 SFT_PY="$ROOT/scripts/llm/finetune/unsloth_sft.py"
 DPO_PY="$ROOT/scripts/llm/finetune/unsloth_dpo.py"
+COMMON_PY="$ROOT/scripts/llm/finetune/finetune_common.py"
+TRAIN_SH="$ROOT/scripts/llm/finetune/train.sh"
 EVAL="$ROOT/scripts/llm/eval/run-evals.mjs"
 QUANT="$ROOT/scripts/llm/finetune/quantize.sh"
 
 if [[ -f "$SFT_PY" ]]; then pass "SFT script $SFT_PY"; else bad "missing $SFT_PY"; fi
 if [[ -f "$DPO_PY" ]]; then pass "DPO script $DPO_PY"; else bad "missing $DPO_PY"; fi
+if [[ -f "$COMMON_PY" ]]; then pass "shared helpers $COMMON_PY"; else bad "missing $COMMON_PY"; fi
+if [[ -f "$TRAIN_SH" ]]; then pass "one-shot runner $TRAIN_SH (pnpm llm:train)"; else bad "missing $TRAIN_SH"; fi
 if [[ -f "$EVAL" ]]; then pass "eval harness $EVAL"; else bad "missing $EVAL"; fi
 if [[ -f "$QUANT" ]]; then pass "quantize script $QUANT"; else bad "missing $QUANT"; fi
 
@@ -71,7 +75,7 @@ fi
 
 if command -v python3 >/dev/null 2>&1; then
   pass "python3 $(python3 --version 2>&1 | awk '{print $2}')"
-  python3 -m py_compile "$SFT_PY" "$DPO_PY" && pass "unsloth_sft.py / unsloth_dpo.py compile"
+  python3 -m py_compile "$SFT_PY" "$DPO_PY" "$COMMON_PY" && pass "unsloth_sft.py / unsloth_dpo.py / finetune_common.py compile"
 else
   bad "python3 not on PATH (needed on the CUDA host)"
 fi
@@ -79,7 +83,7 @@ fi
 if command -v nvidia-smi >/dev/null 2>&1; then
   nvidia-smi --query-gpu=name,memory.total --format=csv,noheader && pass "nvidia-smi sees a GPU"
 else
-  note "nvidia-smi not found — this machine cannot run QLoRA. Copy the JSONL + scripts/llm/finetune/ to a CUDA box."
+  note "nvidia-smi not found — this machine cannot run QLoRA. Copy the JSONL + scripts/llm/finetune/ to a CUDA box (or smoke-test the pipeline here: pnpm llm:train -- --smoke)."
 fi
 
 if python3 - <<'PY' >/dev/null 2>&1
@@ -99,6 +103,9 @@ cat <<'EOS'
   pip install "unsloth[colab-new]" transformers datasets trl
   huggingface-cli login   # accept mistralai/Ministral-3-8B-Base-2512 terms
 
+  pnpm llm:train          # SFT → DPO → GGUF in one go (scripts/llm/finetune/train.sh)
+
+  # or stage by stage:
   python scripts/llm/finetune/unsloth_sft.py \
     --data scripts/llm/output/finetune-sharegpt.jsonl \
     --eval-data scripts/llm/output/finetune-sharegpt.val.jsonl \

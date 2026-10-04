@@ -100,9 +100,20 @@ documentation.
 - [ ] Drop shared-box extracts into `llm-raw-source/` (or PDFs into `llm-raw/`)
       and re-run `pnpm llm:curate-novels` so tagged scenes replace the
       synthetic samples. Do not commit full novel text.
-- [ ] Run Unsloth or LLaMA-Factory QLoRA on a CUDA box
-  (`pnpm llm:gpu-check` then `unsloth_sft.py` — see `docs/llm-build.md`)
-- [ ] Run the DPO preference stage (`unsloth_dpo.py`, tooling now scaffolded above)
+- [x] Phase J (pipeline proven end-to-end, CPU): `unsloth_sft.py` / `unsloth_dpo.py`
+      share `finetune_common.py`, default to the baseline hyperparameters
+      (lr 2e-4 · 2×8 = 16 effective · cosine · warmup 0.05 · paged_adamw_8bit ·
+      seq 4096 · r16/alpha32), and fall back from Unsloth to plain
+      transformers + peft when there is no CUDA — so `pnpm llm:train -- --smoke`
+      runs SFT → DPO (adapter resume, chat-template DPO rows, `training_summary.json`)
+      on this sandbox with SmolLM2-135M. `pnpm llm:train` is the one-command
+      SFT → DPO → GGUF runner for the GPU box; `pnpm llm:train:test` covers the
+      loaders / hparam plumbing in CI.
+- [ ] Run `pnpm llm:train` on a CUDA box (Ministral 3 8B QLoRA; Colab T4 for the
+      scribe variant) — the only step left that needs hardware this repo does
+      not have. `pnpm llm:gpu-check` first; see `docs/llm-build.md`.
+- [ ] Review the DPO stage output (`training_summary.json` reward margin) and add
+      pairs for any real failure mode the eval surfaces
 - [ ] Quantize to Q4_K_M / Q5 and validate on internal evals
   (`scripts/llm/finetune/quantize.sh` + `pnpm llm:eval`)
 - [x] Step 21: Deleted the cloud failover/ensemble chain entirely — `llmEnsemble.ts`,
