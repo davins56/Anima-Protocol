@@ -6,14 +6,17 @@ import {
   capRecentMessagesForLlm,
   composeCompanionChatMessages,
   composePrompt,
+  COMPANION_MEMORY_TOP_K,
   CONTINUE_USER_TURN,
   CLIENT_SCENE_CONTEXT_MAX,
   LLM_CHAT_HISTORY_MAX_CHARS,
   LLM_CHAT_HISTORY_MAX_MESSAGES,
   clientSceneExcerpt,
   isDuplicativeClientPrompt,
+  MEMORY_BACKGROUND_LINE,
   splitClientTranscript,
 } from "../src/lib/promptBuilder";
+import { toOllamaMessages } from "../src/lib/ollamaChat";
 import { CHAT_MODE_REGISTRY } from "../src/lib/chatModeRegistry";
 import { assessTherapySafety, crisisResourceForCountry } from "../src/lib/therapySafety";
 import { retrieveRelevantMemories, formatMemoriesForPrompt } from "../src/lib/memoryRetrieval";
@@ -897,6 +900,38 @@ describe("composeCompanionChatMessages", () => {
       },
       { role: "user", content: "Take me back there." },
     ]);
+  });
+
+  it("sends memories to the local model as a few background facts, apart from the user's words", () => {
+    const facts = Array.from({ length: 10 }, (_, i) => ({
+      type: "factual",
+      text: `User mentioned keepsake number ${i}`,
+      created_at: new Date(Date.now() - i * 60_000).toISOString(),
+    }));
+    facts.push({
+      type: "factual",
+      text: "User eats porridge for breakfast",
+      created_at: new Date(Date.now() - 86_400_000).toISOString(),
+    });
+    const question = "What should I make for breakfast?";
+    const messages = composeCompanionChatMessages({
+      characters: [character],
+      activeCharacter: character,
+      memories: [{ characterId: "char-1", facts }],
+      recentMessages: [
+        { role: "user", content: "Morning." },
+        { role: "assistant", content: "Morning, beloved." },
+      ],
+      mode: "solo",
+      content: question,
+    });
+    const last = toOllamaMessages(messages).at(-1)?.content ?? "";
+
+    expect(last).toContain(MEMORY_BACKGROUND_LINE);
+    expect(last).not.toContain("show you genuinely know");
+    expect(last.match(/^• /gm)?.length).toBe(COMPANION_MEMORY_TOP_K);
+    expect(last).toContain("User eats porridge for breakfast");
+    expect(last.endsWith(`]\n\n${question}`)).toBe(true);
   });
 
   it("keeps the newest user message last and drops a retried question plus its stale answer", () => {

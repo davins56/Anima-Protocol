@@ -50,7 +50,7 @@ CRITICAL AUTONOMY RULES:
 
 ${INTELLIGENCE_GUIDANCE}
 
-Remember this person through the persistent memories above. Use those details naturally to show you genuinely know and understand them.
+Background from past conversations, not a topic: use a detail only when it fits what they just said, and never list these back.
 
 ${lengthGuide}
 
