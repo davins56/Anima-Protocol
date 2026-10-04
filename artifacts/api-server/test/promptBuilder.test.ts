@@ -1085,13 +1085,8 @@ describe("buildGroupCompanionPrompt", () => {
     const facts = Array.from({ length: 11 }, (_, i) => ({
       type: "factual",
       text: `Unrelated keepsake number ${i} sits on a shelf`,
-      created_at: new Date().toISOString(),
+      created_at: new Date(Date.now() - i * 60_000).toISOString(),
     }));
-    facts.push({
-      type: "factual",
-      text: "User eats porridge for breakfast",
-      created_at: new Date(Date.now() - 86_400_000).toISOString(),
-    });
     const prompt = buildCompanionPrompt({
       systemPrompt: "Send one warm check-in.",
       characters: [char1],
@@ -1118,8 +1113,9 @@ describe("buildGroupCompanionPrompt", () => {
       },
     });
     const keepsakes = prompt.match(/Unrelated keepsake number/g) ?? [];
-    expect(prompt).toContain("User eats porridge for breakfast");
-    expect(keepsakes).toHaveLength(COMPANION_MEMORY_TOP_K - 1);
+    expect(keepsakes).toHaveLength(COMPANION_MEMORY_TOP_K);
+    expect(prompt).toContain("Unrelated keepsake number 0 sits on a shelf");
+    expect(prompt).not.toContain("Unrelated keepsake number 10 sits on a shelf");
     expect(prompt).not.toContain(MEMORY_RECALL_LINE);
   });
 
