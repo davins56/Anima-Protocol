@@ -154,6 +154,11 @@ python scripts/llm/finetune/unsloth_sft.py \
   --out scripts/llm/checkpoints/anima-ministral8b-qlora
 ```
 
+Defaults (override with flags): LoRA learning rate `2e-4`, per-device batch `2`,
+gradient accumulation `8` (effective batch 16), warmup ratio `0.05`, cosine
+schedule, `paged_adamw_8bit`, sequence length `4096`. Precision is bf16 on
+Ampere and newer, fp16 on T4/V100. On a 12 GB card pass `--batch-size 1 --grad-accum 16`.
+
 LLaMA-Factory alternative (run from repo root so `dataset_dir` resolves):
 
 ```bash
@@ -170,6 +175,10 @@ python scripts/llm/finetune/unsloth_dpo.py \
   --base scripts/llm/checkpoints/anima-ministral8b-qlora \
   --out scripts/llm/checkpoints/anima-ministral8b-dpo
 ```
+
+DPO keeps a much smaller learning rate (`5e-6`) than SFT. Microbatch stays
+`1` (the loss compares two sequences) with gradient accumulation `16`
+(effective batch 16), warmup ratio `0.05`, and `paged_adamw_8bit`.
 
 Pairs come from `lib/llm/src/dataset/preferences.ts` (`pnpm llm:prepare-dpo`).
 Add a pair when you catch a real failure mode (generic-assistant, memory
