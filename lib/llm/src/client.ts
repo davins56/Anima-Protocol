@@ -76,13 +76,16 @@ export class AnimaLLM {
   private provider: string;
 
   constructor(options: AnimaLLMOptions = {}) {
-    this.baseUrl = (
+    const rawUrl = (
       options.baseUrl ||
       process.env.ANIMA_LOCAL_LLM_BASE_URL ||
       process.env.VLLM_BASE_URL ||
       process.env.OLLAMA_BASE_URL ||
       "http://localhost:11434/v1"
-    ).replace(/\/+$/, "");
+    )
+      .trim()
+      .replace(/\/+$/, "");
+    this.baseUrl = rawUrl.endsWith("/v1") ? rawUrl : `${rawUrl}/v1`;
 
     this.apiKey =
       options.apiKey ||

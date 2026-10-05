@@ -156,4 +156,12 @@ describe("AnimaLLM Client", () => {
 
     expect(content).toBe("Hello world!");
   });
+
+  it("automatically appends /v1 to baseUrl when omitted", async () => {
+    const baseWithoutV1 = serverUrl.replace(/\/v1$/, "");
+    const client = new AnimaLLM({ baseUrl: baseWithoutV1 });
+    const res = await client.generateResponse({ prompt: "Testing URL normalization" });
+
+    expect(res.content).toBe("I am Anima, your digital companion.");
+  });
 });

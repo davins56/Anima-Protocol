@@ -215,7 +215,10 @@ export function readExplicitLocalLlmBaseUrl(
 ): string | null {
   const direct =
     env.ANIMA_LOCAL_LLM_BASE_URL?.trim() || env.VLLM_BASE_URL?.trim();
-  if (direct) return direct.replace(/\/$/, "");
+  if (direct) {
+    const root = direct.replace(/\/$/, "");
+    return root.endsWith("/v1") ? root : `${root}/v1`;
+  }
   const ollama = env.OLLAMA_BASE_URL?.trim();
   if (!ollama) return null;
   const root = ollama.replace(/\/$/, "");
