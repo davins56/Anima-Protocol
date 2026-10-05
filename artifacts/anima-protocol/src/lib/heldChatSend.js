@@ -53,7 +53,16 @@ export function outgoingAttachments(message) {
  * @param {unknown} message
  * @returns {boolean}
  */
+export function isReplyReplacement(message) {
+  if (!message || typeof message !== "object") return false;
+  const action = /** @type {{ replyAction?: unknown }} */ (message).replyAction;
+  return action === "retry" || action === "edit";
+}
+
 export function isHoldableOutgoing(message) {
+  // Retry and edit must not sit in the #545 queue. A later flush would send
+  // them as a normal user turn and count mood twice.
+  if (isReplyReplacement(message)) return false;
   return Boolean(outgoingText(message).trim()) || outgoingAttachments(message).length > 0;
 }
 
