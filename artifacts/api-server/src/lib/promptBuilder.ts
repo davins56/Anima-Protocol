@@ -293,6 +293,51 @@ export const LOCAL_PROMPT_SAFETY_MARGIN_TOKENS = 256;
  */
 export const LOCAL_PROMPT_MAX_TOKENS = 1_240;
 
+/**
+ * Header over the remembered facts. The old header told the model to show it
+ * knew the person, and a small model did that every turn: it recited
+ * memories instead of answering the message in front of it.
+ */
+export const MEMORY_BACKGROUND_LINE =
+  "Background from past conversations, not a topic: use a detail only when it fits what they just said, and never list these back.";
+
+/**
+ * Replaces the background line when they ask what you remember. The strict
+ * line would make a small model refuse that question.
+ */
+export const MEMORY_RECALL_LINE =
+  "They asked what you remember. Answer from the background below, in your own voice, and do not invent memories that are not listed.";
+
+function asksToHearRememberedFacts(userText: string | null | undefined): boolean {
+  const q = String(userText || "")
+    .toLowerCase()
+    .replace(/[’‘ʼ]/g, "'");
+  return (
+    /\bwhat do you (?:remember|recall|know) about me\b/.test(q) ||
+    /\bwhat (?:do you|can you) remember\b/.test(q) ||
+    /\bwhat(?:'s| is) (?:something |anything )?(?:that )?you remember\b/.test(q) ||
+    /\bdo you remember (?:anything|something|what|me|about)\b/.test(q) ||
+    /\btell me (?:everything |what |all )?(?:that )?you remember\b/.test(q) ||
+    /\bwhat have you (?:learned|remembered) about me\b/.test(q) ||
+    /\bwhat memories do you have\b/.test(q)
+  );
+}
+
+/** Background rule, or the recall rule when this message asks for memories. */
+export function memoryBackgroundLine(userText: string | null | undefined): string {
+  return asksToHearRememberedFacts(userText)
+    ? MEMORY_RECALL_LINE
+    : MEMORY_BACKGROUND_LINE;
+}
+
+/**
+ * Most remembered facts one companion turn carries. Up to 12 facts drowned
+ * the user's words on the 0.5B local model, so it answered the memories
+ * instead. The best-scoring facts for this message still come first.
+ * Solo, group, and proactive turns all use this ceiling.
+ */
+export const COMPANION_MEMORY_TOP_K = 4;
+
 /** Prompt tokens that still leave room for a full local decode inside n_ctx. */
 export function localPromptHardMaxTokens(
   numPredict = OLLAMA_NUM_PREDICT_CAP,
@@ -1286,7 +1331,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
 
   const memConfig = synchroState
     ? synchroToMemoryConfig(synchroState)
-    : { topK: 12, preferTypes: undefined };
+    : { topK: COMPANION_MEMORY_TOP_K, preferTypes: undefined };
   const speakerMemories =
     mainChar?.id != null && String(mainChar.id)
       ? memories.filter((m) => String(m.characterId) === String(mainChar.id))
@@ -1295,7 +1340,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
     buildMemorySummaryBlock(speakerMemories, characterNames),
     formatMemoriesForPrompt(
       retrieveRelevantMemories(speakerMemories, {
-        topK: memConfig.topK,
+        topK: Math.min(memConfig.topK, COMPANION_MEMORY_TOP_K),
         contextHint: content,
         preferTypes: memConfig.preferTypes,
       }),
@@ -1305,7 +1350,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
   ]);
   const memoryText = memoryBody
     ? joinPromptParts([
-        "Remember this person through the persistent memories below. Use those details naturally to show you genuinely know and understand them.",
+        memoryBackgroundLine(content),
         memoryBody,
       ])
     : "";
@@ -1510,7 +1555,8 @@ function isLocalClosingInstruction(content: string): boolean {
  * the clock, and mood — plus the answer-last
  * line (and the avoid-repeat line, when a retry added one) is bracketed at
  * the start of the final user turn. Guardrails stay in the system message.
- * The user's own text stays last.
+ * A blank line sets the user's own text apart from those notes, and it
+ * stays last.
  * Cloud providers keep the separate system turns.
  */
 export function messagesForLocalOllama<T extends { role: string; content: string }>(
@@ -1543,7 +1589,7 @@ export function messagesForLocalOllama<T extends { role: string; content: string
     const folded = {
       ...last,
       role: "user" as const,
-      content: `${notes.join("\n")}\n${last.content}`,
+      content: `${notes.join("\n")}\n\n${last.content}`,
     };
     return [...messages.slice(0, start), folded as T];
   }
@@ -1563,7 +1609,7 @@ export function messagesForLocalOllama<T extends { role: string; content: string
   const folded = {
     ...last,
     role: "user" as const,
-    content: notes.length > 0 ? `${notes.join("\n")}\n${last.content}` : last.content,
+    content: notes.length > 0 ? `${notes.join("\n")}\n\n${last.content}` : last.content,
   };
   const out: T[] = [];
   if (stable) out.push({ role: "system", content: stable } as T);
@@ -2270,10 +2316,12 @@ ${sceneExcerpt}
     ? companionAffectToPromptGuidance(companionAffect, BUDGET.selfState)
     : "";
 
-  // 4. Smart memory retrieval (synchro-gated when available)
+  // 4. Smart memory retrieval (synchro-gated when available).
+  // Synchro may ask for up to 20 facts. The companion ceiling still applies:
+  // proactive check-ins and group turns use this same path.
   const memConfig = synchroState
     ? synchroToMemoryConfig(synchroState)
-    : { topK: 12, preferTypes: undefined };
+    : { topK: COMPANION_MEMORY_TOP_K, preferTypes: undefined };
   // Crossover/group loads every participant's companion_memories. Scoring
   // across that pool lets speaker A recall speaker B's private facts.
   const speakerMemories =
@@ -2281,7 +2329,7 @@ ${sceneExcerpt}
       ? memories.filter((m) => String(m.characterId) === String(mainChar.id))
       : memories;
   const scoredMemories = retrieveRelevantMemories(speakerMemories, {
-    topK: memConfig.topK,
+    topK: Math.min(memConfig.topK, COMPANION_MEMORY_TOP_K),
     contextHint: content,
     preferTypes: memConfig.preferTypes,
   });
@@ -2303,6 +2351,10 @@ ${sceneExcerpt}
 
   // 7. Shared memory (crossover sessions)
   const sharedBlock = isCrossover ? buildSharedMemoryBlock(sharedMemory) : "";
+  const memoryHeader =
+    memorySummary || memoryBlock || sharedBlock
+      ? memoryBackgroundLine(content)
+      : "";
 
   // 8. Conversation history (smart truncation).
   // Fat Chat.jsx prompts used to ship "Story so far:" inside a 24k wrap; that
@@ -2444,7 +2496,7 @@ OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
       },
       {
         rank: 110,
-        text: "Remember this person through the persistent memories above. Use those details naturally to show you genuinely know and understand them.",
+        text: memoryHeader,
       },
       { rank: 110, text: LOYALTY_GUARDRAIL },
       {

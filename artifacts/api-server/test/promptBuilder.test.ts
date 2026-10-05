@@ -6,14 +6,19 @@ import {
   capRecentMessagesForLlm,
   composeCompanionChatMessages,
   composePrompt,
+  COMPANION_MEMORY_TOP_K,
   CONTINUE_USER_TURN,
   CLIENT_SCENE_CONTEXT_MAX,
   LLM_CHAT_HISTORY_MAX_CHARS,
   LLM_CHAT_HISTORY_MAX_MESSAGES,
   clientSceneExcerpt,
   isDuplicativeClientPrompt,
+  MEMORY_BACKGROUND_LINE,
+  MEMORY_RECALL_LINE,
+  memoryBackgroundLine,
   splitClientTranscript,
 } from "../src/lib/promptBuilder";
+import { toOllamaMessages } from "../src/lib/ollamaChat";
 import { CHAT_MODE_REGISTRY } from "../src/lib/chatModeRegistry";
 import { assessTherapySafety, crisisResourceForCountry } from "../src/lib/therapySafety";
 import { retrieveRelevantMemories, formatMemoriesForPrompt } from "../src/lib/memoryRetrieval";
@@ -899,6 +904,72 @@ describe("composeCompanionChatMessages", () => {
     ]);
   });
 
+  it("sends memories to the local model as a few background facts, apart from the user's words", () => {
+    const facts = Array.from({ length: 10 }, (_, i) => ({
+      type: "factual",
+      text: `User mentioned keepsake number ${i}`,
+      created_at: new Date(Date.now() - i * 60_000).toISOString(),
+    }));
+    facts.push({
+      type: "factual",
+      text: "User eats porridge for breakfast",
+      created_at: new Date(Date.now() - 86_400_000).toISOString(),
+    });
+    const question = "What should I make for breakfast?";
+    const messages = composeCompanionChatMessages({
+      characters: [character],
+      activeCharacter: character,
+      memories: [{ characterId: "char-1", facts }],
+      recentMessages: [
+        { role: "user", content: "Morning." },
+        { role: "assistant", content: "Morning, beloved." },
+      ],
+      mode: "solo",
+      content: question,
+    });
+    const last = toOllamaMessages(messages).at(-1)?.content ?? "";
+
+    expect(last).toContain(MEMORY_BACKGROUND_LINE);
+    expect(last).not.toContain("show you genuinely know");
+    expect(last).not.toContain(MEMORY_RECALL_LINE);
+    expect(last.match(/^• /gm)?.length).toBe(COMPANION_MEMORY_TOP_K);
+    expect(last).toContain("User eats porridge for breakfast");
+    expect(last.endsWith(`]\n\n${question}`)).toBe(true);
+  });
+
+  it("answers a direct question about what it remembers", () => {
+    const question = "What do you remember about me?";
+    const messages = composeCompanionChatMessages({
+      characters: [character],
+      activeCharacter: character,
+      memories: [
+        {
+          characterId: "char-1",
+          facts: [
+            {
+              type: "factual",
+              text: "User is a writer working on a novel",
+              created_at: new Date().toISOString(),
+            },
+          ],
+        },
+      ],
+      recentMessages: [],
+      mode: "solo",
+      content: question,
+    });
+    const last = toOllamaMessages(messages).at(-1)?.content ?? "";
+    expect(last).toContain(MEMORY_RECALL_LINE);
+    expect(last).not.toContain("never list these back");
+    expect(last).toContain("User is a writer working on a novel");
+    expect(memoryBackgroundLine("What’s something you remember about me?")).toBe(
+      MEMORY_RECALL_LINE,
+    );
+    expect(memoryBackgroundLine("Do you remember the harbor?")).toBe(
+      MEMORY_BACKGROUND_LINE,
+    );
+  });
+
   it("keeps the newest user message last and drops a retried question plus its stale answer", () => {
     const question = "What is the tide today?";
     const messages = composeCompanionChatMessages({
@@ -966,6 +1037,86 @@ describe("buildGroupCompanionPrompt", () => {
 
     expect(prompt).toContain("ONLY SERENITY THIS TURN");
     expect(prompt).toContain("**Serenity:**");
+    expect(prompt).not.toContain(MEMORY_BACKGROUND_LINE);
+  });
+
+  it("caps a group turn at four memories", () => {
+    const char1 = { id: "c1", name: "Serenity", universe: "Eden" };
+    const facts = Array.from({ length: 11 }, (_, i) => ({
+      type: "factual",
+      text: `Unrelated keepsake number ${i} sits on a shelf`,
+      created_at: new Date().toISOString(),
+    }));
+    facts.push({
+      type: "factual",
+      text: "User eats porridge for breakfast",
+      created_at: new Date(Date.now() - 86_400_000).toISOString(),
+    });
+    const prompt = buildGroupCompanionPrompt({
+      characters: [char1, { id: "c2", name: "Linda", universe: "Fallen" }],
+      nextCharacter: char1,
+      memories: [{ characterId: "c1", facts }],
+      recentMessages: [],
+      content: "What should I make for breakfast?",
+      synchroState: {
+        vector: {
+          intimacy: 90,
+          powerDynamic: 0,
+          spiritualAttunement: 80,
+          primalIntensity: 50,
+          crossoverOpenness: 70,
+          synchroStrength: 90,
+        },
+        level: "fullCross",
+        emotionalTone: "warm",
+        totalTurns: 100,
+        sessionTurns: 5,
+        lastInteraction: new Date().toISOString(),
+      },
+    });
+    const keepsakes = prompt.match(/Unrelated keepsake number/g) ?? [];
+    expect(prompt).toContain("User eats porridge for breakfast");
+    expect(keepsakes).toHaveLength(COMPANION_MEMORY_TOP_K - 1);
+    expect(prompt).toContain(MEMORY_BACKGROUND_LINE);
+  });
+
+  it("caps proactive composePrompt turns at four memories", () => {
+    const char1 = { id: "c1", name: "Serenity", universe: "Eden" };
+    const facts = Array.from({ length: 11 }, (_, i) => ({
+      type: "factual",
+      text: `Unrelated keepsake number ${i} sits on a shelf`,
+      created_at: new Date(Date.now() - i * 60_000).toISOString(),
+    }));
+    const prompt = buildCompanionPrompt({
+      systemPrompt: "Send one warm check-in.",
+      characters: [char1],
+      activeCharacter: char1,
+      memories: [{ characterId: "c1", facts }],
+      recentMessages: [],
+      mode: "solo",
+      content: "[Proactive outreach: send the check-in now.]",
+      isCrossover: false,
+      synchroState: {
+        vector: {
+          intimacy: 90,
+          powerDynamic: 0,
+          spiritualAttunement: 80,
+          primalIntensity: 50,
+          crossoverOpenness: 70,
+          synchroStrength: 90,
+        },
+        level: "fullCross",
+        emotionalTone: "warm",
+        totalTurns: 100,
+        sessionTurns: 5,
+        lastInteraction: new Date().toISOString(),
+      },
+    });
+    const keepsakes = prompt.match(/Unrelated keepsake number/g) ?? [];
+    expect(keepsakes).toHaveLength(COMPANION_MEMORY_TOP_K);
+    expect(prompt).toContain("Unrelated keepsake number 0 sits on a shelf");
+    expect(prompt).not.toContain("Unrelated keepsake number 10 sits on a shelf");
+    expect(prompt).not.toContain(MEMORY_RECALL_LINE);
   });
 
   it("does not bind group TURN RULES to characters[0] when speaker is missing", () => {

@@ -136,7 +136,7 @@ describe("ollamaChat adapter", () => {
       { role: "system", content: "CHARACTER IDENTITY LOCK: You are Natasha." },
       { role: "user", content: "Earlier" },
       { role: "assistant", content: "I remember." },
-      { role: "user", content: `[${instruction}]\n[${avoid}]\n${userText}` },
+      { role: "user", content: `[${instruction}]\n[${avoid}]\n\n${userText}` },
     ]);
     expect(mapped.map((message) => message.content).join("\n").split(userText).length - 1).toBe(1);
   });

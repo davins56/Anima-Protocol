@@ -455,7 +455,7 @@ describe("companion prompt prefill budget", () => {
     expect(answerAt).toBeGreaterThan(feelingAt);
     expect(localUser.slice(feelingAt, answerAt)).not.toContain("\n[");
     expect(localUser.slice(answerAt)).toMatch(
-      /^\[Answer [^\]]+\]\nHowever you wish to move Natasha\.$/,
+      /^\[Answer [^\]]+\]\n\nHowever you wish to move Natasha\.$/,
     );
   });
 
