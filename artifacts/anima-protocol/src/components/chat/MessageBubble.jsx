@@ -19,7 +19,7 @@ import { isOwnModelReply } from "@/lib/modelTutor";
 
 const renderMessageWithActions = (content) => renderItalicText(content);
 
-export default function MessageBubble({ message, onRewind, canRewind, onSpeak, character, characterMemories = [], characterEmotion = 'neutral', characterEmotionIntensity = 5, sessionId = null, onEditMessage, onDeleteMessage, onRegenerateMessage, messageLoreLinks = [], onAvatarClick, onTeach }) {
+export default function MessageBubble({ message, onRewind, canRewind, onSpeak, character, characterMemories = [], characterEmotion = 'neutral', characterEmotionIntensity = 5, sessionId = null, onEditMessage, onDeleteMessage, onRegenerateMessage, messageLoreLinks = [], onAvatarClick, onTeach, showEdit = false, showRetry = false, actionsDisabled = false }) {
   const [loreEntries, setLoreEntries] = useState([]);
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(message.content || "");
@@ -34,9 +34,9 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
   const pdfFiles = (message.attachments || []).filter((a) => a.type === "pdf");
 
   const handleEditSave = () => {
-    if (editText.trim() && onEditMessage) {
-      onEditMessage(editText.trim());
-    }
+    const next = editText.trim();
+    if (!next || !onEditMessage || actionsDisabled) return;
+    onEditMessage(next);
     setIsEditing(false);
   };
 
@@ -144,11 +144,20 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
                 autoFocus
               />
               <div className="flex gap-2">
-                <button onClick={handleEditSave} className="flex items-center gap-1 px-2 py-1 bg-primary/20 border border-primary/40 text-primary font-mono text-[8px] tracking-widest uppercase hover:bg-primary/30 transition-all">
-                  <Check className="w-2.5 h-2.5" /> Save
+                <button
+                  type="button"
+                  onClick={handleEditSave}
+                  disabled={!editText.trim() || actionsDisabled}
+                  className="inline-flex items-center justify-center gap-1.5 min-h-[44px] min-w-[44px] px-3 bg-primary/20 border border-primary/40 text-primary font-mono text-[10px] tracking-widest uppercase hover:bg-primary/30 transition-all disabled:opacity-40"
+                >
+                  <Check className="w-3.5 h-3.5" /> Save
                 </button>
-                <button onClick={() => setIsEditing(false)} className="flex items-center gap-1 px-2 py-1 border border-primary/20 text-primary/50 font-mono text-[8px] tracking-widest uppercase hover:border-primary/40 transition-all">
-                  <X className="w-2.5 h-2.5" /> Cancel
+                <button
+                  type="button"
+                  onClick={() => { setEditText(message.content || ""); setIsEditing(false); }}
+                  className="inline-flex items-center justify-center gap-1.5 min-h-[44px] min-w-[44px] px-3 border border-primary/20 text-primary/50 font-mono text-[10px] tracking-widest uppercase hover:border-primary/40 transition-all"
+                >
+                  <X className="w-3.5 h-3.5" /> Cancel
                 </button>
               </div>
             </div>
@@ -241,31 +250,72 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
           )}
         </div>
 
-        {/* Action bar — edit, delete, regenerate */}
-        {!isTyping && !isThinking && !isStreaming && !isEditing && (
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
-            {isUser && onEditMessage && (
+        {/* Retry on her latest reply and Edit on his latest line stay visible
+            without hover so a finger can hit them on iPhone and iPad. Older
+            bubbles keep the same targets, hidden only for a fine mouse pointer. */}
+        {!isTyping && !isThinking && !isStreaming && !isEditing && (showEdit || showRetry) && (
+          <div className="flex items-center gap-1 mt-1">
+            {showEdit && isUser && onEditMessage && (
               <button
-                onClick={() => { setEditText(message.content); setIsEditing(true); }}
-                className="flex items-center justify-center min-w-[44px] min-h-[44px] text-primary/30 hover:text-primary/70 border border-transparent hover:border-primary/20 font-mono text-xs tracking-widest uppercase transition-all"
+                type="button"
+                data-testid="edit-message"
+                onClick={() => { if (!actionsDisabled) { setEditText(message.content || ""); setIsEditing(true); } }}
+                disabled={actionsDisabled}
+                aria-label="Edit your message"
+                className="inline-flex items-center justify-center gap-1.5 min-w-[44px] min-h-[44px] px-3 border border-primary/40 text-primary/80 font-mono text-[10px] tracking-widest uppercase disabled:opacity-40 disabled:pointer-events-none"
+              >
+                <Pencil className="w-3.5 h-3.5" /> Edit
+              </button>
+            )}
+            {showRetry && onRegenerateMessage && (
+              <button
+                type="button"
+                data-testid="retry-reply"
+                onClick={onRegenerateMessage}
+                disabled={actionsDisabled}
+                aria-label="Retry her reply"
+                className="inline-flex items-center justify-center gap-1.5 min-w-[44px] min-h-[44px] px-3 border border-cyan-400/40 text-cyan-200/90 font-mono text-[10px] tracking-widest uppercase disabled:opacity-40 disabled:pointer-events-none"
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> Retry
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Action bar — edit, delete, regenerate. Always tappable on touch;
+            a mouse can reveal it by hover. */}
+        {!isTyping && !isThinking && !isStreaming && !isEditing && (
+          <div className="flex items-center gap-1 mt-0.5 opacity-100 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 [@media(hover:hover)_and_(pointer:fine)]:group-hover:opacity-100 [@media(hover:hover)_and_(pointer:fine)]:focus-within:opacity-100">
+            {isUser && onEditMessage && !showEdit && (
+              <button
+                type="button"
+                onClick={() => { if (!actionsDisabled) { setEditText(message.content || ""); setIsEditing(true); } }}
+                disabled={actionsDisabled}
+                className="flex items-center justify-center min-w-[44px] min-h-[44px] text-primary/30 hover:text-primary/70 border border-transparent hover:border-primary/20 font-mono text-xs tracking-widest uppercase transition-all disabled:opacity-40"
                 title="Edit message"
+                aria-label="Edit your message"
               >
                 <Pencil className="w-3 h-3" />
               </button>
             )}
-            {!isUser && onRegenerateMessage && (
+            {!isUser && onRegenerateMessage && !showRetry && (
               <button
+                type="button"
                 onClick={onRegenerateMessage}
-                className="flex items-center justify-center min-w-[44px] min-h-[44px] text-primary/30 hover:text-cyan-400 border border-transparent hover:border-cyan-400/20 font-mono text-xs tracking-widest uppercase transition-all"
-                title="Regenerate response"
+                disabled={actionsDisabled}
+                className="flex items-center justify-center min-w-[44px] min-h-[44px] text-primary/30 hover:text-cyan-400 border border-transparent hover:border-cyan-400/20 font-mono text-xs tracking-widest uppercase transition-all disabled:opacity-40"
+                title="Retry her reply"
+                aria-label="Retry her reply"
               >
                 <RefreshCw className="w-3 h-3" />
               </button>
             )}
             {onDeleteMessage && (
               <button
+                type="button"
                 onClick={onDeleteMessage}
-                className="flex items-center justify-center min-w-[44px] min-h-[44px] text-primary/20 hover:text-red-400 border border-transparent hover:border-red-400/20 font-mono text-xs tracking-widest uppercase transition-all"
+                disabled={actionsDisabled}
+                className="flex items-center justify-center min-w-[44px] min-h-[44px] text-primary/20 hover:text-red-400 border border-transparent hover:border-red-400/20 font-mono text-xs tracking-widest uppercase transition-all disabled:opacity-40"
                 title="Delete message"
               >
                 <Trash2 className="w-3 h-3" />

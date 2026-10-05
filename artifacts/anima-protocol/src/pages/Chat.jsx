@@ -176,6 +176,7 @@ import {
   sessionControlsLocked,
   writeHeldDraft,
 } from "@/lib/heldChatSend";
+import { replyActionsAreLocked } from "@/lib/chatReplyActions";
 import HeldOutgoingBubble from "@/components/chat/HeldOutgoingBubble";
 import {
   CONNECTION_DROPPED_STATUS,
@@ -313,6 +314,16 @@ export default function Chat() {
   const busyRetryTokenRef = useRef(0);
   const turnControlsLocked =
     composerBusy || sessionControlsLocked(gateSnap, activeSession?.id);
+  const replyActionsDisabled = replyActionsAreLocked({
+    answering: composerBusy,
+    turnLocked: sessionControlsLocked(gateSnap, activeSession?.id),
+    heldOutgoing: Boolean(activeSession?.id && gateSnap.heldBySession?.[activeSession.id]),
+    restoredDraft: Boolean(
+      activeSession?.id && composerRestore?.sessionId === activeSession.id,
+    ),
+  });
+  const replyActionsDisabledRef = useRef(false);
+  replyActionsDisabledRef.current = replyActionsDisabled;
   /** Same user line while the self-hosted model is still generating. */
   const lateTurnRef = useRef(null);
   /** Last LLM provider that served a reply: "openai" | "xai" | "gemini" | "kimi" | "gateway" */
@@ -1225,13 +1236,19 @@ export default function Chat() {
     deleteMessageFlow(idx, { activeSession, setActiveSession });
 
   const handleEditMessage = (idx, newText) =>
-    editMessageFlow(idx, newText, { activeSession, setActiveSession });
+    editMessageFlow(idx, newText, {
+      confirm,
+      activeSession,
+      isLoading: () => replyActionsDisabledRef.current,
+      setActiveSession,
+      sendMessage: handleSendMessage,
+    });
 
   const handleRegenerateMessage = (idx) =>
     regenerateMessageFlow(idx, {
       confirm,
       activeSession,
-      isLoading: turnControlsLocked,
+      isLoading: () => replyActionsDisabledRef.current,
       setActiveSession,
       sendMessage: handleSendMessage,
     });
@@ -1635,9 +1652,19 @@ export default function Chat() {
 
   const handleSendMessage = async (message) => {
     if (!activeSession?.id) return;
+    const messageData = typeof message === "string" ? { text: message, attachments: undefined } : (message || {});
+    const replyAction =
+      messageData.replyAction === "retry" || messageData.replyAction === "edit"
+        ? messageData.replyAction
+        : null;
+    const skipAffect = replyAction != null;
+    const historyBase = Array.isArray(messageData.history) ? messageData.history : null;
     const decision = gateRef.current.accept(activeSession.id, message);
     syncGate();
-    if (decision.action !== "send") return;
+    if (decision.action !== "send") {
+      if (replyAction) return { started: false };
+      return;
+    }
     const ownerToken = decision.ownerToken;
 
     const sendLock = acquireChatSendLock(sendingRef, {
@@ -1647,11 +1674,10 @@ export default function Chat() {
     if (!sendLock) {
       gateRef.current.revertSendToHold(activeSession.id, message, ownerToken);
       syncGate();
+      if (replyAction) return { started: false };
       return;
     }
-    
-    // Handle both string (legacy) and object (new with attachments) formats
-    const messageData = typeof message === "string" ? { text: message, attachments: undefined } : message;
+
     const attachments = messageData.attachments || [];
     const pdfAttachments = attachments.filter((item) => item?.type === "pdf");
     let content = messageData.text || "";
@@ -1665,6 +1691,7 @@ export default function Chat() {
     // Empty content = "continue" — keep the scene moving without a new user line.
     // Works in solo (character takes the next beat) and group (next speaker).
     const isContinue = !content.trim() && !attachments.length;
+    const omitUserRow = isContinue || replyAction === "retry";
     if (isContinue && activeSession.mode !== "group" && activeSession.mode !== "solo") {
       releaseChatSendLock(sendingRef, sendLock);
       gateRef.current.release("reply_finished", ownerToken);
@@ -1730,9 +1757,10 @@ export default function Chat() {
       userMessage.attachments = attachments;
     }
 
-    const updatedMessages = isContinue
-      ? [...(activeSession.messages || [])]
-      : [...(activeSession.messages || []), userMessage];
+    const threadBeforeTurn = historyBase || activeSession.messages || [];
+    const updatedMessages = omitUserRow
+      ? [...threadBeforeTurn]
+      : [...threadBeforeTurn, userMessage];
 
     // Value moment: a message in a multi-character "crossover" scene (characters
     // from 2+ universes together). is_crossover lets us segment that core action.
@@ -1749,16 +1777,18 @@ export default function Chat() {
         .map((c) => c.universe)
         .filter(Boolean),
     ).size;
-    track("message_sent", {
-      session_mode: activeSession.mode || "solo",
-      character_count: characterCount,
-      is_crossover: activeSession.mode === "group" && distinctUniverses >= 2,
-      is_continue: isContinue,
-      has_attachment: attachments.length > 0,
-      is_therapy: isTherapySession(activeSession, authUser, characters.find((c) => c.id === activeSession.character_id)),
-    });
+    if (replyAction !== "retry") {
+      track("message_sent", {
+        session_mode: activeSession.mode || "solo",
+        character_count: characterCount,
+        is_crossover: activeSession.mode === "group" && distinctUniverses >= 2,
+        is_continue: isContinue,
+        has_attachment: attachments.length > 0,
+        is_therapy: isTherapySession(activeSession, authUser, characters.find((c) => c.id === activeSession.character_id)),
+      });
+    }
 
-    if (!isContinue && content) {
+    if (!skipAffect && !isContinue && content) {
       const identity = [
         threadAnima?.personality,
         threadAnima?.speaking_style,
@@ -1785,7 +1815,7 @@ export default function Chat() {
     setActiveSession((prev) => ({ ...prev, messages: [...updatedMessages, thinkingMsg] }));
 
     try {
-      if (shouldAttemptProtocolUpgrade({
+      if (replyAction !== "retry" && shouldAttemptProtocolUpgrade({
         content,
         serenity,
         activeSession,
@@ -1811,7 +1841,7 @@ export default function Chat() {
         }
       }
 
-      if (shouldAttemptDeviceScan({
+      if (replyAction !== "retry" && shouldAttemptDeviceScan({
         content,
         activeSession,
         characters,
@@ -2312,6 +2342,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
               response_length: user?.settings?.ai_response_length || undefined,
               hidden_sequences: hiddenThread.hidden,
               conversational_weather: hiddenThread.weather,
+              ...(replyAction ? { reply_action: replyAction, skip_affect: true } : {}),
             },
             ...(ownModelTurn
               ? { ownModelReply: ownModelTurn.reply, ownModelVersion: ownModelTurn.version }
@@ -2330,7 +2361,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         userMessage.id = `${turnId}:user`;
         userMessage.turn_id = turnId;
       }
-      if (ownModelTurn?.learning && resultPayload.brand === "own") {
+      if (!skipAffect && ownModelTurn?.learning && resultPayload.brand === "own") {
         // "Always learning": Anima drafts what it would have said and the
         // own model learns it in the background.
         queueOwnModelLesson({ turnId, messages: messagesForModel(updatedMessages) });
@@ -2443,19 +2474,22 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       }
 
       // Felt state from the server is authoritative; keyword detectMood is fallback.
-      const affectSnapshot = parseCompanionAffectSnapshot(resultPayload.companion_affect);
-      if (affectSnapshot) {
-        setCompanionAffect(affectSnapshot);
-        setCurrentMood(affectSnapshot.primary);
-        const fromAffect = characterEmotionFromAffect(affectSnapshot);
-        if (fromAffect && activeChar?.id) {
-          setCharacterEmotions((prev) => ({
-            ...prev,
-            [activeChar.id]: { ...(prev[activeChar.id] || {}), ...fromAffect },
-          }));
+      // Retry and edit already counted this turn. Do not shift mood again.
+      if (!skipAffect) {
+        const affectSnapshot = parseCompanionAffectSnapshot(resultPayload.companion_affect);
+        if (affectSnapshot) {
+          setCompanionAffect(affectSnapshot);
+          setCurrentMood(affectSnapshot.primary);
+          const fromAffect = characterEmotionFromAffect(affectSnapshot);
+          if (fromAffect && activeChar?.id) {
+            setCharacterEmotions((prev) => ({
+              ...prev,
+              [activeChar.id]: { ...(prev[activeChar.id] || {}), ...fromAffect },
+            }));
+          }
+        } else {
+          setCurrentMood(detectMood(result));
         }
-      } else {
-        setCurrentMood(detectMood(result));
       }
 
       // In group mode, parse multi-character **Name:** format into separate bubbles
@@ -2496,13 +2530,13 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // rows. This never rewrites the prior history. `updatedMessages` is the
       // history already on rows plus, for a normal turn, the user message at the
       // end; everything before that already exists as rows.
-      const priorHistory = isContinue
+      const priorHistory = omitUserRow
         ? updatedMessages
         : updatedMessages.slice(0, -1);
       const crisisMessage = crisisCardFromPayload(resultPayload);
       const newMessages = assignTurnMessageIds(
         [
-          ...(isContinue ? [] : [userMessage]),
+          ...(omitUserRow ? [] : [userMessage]),
           ...eventMessages,
           ...newAiMessages,
           ...(crisisMessage ? [crisisMessage] : []),
@@ -2528,7 +2562,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           })),
         );
         userMessagePersisted =
-          isContinue || storedNew.some((message) => message?.role === "user");
+          omitUserRow || storedNew.some((message) => message?.role === "user");
 
         finalMessages = [...priorHistory, ...storedNew];
         applyIfSendSession((prev) => ({ ...prev, messages: finalMessages }));
@@ -2540,6 +2574,9 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       }
       loadSessions().catch(() => {});
 
+      // Retry and edit already wrote mood, memory, and the other once-per-turn
+      // side effects. A second pass would double-count affect.
+      if (!skipAffect) {
       // Update calendar based on elapsed real-world time (every 10 messages)
       if (finalMessages.length % 10 === 0) {
         base44.functions.invoke("updateSeasonalContext", {
@@ -3024,6 +3061,7 @@ Return JSON:
           }).catch(() => {});
         }, 1500);
       }
+      }
     } catch (err) {
       if (settled) {
         console.error(err);
@@ -3033,13 +3071,25 @@ Return JSON:
         skipHeldFlush = true;
         terminalReason = "error";
         pendingRemoteSyncRef.current = false;
-        applyIfSendSession((prev) => ({
-          ...prev,
-          messages: omitTurnMessages(prev?.messages, turnId),
-        }));
-        gateRef.current.noteBusy(sendSessionId, message, ownerToken);
-        syncGate();
-        armConversationBusyRetry(sendSessionId);
+        if (replyAction && Array.isArray(messageData.priorMessages)) {
+          const prior = messageData.priorMessages;
+          const restoredPreview = String(prior[prior.length - 1]?.content || "").slice(0, 60);
+          applyIfSendSession((prev) => ({ ...prev, messages: prior, last_message: restoredPreview }));
+          base44.entities.ChatSession.update(sendSessionId, {
+            messages: prior,
+            last_message: restoredPreview,
+          }).catch(() => {});
+          gateRef.current.release("error", ownerToken);
+          syncGate();
+        } else {
+          applyIfSendSession((prev) => ({
+            ...prev,
+            messages: omitTurnMessages(prev?.messages, turnId),
+          }));
+          gateRef.current.noteBusy(sendSessionId, message, ownerToken);
+          syncGate();
+          armConversationBusyRetry(sendSessionId);
+        }
       } else {
       console.error(err);
       terminalReason = composerTerminalReason(err);
@@ -3079,7 +3129,7 @@ Return JSON:
       // (or the optimistic user turn that was never written because persist:false).
       if (sendSessionId) {
         try {
-          if (!isContinue && !userMessagePersisted && content.trim()) {
+          if (!omitUserRow && !userMessagePersisted && content.trim()) {
             await base44.messages.append(sendSessionId, userMessage);
             userMessagePersisted = true;
           }
@@ -3145,7 +3195,7 @@ Return JSON:
             }
           }
           const lateAffect = parseCompanionAffectSnapshot(late.companion_affect);
-          if (lateAffect) {
+          if (!skipAffect && lateAffect) {
             setCompanionAffect(lateAffect);
             setCurrentMood(lateAffect.primary);
           }
@@ -3153,7 +3203,7 @@ Return JSON:
             ...prev,
             messages: mergeLateReplyIntoMessages(prev?.messages, {
               turnId,
-              userContent: isContinue ? "" : content,
+              userContent: omitUserRow ? "" : content,
               assistantContent: lateText,
               characterName: late.active_character_name || replySpeakerName,
               createdAt: late.created_at,
@@ -3482,7 +3532,8 @@ Return JSON:
                 onSpeak={speakMessage}
                 onEditMessage={handleEditMessage}
                 onDeleteMessage={handleDeleteMessage}
-                onRegenerateMessage={turnControlsLocked ? undefined : handleRegenerateMessage}
+                onRegenerateMessage={handleRegenerateMessage}
+                actionsDisabled={replyActionsDisabled}
                 onAvatarClick={setBioCharacter}
                 onTeachMessage={
                   modelTutor.isSteward

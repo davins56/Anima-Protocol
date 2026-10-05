@@ -2,18 +2,21 @@ import { useState } from "react";
 import MessageBubble from "./MessageBubble";
 import SystemDisclosure from "./SystemDisclosure";
 import { parseGroupResponse } from "@/lib/parseGroupResponse";
+import { lastReplyActionIndexes } from "@/lib/chatReplyActions";
 import { ChevronUp, Loader } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const PAGE_SIZE = 20; // messages shown per "page"
 
-export default function MessageList({ messages, session, characters, characterMemories = [], characterEmotions = {}, loreLinks = {}, onRewindToMessage, onSpeak, onEditMessage, onDeleteMessage, onRegenerateMessage, onAvatarClick, onTeachMessage }) {
+export default function MessageList({ messages, session, characters, characterMemories = [], characterEmotions = {}, loreLinks = {}, onRewindToMessage, onSpeak, onEditMessage, onDeleteMessage, onRegenerateMessage, onAvatarClick, onTeachMessage, actionsDisabled = false }) {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(false);
 
   const groupChars = session?.mode === "group"
     ? characters.filter(c => session.group_character_ids?.includes(c.id))
     : [];
+  const { lastUser, lastAssistant } = lastReplyActionIndexes(messages);
+  const askAgainFromUser = lastUser >= 0 && lastAssistant < lastUser;
 
   // Build the full rendered list first
   const allRendered = [];
@@ -58,7 +61,9 @@ export default function MessageList({ messages, session, characters, characterMe
                           canRewind={j === 0 && i < (messages?.length || 0) - 1}
                           onSpeak={(content) => onSpeak(content, subMsg.character_name)}
                           onDeleteMessage={onDeleteMessage ? () => onDeleteMessage(i) : undefined}
-                          onRegenerateMessage={!subMsg.role === 'user' && onRegenerateMessage ? () => onRegenerateMessage(i) : undefined}
+                          onRegenerateMessage={subMsg.role !== "user" && onRegenerateMessage ? () => onRegenerateMessage(i) : undefined}
+                          showRetry={j === 0 && i === lastAssistant}
+                          actionsDisabled={actionsDisabled}
                           onAvatarClick={onAvatarClick}
                           onTeach={onTeachMessage ? () => onTeachMessage(i, subMsg, j) : undefined}
                         />
@@ -87,7 +92,19 @@ export default function MessageList({ messages, session, characters, characterMe
           onSpeak={(content) => onSpeak(content, msg.character_name)}
           onEditMessage={msg.role === 'user' && onEditMessage ? (newText) => onEditMessage(i, newText) : undefined}
           onDeleteMessage={onDeleteMessage ? () => onDeleteMessage(i) : undefined}
-          onRegenerateMessage={msg.role === 'assistant' && msg.character_name !== '__typing__' && onRegenerateMessage ? () => onRegenerateMessage(i) : undefined}
+          onRegenerateMessage={
+            onRegenerateMessage && msg.role === "assistant" && msg.character_name !== "__typing__"
+              ? () => onRegenerateMessage(i)
+              : onRegenerateMessage && askAgainFromUser && i === lastUser
+                ? () => onRegenerateMessage(messages.length)
+                : undefined
+          }
+          showEdit={msg.role === "user" && i === lastUser}
+          showRetry={
+            (msg.role === "assistant" && i === lastAssistant) ||
+            (askAgainFromUser && i === lastUser)
+          }
+          actionsDisabled={actionsDisabled}
           onAvatarClick={onAvatarClick}
           onTeach={msg.role === 'assistant' && onTeachMessage ? () => onTeachMessage(i) : undefined}
         />
