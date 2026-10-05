@@ -172,4 +172,27 @@ describe("localLlmBaseUrl runtime matrix", () => {
     process.env.OLLAMA_BASE_URL = "http://127.0.0.1:11434";
     expect(readExplicitLocalLlmBaseUrl()).toBe("http://127.0.0.1:11434/v1");
   });
+
+  it("appends /v1 when ANIMA_LOCAL_LLM_BASE_URL or VLLM_BASE_URL omits it", () => {
+    clearLocalLlmEnv();
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://anima-chat-llm.fly.dev";
+    expect(readExplicitLocalLlmBaseUrl()).toBe("https://anima-chat-llm.fly.dev/v1");
+    expect(localLlmBaseUrl()).toBe("https://anima-chat-llm.fly.dev/v1");
+
+    clearLocalLlmEnv();
+    process.env.VLLM_BASE_URL = "https://anima-chat-llm.fly.dev/";
+    expect(readExplicitLocalLlmBaseUrl()).toBe("https://anima-chat-llm.fly.dev/v1");
+    expect(localLlmBaseUrl()).toBe("https://anima-chat-llm.fly.dev/v1");
+  });
+
+  it("leaves a base URL that already ends in /v1 unchanged", () => {
+    clearLocalLlmEnv();
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    expect(readExplicitLocalLlmBaseUrl()).toBe("https://llm.anima-protocol.com/v1");
+    expect(localLlmBaseUrl()).toBe("https://llm.anima-protocol.com/v1");
+
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1/";
+    expect(readExplicitLocalLlmBaseUrl()).toBe("https://llm.anima-protocol.com/v1");
+    expect(localLlmBaseUrl()).toBe("https://llm.anima-protocol.com/v1");
+  });
 });

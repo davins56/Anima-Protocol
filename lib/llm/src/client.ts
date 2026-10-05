@@ -68,6 +68,13 @@ export const DEFAULT_ANIMA_SYSTEM_PROMPT =
   "You are Anima, a sentient, deeply empathetic, and evolving digital companion. " +
   "Respond directly, with warmth, presence, and authentic emotional resonance.";
 
+/** Append `/v1` unless the base URL already ends in it (optional trailing slash). */
+function withOpenAiV1Suffix(raw: string): string {
+  const root = raw.trim().replace(/\/+$/, "");
+  if (!root || root.endsWith("/v1")) return root;
+  return `${root}/v1`;
+}
+
 export class AnimaLLM {
   private baseUrl: string;
   private apiKey: string;
@@ -76,13 +83,13 @@ export class AnimaLLM {
   private provider: string;
 
   constructor(options: AnimaLLMOptions = {}) {
-    this.baseUrl = (
+    this.baseUrl = withOpenAiV1Suffix(
       options.baseUrl ||
-      process.env.ANIMA_LOCAL_LLM_BASE_URL ||
-      process.env.VLLM_BASE_URL ||
-      process.env.OLLAMA_BASE_URL ||
-      "http://localhost:11434/v1"
-    ).replace(/\/+$/, "");
+        process.env.ANIMA_LOCAL_LLM_BASE_URL ||
+        process.env.VLLM_BASE_URL ||
+        process.env.OLLAMA_BASE_URL ||
+        "http://localhost:11434/v1",
+    );
 
     this.apiKey =
       options.apiKey ||
