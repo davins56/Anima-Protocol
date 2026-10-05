@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { isCloudflareWorkerRuntime } from "@workspace/db";
+import { withOpenAiV1Suffix } from "@workspace/llm";
 
 /** Same Worker signal as `@workspace/db` — re-exported so LLM routing stays in lockstep. */
 export { isCloudflareWorkerRuntime };
@@ -207,22 +208,11 @@ function urlLooksLoopback(raw: string): boolean {
 }
 
 /**
- * OpenAI-compatible chat is `{base}/chat/completions`.
- * Append `/v1` when the operator omitted it. A URL that already ends in
- * `/v1` (optional trailing slash) is returned unchanged.
- */
-function withOpenAiV1Suffix(raw: string): string {
-  const root = raw.trim().replace(/\/+$/, "");
-  if (!root || root.endsWith("/v1")) return root;
-  return `${root}/v1`;
-}
-
-/**
  * Operator-supplied OpenAI-compatible base URL, or null when unset.
  * Does not invent localhost and does not apply the serverless loopback guard.
- * `ANIMA_LOCAL_LLM_BASE_URL` and `VLLM_BASE_URL` gain a trailing `/v1` when
- * omitted so `/chat/completions` resolves. `https://llm.anima-protocol.com/v1`
- * is left as-is.
+ * `ANIMA_LOCAL_LLM_BASE_URL` and `VLLM_BASE_URL` gain a trailing `/v1` on the
+ * pathname when omitted so `/chat/completions` resolves. Query and hash are
+ * kept. `https://llm.anima-protocol.com/v1` is left as-is.
  */
 export function readExplicitLocalLlmBaseUrl(
   env: NodeJS.ProcessEnv = process.env,

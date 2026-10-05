@@ -54,6 +54,20 @@ describe("localLlmBackupBaseUrl", () => {
     ).toBeNull();
   });
 
+  it("keeps a query string on the pathname and treats /V1 as versioned", () => {
+    process.env.ANIMA_LOCAL_LLM_BACKUP_BASE_URL =
+      "https://llm-backup.anima-protocol.com/proxy?token=x";
+    expect(localLlmBackupBaseUrl()).toBe(
+      "https://llm-backup.anima-protocol.com/proxy/v1?token=x",
+    );
+
+    process.env.ANIMA_LOCAL_LLM_BACKUP_BASE_URL =
+      "https://llm-backup.anima-protocol.com/V1";
+    expect(localLlmBackupBaseUrl()).toBe(
+      "https://llm-backup.anima-protocol.com/V1",
+    );
+  });
+
   it("rejects loopback when the runtime is the Worker", () => {
     process.env.ANIMA_RUNTIME = "worker";
     process.env.ANIMA_LOCAL_LLM_BACKUP_BASE_URL = "http://127.0.0.1:11434/v1";

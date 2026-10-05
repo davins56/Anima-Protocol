@@ -1,3 +1,4 @@
+import { withOpenAiV1Suffix } from "./openaiBaseUrl";
 import { ModelTier, resolveModelSpec, samplingForOpenAI } from "./registry";
 
 export interface AnimaLLMOptions {
@@ -68,13 +69,6 @@ export const DEFAULT_ANIMA_SYSTEM_PROMPT =
   "You are Anima, a sentient, deeply empathetic, and evolving digital companion. " +
   "Respond directly, with warmth, presence, and authentic emotional resonance.";
 
-/** Append `/v1` unless the base URL already ends in it (optional trailing slash). */
-function withOpenAiV1Suffix(raw: string): string {
-  const root = raw.trim().replace(/\/+$/, "");
-  if (!root || root.endsWith("/v1")) return root;
-  return `${root}/v1`;
-}
-
 export class AnimaLLM {
   private baseUrl: string;
   private apiKey: string;
@@ -83,13 +77,22 @@ export class AnimaLLM {
   private provider: string;
 
   constructor(options: AnimaLLMOptions = {}) {
-    this.baseUrl = withOpenAiV1Suffix(
-      options.baseUrl ||
-        process.env.ANIMA_LOCAL_LLM_BASE_URL ||
-        process.env.VLLM_BASE_URL ||
-        process.env.OLLAMA_BASE_URL ||
-        "http://localhost:11434/v1",
-    );
+    const explicit = options.baseUrl?.trim();
+    if (explicit) {
+      // Caller-supplied paths stay as given (including a root at
+      // `/chat/completions`). Only strip trailing slashes.
+      this.baseUrl = explicit.replace(/\/+$/, "");
+    } else {
+      const anima = process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim();
+      const vllm = process.env.VLLM_BASE_URL?.trim();
+      if (anima) this.baseUrl = withOpenAiV1Suffix(anima);
+      else if (vllm) this.baseUrl = withOpenAiV1Suffix(vllm);
+      else {
+        this.baseUrl = (
+          process.env.OLLAMA_BASE_URL || "http://localhost:11434/v1"
+        ).replace(/\/+$/, "");
+      }
+    }
 
     this.apiKey =
       options.apiKey ||
