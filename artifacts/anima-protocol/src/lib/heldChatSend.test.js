@@ -107,6 +107,16 @@ describe("held chat send", () => {
     ]);
   });
 
+  it("does not queue a retry or edit as another user turn while she is replying", () => {
+    const gate = createComposerGate();
+    gate.accept("sess", "hello");
+    const retry = gate.accept("sess", { text: "hello", replyAction: "retry", history: [] });
+    const edit = gate.accept("sess", { text: "rewritten", replyAction: "edit", history: [] });
+    expect(retry.action).toBe("ignore");
+    expect(edit.action).toBe("ignore");
+    expect(gate.snapshot().heldBySession.sess).toBeUndefined();
+  });
+
   it("keeps the text box usable while Continue and regenerate stay locked", () => {
     const gate = createComposerGate();
     sendThenHold(gate, "sess", "hello", "one more");

@@ -232,9 +232,36 @@ describe("regenerateMessageFlow (confirm-and-rewrite a reply)", () => {
       "hi there",
       "tell me a story",
     ]);
-    // ...and the most recent preceding user message was sent again.
+    // ...and the same user line is sent again as a retry, not a new user turn.
     expect(sendMessage).toHaveBeenCalledTimes(1);
-    expect(sendMessage).toHaveBeenCalledWith("tell me a story");
+    expect(sendMessage.mock.calls[0][0]).toMatchObject({
+      text: "tell me a story",
+      replyAction: "retry",
+    });
+    expect(typeof sendMessage.mock.calls[0][0]).toBe("object");
+    expect(sendMessage.mock.calls[0][0].history.map((message) => message.content)).toEqual([
+      "hello",
+      "hi there",
+      "tell me a story",
+    ]);
+  });
+
+  it("does not start a retry while a turn is in flight or a message is waiting", async () => {
+    const session = await makeSession();
+    const confirm = vi.fn().mockResolvedValue(true);
+    const setActiveSession = vi.fn();
+    const sendMessage = vi.fn();
+
+    await regenerateMessageFlow(3, {
+      confirm,
+      activeSession: session,
+      isLoading: () => true,
+      setActiveSession,
+      sendMessage,
+    });
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it("trims without re-sending when there is no preceding user message", async () => {
@@ -259,5 +286,24 @@ describe("regenerateMessageFlow (confirm-and-rewrite a reply)", () => {
     expect(stored.messages.map((m) => m.content)).toEqual(["The stage is set."]);
     expect(setActiveSession).toHaveBeenCalledTimes(1);
     expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("restores the thread when the send cannot start", async () => {
+    const session = await makeSession();
+    const confirm = vi.fn().mockResolvedValue(true);
+    const setActiveSession = vi.fn();
+    const sendMessage = vi.fn().mockResolvedValue({ started: false });
+
+    await regenerateMessageFlow(3, {
+      confirm,
+      activeSession: session,
+      isLoading: false,
+      setActiveSession,
+      sendMessage,
+    });
+
+    const stored = await base44.entities.ChatSession.get(session.id);
+    expect(stored.messages).toHaveLength(5);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
   });
 });
