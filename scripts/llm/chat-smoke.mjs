@@ -5,11 +5,29 @@
  *   node scripts/llm/chat-smoke.mjs "Who are you?"
  *   pnpm llm:chat -- "Tell me a short hello"
  */
-const base =
-  (process.env.ANIMA_LOCAL_LLM_BASE_URL || "http://127.0.0.1:11434/v1").replace(
-    /\/$/,
-    "",
-  );
+/** Same pathname rules as `withOpenAiV1Suffix` in `@workspace/llm`. */
+function withOpenAiV1Suffix(raw) {
+  const trimmed = raw.trim();
+  if (!trimmed) return trimmed;
+  let url;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return trimmed;
+  }
+  const path = url.pathname.replace(/\/+$/, "") || "/";
+  if (/\/v1$/i.test(path)) {
+    if (url.pathname === path) return trimmed;
+    url.pathname = path;
+    return url.href;
+  }
+  url.pathname = path === "/" ? "/v1" : `${path}/v1`;
+  return url.href;
+}
+
+const base = withOpenAiV1Suffix(
+  process.env.ANIMA_LOCAL_LLM_BASE_URL || "http://127.0.0.1:11434/v1",
+);
 const model =
   process.env.ANIMA_OLLAMA_MODEL_STANDARD ||
   process.env.ANIMA_OLLAMA_CHAT_TAG ||
