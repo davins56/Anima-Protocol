@@ -172,4 +172,11 @@ describe("localLlmBaseUrl runtime matrix", () => {
     process.env.OLLAMA_BASE_URL = "http://127.0.0.1:11434";
     expect(readExplicitLocalLlmBaseUrl()).toBe("http://127.0.0.1:11434/v1");
   });
+
+  it("automatically appends /v1 to ANIMA_LOCAL_LLM_BASE_URL when omitted", () => {
+    clearLocalLlmEnv();
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://anima-chat-llm.fly.dev";
+    expect(readExplicitLocalLlmBaseUrl()).toBe("https://anima-chat-llm.fly.dev/v1");
+    expect(localLlmBaseUrl()).toBe("https://anima-chat-llm.fly.dev/v1");
+  });
 });
