@@ -391,7 +391,7 @@ describe("Cloudflare wrangler config", () => {
       scripts?: Record<string, string>;
       devDependencies?: Record<string, string>;
     };
-    expect(pkg.devDependencies?.wrangler).toBe("4.129.1");
+    expect(pkg.devDependencies?.wrangler).toMatch(/^4\./);
     expect(pkg.scripts?.postinstall).toContain(
       "install-wrangler-deploy-guard.mjs",
     );

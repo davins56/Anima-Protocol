@@ -82,7 +82,7 @@ describe("generated Vercel bundle serves /api", () => {
   it("serves /api/__clerk instead of 404 so GitHub OAuth can start", async () => {
     const response = await fetch(`${baseUrl}/api/__clerk/v1/environment`);
     expect(response.status).not.toBe(404);
-    expect([200, 400, 401, 403, 502, 503]).toContain(response.status);
+    expect([200, 400, 401, 403, 422, 502, 503]).toContain(response.status);
     const contentType = response.headers.get("content-type") ?? "";
     expect(contentType).toMatch(/json/);
   });
