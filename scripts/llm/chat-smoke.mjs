@@ -5,11 +5,12 @@
  *   node scripts/llm/chat-smoke.mjs "Who are you?"
  *   pnpm llm:chat -- "Tell me a short hello"
  */
-const base =
-  (process.env.ANIMA_LOCAL_LLM_BASE_URL || "http://127.0.0.1:11434/v1").replace(
-    /\/$/,
-    "",
-  );
+const rawBase = (
+  process.env.ANIMA_LOCAL_LLM_BASE_URL || "http://127.0.0.1:11434/v1"
+)
+  .trim()
+  .replace(/\/+$/, "");
+const base = rawBase.endsWith("/v1") ? rawBase : `${rawBase}/v1`;
 const model =
   process.env.ANIMA_OLLAMA_MODEL_STANDARD ||
   process.env.ANIMA_OLLAMA_CHAT_TAG ||
