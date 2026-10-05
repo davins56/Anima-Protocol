@@ -119,8 +119,14 @@
   // 1. In Secrets Store a31e40473ef34db896b5bc1e6c1c4b86 create these
   //    secret_name entries if they do not already exist (values only in
   //    the dashboard — never commit them):
-  //      ANIMA_LOCAL_LLM_BASE_URL = https://llm.anima-protocol.com/v1
-  //      ANIMA_LOCAL_LLM_API_KEY  = tunnel / host bearer (same as PROXY_AUTH_TOKEN)
+    //      ANIMA_LOCAL_LLM_BASE_URL = https://llm.anima-protocol.com/v1
+    //      ANIMA_LOCAL_LLM_API_KEY  = tunnel / host bearer (same as PROXY_AUTH_TOKEN)
+    // Optional backup Ollama (same anima-chat model) is
+    // ANIMA_LOCAL_LLM_BACKUP_BASE_URL, read from the process env only.
+    // Do not bind it here until that secret_name exists. A missing binding
+    // fails wrangler deploy. Unset means no hop. Example:
+    // https://llm-backup.anima-protocol.com/v1
+    // Never an OpenRouter or OpenAI fallback.
   //    Do NOT bind ANIMA_LOCAL_LLM_BACKEND here — it is a committed var.
   // 2. The { binding, store_id, secret_name } objects below must match
   //    those names exactly.
@@ -161,6 +167,29 @@
       "binding": "ANIMA_LOCAL_LLM_API_KEY",
       "store_id": "a31e40473ef34db896b5bc1e6c1c4b86",
       "secret_name": "ANIMA_LOCAL_LLM_API_KEY"
+    }
+  ],
+  // One Durable Object serializes the local Ollama slot across isolates.
+  // Chat turns queue FIFO; background callers skip while it is held or a
+  // chat turn is waiting. The lease TTL is inside the object (no new secret).
+  //
+  // LocalLlmSlot uses the SQLite backend (new_sqlite_classes). Workers Free
+  // includes SQLite-backed Durable Objects, so this migration does not need
+  // Workers Paid. Keep the class in new_sqlite_classes — do not move it to
+  // new_classes. Do not rename LocalLlmSlot without a new migration tag.
+  // The object name in code is getByName("ollama") — one slot for the droplet.
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "LOCAL_LLM_SLOT",
+        "class_name": "LocalLlmSlot"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1-local-llm-slot",
+      "new_sqlite_classes": ["LocalLlmSlot"]
     }
   ],
   // Free plan: 10k neurons/day. Exhaustion is Workers AI error 4006 — the

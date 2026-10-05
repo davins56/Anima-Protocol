@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { LlmStreamTimeoutError } from "../src/lib/consumeLlmStream.js";
 import { streamErrorMessage } from "../src/lib/chatStreamError";
+import {
+  LOCAL_LLM_SUBREQUEST_HINT,
+  OPENROUTER_FREE_PROVIDER_HINT,
+} from "../src/lib/llmFailover";
 import { WorkerApiTimeoutError } from "../src/lib/workerApiGuard";
 
 const NATASHA_FAILED_QUERY = `Failed query: select "id", "user_id", "character_id", "summary", "facts", "emotional_state", "resonance_notes", "created_at", "updated_at" from "companion_memories" where ("companion_memories"."user_id" = $1 and "companion_memories"."character_id" in ($2)) order by "companion_memories"."updated_at" desc params: user_3EndjEBjft9MWRhD4dYFiX63sDU,seed_marvel-cinematic-universe-natasha-romanoff`;
@@ -42,8 +46,19 @@ describe("streamErrorMessage companion_memories", () => {
 
   it("maps a generic Failed query without companion_memories to a safe DB message", () => {
     expect(streamErrorMessage(new Error("Failed query: select 1\nparams:"))).toBe(
-      "Database unavailable",
+      "Couldn't load this conversation. Please try again.",
     );
+  });
+
+  it("maps a Worker cross-request I/O failure to conversation copy, not Database unavailable", () => {
+    const message = streamErrorMessage(
+      new Error(
+        "Cannot perform I/O on behalf of a different request. I/O objects created in the context of one request handler cannot be accessed from a different request's handler.",
+      ),
+    );
+    expect(message).toBe("Couldn't load this conversation. Please try again.");
+    expect(message).not.toMatch(/Database unavailable/i);
+    expect(message).not.toMatch(/different request/i);
   });
 
   it("still names companion memory when the table is two cause levels down", () => {
@@ -91,5 +106,36 @@ describe("streamErrorMessage does not regress LLM / Worker timeouts", () => {
     expect(message).toMatch(/took too long to reply/i);
     expect(message).not.toMatch(/Failed query|select 1/i);
     expect(message).not.toMatch(/database/i);
+  });
+});
+
+describe("streamErrorMessage OpenRouter hop leftovers", () => {
+  it("remaps bare HTTP 429 / request-failed status to the free-tier hint", () => {
+    expect(
+      streamErrorMessage(
+        Object.assign(new Error("Request failed with status code 429"), {
+          status: 429,
+        }),
+      ),
+    ).toBe(OPENROUTER_FREE_PROVIDER_HINT);
+    expect(streamErrorMessage(new Error("API error: 502"))).toBe(
+      OPENROUTER_FREE_PROVIDER_HINT,
+    );
+    expect(streamErrorMessage(new Error("HTTP 503"))).not.toMatch(
+      /companion service encountered an issue/i,
+    );
+  });
+});
+
+describe("streamErrorMessage Worker subrequest limit", () => {
+  it("does not leak the Cloudflare subrequest string or tunnel/home-box copy", () => {
+    const productionToast = Object.assign(new Error("Connection error."), {
+      name: "APIConnectionError",
+      cause: new Error("Too many subrequests by single Worker invocation."),
+    });
+    const message = streamErrorMessage(productionToast);
+    expect(message).toBe(LOCAL_LLM_SUBREQUEST_HINT);
+    expect(message).not.toMatch(/Too many subrequests/i);
+    expect(message).not.toMatch(/home box|Cloudflare Tunnel|public-v1/i);
   });
 });

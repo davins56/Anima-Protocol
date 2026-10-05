@@ -1,5 +1,5 @@
 import { format } from "date-fns";
-import { RotateCcw, Pencil, Trash2, RefreshCw, Check, X } from "lucide-react";
+import { RotateCcw, Pencil, Trash2, RefreshCw, Check, X, GraduationCap } from "lucide-react";
 import EventBubble from "./EventBubble";
 import LoreTextWithKeywords from "./LoreTextWithKeywords";
 import LoreTextWithIndicators from "./LoreTextWithIndicators";
@@ -9,26 +9,29 @@ import LoreKeywordHighlighter from "@/components/lore/LoreKeywordHighlighter";
 import MediaLightbox from "./MediaLightbox";
 import AudioPlayer from "./AudioPlayer";
 import DeviceScanCard from "./DeviceScanCard";
+import PdfFileChip from "@/components/pdf/PdfFileChip";
 import { renderItalicText } from "./renderItalicText";
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { useMemoryHighlight } from "@/hooks/useMemoryHighlight";
 import { useLoreDetection } from "@/hooks/useLoreDetection";
+import { isOwnModelReply } from "@/lib/modelTutor";
 
 const renderMessageWithActions = (content) => renderItalicText(content);
 
-export default function MessageBubble({ message, onRewind, canRewind, onSpeak, character, characterMemories = [], characterEmotion = 'neutral', characterEmotionIntensity = 5, sessionId = null, onEditMessage, onDeleteMessage, onRegenerateMessage, messageLoreLinks = [], onAvatarClick }) {
+export default function MessageBubble({ message, onRewind, canRewind, onSpeak, character, characterMemories = [], characterEmotion = 'neutral', characterEmotionIntensity = 5, sessionId = null, onEditMessage, onDeleteMessage, onRegenerateMessage, messageLoreLinks = [], onAvatarClick, onTeach }) {
   const [loreEntries, setLoreEntries] = useState([]);
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(message.content || "");
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const { isMemoryReference, memoryDetail } = useMemoryHighlight(message, characterMemories);
-  const { loreContext } = useLoreDetection(message.content, sessionId);
+  const { loreContext } = useLoreDetection(message, sessionId);
 
   // Extract media from message attachments
   const images = (message.attachments || []).filter((a) => a.type === "image").map((a) => a.url);
   const audioClips = (message.attachments || []).filter((a) => a.type === "audio");
+  const pdfFiles = (message.attachments || []).filter((a) => a.type === "pdf");
 
   const handleEditSave = () => {
     if (editText.trim() && onEditMessage) {
@@ -92,6 +95,11 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
         {!isUser && message.character_name && !isTyping && !isThinking && (
           <span className="text-[8px] sm:text-[9px] font-mono text-primary/50 tracking-[0.2em] uppercase">
             [{message.character_name}]
+            {isOwnModelReply(message) && (
+              <span className="ml-1.5 text-fuchsia-300/70" title="Written by your own model">
+                · your model
+              </span>
+            )}
           </span>
         )}
         <div
@@ -160,6 +168,18 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
                />
              )}
            </>
+           )}
+
+           {pdfFiles.length > 0 && (
+            <div className="mt-2 space-y-1.5">
+              {pdfFiles.map((file, idx) => (
+                <PdfFileChip
+                  key={file.id || idx}
+                  name={file.name || file.filename || "PDF"}
+                  pageCount={file.page_count || file.pageCount}
+                />
+              ))}
+            </div>
            )}
 
            {/* Media attachments */}
@@ -252,6 +272,19 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
               </button>
             )}
           </div>
+        )}
+
+        {/* Steward only: teach the own model a better reply. Visible without
+            hover on phones, where the action bar above never appears. */}
+        {onTeach && !isUser && !isTyping && !isThinking && !isStreaming && !isEditing && (
+          <button
+            type="button"
+            onClick={onTeach}
+            className="flex items-center gap-1 min-h-[32px] px-2 border border-fuchsia-400/20 hover:border-fuchsia-400/50 text-fuchsia-300/70 hover:text-fuchsia-200 font-mono text-[9px] tracking-widest uppercase transition-all opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100"
+            title="Teach your model a better reply"
+          >
+            <GraduationCap className="w-3 h-3" /> Teach
+          </button>
         )}
 
         {time && !isTyping && !isThinking && !isStreaming && (

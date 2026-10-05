@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
 import {
+  CONTINUE_IN_FIRST_PERSON,
   LEAN_SOLO_CLIENT_CONTEXT_MAX,
   buildLeanSoloClientContext,
   companionChatDeepMode,
@@ -45,15 +46,33 @@ describe("buildLeanSoloClientContext", () => {
     expect(context.length).toBeLessThanOrEqual(LEAN_SOLO_CLIENT_CONTEXT_MAX);
     expect(context).toContain("2-4 sentences");
     expect(context).toContain("IMAGE GENERATION");
-    expect(context).toMatch(/Continue — keep the scene moving as Aria/);
+    expect(context).toContain(CONTINUE_IN_FIRST_PERSON);
+    expect(context).not.toMatch(/as Aria/);
   });
 
-  it("adds a continue beat without a user transcript", () => {
+  it("adds a first-person continue line without a user transcript", () => {
     const context = buildLeanSoloClientContext({
       isContinue: true,
       characterName: "Aria",
     });
-    expect(context).toMatch(/Continue — keep the scene moving as Aria/);
+    expect(context).toBe(CONTINUE_IN_FIRST_PERSON);
+    expect(context).not.toMatch(/continue the (?:scene|story)/i);
+    expect(context).not.toMatch(/as Aria/);
+  });
+
+  it("sends that same first-person line when the chat box is empty", () => {
+    const chat = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../pages/Chat.jsx"),
+      "utf8",
+    );
+    const handler = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "./chatMessageHandler.js"),
+      "utf8",
+    );
+    expect(chat).toContain("content: isContinue ? CONTINUE_IN_FIRST_PERSON : content");
+    expect(chat).not.toContain("Make real decisions based on who you are");
+    expect(handler).toContain("CONTINUE_IN_FIRST_PERSON");
+    expect(handler).not.toContain("Make real decisions based on who you are");
   });
 
   it("caps an oversized trailing block instead of exceeding the budget", () => {
@@ -96,6 +115,7 @@ describe("Chat.jsx lean 1:1 wiring", () => {
     expect(chat).toContain("userProfileContext,");
     expect(chat).toContain("behaviorConfigPromise");
     expect(chat).toContain("companionChatDeepMode(activeSession)");
+    expect(chat).toContain("response_length: user?.settings?.ai_response_length || undefined");
     expect(chat).not.toMatch(
       /prompt = `You are \$\{char\.name\}[\s\S]*CHARACTER IDENTITY LOCK/,
     );

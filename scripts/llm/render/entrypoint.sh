@@ -4,6 +4,9 @@
 # then stays in the foreground serving traffic so Render sees a live process.
 set -eu
 
+# /v1/chat/completions drops keep_alive. The server default still applies.
+export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-30m}"
+
 ollama serve &
 SERVE_PID=$!
 
@@ -18,14 +21,15 @@ until curl -sf http://127.0.0.1:11434/api/tags >/dev/null 2>&1; do
   sleep 1
 done
 
-if ollama list 2>/dev/null | grep -q "^${ANIMA_OLLAMA_CHAT_TAG}"; then
-  echo "${ANIMA_OLLAMA_CHAT_TAG} already present on disk, skipping bootstrap."
+if ollama list 2>/dev/null | grep -q "^${ANIMA_BOOTSTRAP_BASE}"; then
+  echo "${ANIMA_BOOTSTRAP_BASE} already present on disk, skipping pull."
 else
   echo "Pulling open weights: ${ANIMA_BOOTSTRAP_BASE}"
   ollama pull "${ANIMA_BOOTSTRAP_BASE}"
-  echo "Creating Anima chat model: ${ANIMA_OLLAMA_CHAT_TAG}"
-  ollama create "${ANIMA_OLLAMA_CHAT_TAG}" -f /Modelfile.anima-chat
 fi
+# Rebuild every boot so Modelfile changes (sampling, system prompt) apply.
+echo "Creating Anima chat model: ${ANIMA_OLLAMA_CHAT_TAG}"
+ollama create "${ANIMA_OLLAMA_CHAT_TAG}" -f /Modelfile.anima-chat
 
 echo "Anima LLM ready on :11434 (${ANIMA_OLLAMA_CHAT_TAG})"
 wait "$SERVE_PID"

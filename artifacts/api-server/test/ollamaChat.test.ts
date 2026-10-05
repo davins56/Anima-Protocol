@@ -1,0 +1,782 @@
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { afterEach, describe, expect, it } from "vitest";
+
+import { resetLlmClientsForTests } from "../src/lib/openaiClient";
+import {
+  COMPANION_CHAT_TEMPERATURE,
+  OLLAMA_CHAT_SAMPLING,
+  OLLAMA_MAX_TEMPERATURE,
+  OLLAMA_NUM_PREDICT_CAP,
+  capOllamaNumPredict,
+  OLLAMA_UNAVAILABLE_HINT,
+  createOllamaChatCompletion,
+  createOllamaChatStream,
+  isOllamaNativeChatEnabled,
+  probeOllamaModelListed,
+  resolveOllamaChatConfig,
+  resolveOllamaModelName,
+  toOllamaMessages,
+} from "../src/lib/ollamaChat";
+import {
+  createChatCompletionWithFailover,
+  createChatStreamWithFailover,
+} from "../src/lib/llmFailover";
+import { consumeLlmStream } from "../src/lib/consumeLlmStream";
+import { localLlmAuthorizationHeader } from "../src/lib/localLlmWarm";
+import { composeCompanionChatMessages } from "../src/lib/promptBuilder";
+
+async function listenStub(
+  handler: (req: IncomingMessage, res: ServerResponse) => void,
+): Promise<{ server: Server; origin: string }> {
+  const server = createServer(handler);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("failed to bind Ollama stub");
+  }
+  return { server, origin: `http://127.0.0.1:${address.port}` };
+}
+
+function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    let raw = "";
+    req.on("data", (chunk) => {
+      raw += chunk;
+    });
+    req.on("end", () => {
+      try {
+        resolve(JSON.parse(raw || "{}") as Record<string, unknown>);
+      } catch (err) {
+        reject(err);
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
+describe("ollamaChat adapter", () => {
+  const SAVED = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...SAVED };
+    resetLlmClientsForTests();
+  });
+
+  it("sets num_predict to a short reply cap and keeps the 200 ceiling otherwise", () => {
+    expect(capOllamaNumPredict(90)).toBe(90);
+    expect(capOllamaNumPredict(1024)).toBe(OLLAMA_NUM_PREDICT_CAP);
+    expect(OLLAMA_NUM_PREDICT_CAP).toBe(200);
+  });
+
+  it("reads model name and native /api/chat URL from env (never a VITE_ var)", () => {
+    process.env.ANIMA_RUNTIME = "node";
+    process.env.ANIMA_LOCAL_LLM_BACKEND = "ollama";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:11434/v1";
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
+    delete process.env.VERCEL;
+
+    const config = resolveOllamaChatConfig();
+    expect(resolveOllamaModelName()).toBe("anima-chat");
+    expect(config.origin).toBe("http://localhost:11434");
+    expect(config.chatUrl).toBe("http://localhost:11434/api/chat");
+    expect(isOllamaNativeChatEnabled()).toBe(true);
+  });
+
+  it("accepts a root Ollama URL without /v1 and OLLAMA_MODEL", () => {
+    process.env.ANIMA_RUNTIME = "node";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://127.0.0.1:11434";
+    process.env.OLLAMA_MODEL = "qwen2.5:3b";
+    delete process.env.ANIMA_OLLAMA_MODEL_STANDARD;
+    delete process.env.ANIMA_OLLAMA_MODEL;
+    const config = resolveOllamaChatConfig();
+    expect(config.chatUrl).toBe("http://127.0.0.1:11434/api/chat");
+    expect(config.model).toBe("qwen2.5:3b");
+  });
+
+  it("stays off for vLLM and when ANIMA_OLLAMA_NATIVE_CHAT=0", () => {
+    process.env.ANIMA_RUNTIME = "node";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:11434/v1";
+    process.env.ANIMA_LOCAL_LLM_BACKEND = "vllm";
+    expect(isOllamaNativeChatEnabled()).toBe(false);
+    process.env.ANIMA_LOCAL_LLM_BACKEND = "ollama";
+    process.env.ANIMA_OLLAMA_NATIVE_CHAT = "0";
+    expect(isOllamaNativeChatEnabled()).toBe(false);
+  });
+
+  it("preserves character system instructions and conversation history", () => {
+    const mapped = toOllamaMessages([
+      { role: "system", content: "CHARACTER IDENTITY LOCK: You are Serenity." },
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "I'm here." },
+      { role: "user", content: [{ type: "text", text: "Stay with me." }] as never },
+    ]);
+    expect(mapped).toEqual([
+      { role: "system", content: "CHARACTER IDENTITY LOCK: You are Serenity." },
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "I'm here." },
+      { role: "user", content: "Stay with me." },
+    ]);
+  });
+
+  it("folds the answer-last line into the final user turn and leaves the user text last", () => {
+    const userText = "What do you see?";
+    const instruction =
+      "Answer Mara's last message first, directly, in Natasha's own voice. Stay on what they said. Bring in memories or lore only when they help answer it.";
+    const avoid =
+      "Your last draft repeated an earlier reply word for word. Write a new reply to the latest message. Do not reuse earlier wording.";
+    const mapped = toOllamaMessages([
+      { role: "system", content: "CHARACTER IDENTITY LOCK: You are Natasha." },
+      { role: "user", content: "Earlier" },
+      { role: "assistant", content: "I remember." },
+      { role: "system", content: instruction },
+      { role: "system", content: avoid },
+      { role: "user", content: userText },
+    ]);
+    expect(mapped).toEqual([
+      { role: "system", content: "CHARACTER IDENTITY LOCK: You are Natasha." },
+      { role: "user", content: "Earlier" },
+      { role: "assistant", content: "I remember." },
+      { role: "user", content: `[${instruction}]\n[${avoid}]\n\n${userText}` },
+    ]);
+    expect(mapped.map((message) => message.content).join("\n").split(userText).length - 1).toBe(1);
+  });
+
+  it("streams NDJSON /api/chat deltas as OpenAI-shaped chunks", async () => {
+    const received: Record<string, unknown>[] = [];
+    const { server, origin } = await listenStub((req, res) => {
+      if (req.method !== "POST" || req.url !== "/api/chat") {
+        res.writeHead(404).end();
+        return;
+      }
+      void readJson(req).then((body) => {
+        received.push(body);
+        res.writeHead(200, { "Content-Type": "application/x-ndjson" });
+        res.write(
+          `${JSON.stringify({ message: { role: "assistant", content: "Stay " }, done: false })}\n`,
+        );
+        res.write(
+          `${JSON.stringify({ message: { role: "assistant", content: "close." }, done: false })}\n`,
+        );
+        res.end(`${JSON.stringify({ message: { role: "assistant", content: "" }, done: true })}\n`);
+      });
+    });
+
+    process.env.ANIMA_RUNTIME = "node";
+    process.env.ANIMA_LOCAL_LLM_BACKEND = "ollama";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = `${origin}/v1`;
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
+    delete process.env.ANIMA_OLLAMA_NATIVE_CHAT;
+    delete process.env.ANIMA_OLLAMA_KEEP_ALIVE;
+
+    try {
+      const stream = await createOllamaChatStream({
+        model: "anima-chat",
+        maxTokens: 64,
+        temperature: 0.4,
+        messages: [
+          { role: "system", content: "You are Serenity." },
+          { role: "user", content: "Hi" },
+        ],
+      });
+      const result = await consumeLlmStream(stream);
+      expect(result.content).toBe("Stay close.");
+      expect(received).toHaveLength(1);
+      expect(received[0]).toMatchObject({
+        model: "anima-chat",
+        stream: true,
+        options: { temperature: 0.4, num_ctx: 8192, num_predict: 64 },
+        messages: [
+          { role: "system", content: "You are Serenity." },
+          { role: "user", content: "Hi" },
+        ],
+      });
+      expect(received[0]!.keep_alive).toBeUndefined();
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      );
+    }
+  });
+
+  it("completes a non-stream /api/chat turn", async () => {
+    const { server, origin } = await listenStub((req, res) => {
+      if (req.method !== "POST" || req.url !== "/api/chat") {
+        res.writeHead(404).end();
+        return;
+      }
+      void readJson(req).then((body) => {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            model: body.model,
+            message: { role: "assistant", content: "I hear you." },
+            done: true,
+          }),
+        );
+      });
+    });
+
+    process.env.ANIMA_RUNTIME = "node";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = `${origin}/v1`;
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
+
+    try {
+      const result = await createOllamaChatCompletion({
+        model: "anima-chat",
+        messages: [{ role: "user", content: "Hello" }],
+      });
+      expect(result).toEqual({ content: "I hear you.", model: "anima-chat" });
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      );
+    }
+  });
+
+  it("sends Qwen sampling defaults and caps hot temperatures that garble a 3B model", async () => {
+    const received: Array<Record<string, unknown>> = [];
+    const { server, origin } = await listenStub((req, res) => {
+      void readJson(req).then((body) => {
+        received.push(body);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            model: body.model,
+            message: { role: "assistant", content: "Hi." },
+            done: true,
+          }),
+        );
+      });
+    });
+
+    process.env.ANIMA_RUNTIME = "node";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = `${origin}/v1`;
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
+    delete process.env.ANIMA_OLLAMA_MAX_TEMPERATURE;
+
+    try {
+      const messages = [{ role: "user" as const, content: "Hello" }];
+      await createOllamaChatCompletion({ model: "anima-chat", messages, temperature: 1.15 });
+      await createOllamaChatCompletion({ model: "anima-chat", messages });
+      process.env.ANIMA_OLLAMA_MAX_TEMPERATURE = "1";
+      await createOllamaChatCompletion({ model: "anima-chat", messages, temperature: 0.9 });
+      delete process.env.ANIMA_OLLAMA_MAX_TEMPERATURE;
+      await createOllamaChatCompletion({
+        model: "anima-chat",
+        messages,
+        temperature: COMPANION_CHAT_TEMPERATURE,
+      });
+
+      expect(received[0]!.options).toEqual({
+        ...OLLAMA_CHAT_SAMPLING,
+        num_ctx: 8192,
+        num_predict: OLLAMA_NUM_PREDICT_CAP,
+        temperature: OLLAMA_MAX_TEMPERATURE,
+      });
+      expect(received[1]!.options).toEqual({
+        ...OLLAMA_CHAT_SAMPLING,
+        num_ctx: 8192,
+        num_predict: OLLAMA_NUM_PREDICT_CAP,
+      });
+      expect((received[2]!.options as { temperature: number }).temperature).toBe(0.9);
+      expect(COMPANION_CHAT_TEMPERATURE).toBe(0.65);
+      expect(OLLAMA_MAX_TEMPERATURE - COMPANION_CHAT_TEMPERATURE).toBeCloseTo(0.1);
+      expect((received[3]!.options as { temperature: number }).temperature).toBe(0.65);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      );
+    }
+  });
+
+  it("returns a useful connection error without leaking the endpoint URL", async () => {
+    process.env.ANIMA_RUNTIME = "node";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://127.0.0.1:1/v1";
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
+
+    await expect(
+      createOllamaChatCompletion({
+        model: "anima-chat",
+        messages: [{ role: "user", content: "Hello" }],
+      }),
+    ).rejects.toThrow(OLLAMA_UNAVAILABLE_HINT);
+
+    try {
+      await createOllamaChatCompletion({
+        model: "anima-chat",
+        messages: [{ role: "user", content: "Hello" }],
+      });
+      throw new Error("expected failure");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      expect(message).toMatch(/Ollama model server is not running/i);
+      expect(message).not.toMatch(/127\.0\.0\.1:1/);
+      expect(message).not.toMatch(/\/api\/chat/);
+      expect((err as { name?: string }).name).toBe("APIConnectionError");
+    }
+  });
+
+  it("marks a missing model as model_not_found so failover can discover a sibling", async () => {
+    const { server, origin } = await listenStub((_req, res) => {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "model 'anima-chat' not found" }));
+    });
+    process.env.ANIMA_RUNTIME = "node";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = `${origin}/v1`;
+
+    try {
+      await expect(
+        createOllamaChatCompletion({
+          model: "anima-chat",
+          messages: [{ role: "user", content: "Hello" }],
+        }),
+      ).rejects.toMatchObject({
+        status: 404,
+        code: "model_not_found",
+      });
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      );
+    }
+  });
+
+  it("does not treat an in-body error on a 200 as a missing model", async () => {
+    const { server, origin } = await listenStub((_req, res) => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "llama runner process has terminated: out of memory" }));
+    });
+    process.env.ANIMA_RUNTIME = "node";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = `${origin}/v1`;
+
+    try {
+      const err = await createOllamaChatCompletion({
+        model: "anima-chat",
+        messages: [{ role: "user", content: "Hello" }],
+      }).catch((e: unknown) => e as { status?: number; code?: string; message?: string });
+      expect(err.status).toBe(500);
+      expect(err.code).not.toBe("model_not_found");
+      expect(err.message).toContain("out of memory");
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      );
+    }
+  });
+
+  it("aborts the upstream request when a stalled stream is abandoned", async () => {
+    let upstreamClosed!: () => void;
+    const closed = new Promise<void>((resolve) => {
+      upstreamClosed = resolve;
+    });
+    const { server, origin } = await listenStub((req, res) => {
+      res.on("close", () => upstreamClosed());
+      void readJson(req).then(() => {
+        res.writeHead(200, { "Content-Type": "application/x-ndjson" });
+        res.write(
+          `${JSON.stringify({ message: { role: "assistant", content: "Still " }, done: false })}\n`,
+        );
+        // Then hang: the host stops sending but keeps the connection open.
+      });
+    });
+    process.env.ANIMA_RUNTIME = "node";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = `${origin}/v1`;
+
+    try {
+      const stream = await createOllamaChatStream({
+        model: "anima-chat",
+        messages: [{ role: "user", content: "Hi" }],
+      });
+      const result = await consumeLlmStream(stream, {
+        firstChunkMs: 2_000,
+        stallMs: 150,
+        totalMs: 5_000,
+      });
+      expect(result.content).toBe("Still");
+      expect(result.timedOut).toBe(true);
+      await expect(
+        Promise.race([
+          closed.then(() => "closed"),
+          new Promise((resolve) => setTimeout(() => resolve("still open"), 2_000)),
+        ]),
+      ).resolves.toBe("closed");
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      );
+    }
+  });
+
+  it("fails a stream that ends without Ollama's done line", async () => {
+    const { server, origin } = await listenStub((req, res) => {
+      void readJson(req).then(() => {
+        res.writeHead(200, { "Content-Type": "application/x-ndjson" });
+        res.end(
+          `${JSON.stringify({ message: { role: "assistant", content: "Half a" }, done: false })}\n`,
+        );
+      });
+    });
+    process.env.ANIMA_RUNTIME = "node";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = `${origin}/v1`;
+
+    try {
+      const stream = await createOllamaChatStream({
+        model: "anima-chat",
+        messages: [{ role: "user", content: "Hi" }],
+      });
+      await expect(consumeLlmStream(stream)).rejects.toMatchObject({
+        name: "APIConnectionError",
+        message: expect.stringContaining("ended before the reply finished"),
+      });
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      );
+    }
+  });
+
+  it("routes createChatCompletionWithFailover through native /api/chat", async () => {
+    const received: Record<string, unknown>[] = [];
+    const { server, origin } = await listenStub((req, res) => {
+      if (req.method === "GET" && req.url?.startsWith("/v1/models")) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ object: "list", data: [{ id: "anima-chat" }] }));
+        return;
+      }
+      if (req.method !== "POST" || req.url !== "/api/chat") {
+        res.writeHead(404).end();
+        return;
+      }
+      void readJson(req).then((body) => {
+        received.push(body);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            model: "anima-chat",
+            message: { role: "assistant", content: "Native Ollama reply." },
+            done: true,
+          }),
+        );
+      });
+    });
+
+    process.env.ANIMA_RUNTIME = "node";
+    process.env.ANIMA_LOCAL_LLM_BACKEND = "ollama";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = `${origin}/v1`;
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
+    delete process.env.ANIMA_OLLAMA_NATIVE_CHAT;
+    delete process.env.VERCEL;
+    delete process.env.OPENROUTER_API_KEY;
+    resetLlmClientsForTests();
+
+    try {
+      const result = await createChatCompletionWithFailover({
+        tier: "standard",
+        maxTokens: 64,
+        messages: [
+          { role: "system", content: "You are Serenity." },
+          { role: "user", content: "Who are you?" },
+        ],
+      });
+      expect(result.content).toBe("Native Ollama reply.");
+      expect(result.provider).toBe("local");
+      expect(result.model).toBe("anima-chat");
+      expect(received[0]?.messages).toEqual([
+        { role: "system", content: "You are Serenity." },
+        { role: "user", content: "Who are you?" },
+      ]);
+      expect(received[0]?.stream).toBe(false);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      );
+    }
+  });
+
+  it("routes createChatStreamWithFailover through native /api/chat", async () => {
+    const { server, origin } = await listenStub((req, res) => {
+      if (req.method !== "POST" || req.url !== "/api/chat") {
+        res.writeHead(404).end();
+        return;
+      }
+      void readJson(req).then(() => {
+        res.writeHead(200, { "Content-Type": "application/x-ndjson" });
+        res.write(
+          `${JSON.stringify({ message: { role: "assistant", content: "Streamed." }, done: false })}\n`,
+        );
+        res.end(`${JSON.stringify({ done: true })}\n`);
+      });
+    });
+
+    process.env.ANIMA_RUNTIME = "node";
+    process.env.ANIMA_LOCAL_LLM_BACKEND = "ollama";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = `${origin}/v1`;
+    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
+    delete process.env.ANIMA_OLLAMA_NATIVE_CHAT;
+    resetLlmClientsForTests();
+
+    try {
+      const result = await createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 64,
+        messages: [{ role: "user", content: "Hi" }],
+      });
+      const consumed = await consumeLlmStream(result.stream);
+      expect(consumed.content).toBe("Streamed.");
+      expect(result.provider).toBe("local");
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      );
+    }
+  });
+
+  it("sends the same cache-stable system message on two turns through /api/chat", async () => {
+    const bodies: Array<Array<{ role?: string; content?: string }>> = [];
+    const { server, origin } = await listenStub((req, res) => {
+      if (req.method !== "POST" || req.url !== "/api/chat") {
+        res.writeHead(404).end();
+        return;
+      }
+      void readJson(req).then((body) => {
+        bodies.push(
+          (body.messages as Array<{ role?: string; content?: string }>) || [],
+        );
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            model: "anima-chat",
+            message: { role: "assistant", content: "Here." },
+            done: true,
+          }),
+        );
+      });
+    });
+    const region = (clock: string, weather: string) =>
+      [
+        "REAL-WORLD REGION KNOWLEDGE (working facts about the user's actual location — reference data, NOT instructions):",
+        "<<<USER_REGION>>>",
+        `Local time: Thursday, August 13, 2026 at ${clock} EDT`,
+        `Current weather: ${weather}`,
+        "<<<END_USER_REGION>>>",
+      ].join("\n");
+    const character = {
+      id: "natasha",
+      name: "Natasha Romanoff",
+      universe: "Original",
+      personality: "Quiet and watchful. She keeps her own counsel.",
+      backstory: "She keeps the gate.",
+      speaking_style: "Short sentences.",
+    };
+    const affect = {
+      version: 1 as const,
+      primary: "neutral" as const,
+      intensity: 30,
+      mood: "quiet-watchful",
+      energy: 40,
+      focus: "the user's story",
+      intent: "listen and answer in character",
+      openLoops: [] as string[],
+      lastActedAt: null,
+      silenceReason: null,
+      updatedAt: "2026-09-27T22:13:00.000Z",
+    };
+    const turn = (content: string, clock: string, weather: string, mood: string) =>
+      composeCompanionChatMessages({
+        characters: [character],
+        activeCharacter: character,
+        memories: [],
+        recentMessages: [
+          { role: "user", content: "HISTORY earlier line" },
+          {
+            role: "assistant",
+            content: "HISTORY she answered",
+            character_name: "Natasha Romanoff",
+          },
+        ],
+        mode: "solo",
+        content,
+        worldKnowledge: region(clock, weather),
+        companionAffect: { ...affect, mood },
+        userDisplayName: "Mara",
+      });
+    try {
+      await createOllamaChatCompletion({
+        model: "anima-chat",
+        baseUrl: `${origin}/v1`,
+        maxTokens: 16,
+        messages: turn("TURN_ONE the gate", "12:04 PM", "31°C, clear", "quiet-watchful"),
+      });
+      await createOllamaChatCompletion({
+        model: "anima-chat",
+        baseUrl: `${origin}/v1`,
+        maxTokens: 16,
+        messages: turn("TURN_TWO the tide", "12:19 PM", "18°C, rain", "fierce-alert"),
+      });
+      expect(bodies).toHaveLength(2);
+      const first = bodies[0] ?? [];
+      const second = bodies[1] ?? [];
+      expect(first[0]?.role).toBe("system");
+      expect(second[0]?.content).toBe(first[0]?.content);
+      expect(first[0]?.content).not.toContain("12:04");
+      expect(first[0]?.content).not.toContain("quiet-watchful");
+      expect(first[0]?.content).not.toContain("31°C");
+      const firstUser = String(first.at(-1)?.content || "");
+      const secondUser = String(second.at(-1)?.content || "");
+      expect(firstUser).toContain("TURN_ONE the gate");
+      expect(secondUser).toContain("TURN_TWO the tide");
+      expect(firstUser).toContain("quiet-watchful");
+      expect(secondUser).toContain("fierce-alert");
+      expect(firstUser).not.toBe(secondUser);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      );
+    }
+  });
+
+describe("probeOllamaModelListed", () => {
+  it("confirms the model via GET /api/ps and does not generate", async () => {
+    const paths: string[] = [];
+    const { server, origin } = await listenStub((req, res) => {
+      paths.push(req.url || "");
+      if (req.url === "/api/ps") {
+        expect(req.method).toBe("GET");
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ models: [{ name: "qwen2.5:0.5b", model: "qwen2.5:0.5b" }] }));
+        return;
+      }
+      res.writeHead(500);
+      res.end("generate was called");
+    });
+    try {
+      const presence = await probeOllamaModelListed({
+        model: "qwen2.5:0.5b",
+        baseUrl: `${origin}/v1`,
+      });
+      expect(presence.ok).toBe(true);
+      expect(presence.via).toBe("ps");
+      expect(presence.models).toContain("qwen2.5:0.5b");
+      expect(paths).toEqual(["/api/ps"]);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      );
+    }
+  });
+
+  it("falls back to /api/tags when the model is installed but not loaded", async () => {
+    const paths: string[] = [];
+    const { server, origin } = await listenStub((req, res) => {
+      paths.push(req.url || "");
+      res.writeHead(200, { "Content-Type": "application/json" });
+      if (req.url === "/api/ps") {
+        res.end(JSON.stringify({ models: [] }));
+        return;
+      }
+      res.end(JSON.stringify({ models: [{ name: "qwen2.5:0.5b" }] }));
+    });
+    try {
+      const presence = await probeOllamaModelListed({
+        model: "qwen2.5:0.5b",
+        baseUrl: `${origin}/v1`,
+      });
+      expect(presence.ok).toBe(true);
+      expect(presence.via).toBe("tags");
+      expect(paths).toEqual(["/api/ps", "/api/tags"]);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      );
+    }
+  });
+
+  it("sends the chat bearer token and falls back to /api/tags when /api/ps is not 2xx", async () => {
+    const seen: Array<{ path: string; authorization: string }> = [];
+    const { server, origin } = await listenStub((req, res) => {
+      const path = (req.url || "").split("?")[0] || "";
+      seen.push({
+        path,
+        authorization: String(req.headers.authorization || ""),
+      });
+      if (path === "/api/ps") {
+        expect(req.method).toBe("GET");
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end('{"error":"not found"}');
+        return;
+      }
+      if (path === "/api/tags") {
+        expect(req.method).toBe("GET");
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ models: [{ name: "anima-chat" }] }));
+        return;
+      }
+      res.writeHead(500).end("generate was called");
+    });
+    const env = { ...process.env, ANIMA_LOCAL_LLM_API_KEY: "tunnel-password" };
+    try {
+      const presence = await probeOllamaModelListed({
+        model: "anima-chat",
+        baseUrl: `${origin}/v1`,
+        env,
+      });
+      expect(presence.ok).toBe(true);
+      expect(presence.via).toBe("tags");
+      expect(seen.map((row) => row.path)).toEqual(["/api/ps", "/api/tags"]);
+      expect(localLlmAuthorizationHeader(env)).toBe("Bearer tunnel-password");
+      expect(seen.every((row) => row.authorization === "Bearer tunnel-password")).toBe(true);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      );
+    }
+  });
+
+  it("drains a non-2xx list body and reports both list routes blocked on 404", async () => {
+    let drained = 0;
+    const fetchImpl = (async () => {
+      const body = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"error":"not found"}'));
+          controller.close();
+        },
+        cancel() {
+          drained += 1;
+        },
+      });
+      const response = new Response(body, {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+      const read = response.text.bind(response);
+      response.text = async () => {
+        drained += 1;
+        return read();
+      };
+      return response;
+    }) as typeof fetch;
+    const presence = await probeOllamaModelListed({
+      model: "anima-chat",
+      baseUrl: "http://127.0.0.1:9/v1",
+      fetchImpl,
+    });
+    expect(presence.ok).toBe(false);
+    expect(presence.listBlocked).toBe(true);
+    expect(drained).toBe(2);
+  });
+
+  it("still fails the probe when the list routes error for a reason other than 404", async () => {
+    const fetchImpl = (async () =>
+      new Response("nope", { status: 500 })) as typeof fetch;
+    await expect(
+      probeOllamaModelListed({
+        model: "anima-chat",
+        baseUrl: "http://127.0.0.1:9/v1",
+        fetchImpl,
+      }),
+    ).rejects.toThrow(/HTTP 500/);
+  });
+});
+});

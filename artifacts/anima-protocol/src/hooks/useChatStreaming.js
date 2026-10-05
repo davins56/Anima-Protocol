@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { chatStreamStatusCopy } from "@/lib/chatStreamStatusCopy";
+import { HELD_SEND_NOTE } from "@/lib/heldChatSend";
 
 /**
  * Paint a streaming/thinking bubble onto the session that started the send.
@@ -14,15 +15,17 @@ export function applyStreamingMessage(session, { sessionId, prefixMessages, mess
 
 export function useChatStreaming(setActiveSession) {
   const createStreamUi = useCallback(
-    ({ sessionId, updatedMessages, characterName, timestamp, onDelta }) => {
+    ({ sessionId, updatedMessages, characterName, timestamp, onDelta, turnId }) => {
       let paintedTokens = false;
+      const resolveTurnId = () => (typeof turnId === "function" ? turnId() : turnId);
 
       const replaceTransient = (message) => {
+        const id = resolveTurnId();
         setActiveSession((session) =>
           applyStreamingMessage(session, {
             sessionId,
             prefixMessages: updatedMessages,
-            message,
+            message: id ? { ...message, turn_id: id } : message,
           }),
         );
       };
@@ -54,6 +57,16 @@ export function useChatStreaming(setActiveSession) {
           replaceTransient({
             role: "assistant",
             content: "...",
+            character_name: "__thinking__",
+            timestamp,
+          });
+          return;
+        }
+        if (event?.status === "waiting") {
+          if (paintedTokens) return;
+          replaceTransient({
+            role: "assistant",
+            content: chatStreamStatusCopy(event) || HELD_SEND_NOTE,
             character_name: "__thinking__",
             timestamp,
           });

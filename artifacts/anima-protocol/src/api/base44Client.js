@@ -56,6 +56,94 @@ export {
   STORE_SESSION_CREATE_TIMEOUT_MS,
 };
 
+/**
+ * Bound for automatic sidecar invokes only. Foreground calls such as
+ * generateCompanionFromPrompt and codespaceAgentStep keep no default
+ * timeout — a cold local model can take ~90s for a first token.
+ * Names match POST_TURN_SIDECAR_FUNCTIONS in the API, plus lore detection.
+ */
+export const FUNCTION_INVOKE_TIMEOUT_MS = 12_000;
+
+const BACKGROUND_FUNCTION_INVOKES = new Set([
+  "aggregatePersonalityShifts",
+  "analyzeCharacterForBehavior",
+  "analyzeEmotionalClimate",
+  "analyzeMessageTags",
+  "analyzeNarrativeContext",
+  "applyNarrativeItemEvents",
+  "autoEvolveWorldState",
+  "characterMemory",
+  "detectLoreKeywords",
+  "detectQuestsFromNarrative",
+  "evolveCharacter",
+  "extractLore",
+  "generateChoices",
+  "generateDivergentPaths",
+  "generateGroupInteraction",
+  "generateResponseSuggestions",
+  "generateSessionQuests",
+  "generateSpecialQuests",
+  "generateWorldEvent",
+  "ingestSeriesLore",
+  "scanAndLinkLoreKeywords",
+  "suggestGuestCharacter",
+  "suggestSideQuests",
+  "suggestWorldEvents",
+  "trackCharacterEvolution",
+  "updateCharacterEmotion",
+  "updateInventory",
+  "worldEvolutionOrchestrator",
+]);
+
+function isBackgroundFunctionInvoke(name) {
+  return BACKGROUND_FUNCTION_INVOKES.has(String(name || "").trim());
+}
+
+function combineClientAbortSignals(signals) {
+  const live = signals.filter(Boolean);
+  if (live.length === 0) return undefined;
+  if (live.length === 1) return live[0];
+  if (typeof AbortSignal !== "undefined" && typeof AbortSignal.any === "function") {
+    return AbortSignal.any(live);
+  }
+  const controller = new AbortController();
+  for (const signal of live) {
+    if (signal.aborted) {
+      controller.abort(signal.reason);
+      return controller.signal;
+    }
+    signal.addEventListener(
+      "abort",
+      () => controller.abort(signal.reason),
+      { once: true },
+    );
+  }
+  return controller.signal;
+}
+
+/** Timeout for a function invoke. Falls back when AbortSignal.timeout is missing. */
+function createInvokeTimeout(timeoutMs) {
+  if (!(typeof timeoutMs === "number" && timeoutMs > 0)) {
+    return { signal: undefined, cancel() {} };
+  }
+  if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+    return { signal: AbortSignal.timeout(timeoutMs), cancel() {} };
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    const err = new Error("The operation was aborted");
+    err.name = "TimeoutError";
+    controller.abort(err);
+  }, timeoutMs);
+  if (typeof timer.unref === "function") timer.unref();
+  return {
+    signal: controller.signal,
+    cancel() {
+      clearTimeout(timer);
+    },
+  };
+}
+
 const DEFAULT_STORE_TIMEOUT_MESSAGE =
   'The server took too long to respond. Check your connection or try again in a moment.';
 
@@ -1000,9 +1088,12 @@ async function queryEntity(entityName, opts) {
       `/${encodeURIComponent(entityName)}${qs ? `?${qs}` : ''}`,
       {
         retryOnTimeout: true,
-        timeoutMs: LONG_LIST_ENTITIES.has(entityName)
-          ? STORE_LIST_TIMEOUT_MS
-          : undefined,
+        timeoutMs:
+          typeof opts?.timeoutMs === 'number' && opts.timeoutMs > 0
+            ? opts.timeoutMs
+            : LONG_LIST_ENTITIES.has(entityName)
+              ? STORE_LIST_TIMEOUT_MS
+              : undefined,
         token,
       },
     );
@@ -1079,7 +1170,7 @@ async function throwErr(res) {
 
 // Read a session's messages, ascending (chronological) seq. With no limit this
 // is the whole history; limit/beforeSeq page it (see the server contract).
-async function listMessages(sessionId, { limit, beforeSeq } = {}) {
+async function listMessages(sessionId, { limit, beforeSeq, timeoutMs } = {}) {
   if (!sessionId) return [];
   const token = await resolveStoreToken();
   if (!token) {
@@ -1090,7 +1181,10 @@ async function listMessages(sessionId, { limit, beforeSeq } = {}) {
   params.set('session_id', sessionId);
   if (typeof limit === 'number' && limit >= 0) params.set('limit', String(limit));
   if (typeof beforeSeq === 'number') params.set('before_seq', String(beforeSeq));
-  const res = await storeFetch(`/messages?${params.toString()}`);
+  const res = await storeFetch(`/messages?${params.toString()}`, {
+    token,
+    timeoutMs,
+  });
   if (res.status === 401) throw missingStoreTokenError();
   if (!res.ok) await throwErr(res);
   return res.json();
@@ -1232,6 +1326,7 @@ function entityStore(entityName) {
       }
       const res = await storeFetch(
         `/${encodeURIComponent(entityName)}/${encodeURIComponent(id)}`,
+        { token, timeoutMs: opts?.timeoutMs },
       );
       if (res.status === 401) throw missingStoreTokenError();
       if (res.status === 404) return null;
@@ -1368,7 +1463,13 @@ function entityStore(entityName) {
       },
       async filter(filters = {}, sort, limit, opts) {
         const offset = opts && typeof opts.offset === 'number' ? opts.offset : undefined;
-        const sessions = await queryEntity(entityName, { filters, sort, limit, offset });
+        const sessions = await queryEntity(entityName, {
+          filters,
+          sort,
+          limit,
+          offset,
+          timeoutMs: opts?.timeoutMs,
+        });
         if (opts && opts.withMessages === false) return sessions;
         return hydrateMany(sessions);
       },
@@ -1612,20 +1713,30 @@ export const base44 = {
         deepMode,
         response_json_schema,
         max_tokens,
+        sidecar,
       }) => {
         // Signed-in OpenAI completions — not the unauthenticated /api/ai/chat probe.
         let result = '';
+        let skipped = false;
         for await (const chunk of animaApi.chatCompletions({
           content: prompt,
           systemPrompt: systemPrompt || system_prompt || '',
           deepMode: !!deepMode,
           responseJsonSchema: response_json_schema,
           maxTokens: typeof max_tokens === 'number' ? max_tokens : undefined,
+          sidecar: !!sidecar,
         })) {
+          if (chunk.skipped) {
+            skipped = true;
+            break;
+          }
           if (chunk.done) break;
           if (chunk.error) throw new Error(chunk.error);
           if (chunk.content) result += chunk.content;
         }
+
+        // Local-only sidecar gate: canned empty, no throw, no toast.
+        if (skipped) return response_json_schema ? {} : '';
 
         result = visibleAssistantReply(result);
         if (!String(result).trim()) {
@@ -1688,12 +1799,25 @@ export const base44 = {
     {},
     {
       get: (_, fnName) => {
-        const callFn = async (nameOrData, data) => {
+        const callFn = async (nameOrData, data, options) => {
           // Support both call styles:
-          // base44.functions.invoke("fnName", data)
+          // base44.functions.invoke("fnName", data, options)
           // base44.functions.realName.invoke(data)
           const realName = fnName === 'invoke' ? nameOrData : fnName;
           const payload = fnName === 'invoke' ? data : nameOrData;
+          const invokeOptions = fnName === 'invoke' ? options : undefined;
+          const explicitTimeout =
+            typeof invokeOptions?.timeoutMs === 'number' && invokeOptions.timeoutMs > 0
+              ? invokeOptions.timeoutMs
+              : 0;
+          const timeoutMs =
+            explicitTimeout ||
+            (isBackgroundFunctionInvoke(realName) ? FUNCTION_INVOKE_TIMEOUT_MS : 0);
+          const timeout = createInvokeTimeout(timeoutMs);
+          const signal = combineClientAbortSignals([
+            timeout.signal,
+            invokeOptions?.signal,
+          ]);
           try {
             let headers = await requireChatAuthHeaders();
             const postOnce = (requestHeaders) =>
@@ -1702,6 +1826,7 @@ export const base44 = {
                 headers: requestHeaders,
                 credentials: 'same-origin',
                 body: JSON.stringify(payload || {}),
+                signal,
               });
             let res = await postOnce(headers);
             if (res.status === 401) {
@@ -1719,6 +1844,8 @@ export const base44 = {
           } catch (err) {
             console.warn(`base44.functions.${String(realName)} failed:`, err.message);
             return null;
+          } finally {
+            timeout.cancel();
           }
         };
 

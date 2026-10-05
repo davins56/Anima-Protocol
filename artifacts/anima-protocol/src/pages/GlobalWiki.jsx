@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
-import { ArrowLeft, BookOpen, Search, TrendingUp, Users, Lightbulb, Tag } from "lucide-react";
+import { ArrowLeft, BookOpen, Search, TrendingUp, Users, Lightbulb, Plus, X, Edit2, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const CATEGORIES = ["character_fact", "item", "location", "event", "relationship", "secret", "rule"];
+const IMPORTANCE = ["low", "medium", "high", "critical"];
+const EMPTY_FORM = { category: "event", subject: "", fact: "", importance: "medium", session_id: "" };
 
 export default function GlobalWiki() {
   const [loreEntries, setLoreEntries] = useState([]);
@@ -15,6 +17,11 @@ export default function GlobalWiki() {
   const [filterCategory, setFilterCategory] = useState("all");
   const [filterImportance, setFilterImportance] = useState("all");
   const [view, setView] = useState("entries"); // "entries", "themes", "characters"
+  const [scope, setScope] = useState("all");
+  const [showForm, setShowForm] = useState(false);
+  const [editingEntry, setEditingEntry] = useState(null);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -87,11 +94,46 @@ export default function GlobalWiki() {
   const filteredLore = (loreEntries || []).filter(entry => {
     const categoryMatch = filterCategory === "all" || entry.category === filterCategory;
     const importanceMatch = filterImportance === "all" || entry.importance === filterImportance;
+    const scopeMatch = scope === "all" || (scope === "global" ? !entry.session_id : entry.session_id === scope);
     const searchMatch = !search.trim() ||
       entry.subject?.toLowerCase().includes(search.toLowerCase()) ||
       entry.fact?.toLowerCase().includes(search.toLowerCase());
-    return categoryMatch && importanceMatch && searchMatch;
+    return categoryMatch && importanceMatch && scopeMatch && searchMatch;
   });
+
+  const openCreateForm = () => {
+    setEditingEntry(null);
+    setForm({ ...EMPTY_FORM, session_id: scope !== "all" && scope !== "global" ? scope : "" });
+    setShowForm(true);
+  };
+
+  const openEditForm = (entry) => {
+    setEditingEntry(entry);
+    setForm({ category: entry.category || "event", subject: entry.subject || "", fact: entry.fact || "", importance: entry.importance || "medium", session_id: entry.session_id || "" });
+    setShowForm(true);
+  };
+
+  const closeForm = () => {
+    setShowForm(false);
+    setEditingEntry(null);
+    setForm(EMPTY_FORM);
+  };
+
+  const saveEntry = async () => {
+    if (!form.subject.trim() || !form.fact.trim()) return;
+    setSaving(true);
+    const payload = { category: form.category, subject: form.subject.trim(), fact: form.fact.trim(), importance: form.importance, session_id: form.session_id || undefined, is_active: true };
+    if (editingEntry) await base44.entities.WorldState.update(editingEntry.id, payload);
+    else await base44.entities.WorldState.create(payload);
+    closeForm();
+    await loadData();
+    setSaving(false);
+  };
+
+  const archiveEntry = async (entry) => {
+    await base44.entities.WorldState.update(entry.id, { is_active: false });
+    setLoreEntries((current) => current.filter((item) => item.id !== entry.id));
+  };
 
   const themes = extractThemes();
   const characterHistories = getCharacterHistories();
@@ -166,6 +208,10 @@ export default function GlobalWiki() {
               Histories
             </button>
           </div>
+          <button onClick={openCreateForm} title="Add lore entry" className="flex items-center gap-2 px-3 py-2 border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 font-mono text-[9px] tracking-widest uppercase transition-colors">
+            <Plus className="w-3.5 h-3.5" />
+            Add lore
+          </button>
         </div>
       </div>
 
@@ -185,7 +231,18 @@ export default function GlobalWiki() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <select
+                  value={scope}
+                  onChange={(e) => setScope(e.target.value)}
+                  className="bg-black/60 border border-primary/20 text-primary/70 font-mono text-sm px-3 py-2 focus:outline-none focus:border-primary/50"
+                >
+                  <option value="all">All Worlds</option>
+                  <option value="global">Global Lore</option>
+                  {sessions.map(session => (
+                    <option key={session.id} value={session.id}>{session.title || "Untitled world"}</option>
+                  ))}
+                </select>
                 <select
                   value={filterCategory}
                   onChange={(e) => setFilterCategory(e.target.value)}
@@ -220,7 +277,7 @@ export default function GlobalWiki() {
                 <p className="font-mono text-primary/20 text-sm">No entries found</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {filteredLore.map(entry => {
                   const meta = categoryMeta[entry.category];
                   const sessionTitle = sessions.find(s => s.id === entry.session_id)?.title || "Global";
@@ -236,9 +293,11 @@ export default function GlobalWiki() {
                           </h3>
                           <p className="text-[9px] font-mono text-primary/40">{meta?.label}</p>
                         </div>
-                        <span className={`font-mono text-[8px] tracking-widest uppercase ${importanceColors[entry.importance]}`}>
-                          {entry.importance}
-                        </span>
+                        <div className="flex items-center gap-1">
+                          <span className={`font-mono text-[8px] tracking-widest uppercase ${importanceColors[entry.importance]}`}>{entry.importance}</span>
+                          <button onClick={() => openEditForm(entry)} title="Edit lore entry" className="p-1 text-primary/30 hover:text-primary"><Edit2 className="w-3 h-3" /></button>
+                          <button onClick={() => archiveEntry(entry)} title="Archive lore entry" className="p-1 text-primary/30 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>
+                        </div>
                       </div>
                       <p className="text-[10px] font-mono text-primary/60 leading-relaxed line-clamp-3">
                         {entry.fact}
@@ -381,6 +440,37 @@ export default function GlobalWiki() {
           </>
         )}
       </div>
+
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg bg-background border border-primary/30 shadow-2xl">
+            <div className="flex items-center justify-between p-5 border-b border-primary/20">
+              <h2 className="font-mono text-primary tracking-[0.2em] uppercase text-sm">{editingEntry ? "// Edit world entry" : "// Add world entry"}</h2>
+              <button onClick={closeForm} title="Close" className="text-primary/40 hover:text-primary"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <select value={form.category} onChange={(e) => setForm((current) => ({ ...current, category: e.target.value }))} className="bg-black/60 border border-primary/20 text-primary/70 font-mono text-xs px-3 py-2">
+                  {CATEGORIES.map(category => <option key={category} value={category}>{category.replace("_", " ")}</option>)}
+                </select>
+                <select value={form.importance} onChange={(e) => setForm((current) => ({ ...current, importance: e.target.value }))} className="bg-black/60 border border-primary/20 text-primary/70 font-mono text-xs px-3 py-2">
+                  {IMPORTANCE.map(importance => <option key={importance} value={importance}>{importance}</option>)}
+                </select>
+              </div>
+              <select value={form.session_id} onChange={(e) => setForm((current) => ({ ...current, session_id: e.target.value }))} className="w-full bg-black/60 border border-primary/20 text-primary/70 font-mono text-xs px-3 py-2">
+                <option value="">Global lore</option>
+                {sessions.map(session => <option key={session.id} value={session.id}>{session.title || "Untitled world"}</option>)}
+              </select>
+              <input value={form.subject} onChange={(e) => setForm((current) => ({ ...current, subject: e.target.value }))} placeholder="Subject, place, faction, rule..." className="w-full bg-black/60 border border-primary/20 text-primary/80 placeholder-primary/20 font-mono text-sm px-3 py-2" />
+              <textarea value={form.fact} onChange={(e) => setForm((current) => ({ ...current, fact: e.target.value }))} placeholder="Describe what is true in this world..." rows={4} className="w-full bg-black/60 border border-primary/20 text-primary/80 placeholder-primary/20 font-mono text-sm px-3 py-2 resize-none" />
+            </div>
+            <div className="flex justify-end gap-3 p-5 border-t border-primary/20">
+              <button onClick={closeForm} className="px-4 py-2 border border-primary/20 text-primary/50 font-mono text-xs uppercase">Cancel</button>
+              <button onClick={saveEntry} disabled={saving || !form.subject.trim() || !form.fact.trim()} className="px-4 py-2 border border-primary/50 bg-primary/10 text-primary disabled:opacity-30 font-mono text-xs uppercase">{saving ? "Saving..." : editingEntry ? "Update" : "Create"}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

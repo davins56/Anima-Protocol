@@ -13,6 +13,17 @@ import {
   createChatCompletionWithFailover,
 } from "./lib/llmFailover";
 import { llmAiChatOpenTimeoutMs, openStreamAbort } from "./lib/chatTimeouts";
+import { tryBeginCompanionLlmTurn } from "./lib/sidecarLlm";
+import { acquireLocalLlmBackground } from "./lib/localLlmSlot";
+import { createRateLimit } from "./lib/rateLimit";
+import {
+  AI_CHAT_RATE_LIMIT_MAX,
+  AI_CHAT_RATE_LIMIT_WINDOW_MS,
+  aiChatHasSessionCredential,
+  aiChatProbeAuthorized,
+  aiChatRequiresCredential,
+} from "./lib/aiChatGate";
+import { getAuth } from "@clerk/express";
 import { visibleAssistantReply } from "./lib/visibleAssistantReply";
 import { syncCloudflareRuntimeEnvMiddleware } from "./lib/cloudflareEnv";
 import {
@@ -107,11 +118,69 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// Local / operator chat probe. Public like /api/healthz so a missing Clerk
-// key cannot hide an otherwise-working Ollama host. Same provider chain as
-// signed-in chat (`createChatCompletionWithFailover`). Do not require the
-// Workers AI binding — local Node has none.
+const aiChatRateLimit = createRateLimit({
+  name: "ai-chat",
+  max: AI_CHAT_RATE_LIMIT_MAX,
+  windowMs: AI_CHAT_RATE_LIMIT_WINDOW_MS,
+  identity: "ip",
+});
+
+// Operator chat probe. Same provider chain as signed-in chat. In production
+// a signed-in Clerk user or ANIMA_AI_CHAT_PROBE_KEY is required so the open
+// internet cannot queue the single Ollama slot. `/api/healthz/llm?probe=1`
+// stays public and does not use this route. Local Node stays open.
 app.post("/api/ai/chat", async (req: Request, res: Response) => {
+  if (aiChatRequiresCredential()) {
+    const probeOk = aiChatProbeAuthorized(req);
+    if (!probeOk) {
+      if (!aiChatHasSessionCredential(req)) {
+        res.status(401).json({ error: "Unauthorized", code: "ai_chat_unauthorized" });
+        return;
+      }
+      const userId = await new Promise<string | null>((resolve) => {
+        safeClerkMiddleware()(req, res, () => {
+          if (res.headersSent) {
+            resolve(null);
+            return;
+          }
+          try {
+            resolve(getAuth(req).userId ?? null);
+          } catch {
+            resolve(null);
+          }
+        });
+      });
+      if (res.headersSent) return;
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized", code: "ai_chat_unauthorized" });
+        return;
+      }
+    }
+  }
+
+  await new Promise<void>((resolve) => {
+    aiChatRateLimit(req, res, () => resolve());
+  });
+  if (res.headersSent) return;
+
+  const releaseSlot = tryBeginCompanionLlmTurn();
+  if (!releaseSlot) {
+    res.status(429).json({
+      error: "The companion is using the model. Try again in a moment.",
+      code: "llm_busy",
+    });
+    return;
+  }
+  const background = await acquireLocalLlmBackground("ai-chat");
+  if (!background) {
+    releaseSlot();
+    res.status(429).json({
+      error: "The companion is using the model. Try again in a moment.",
+      code: "llm_busy",
+    });
+    return;
+  }
+
   const { prompt, messages } = req.body ?? {};
   const chatMessages = Array.isArray(messages)
     ? messages
@@ -149,6 +218,8 @@ app.post("/api/ai/chat", async (req: Request, res: Response) => {
     });
   } finally {
     open.cancel();
+    releaseSlot();
+    await background.release();
   }
 });
 

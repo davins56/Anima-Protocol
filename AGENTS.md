@@ -46,7 +46,7 @@ The repo root **`.env`** is gitignored. Both **`anima-protocol`** (Vite) and **`
 | Variable | Used by |
 |----------|---------|
 | `DATABASE_URL` | API + `db push` |
-| `OPENAI_API_KEY` | API (import-time check) |
+| `OPENAI_API_KEY` | API — optional; image generate/edit only (tried after Gemini, before OpenRouter). Chat never reads it |
 | `PORT` | API `8080`, frontend `23660`, mockup `8081` |
 | `BASE_PATH` | Frontend `/`, mockup `/__mockup` |
 | `VITE_CLERK_PUBLISHABLE_KEY` | Frontend (build/dev) — must match `CLERK_PUBLISHABLE_KEY`; Vite build also reads `CLERK_PUBLISHABLE_KEY` if `VITE_` is unset |
@@ -61,8 +61,9 @@ The repo root **`.env`** is gitignored. Both **`anima-protocol`** (Vite) and **`
 | `ANIMA_OPENROUTER_FREE` | API — set `true` to skip Venice and use `minimax/minimax-m2.7:free` |
 | `ANIMA_LOCAL_LLM_BASE_URL` | API — public HTTPS OpenAI-compatible `…/v1` URL (Fly: `https://anima-chat-llm.fly.dev/v1`). Never localhost on the Worker |
 | `ANIMA_LOCAL_LLM_API_KEY` | API — bearer token; must match Fly `PROXY_AUTH_TOKEN` |
-| `ANIMA_LOCAL_LLM_BACKEND` | API — `ollama` (default) or `vllm` |
+| `ANIMA_LOCAL_LLM_BACKEND` | API — `ollama` (default) or `vllm` (any OpenAI-compatible `/v1` host, including your own trained model via `server/server.py`; see `docs/custom-llm.md`) |
 | `ANIMA_OLLAMA_MODEL_STANDARD` | API — model tag the host serves (`anima-chat`) |
+| `GITHUB_TRAINER_TOKEN` | API — optional fine-grained token (Actions read/write) so a new lesson starts `.github/workflows/own-model-trainer.yml` at once instead of on its 15-minute schedule. The own model itself runs in the browser (weights in Postgres `own_model_blobs`) and needs no host — see `docs/own-model.md`. `GITHUB_TRAINER_REPO` / `GITHUB_TRAINER_REF` override `davins56/Anima-Protocol` / `main` |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Web Push credentials for proactive character messages |
 | `VAPID_SUBJECT` | Web Push contact URI; defaults to `mailto:support@anima-protocol.com` |
 | `CRON_SECRET` | Authorizes the hourly Vercel proactive-message cron |
@@ -273,6 +274,7 @@ All new events must follow these conventions.
 | `therapy_session_started` | User begins a therapy-mode chat with their Anima | `source` (`therapy_page` / `chat_new_session`), `is_anima`, `has_multiple_animas`, `has_topic` | `src/pages/Therapy.jsx`, `src/pages/Chat.jsx` |
 | `device_scan_completed` | Anima finishes a permission-gated scan of this device for leftover / junk data | `flag_count`, `has_folder_grant`, `is_anima` | `src/lib/animaDeviceScan.js`, `src/components/anima/DeviceScanPanel.jsx` |
 | `echo_key_discovered` | Operator finds, synthesises, or evolves an Echo Key in story mode | `source` (`virtual` / `field` / `synthesis` / `evolution`), `site`, `tier`, `is_outdoor` | `src/components/echoKeys/EchoStoryMode.jsx`, `src/pages/NetBattle.jsx` |
+| `model_lesson_taught` | Steward saves a correction for their own model from a chat reply (fires after the lesson is saved) | `has_note`, `is_drafted`, `is_own_model_reply`, `is_trainer_started` | `src/components/tutor/TeachDialog.jsx` |
 
 > **Value moment:** the core action is a *crossover interaction* — engaging multiple characters from different universes in one session. `message_sent` with `is_crossover: true` captures it.
 

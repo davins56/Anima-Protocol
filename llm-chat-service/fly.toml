@@ -1,0 +1,34 @@
+app = "anima-chat-gateway"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  HOST = "0.0.0.0"
+  PORT = "8082"
+  LLM_BASE_URL = "https://anima-chat-llm.fly.dev/v1"
+  LLM_MODEL = "anima-chat"
+  LLM_REQUEST_TIMEOUT_MS = "45000"
+  MAX_CONTEXT_MESSAGES = "20"
+  MAX_MESSAGE_CHARS = "8000"
+  MAX_OUTPUT_TOKENS = "384"
+
+[http_service]
+  internal_port = 8082
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
