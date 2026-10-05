@@ -1,3 +1,4 @@
+import { withOpenAiV1Suffix } from "./openaiBaseUrl";
 import { ModelTier, resolveModelSpec, samplingForOpenAI } from "./registry";
 
 export interface AnimaLLMOptions {
@@ -76,13 +77,22 @@ export class AnimaLLM {
   private provider: string;
 
   constructor(options: AnimaLLMOptions = {}) {
-    this.baseUrl = (
-      options.baseUrl ||
-      process.env.ANIMA_LOCAL_LLM_BASE_URL ||
-      process.env.VLLM_BASE_URL ||
-      process.env.OLLAMA_BASE_URL ||
-      "http://localhost:11434/v1"
-    ).replace(/\/+$/, "");
+    const explicit = options.baseUrl?.trim();
+    if (explicit) {
+      // Caller-supplied paths stay as given (including a root at
+      // `/chat/completions`). Only strip trailing slashes.
+      this.baseUrl = explicit.replace(/\/+$/, "");
+    } else {
+      const anima = process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim();
+      const vllm = process.env.VLLM_BASE_URL?.trim();
+      if (anima) this.baseUrl = withOpenAiV1Suffix(anima);
+      else if (vllm) this.baseUrl = withOpenAiV1Suffix(vllm);
+      else {
+        this.baseUrl = (
+          process.env.OLLAMA_BASE_URL || "http://localhost:11434/v1"
+        ).replace(/\/+$/, "");
+      }
+    }
 
     this.apiKey =
       options.apiKey ||

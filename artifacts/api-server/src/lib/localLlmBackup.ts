@@ -1,3 +1,5 @@
+import { withOpenAiV1Suffix } from "@workspace/llm";
+
 /**
  * Optional second self-hosted Ollama / vLLM address.
  *
@@ -64,8 +66,7 @@ export function localLlmBackupBaseUrl(
 ): string | null {
   const raw = env.ANIMA_LOCAL_LLM_BACKUP_BASE_URL?.trim();
   if (!raw) return null;
-  let base = raw.replace(/\/+$/, "");
-  if (!/\/v1$/i.test(base)) base = `${base}/v1`;
+  const base = withOpenAiV1Suffix(raw);
   let url: URL;
   try {
     url = new URL(base);
