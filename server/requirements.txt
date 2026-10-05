@@ -1,9 +1,0 @@
-# Anima Protocol — training + serving dependencies.
-# Bounds keep a future major from breaking the scripts.
-# Torch is a range so a CUDA build (Colab) and a CPU wheel both satisfy it.
-torch>=2.4,<2.15
-numpy>=2.0,<3
-tokenizers>=0.20,<0.24
-fastapi>=0.115,<1
-uvicorn>=0.32,<1
-pydantic>=2.6,<3

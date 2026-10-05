@@ -37,7 +37,7 @@ documentation.
 
 ## Phase E — Runnable open chat LLM (no cloud BYOK)
 
-- [x] Step 16: `Modelfile.anima-chat` from public Qwen2.5 0.5B weights
+- [x] Step 16: `Modelfile.anima-chat` from public Qwen2.5 3B weights
 - [x] Step 17: `scripts/llm/bootstrap-anima-llm.sh` + `pnpm llm:up` / `pnpm llm:chat`
 - [x] Step 18: Registry defaults Ollama lineup to `anima-chat`; custom → ollama unless `ANIMA_LOCAL_LLM_BACKEND=vllm`
 - [x] Step 19: Docs clarify ChatGPT/Gemini/Groq weights are closed; Anima uses open weights

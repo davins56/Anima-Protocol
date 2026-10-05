@@ -7,7 +7,6 @@
 
 /** @param {string | null | undefined} provider */
 export function llmProviderShortLabel(provider) {
-  if (provider === "own") return "Your model";
   if (provider === "anima" || provider === "local") return "Anima";
   if (provider === "minimax") return "MiniMax";
   if (provider === "deepshi") return "Deepshi";
@@ -22,7 +21,6 @@ export function llmProviderShortLabel(provider) {
  * @param {string | null | undefined} brand
  */
 export function llmDisplayLabel(provider, brand) {
-  if (brand === "own" || provider === "own") return "Your model";
   if (brand === "anima") return "Anima";
   if (brand === "minimax" || provider === "minimax") return "MiniMax";
   if (brand === "deepshi" || provider === "deepshi") return "Deepshi";
@@ -33,9 +31,6 @@ export function llmDisplayLabel(provider, brand) {
 
 /** @param {string | null | undefined} provider */
 export function llmProviderTitle(provider) {
-  if (provider === "own") {
-    return "Last reply from your own model (the one you trained and teach)";
-  }
   if (provider === "anima" || provider === "local") {
     return "Last reply from Anima LLM (self-hosted)";
   }
@@ -60,9 +55,6 @@ export function llmProviderTitle(provider) {
  * @param {string | null | undefined} brand
  */
 export function llmDisplayTitle(provider, brand) {
-  if (brand === "own" || provider === "own") {
-    return "Your own model — trained from scratch and learning from your lessons (Settings → Model Tutor)";
-  }
   if (brand === "anima") {
     return "Anima LLM — open weights, self-hosted (never switches to a flagship provider)";
   }
@@ -83,9 +75,6 @@ export function llmDisplayTitle(provider, brand) {
 
 /** Badge styles for the chat header provider chip. */
 export function llmProviderBadgeClass(provider) {
-  if (provider === "own") {
-    return "border-fuchsia-400/50 text-fuchsia-200/90 bg-fuchsia-400/10";
-  }
   if (provider === "anima" || provider === "local") {
     return "border-rose-400/50 text-rose-200/90 bg-rose-400/10";
   }
@@ -109,7 +98,6 @@ export function llmProviderBadgeClass(provider) {
  * @param {string | null | undefined} brand
  */
 export function llmDisplayBadgeClass(provider, brand) {
-  if (brand === "own") return llmProviderBadgeClass("own");
   if (brand === "anima") return llmProviderBadgeClass("anima");
   if (brand === "minimax") return llmProviderBadgeClass("minimax");
   if (brand === "deepshi") return llmProviderBadgeClass("deepshi");

@@ -107,5 +107,6 @@ Mode: ${policy.name}
 Safety profile: ${policy.safetyProfile}
 ${adultRule}
 Persistent memory: ${policy.memoryAllowed ? "allowed" : "disabled"}
-Real-world context: ${policy.webAllowed ? "allowed when relevant" : "disabled"}`;
+Real-world context: ${policy.webAllowed ? "allowed when relevant" : "disabled"}
+Prompt modules: ${policy.promptModules.join(", ")}`;
 }

@@ -44,10 +44,7 @@ describe("custom Anima LLM — live local HTTP round trip", () => {
         );
         return;
       }
-      const isNativeChat = req.method === "POST" && req.url?.startsWith("/api/chat");
-      const isOpenAiChat =
-        req.method === "POST" && req.url?.startsWith("/v1/chat/completions");
-      if (!isNativeChat && !isOpenAiChat) {
+      if (req.method !== "POST" || !req.url?.startsWith("/v1/chat/completions")) {
         res.writeHead(404).end();
         return;
       }
@@ -61,30 +58,17 @@ describe("custom Anima LLM — live local HTTP round trip", () => {
         if (servedModels && !servedModels.includes(body.model)) {
           res.writeHead(404, { "Content-Type": "application/json" });
           res.end(
-            isNativeChat
-              ? JSON.stringify({ error: `model '${body.model}' not found` })
-              : JSON.stringify({
-                  error: {
-                    message: `The model \`${body.model}\` does not exist or you do not have access to it.`,
-                    type: "invalid_request_error",
-                    code: "model_not_found",
-                  },
-                }),
-          );
-          return;
-        }
-        received.push({ model: body.model, messages: body.messages });
-        if (isNativeChat) {
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(
             JSON.stringify({
-              model: body.model,
-              message: { role: "assistant", content: replyText },
-              done: true,
+              error: {
+                message: `The model \`${body.model}\` does not exist or you do not have access to it.`,
+                type: "invalid_request_error",
+                code: "model_not_found",
+              },
             }),
           );
           return;
         }
+        received.push({ model: body.model, messages: body.messages });
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({

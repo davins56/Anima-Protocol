@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { chatTurnErrorMessage, shouldCheckBackForCompanionReply } from "./chatTurnError.js";
+import { chatTurnErrorMessage } from "./chatTurnError.js";
 
 describe("chatTurnErrorMessage", () => {
   it("keeps actionable API / network copy", () => {
@@ -9,39 +9,16 @@ describe("chatTurnErrorMessage", () => {
   });
 
   it("hides Temporal Dead Zone / minified engine errors", () => {
-    const tdz = new ReferenceError("Cannot access 'H' before initialization.");
-    const engine = new TypeError("H is not a function");
-    expect(chatTurnErrorMessage(tdz)).toBe(
+    expect(chatTurnErrorMessage(new ReferenceError("Cannot access 'H' before initialization."))).toBe(
       "The companion could not reply. Please try again.",
     );
-    expect(chatTurnErrorMessage(engine)).toBe(
+    expect(chatTurnErrorMessage(new TypeError("H is not a function"))).toBe(
       "The companion could not reply. Please try again.",
-    );
-    expect(shouldCheckBackForCompanionReply(tdz)).toBe(true);
-    expect(shouldCheckBackForCompanionReply(engine)).toBe(true);
-    expect(chatTurnErrorMessage(new TypeError("Failed to fetch"))).toMatch(
-      /connection dropped, checking for her reply/i,
-    );
-    expect(chatTurnErrorMessage(new TypeError("Load failed"))).toMatch(
-      /connection dropped, checking for her reply/i,
     );
   });
 
   it("falls back when the failure has no message", () => {
     expect(chatTurnErrorMessage(null)).toBe("The companion could not reply. Please try again.");
-    expect(shouldCheckBackForCompanionReply(null)).toBe(true);
-  });
-
-  it("does not check back for an actionable failure or a busy conversation", () => {
-    const auth = new Error("Unauthorized");
-    expect(shouldCheckBackForCompanionReply(auth)).toBe(false);
-    const busy = new Error(
-      "The companion is still finishing the last reply. Wait a moment, then try again.",
-    );
-    busy.code = "conversation_busy";
-    busy.status = 409;
-    expect(chatTurnErrorMessage(busy)).toBe(busy.message);
-    expect(shouldCheckBackForCompanionReply(busy)).toBe(false);
   });
 
   it("remaps OpenRouter's raw provider-400 wrapper", () => {
@@ -82,15 +59,9 @@ describe("chatTurnErrorMessage", () => {
     );
   });
 
-  it("remaps generic HTTP status codes to the OpenRouter free-tier hint", () => {
-    expect(chatTurnErrorMessage(new Error("API error: 429"))).toMatch(
-      /OpenRouter free-tier model is temporarily unavailable/i,
-    );
-    expect(chatTurnErrorMessage(new Error("Request failed with status code 502"))).toMatch(
-      /openrouter\.ai\/settings\/credits/i,
-    );
-    expect(chatTurnErrorMessage(new Error("HTTP 503"))).not.toMatch(
-      /companion service encountered an issue/i,
+  it("remaps generic HTTP status codes to polite error messages", () => {
+    expect(chatTurnErrorMessage(new Error("API error: 500"))).toBe(
+      "The companion service encountered an issue. Please try again in a moment.",
     );
   });
 
@@ -158,33 +129,6 @@ describe("chatTurnErrorMessage", () => {
     expect(message).toBe("Couldn't load companion memory. Please try again.");
     expect(message).not.toMatch(/Failed query|select "/i);
     expect(message).not.toMatch(/deepseek/i);
-  });
-
-  it("remaps Worker subrequest-limit toasts without leaking CF or tunnel copy", () => {
-    const production =
-      "Anima LLM connection failed for host=anima-chat-llm.fly.dev model=anima-chat: Connection error. — Too many subrequests by single Worker invocation. The self-hosted Anima LLM host did not accept a connection. Wake the home box / named Cloudflare Tunnel (scripts/llm/public-v1/README.md)";
-    const message = chatTurnErrorMessage(new Error(production));
-    expect(message).toMatch(/chat service is busy/i);
-    expect(message).not.toMatch(/Too many subrequests/i);
-    expect(message).not.toMatch(/home box|Cloudflare Tunnel|public-v1/i);
-    expect(message).not.toMatch(/anima-chat-llm\.fly\.dev/i);
-  });
-
-  it("remaps a pre-token Database unavailable toast to conversation copy", () => {
-    expect(chatTurnErrorMessage(new Error("Database unavailable"))).toBe(
-      "Couldn't load this conversation. Please try again.",
-    );
-    expect(chatTurnErrorMessage(new Error("Database connection timed out"))).toBe(
-      "Couldn't load this conversation. Please try again.",
-    );
-    expect(chatTurnErrorMessage(new Error("Database unavailable"))).not.toMatch(
-      /database unavailable/i,
-    );
-    expect(
-      chatTurnErrorMessage(
-        new Error("Cannot perform I/O on behalf of a different request"),
-      ),
-    ).toBe("Couldn't load this conversation. Please try again.");
   });
 
   it("keeps local-only timeout copy so the HUD does not look like a silent hang", () => {

@@ -1,9 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Existing ensemble tests mock the OpenAI /v1 client. Native /api/chat is
-// covered by ollamaChat.test.ts — leave this off or createMock is never called.
-process.env.ANIMA_OLLAMA_NATIVE_CHAT = "0";
-
 const createMock = vi.fn();
 
 vi.mock("../src/lib/openaiClient", () => {
@@ -74,10 +70,6 @@ vi.mock("../src/lib/openaiClient", () => {
     getOpenAIClient: () => client,
     getLocalLlmClient: () => client,
     normalizeApiKey: (raw: string | undefined) => (raw ? raw.trim() || null : null),
-    isLoopbackLlmHost: (host: string | null | undefined) => {
-      const h = (host || "").trim().toLowerCase();
-      return h === "localhost" || h === "127.0.0.1" || h === "::1";
-    },
     localLlmMaxRetries: () => 2,
     openRouterMaxRetries: () => 2,
     openRouterCascadeMaxRetries: (remaining: number) => (remaining > 0 ? 0 : 2),

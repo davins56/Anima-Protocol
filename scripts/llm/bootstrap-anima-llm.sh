@@ -7,14 +7,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 MODELFILE="${ROOT}/scripts/llm/Modelfile.anima-chat"
-# Default fits a 1 vCPU / 2 GB host. qwen2.5:3b needs at least 2 vCPU / 4 GB.
-# ANIMA_CHAT_BASE_MODEL wins; ANIMA_BOOTSTRAP_BASE remains a fallback.
-BASE_MODEL="${ANIMA_CHAT_BASE_MODEL:-${ANIMA_BOOTSTRAP_BASE:-qwen2.5:0.5b}}"
+BASE_MODEL="${ANIMA_BOOTSTRAP_BASE:-qwen2.5:3b}"
 ANIMA_TAG="${ANIMA_OLLAMA_CHAT_TAG:-anima-chat}"
 OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"
-# Applies only when this script starts `ollama serve`. An already-running
-# daemon keeps its own OLLAMA_KEEP_ALIVE (set it to 30m and restart).
-export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-30m}"
 export OLLAMA_HOST
 
 die() { echo "error: $*" >&2; exit 1; }
@@ -42,13 +37,9 @@ fi
 echo "Pulling open weights: ${BASE_MODEL}"
 ollama pull "${BASE_MODEL}"
 
-echo "Creating Anima chat model: ${ANIMA_TAG} (FROM ${BASE_MODEL})"
+echo "Creating Anima chat model: ${ANIMA_TAG}"
 [[ -f "${MODELFILE}" ]] || die "missing ${MODELFILE}"
-RENDERED="$(mktemp)"
-trap 'rm -f "${RENDERED}"' EXIT
-sed "s|^FROM[[:space:]].*|FROM ${BASE_MODEL}|" "${MODELFILE}" > "${RENDERED}"
-grep -qxF "FROM ${BASE_MODEL}" "${RENDERED}" || die "failed to set Modelfile FROM to ${BASE_MODEL}"
-ollama create "${ANIMA_TAG}" -f "${RENDERED}"
+ollama create "${ANIMA_TAG}" -f "${MODELFILE}"
 
 echo "Smoke-testing chat…"
 RESP="$(curl -sf "http://${OLLAMA_HOST}/v1/chat/completions" \

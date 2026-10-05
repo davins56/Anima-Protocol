@@ -8,7 +8,7 @@
  *   pnpm --filter @workspace/llm run cli -- serve-hint
  */
 
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -70,21 +70,19 @@ Commands:
                Extract tagged scenes from llm-raw / llm-raw-source / samples/novels
                into scripts/llm/data/curated/ and copy JSONL into scripts/llm/data/raw/
   dataset [--from path] [--rehearse] [--characters a,b] [--val-split 0.05]
-               [--no-curate] [--include-lore] [--no-scribe]
+               [--no-curate] [--include-lore]
                Curate novels (unless --no-curate) + ingest (optional) + prepare-finetune
                + prepare-dpo + dataset-stats
   prepare-finetune [--format sharegpt|chatml|alpaca|messages] [--out path] [--tags a,b]
                [--with-db] [--user <clerkUserId>] [--no-clean] [--no-dedupe]
                [--min-assistant-chars N] [--val-split 0.0-0.5]
                [--with-logs dir] [--no-logs] [--character name] [--characters a,b]
-               [--all-characters] [--include-lore] [--no-weight] [--no-scribe]
+               [--all-characters] [--include-lore] [--no-weight]
                Raw logs in scripts/llm/data/raw/ are merged automatically unless --no-logs.
                Brief-gold + seed turns are included. exclude-serenity-sft (fallen-angel
                lore) is dropped unless --include-lore. Train split is replica-weighted.
-               The committed scribe set (scripts/llm/data/scribe/sft) merges unless --no-scribe.
   dataset-stats [--file path]   Quality/shape report on an exported JSONL
-  prepare-dpo [--out path] [--tags a,b] [--no-scribe]
-               Preference pairs for DPO/ORPO/SimPO (curated code pairs + scribe/dpo/*.jsonl)
+  prepare-dpo [--out path] [--tags a,b]   Preference pairs for DPO/ORPO/SimPO
   chat [prompt…]          One-shot chat against local Anima LLM (Ollama/vLLM)
   serve-hint
   seed-stats
@@ -126,8 +124,6 @@ function parseFormat(raw: string | undefined): ExportFormat {
 
 const DEFAULT_RAW_DIR = path.join("scripts", "llm", "data", "raw");
 const DEFAULT_SAMPLES_DIR = path.join("scripts", "llm", "data", "samples");
-const DEFAULT_SCRIBE_SFT_DIR = path.join("scripts", "llm", "data", "scribe", "sft");
-const DEFAULT_SCRIBE_DPO_DIR = path.join("scripts", "llm", "data", "scribe", "dpo");
 
 function importOptsFromArgs(args: string[]): ImportLogsOptions {
   const allCharacters = hasFlag(args, "--all-characters");
@@ -265,24 +261,6 @@ async function cmdPrepareFinetune(args: string[]): Promise<void> {
     examples = [...examples, ...fromLogs];
   }
 
-  // Committed synthetic scribe register — hundreds of finished, literate
-  // turns so the "complete every thought" behavior is not carried by a
-  // handful of seeds. Weight 1: the operator's own logs stay the majority.
-  if (!hasFlag(args, "--no-scribe")) {
-    const { importLogsDir } = await import("./dataset/import");
-    const scribe = await importLogsDir(resolveOutPath(DEFAULT_SCRIBE_SFT_DIR), {
-      ...importOptsFromArgs(args),
-      characterNames: undefined,
-      defaultCharacterName: undefined,
-      allCharacters: true,
-    });
-    if (scribe.length) {
-      console.log(`Merged ${scribe.length} scribe-register examples from ${DEFAULT_SCRIBE_SFT_DIR}`);
-      describeExamples(scribe);
-    }
-    examples = [...examples, ...scribe];
-  }
-
   // Optionally merge DB transcripts when --with-db is set.
   if (hasFlag(args, "--with-db")) {
     if (!process.env.DATABASE_URL) {
@@ -306,35 +284,6 @@ async function cmdPrepareFinetune(args: string[]): Promise<void> {
   console.log(`Serve target:   ${ANIMA_PRIMARY_MODEL}`);
 }
 
-/**
- * scribe/dpo/*.jsonl rows are already in the export shape plus id /
- * rejectionReason / tags; keep only what the trainers read.
- */
-async function readScribeDpoPairs(
-  dir: string,
-): Promise<Array<{ prompt: string; chosen: string; rejected: string; system: string }>> {
-  let entries: string[];
-  try {
-    entries = (await readdir(dir)).filter((f) => f.endsWith(".jsonl")).sort();
-  } catch {
-    return [];
-  }
-  const rows: Array<{ prompt: string; chosen: string; rejected: string; system: string }> = [];
-  for (const file of entries) {
-    const text = await readFile(path.join(dir, file), "utf8");
-    for (const line of text.split("\n")) {
-      if (!line.trim()) continue;
-      const row = JSON.parse(line) as Record<string, unknown>;
-      const prompt = String(row.prompt || "").trim();
-      const chosen = String(row.chosen || "").trim();
-      const rejected = String(row.rejected || "").trim();
-      if (!prompt || !chosen || !rejected || chosen === rejected) continue;
-      rows.push({ prompt, chosen, rejected, system: String(row.system || "").trim() });
-    }
-  }
-  return rows;
-}
-
 async function cmdPrepareDpo(args: string[]): Promise<void> {
   const out = resolveOutPath(
     argValue(args, "--out") || path.join("scripts", "llm", "output", "dpo-pairs.jsonl"),
@@ -343,16 +292,9 @@ async function cmdPrepareDpo(args: string[]): Promise<void> {
   const tags = tagsRaw ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean) : undefined;
 
   const preferences = listPreferenceExamples(tags);
-  const scribePairs = hasFlag(args, "--no-scribe")
-    ? []
-    : await readScribeDpoPairs(resolveOutPath(DEFAULT_SCRIBE_DPO_DIR));
   await mkdir(path.dirname(out), { recursive: true });
-  const lines = [preferencesToJsonl(preferences).trimEnd(), ...scribePairs.map((row) => JSON.stringify(row))]
-    .filter(Boolean)
-    .join("\n");
-  await writeFile(out, lines + "\n", "utf8");
-  const scribeNote = scribePairs.length ? ` (${preferences.length} curated + ${scribePairs.length} scribe)` : "";
-  console.log(`Wrote ${preferences.length + scribePairs.length} preference pairs${scribeNote} → ${out}`);
+  await writeFile(out, preferencesToJsonl(preferences), "utf8");
+  console.log(`Wrote ${preferences.length} preference pairs → ${out}`);
   console.log(
     "Run: python scripts/llm/finetune/unsloth_dpo.py --data " + path.relative(REPO_ROOT, out),
   );

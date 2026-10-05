@@ -17,19 +17,17 @@ The React app still calls `POST /api/chat/messages`. The preferred backend is th
 
 ## Path A — Bootstrap today (CPU / laptop)
 
-Creates `anima-chat` from public **Qwen2.5 0.5B** weights (~400 MB). Good enough to engage in real chats with no cloud API keys at all.
+Creates `anima-chat` from public **Qwen2.5 3B** weights (~2 GB). Good enough to engage in real chats with no cloud API keys at all.
 
 ```bash
 # Install Ollama from https://ollama.com if needed, then:
 pnpm llm:up
-# → pulls qwen2.5:0.5b, creates anima-chat, smoke-tests chat
+# → pulls qwen2.5:3b, creates anima-chat, smoke-tests chat
 
 pnpm llm:chat -- "Who are you?"
 ```
 
-Point the api-server at it (also the defaults in `.env.example`). The API
-reads these on the server and calls Ollama's native `POST /api/chat` — do
-not put the host or model name in frontend `VITE_*` variables.
+Point the api-server at it (also the defaults in `.env.example`):
 
 ```bash
 export ANIMA_LOCAL_LLM_BACKEND=ollama
@@ -50,61 +48,6 @@ curl -s http://localhost:8080/api/ai/chat \
 ```
 
 From the React app, `animaApi.aiChat({ prompt })` hits that same probe. Signed-in companion chat uses `/api/chat/messages` and still talks to this local endpoint.
-
----
-
-## Scribe voice — finished, literate replies
-
-If the model answers in fragments or trails off, the fix is two-layered:
-a model large enough to carry a paragraph, and sampling tuned for finished
-prose. `anima-scribe` is that layer on open weights:
-
-```bash
-ollama pull qwen2.5:7b
-ollama create anima-scribe -f scripts/llm/Modelfile.anima-scribe
-export ANIMA_OLLAMA_MODEL_STANDARD=anima-scribe
-```
-
-The Modelfile sets the system voice (doctoral fluency, every thought
-finished, prose not bullets) and the sampler (`temperature 0.7`, `min_p
-0.05`, `repeat_penalty 1.12`, `num_predict 768`). Qwen2.5 7B Q4_K_M fits a
-free Colab T4 or any 8 GB GPU; on a CPU-only host change `FROM` to
-`qwen2.5:3b` and expect plainer prose.
-
-To bake the register into the weights, the repo ships a committed synthetic
-scribe set — [`scripts/llm/data/scribe/`](../scripts/llm/data/scribe/README.md):
-a few hundred finished, literate exchanges in Serenity's and Fallen Angel's
-voices plus DPO pairs whose rejected replies are the concrete failures
-(mid-clause truncation, fragment stacks, drift, list-dumps, generic-assistant
-lapses, restart loops). It merges through the normal pipeline at weight 1, so
-your own logs stay the majority:
-
-```bash
-pnpm llm:dataset            # seeds + raw logs + scribe set → finetune-sharegpt.jsonl, dpo-pairs.jsonl
-pnpm llm:dataset -- --no-scribe   # train without the synthetic set
-```
-
-### Fine-tune the scribe on a free Colab T4
-
-Open [`scripts/llm/finetune/colab_scribe_qlora.ipynb`](../scripts/llm/finetune/colab_scribe_qlora.ipynb)
-in Colab (T4 runtime), upload the three JSONL files from `scripts/llm/output/`,
-and run top to bottom: QLoRA SFT on `unsloth/Qwen2.5-7B-Instruct-bnb-4bit`
-(~60–90 min), DPO (~15 min), a sanity chat, then GGUF export via
-`pnpm llm:export-gguf` / `scripts/llm/finetune/export_gguf.py`. The Unsloth
-scripts pick fp16 on T4 and bf16 on Ampere+ automatically. On the Ollama host:
-
-```bash
-ollama create anima-scribe -f scripts/llm/Modelfile.anima-scribe-tuned   # FROM ./gguf/anima-scribe-q4_k_m.gguf
-export ANIMA_OLLAMA_MODEL_STANDARD=anima-scribe
-pnpm llm:eval
-```
-
-`pnpm llm:eval` gained two checks for this: `mustEndSentence` (reply ends on
-terminal punctuation) and `minWords`. Both `complete-thought-*` cases must
-pass before pointing production at a new tag.
-
-The from-scratch tiny GPT in `training/` cannot reach this register at its
-size; see `training/README.md` for what it can do and what was fixed there.
 
 ---
 
@@ -192,74 +135,6 @@ concrete failure mode, not a vague "be better." Full walkthrough:
 
 ---
 
-## Your own trained model (`training/` → `server/server.py`)
-
-The from-scratch Anima model (`training/`, Phases 1–3) can answer companion
-chat directly. `server/server.py` speaks the OpenAI chat-completions protocol
-the api-server uses for non-Ollama hosts, streaming included. No cloud key is
-involved at any point.
-
-On the model host, after Phase 3 has written `out/anima-dpo/ckpt.pt`:
-
-```bash
-pip install -r server/requirements.txt
-ANIMA_SERVER_TOKEN=<long random string> python server/server.py   # 127.0.0.1:8000
-```
-
-`ANIMA_CKPT` and `ANIMA_TOK_DIR` override the checkpoint and tokenizer paths
-when the host keeps them somewhere other than `out/` and `data/anima_tokens/`.
-
-Point the api-server at it:
-
-```bash
-export ANIMA_LLM_PROVIDER=custom
-export ANIMA_LOCAL_LLM_BACKEND=vllm        # the generic OpenAI-compatible /v1 backend
-export ANIMA_LOCAL_LLM_BASE_URL=http://127.0.0.1:8000/v1
-export ANIMA_LOCAL_LLM_API_KEY=<same value as ANIMA_SERVER_TOKEN>
-export ANIMA_VLLM_MODEL_LIGHT=anima ANIMA_VLLM_MODEL_STANDARD=anima ANIMA_VLLM_MODEL_HEAVY=anima
-```
-
-`curl -s 'localhost:8080/api/healthz/llm?probe=1'` should report
-`"preferred":"local"`, `"brand":"anima"`, `"chain":["local"]`, and a passing
-probe on model `anima`.
-
-How the server handles a companion request:
-
-- It streams `chat.completion.chunk` events a sentence at a time. A
-  length-capped reply is still cut back to its last finished sentence, so
-  the streamed text matches the non-streaming reply.
-- It keeps the newest turns that fit the 1024-token window. The long
-  companion system prompt is usually the first thing dropped. A final message
-  that overflows on its own keeps its tail.
-- It reads text only. Image parts are ignored, tool-call turns with no text
-  are skipped, and `tools` are accepted but never called.
-- It clamps `max_tokens` to 768 instead of rejecting larger values. The
-  api-server already sends 200 or fewer.
-
-**Production (Worker).** The Worker cannot reach localhost. Expose the server
-over public HTTPS with the same tunnel used for Ollama in
-[`docs/llm-deploy.md`](./llm-deploy.md), aimed at the model server
-(`ANIMA_TUNNEL_PORT=8000 pnpm llm:tunnel`). Then:
-
-1. Set Secrets Store `ANIMA_LOCAL_LLM_BASE_URL` to that `https://…/v1` and
-   `ANIMA_LOCAL_LLM_API_KEY` to the server token.
-2. In `wrangler.jsonc` `vars`, change `ANIMA_LOCAL_LLM_BACKEND` from `ollama`
-   to `vllm`, add `ANIMA_VLLM_MODEL_STANDARD` (plus `_LIGHT` / `_HEAVY`) set to
-   `anima`, and redeploy.
-
-Do step 2 only once the new host answers. Until then production stays on
-`anima-chat`.
-
-Tests: `python3 server/test_server.py` builds a tiny random-weight model, so it
-needs no trained checkpoint (requires `torch`, `tokenizers`, `fastapi`,
-`httpx`).
-
-At about 34M parameters this model is a research and preview voice (see
-[`training/README.md`](../training/README.md)). `anima-chat` and
-`anima-scribe` on open weights remain the fluent option.
-
----
-
 ## Other supported open-weight families
 
 Anima now keeps a source-of-truth catalog for Llama, Qwen, Mistral, Gemma,
@@ -272,7 +147,7 @@ pnpm llm:list-open-models
 | Family | Ollama example | vLLM / Hugging Face example | OpenRouter free example |
 |--------|----------------|-----------------------------|-------------------------|
 | Llama | `llama3.1:8b` | `meta-llama/Llama-3.1-8B-Instruct` | `meta-llama/llama-3.3-70b-instruct:free` |
-| Qwen | `qwen2.5:0.5b` | `Qwen/Qwen2.5-7B-Instruct` | `qwen/qwen-2.5-7b-instruct:free` |
+| Qwen | `qwen2.5:3b` | `Qwen/Qwen2.5-7B-Instruct` | `qwen/qwen-2.5-7b-instruct:free` |
 | Mistral | `mistral:7b` | `mistralai/Ministral-3-8B-Instruct-2512` | `mistralai/mistral-small-3.2-24b-instruct:free` |
 | Gemma | `gemma3:4b` | `google/gemma-3-4b-it` | `google/gemma-3-12b-it:free` |
 | DeepSeek | `deepseek-r1:7b` | `deepseek-ai/DeepSeek-R1-Distill-Qwen-7B` | `deepseek/deepseek-r1:free` |
@@ -298,24 +173,6 @@ OPENROUTER_API_KEY=sk-or-…
 ```
 
 Do not set `ANIMA_OPENROUTER_FALLBACK=true` to paper over a down self-hosted host — fail the turn and wake that host. Restoring a local→OpenRouter hop is not supported while customOnly is on.
-
-Local chat calls omit Ollama `keep_alive` unless `ANIMA_OLLAMA_KEEP_ALIVE` is set, so the droplet daemon wins. Production should keep `OLLAMA_KEEP_ALIVE=-1` (model stays loaded). A body value of `30m` overrides that and unloads anima-chat. Ollama's `/v1/chat/completions` handler ignores the field; the public-v1 proxy rewrites that route onto native `/api/chat` and only copies `keep_alive` when the request or env sets it. The header-withheld local budget stays 90s (`LLM_LOCAL_FIRST_TOKEN_MS`). That clock starts when the turn takes the single local slot, not while it is queued. Companion `/api/chat/messages` may keep the browser fetch open for `CHAT_FETCH_ABORT_MS` (180s queue + 90s first token + 30s decode slack + 10s context). Repeat-retry leftover time still uses the 140s `CHAT_STREAM_TIMEOUT_MS` window. Once tokens are flowing, a client disconnect does not abort the upstream generate until that generation cap: the reply and that turn's mood change are saved together, and the client picks them up by polling (`LATE_REPLY_POLL_MS`, 300s) or by opening the chat again. A generate that has not emitted a token yet still stops after the disconnect grace or the 60s late-persist budget. `/api/ai/chat` stays at 18s so a hung generate still returns JSON before the Worker ~20s wall. Do not raise that probe. Native `num_predict` is capped at 200.
-
-### Single slot on the local host
-
-The droplet serves one Ollama request at a time. Each Cloudflare isolate used to keep its own in-memory counter, so a second chat turn, a proactive check-in, or a journal call walked straight into Ollama and sat behind the first prompt. That wait was charged against the second turn's 90s first-token budget.
-
-Chat turns on a local-only chain now take one shared lease, FIFO. While a turn waits it sends an SSE `status: "waiting"` event with `queue_position`, and the chat bubble shows `Sends when she's done` instead of failing the spinner. A second text in the same conversation is held on the client until that reply finishes; it is not queued as another generate. That hold is saved in the browser for the signed-in account and conversation. If the tab reloads before it sends, the text goes back into the send box for review and does not send by itself. The saved copy stays through another reload until the user sends it or clears the box, and it expires after 24 hours. The 90s first-token abort starts only after the lease is granted. Waiting itself is capped at 180s (`LLM_LOCAL_SLOT_WAIT_MS`); past that the turn returns "The companion is still finishing another reply. Please try again in a moment."
-
-Background callers (proactive check-ins, journal, milestone evolution, post-turn sidecars, and the app-open warm) try the lease once. They skip when it is held or any chat turn is already in line, so they do not evict Ollama's cached prompt. Hosted and non-local providers never take the lease.
-
-The lease expires on its own (`LLM_LOCAL_SLOT_TTL_MS`, 150s, a little above the 120s generation cap) if the holder dies. A live holder heartbeats every 15s, which extends the lease. Set `ANIMA_LOCAL_LLM_SLOT=false` (or `0` / `off`) to disable the queue. The default is on whenever the provider chain is local-only. Forcing the flag on does not queue OpenRouter, Workers AI, MiniMax, or any other hosted chain.
-
-Production coordinates the lease with a Durable Object binding `LOCAL_LLM_SLOT` (`class_name` `LocalLlmSlot`, migration `v1-local-llm-slot` in `wrangler.jsonc`). One object, `getByName("ollama")`, is the slot. The class uses the SQLite backend (`new_sqlite_classes`), which the Workers Free plan supports. Keep it in `new_sqlite_classes`; do not move it to `new_classes`. There is no new secret. Do not rename the class without a new migration. Node and vitest use an in-process book when the binding is absent; that book is not shared across isolates.
-
-Optional second self-hosted host: `ANIMA_LOCAL_LLM_BACKUP_BASE_URL` (for example `https://llm-backup.anima-protocol.com/v1`) serving the same `anima-chat` model. When it is set, a primary timeout, connection error, or busy host (429/503) tries that URL and stays on provider `local`. Auth failures and the Worker subrequest limit do not hop. When the variable is unset, chat stays on the single host and still does not fall through to OpenRouter or OpenAI. Do not commit the URL as a secret, and do not add a Wrangler binding until the Secrets Store entry exists.
-
-Signed-in app open fires one background `POST /api/llm/warm` per browser session. That route is its own request: it sends a native `/api/generate` with an empty prompt and `num_predict: 1`, times out at 22s, and does not call OpenRouter or OpenAI. It skips while a companion turn is open. The chat-turn warm (`hintLocalLlmWarm`) stays skipped on Workers (#480). A successful preload suppresses another one for 5 minutes on that isolate.
 
 More detail on the fine-tune pipeline and self-hosted stack: [`docs/llm-build.md`](./llm-build.md).
 
@@ -470,7 +327,7 @@ ANIMA_OLLAMA_MODEL_STANDARD=anima-chat       # or anima-uncensored / your vLLM i
 
 This one means the opposite of the error above: `ANIMA_LOCAL_LLM_BASE_URL` **is** set and the host **is** reachable — it just doesn't serve a model by that name. Usual causes:
 
-- `ollama create anima-chat -f scripts/llm/Modelfile.anima-chat` was never run on the host, so it only has the base weights (`qwen2.5:0.5b`).
+- `ollama create anima-chat -f scripts/llm/Modelfile.anima-chat` was never run on the host, so it only has the base weights (`qwen2.5:3b`).
 - The tag exists as `anima-chat:latest` behind a gateway that doesn't do Ollama's implicit `:latest` resolution.
 - The URL points at a vLLM host or another OpenAI-compatible gateway serving its own model ids.
 
@@ -479,7 +336,7 @@ This one means the opposite of the error above: `ANIMA_LOCAL_LLM_BASE_URL` **is*
 You'll see this in the API logs when it kicks in:
 
 ```
-[llm] "anima-chat" is not served by this endpoint — using "qwen2.5:0.5b" instead (found via /v1/models).
+[llm] "anima-chat" is not served by this endpoint — using "qwen2.5:3b" instead (found via /v1/models).
 ```
 
 That keeps the app talking, but it's still a misconfiguration — see exactly what the host has and pin it:
@@ -493,9 +350,9 @@ curl -s 'https://www.anima-protocol.com/api/healthz/llm?probe=1' \
 Then either create the expected tag on the host, or point the env at what's already there and redeploy:
 
 ```bash
-ANIMA_OLLAMA_MODEL_LIGHT=qwen2.5:0.5b
-ANIMA_OLLAMA_MODEL_STANDARD=qwen2.5:0.5b
-ANIMA_OLLAMA_MODEL_HEAVY=qwen2.5:0.5b
+ANIMA_OLLAMA_MODEL_LIGHT=qwen2.5:3b
+ANIMA_OLLAMA_MODEL_STANDARD=qwen2.5:3b
+ANIMA_OLLAMA_MODEL_HEAVY=qwen2.5:3b
 ```
 
 If the endpoint serves *nothing* usable for chat, the turn fails with a message naming your host, the ids it does serve, and the command that fixes it — not a bare 404.

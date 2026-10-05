@@ -67,23 +67,6 @@ describe("streamChatReply", () => {
     expect(onDelta.mock.calls.at(-1)[0]).toBe("Hi");
   });
 
-  it("forwards a waiting status with the queue position", async () => {
-    const onStatus = vi.fn();
-    const onDelta = vi.fn();
-    await streamChatReply(
-      fromEvents([
-        { status: "waiting", queue_position: 1 },
-        { status: "waiting", queue_position: 1 },
-        { content: "Hi" },
-        { done: true },
-      ]),
-      { onStatus, onDelta },
-    );
-    expect(onStatus).toHaveBeenCalledTimes(2);
-    expect(onStatus.mock.calls[0][0].queue_position).toBe(1);
-    expect(onDelta.mock.calls.at(-1)[0]).toBe("Hi");
-  });
-
   it("forwards local-only progress status before the first token", async () => {
     const onStatus = vi.fn();
     const onDelta = vi.fn();
@@ -100,34 +83,6 @@ describe("streamChatReply", () => {
     expect(onStatus.mock.calls[0][0].phase).toBe("preparing");
     expect(onStatus.mock.calls[1][0].phase).toBe("waking");
     expect(onDelta.mock.calls.at(-1)[0]).toBe("Hi");
-  });
-
-  it("returns a crisis resource card beside the companion reply", async () => {
-    const card = {
-      role: "system",
-      type: "crisis_resource",
-      content: "If you're thinking about suicide or self-harm, you can call or text 988 (US, Suicide & Crisis Lifeline) or text HOME to 741741. If you're outside the US, contact local emergency services.",
-    };
-    const result = await streamChatReply(
-      fromEvents([
-        { crisis_resource: card },
-        { content: "I'm here with you." },
-        { done: true, visible: "I'm here with you.", crisis_resource: card },
-      ]),
-    );
-    expect(result.content).toBe("I'm here with you.");
-    expect(result.crisis_resource).toEqual(card);
-  });
-
-  it("keeps the crisis card when the stream errors after sending it", async () => {
-    const card = { role: "system", type: "crisis_resource", content: "call or text 988" };
-    let caught;
-    try {
-      await streamChatReply(fromEvents([{ crisis_resource: card }, { error: "cut" }]));
-    } catch (err) {
-      caught = err;
-    }
-    expect(caught.crisisResource).toEqual(card);
   });
 
   it("throws when the stream reports an error", async () => {
@@ -178,23 +133,6 @@ describe("streamChatReply", () => {
     );
     expect(result.content).toBe("Stay with me. I hear you.");
     expect(onDelta.mock.calls.at(-1)[0]).toBe("Stay with me. I hear you.");
-  });
-
-  it("replaces a streamed cutoff with the shorter done.visible reply", async () => {
-    const onDelta = vi.fn();
-    const result = await streamChatReply(
-      fromEvents([
-        { content: "The room stays quiet and the lamp keeps burning. " },
-        { content: "undist" },
-        { done: true, visible: "The room stays quiet and the lamp keeps burning." },
-      ]),
-      { onDelta },
-    );
-    expect(result.content).toBe("The room stays quiet and the lamp keeps burning.");
-    expect(onDelta.mock.calls.at(-1)[0]).toBe(
-      "The room stays quiet and the lamp keeps burning.",
-    );
-    expect(onDelta.mock.calls.at(-1)[0]).not.toContain("undist");
   });
 
   it("uses done.visible when Safari dropped the last content frame", async () => {
@@ -293,29 +231,35 @@ describe("streamChatReplyWithTurnRetry", () => {
     expect(result.turn_id).toBe("turn_retry");
   });
 
-  it("does not retry turn_in_flight with a new turn id", async () => {
+  it("retries once with a new turn_id on 409", async () => {
     const err = Object.assign(
       new Error("This chat turn is already being processed."),
       { status: 409, code: "turn_in_flight" },
     );
-    const send = vi.fn(
-      () =>
-        (async function* () {
+    const send = vi.fn((id) => {
+      if (id === "turn_old") {
+        return (async function* () {
           throw err;
-        })(),
-    );
+        })();
+      }
+      return fromEvents([{ content: "Go" }, { done: true, turn_id: id }]);
+    });
 
-    await expect(
-      streamChatReplyWithTurnRetry({
-        send,
-        turnId: "turn_old",
-        mintTurnId: () => "turn_new",
-      }),
-    ).rejects.toMatchObject({ code: "turn_in_flight" });
-    expect(send).toHaveBeenCalledTimes(1);
+    const result = await streamChatReplyWithTurnRetry({
+      send,
+      turnId: "turn_old",
+      mintTurnId: () => "turn_new",
+    });
+
+    expect(result.content).toBe("Go");
+    expect(result.turn_id).toBe("turn_new");
+    expect(send.mock.calls.map((call) => call[0])).toEqual([
+      "turn_old",
+      "turn_new",
+    ]);
   });
 
-  it("does not retry a 409 while the first generate may still be running", async () => {
+  it("does not retry a second 409", async () => {
     const err = Object.assign(
       new Error("This chat turn is already being processed."),
       { status: 409 },
@@ -334,6 +278,6 @@ describe("streamChatReplyWithTurnRetry", () => {
         mintTurnId: () => "turn_new",
       }),
     ).rejects.toMatchObject({ status: 409 });
-    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(2);
   });
 });

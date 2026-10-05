@@ -1,13 +1,12 @@
 import { useState } from "react";
 import MessageBubble from "./MessageBubble";
-import SystemDisclosure from "./SystemDisclosure";
 import { parseGroupResponse } from "@/lib/parseGroupResponse";
 import { ChevronUp, Loader } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const PAGE_SIZE = 20; // messages shown per "page"
 
-export default function MessageList({ messages, session, characters, characterMemories = [], characterEmotions = {}, loreLinks = {}, onRewindToMessage, onSpeak, onEditMessage, onDeleteMessage, onRegenerateMessage, onAvatarClick, onTeachMessage }) {
+export default function MessageList({ messages, session, characters, characterMemories = [], characterEmotions = {}, loreLinks = {}, onRewindToMessage, onSpeak, onEditMessage, onDeleteMessage, onRegenerateMessage, onAvatarClick }) {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(false);
 
@@ -19,20 +18,6 @@ export default function MessageList({ messages, session, characters, characterMe
   const allRendered = [];
 
   (messages || []).forEach((msg, i) => {
-    if (msg?.type === "crisis_resource" || msg?.type === "ai_notice" || msg?.role === "system") {
-      allRendered.push({
-        key: `disclosure-${i}`,
-        element: (
-          <SystemDisclosure
-            key={`disclosure-${i}`}
-            tone={msg.type === "crisis_resource" ? "crisis" : "info"}
-            text={msg.content}
-            testId={msg.type === "crisis_resource" ? "crisis-resource-card" : "ai-companion-notice"}
-          />
-        ),
-      });
-      return;
-    }
     if (
       msg.role === "assistant" &&
       msg.character_name !== "__typing__" &&
@@ -60,7 +45,6 @@ export default function MessageList({ messages, session, characters, characterMe
                           onDeleteMessage={onDeleteMessage ? () => onDeleteMessage(i) : undefined}
                           onRegenerateMessage={!subMsg.role === 'user' && onRegenerateMessage ? () => onRegenerateMessage(i) : undefined}
                           onAvatarClick={onAvatarClick}
-                          onTeach={onTeachMessage ? () => onTeachMessage(i, subMsg, j) : undefined}
                         />
                       ),
                     });
@@ -89,7 +73,6 @@ export default function MessageList({ messages, session, characters, characterMe
           onDeleteMessage={onDeleteMessage ? () => onDeleteMessage(i) : undefined}
           onRegenerateMessage={msg.role === 'assistant' && msg.character_name !== '__typing__' && onRegenerateMessage ? () => onRegenerateMessage(i) : undefined}
           onAvatarClick={onAvatarClick}
-          onTeach={msg.role === 'assistant' && onTeachMessage ? () => onTeachMessage(i) : undefined}
         />
       ),
     });

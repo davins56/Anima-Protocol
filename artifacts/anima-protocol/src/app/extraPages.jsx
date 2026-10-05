@@ -112,28 +112,14 @@ const PAGES = {
   YnStoriesLibrary: lazy(() => import("../pages/YnStoriesLibrary")),
 };
 
-export default function ExtraPage({ name, ...props }) {
+export default function ExtraPage({ name }) {
   const Comp = PAGES[name];
   if (!Comp) {
-    return (
-      <div className="flex-1 min-h-0 flex items-center justify-center p-6">
-        <div className="text-center space-y-3">
-          <p className="font-mono text-sm text-primary/80 tracking-widest uppercase">
-            This screen is not available
-          </p>
-          <a
-            href="/"
-            className="inline-block font-mono text-[10px] tracking-widest uppercase text-primary/60 hover:text-primary"
-          >
-            Go Home
-          </a>
-        </div>
-      </div>
-    );
+    return null;
   }
   return (
     <Suspense fallback={<PageLoader />}>
-      <Comp {...props} />
+      <Comp />
     </Suspense>
   );
 }

@@ -23,7 +23,6 @@ import {
 } from "@/lib/listPersonalAnimas";
 import { STORE_AUTH_WAIT_MS } from "@/lib/storeTimeouts";
 import { useAuth } from "@/lib/AuthContext";
-import CompanionLoreFiles from "@/components/pdf/CompanionLoreFiles";
 
 const ARCHETYPES = ["guardian", "muse", "sage", "trickster", "shadow", "lover", "explorer", "oracle"];
 
@@ -381,14 +380,7 @@ Return JSON with a single "${field}" string field.`,
             </div>
           </div>
         )}
-        {loading && animas.length === 0 ? (
-          <div className="text-center py-24" role="status" aria-live="polite">
-            <Loader className="w-6 h-6 text-primary/60 animate-spin mx-auto mb-3" />
-            <p className="font-mono text-[10px] text-primary/40 tracking-widest uppercase">
-              Loading Animas...
-            </p>
-          </div>
-        ) : animas.length === 0 ? (
+        {animas.length === 0 ? (
           <div className="text-center py-24">
             <div className="w-20 h-20 border border-primary/20 bg-primary/5 mx-auto flex items-center justify-center mb-6">
               <Sparkles className="w-8 h-8 text-primary/30" />
@@ -719,11 +711,6 @@ Return JSON with a single "${field}" string field.`,
                   className="w-full bg-black/60 border border-primary/20 text-primary/80 placeholder-primary/15 font-mono text-sm px-3 py-2 focus:outline-none focus:border-primary/50 transition-colors resize-none leading-relaxed"
                 />
               </div>
-
-              <CompanionLoreFiles
-                characterId={editingAnima?.id || null}
-                characterName={form.name}
-              />
 
               {/* Speaking Style */}
               <div>

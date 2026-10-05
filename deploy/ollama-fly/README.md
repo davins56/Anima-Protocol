@@ -1,7 +1,7 @@
 # Fly.io Ollama host (`anima-chat-llm`)
 
 Public HTTPS OpenAI-compatible API for the branded `anima-chat` model
-(`qwen2.5:0.5b`, ~400 MB, CPU-friendly). The Cloudflare Worker at
+(`qwen2.5:3b`, ~2 GB, CPU-friendly). The Cloudflare Worker at
 `anima-protocol.com` cannot reach `localhost` (isolate fetch is rejected with
 Cloudflare error 1003). This app is the intended `ANIMA_LOCAL_LLM_BASE_URL`.
 
@@ -44,7 +44,7 @@ idle may time out. Do not change that without measuring a real chat turn.
 fly launch --no-deploy --config deploy/ollama-fly/fly.toml
 # or: fly apps create anima-chat-llm
 
-# 2. Persistent volume for Ollama weights (~400 MB model + headroom)
+# 2. Persistent volume for Ollama weights (~2 GB model + headroom)
 fly volumes create ollama_data --size 20 --app anima-chat-llm --yes
 
 # 3. Bearer token — generate locally, do not commit
@@ -56,7 +56,7 @@ fly secrets set PROXY_AUTH_TOKEN="${PROXY_AUTH_TOKEN}" -a anima-chat-llm
 fly deploy --config deploy/ollama-fly/fly.toml --dockerfile deploy/ollama-fly/Dockerfile
 ```
 
-First boot pulls `qwen2.5:0.5b` and runs `ollama create anima-chat`. `/healthz`
+First boot pulls `qwen2.5:3b` and runs `ollama create anima-chat`. `/healthz`
 stays up so Fly does not kill the machine during the pull. Watch progress:
 
 ```bash
@@ -141,12 +141,6 @@ Ollama on Fly **CPU** with a 3B model is slow for long replies. That is
 expected. Upgrade path: a Fly GPU machine, or a larger CPU/`performance-*`
 VM, still serving `anima-chat` (or a fine-tuned tag) behind the same proxy.
 Do not point `ANIMA_LOCAL_LLM_BASE_URL` at OpenAI, Groq, or Gemini.
-
-`entrypoint.sh` exports `OLLAMA_KEEP_ALIVE=30m` when unset. Ollama's
-`/v1/chat/completions` handler drops the request `keep_alive` field; the
-server default is what keeps weights resident. The DO tunnel proxy
-(`scripts/llm/public-v1/openai-proxy.py`) also rewrites that route onto
-native `/api/chat`. Do not re-enable OpenRouter after this host.
 
 ## Files
 

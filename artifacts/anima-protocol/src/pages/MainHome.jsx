@@ -19,7 +19,6 @@ import {
 } from "@/lib/homeWake";
 import HomeDock from "@/components/home/HomeDock";
 import HomeFloorSheets from "@/components/home/HomeFloorSheets";
-import { RECENT_CHATS_LIMIT, sortRecentSessions } from "@/lib/recentChats";
 
 const APP_VERSION = "V4.3.0";
 const LONG_PRESS_MS = 520;
@@ -98,15 +97,16 @@ export default function MainHome() {
     try {
       const [me, sessionList, animas, checkIns] = await Promise.all([
         base44.auth.me(),
-        base44.entities.ChatSession.list("-updated_date", RECENT_CHATS_LIMIT, {
-          withMessages: false,
-        }),
+        base44.entities.ChatSession.list(),
         base44.entities.Anima.list(),
         base44.entities.CheckIn.list(),
       ]);
       setSelectedMode(me?.selected_mode || "serenity");
 
-      setSessions(sortRecentSessions(sessionList, RECENT_CHATS_LIMIT));
+      const recent = [...(sessionList || [])]
+        .sort((a, b) => new Date(b.updated_date || b.created_date || 0) - new Date(a.updated_date || a.created_date || 0))
+        .slice(0, 5);
+      setSessions(recent);
 
       const userAnima = animas?.find((a) => a.assigned_user === me?.email) || animas?.[0] || null;
       setAnima(userAnima);
@@ -332,14 +332,16 @@ export default function MainHome() {
             ) : null}
           </div>
 
-          <button
-            type="button"
-            data-home-recents
-            onClick={() => setPanel("recents")}
-            className="self-center mb-3 font-mono text-[9px] tracking-[0.28em] uppercase text-cyan-400/45 hover:text-cyan-300"
-          >
-            Recents
-          </button>
+          {sessions.length > 0 && (
+            <button
+              type="button"
+              data-home-recents
+              onClick={() => setPanel("recents")}
+              className="self-center mb-3 font-mono text-[9px] tracking-[0.28em] uppercase text-cyan-400/45 hover:text-cyan-300"
+            >
+              Recents
+            </button>
+          )}
         </div>
       </div>
 

@@ -1,16 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
-import { useLocalOnlyLlmChain } from '@/lib/localOnlyLlm';
 
 export const useDivergentPaths = (sessionId, characterId, characterName, messages) => {
   const [paths, setPaths] = useState([]);
   const [showPaths, setShowPaths] = useState(false);
   const [loading, setLoading] = useState(false);
   const messageCheckRef = useRef(0);
-  const localOnly = useLocalOnlyLlmChain();
 
   const generatePaths = async () => {
-    if (localOnly) return;
     if (!sessionId || !characterId || !messages || messages.length < 2) return;
 
     setLoading(true);
@@ -35,8 +32,7 @@ export const useDivergentPaths = (sessionId, characterId, characterName, message
 
   // Auto-trigger path generation after major exchanges
   useEffect(() => {
-    if (localOnly) return undefined;
-    if (!messages || messages.length < 2) return undefined;
+    if (!messages || messages.length < 2) return;
 
     const currentCount = messages.length;
     
@@ -47,12 +43,10 @@ export const useDivergentPaths = (sessionId, characterId, characterName, message
       // Check if last message is from AI (major dialogue)
       const lastMsg = messages[messages.length - 1];
       if (lastMsg?.role === 'assistant' && lastMsg?.character_name !== '__typing__') {
-        const timer = setTimeout(() => generatePaths(), 500);
-        return () => clearTimeout(timer);
+        setTimeout(() => generatePaths(), 500);
       }
     }
-    return undefined;
-  }, [messages, sessionId, characterId, localOnly]);
+  }, [messages, sessionId, characterId]);
 
   const handleSelectPath = async (path) => {
     // Inject path selection as a narrative directive

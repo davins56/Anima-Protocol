@@ -1,7 +1,7 @@
 #!/bin/sh
 # Starts `ollama serve`, puts Caddy in front (Bearer PROXY_AUTH_TOKEN on /v1/*),
-# pulls the base weights on first boot (skipped once the Fly volume has them),
-# rebuilds the branded `anima-chat` model from the Modelfile, then stays up so Fly health checks pass
+# bootstraps the branded `anima-chat` model on first boot (skipped once the
+# Fly volume already has the weights), then stays up so Fly health checks pass
 # during the first-boot pull.
 #
 # Caddy binds :8080 immediately with a static /healthz. Ollama readiness and
@@ -17,11 +17,8 @@ if [ -z "${PROXY_AUTH_TOKEN:-}" ]; then
 fi
 
 OLLAMA_HOST="${OLLAMA_HOST:-0.0.0.0:11434}"
-ANIMA_BOOTSTRAP_BASE="${ANIMA_BOOTSTRAP_BASE:-qwen2.5:0.5b}"
+ANIMA_BOOTSTRAP_BASE="${ANIMA_BOOTSTRAP_BASE:-qwen2.5:3b}"
 ANIMA_OLLAMA_CHAT_TAG="${ANIMA_OLLAMA_CHAT_TAG:-anima-chat}"
-# /v1/chat/completions drops keep_alive. This default still applies to those
-# requests so anima-chat stays resident for 30m after the last hit.
-export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-30m}"
 export OLLAMA_HOST
 
 echo "Starting ollama serve on ${OLLAMA_HOST}..."
@@ -52,21 +49,18 @@ wait_for_ollama() {
 bootstrap_model() {
   echo "Waiting for ollama serve to become ready..."
   wait_for_ollama || return 1
-  if ollama list 2>/dev/null | grep -q "^${ANIMA_BOOTSTRAP_BASE}"; then
-    echo "${ANIMA_BOOTSTRAP_BASE} already present on volume, skipping pull."
-  else
-    echo "Pulling open weights: ${ANIMA_BOOTSTRAP_BASE} (first boot; /healthz stays up)"
-    ollama pull "${ANIMA_BOOTSTRAP_BASE}"
+  if ollama list 2>/dev/null | grep -q "^${ANIMA_OLLAMA_CHAT_TAG}"; then
+    echo "${ANIMA_OLLAMA_CHAT_TAG} already present on volume, skipping bootstrap."
+    return 0
   fi
-  # Rebuild on every boot. The base weights are already on the volume, so this
-  # only rewrites the small params/system layer — and a redeploy with a new
-  # Modelfile (sampling, system prompt) actually reaches the served model.
+  echo "Pulling open weights: ${ANIMA_BOOTSTRAP_BASE} (first boot; /healthz stays up)"
+  ollama pull "${ANIMA_BOOTSTRAP_BASE}"
   echo "Creating Anima chat model: ${ANIMA_OLLAMA_CHAT_TAG}"
   ollama create "${ANIMA_OLLAMA_CHAT_TAG}" -f /Modelfile.anima-chat
   echo "Bootstrap complete: ${ANIMA_OLLAMA_CHAT_TAG}"
 }
 
-# Do not block health checks on the ~400 MB first pull.
+# Do not block health checks on the ~2 GB first pull.
 bootstrap_model &
 BOOTSTRAP_PID=$!
 

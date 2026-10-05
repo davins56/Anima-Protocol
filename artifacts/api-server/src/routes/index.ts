@@ -6,9 +6,7 @@ import characterImageRouter from "./characterImage";
 import battleModelsRouter from "./battleModels";
 import storeRouter from "./store";
 import storageRouter from "./storage";
-import pdfRouter from "./pdf";
 import chatRouter from "./chat";
-import llmWarmRouter from "./llmWarm";
 import intimacyRouter from "./intimacy";
 import operatorModelRouter from "./operatorModel";
 import adminRouter from "./admin";
@@ -17,8 +15,6 @@ import protocolUpgradeRouter from "./protocolUpgrade";
 import notificationsRouter from "./notifications";
 import relationshipOsRouter from "./relationshipOs";
 import repoCodespaceRouter from "./repoCodespace";
-import modelTutorRouter from "./modelTutor";
-import ownModelRouter from "./ownModel";
 
 const router: IRouter = Router();
 
@@ -29,7 +25,6 @@ router.use(elevenLabsRouter);
 router.use(characterImageRouter);
 router.use(battleModelsRouter);
 router.use("/chat", chatRouter);
-router.use("/llm", llmWarmRouter);
 router.use("/intimacy", intimacyRouter);
 router.use("/operator-model", operatorModelRouter);
 router.use("/code-repair", codeRepairRouter);
@@ -37,11 +32,8 @@ router.use("/protocol-upgrade", protocolUpgradeRouter);
 router.use("/notifications", notificationsRouter);
 router.use("/relationship-os", relationshipOsRouter);
 router.use("/repo-codespace", repoCodespaceRouter);
-router.use("/tutor", modelTutorRouter);
-router.use("/model", ownModelRouter);
 router.use("/store", storeRouter);
 router.use(storageRouter);
-router.use(pdfRouter);
 
 router.get("/placeholder/:w/:h", (req, res) => {
   const w = Math.min(Number(req.params.w) || 150, 1200);

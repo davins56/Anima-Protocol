@@ -18,7 +18,6 @@ import {
 export async function streamChatReply(events, { onDelta, onFirstToken, onStatus } = {}) {
   let content = "";
   let doneEvent = null;
-  let crisisResource = null;
   let sawFirst = false;
   let pending = null;
   let rafId = null;
@@ -57,13 +56,9 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus 
 
   try {
     for await (const event of events) {
-      if (event?.crisis_resource) {
-        crisisResource = event.crisis_resource;
-      }
       if (event?.error) {
         const err = new Error(event.error);
         if (content) err.partialContent = content;
-        if (crisisResource) err.crisisResource = crisisResource;
         throw err;
       }
       if (event?.status) {
@@ -102,13 +97,7 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus 
   );
   if (content && onDelta) onDelta(content);
 
-  return {
-    ...(doneEvent || {}),
-    content,
-    ...(crisisResource && !doneEvent?.crisis_resource
-      ? { crisis_resource: crisisResource }
-      : {}),
-  };
+  return { ...(doneEvent || {}), content };
 }
 
 export function isChatTurnCollisionError(error) {
@@ -122,13 +111,6 @@ export function isChatTurnCollisionError(error) {
   );
 }
 
-/** 409 / turn_in_flight means the first generate is still on the droplet. */
-export function isTurnStillRunningError(error) {
-  if (!error) return false;
-  if (error.code === "turn_in_flight" || error.status === 409) return true;
-  return /already being processed/i.test(String(error.message || ""));
-}
-
 function defaultMintTurnId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return `turn_${crypto.randomUUID()}`;
@@ -137,13 +119,9 @@ function defaultMintTurnId() {
 }
 
 /**
- * Companion send wrapper: a reused `turn_id` can replay prior text (`replayed`).
- * Mint a fresh id and retry that once so turn-2 never keeps the previous
- * assistant bubble.
- *
- * Do not retry `turn_in_flight` / HTTP 409. That response means the first
- * generate is still running on the single-slot Ollama host. A new turn id
- * would queue a second generate behind it.
+ * Companion send wrapper: a reused `turn_id` can replay prior text (`replayed`)
+ * or 409 while the first attempt is still pending. Mint a fresh id and retry
+ * once so turn-2 never keeps the previous assistant bubble.
  *
  * @param {{
  *   send: (turnId: string) => AsyncIterable<object>,
@@ -181,11 +159,7 @@ export async function streamChatReplyWithTurnRetry({
       }
       return { ...result, turn_id: result?.turn_id || currentTurnId };
     } catch (error) {
-      if (
-        !retried &&
-        isChatTurnCollisionError(error) &&
-        !isTurnStillRunningError(error)
-      ) {
+      if (!retried && isChatTurnCollisionError(error)) {
         retried = true;
         currentTurnId = mintTurnId();
         onRetry?.(currentTurnId);

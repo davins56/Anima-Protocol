@@ -1,3 +1,0 @@
-# The background trainer (server/trainer.py) also talks to Postgres.
--r requirements.txt
-psycopg[binary]>=3.1,<4
