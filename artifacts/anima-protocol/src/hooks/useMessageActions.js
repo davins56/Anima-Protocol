@@ -1,8 +1,11 @@
 import { base44 } from "@/api/base44Client";
 import { useConfirm } from "@/lib/ConfirmDialog";
+import { editMessageFlow } from "@/lib/chatEditHandlers";
+import { regenerateMessageFlow } from "@/lib/chatRewindHandlers";
 
 /**
  * Provides edit, delete, and regenerate actions for chat messages.
+ * Edit resends the new wording. Retry replaces her reply without a second user turn.
  */
 export function useMessageActions({ activeSession, setActiveSession, isLoading, handleSendMessage }) {
   const confirm = useConfirm();
@@ -19,30 +22,23 @@ export function useMessageActions({ activeSession, setActiveSession, isLoading, 
     setActiveSession(prev => ({ ...prev, messages: updated }));
   };
 
-  const handleEditMessage = async (messageIndex, newText) => {
-    if (!activeSession) return;
-    const updated = (activeSession.messages || []).map((msg, i) =>
-      i === messageIndex ? { ...msg, content: newText } : msg
-    );
-    await base44.entities.ChatSession.update(activeSession.id, { messages: updated });
-    setActiveSession(prev => ({ ...prev, messages: updated }));
-  };
-
-  const handleRegenerateMessage = async (messageIndex) => {
-    if (!activeSession || isLoading) return;
-    const ok = await confirm({
-      heading: "Regenerate",
-      title: "Regenerate this response?",
-      message: "This discards this reply and anything after it, then writes a new one.",
-      confirmLabel: "Regenerate",
+  const handleEditMessage = (messageIndex, newText) =>
+    editMessageFlow(messageIndex, newText, {
+      confirm,
+      activeSession,
+      isLoading,
+      setActiveSession,
+      sendMessage: handleSendMessage,
     });
-    if (!ok) return;
-    const messagesUpToBefore = (activeSession.messages || []).slice(0, messageIndex);
-    const lastUserMsg = [...messagesUpToBefore].reverse().find(m => m.role === 'user');
-    await base44.entities.ChatSession.update(activeSession.id, { messages: messagesUpToBefore });
-    setActiveSession(prev => ({ ...prev, messages: messagesUpToBefore }));
-    if (lastUserMsg) await handleSendMessage(lastUserMsg.content);
-  };
+
+  const handleRegenerateMessage = (messageIndex) =>
+    regenerateMessageFlow(messageIndex, {
+      confirm,
+      activeSession,
+      isLoading,
+      setActiveSession,
+      sendMessage: handleSendMessage,
+    });
 
   return { handleDeleteMessage, handleEditMessage, handleRegenerateMessage };
 }

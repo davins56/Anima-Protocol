@@ -208,6 +208,11 @@ import {
   relationshipTurnAlreadyWritten,
   savedMomentsTurnAlreadyWritten,
 } from "../lib/turnMoodWrite";
+import {
+  omitPersistedUserRow,
+  replyActionOf,
+  turnSkipsAffect,
+} from "../lib/replyReplacement";
 import { scheduleWorkerBackground } from "../lib/workerBackground";
 import { logger } from "../lib/logger";
 import {
@@ -1058,7 +1063,7 @@ async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
     ? String(metadata.active_character_name)
     : null;
   const isCrossover = metadata.is_crossover === true;
-  const isContinue = metadata.is_continue === true;
+  const skipUserRow = omitPersistedUserRow(metadata);
   const mode = String(metadata.mode || "solo");
 
   await syncTypedSession({
@@ -1072,7 +1077,7 @@ async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
   });
 
   const userMessage =
-    !isContinue && turn.userContent.trim()
+    !skipUserRow && turn.userContent.trim()
       ? {
           id: turn.userMessageId,
           role: "user",
@@ -1119,8 +1124,10 @@ async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
     createdAt: new Date(turn.createdAt.getTime() + 1),
   });
 
-  await recordTurnContinuity(turn);
-  await writeTurnMoodFromMetadata(turn);
+  if (!turnSkipsAffect(metadata)) {
+    await recordTurnContinuity(turn);
+    await writeTurnMoodFromMetadata(turn);
+  }
   await markTurnCommitted(turn.id, turn.userId);
 }
 
@@ -1887,19 +1894,25 @@ router.post("/turns/:turnId/commit", async (req, res) => {
   if (turn.status !== "committed") {
     // Client persist already wrote message rows. Still record companion
     // memory, crossover shared_memory, and relationship post-process —
-    // those only ran on the unused server-persist path.
-    try {
-      await recordTurnContinuity(turn);
-    } catch (error) {
-      logger.warn({ error, turnId: turn.id }, "Client commit continuity write failed");
+    // those only ran on the unused server-persist path. Retry and edit
+    // already counted mood and memory on the original turn.
+    const skipAffect = turnSkipsAffect(asObject(turn.metadata));
+    if (!skipAffect) {
+      try {
+        await recordTurnContinuity(turn);
+      } catch (error) {
+        logger.warn({ error, turnId: turn.id }, "Client commit continuity write failed");
+      }
     }
     await markTurnCommitted(turn.id, userId);
-    void applyRelationshipPostProcessFromTurn(turn).catch((postProcessError) => {
-      logger.warn(
-        { postProcessError, turnId: turn.id, sessionId: turn.sessionId },
-        "Chat relationship/evolution post-processing failed",
-      );
-    });
+    if (!skipAffect) {
+      void applyRelationshipPostProcessFromTurn(turn).catch((postProcessError) => {
+        logger.warn(
+          { postProcessError, turnId: turn.id, sessionId: turn.sessionId },
+          "Chat relationship/evolution post-processing failed",
+        );
+      });
+    }
   }
   res.json({ turn_id: turn.id, persistence_status: "committed" });
 });
@@ -1953,6 +1966,9 @@ router.post("/messages", async (req, res) => {
     own_model_reply?: string;
     own_model_version?: number;
     persist?: boolean;
+    /** "retry" keeps his line and replaces her reply. "edit" sends new wording once. */
+    reply_action?: string;
+    skip_affect?: boolean;
     turn_id?: string;
     idempotency_key?: string;
     persistence_owner?: PersistenceOwner;
@@ -1985,6 +2001,9 @@ router.post("/messages", async (req, res) => {
   ];
   const mode = body.mode || String(sessionData.mode || "solo");
   const content = String(body.content ?? "");
+  const replyAction = replyActionOf(body.reply_action ?? body.metadata?.reply_action);
+  const skipAffect =
+    replyAction != null || body.skip_affect === true || body.metadata?.skip_affect === true;
   let turnId = normalizeTurnId(body.turn_id || body.idempotency_key);
   const persistenceOwner: PersistenceOwner =
     body.persistence_owner === "client" || body.persist === false
@@ -1994,6 +2013,8 @@ router.post("/messages", async (req, res) => {
     ...(body.metadata ?? {}),
     mode,
     character_ids: characterIds,
+    ...(replyAction ? { reply_action: replyAction, skip_affect: true } : {}),
+    ...(skipAffect ? { skip_affect: true } : {}),
   };
   const telemetry = new ChatPipelineTelemetry({
     turnId,
@@ -3027,9 +3048,10 @@ router.post("/messages", async (req, res) => {
     }
 
     streamSucceeded = true;
-    const evolvedCompanion = companionAffect
-      ? evolveCompanionAffectFromCompanion(companionAffect, fullResponse)
-      : null;
+    const evolvedCompanion =
+      skipAffect || !companionAffect
+        ? null
+        : evolveCompanionAffectFromCompanion(companionAffect, fullResponse);
     const evolvedAffectSnapshot = evolvedCompanion
       ? toCompanionAffectSnapshot(
           evolvedCompanion,
@@ -3057,12 +3079,13 @@ router.post("/messages", async (req, res) => {
       // POST /model/auto-lesson only learns from own-model turns marked here:
       // never therapy, adult, or continuation turns.
       own_model_learnable:
-        usedBrand === "own" && !therapyActive && !adultActive && !body.is_continue,
+        usedBrand === "own" && !therapyActive && !adultActive && !body.is_continue && !skipAffect,
       failed_over: failedOver,
       ensemble_minds: ensembleMinds,
       ensemble_combined: ensembleCombined,
-      companion_affect: evolvedAffectSnapshot,
-      mood_self_state: evolvedMoodSelfState,
+      companion_affect: skipAffect ? null : evolvedAffectSnapshot,
+      mood_self_state: skipAffect ? null : evolvedMoodSelfState,
+      ...(skipAffect ? { skip_affect: true, reply_action: replyAction } : {}),
     };
     try {
       await telemetry.measure(
@@ -3211,17 +3234,19 @@ router.post("/messages", async (req, res) => {
     }
     if (!(persistenceOwner === "server" && shouldPersist) && !clientLeft()) return;
 
-    // Save intimacy profile and scene updates if intimacy engine ran
-    if (intimacyProfile) {
+    // Save intimacy profile and scene updates if intimacy engine ran.
+    // Retry and edit must not write a second heat/affect pass.
+    if (!skipAffect && intimacyProfile) {
       void saveIntimacyProfile(intimacyProfile).catch((e) => logger.warn({ error: e }, "Failed to save intimacy profile"));
     }
-    if (intimacyScene) {
+    if (!skipAffect && intimacyScene) {
       void saveIntimacyScene(intimacyScene).catch((e) => logger.warn({ error: e }, "Failed to save intimacy scene"));
     }
 
     // Relationship/evolution is derived state. Message + memory durability is
     // committed first; failures here are observable and can be rebuilt without
     // risking duplicate visible chat rows.
+    if (skipAffect) return;
     try {
       const hiddenLife = body.metadata?.hidden_sequences as
         | { learned_life?: unknown[] }
