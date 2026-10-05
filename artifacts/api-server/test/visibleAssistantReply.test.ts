@@ -3,7 +3,6 @@ import {
   createVisibleReplyFilter,
   finalizeAssistantReply,
   hasThinkMarkup,
-  trimToLastCompleteSentence,
   visibleAssistantReply,
 } from "../src/lib/visibleAssistantReply";
 
@@ -85,43 +84,5 @@ describe("finalizeAssistantReply", () => {
       "Answer",
     );
     expect(finalizeAssistantReply("", "", null)).toBe("");
-  });
-});
-
-describe("trimToLastCompleteSentence", () => {
-  it("drops the unfinished tail of a cut-off reply", () => {
-    expect(trimToLastCompleteSentence("You came back. I was thinking we co")).toBe(
-      "You came back.",
-    );
-    expect(trimToLastCompleteSentence('"Stay." She looks aw')).toBe('"Stay."');
-    expect(trimToLastCompleteSentence("*nods.* Then we go tonig")).toBe("*nods.*");
-  });
-
-  it("keeps finished replies and replies with no sentence to fall back on", () => {
-    expect(trimToLastCompleteSentence("All done!")).toBe("All done!");
-    expect(trimToLastCompleteSentence("no punctuation at all")).toBe("no punctuation at all");
-  });
-
-  it("does not treat an honorific as a sentence end", () => {
-    expect(trimToLastCompleteSentence("Ask Mr. Smith about the wa")).toBe(
-      "Ask Mr. Smith about the wa",
-    );
-  });
-
-  it("keeps a closed action when that keeps more than the last sentence", () => {
-    expect(
-      trimToLastCompleteSentence(
-        "I stay. *She looks across the room* and the quiet, undist",
-      ),
-    ).toBe("I stay. *She looks across the room*");
-  });
-
-  it("closes an open action when there is no sentence end", () => {
-    expect(trimToLastCompleteSentence("*reaches toward the quiet, undist")).toBe(
-      "*reaches toward the quiet, undist*",
-    );
-    expect(trimToLastCompleteSentence("no punctuation at all")).toBe(
-      "no punctuation at all",
-    );
   });
 });

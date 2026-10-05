@@ -34,14 +34,6 @@ describe("llmProviderLabel", () => {
     expect(llmDisplayBadgeClass("workersai", "workersai")).toMatch(/emerald/);
   });
 
-  it("labels the steward's own model", () => {
-    expect(llmProviderShortLabel("own")).toBe("Your model");
-    expect(llmDisplayLabel("own", "own")).toBe("Your model");
-    expect(llmDisplayTitle("own", "own")).toMatch(/learning from your lessons/);
-    expect(llmProviderTitle("own")).toMatch(/your own model/);
-    expect(llmDisplayBadgeClass("own", "own")).toMatch(/fuchsia/);
-  });
-
   it("lists self-hosted Anima, MiniMax, and OpenRouter Venice backends", () => {
     expect(CONFIGURED_LLM_PROVIDERS.map((p) => p.id)).toEqual([
       "workersai",

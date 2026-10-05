@@ -97,7 +97,6 @@ export interface Base44Integrations {
       history?: unknown[];
       response_json_schema?: Record<string, unknown>;
       max_tokens?: number;
-      sidecar?: boolean;
     }): Promise<string | Record<string, unknown>>;
     GenerateImage(...args: any[]): Promise<any>;
     UploadFile(...args: any[]): Promise<{ url: string | null }>;

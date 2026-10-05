@@ -1,11 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Existing failover tests mock the OpenAI /v1 client. Native /api/chat is
-// covered by ollamaChat.test.ts and the HTTP stub suites.
-process.env.ANIMA_OLLAMA_NATIVE_CHAT = "0";
-
 const createMock = vi.fn();
-const backupCreateMock = vi.fn();
 const modelsListMock = vi.fn();
 
 vi.mock("../src/lib/openaiClient", () => {
@@ -261,10 +256,6 @@ vi.mock("../src/lib/openaiClient", () => {
     },
     logLocalLlmClientInitOnce: () => {},
     getOpenAIClient: () => client,
-    getLocalLlmClientForBase: () => ({
-      chat: { completions: { create: (...args: unknown[]) => backupCreateMock(...args) } },
-      models: { list: (...args: unknown[]) => modelsListMock(...args) },
-    }),
     getLocalLlmClient: () => {
       const explicit =
         process.env.ANIMA_LOCAL_LLM_BASE_URL?.trim() ||
@@ -288,10 +279,6 @@ vi.mock("../src/lib/openaiClient", () => {
       return client;
     },
     normalizeApiKey: (raw: string | undefined) => (raw ? raw.trim() || null : null),
-    isLoopbackLlmHost: (host: string | null | undefined) => {
-      const h = (host || "").trim().toLowerCase();
-      return h === "localhost" || h === "127.0.0.1" || h === "::1";
-    },
     localLlmMaxRetries: () => 2,
     openRouterMaxRetries: () => {
       const raw = Number(process.env.ANIMA_OPENROUTER_MAX_RETRIES);
@@ -340,12 +327,7 @@ import {
   isOpenRouterTransientGatewayError,
   isOpenRouterZdrOrDataPolicyError,
   LOCAL_LLM_CONNECTION_FIX_HINT,
-  LOCAL_LLM_PUBLIC_HOST_UNREACHABLE_HINT,
-  LOCAL_LLM_SUBREQUEST_HINT,
   LOCAL_LLM_TIMEOUT_HINT,
-  isHomeTunnelLlmHost,
-  isWorkerSubrequestLimitError,
-  localLlmConnectionHint,
   OPENROUTER_FREE_PROVIDER_HINT,
   OPENROUTER_ZDR_PRIVACY_HINT,
   shouldTryNextOpenRouterFreeModel,
@@ -357,7 +339,6 @@ import {
   resolveLocalModel,
   resolveOpenRouterModel,
   honorCallerMaxTokens,
-  localOllamaMaxTokens,
   chatCompletionHttpFailure,
 } from "../src/lib/llmFailover";
 
@@ -416,35 +397,6 @@ describe("isProviderConnectionError", () => {
   it("does not throw when code/type/message are non-strings", () => {
     expect(() => isProviderConnectionError({ code: -111, type: {}, message: { errno: -111 } })).not.toThrow();
     expect(isProviderConnectionError({ code: -111, type: {} })).toBe(false);
-  });
-});
-
-describe("Worker subrequest limit vs host connection hints", () => {
-  it("detects the production Cloudflare subrequest error under an SDK Connection error wrapper", () => {
-    const err = Object.assign(new Error("Connection error."), {
-      name: "APIConnectionError",
-      cause: new Error("Too many subrequests by single Worker invocation."),
-    });
-    expect(isWorkerSubrequestLimitError(err)).toBe(true);
-    expect(isProviderConnectionError(err)).toBe(true);
-  });
-
-  it("keeps tunnel copy for home-box hosts and Fly/public copy otherwise", () => {
-    expect(isHomeTunnelLlmHost("llm.anima-protocol.com")).toBe(true);
-    expect(isHomeTunnelLlmHost("localhost")).toBe(true);
-    expect(isHomeTunnelLlmHost("anima-chat-llm.fly.dev")).toBe(false);
-    expect(localLlmConnectionHint("llm.anima-protocol.com")).toBe(
-      LOCAL_LLM_CONNECTION_FIX_HINT,
-    );
-    expect(localLlmConnectionHint("anima-chat-llm.fly.dev")).toBe(
-      LOCAL_LLM_PUBLIC_HOST_UNREACHABLE_HINT,
-    );
-    expect(localLlmConnectionHint(null)).toBe(LOCAL_LLM_PUBLIC_HOST_UNREACHABLE_HINT);
-  });
-});
-
-describe("isProviderConnectionError numeric code", () => {
-  it("still detects string connect codes when type is non-string", () => {
     expect(isProviderConnectionError({ code: "ECONNREFUSED", type: 1 })).toBe(true);
   });
 });
@@ -951,7 +903,6 @@ describe("getProviderChain", () => {
     delete process.env.DEEPSHI_API_KEY;
     delete process.env.ANIMA_DEEPSHI_API_KEY;
     delete process.env.ANIMA_OPENROUTER_FALLBACK;
-    delete process.env.ANIMA_LOCAL_LLM_FALLBACK;
   });
 
   it("keeps chain [local] when customOnly even if OpenRouter fallback and key are set", () => {
@@ -973,13 +924,6 @@ describe("getProviderChain", () => {
     delete process.env.ANIMA_LLM_PROVIDER;
     expect(getProviderChain()).toEqual(["local"]);
     expect(preferCustomLlmOnly()).toBe(true);
-  });
-
-  it("appends OpenRouter after local when local fallback is explicitly enabled", () => {
-    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://localhost:11434/v1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test";
-    process.env.ANIMA_LOCAL_LLM_FALLBACK = "true";
-    expect(getProviderChain()).toEqual(["local", "openrouter"]);
   });
 
   it("does not skip a usable local host when ANIMA_LLM_PROVIDER=minimax", () => {
@@ -1275,9 +1219,7 @@ describe("createChatStreamWithFailover", () => {
     delete process.env.MINIMAX_API_KEY;
     delete process.env.ANIMA_MINIMAX_API_KEY;
     delete process.env.ANIMA_OPENROUTER_FALLBACK;
-    delete process.env.ANIMA_LOCAL_LLM_BACKUP_BASE_URL;
     createMock.mockReset();
-    backupCreateMock.mockReset();
     modelsListMock.mockReset();
     resetLocalModelCatalogForTests();
     resetOpenRouterCreditFallbackForTests();
@@ -1330,24 +1272,11 @@ describe("createChatStreamWithFailover", () => {
     });
     expect(createMock.mock.calls[0]?.[0]).toMatchObject({
       stream: true,
-      max_tokens: 200,
+      max_tokens: 1024,
     });
   });
 
-  it("omits keep_alive unless ANIMA_OLLAMA_KEEP_ALIVE is set", async () => {
-    delete process.env.ANIMA_OLLAMA_KEEP_ALIVE;
-    createMock.mockResolvedValueOnce(fakeStream("anima"));
-    await createChatStreamWithFailover({
-      tier: "standard",
-      model: "anima-chat",
-      maxTokens: 1024,
-      messages: [{ role: "user", content: "hello" }],
-    });
-    expect(createMock.mock.calls[0]?.[0].keep_alive).toBeUndefined();
-  });
-
-  it("sends Ollama keep_alive when ANIMA_OLLAMA_KEEP_ALIVE is set", async () => {
-    process.env.ANIMA_OLLAMA_KEEP_ALIVE = "30m";
+  it("sends Ollama keep_alive on the local stream so weights stay resident", async () => {
     createMock.mockResolvedValueOnce(fakeStream("anima"));
     await createChatStreamWithFailover({
       tier: "standard",
@@ -1357,7 +1286,7 @@ describe("createChatStreamWithFailover", () => {
     });
     expect(createMock.mock.calls[0]?.[0]).toMatchObject({
       stream: true,
-      keep_alive: "30m",
+      keep_alive: "10m",
     });
   });
 
@@ -1377,12 +1306,6 @@ describe("createChatStreamWithFailover", () => {
     expect(honorCallerMaxTokens(0.7, 8192)).toBe(1);
     expect(honorCallerMaxTokens(1024.9, 8192)).toBe(1024);
     expect(honorCallerMaxTokens(undefined, 8192)).toBe(8192);
-  });
-
-  it("passes a 90-token short reply through the Ollama num_predict ceiling", () => {
-    expect(localOllamaMaxTokens(90, 8192)).toBe(90);
-    expect(localOllamaMaxTokens(1024, 8192)).toBe(200);
-    expect(localOllamaMaxTokens(8192, 8192)).toBe(200);
   });
 
   it("throws a local-only setup error when the self-hosted LLM is missing", async () => {
@@ -1564,11 +1487,7 @@ describe("createChatStreamWithFailover", () => {
 
     expect(result.model).toBe("qwen2.5:3b");
     expect(modelsListMock).toHaveBeenCalledTimes(1);
-    expect(createMock).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({ model: "qwen2.5:3b" }),
-      expect.objectContaining({ maxRetries: 2 }),
-    );
+    expect(createMock).toHaveBeenNthCalledWith(2, expect.objectContaining({ model: "qwen2.5:3b" }));
   });
 
   it("reuses the discovered model on later turns instead of re-earning the 404", async () => {
@@ -1590,11 +1509,7 @@ describe("createChatStreamWithFailover", () => {
     expect(second.model).toBe("qwen2.5:3b");
     // Three calls total, not four: the second turn skipped the dead tag.
     expect(createMock).toHaveBeenCalledTimes(3);
-    expect(createMock).toHaveBeenNthCalledWith(
-      3,
-      expect.objectContaining({ model: "qwen2.5:3b" }),
-      expect.objectContaining({ maxRetries: 2 }),
-    );
+    expect(createMock).toHaveBeenNthCalledWith(3, expect.objectContaining({ model: "qwen2.5:3b" }));
     // And discovery was not repeated either.
     expect(modelsListMock).toHaveBeenCalledTimes(1);
   });
@@ -1690,73 +1605,6 @@ describe("createChatStreamWithFailover", () => {
     expect(message).toMatch(/Connection error/i);
     expect(message).toMatch(/SSL_ERROR_SYSCALL|ECONNRESET/i);
     expect(message).toMatch(/does not fall through to OpenRouter/i);
-    expect(message).toContain(LOCAL_LLM_PUBLIC_HOST_UNREACHABLE_HINT);
-    expect(message).not.toMatch(/home box|Cloudflare Tunnel|public-v1/i);
-  });
-
-  it("keeps the tunnel/home-box recipe only for named-tunnel hosts", async () => {
-    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
-    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
-    const sdkErr = Object.assign(new Error("Connection error."), {
-      name: "APIConnectionError",
-    });
-    createMock.mockRejectedValueOnce(sdkErr);
-
-    await expect(
-      createChatStreamWithFailover({
-        tier: "standard",
-        model: "anima-chat",
-        maxTokens: 8192,
-        messages: [{ role: "user", content: "hi" }],
-      }),
-    ).rejects.toThrow(LOCAL_LLM_CONNECTION_FIX_HINT);
-  });
-
-  it("surfaces a HUD-safe busy message for Worker subrequest-limit failures", async () => {
-    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://anima-chat-llm.fly.dev/v1";
-    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
-    const sdkErr = Object.assign(new Error("Connection error."), {
-      name: "APIConnectionError",
-      cause: new Error("Too many subrequests by single Worker invocation."),
-    });
-    createMock.mockRejectedValueOnce(sdkErr);
-
-    let thrown: unknown;
-    try {
-      await createChatStreamWithFailover({
-        tier: "standard",
-        model: "anima-chat",
-        maxTokens: 8192,
-        messages: [{ role: "user", content: "hi" }],
-      });
-    } catch (err) {
-      thrown = err;
-    }
-    expect(thrown).toBeInstanceOf(Error);
-    const message = (thrown as Error).message;
-    expect(message).toBe(LOCAL_LLM_SUBREQUEST_HINT);
-    expect(message).not.toMatch(/Too many subrequests/i);
-    expect(message).not.toMatch(/home box|Cloudflare Tunnel|public-v1/i);
-    expect(message).not.toMatch(/anima-chat-llm\.fly\.dev/i);
-    expect(chatCompletionHttpFailure(thrown)).toMatchObject({
-      status: 503,
-      error: LOCAL_LLM_SUBREQUEST_HINT,
-      code: "ai_request_failed",
-    });
-  });
-
-  it("caps local SDK retries on the generate call so a wedged host cannot fan out", async () => {
-    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://anima-chat-llm.fly.dev/v1";
-    createMock.mockResolvedValueOnce(fakeStream("ok"));
-    await createChatStreamWithFailover({
-      tier: "standard",
-      model: "anima-chat",
-      maxTokens: 32,
-      messages: [{ role: "user", content: "hi" }],
-    });
-    expect(createMock).toHaveBeenCalledTimes(1);
-    const opts = createMock.mock.calls[0]?.[1] as { maxRetries?: number };
-    expect(opts?.maxRetries).toBe(2);
   });
 
   it("does not hop to OpenRouter when the custom Anima LLM host is unreachable even if fallback is on", async () => {
@@ -1780,121 +1628,6 @@ describe("createChatStreamWithFailover", () => {
       }),
     ).rejects.toThrow(/Anima LLM connection failed/i);
     expect(createMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("fails closed on a busy primary when no backup URL is configured", async () => {
-    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
-    process.env.ANIMA_LLM_PROVIDER = "custom";
-    process.env.OPENROUTER_API_KEY = "sk-or-test";
-    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
-    delete process.env.ANIMA_LOCAL_LLM_BACKUP_BASE_URL;
-    createMock.mockRejectedValueOnce(
-      Object.assign(new Error("model is busy"), { status: 503 }),
-    );
-    createMock.mockResolvedValueOnce(fakeStream("openrouter-should-not-run"));
-    await expect(
-      createChatStreamWithFailover({
-        tier: "standard",
-        model: "anima-chat",
-        maxTokens: 32,
-        messages: [{ role: "user", content: "hello" }],
-      }),
-    ).rejects.toThrow();
-    expect(createMock).toHaveBeenCalledTimes(1);
-    expect(backupCreateMock).not.toHaveBeenCalled();
-  });
-
-  it("switches to the backup self-hosted URL when the primary times out", async () => {
-    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
-    process.env.ANIMA_LOCAL_LLM_BACKUP_BASE_URL =
-      "https://llm-backup.anima-protocol.com/v1";
-    process.env.ANIMA_LLM_PROVIDER = "custom";
-    process.env.OPENROUTER_API_KEY = "sk-or-test";
-    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
-    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
-    const abortErr = Object.assign(new Error("Request was aborted."), {
-      name: "APIUserAbortError",
-    });
-    createMock.mockRejectedValueOnce(abortErr);
-    createMock.mockResolvedValueOnce(fakeStream("openrouter-should-not-run"));
-    backupCreateMock.mockResolvedValueOnce(fakeStream("from backup"));
-    const result = await createChatStreamWithFailover({
-      tier: "standard",
-      model: "anima-chat",
-      maxTokens: 32,
-      messages: [{ role: "user", content: "hello" }],
-    });
-    expect(result.provider).toBe("local");
-    expect(result.brand).toBe("anima");
-    expect(result.failedOver).toBe(true);
-    let text = "";
-    for await (const chunk of result.stream as AsyncIterable<{
-      choices?: Array<{ delta?: { content?: string } }>;
-    }>) {
-      text += chunk.choices?.[0]?.delta?.content || "";
-    }
-    expect(text).toBe("from backup");
-    expect(createMock).toHaveBeenCalledTimes(1);
-    expect(backupCreateMock).toHaveBeenCalledTimes(1);
-    expect(getProviderChain()).toEqual(["local"]);
-  });
-
-  it("switches to the backup URL when the primary is busy and does not call OpenAI", async () => {
-    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
-    process.env.ANIMA_LOCAL_LLM_BACKUP_BASE_URL = "https://llm-backup.anima-protocol.com";
-    process.env.ANIMA_LLM_PROVIDER = "custom";
-    process.env.OPENAI_API_KEY = "sk-openai-should-not-be-used";
-    createMock.mockRejectedValueOnce(
-      Object.assign(new Error("server is busy"), { status: 429 }),
-    );
-    backupCreateMock.mockResolvedValueOnce(fakeStream("backup-busy"));
-    const result = await createChatStreamWithFailover({
-      tier: "standard",
-      model: "anima-chat",
-      maxTokens: 32,
-      messages: [{ role: "user", content: "hello" }],
-    });
-    expect(result.provider).toBe("local");
-    expect(result.failedOver).toBe(true);
-    expect(backupCreateMock).toHaveBeenCalledTimes(1);
-    expect(createMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not send an auth failure or a subrequest limit to the backup host", async () => {
-    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
-    process.env.ANIMA_LOCAL_LLM_BACKUP_BASE_URL =
-      "https://llm-backup.anima-protocol.com/v1";
-    process.env.ANIMA_LLM_PROVIDER = "custom";
-    process.env.OPENROUTER_API_KEY = "sk-or-test";
-    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
-    createMock.mockRejectedValueOnce(
-      Object.assign(new Error("401 status code (no body)"), { status: 401 }),
-    );
-    await expect(
-      createChatStreamWithFailover({
-        tier: "standard",
-        model: "anima-chat",
-        maxTokens: 32,
-        messages: [{ role: "user", content: "hello" }],
-      }),
-    ).rejects.toThrow();
-    expect(backupCreateMock).not.toHaveBeenCalled();
-    expect(createMock).toHaveBeenCalledTimes(1);
-
-    createMock.mockReset();
-    backupCreateMock.mockReset();
-    createMock.mockRejectedValueOnce(new Error("Too many subrequests"));
-    createMock.mockResolvedValueOnce(fakeStream("openrouter-should-not-run"));
-    await expect(
-      createChatStreamWithFailover({
-        tier: "standard",
-        model: "anima-chat",
-        maxTokens: 32,
-        messages: [{ role: "user", content: "hello" }],
-      }),
-    ).rejects.toThrow();
-    expect(createMock).toHaveBeenCalledTimes(1);
-    expect(backupCreateMock).not.toHaveBeenCalled();
   });
 
   it("does not hop to OpenRouter when local stream-open times out even if fallback is on", async () => {
@@ -2118,49 +1851,6 @@ describe("createChatStreamWithFailover", () => {
     expect(createMock).toHaveBeenCalledTimes(1);
   });
 
-  it("cascades to the next OpenRouter :free model when the first stream 429s on first chunk", async () => {
-    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
-    delete process.env.OLLAMA_BASE_URL;
-    delete process.env.VLLM_BASE_URL;
-    process.env.VERCEL = "1";
-    process.env.OPENROUTER_API_KEY = "sk-or-test";
-    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
-    process.env.ANIMA_OPENROUTER_FREE = "true";
-    setAiBinding({
-      run: async () => {
-        throw Object.assign(
-          new Error("4006: You have used up your daily free allocation of 10,000 neurons"),
-          { code: 4006 },
-        );
-      },
-    });
-    createMock.mockResolvedValueOnce({
-      async *[Symbol.asyncIterator]() {
-        throw Object.assign(new Error("Request failed with status code 429"), {
-          status: 429,
-        });
-      },
-    });
-    createMock.mockResolvedValueOnce(fakeStream("openrouter-m3"));
-    const result = await createChatStreamWithFailover({
-      tier: "standard",
-      model: "anima-chat",
-      maxTokens: 32,
-      messages: [{ role: "user", content: "hello" }],
-    });
-    expect(result.provider).toBe("openrouter");
-    expect(result.failedOver).toBe(true);
-    expect(result.model).toBe("minimax/minimax-m3:free");
-    expect(createMock).toHaveBeenCalledTimes(2);
-    const chunks: Array<{ choices?: Array<{ delta?: { content?: string } }> }> = [];
-    for await (const chunk of result.stream) {
-      chunks.push(chunk);
-    }
-    expect(chunks.some((chunk) => chunk.choices?.[0]?.delta?.content === "openrouter-m3")).toBe(
-      true,
-    );
-  });
-
   it("skips Workers AI on the next turn after isolate 4006 so OpenRouter is first", async () => {
     delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
     delete process.env.OLLAMA_BASE_URL;
@@ -2233,10 +1923,10 @@ describe("createChatCompletionWithFailover", () => {
     expect(result.content).toBe("anima reply");
     expect(result.provider).toBe("local");
     expect(result.brand).toBe("anima");
-    expect(createMock.mock.calls[0]?.[0]).toMatchObject({ max_tokens: 200 });
+    expect(createMock.mock.calls[0]?.[0]).toMatchObject({ max_tokens: 1024 });
   });
 
-  it("caps the local completion at the Ollama num_predict ceiling", async () => {
+  it("honors the caller maxTokens cap on the local completion", async () => {
     createMock.mockResolvedValueOnce(fakeCompletion("anima reply"));
     await createChatCompletionWithFailover({
       tier: "standard",
@@ -2244,7 +1934,7 @@ describe("createChatCompletionWithFailover", () => {
       messages: [{ role: "system", content: "You are Serenity." }],
     });
     expect(createMock.mock.calls[0]?.[0]).toMatchObject({
-      max_tokens: 200,
+      max_tokens: 1024,
     });
   });
 
@@ -2410,33 +2100,10 @@ describe("probeLlmProviders", () => {
       configured: true,
       ok: false,
       errorKind: "connection",
-      hint: LOCAL_LLM_PUBLIC_HOST_UNREACHABLE_HINT,
+      hint: LOCAL_LLM_CONNECTION_FIX_HINT,
     });
     expect(probes[0]?.message).toMatch(/host=anima-chat-llm\.fly\.dev/i);
     expect(probes[0]?.message).toMatch(/model=anima-chat/i);
-    expect(probes[0]?.message).not.toMatch(/home box|Cloudflare Tunnel/i);
-  });
-
-  it("reports errorKind=busy without tunnel copy when the Worker hits the subrequest cap", async () => {
-    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://anima-chat-llm.fly.dev/v1";
-    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
-    createMock.mockRejectedValueOnce(
-      Object.assign(new Error("Connection error."), {
-        name: "APIConnectionError",
-        cause: new Error("Too many subrequests by single Worker invocation."),
-      }),
-    );
-    const probes = await probeLlmProviders();
-    expect(probes).toHaveLength(1);
-    expect(probes[0]).toMatchObject({
-      provider: "local",
-      configured: true,
-      ok: false,
-      errorKind: "busy",
-      hint: LOCAL_LLM_SUBREQUEST_HINT,
-      message: LOCAL_LLM_SUBREQUEST_HINT,
-    });
-    expect(probes[0]?.message).not.toMatch(/Too many subrequests|home box|Cloudflare Tunnel/i);
   });
 
   it("does not probe OpenRouter when local is unset even if a key is present", async () => {
@@ -2510,113 +2177,6 @@ describe("probeLlmProviders", () => {
       message: expect.stringMatching(/Workers AI daily free quota exhausted/),
     });
     expect(createMock).not.toHaveBeenCalled();
-  });
-
-  it("probes native Ollama with /api/ps and does not generate", async () => {
-    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://127.0.0.1:11434/v1";
-    process.env.ANIMA_OLLAMA_NATIVE_CHAT = "1";
-    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "qwen2.5:0.5b";
-    delete process.env.ANIMA_LOCAL_LLM_BACKEND;
-    delete process.env.VERCEL;
-    const urls: string[] = [];
-    const fetchMock = vi.fn(async (url: string) => {
-      urls.push(String(url));
-      return new Response(
-        JSON.stringify({ models: [{ name: "qwen2.5:0.5b" }] }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      );
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    try {
-      const probes = await probeLlmProviders();
-      expect(createMock).not.toHaveBeenCalled();
-      expect(urls.some((url) => url.endsWith("/api/chat"))).toBe(false);
-      expect(urls.some((url) => url.endsWith("/api/ps"))).toBe(true);
-      expect(probes[0]).toMatchObject({
-        provider: "local",
-        configured: true,
-        ok: true,
-        model: "qwen2.5:0.5b",
-        configuredModel: "qwen2.5:0.5b",
-        availableModels: ["qwen2.5:0.5b"],
-      });
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
-  it("falls back to a tiny generate when /api/ps and /api/tags both return 404", async () => {
-    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://127.0.0.1:11434/v1";
-    process.env.ANIMA_OLLAMA_NATIVE_CHAT = "1";
-    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "qwen2.5:0.5b";
-    process.env.ANIMA_OLLAMA_MODEL_LIGHT = "qwen2.5:0.5b";
-    process.env.ANIMA_OLLAMA_MODEL_HEAVY = "qwen2.5:0.5b";
-    delete process.env.ANIMA_LOCAL_LLM_BACKEND;
-    delete process.env.VERCEL;
-    const urls: string[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (url: string) => {
-        urls.push(String(url));
-        return new Response(JSON.stringify({ error: { message: "not found" } }), {
-          status: 404,
-          headers: { "Content-Type": "application/json" },
-        });
-      }),
-    );
-    createMock.mockResolvedValueOnce(fakeCompletion("ok"));
-    modelsListMock.mockResolvedValueOnce({ data: [{ id: "qwen2.5:0.5b" }] });
-    try {
-      const probes = await probeLlmProviders();
-      expect(urls.some((url) => url.endsWith("/api/ps"))).toBe(true);
-      expect(urls.some((url) => url.endsWith("/api/tags"))).toBe(true);
-      expect(createMock).toHaveBeenCalledTimes(1);
-      const body = createMock.mock.calls[0]?.[0] as { max_tokens?: number; messages?: Array<{ content?: string }> };
-      expect(body.max_tokens).toBeGreaterThan(0);
-      expect(body.max_tokens).toBeLessThanOrEqual(16);
-      expect(body.messages?.[0]?.content).toBe("Reply with the single word: ok");
-      expect(probes[0]).toMatchObject({
-        provider: "local",
-        configured: true,
-        ok: true,
-        model: "qwen2.5:0.5b",
-      });
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
-  it("uses another listed model when the configured tag is missing from /api/ps", async () => {
-    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://127.0.0.1:11434/v1";
-    process.env.ANIMA_OLLAMA_NATIVE_CHAT = "1";
-    process.env.ANIMA_OLLAMA_MODEL_STANDARD = "anima-chat";
-    process.env.ANIMA_OLLAMA_MODEL_LIGHT = "anima-chat";
-    process.env.ANIMA_OLLAMA_MODEL_HEAVY = "anima-chat";
-    delete process.env.ANIMA_LOCAL_LLM_BACKEND;
-    delete process.env.VERCEL;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        new Response(JSON.stringify({ models: [{ name: "qwen2.5:3b" }] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      ),
-    );
-    modelsListMock.mockResolvedValue({ data: [{ id: "qwen2.5:3b" }] });
-    try {
-      const probes = await probeLlmProviders();
-      expect(createMock).not.toHaveBeenCalled();
-      expect(probes[0]).toMatchObject({
-        provider: "local",
-        configured: true,
-        ok: true,
-        model: "qwen2.5:3b",
-        configuredModel: "anima-chat",
-      });
-    } finally {
-      vi.unstubAllGlobals();
-    }
   });
 });
 

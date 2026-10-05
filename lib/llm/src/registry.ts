@@ -13,7 +13,7 @@
  * Primary product path: a **self-hosted Anima LLM** built from public open
  * weights (not ChatGPT / Gemini / Groq — those stacks are closed).
  *
- *   Bootstrap (CPU / laptop): `anima-chat` ← Qwen2.5 0.5B via Ollama
+ *   Bootstrap (CPU / laptop): `anima-chat` ← Qwen2.5 3B via Ollama
  *   GPU upgrade: fine-tuned Ministral 3 8B via vLLM / Ollama GGUF
  *
  * Chat (artifacts/api-server/src/lib/llmFailover.ts) always resolves through
@@ -77,7 +77,7 @@ export const ANIMA_MEMORY_SPECIALIST_MODEL =
  * Public open weights used for the CPU/laptop bootstrap chat model.
  * (Qwen2.5 Instruct — Apache-2.0; not ChatGPT/Gemini/Groq.)
  */
-export const ANIMA_BOOTSTRAP_BASE_MODEL = "qwen2.5:0.5b";
+export const ANIMA_BOOTSTRAP_BASE_MODEL = "qwen2.5:3b";
 /** Ollama tag after `ollama create` from Modelfile.anima-chat (bootstrap). */
 export const ANIMA_OLLAMA_CHAT_TAG = "anima-chat";
 /** Ollama tag after fine-tune GGUF + Modelfile.anima-ministral8b (GPU upgrade). */
@@ -261,7 +261,7 @@ const GROQ_SAMPLING: Record<ModelTier, SamplingPreset> = {
 };
 
 // --- Ollama self-hosted lineup ----------------------------------------------
-// Default = bootstrap `anima-chat` (public Qwen2.5 0.5B) so chat works on CPU
+// Default = bootstrap `anima-chat` (public Qwen2.5 3B) so chat works on CPU
 // without a GPU fine-tune. Override ANIMA_OLLAMA_MODEL_* to anima-ministral8b
 // after you convert a LoRA merge to GGUF.
 const OLLAMA_DEFAULTS: Record<ModelTier, TierDefaults> = {
@@ -269,7 +269,7 @@ const OLLAMA_DEFAULTS: Record<ModelTier, TierDefaults> = {
     model: ANIMA_OLLAMA_CHAT_TAG,
     alias: "anima-mini",
     maxTokens: 4096,
-    description: "Anima bootstrap chat (Qwen2.5 0.5B open weights, ~400 MB)",
+    description: "Anima bootstrap chat (Qwen2.5 3B open weights, ~2 GB)",
   },
   standard: {
     model: ANIMA_OLLAMA_CHAT_TAG,

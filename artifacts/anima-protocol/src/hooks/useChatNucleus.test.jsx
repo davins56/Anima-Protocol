@@ -92,30 +92,4 @@ describe("useChatNucleus", () => {
     expect(result.current.error).toBe("Provider failed");
     unmount();
   });
-  it.each([
-    ["terminal-only reply", [{ done: true, visible: "I heard your question." }]],
-    ["partial stream", [{ content: "I heard" }, { done: true, visible: "I heard your question." }]],
-    ["terminal content snapshot", [{ content: "I heard" }, { done: true, content: "I heard your question." }]],
-  ])("renders the authoritative %s exactly once", async (_label, events) => {
-    animaApi.chat.sendMessage.mockImplementation(async function* () {
-      for (const event of events) yield event;
-    });
-    const { result, unmount } = renderHook(() =>
-      useChatNucleus({ sessionId: "test-session", activeCharacter: { id: "c1", name: "Astra" } }),
-    );
-    try {
-      await act(async () => {
-        await result.current.sendMessage({ text: "Did you hear my question?" });
-      });
-      expect(result.current.messages.map(({ role, content }) => ({ role, content }))).toEqual([
-        { role: "user", content: "Did you hear my question?" },
-        { role: "assistant", content: "I heard your question." },
-      ]);
-      expect(result.current.isLoading).toBe(false);
-      expect(result.current.error).toBeNull();
-    } finally {
-      unmount();
-    }
-  });
-
 });

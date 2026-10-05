@@ -56,18 +56,3 @@ curl -sS 'https://anima-protocol.com/api/healthz/llm?probe=1'
 ```
 
 The tunnel dies when the origin box / `cloudflared` stops. For a warm production host, use Fly.
-
-## keep_alive
-
-Ollama's OpenAI route (`/v1/chat/completions`) **drops** `keep_alive`. This proxy rewrites `POST /v1/chat/completions` onto native `POST /api/chat` and **streams** the reply. It does **not** inject `keep_alive`. The Worker also omits the field unless `ANIMA_OLLAMA_KEEP_ALIVE` is set, so the daemon value wins. A client hang-up closes the upstream connection so Ollama stops the generate. Translated `num_predict` is capped at 200.
-
-Pin the daemon so the model stays loaded:
-
-```bash
-# systemd drop-in, or the shell that runs `ollama serve`
-export OLLAMA_KEEP_ALIVE=-1
-```
-
-Restart **this proxy** after pulling the rewrite (`start-public-v1.sh` will not replace an already-healthy process). Companion `/api/chat/messages` waits 90s for the first token. Leave `/api/ai/chat` at 18s (Worker ~20s wall). Do not turn on `ANIMA_OPENROUTER_FALLBACK` to hide a cold box — customOnly stays fail-closed.
-
-`ANIMA_LLM_PROXY_NATIVE=0` passes `/v1/chat/completions` through unchanged (vLLM).

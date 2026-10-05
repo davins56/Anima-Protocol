@@ -1,10 +1,3 @@
-import {
-  CONNECTION_DROPPED_STATUS,
-  GENERIC_COMPANION_COULD_NOT_REPLY,
-  isCompanionStillTypingError,
-  isConnectionDroppedError,
-} from "./lateCompanionReply.js";
-
 const GENERIC_PROVIDER_RETURNED_RE = /(?:\b\d{3}\s+)?provider returned error/i;
 const OPENROUTER_ZDR_DUMP_RE =
   /zdr violation|guardrail restrictions|0 endpoints out of/i;
@@ -19,8 +12,6 @@ const WORKERS_AI_4006_RE =
   /\b4006\b|10[, ]?000 neurons|daily free (?:allocation|quota)|used up your daily free/i;
 const STORE_UNREACHABLE_RE =
   /companion store is unreachable|server sent an unexpected response/i;
-const WORKER_SUBREQUEST_RE =
-  /too many subrequests|subrequest limit/i;
 const SQL_LEAK_RE =
   /Failed query\b|from\s+"companion_memories"|select\s+"id"\s*,\s*"user_id"|params:\s*user_/i;
 
@@ -32,19 +23,6 @@ const OPENROUTER_ZDR_PRIVACY_HINT =
   "Allow the model (or turn off ZDR) at https://openrouter.ai/settings/privacy.";
 
 /**
- * The reply may already be saved, or still generating, even though this
- * request failed. The page should poll the durable turn instead of leaving
- * a typing bubble with no error.
- *
- * @param {unknown} err
- * @returns {boolean}
- */
-export function shouldCheckBackForCompanionReply(err) {
-  if (isConnectionDroppedError(err) || isCompanionStillTypingError(err)) return true;
-  return chatTurnErrorMessage(err) === GENERIC_COMPANION_COULD_NOT_REPLY;
-}
-
-/**
  * Map a failed chat turn into copy that is safe to show in the HUD.
  * Engine / bundler errors (TDZ, missing bindings) must not leak minified names.
  *
@@ -52,7 +30,6 @@ export function shouldCheckBackForCompanionReply(err) {
  * @returns {string}
  */
 export function chatTurnErrorMessage(err) {
-  if (isConnectionDroppedError(err)) return CONNECTION_DROPPED_STATUS;
   const raw = err instanceof Error && err.message ? String(err.message).trim() : "";
   const isEngineError =
     err instanceof ReferenceError ||
@@ -90,12 +67,6 @@ export function chatTurnErrorMessage(err) {
   if (WORKERS_AI_4006_RE.test(raw)) {
     return WORKERS_AI_FREE_QUOTA_HINT;
   }
-  if (WORKER_SUBREQUEST_RE.test(raw)) {
-    return (
-      "The companion could not finish this reply because the chat service is busy. " +
-      "Please try again in a moment. Chat does not fall through to OpenRouter or MiniMax."
-    );
-  }
   if (WORKERS_AI_RE.test(raw)) {
     return raw;
   }
@@ -107,26 +78,8 @@ export function chatTurnErrorMessage(err) {
   if (GENERIC_HTTP_400_RE.test(raw)) {
     return "The companion service encountered an issue (HTTP 400). Please try again in a moment.";
   }
-  // After Workers AI 4006 the signed-in hop is OpenRouter :free. A bare
-  // "API error: 429" / "Request failed with status code 502" must not
-  // become the opaque companion-service toast.
   if (GENERIC_HTTP_STATUS_RE.test(raw)) {
-    return (
-      "The OpenRouter free-tier model is temporarily unavailable. " +
-      "Retry shortly, or add credits at https://openrouter.ai/settings/credits for paid models."
-    );
-  }
-  // A pre-token Hyperdrive / store 503 used to become the HUD toast
-  // "Database unavailable" while the companion was still thinking.
-  if (
-    /^database unavailable$/i.test(raw) ||
-    /^database (?:connection )?(?:timed out|reset|refused|host unreachable)$/i.test(
-      raw,
-    ) ||
-    /^database query failed$/i.test(raw) ||
-    /Cannot perform I\/O on behalf of a different request/i.test(raw)
-  ) {
-    return "Couldn't load this conversation. Please try again.";
+    return "The companion service encountered an issue. Please try again in a moment.";
   }
   // Local-only timeout / connection copy from `/chat/messages` is already HUD-safe.
   return raw;

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { animaApi } from "@/api/animaApi";
 import { collectRegionHints } from "@/lib/userRegion";
 import { chatStreamStatusCopy } from "@/lib/chatStreamStatusCopy";
-import { streamChatReply } from "@/lib/streamChatReply";
 
 function createChatMessage(role, content, { characterName = null, attachments = [], type = undefined } = {}) {
   return {
@@ -74,45 +73,64 @@ export function useChatNucleus({ sessionId, initialMessages = [], characters = [
           region: collectRegionHints(),
         });
 
-        const assistantMessage = createChatMessage("assistant", "", {
-          characterName: activeCharacter?.name ?? "Serenity",
-        });
-        const finalMeta = await streamChatReply(stream, {
-          onDelta: (content) => {
+        let assistantText = "";
+        let assistantMessageId = null;
+        let finalMeta = null;
+
+        for await (const event of stream) {
+          if (event?.error) {
+            throw new Error(event.error);
+          }
+
+          if (event?.status && !assistantText) {
+            const copy = chatStreamStatusCopy(event);
+            if (copy) {
+              setMessages((prev) => {
+                const trimmed = prev.filter(
+                  (msg) =>
+                    msg.character_name !== "__typing__" &&
+                    msg.character_name !== "__thinking__",
+                );
+                return [
+                  ...trimmed,
+                  createChatMessage("assistant", copy, {
+                    characterName: "__thinking__",
+                  }),
+                ];
+              });
+            }
+          }
+
+          if (event?.provider) {
+            setProviderStatus(event.provider);
+          }
+
+          if (typeof event?.content === "string") {
+            assistantText += event.content;
             setMessages((prev) => {
               const trimmed = prev.filter(
                 (msg) =>
                   msg.character_name !== "__typing__" &&
                   msg.character_name !== "__thinking__",
               );
-              if (trimmed.some((msg) => msg.id === assistantMessage.id)) {
+              if (assistantMessageId && trimmed[trimmed.length - 1]?.id === assistantMessageId) {
                 return trimmed.map((msg) =>
-                  msg.id === assistantMessage.id ? { ...msg, content } : msg,
+                  msg.id === assistantMessageId ? { ...msg, content: assistantText } : msg,
                 );
               }
-              return [...trimmed, { ...assistantMessage, content }];
+
+              const assistantMessage = createChatMessage("assistant", assistantText, {
+                characterName: activeCharacter?.name ?? "Serenity",
+              });
+              assistantMessageId = assistantMessage.id;
+              return [...trimmed, assistantMessage];
             });
-          },
-          onStatus: (event) => {
-            if (event.provider) setProviderStatus(event.provider);
-            const copy = chatStreamStatusCopy(event);
-            if (!copy) return;
-            setMessages((prev) => {
-              if (prev.some((msg) => msg.id === assistantMessage.id)) return prev;
-              const trimmed = prev.filter(
-                (msg) =>
-                  msg.character_name !== "__typing__" &&
-                  msg.character_name !== "__thinking__",
-              );
-              return [
-                ...trimmed,
-                { ...typingMessage, content: copy, character_name: "__thinking__" },
-              ];
-            });
-          },
-        });
-        const assistantText = finalMeta.content;
-        if (finalMeta.provider) setProviderStatus(finalMeta.provider);
+          }
+
+          if (event?.done) {
+            finalMeta = event;
+          }
+        }
 
         if (!assistantText.trim()) {
           setMessages((prev) => {

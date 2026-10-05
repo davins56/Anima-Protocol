@@ -81,24 +81,6 @@ describe("chat persistence identifiers", () => {
       true,
     );
   });
-
-  it("stores a crisis card as a system row, not another assistant line", () => {
-    const messages = assignTurnMessageIds(
-      [
-        { role: "user", content: "I want to die" },
-        { role: "assistant", content: "I'm here." },
-        { role: "system", type: "crisis_resource", content: "call 988" },
-      ],
-      "turn_crisis",
-    );
-    expect(messages.map((message) => message.id)).toEqual([
-      "turn_crisis:user",
-      "turn_crisis:assistant",
-      "turn_crisis:crisis",
-    ]);
-    expect(messages[2].role).toBe("system");
-    expect(messages[2].type).toBe("crisis_resource");
-  });
 });
 
 describe("useChatPersistence persistTurn", () => {

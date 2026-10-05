@@ -1,7 +1,7 @@
 # Chat latency + identity-loop audit
 
-**Date:** 2026-09-14 (updated: #479 docs + review accuracy)  
-**Baseline:** `main` @ `75480fb2` (`#479`) / `19f280c8` (`#480`)  
+**Date:** 2026-09-14 (updated: #476 local-only 45s open)
+**Baseline:** `main` @ `a495cd07` (`#476`) / `56ec608a` (`#475`)
 **Owner priority:** AI response speed — **TTFT**, then end-to-end chat latency. Identity loop and Worker timeout/CI stay in this document, below latency.
 
 Findings only. No runtime code in this PR.
@@ -51,8 +51,8 @@ Telemetry (`ChatPipelineTelemetry`) records `context_load_ms` and `ttft_ms`, but
 |------------|---------|
 | Waiting on full replies instead of streaming | **Mostly false.** Main path streams. Exceptions: opt-in `ANIMA_LOCAL_LLM_ENSEMBLE` (off by default, waits for N full drafts, **not** under the Chat.jsx `openStreamAbort`); image gen after the reply. Ordinary solo turns cap at 1024 (`chatReplyMaxTokens`); group and `deep_mode` keep the routed 4–8k budget. Leftover 1:1 E2E is prefill + model, not 4–8k decode. |
 | Oversize context / memory retrieval | **Partly fixed.** Server strips `Story so far:` and caps the remainder at 2k (`clientSceneExcerpt`, #453). Solo Chat.jsx sends lean extras (#458). Group still *builds* fat `buildGroupPrompt` before POST. `composePrompt` still adds CHARACTER / memories / CORE. |
-| Worker ~20s wall | **Does not race `/api/chat`.** `isLongLivedApiPath` exempts `/api/openai` and `/api/chat`. The 20s wall is store/healthz. **#450 merged:** Worker `ETIMEOUT` is no longer classified as a DB timeout; live `?probe=1` uses a **45s** bound. **`POST /api/chat/messages`** first-token budget is **90s** local-only (`LLM_LOCAL_FIRST_TOKEN_MS`). **`POST /api/ai/chat`** stays **18s** (`llmAiChatOpenTimeoutMs`). The **80s** `:free` outer abort applies only when OpenRouter is actually on the chain (no custom host + fallback). |
-| Cold Ollama / queue | The app **omits** `keep_alive` unless `ANIMA_OLLAMA_KEEP_ALIVE` is set, so droplet `OLLAMA_KEEP_ALIVE=-1` wins. A body `30m` overrides the daemon and unloads the model. The public-v1 proxy does not inject `keep_alive` and closes upstream when the client disconnects. Native `num_predict` is capped at **512**. App-open `POST /api/llm/warm` is one empty generate (`num_predict: 1`) and skips while a companion turn is open. `hintLocalLlmWarm` stays skipped on Workers. `/api/ai/chat` stays **18s**. `localAttemptSignal` is **12s** only when a next provider exists. **#464:** a usable custom host is `[local]` only — timeout returns `ai_timeout` / connection, no OpenRouter hop. |
+| Worker ~20s wall | **Does not race `/api/chat`.** `isLongLivedApiPath` exempts `/api/openai` and `/api/chat`. The 20s wall is store/healthz. **#450 merged:** Worker `ETIMEOUT` is no longer classified as a DB timeout; live `?probe=1` uses a **45s** bound. **`POST /api/chat/messages`** opens in **45s** local-only (#476 `LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS`). **`POST /api/ai/chat`** stays **18s** (`llmAiChatOpenTimeoutMs`). The **80s** `:free` outer abort applies only when OpenRouter is actually on the chain (no custom host + fallback). |
+| Cold Ollama | **True for ops; 12s hop only if a next provider exists.** After #476: Ollama `keep_alive: "10m"` (opt-out `ANIMA_OLLAMA_KEEP_ALIVE=off`) plus a best-effort native warm hint while context loads. `ANIMA_LOCAL_LLM_MAX_RETRIES` defaults to **2**. `localAttemptSignal` combines the caller abort with `LLM_LOCAL_FAILOVER_ATTEMPT_MS` (**12s**) whenever a next provider exists. **#464:** a usable custom host makes `getProviderChain()` `[local]` only — local connection/timeout returns `ai_timeout` / connection error, no OpenRouter hop. Do not set `ANIMA_OPENROUTER_FALLBACK` to paper over a down self-hosted host. |
 
 ---
 
@@ -79,23 +79,21 @@ Telemetry (`ChatPipelineTelemetry`) records `context_load_ms` and `ttft_ms`, but
 1. [#457](https://github.com/davins56/Anima-Protocol/pull/457) `cappedLocalMaxTokens` so a caller cap reaches Ollama.
 2. [#455](https://github.com/davins56/Anima-Protocol/pull/455) `2af82b82` adds `clampChatMessagesMaxTokens` (1024) and `llmChatMessagesOpenTimeoutMs()`. Production `/chat/messages` uses `chatReplyMaxTokens` (#458 `chat.ts`): **1024 for ordinary solo**; **group and `deep_mode` keep the routed budget**. Do not start a third token-cap PR.
 3. [#464](https://github.com/davins56/Anima-Protocol/pull/464) `245b5848` — usable `ANIMA_LOCAL_LLM_BASE_URL` → chain `[local]` only. Local failure does not hop to OpenRouter. `ANIMA_OPENROUTER_FALLBACK` remains opt-in after Workers AI when **no** custom host is set.
-4. [#476](https://github.com/davins56/Anima-Protocol/pull/476) `a495cd07` — local-only `/chat/messages` open is **45s** (`LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS`). **`/api/ai/chat` stays 18s.** JSON progress SSE; Ollama `keep_alive` default is now **30m** (was 10m). Consume after open is **`llmChatMessagesStreamTotalMs()` = 75s** (130s browser abort − 45s open − 10s context slack). That 75s vs 130s gap is the helper, not a bug — do not raise consume to `LLM_STREAM_TOTAL_MS` (90s) or the client fetch dies first. Never the **80s** cascade. Never `llmOpenTimeoutMs({ freeTierCascade: false })` (**35s**) on Chat.jsx. Do not shrink the 45s open toward 30s and do not raise the 18s `/api/ai/chat` probe (that path must finish under the Worker ~20s wall). Ignore other-agent notes to surface raw System errors, raise consume to match the 130s abort, or skip `writeSse` after disconnect.
+4. [#476](https://github.com/davins56/Anima-Protocol/pull/476) `a495cd07` — local-only `/chat/messages` open is **45s** (`LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS`). **`/api/ai/chat` stays 18s.** JSON progress SSE; Ollama `keep_alive: "10m"`. Consume after open is **`llmChatMessagesStreamTotalMs()` = 75s** (130s browser abort − 45s open − 10s context slack). That 75s vs 130s gap is the helper, not a bug — do not raise consume to `LLM_STREAM_TOTAL_MS` (90s) or the client fetch dies first. Never the **80s** cascade. Never `llmOpenTimeoutMs({ freeTierCascade: false })` (**35s**) on Chat.jsx. Ignore other-agent notes to surface raw System errors, raise consume to match the 130s abort, or skip `writeSse` after disconnect.
 
 Do **not** re-apply `LLM_LOCAL_FAILOVER_ATTEMPT_MS`. Do not invent another open-budget constant. Optionally lower `LLM_STREAM_FIRST_CHUNK_MS` for anima-chat (50s is R1 `<think>`). Browser abort is still **130s**.
 
-**Ops:** set `OLLAMA_KEEP_ALIVE=-1` on the droplet `ollama serve`. Do not send an app-side `keep_alive` unless you mean to override that. Restart `scripts/llm/public-v1/openai-proxy.py` so `/v1/chat/completions` is rewritten onto native `/api/chat` (streams; closes upstream on client disconnect; `num_predict` cap 512). Worker chat-invocation `/api/generate` warm stays skipped (#480). App-open `POST /api/llm/warm` is a separate request, once per browser session, `num_predict: 1`. Local SDK retries default to **0**. Do not set `ANIMA_OPENROUTER_FALLBACK` to paper over a queued or cold custom host.
-
-**Current clocks:** local-only `/chat/messages` first token is **90s**; consume hard cap is **120s**. A client disconnect aborts the upstream Ollama fetch. The client does not retry `turn_in_flight`.
+**Ops (not a code PR):** host-side warmup cron against `llm.anima-protocol.com` still helps cold boxes; in-app `keep_alive: "10m"` is already #476. `ANIMA_LOCAL_LLM_MAX_RETRIES=0` on a single-slot box. Worker can set `ANIMA_OPENROUTER_FALLBACK=false` to drop the remaining Workers AI → OpenRouter hop.
 
 ### P0-L4 — Memory retrieval is not the first TTFT knob (but don’t grow it)
 
-`retrieveRelevantMemories` is in-process scoring (topK 12, last 24 turn crumbs). `attachStoredEmbeddings` is a DB read of JSON vectors. That is cheaper than leftover group fat prompt. **Do not** “fix speed” by deleting companion memory. After [#478](https://github.com/davins56/Anima-Protocol/pull/478), `loadMemories` (and turn upserts) use `withTransientDbRetry` and scalar `eq` / `or(eq…)` instead of drizzle `inArray` on `companion_memories`. That query runs **after** `openChatSse` (#453). Router `ensureSchemaOnce`, `loadStoreSession`, and `beginChatTurn` still run **before** the first SSE byte — a stale Hyperdrive socket there can delay TTFT. Do not start a competing timeout PR for that leftover. P0-L1/L2/L3 server + solo client shipped. Identity-loop P1 still matters for *quality* of recall, not the first-token budget.
+`retrieveRelevantMemories` is in-process scoring (topK 12, last 24 turn crumbs). `attachStoredEmbeddings` is a DB read of JSON vectors. That is cheaper than leftover group fat prompt. **Do not** “fix speed” by deleting companion memory. P0-L1/L2/L3 server + solo client shipped. Identity-loop P1 still matters for *quality* of recall, not the first-token budget.
 
 ---
 
 ## P1 — identity loop (after a faster chat)
 
-Production Chat is client-persist. Server **already** injects `companion_memories` every turn (`loadMemories` → `composePrompt`). [#458](https://github.com/davins56/Anima-Protocol/pull/458) stopped stuffing `CharacterMemory` into the solo `system_prompt`. Two stores remain; only the server store is on the hot path for 1:1. [#478](https://github.com/davins56/Anima-Protocol/pull/478) stopped leaking drizzle `Failed query` SQL to the HUD (`streamErrorMessage` / `chatTurnErrorMessage`) and made `loadMemories` retry stale Hyperdrive sockets. That is **not** identity Slice A (seed on create).
+Production Chat is client-persist. Server **already** injects `companion_memories` every turn (`loadMemories` → `composePrompt`). [#458](https://github.com/davins56/Anima-Protocol/pull/458) stopped stuffing `CharacterMemory` into the solo `system_prompt`. Two stores remain; only the server store is on the hot path for 1:1.
 
 ```
 create   POST /api/store/Character|Anima     no companion_memories row
@@ -133,11 +131,7 @@ memory   upsertTurnMemory / recordTurnContinuity → companion_memories
 
 | Item | Status |
 |------|--------|
-| [#479](https://github.com/davins56/Anima-Protocol/pull/479) Audit docs (#478 SQL toast + #480 Worker subrequest HUD) | **Merged** `75480fb2` (2026-09-14). Post-merge reviews: `loadMemories` retry is after SSE; session/turn ledger can still delay first byte. Solo Chat.jsx still *calls* `buildMemoryContext` but does not inject it. |
-| [#480](https://github.com/davins56/Anima-Protocol/pull/480) Worker LLM subrequest burn + misleading tunnel toast | **Merged** `19f280c8` (2026-09-14). Skip `hintLocalLlmWarm` on Workers (keep `keep_alive` on generate). Local SDK retries default **0** on Workers / Vercel / Cloud Run, **2** on Node. Skip `/v1/models` after connection / subrequest failure. HUD: busy copy for CF subrequest limit (no internals, no tunnel recipe); Fly / public host connection failed without home-box copy. OpenRouter fallback stays off. Does **not** change the #476 45s open budget or #478 SQL sanitization. Do **not** put that warm back on the chat invocation or start a competing retry / timeout PR. App-open preload is `POST /api/llm/warm` (separate invocation, session + 5-minute throttle). |
-| [#478](https://github.com/davins56/Anima-Protocol/pull/478) Stop leaking `companion_memories` SQL toasts | **Merged** `f7d3d833` (2026-09-14). `loadMemories` / turn upserts: `withTransientDbRetry` + scalar `eq`/`or` (no `inArray` on `companion_memories`); missing-relation self-heal only when the blob names that table. HUD-safe `streamErrorMessage` + client `chatTurnErrorMessage`. Does **not** regress #450 Worker-wall copy or #476 local-only LLM timeout copy. Do **not** start a second SQL-toast / `inArray` PR. Not identity seed-on-create. |
-| [#477](https://github.com/davins56/Anima-Protocol/pull/477) Audit docs (#476 45s open + #474 replay key) | **Merged** `2a432a69` (2026-09-14). |
-| [#476](https://github.com/davins56/Anima-Protocol/pull/476) Local-only cold-start progress (45s `/chat/messages` open) | **Merged** `a495cd07` (2026-09-14). `LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS` 45s; `/api/ai/chat` stays 18s. JSON progress SSE; Ollama `keep_alive` later default **30m** (shipped as 10m; `/v1` drops it — public-v1 proxy maps native `/api/chat`). `llmChatMessagesStreamTotalMs()` **75s**. Does **not** undo #464. Do **not** re-enable the Worker `/api/generate` warm on the chat invocation or an OpenRouter hop. App-open `POST /api/llm/warm` is separate and throttled. |
+| [#476](https://github.com/davins56/Anima-Protocol/pull/476) Local-only cold-start progress (45s `/chat/messages` open) | **Merged** `a495cd07` (2026-09-14). `LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS` 45s; `/api/ai/chat` stays 18s. JSON progress SSE; Ollama `keep_alive: "10m"`; `llmChatMessagesStreamTotalMs()` **75s** so 45+75+10 stays under the 130s browser abort. Does **not** undo #464. Do **not** start a competing timeout / keep_alive PR. |
 | [#475](https://github.com/davins56/Anima-Protocol/pull/475) Audit docs (#474 same-body replay) | **Merged** `56ec608a` (2026-09-14). Post-merge reviews: replay key is `userContent` only; client regenerates on `replayed` rather than accept-ledger. Documented here — **do not** start a second replay PR unless asked. |
 | [#474](https://github.com/davins56/Anima-Protocol/pull/474) Stop turn-2 replay of prior assistant text | **Merged** `447ab86d` (2026-09-14). `classifyChatTurnReuse`: replay only when `userContent` matches (not mode/cast/prompt); mismatch mints a new `turn_id`; same-body in-flight is 409 `turn_in_flight`. Client `streamChatReplyWithTurnRetry` + `sendingRef` mints a fresh id on `replayed` / 409 so Safari retry **regenerates**. Does **not** reopen Slice 1 SSE order. |
 | [#472](https://github.com/davins56/Anima-Protocol/pull/472) Audit docs (#471 + #458 hot-path claims) | **Merged** `c86bee80` (2026-09-14). |
@@ -171,13 +165,13 @@ Do not duplicate. Remaining client fat prompt is **group** `buildGroupPrompt`. D
 
 ### Slice 2 — E2E: honor token cap on local Ollama; stop 80s OpenRouter cascade (P0-L3) — **shipped in #455 + #457 + #464 + #476**
 
-Do not duplicate. Next is identity Slice A — seed `companion_memories` on create, then **migrate** distilled `CharacterMemory` facts into that store (or the server prompt). Solo already dropped the client memory block (#458). [#478](https://github.com/davins56/Anima-Protocol/pull/478) only hardened the existing server read/upsert + HUD copy. Do **not** add `GET /chat/memories` to the client prompt.
+Do not duplicate. Next is identity Slice A — seed `companion_memories` on create, then **migrate** distilled `CharacterMemory` facts into that store (or the server prompt). Solo already dropped the client memory block (#458). Do **not** add `GET /chat/memories` to the client prompt.
 
 ### Explicitly not the first PR
 
 - Another Slice 1 TTFT PR (SSE / repo RAG / 24k wrap) — **shipped in [#453](https://github.com/davins56/Anima-Protocol/pull/453)**.
 - Another turn-id replay PR — **shipped in [#474](https://github.com/davins56/Anima-Protocol/pull/474)** (same-body `userContent` only; mismatch mints a new id; client regenerates on `replayed` / 409). Do not expand the replay key to mode/cast/prompt unless asked.
-- A competing local-only open-budget / keep_alive PR — **shipped in [#476](https://github.com/davins56/Anima-Protocol/pull/476)**. Consume helper is already **75s**; do not raise it to the 130s client abort or to `LLM_STREAM_TOTAL_MS` (90s). Worker native `/api/generate` warm + SDK retry fan-out is **#480**.
+- A competing local-only open-budget / keep_alive PR — **shipped in [#476](https://github.com/davins56/Anima-Protocol/pull/476)**. Consume helper is already **75s**; do not raise it to the 130s client abort or to `LLM_STREAM_TOTAL_MS` (90s).
 - Another Slice 2 token-cap / 18s `/api/ai/chat` open PR — **shipped in [#455](https://github.com/davins56/Anima-Protocol/pull/455)** / [#457](https://github.com/davins56/Anima-Protocol/pull/457). Chat.jsx local-only open is **#476** (45s).
 - Another lean 1:1 Chat.jsx PR — **shipped in [#458](https://github.com/davins56/Anima-Protocol/pull/458)**.
 - Another contract-split / 2k wrap PR — **shipped in [#463](https://github.com/davins56/Anima-Protocol/pull/463)** / [#467](https://github.com/davins56/Anima-Protocol/pull/467) / [#471](https://github.com/davins56/Anima-Protocol/pull/471). Known leftover: group image-tag contract vs 400-char tail — do not start a fourth split unless asked.
@@ -185,8 +179,6 @@ Do not duplicate. Next is identity Slice A — seed `companion_memories` on crea
 - Worker ETIMEOUT / healthz probe classification (**done in #450**).
 - Another 12s local hop on `/chat/messages` (**already in #450** via `localAttemptSignal`).
 - Wiring `GET /chat/memories` into Chat.jsx `system_prompt` (would worsen double-prefill).
-- Another `companion_memories` SQL-toast / `inArray` / HUD-leak PR — **shipped in [#478](https://github.com/davins56/Anima-Protocol/pull/478)**. Do not retune #450/#476 timeout copy while touching stream errors.
-- Another Worker subrequest / tunnel-recipe HUD PR — **shipped in [#480](https://github.com/davins56/Anima-Protocol/pull/480)**. Do not re-enable the Worker `/api/generate` warm inside `/api/chat/messages` or default hosted retries back to 2. App-open preload is `POST /api/llm/warm` only.
 - Treating `upsertTurnMemory` crumbs as a replacement for distilled `CharacterMemory`.
 - Ensemble / OpenRouter chain CI — **shipped in #458** `17da2ef6`.
 - Putting the 18s `openStreamAbort` on opt-in `ANIMA_LOCAL_LLM_ENSEMBLE` gathering (off by default; not the production Chat path).
@@ -206,16 +198,16 @@ Do not duplicate. Next is identity Slice A — seed `companion_memories` on crea
 | Local Ollama honors `req.maxTokens` | #457 `cappedLocalMaxTokens` on `main` `b59c2db5` (not only #455 `262c275e`) |
 | Chat.jsx streams deltas | `streamChatReply.js` `onDelta` per content event; `useChatStreaming` |
 | Ensemble off by default | `localEnsemble.ts` `ANIMA_LOCAL_LLM_ENSEMBLE`; gathering path in `chat.ts` skips `openStreamAbort` |
-| `/chat/messages` 90s local-only first token; 1024 ordinary solo, 512 Ollama cap | `LLM_LOCAL_FIRST_TOKEN_MS` via `llmChatMessagesOpenTimeoutMs`; #458 `chatReplyMaxTokens` in `chat.ts` (solo 1024; group / `deep_mode` keep routed max) then `capOllamaNumPredict` (512) on the local call. |
+| `/chat/messages` 45s local-only open; 1024 ordinary solo | #476 `LLM_OPEN_TIMEOUT_LOCAL_ONLY_MS` via `llmChatMessagesOpenTimeoutMs`; #458 `chatReplyMaxTokens` in `chat.ts` (solo 1024; group / `deep_mode` keep routed max). `clampChatMessagesMaxTokens` is the 1024 helper, not the production group/deep path. |
 | Custom host is local-only | #464 `getProviderChain()` `[local]` when custom URL is usable; `llmFailover.ts`. Without a custom host the chain can start Workers AI and OpenRouter if fallback is on. |
 | 12s local hop already on `/chat/messages` | `llmFailover.ts` `localAttemptSignal` + `LLM_LOCAL_FAILOVER_ATTEMPT_MS`; only when a next provider exists |
-| `/api/ai/chat` ≠ Chat.jsx | Chat.jsx → `animaApi.chat.sendMessage` → `/chat/messages` (90s local-only first token); `/api/ai/chat` stays 18s (`llmAiChatOpenTimeoutMs`) |
-| #450 merged | `origin/main` `f4a7010a`; `/api/ai/chat` still `llmAiChatOpenTimeoutMs()` (18s); `/chat/messages` local-only first token is 90s |
-| Progress SSE + keep_alive | #476 JSON `{ status: "progress", phase }`. `keep_alive` is omitted unless `ANIMA_OLLAMA_KEEP_ALIVE` is set (daemon `OLLAMA_KEEP_ALIVE=-1` wins). Local-only consume hard cap is 120s. Client disconnect aborts upstream Ollama. #480 skips the chat-invocation native `/api/generate` warm. App-open preload is `POST /api/llm/warm` (`num_predict: 1`, skips while a turn is open). |
+| `/api/ai/chat` ≠ Chat.jsx | Chat.jsx → `animaApi.chat.sendMessage` → `/chat/messages` (45s local-only #476); `/api/ai/chat` stays 18s (`llmAiChatOpenTimeoutMs`) |
+| #450 merged | `origin/main` `f4a7010a`; `/api/ai/chat` still `llmAiChatOpenTimeoutMs()` (18s); `/chat/messages` `llmChatMessagesOpenTimeoutMs()` is 45s after #476 |
+| Progress SSE + keep_alive | #476 JSON `{ status: "progress", phase }`; Ollama `keep_alive: "10m"`; `llmChatMessagesStreamTotalMs()` **75s** (130 − 45 − 10). Client abort is `CHAT_STREAM_TIMEOUT_MS` 130s in `animaApi.js`. |
 | Companion clamp 1024 | `chatReplyMaxTokens` for ordinary solo; group / `deep_mode` keep `routeModel` 4–8k. Heavy 8192 is not what ordinary 1:1 `/chat/messages` sends. |
 | Leftover repair unawaited | #458 `scheduleLeftoverTurnRepair` after SSE heartbeat; must not delay TTFT |
 | World knowledge peek | `peekRegionalWorldKnowledge` on hot path; `void fetchRegionalWorldKnowledge` warms cache |
-| Server memories already in prompt | `chat.ts` `loadMemories` → `composePrompt` `formatMemoriesForPrompt`. Solo Chat.jsx still *calls* `buildMemoryContext(characterMemories)` on send but does **not** pass `memCtx` into `buildLeanSoloClientContext` (#458) — dead work, not dual-inject. #478: retry + scalar character-id match; HUD-safe `streamErrorMessage` |
+| Server memories already in prompt | `chat.ts` `loadMemories` → `composePrompt` `formatMemoriesForPrompt`; solo Chat.jsx no longer `buildMemoryContext` (#458) |
 | `GET /chat/memories/:id` affect chrome | Chat.jsx `companionMemory` hydrates `companion_affect` / mood; **not** `system_prompt` |
 | Repo RAG gated | `shouldRetrieveRepositoryKnowledge` — ordinary turns skip; `ANIMA_REPOSITORY_RAG=false` still hard off |
 | Telemetry | `ttft_ms` from `generationStartedAt`; `repository_rag_ms` is nested in `context_load_ms` (`chat.ts` + `chatTelemetry.ts`) |

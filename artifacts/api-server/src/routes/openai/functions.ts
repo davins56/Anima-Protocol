@@ -1,4 +1,3 @@
-import { AsyncLocalStorage } from "node:async_hooks";
 import { Router } from "express";
 import { toFile } from "openai";
 import { getAuth } from "@clerk/express";
@@ -7,18 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { createRateLimit } from "../../lib/rateLimit";
 import { notifyUser } from "../../lib/storeEvents";
 import { resolveModel } from "../../lib/modelRouter";
-import {
-  createChatCompletionWithFailover,
-  isLocalOnlyProviderChain,
-} from "../../lib/llmFailover";
-import {
-  isPostTurnSidecarFunction,
-  shouldSkipSidecarLlm,
-  userHasOpenCompanionTurn,
-} from "../../lib/sidecarLlm";
-import { acquireLocalLlmBackground } from "../../lib/localLlmSlot";
-import { abortWhenClientLeaves, combineAbortSignals } from "../../lib/chatTimeouts";
-import { matchLoreKeywordContext, type LoreMatchEntry } from "../../lib/loreKeywordMatch";
+import { createChatCompletionWithFailover } from "../../lib/llmFailover";
 import { visibleAssistantReply } from "../../lib/visibleAssistantReply";
 import { getOpenAIClient, hasOpenAIKey, hasOpenRouterKey } from "../../lib/openaiClient";
 import { searchMemoriesSemantically } from "../../lib/memoryEmbeddings";
@@ -37,18 +25,6 @@ import {
 import { logger } from "../../lib/logger";
 import { buildInBrowserCodespaceSystemPrompt } from "../../lib/codespaceAgentPrompt";
 
-/**
- * Partial test mocks omit this export and throw on access.
- * Missing or unreadable means "not known local-only".
- */
-function chainIsLocalOnly(): boolean {
-  try {
-    return typeof isLocalOnlyProviderChain === "function" && isLocalOnlyProviderChain();
-  } catch {
-    return false;
-  }
-}
-
 const router = Router();
 // Invoke helpers are chatty during UI bootstrap; key by user and allow headroom.
 router.use(createRateLimit({ name: "openai-functions", max: 180 }));
@@ -61,100 +37,21 @@ router.use((req, res, next) => {
   next();
 });
 
-/** Sidecar location flavor. A slow call is dropped instead of holding the chat slot. */
-export const LOCATION_CONTEXT_TIMEOUT_MS = 3_000;
-
-/**
- * Cap for every `llm()` helper call. A disconnected client aborts sooner.
- * Companion chat does not use this helper.
- */
-export const GENERIC_LLM_TIMEOUT_MS = 12_000;
-
-type InvokeLlmScope = { signal: AbortSignal; userId: string };
-const invokeLlmScope = new AsyncLocalStorage<InvokeLlmScope>();
-
-function namedLocation(data: Record<string, unknown>): string {
-  const loc = typeof data.location === "string" ? data.location.trim() : "";
-  if (loc) return loc;
-  return typeof data.location_name === "string" ? data.location_name.trim() : "";
-}
-
-/** Place already named on the request. No model call. */
-export function cheapLocationContext(data: Record<string, unknown>): string {
-  const loc = namedLocation(data);
-  return loc ? `Setting: ${loc}.` : "";
-}
-
-async function llm(
-  systemPrompt: string,
-  userPrompt: string,
-  maxTokens = 1024,
-  opts?: { sidecar?: boolean; timeoutMs?: number; signal?: AbortSignal },
-): Promise<string> {
-  if (opts?.sidecar && shouldSkipSidecarLlm()) {
-    return "";
+async function llm(systemPrompt: string, userPrompt: string, maxTokens = 1024): Promise<string> {
+  const result = await createChatCompletionWithFailover({
+    tier: "standard",
+    model: "gpt-4o",
+    maxTokens,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+  });
+  const visible = visibleAssistantReply(result.content);
+  if (!String(visible).trim()) {
+    throw new Error("The companion returned an empty reply. Please try again.");
   }
-  const scope = invokeLlmScope.getStore();
-  if (
-    chainIsLocalOnly() &&
-    scope?.userId &&
-    userHasOpenCompanionTurn(scope.userId)
-  ) {
-    return "";
-  }
-  const background = opts?.sidecar
-    ? await acquireLocalLlmBackground("sidecar")
-    : null;
-  if (opts?.sidecar && !background) return "";
-  try {
-    const timeoutMs =
-      typeof opts?.timeoutMs === "number" && opts.timeoutMs > 0
-        ? opts.timeoutMs
-        : GENERIC_LLM_TIMEOUT_MS;
-    const signals = [AbortSignal.timeout(timeoutMs)];
-    if (scope?.signal) signals.push(scope.signal);
-    if (opts?.signal) signals.push(opts.signal);
-    const result = await createChatCompletionWithFailover({
-      tier: "standard",
-      maxTokens,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      signal: combineAbortSignals(...signals),
-    });
-    const visible = visibleAssistantReply(result.content);
-    if (!String(visible).trim()) {
-      throw new Error("The companion returned an empty reply. Please try again.");
-    }
-    return visible;
-  } finally {
-    await background?.release();
-  }
-}
-
-async function loadSessionLoreEntries(
-  userId: string,
-  sessionId: string,
-): Promise<LoreMatchEntry[]> {
-  const rows = await db
-    .select()
-    .from(userEntities)
-    .where(
-      and(eq(userEntities.userId, userId), eq(userEntities.entityName, "WorldState")),
-    )
-    .limit(200);
-  const entries: LoreMatchEntry[] = [];
-  for (const row of rows) {
-    const data = (row.data && typeof row.data === "object" ? row.data : {}) as LoreMatchEntry & {
-      session_id?: string;
-      is_active?: boolean;
-    };
-    if (data.is_active === false) continue;
-    if (sessionId && data.session_id && data.session_id !== sessionId) continue;
-    entries.push({ ...data, id: row.entityId });
-  }
-  return entries;
+  return visible;
 }
 
 type WebSearchResult = {
@@ -361,6 +258,7 @@ async function analyzeTextContext(text: string): Promise<ContextAnalysis> {
 async function analyzeImageContext(dataUrl: string): Promise<ContextAnalysis> {
   const result = await createChatCompletionWithFailover({
     tier: "standard",
+    model: "gpt-4o",
     maxTokens: 1500,
     messages: [
       { role: "system", content: CONTEXT_SYSTEM_PROMPT },
@@ -477,7 +375,6 @@ async function extractCharacterMemories(
       "ONLY the JSON array.",
     `EXISTING MEMORIES:\n${existingList}\n\nLATEST EXCHANGE:\nUser: ${clip(userMessage)}\nCharacter: ${clip(aiResponse)}`,
     512,
-    { sidecar: true },
   ).catch(() => "[]");
   let parsed: unknown;
   try {
@@ -729,7 +626,6 @@ async function extractInventoryEvents(
       "item name. If nothing changed hands, return []. Output ONLY the JSON array.",
     `CURRENT INVENTORY:\n${existingList}\n\nLATEST EXCHANGE:\nUser: ${clip(userMessage)}\nCharacter: ${clip(aiResponse)}`,
     512,
-    { sidecar: true },
   ).catch(() => "[]");
   return parseInventoryEvents(raw);
 }
@@ -977,12 +873,6 @@ export function buildContextPromptString(records: Record<string, unknown>[]): st
 router.post("/invoke/:fnName", async (req, res) => {
   const { fnName } = req.params;
   const data = req.body as Record<string, unknown>;
-  const clientLeft = abortWhenClientLeaves(res);
-  const auth = getAuth(req) as { userId?: string | null };
-  invokeLlmScope.enterWith({
-    signal: clientLeft.signal,
-    userId: auth.userId || "",
-  });
 
   try {
     let result: unknown = null;
@@ -1007,9 +897,7 @@ router.post("/invoke/:fnName", async (req, res) => {
         const context = JSON.stringify(data);
         const raw = await llm(
           "You are a quest designer. Return a JSON array of 1-3 quest objects with fields: { title, description, objective, reward }. Output only valid JSON.",
-          `Generate quests from this context: ${context}`,
-          1024,
-          { sidecar: true },
+          `Generate quests from this context: ${context}`
         );
         try { result = JSON.parse(raw); } catch { result = []; }
         break;
@@ -1019,9 +907,7 @@ router.post("/invoke/:fnName", async (req, res) => {
         const context = JSON.stringify(data);
         const raw = await llm(
           "You are a narrative game designer. Return a JSON array of 3 story choice strings the player could say next. Output only a JSON array of strings.",
-          `Context: ${context}`,
-          1024,
-          { sidecar: true },
+          `Context: ${context}`
         );
         try { result = JSON.parse(raw); } catch { result = []; }
         break;
@@ -1031,9 +917,7 @@ router.post("/invoke/:fnName", async (req, res) => {
         const context = JSON.stringify(data);
         const raw = await llm(
           "Generate 3 short message suggestions the user could send next. Return a JSON array of strings.",
-          `Context: ${context}`,
-          1024,
-          { sidecar: true },
+          `Context: ${context}`
         );
         try { result = JSON.parse(raw); } catch { result = []; }
         break;
@@ -1075,34 +959,13 @@ router.post("/invoke/:fnName", async (req, res) => {
 
       case "generateAtmosphericDescription":
       case "generateLocationBackground":
-      case "extractLocationContext": {
+      case "extractLocationContext":
+      case "injectLocationContext": {
         const loc = (data.location as string) || (data.location_name as string) || "the current scene";
         result = await llm(
           "You are an atmospheric world-builder. Write a 2-sentence vivid description.",
           `Describe the atmosphere of: ${loc}`
         );
-        break;
-      }
-
-      case "injectLocationContext": {
-        // Local-only chat has one Ollama slot. A model call here is served
-        // before the companion reply. Use the named place, or nothing.
-        if (chainIsLocalOnly()) {
-          result = cheapLocationContext(data);
-          break;
-        }
-        const loc = namedLocation(data) || "the current scene";
-        try {
-          const raw = await llm(
-            "You are an atmospheric world-builder. Write a 2-sentence vivid description.",
-            `Describe the atmosphere of: ${loc}`,
-            256,
-            { sidecar: true, timeoutMs: LOCATION_CONTEXT_TIMEOUT_MS },
-          );
-          result = raw.trim() || cheapLocationContext(data);
-        } catch {
-          result = cheapLocationContext(data);
-        }
         break;
       }
 
@@ -1120,9 +983,7 @@ router.post("/invoke/:fnName", async (req, res) => {
         const content = (data.content as string) || "";
         const raw = await llm(
           "Analyze this message and return a JSON object with: { emotion: string, intensity: number (1-5), tags: string[] }. Output only valid JSON.",
-          content,
-          1024,
-          { sidecar: true },
+          content
         );
         try { result = JSON.parse(raw); } catch { result = { emotion: "neutral", intensity: 2, tags: [] }; }
         break;
@@ -1132,9 +993,7 @@ router.post("/invoke/:fnName", async (req, res) => {
       case "analyzeEmotionalClimate": {
         result = await llm(
           "Briefly analyze the emotional and narrative tone of this session in 1-2 sentences.",
-          JSON.stringify(data),
-          1024,
-          { sidecar: true },
+          JSON.stringify(data)
         );
         break;
       }
@@ -1144,9 +1003,7 @@ router.post("/invoke/:fnName", async (req, res) => {
         const text = (data.text as string) || (data.content as string) || "";
         const raw = await llm(
           "Extract world lore facts from this text. Return a JSON array of { subject, fact } objects. Output only valid JSON.",
-          text.slice(0, 4000),
-          1024,
-          { sidecar: true },
+          text.slice(0, 4000)
         );
         try { result = JSON.parse(raw); } catch { result = []; }
         break;
@@ -1157,9 +1014,7 @@ router.post("/invoke/:fnName", async (req, res) => {
       case "analyzeCharacterForBehavior": {
         const raw = await llm(
           "You are a narrative behavioral analyst. Describe how this character has evolved based on recent events. Return a JSON object with: { evolved_personality: string, growth_areas: string[], updated_motivations: string[], new_vulnerabilities: string[] }. Output ONLY valid JSON.",
-          JSON.stringify(data),
-          1024,
-          { sidecar: true },
+          JSON.stringify(data)
         );
         try {
           result = { data: JSON.parse(raw) };
@@ -1188,9 +1043,7 @@ router.post("/invoke/:fnName", async (req, res) => {
       case "generateWorldEvent": {
         result = await llm(
           "Describe a subtle world state change in 1-2 sentences based on recent story events.",
-          JSON.stringify(data),
-          1024,
-          { sidecar: true },
+          JSON.stringify(data)
         );
         break;
       }
@@ -1291,9 +1144,7 @@ router.post("/invoke/:fnName", async (req, res) => {
         const context = JSON.stringify(data);
         result = await llm(
           "Write a brief group interaction between the characters in 2-3 sentences.",
-          context,
-          1024,
-          { sidecar: true },
+          context
         );
         break;
       }
@@ -1551,35 +1402,7 @@ router.post("/invoke/:fnName", async (req, res) => {
         break;
       }
 
-      case "detectLoreKeywords": {
-        const content = typeof data.content === "string" ? data.content : "";
-        const sessionId = typeof data.session_id === "string" ? data.session_id : "";
-        let entries: LoreMatchEntry[] = [];
-        if (Array.isArray(data.lore_entries)) {
-          entries = data.lore_entries as LoreMatchEntry[];
-        } else if (auth.userId) {
-          try {
-            entries = await loadSessionLoreEntries(auth.userId, sessionId);
-          } catch (err) {
-            logger.warn({ err }, "Lore keyword lookup skipped");
-            entries = [];
-          }
-        }
-        result = { data: { context: matchLoreKeywordContext(content, entries) } };
-        break;
-      }
-
       default: {
-        // Automatic sidecars never take the local slot. User-started names
-        // still go through llm(), which skips only while that user's
-        // companion turn is open and always times out / aborts on disconnect.
-        if (
-          isPostTurnSidecarFunction(fnName) &&
-          (chainIsLocalOnly() || shouldSkipSidecarLlm())
-        ) {
-          result = null;
-          break;
-        }
         const raw = await llm(
           `You are a helpful AI function handler named "${fnName}". Process the input and return a useful result. If returning structured data, output valid JSON.`,
           JSON.stringify(data)
@@ -1592,11 +1415,7 @@ router.post("/invoke/:fnName", async (req, res) => {
     res.json({ result });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (!res.headersSent) {
-      res.status(500).json({ error: msg });
-    }
-  } finally {
-    clientLeft.cancel();
+    res.status(500).json({ error: msg });
   }
 });
 

@@ -4,9 +4,6 @@ import {
   isLocalOnlyProviderChain,
   isOpenRouterGenericProviderError,
   isOpenRouterZdrOrDataPolicyError,
-  isProviderQuotaError,
-  isWorkerSubrequestLimitError,
-  LOCAL_LLM_SUBREQUEST_HINT,
   localOnlyTimeoutMessage,
   OPENROUTER_FREE_PROVIDER_HINT,
   OPENROUTER_ZDR_PRIVACY_HINT,
@@ -28,16 +25,8 @@ const COMPANION_MEMORY_SCHEMA =
   "Couldn't load companion memory — the database schema is missing or out of date.";
 const COMPANION_MEMORY_GENERIC =
   "Couldn't load companion memory. Please try again.";
-const CONVERSATION_CONTEXT_TIMEOUT =
-  "Couldn't load this conversation — the database timed out. Please try again.";
-const CONVERSATION_CONTEXT_SCHEMA =
-  "Couldn't load this conversation — the database schema is missing or out of date.";
-const CONVERSATION_CONTEXT_GENERIC =
-  "Couldn't load this conversation. Please try again.";
 const GENERIC_COMPANION_FAILURE =
   "The companion could not reply. Please try again.";
-const GENERIC_HTTP_STATUS_RE =
-  /^(?:API\s+error:\s*\d{3}|HTTP\s*\d{3}|Request\s+failed\s+with\s+status\s+code\s+\d{3})$/i;
 
 function looksLikeSqlLeak(message: string): boolean {
   return FAILED_QUERY_RE.test(message) || SQL_LEAK_RE.test(message);
@@ -51,11 +40,7 @@ function companionMemoryOrDbMessage(err: unknown): string {
     if (dbInfo.reason === "schema") return COMPANION_MEMORY_SCHEMA;
     return COMPANION_MEMORY_GENERIC;
   }
-  if (dbInfo.isDbError) {
-    if (dbInfo.reason === "timeout") return CONVERSATION_CONTEXT_TIMEOUT;
-    if (dbInfo.reason === "schema") return CONVERSATION_CONTEXT_SCHEMA;
-    return CONVERSATION_CONTEXT_GENERIC;
-  }
+  if (dbInfo.isDbError) return dbInfo.safeMessage;
   return GENERIC_COMPANION_FAILURE;
 }
 
@@ -65,11 +50,6 @@ function companionMemoryOrDbMessage(err: unknown): string {
  * client toast — keep the raw error in server logs.
  */
 export function streamErrorMessage(err: unknown): string {
-  // The steward's own model already words its errors (ownModel.ts); the
-  // provider remaps below would turn them into OpenRouter hints.
-  if (err instanceof Error && err.name === "OwnModelError") {
-    return err.message;
-  }
   if (err instanceof LlmStreamTimeoutError) {
     return typeof isLocalOnlyProviderChain === "function" &&
       isLocalOnlyProviderChain()
@@ -78,12 +58,6 @@ export function streamErrorMessage(err: unknown): string {
   }
   if (isWorkersAiFreeQuotaError(err)) {
     return WORKERS_AI_FREE_QUOTA_HINT;
-  }
-  if (
-    typeof isWorkerSubrequestLimitError === "function" &&
-    isWorkerSubrequestLimitError(err)
-  ) {
-    return LOCAL_LLM_SUBREQUEST_HINT;
   }
   if (isOpenRouterZdrOrDataPolicyError(err)) {
     return OPENROUTER_ZDR_PRIVACY_HINT;
@@ -114,18 +88,12 @@ export function streamErrorMessage(err: unknown): string {
     return companionMemoryOrDbMessage(err);
   }
   if (/aborted|abort/i.test(raw)) {
-    return typeof isLocalOnlyProviderChain === "function" &&
-      isLocalOnlyProviderChain()
+    return typeof localOnlyTimeoutMessage === "function"
       ? localOnlyTimeoutMessage()
-      : OPENROUTER_FREE_PROVIDER_HINT;
+      : "The companion took too long to reply. Please try again.";
   }
   if (/workers ai|deepseek/i.test(raw)) {
     return raw;
-  }
-  // OpenAI SDK / fetch leftovers after an OpenRouter :free hop. Must not
-  // become the Chat toast "The companion service encountered an issue."
-  if (isProviderQuotaError(err) || GENERIC_HTTP_STATUS_RE.test(raw)) {
-    return OPENROUTER_FREE_PROVIDER_HINT;
   }
   return raw;
 }

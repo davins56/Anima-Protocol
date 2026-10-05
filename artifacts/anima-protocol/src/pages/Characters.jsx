@@ -21,7 +21,6 @@ import { deleteWithUndo, deleteAllWithUndo } from "@/lib/undoableDelete";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import AddSeriesCharactersModal from "@/components/characters/AddSeriesCharactersModal";
 import CharacterBioSheet from "@/components/character/CharacterBioSheet";
-import CompanionLoreFiles from "@/components/pdf/CompanionLoreFiles";
 import AvatarUploadField from "@/components/anima/AvatarUploadField";
 import IntimacyEditor from "@/components/intimacy/IntimacyEditor";
 import { characterCreatePayload } from "@/lib/characterAvatarUpload";
@@ -629,11 +628,6 @@ export default function Characters() {
                 onChange={(v) => setForm((f) => ({ ...f, backstory: v }))}
                 placeholder="Background, history, motivations..."
                 rows={3}
-              />
-
-              <CompanionLoreFiles
-                characterId={editingChar?.id || null}
-                characterName={form.name}
               />
 
               {/* Speaking Style */}

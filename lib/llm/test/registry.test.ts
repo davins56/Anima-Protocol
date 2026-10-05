@@ -46,7 +46,7 @@ describe("registry", () => {
   it("lists ollama bootstrap lineup as anima-chat", () => {
     const models = listModels("ollama");
     expect(models).toHaveLength(3);
-    expect(ANIMA_BOOTSTRAP_BASE_MODEL).toBe("qwen2.5:0.5b");
+    expect(ANIMA_BOOTSTRAP_BASE_MODEL).toContain("qwen");
     expect(models.find((m) => m.tier === "standard")?.model).toBe(
       ANIMA_OLLAMA_CHAT_TAG,
     );

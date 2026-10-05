@@ -1,3 +1,0 @@
-# Test-only extras for server/tests (FastAPI's TestClient needs httpx).
--r requirements.txt
-httpx>=0.27,<1

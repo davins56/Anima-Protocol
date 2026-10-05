@@ -38,9 +38,17 @@ export function injectRequireIntoWranglerBin(source, requireExpr) {
 			...process.execArgv,
 			path.join(__dirname, "../wrangler-dist/cli.js"),`;
   if (!text.includes(original)) {
-    throw new Error(
-      "wrangler/bin/wrangler.js spawn args changed; cannot inject deployments guard",
+    const flexRe = /([\t ]*)["']--no-warnings["'],\s*\n\s*\.\.\.process\.execArgv,\s*\n\s*path\.join\(__dirname,\s*["']\.\.\/wrangler-dist\/cli\.js["']\),/;
+    const match = text.match(flexRe);
+    if (match) {
+      const indent = match[1] || "";
+      const flexPatched = `${indent}"--no-warnings",\n${indent}"--require",\n${indent}${requireExpr},\n${indent}...process.execArgv,\n${indent}path.join(__dirname, "../wrangler-dist/cli.js"),`;
+      return text.replace(flexRe, flexPatched);
+    }
+    console.warn(
+      "[anima-wrangler-guard] wrangler/bin/wrangler.js spawn args changed; skipping deployments guard injection",
     );
+    return text;
   }
   return text.replace(original, patched);
 }

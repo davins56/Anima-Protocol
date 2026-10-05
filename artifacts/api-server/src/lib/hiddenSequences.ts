@@ -122,7 +122,7 @@ export function hiddenSequencePromptBlock(params: {
   const parts: string[] = [`CONVERSATIONAL WEATHER: ${weather}.`];
   if (weather === "lull") {
     parts.push(
-      "This is a lull. Do not offer jack-in.",
+      "This is a lull. Do not offer jack-in. If the steward insists, you may refuse.",
     );
   } else if (weather === "stir") {
     parts.push(

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { animaApi, chatAuthRequiredError, chatHttpError } from "./animaApi.js";
+import { chatAuthRequiredError, chatHttpError } from "./animaApi.js";
 
 const authHeaders = vi.fn();
 const fetchMock = vi.fn();
@@ -179,53 +179,6 @@ describe("chat send auth and HTTP errors", () => {
     expect(events.some((event) => event.content === "Stay close.")).toBe(true);
   });
 
-  it("forwards sidecar: true on chat completions and omits it otherwise", async () => {
-    authHeaders.mockResolvedValue({
-      "Content-Type": "application/json",
-      Authorization: "Bearer fresh",
-    });
-    const encoder = new TextEncoder();
-    const sidecarBody = new ReadableStream({
-      start(controller) {
-        controller.enqueue(encoder.encode('data: {"done":true,"skipped":true}\n\n'));
-        controller.close();
-      },
-    });
-    const plainBody = new ReadableStream({
-      start(controller) {
-        controller.enqueue(encoder.encode('data: {"content":"Stay close."}\n\n'));
-        controller.enqueue(encoder.encode('data: {"done":true}\n\n'));
-        controller.close();
-      },
-    });
-    fetchMock
-      .mockResolvedValueOnce({ ok: true, status: 200, body: sidecarBody })
-      .mockResolvedValueOnce({ ok: true, status: 200, body: plainBody });
-
-    const { animaApi } = await import("./animaApi.js");
-    const skipped = [];
-    for await (const event of animaApi.chatCompletions({
-      content: "journal",
-      sidecar: true,
-    })) {
-      skipped.push(event);
-    }
-    const spoken = [];
-    for await (const event of animaApi.chatCompletions({
-      content: "hello",
-    })) {
-      spoken.push(event);
-    }
-
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
-      content: "journal",
-      sidecar: true,
-    });
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body).sidecar).toBeUndefined();
-    expect(skipped).toEqual([expect.objectContaining({ done: true, skipped: true })]);
-    expect(spoken.some((event) => event.content === "Stay close.")).toBe(true);
-  });
-
   it("refuses to POST /openai conversation messages without a Bearer token", async () => {
     authHeaders.mockResolvedValue({ "Content-Type": "application/json" });
     const { animaApi } = await import("./animaApi.js");
@@ -260,24 +213,5 @@ describe("chat send auth and HTTP errors", () => {
       model: "anima-chat",
       failed_over: false,
     });
-  });
-});
-
-
-describe("completeMessage final response", () => {
-  afterEach(() => vi.restoreAllMocks());
-
-  it.each([
-    [[], { done: true, visible: "Complete answer", turn_id: "turn-1" }],
-    [[{ content: "Complete" }], { done: true, visible: "Complete answer", turn_id: "turn-1" }],
-    [[{ content: "Complete" }], { done: true, content: "Complete answer", turn_id: "turn-1" }],
-  ])("uses the completed snapshot after deltas %j", async (deltas, terminal) => {
-    vi.spyOn(animaApi.chat, "sendMessage").mockImplementation(async function* () {
-      for (const delta of deltas) yield delta;
-      yield terminal;
-      throw new Error("Must stop consuming after done");
-    });
-    await expect(animaApi.chat.completeMessage({ sessionId: "s1", content: "Question" }))
-      .resolves.toMatchObject({ content: "Complete answer", turn_id: "turn-1" });
   });
 });

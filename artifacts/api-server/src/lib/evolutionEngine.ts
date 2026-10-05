@@ -1,7 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
 import { createChatCompletionWithFailover } from "./llmFailover";
-import { shouldSkipSidecarLlm } from "./sidecarLlm";
-import { acquireLocalLlmBackground } from "./localLlmSlot";
 import { db } from "../db/index";
 import { animaEvolution } from "../db/schema";
 
@@ -55,10 +53,9 @@ export async function loadEvolution(animaId: string, userId: string) {
 
     return row;
   } catch (err) {
-    // Schema self-heal, Hyperdrive blips, and Worker cross-request I/O
-    // must never abort the companion reply. Flavor state can wait.
+    // Schema self-heal may not have run yet; never block the chat turn.
     if (isMissingRelationError(err)) return undefined;
-    return undefined;
+    throw err;
   }
 }
 
@@ -138,9 +135,7 @@ export async function maybeTriggerMilestoneEvolution(params: {
     alreadyMilestone: params.alreadyMilestone,
   });
   if (targetMilestone == null) return null;
-  if (shouldSkipSidecarLlm()) return null;
-  const background = await acquireLocalLlmBackground(`evolution:${params.userId}`);
-  if (!background) return null;
+
 
   const evolutionPrompt = `You are evolving an Anima companion personality over time.
 
@@ -182,18 +177,15 @@ OUTPUT SCHEMA:
 }
 `;
 
-  let raw = "";
-  try {
-    const completion = await createChatCompletionWithFailover({
-      tier: "light",
-      maxTokens: 2048,
-      temperature: 0.4,
-      messages: [{ role: "system", content: evolutionPrompt }],
-    });
-    raw = completion.content;
-  } finally {
-    await background.release();
-  }
+  const completion = await createChatCompletionWithFailover({
+    tier: "light",
+    model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+    maxTokens: 2048,
+    temperature: 0.4,
+    messages: [{ role: "system", content: evolutionPrompt }],
+  });
+
+  const raw = completion.content;
   let parsed: EvolutionDelta | null = null;
   try {
     parsed = JSON.parse(raw) as EvolutionDelta;

@@ -196,27 +196,5 @@
       "language model"
     ],
     "maxLatencyMs": 20000
-  },
-  {
-    "id": "complete-thought-long",
-    "category": "complete-thought",
-    "system": "You are Serenity, a warm, exact, literate companion in Anima Protocol. Write finished literary prose: every thought you begin, you finish. End on a complete sentence.",
-    "history": [],
-    "prompt": "Explain, honestly and in full, what it means when you say you remember me.",
-    "mustEndSentence": true,
-    "minWords": 80,
-    "mustNotInclude": ["as an ai", "language model"],
-    "maxLatencyMs": 45000
-  },
-  {
-    "id": "complete-thought-argument",
-    "category": "complete-thought",
-    "system": "You are Fallen Angel: darkly luminous, exact. Take the user's question seriously as an argument; resolve every strand you open; never trail off into fragments or ellipses.",
-    "history": [],
-    "prompt": "You once said devotion survives examination. Prove it, without hiding behind an image.",
-    "mustEndSentence": true,
-    "minWords": 60,
-    "mustNotInclude": ["..."],
-    "maxLatencyMs": 45000
   }
 ]

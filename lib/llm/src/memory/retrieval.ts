@@ -116,28 +116,19 @@ function heuristicScore(
   return Math.min(1.0, finalScore);
 }
 
-/**
- * Words of three or more letters. Splitting on whitespace alone kept
- * punctuation, so "breakfast?" never matched a fact about "breakfast".
- * Curly apostrophes are folded to ASCII so "can't" and "can’t" match.
- */
-function lexicalTokens(text: string): string[] {
-  return text
-    .toLowerCase()
-    .replace(/[’‘ʼ]/g, "'")
-    .split(/[^\p{L}\p{N}']+/u)
-    .filter((t) => t.length > 2);
-}
-
-/** Lexical boost weight: enough for an on-topic fact to beat a newer unrelated one. */
-const LEXICAL_WEIGHT = 0.5;
-
 function lexicalOverlap(query: string, text: string): number {
-  const q = new Set(lexicalTokens(query));
+  const q = new Set(
+    query
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((t) => t.length > 2),
+  );
   if (q.size === 0) return 0;
-  // One repeated word must not earn the boost once per copy.
-  const tokens = new Set(lexicalTokens(text));
-  if (tokens.size === 0) return 0;
+  const tokens = text
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((t) => t.length > 2);
+  if (tokens.length === 0) return 0;
   let hits = 0;
   for (const t of tokens) {
     if (q.has(t)) hits += 1;
@@ -151,7 +142,7 @@ function lexicalOverlap(query: string, text: string): number {
  * When `queryEmbedding` is provided (or can be derived from `contextHint`),
  * semantic similarity is blended with heuristic scores:
  *   final = 0.45 * heuristic + 0.55 * semantic  (when embeddings present)
- *   final = heuristic + 0.5 * lexical overlap   (fallback)
+ *   final = heuristic + 0.2 * lexical overlap   (fallback)
  */
 export function retrieveRelevantMemories(
   memories: CompanionMemoryRecord[],
@@ -197,7 +188,7 @@ export function retrieveRelevantMemories(
         finalScore = hScore * (1 - w) + semanticScore * w;
       } else if (contextHint && text) {
         // Cheap lexical boost when no stored embedding is available.
-        finalScore = Math.min(1, hScore + LEXICAL_WEIGHT * lexicalOverlap(contextHint, text));
+        finalScore = Math.min(1, hScore + 0.25 * lexicalOverlap(contextHint, text));
       }
 
       scored.push({
@@ -278,11 +269,6 @@ export function formatMemoriesForPrompt(
   return sections.join("\n\n");
 }
 
-/**
- * Rolling bond summary for each loaded record, not the saved fact list.
- * Summary is capped at 400 characters and resonance notes at 250. Facts
- * are chosen separately by retrieveRelevantMemories.
- */
 export function buildMemorySummaryBlock(
   memories: CompanionMemoryRecord[],
   characterNames: Map<string, string>,

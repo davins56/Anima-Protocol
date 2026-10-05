@@ -4,7 +4,7 @@
 // the model the host really has loaded drift apart constantly in practice:
 //
 //   - `ollama create anima-chat -f Modelfile.anima-chat` was never run on the
-//     box, so it only serves the base weights (`qwen2.5:0.5b`).
+//     box, so it only serves the base weights (`qwen2.5:3b`).
 //   - Ollama registered the tag as `anima-chat:latest` and the gateway in
 //     front of it does not do the implicit `:latest` resolution Ollama does.
 //   - ANIMA_LOCAL_LLM_BASE_URL points at a vLLM host serving a HF repo id,

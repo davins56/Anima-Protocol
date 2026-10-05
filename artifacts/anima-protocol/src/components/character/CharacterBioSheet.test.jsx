@@ -19,17 +19,6 @@ vi.mock("framer-motion", async () => {
   };
 });
 
-vi.mock("@/components/pdf/CompanionLoreFiles", () => ({
-  default: () => null,
-}));
-
-vi.mock("@/api/pdfDocuments", () => ({
-  listPdfDocuments: vi.fn(async () => []),
-  uploadPdfDocument: vi.fn(),
-  renamePdfDocument: vi.fn(),
-  deletePdfDocument: vi.fn(),
-}));
-
 import CharacterBioSheet from "./CharacterBioSheet";
 
 const sampleCharacter = {

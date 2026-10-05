@@ -21,7 +21,6 @@ import {
   summarizeClerkProbe,
 } from "../lib/clerkDiagnostics";
 import { requireOpsBearer } from "../lib/opsAuth";
-import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
@@ -149,19 +148,27 @@ router.get("/healthz/db", async (_req, res) => {
     const result = await withTransientDbRetry(() =>
       getPool().query("select 1::int as ok"),
     );
-    const ensured = await withTransientDbRetry(() => ensureSchemaOnce());
-    if (ensured.errors.length > 0) {
-      logger.error(
-        {
-          missingBefore: ensured.missingBefore,
-          createdTables: ensured.createdTables,
-          errors: ensured.errors,
+    let schema: Awaited<ReturnType<typeof inspectSchema>> | undefined;
+    try {
+      schema = await inspectSchema();
+    } catch (schemaErr) {
+      const info = classifyDbError(schemaErr);
+      res.status(503).json({
+        status: "error",
+        db: true,
+        ok: result.rows?.[0]?.ok === 1,
+        schema: {
+          ok: false,
+          error: info.safeMessage,
+          reason: info.reason,
+          code: info.code,
         },
-        "Database health check encountered schema creation errors",
-      );
+        target,
+      });
+      return;
     }
 
-    const healthy = ensured.ok;
+    const healthy = schema.ok;
     res.status(healthy ? 200 : 503).json({
       status: healthy ? "ok" : "error",
       db: true,
@@ -170,10 +177,10 @@ router.get("/healthz/db", async (_req, res) => {
         ? {}
         : { reason: "schema" as const, code: "schema_missing" }),
       schema: {
-        ok: ensured.ok,
-        missingTables: ensured.ok ? [] : ensured.missingBefore,
-        presentTables: ensured.ok ? ensured.createdTables : [],
-        hasPgTrgm: ensured.hasPgTrgm,
+        ok: schema.ok,
+        missingTables: schema.missingTables,
+        presentTables: schema.presentTables,
+        hasPgTrgm: schema.hasPgTrgm,
       },
       target,
     });

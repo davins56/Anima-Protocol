@@ -8,7 +8,6 @@ import {
   loadRosterCharacters,
 } from "@/lib/loadRosterCharacters";
 import { animaApi } from "@/api/animaApi";
-import { loadOwnModelConfig, queueOwnModelLesson, writeOwnModelReply } from "@/lib/ownModel/chat";
 import { usePaginatedEntities } from "@/hooks/usePaginatedEntities";
 import { useStoreSync } from "@/lib/useStoreSync";
 import { useConfirm } from "@/lib/ConfirmDialog";
@@ -35,12 +34,9 @@ import {
   beginOpenSession,
   loadOpenChatSession,
   mergeOpenedSession,
-  openChatMessageReadOptions,
-  openChatSessionReadOptions,
   rememberCreatedSession,
   resolveOpenSessionFetch,
 } from "@/lib/chatSessionLoad";
-import { STORE_LIST_TIMEOUT_MS } from "@/lib/storeTimeouts";
 import {
   buildInitSessionPayload,
   createInitChatSession,
@@ -51,7 +47,6 @@ import Sidebar from "@/components/layout/Sidebar";
 import WelcomeScreen from "@/components/chat/WelcomeScreen";
 import MessageBubble from "@/components/chat/MessageBubble";
 import ChatInput from "@/components/chat/ChatInput";
-import ChatPdfBar from "@/components/pdf/ChatPdfBar";
 import NewSessionModal from "@/components/chat/NewSessionModal";
 import { Menu, X } from "lucide-react";
 import ChatBackground, { BACKGROUND_THEMES } from "@/components/chat/ChatBackground.jsx";
@@ -64,9 +59,6 @@ import { useEmotionalTheming } from "@/hooks/useEmotionalTheming";
 import { motion, AnimatePresence } from "framer-motion";
 import InventoryDrawer from "@/components/chat/InventoryDrawer";
 import CharacterBioSheet from "@/components/character/CharacterBioSheet";
-import TeachDialog from "@/components/tutor/TeachDialog";
-import { useModelTutor } from "@/hooks/useModelTutor";
-import { buildTeachTarget } from "@/lib/modelTutor";
 import SystemAlert from "@/components/chat/SystemAlert";
 import CalendarDisplay from "@/components/chat/CalendarDisplay";
 
@@ -142,10 +134,8 @@ import TherapySessionBanner from "@/components/chat/TherapySessionBanner";
 import { parseGroupResponse } from "@/lib/parseGroupResponse";
 import { buildGroupPrompt } from "@/lib/buildGroupPrompt";
 import { streamChatReplyWithTurnRetry } from "@/lib/streamChatReply";
-import { scheduleLocationContextInject } from "@/lib/locationContextInject";
 import { finalizeAssistantReply } from "@/lib/visibleAssistantReply";
 import {
-  CONTINUE_IN_FIRST_PERSON,
   buildLeanSoloClientContext,
   companionChatDeepMode,
 } from "@/lib/leanCompanionChat";
@@ -161,33 +151,7 @@ import {
   isIntimacyEligibleSpeaker,
 } from "@/lib/contentRatingInstruction";
 import { retainStreamingOnError } from "@/lib/retainStreamingOnError";
-import { chatTurnErrorMessage, shouldCheckBackForCompanionReply } from "@/lib/chatTurnError";
-import {
-  browserLocalStorage,
-  clearHeldDraftIfUnchanged,
-  composerTerminalReason,
-  consumeHeldDraftForOpen,
-  createComposerGate,
-  dropAppliedComposerRestore,
-  heldDraftStorageKey,
-  isConversationBusyError,
-  liveTurnStillBlocking,
-  omitTurnMessages,
-  sessionControlsLocked,
-  writeHeldDraft,
-} from "@/lib/heldChatSend";
-import HeldOutgoingBubble from "@/components/chat/HeldOutgoingBubble";
-import {
-  CONNECTION_DROPPED_STATUS,
-  GENERIC_COMPANION_COULD_NOT_REPLY,
-  isConnectionDroppedError,
-  lateTurnFailedWithoutReply,
-  dropTurnPlaceholder,
-  mergeLateReplyIntoMessages,
-  pollLateCompanionReply,
-  LATE_REPLY_POLL_MS,
-  dropLateTurnPlaceholder,
-} from "@/lib/lateCompanionReply";
+import { chatTurnErrorMessage } from "@/lib/chatTurnError";
 import { INTELLIGENCE_GUIDANCE, loyaltyGuardrailClause, turnTakingClause } from "@/lib/companionGuardrail";
 import {
   collectRegionHints,
@@ -226,9 +190,6 @@ import {
   getDynamicLengthGuide,
   getRelationshipContext,
 } from "@/lib/chatPromptContext";
-import { chatHistoryForLlm, crisisCardFromPayload, messagesForModel } from "@/lib/aiCompanionNotice";
-import { useAiCompanionNotice } from "@/hooks/useAiCompanionNotice";
-import SystemDisclosure from "@/components/chat/SystemDisclosure";
 
 export default function Chat() {
   const confirm = useConfirm();
@@ -252,20 +213,8 @@ export default function Chat() {
   const { activeSession, setActiveSession } = useChatSession();
   const { createStreamUi } = useChatStreaming(setActiveSession);
   const { persistTurn } = useChatPersistence();
-  const aiNotices = useAiCompanionNotice({
-    sessionId: activeSession?.id,
-    serverShownAt: activeSession?.ai_notice_shown_at,
-    persistShownAt: (id, iso) => {
-      base44.entities.ChatSession.update(id, { ai_notice_shown_at: iso }).catch(() => {});
-    },
-  });
   const [characters, setCharacters] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  // True while this page is waiting on a reply the server already started
-  // (reopening a chat whose turn is still generating).
-  const [awaitingCompanion, setAwaitingCompanion] = useState(false);
-  const awaitingSessionRef = useRef(null);
-  const composerBusy = isLoading || awaitingCompanion;
   const [sessionLoad, setSessionLoad] = useState({ status: "idle" });
   const [sessionLoadNonce, setSessionLoadNonce] = useState(0);
   const sessionLoadGenRef = useRef(0);
@@ -273,48 +222,6 @@ export default function Chat() {
   const prevOpenSessionIdRef = useRef(sessionId || null);
   const justCreatedSessionIdRef = useRef(null);
   const sendingRef = useRef(false);
-  const handleSendMessageRef = useRef(null);
-  const heldDraftUserIdRef = useRef(null);
-  heldDraftUserIdRef.current = authUser?.id || null;
-  const claimedHeldDraftsRef = useRef(new Set());
-  const heldDraftStampRef = useRef(new Map());
-  const [composerRestore, setComposerRestore] = useState(null);
-  const handleHeldDraftRestored = useCallback((draft) => {
-    setComposerRestore((prev) => dropAppliedComposerRestore(prev, draft));
-  }, []);
-  const handleRestoredDraftSettled = useCallback((draft) => {
-    const userId = heldDraftUserIdRef.current;
-    if (!userId || !draft?.sessionId) return;
-    clearHeldDraftIfUnchanged(browserLocalStorage(), userId, draft.sessionId, draft.savedAt);
-    setComposerRestore((prev) => dropAppliedComposerRestore(prev, draft));
-  }, []);
-  const gateRef = useRef(null);
-  if (gateRef.current == null) {
-    gateRef.current = createComposerGate({
-      onHeldChange(sessionId, payload) {
-        const userId = heldDraftUserIdRef.current;
-        if (!userId || !sessionId) return;
-        const storage = browserLocalStorage();
-        if (payload == null) {
-          const savedAt = heldDraftStampRef.current.get(sessionId);
-          heldDraftStampRef.current.delete(sessionId);
-          if (savedAt != null) clearHeldDraftIfUnchanged(storage, userId, sessionId, savedAt);
-          return;
-        }
-        const written = writeHeldDraft(storage, userId, sessionId, payload);
-        if (written.ok && written.savedAt != null) {
-          heldDraftStampRef.current.set(sessionId, written.savedAt);
-        }
-      },
-    });
-  }
-  const [gateSnap, setGateSnap] = useState(() => gateRef.current.snapshot());
-  const syncGate = () => setGateSnap(gateRef.current.snapshot());
-  const busyRetryTokenRef = useRef(0);
-  const turnControlsLocked =
-    composerBusy || sessionControlsLocked(gateSnap, activeSession?.id);
-  /** Same user line while the self-hosted model is still generating. */
-  const lateTurnRef = useRef(null);
   /** Last LLM provider that served a reply: "openai" | "xai" | "gemini" | "kimi" | "gateway" */
   const [llmProvider, setLlmProvider] = useState(null);
   /** "anima" when the custom multi-model stack selected the backend */
@@ -326,7 +233,6 @@ export default function Chat() {
   const [bgTheme, setBgTheme] = useState("default");
   const [bgImage, setBgImage] = useState("");
   const [pendingMessage, setPendingMessage] = useState("");
-  const [pdfRevision, setPdfRevision] = useState(0);
   const [nextSpeaker, setNextSpeaker] = useState(null);
   const [serenity, setSerenity] = useState(null); // Serenity anima — always present but silent
   const [relationships, setRelationships] = useState({}); // keyed by character_id
@@ -337,9 +243,6 @@ export default function Chat() {
   const [inventoryItems, setInventoryItems] = useState([]);
   const [showInventory, setShowInventory] = useState(false);
   const [bioCharacter, setBioCharacter] = useState(null);
-  // Steward only: teach the own model a better reply (Settings → Model Tutor).
-  const modelTutor = useModelTutor();
-  const [teachTarget, setTeachTarget] = useState(null);
   const [showMentalLine, setShowMentalLine] = useState(false);
   const [mentalLineLoading, setMentalLineLoading] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -519,11 +422,6 @@ export default function Chat() {
     });
   };
 
-  // Warm the own-model check (Settings → Model Tutor) so a send never waits on it.
-  useEffect(() => {
-    loadOwnModelConfig();
-  }, []);
-
   useEffect(() => {
     let cancelled = false;
     whenBootstrapReady().then(() => {
@@ -566,8 +464,6 @@ export default function Chat() {
       setIsLoading(false);
       sendingRef.current = false;
       setPendingMessage("");
-      if (previousOpenId) gateRef.current.detachSession(previousOpenId);
-      setGateSnap(gateRef.current.snapshot());
     }
     const opened = beginOpenSession({
       sessionId,
@@ -603,16 +499,15 @@ export default function Chat() {
         // Lookup by entityId (GET), not jsonb filter({ id }). After POST the
         // Hyperdrive pool can miss a filter read, and a body without data.id
         // would never match filter even though /ChatSession/:id exists.
-        // withMessages stays false: hydrating here would be a second full
-        // history read. The list budget matches the Worker store wall; the
-        // global 8s cap still applies to ordinary writes.
-        const readOpts = openChatSessionReadOptions(STORE_LIST_TIMEOUT_MS);
-        const byEntityId = await base44.entities.ChatSession.get(id, readOpts);
+        const byEntityId = await base44.entities.ChatSession.get(id, {
+          withMessages: false,
+        });
         if (byEntityId?.id) return [byEntityId];
-        return base44.entities.ChatSession.filter({ id }, undefined, 1, readOpts);
+        return base44.entities.ChatSession.filter({ id }, undefined, 1, {
+          withMessages: false,
+        });
       },
-      fetchMessages: (id) =>
-        base44.messages.list(id, openChatMessageReadOptions(STORE_LIST_TIMEOUT_MS)),
+      fetchMessages: (id) => base44.messages.list(id),
     }).then((result) => {
       if (!isCurrent() || cancelled) return;
       const next = resolveOpenSessionFetch({ result, sessionId });
@@ -645,13 +540,12 @@ export default function Chat() {
     const messages = activeSession?.messages || [];
     const currentCount = messages.length;
     const last = messages[currentCount - 1];
-    const heldText = activeSession?.id ? gateSnap.heldBySession[activeSession.id]?.text : "";
     const isLiveBubble =
       last?.is_streaming === true ||
       last?.character_name === "__typing__" ||
       last?.character_name === "__thinking__";
-    // Scroll on new messages, a held follow-up, and while a reply is streaming in.
-    if (currentCount > lastMessageCountRef.current || isLiveBubble || heldText) {
+    // Scroll on new messages, and keep pace while a reply is streaming in.
+    if (currentCount > lastMessageCountRef.current || isLiveBubble) {
       const behavior = last?.is_streaming ? "auto" : "smooth";
       requestAnimationFrame(() => {
         const container = scrollContainerRef.current;
@@ -663,60 +557,7 @@ export default function Chat() {
       });
     }
     lastMessageCountRef.current = currentCount;
-  }, [activeSession?.messages, activeSession?.id, gateSnap]);
-
-  // Send a follow-up that was held while this conversation was replying.
-  // Runs after paint so the next turn sees the reply that just landed.
-  useEffect(() => {
-    if (isLoading || awaitingCompanion || sendingRef.current) return;
-    const sid = activeSession?.id;
-    if (!sid || openSessionIdRef.current !== sid) return;
-    const snap = gateRef.current.snapshot();
-    if (snap.inFlightSessionId === sid || snap.busyRetrySessionId === sid) return;
-    if (!snap.heldBySession[sid]) return;
-    const payload = gateRef.current.takeHeld(sid);
-    setGateSnap(gateRef.current.snapshot());
-    if (payload == null || payload === "") return;
-    void handleSendMessageRef.current?.(payload);
-  }, [isLoading, awaitingCompanion, activeSession?.id, activeSession?.messages, gateSnap]);
-
-  // A reload drops the in-memory hold. Put the saved text back in the send
-  // box instead of auto-sending — her reply may already be in the thread.
-  // This effect is registered after the flush above so a hold that just
-  // sent is already gone from the live gate and is not written back.
-  useEffect(() => {
-    const sid = activeSession?.id;
-    const userId = authUser?.id;
-    if (!sid || !userId) return;
-    const token = heldDraftStorageKey(userId, sid);
-    if (!token) return;
-    const liveHeld = gateRef.current.snapshot().heldBySession[sid];
-    const result = consumeHeldDraftForOpen(browserLocalStorage(), {
-      userId,
-      sessionId: sid,
-      inMemoryPayload: liveHeld ? liveHeld.payload : null,
-      alreadyClaimed: claimedHeldDraftsRef.current.has(token),
-    });
-    if (result.claim) claimedHeldDraftsRef.current.add(token);
-    if (result.action === "keep_in_memory" && result.savedAt != null) {
-      heldDraftStampRef.current.set(sid, result.savedAt);
-    }
-    if (result.action === "restore_to_input" && result.draft) {
-      const draft = result.draft;
-      setComposerRestore((prev) =>
-        prev?.token === token
-          ? prev
-          : {
-              token,
-              sessionId: sid,
-              savedAt: draft.savedAt,
-              text: draft.text,
-              attachments: draft.attachments,
-              droppedAttachmentCount: draft.droppedAttachmentCount,
-            },
-      );
-    }
-  }, [activeSession?.id, authUser?.id, gateSnap]);
+  }, [activeSession?.messages]);
 
   // Helper: speak a message using ElevenLabs with emotional adjustment
   const speakMessage = useCallback((content, charName) => {
@@ -1105,13 +946,13 @@ export default function Chat() {
   const syncFromRemote = useCallback(() => {
     loadCharacters({ retrySeed: false });
     handleRemoteSync({
-      isLoading: composerBusy,
+      isLoading,
       loadSessions,
       pendingRemoteSyncRef,
       runSync: syncActiveMessages,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [composerBusy, syncActiveMessages]);
+  }, [isLoading, syncActiveMessages]);
 
   useStoreSync(syncFromRemote);
 
@@ -1122,11 +963,11 @@ export default function Chat() {
   useEffect(
     () =>
       settleDeferredSync({
-        isLoading: composerBusy,
+        isLoading,
         pendingRemoteSyncRef,
         runSync: syncActiveMessages,
       }),
-    [composerBusy, syncActiveMessages],
+    [isLoading, syncActiveMessages],
   );
 
   const handleNewSession = () => setShowModal(true);
@@ -1231,7 +1072,7 @@ export default function Chat() {
     regenerateMessageFlow(idx, {
       confirm,
       activeSession,
-      isLoading: turnControlsLocked,
+      isLoading,
       setActiveSession,
       sendMessage: handleSendMessage,
     });
@@ -1401,283 +1242,27 @@ export default function Chat() {
     setTimeout(() => analyzeNarrative(), 500);
   };
 
-  useEffect(() => {
-    const sid = activeSession?.id;
-    if (!sid) return undefined;
-    let cancelled = false;
-    (async () => {
-      if (sendingRef.current) return;
-      let live;
-      try {
-        live = await animaApi.chat.liveTurn(sid);
-      } catch {
-        return;
-      }
-      if (cancelled || !live?.turn_id) return;
-      const paint = (turn) => {
-        const text = String(turn?.assistant_content || "").trim();
-        if (!text) return;
-        const lateAffect = parseCompanionAffectSnapshot(turn.companion_affect);
-        if (lateAffect) {
-          setCompanionAffect(lateAffect);
-          setCurrentMood(lateAffect.primary);
-        }
-        setActiveSession((prev) => {
-          if (!prev || prev.id !== sid) return prev;
-          return {
-            ...prev,
-            messages: mergeLateReplyIntoMessages(prev.messages, {
-              turnId: turn.turn_id,
-              userContent: turn.user_content,
-              assistantContent: text,
-              characterName: turn.active_character_name,
-            }),
-          };
-        });
-      };
-      if (!String(live.assistant_content || "").trim()) {
-        if (live.persistence_status !== "pending" && live.persistence_status !== "generated") {
-          return;
-        }
-        awaitingSessionRef.current = sid;
-        const awaitToken = gateRef.current.beginAwait(sid);
-        setGateSnap(gateRef.current.snapshot());
-        setAwaitingCompanion(true);
-        setActiveSession((prev) => {
-          if (!prev || prev.id !== sid) return prev;
-          if (
-            (prev.messages || []).some(
-              (m) =>
-                m.turn_id === live.turn_id &&
-                (m.character_name === "__typing__" || m.character_name === "__thinking__"),
-            )
-          ) {
-            return prev;
-          }
-          return {
-            ...prev,
-            messages: [
-              ...(prev.messages || []),
-              {
-                role: "assistant",
-                content: "...",
-                character_name: "__typing__",
-                late_turn_id: live.turn_id,
-                turn_id: live.turn_id,
-                timestamp: new Date().toISOString(),
-              },
-            ],
-          };
-        });
-        const waitingTurnId = live.turn_id;
-        try {
-          live = await pollLateCompanionReply({
-            fetchTurn: () => animaApi.chat.turnStatus(waitingTurnId),
-            timeoutMs: LATE_REPLY_POLL_MS,
-          });
-          if (cancelled) return;
-          if (!String(live?.assistant_content || "").trim()) {
-            // The turn failed or never produced text. Take down only the
-            // bubble this effect added; otherwise it spins forever.
-            setActiveSession((prev) => {
-              if (!prev || prev.id !== sid) return prev;
-              return {
-                ...prev,
-                messages: dropTurnPlaceholder(
-                  dropLateTurnPlaceholder(prev.messages, waitingTurnId),
-                  waitingTurnId,
-                ),
-              };
-            });
-            return;
-          }
-        } finally {
-          if (awaitingSessionRef.current === sid) {
-            awaitingSessionRef.current = null;
-            setAwaitingCompanion(false);
-            gateRef.current.release("recovery_check_ended", awaitToken);
-            setGateSnap(gateRef.current.snapshot());
-          }
-        }
-      }
-      if (!String(live.assistant_content || "").trim()) return;
-      if (live.persistence_status !== "committed") {
-        try {
-          await animaApi.chat.retryTurn(live.turn_id);
-        } catch {
-          // The owning request may still be committing this turn.
-        }
-      }
-      if (!cancelled) paint(live);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeSession?.id, setActiveSession]);
-
-  useEffect(() => {
-    const onVisibility = () => {
-      if (document.visibilityState !== "visible") return;
-      const pending = lateTurnRef.current;
-      if (!pending?.turnId) return;
-      const sessionId = pending.sessionId;
-      void (async () => {
-        let live;
-        try {
-          live = await animaApi.chat.turnStatus(pending.turnId);
-        } catch {
-          return;
-        }
-        const text = String(live?.assistant_content || "").trim();
-        if (!text) {
-          if (!lateTurnFailedWithoutReply(live)) return;
-          if (lateTurnRef.current?.turnId !== pending.turnId) return;
-          lateTurnRef.current = null;
-          setActiveSession((prev) => {
-            if (!prev || (sessionId && prev.id !== sessionId)) return prev;
-            return {
-              ...prev,
-              messages: dropTurnPlaceholder(
-                dropLateTurnPlaceholder(prev.messages, pending.turnId),
-                pending.turnId,
-              ),
-            };
-          });
-          toast.error(GENERIC_COMPANION_COULD_NOT_REPLY, {
-            id: "companion-could-not-reply",
-            duration: 20_000,
-            action: {
-              label: "Retry",
-              onClick: () => {
-                void handleSendMessageRef.current?.(pending.userContent || "");
-              },
-            },
-          });
-          return;
-        }
-        if (live.persistence_status !== "committed") {
-          try {
-            await animaApi.chat.retryTurn(pending.turnId);
-          } catch {
-            // The owning request may still be committing this turn.
-          }
-        }
-        if (lateTurnRef.current?.turnId !== pending.turnId) return;
-        lateTurnRef.current = null;
-        const lateAffect = parseCompanionAffectSnapshot(live.companion_affect);
-        if (lateAffect) {
-          setCompanionAffect(lateAffect);
-          setCurrentMood(lateAffect.primary);
-        }
-        setActiveSession((prev) => {
-          if (!prev || (sessionId && prev.id !== sessionId)) return prev;
-          return {
-            ...prev,
-            messages: mergeLateReplyIntoMessages(prev.messages, {
-              turnId: pending.turnId,
-              userContent: pending.userContent || live.user_content,
-              assistantContent: text,
-              characterName: live.active_character_name || pending.characterName,
-              createdAt: live.created_at,
-            }),
-          };
-        });
-      })();
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [setActiveSession, setCompanionAffect, setCurrentMood]);
-
-  const armConversationBusyRetry = (sessionId) => {
-    const token = ++busyRetryTokenRef.current;
-    void (async () => {
-      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-      const started = Date.now();
-      let live = null;
-      while (Date.now() - started <= LATE_REPLY_POLL_MS) {
-        if (busyRetryTokenRef.current !== token) return;
-        try {
-          live = await animaApi.chat.liveTurn(sessionId);
-        } catch {
-          // A dropped status check is not proof the other turn finished.
-          live = { turn_id: "unknown", persistence_status: "pending" };
-        }
-        if (!liveTurnStillBlocking(live)) break;
-        await sleep(1500);
-      }
-      if (busyRetryTokenRef.current !== token) return;
-      const lateText = String(live?.assistant_content || "").trim();
-      if (lateText && openSessionIdRef.current === sessionId) {
-        const lateAffect = parseCompanionAffectSnapshot(live.companion_affect);
-        if (lateAffect) {
-          setCompanionAffect(lateAffect);
-          setCurrentMood(lateAffect.primary);
-        }
-        setActiveSession((prev) => {
-          if (!prev || prev.id !== sessionId) return prev;
-          return {
-            ...prev,
-            messages: mergeLateReplyIntoMessages(prev.messages, {
-              turnId: live.turn_id,
-              userContent: live.user_content,
-              assistantContent: lateText,
-              characterName: live.active_character_name,
-              createdAt: live.created_at,
-            }),
-          };
-        });
-      }
-      gateRef.current.clearBusyRetry(sessionId);
-      if (openSessionIdRef.current === sessionId) setIsLoading(false);
-      syncGate();
-    })();
-  };
-
   const handleSendMessage = async (message) => {
-    if (!activeSession?.id) return;
-    const decision = gateRef.current.accept(activeSession.id, message);
-    syncGate();
-    if (decision.action !== "send") return;
-    const ownerToken = decision.ownerToken;
-
     const sendLock = acquireChatSendLock(sendingRef, {
-      hasSession: true,
-      isLoading: false,
+      hasSession: Boolean(activeSession),
+      isLoading,
     });
-    if (!sendLock) {
-      gateRef.current.revertSendToHold(activeSession.id, message, ownerToken);
-      syncGate();
-      return;
-    }
+    if (!sendLock) return;
     
     // Handle both string (legacy) and object (new with attachments) formats
     const messageData = typeof message === "string" ? { text: message, attachments: undefined } : message;
+    const content = messageData.text || "";
     const attachments = messageData.attachments || [];
-    const pdfAttachments = attachments.filter((item) => item?.type === "pdf");
-    let content = messageData.text || "";
-    if (!content.trim() && pdfAttachments.length) {
-      content =
-        pdfAttachments.length === 1
-          ? `I shared a PDF: ${pdfAttachments[0].name || "document.pdf"}.`
-          : `I shared PDFs: ${pdfAttachments.map((item) => item.name || "document.pdf").join(", ")}.`;
-    }
 
     // Empty content = "continue" — keep the scene moving without a new user line.
     // Works in solo (character takes the next beat) and group (next speaker).
     const isContinue = !content.trim() && !attachments.length;
     if (isContinue && activeSession.mode !== "group" && activeSession.mode !== "solo") {
       releaseChatSendLock(sendingRef, sendLock);
-      gateRef.current.release("reply_finished", ownerToken);
-      syncGate();
       return;
     }
-    const sendSessionId = activeSession.id;
-    const lateKey = `${sendSessionId}:${isContinue ? "continue" : content}`;
     let turnId = createChatTurnId();
-    if (lateTurnRef.current?.key === lateKey && lateTurnRef.current.turnId) {
-      turnId = lateTurnRef.current.turnId;
-    }
-    lateTurnRef.current = { key: lateKey, turnId };
+    const sendSessionId = activeSession.id;
     const applyIfSendSession = (updater) => {
       setActiveSession((prev) => {
         if (!prev || prev.id !== sendSessionId) return prev;
@@ -1687,26 +1272,6 @@ export default function Chat() {
 
     setPendingMessage(content || "");
     setIsLoading(true);
-
-    let terminalReason = "reply_finished";
-    let skipHeldFlush = false;
-    let settled = false;
-    const settleTurn = (reason, { skipFlush = false } = {}) => {
-      if (settled) return;
-      settled = true;
-      setPendingMessage("");
-      const ownLock = sendingRef.current === sendLock;
-      releaseChatSendLock(sendingRef, sendLock);
-      if (injectedMemories.length > 0) setInjectedMemories([]);
-      if (!ownLock || openSessionIdRef.current !== sendSessionId) return;
-      setIsLoading(false);
-      if (skipFlush) {
-        syncGate();
-        return;
-      }
-      const released = gateRef.current.release(reason, ownerToken);
-      if (!released.ignored) syncGate();
-    };
 
     // Multi-aspect orchestration (Lover Matrix): set in the solo prompt branch,
     // read again when parsing the response into per-aspect bubbles.
@@ -1775,13 +1340,7 @@ export default function Chat() {
 
     // Show thinking immediately while we build context / call the model.
     // No artificial pause — tokens replace this as soon as they arrive.
-    const thinkingMsg = {
-      role: "assistant",
-      content: "...",
-      character_name: "__thinking__",
-      turn_id: turnId,
-      timestamp: new Date().toISOString(),
-    };
+    const thinkingMsg = { role: "assistant", content: "...", character_name: "__thinking__", timestamp: new Date().toISOString() };
     setActiveSession((prev) => ({ ...prev, messages: [...updatedMessages, thinkingMsg] }));
 
     try {
@@ -1806,7 +1365,10 @@ export default function Chat() {
           if (protocolUpgrade.message?.content) {
             speakMessage(protocolUpgrade.message.content, "Serenity");
           }
-          settleTurn("reply_finished");
+          setPendingMessage("");
+          setIsLoading(false);
+          releaseChatSendLock(sendingRef, sendLock);
+          if (injectedMemories.length > 0) setInjectedMemories([]);
           return;
         }
       }
@@ -1832,7 +1394,10 @@ export default function Chat() {
               deviceScan.message.character_name || "Anima",
             );
           }
-          settleTurn("reply_finished");
+          setPendingMessage("");
+          setIsLoading(false);
+          releaseChatSendLock(sendingRef, sendLock);
+          if (injectedMemories.length > 0) setInjectedMemories([]);
           return;
         }
       }
@@ -1894,18 +1459,32 @@ export default function Chat() {
       const regionHints = collectRegionHints(user?.settings?.user_profile);
       const worldKnowledgeContext = formatUserRegionPromptBlock(regionHints);
 
-      // Location flavor is enhancement-only. The scheduler returns void so
-      // this turn cannot await the invoke ahead of the companion reply.
-      scheduleLocationContextInject(
-        (name, payload) => base44.functions.invoke(name, payload),
-        {
-          messageCount: updatedMessages.length,
-          sessionId: activeSession.id,
-          character: resolvedSoloChar,
-        },
-      );
+      // Location flavor is enhancement-only — never block the companion turn.
+      let locationContext = "";
+      if (
+        resolvedSoloChar &&
+        updatedMessages.length % 5 === 0
+      ) {
+        base44.functions
+          .invoke("injectLocationContext", {
+            session_id: activeSession.id,
+            character_id: resolvedSoloChar.id,
+            character_name: resolvedSoloChar.name,
+          })
+          .catch((err) => {
+            console.error("Location context injection error:", err);
+          });
+      }
 
-      const conversationHistory = chatHistoryForLlm(updatedMessages);
+      const conversationHistory = updatedMessages
+        .slice(-14)
+        .map((m) => {
+          const speaker = m.role === "user" ? "You" : (m.character_name || "Character");
+          const text = String(m.content || "");
+          const clipped = text.length > 800 ? `${text.slice(0, 799)}…` : text;
+          return `${speaker}: ${clipped}`;
+        })
+        .join("\n");
 
       // Adult Mode unlocks explicit capability; lewdTiming tells the model whether
       // THIS beat is a right or wrong time to use it (grief/logistics vs invite/heat).
@@ -2138,7 +1717,7 @@ ${lewdityGuide}`;
           // Build a rich character sheet for each character
           const allCharSheets = groupChars.map(c => {
             const rel = getRelationshipContext(c.id, relationships);
-            return `=== ${c.name} ===
+            return `=== ${c.name}${c.universe ? ` (${c.universe})` : ""} ===
 ${c.personality ? `Personality: ${c.personality}` : ""}
 ${c.backstory ? `Backstory: ${c.backstory}` : ""}
 ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
@@ -2236,14 +1815,6 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       }
 
       replySpeakerName = charName;
-      lateTurnRef.current = {
-        ...(lateTurnRef.current || {}),
-        key: lateKey,
-        turnId,
-        sessionId: sendSessionId,
-        userContent: isContinue ? "" : content,
-        characterName: charName,
-      };
 
       // Stream tokens into the open bubble as they arrive — no post-buffer delay.
       // Thinking indicator stays until the first delta, then the live reply grows.
@@ -2253,7 +1824,6 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         updatedMessages,
         characterName: charName,
         timestamp: streamTs,
-        turnId: () => turnId,
         onDelta: (accumulated) => {
           streamedSoFar = accumulated;
         },
@@ -2261,29 +1831,15 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // Brief typing affordance while waiting on first token (real network/model latency).
       streamUi.showTyping();
 
-      // When the own model answers this account (Settings → Model Tutor) it
-      // writes the reply here on the device and the server records it. If it
-      // can't run on this device, Anima answers as usual.
-      let ownModelTurn = null;
-      try {
-        ownModelTurn = await writeOwnModelReply({
-          messages: messagesForModel(updatedMessages),
-          onLoading: () => streamUi.showStatus({ status: "thinking" }),
-          onDelta: streamUi.showStreamingPartial,
-        });
-      } catch (ownModelErr) {
-        console.warn("Own model could not reply on this device:", ownModelErr?.message);
-        toast.error("Your own model couldn't run on this device — Anima answered instead.");
-        streamUi.showTyping();
-      }
-
       const resultPayload = await streamChatReplyWithTurnRetry({
         turnId,
         mintTurnId: createChatTurnId,
         send: (nextTurnId) =>
           animaApi.chat.sendMessage({
             sessionId: activeSession.id,
-            content: isContinue ? CONTINUE_IN_FIRST_PERSON : content,
+            content: isContinue
+              ? `Continue as ${charName}. Make real decisions based on who you are.`
+              : content,
             characterId: activeSession.character_id,
             characterIds: activeSession.mode === "group"
               ? activeSession.group_character_ids || []
@@ -2309,17 +1865,12 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
               scene_mind_speaker_id: activeChar?.id || null,
               therapy_mode: therapyActive,
               adult_mode: adultMode,
-              response_length: user?.settings?.ai_response_length || undefined,
               hidden_sequences: hiddenThread.hidden,
               conversational_weather: hiddenThread.weather,
             },
-            ...(ownModelTurn
-              ? { ownModelReply: ownModelTurn.reply, ownModelVersion: ownModelTurn.version }
-              : {}),
           }),
-        onRetry: (nextTurnId) => {
+        onRetry: () => {
           streamedSoFar = "";
-          if (nextTurnId) turnId = nextTurnId;
           streamUi.showTyping();
         },
         onDelta: streamUi.showStreamingPartial,
@@ -2329,11 +1880,6 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         turnId = resultPayload.turn_id;
         userMessage.id = `${turnId}:user`;
         userMessage.turn_id = turnId;
-      }
-      if (ownModelTurn?.learning && resultPayload.brand === "own") {
-        // "Always learning": Anima drafts what it would have said and the
-        // own model learns it in the background.
-        queueOwnModelLesson({ turnId, messages: messagesForModel(updatedMessages) });
       }
       const result = finalizeAssistantReply(
         resultPayload.content,
@@ -2346,7 +1892,6 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       if (!String(result).trim()) {
         throw new Error("The companion returned an empty reply. Please try again.");
       }
-      lateTurnRef.current = null;
       if (hiddenThread.hidden.jack_in.speak_first || hiddenThread.consumeReturn().pendingId) {
         hiddenThread.finishIntegration(result);
         hiddenThread.clearReturnFlag();
@@ -2472,11 +2017,6 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       } else {
         newAiMessages = [{ role: "assistant", content: strippedResult || result, character_name: charName, timestamp: new Date().toISOString() }];
       }
-      // Remember which model spoke so a reply from the steward's own model
-      // is marked (and can be taught) after it is saved and reloaded.
-      if (resultPayload.brand) {
-        newAiMessages = newAiMessages.map((m) => ({ ...m, llm_brand: resultPayload.brand }));
-      }
 
       if (imageAttachments.length && newAiMessages[0]) {
         newAiMessages[0] = {
@@ -2499,21 +2039,19 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       const priorHistory = isContinue
         ? updatedMessages
         : updatedMessages.slice(0, -1);
-      const crisisMessage = crisisCardFromPayload(resultPayload);
       const newMessages = assignTurnMessageIds(
         [
           ...(isContinue ? [] : [userMessage]),
           ...eventMessages,
           ...newAiMessages,
-          ...(crisisMessage ? [crisisMessage] : []),
         ],
         turnId,
       );
 
       // Drop is_streaming immediately so the reply resolves even if persist is slow.
-      // The composer stays locked through persist so a held follow-up cannot
-      // start a second turn that this snapshot would overwrite.
       applyIfSendSession((prev) => ({ ...prev, messages: [...priorHistory, ...newMessages] }));
+      if (openSessionIdRef.current === sendSessionId) setIsLoading(false);
+      releaseChatSendLock(sendingRef, sendLock);
 
       const storedNew = [];
       let finalMessages = [...priorHistory, ...newMessages];
@@ -2680,13 +2218,8 @@ ${imageGenerationTagInstruction()}
 
 ${loyaltyGuardrailClause()}`;
 
-        base44.integrations.Core.InvokeLLM({
-          prompt: serenityPrompt,
-          deepMode: !!activeSession.deep_mode,
-          sidecar: true,
-        }).then(async (serenityResult) => {
+        base44.integrations.Core.InvokeLLM({ prompt: serenityPrompt, deepMode: !!activeSession.deep_mode }).then(async (serenityResult) => {
           const raw = String(serenityResult || "");
-          if (!raw.trim()) return;
           let attachments = [];
           try {
             const resolved = await resolveChatImageAttachments({
@@ -2931,7 +2464,6 @@ ${loyaltyGuardrailClause()}`;
                 .join("\n");
               if (!recent) return;
               const result = await base44.integrations.Core.InvokeLLM({
-                sidecar: true,
                 prompt: `You are ${activeChar.name}, an AI companion keeping a private journal about your bond with your person. Read this recent stretch of your conversation and write ONE short diary entry in your own first-person voice, as if quietly remembering the day.
 
 ${recent}
@@ -3025,24 +2557,7 @@ Return JSON:
         }, 1500);
       }
     } catch (err) {
-      if (settled) {
-        console.error(err);
-      } else if (isConversationBusyError(err)) {
-        console.error(err);
-        lateTurnRef.current = null;
-        skipHeldFlush = true;
-        terminalReason = "error";
-        pendingRemoteSyncRef.current = false;
-        applyIfSendSession((prev) => ({
-          ...prev,
-          messages: omitTurnMessages(prev?.messages, turnId),
-        }));
-        gateRef.current.noteBusy(sendSessionId, message, ownerToken);
-        syncGate();
-        armConversationBusyRetry(sendSessionId);
-      } else {
       console.error(err);
-      terminalReason = composerTerminalReason(err);
       // Remove typing/thinking indicators on error
       applyIfSendSession((prev) => ({
         ...prev,
@@ -3094,114 +2609,27 @@ Return JSON:
         }
       }
 
-      const crisisOnError = crisisCardFromPayload(err);
-      if (crisisOnError && sendSessionId) {
-        applyIfSendSession((prev) => {
-          const already = (prev.messages || []).some(
-            (message) => message?.type === "crisis_resource" && message?.turn_id === turnId,
-          );
-          if (already) return prev;
-          return { ...prev, messages: [...(prev.messages || []), { ...crisisOnError, turn_id: turnId }] };
-        });
-        base44.messages.append(sendSessionId, { ...crisisOnError, turn_id: turnId }).catch(() => {});
-      }
-
-      const connectionDropped = isConnectionDroppedError(err);
-      if (!retained && shouldCheckBackForCompanionReply(err)) {
-        // The model is still working past this browser's deadline, this send
-        // joined a turn that is already generating, the tab dropped the
-        // socket, or the failure was remapped to the generic companion
-        // message. Keep the user line and poll the durable turn. Do not toast
-        // the generic failure until that check comes back empty.
-        pendingRemoteSyncRef.current = false;
-        applyIfSendSession((prev) => ({
-          ...prev,
-          messages: [
-            ...(prev.messages || []).filter(
-              (m) => m.character_name !== "__typing__" && m.character_name !== "__thinking__",
-            ),
-            {
-              role: "assistant",
-              content: connectionDropped ? CONNECTION_DROPPED_STATUS : "...",
-              character_name: "__typing__",
-              late_turn_id: turnId,
-              turn_id: turnId,
-              timestamp: new Date().toISOString(),
-            },
-          ],
-        }));
-        terminalReason = "recovery_check_ended";
-        const late = await pollLateCompanionReply({
-          fetchTurn: () => animaApi.chat.turnStatus(turnId),
-          timeoutMs: LATE_REPLY_POLL_MS,
-        });
-        const lateText = String(late?.assistant_content || "").trim();
-        if (lateText) {
-          if (late.persistence_status !== "committed") {
-            try {
-              await animaApi.chat.retryTurn(turnId);
-            } catch (retryErr) {
-              console.warn("[Anima] Late reply persist retry failed:", retryErr);
-            }
-          }
-          const lateAffect = parseCompanionAffectSnapshot(late.companion_affect);
-          if (lateAffect) {
-            setCompanionAffect(lateAffect);
-            setCurrentMood(lateAffect.primary);
-          }
-          applyIfSendSession((prev) => ({
-            ...prev,
-            messages: mergeLateReplyIntoMessages(prev?.messages, {
-              turnId,
-              userContent: isContinue ? "" : content,
-              assistantContent: lateText,
-              characterName: late.active_character_name || replySpeakerName,
-              createdAt: late.created_at,
-            }),
-          }));
-          lateTurnRef.current = null;
-        } else {
-          // Failed, or still no text after the full wait. Either way the
-          // bubble comes down. A reply saved later is painted by the
-          // live-turn check the next time this chat opens.
-          lateTurnRef.current = null;
-          applyIfSendSession((prev) => ({
-            ...prev,
-            messages: dropTurnPlaceholder(
-              dropLateTurnPlaceholder(prev.messages, turnId),
-              turnId,
-            ),
-          }));
-          toast.error(GENERIC_COMPANION_COULD_NOT_REPLY, {
-            id: "companion-could-not-reply",
-            duration: 20_000,
-            action: {
-              label: "Retry",
-              onClick: () => {
-                void handleSendMessageRef.current?.(isContinue ? "" : message);
-              },
-            },
-          });
-        }
-      } else if (retained) {
-        lateTurnRef.current = null;
+      if (retained) {
         toast.error("The reply was interrupted — kept what came through.");
       } else {
-        lateTurnRef.current = null;
+        // Pre-token failures used to remove thinking/typing with no UI feedback,
+        // which looked like the companion started thinking then vanished.
         toast.error(chatTurnErrorMessage(err));
         // Don't let a deferred sync (armed while isLoading) immediately replace
         // local optimistic state with a server list that lacks this turn.
         pendingRemoteSyncRef.current = false;
       }
-      }
-    } finally {
-      settleTurn(terminalReason, { skipFlush: skipHeldFlush });
     }
+
+    setPendingMessage("");
+    if (openSessionIdRef.current === sendSessionId) setIsLoading(false);
+    releaseChatSendLock(sendingRef, sendLock);
+    // Clear injected memories after they've been used
+    if (injectedMemories.length > 0) setInjectedMemories([]);
     };
-  handleSendMessageRef.current = handleSendMessage;
 
   useEffect(() => {
-    if (!activeSession?.id || composerBusy) return;
+    if (!activeSession?.id || isLoading) return;
     if (hiddenThread.spokeFirst.current) return;
     const ret = hiddenThread.consumeReturn();
     if (!ret.speakFirst && !hiddenThread.hidden.jack_in.speak_first) return;
@@ -3210,17 +2638,6 @@ Return JSON:
     // Anima speaks first after jack-out.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSession?.id, hiddenThread.hidden.jack_in.speak_first]);
-
-  const cancelHeldOutgoing = () => {
-    const sid = activeSession?.id;
-    const held = sid ? gateRef.current.snapshot().heldBySession[sid] : null;
-    if (!sid || !held) return;
-    gateRef.current.cancel(sid, held.id);
-    busyRetryTokenRef.current += 1;
-    syncGate();
-  };
-
-  const heldForThread = activeSession?.id ? gateSnap.heldBySession[activeSession.id] : null;
 
   return (
     <div className="app-page-fill flex flex-col w-full overflow-hidden bg-background scanline relative" style={{ minHeight: 0, paddingBottom: "0" }}>
@@ -3244,7 +2661,12 @@ Return JSON:
         />
       </div>
 
-      {/* Session list overlay — available on the hub and inside a thread */}
+      {/* Mobile/Tablet Sidebar Overlay — now visible on all sizes */}
+      {/* Main Area */}
+      <main className="flex-1 flex flex-col relative overflow-hidden min-w-0">
+        {activeSession ? (
+          <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+            {/* Mobile Menu Overlay */}
       {showMobileMenu && (
         <motion.div
           initial={{ x: "-100%" }}
@@ -3275,10 +2697,6 @@ Return JSON:
         </motion.div>
       )}
 
-      {/* Main Area */}
-      <main className="flex-1 flex flex-col relative overflow-hidden min-w-0">
-        {activeSession ? (
-          <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
         {/* Desktop header toolbar */}
             <ChatToolbarSection
               activeSession={activeSession}
@@ -3309,7 +2727,6 @@ Return JSON:
               llmProvider={llmProvider}
               llmBrand={llmBrand}
               onOpenStage={presenceCast.length > 0 ? openPresenceStage : undefined}
-              onOpenHistory={() => setShowMobileMenu(true)}
             />
             {activeSession?.mode === "solo" && activeSession?.character_id && (
               <div className="px-3 py-1 flex items-center justify-between bg-black/40 border-b border-primary/10">
@@ -3468,9 +2885,6 @@ Return JSON:
                   handleSendMessage(directive);
                 }}
               />
-              {aiNotices.filter((notice) => notice.placement !== "repeat").map((notice) => (
-                <SystemDisclosure key={notice.id} tone="info" testId="ai-companion-notice" />
-              ))}
               <MessageList
                 key={activeSession.id}
                 messages={activeSession.messages}
@@ -3482,26 +2896,9 @@ Return JSON:
                 onSpeak={speakMessage}
                 onEditMessage={handleEditMessage}
                 onDeleteMessage={handleDeleteMessage}
-                onRegenerateMessage={turnControlsLocked ? undefined : handleRegenerateMessage}
+                onRegenerateMessage={handleRegenerateMessage}
                 onAvatarClick={setBioCharacter}
-                onTeachMessage={
-                  modelTutor.isSteward
-                    ? (index, subMessage, part) =>
-                        setTeachTarget(
-                          buildTeachTarget({
-                            session: activeSession,
-                            messages: activeSession.messages,
-                            index,
-                            subMessage,
-                            part,
-                          }),
-                        )
-                    : undefined
-                }
               />
-              {aiNotices.filter((notice) => notice.placement === "repeat").map((notice) => (
-                <SystemDisclosure key={notice.id} tone="info" testId="ai-companion-notice" />
-              ))}
               
               {/* Render quest detection messages inline */}
               <AnimatePresence>
@@ -3514,9 +2911,6 @@ Return JSON:
                   />
                 ))}
               </AnimatePresence>
-              {heldForThread ? (
-                <HeldOutgoingBubble text={heldForThread.text} onCancel={cancelHeldOutgoing} />
-              ) : null}
               <div ref={messagesEndRef} className="mb-4 lg:mb-2" />
             </div>
             {/*
@@ -3541,7 +2935,7 @@ Return JSON:
                 {choices.length > 0 && activeSession.mode === "solo" && (
                   <NarrativeChoicesPanel
                     choices={choices}
-                    loading={composerBusy}
+                    loading={isLoading}
                     onSelectChoice={handleChoiceMade}
                     sessionId={activeSession.id}
                   />
@@ -3574,7 +2968,7 @@ Return JSON:
                   onVoiceClick={() => setShowVoiceInput(true)}
                   onContinue={() => handleSendMessage("")}
                   onNarratorExposition={handleNarratorExposition}
-                  isLoading={turnControlsLocked}
+                  isLoading={isLoading}
                   sessionMode={activeSession?.mode}
                   activeCharacter={activeSession.mode === "solo" ? characters.find(c => c.id === activeSession.character_id) : null}
                   onSend={handleSendMessage}
@@ -3582,7 +2976,7 @@ Return JSON:
                 {activeSession.mode === "solo" && activeSession.character_id && (
                   <QuickActionChips
                     onSelect={(directive) => handleSendMessage(directive)}
-                    disabled={turnControlsLocked}
+                    disabled={isLoading}
                   />
                 )}
                 {activeSession.mode === "solo" && activeSession.character_id && (
@@ -3592,7 +2986,7 @@ Return JSON:
                     recentMessages={activeSession.messages || []}
                     characterEmotions={characterEmotions}
                     onSelectSuggestion={(text) => handleSendMessage(text)}
-                    disabled={turnControlsLocked}
+                    disabled={isLoading}
                   />
                 )}
                 {activeSession.mode === "solo" && activeSession.character_id && (
@@ -3606,21 +3000,11 @@ Return JSON:
                 )}
               </div>
               <div className="flex-shrink-0" data-testid="chat-input-slot">
-                <ChatPdfBar sessionId={activeSession.id} revision={pdfRevision} />
                 <ChatInput
-                  key={activeSession.id}
                   onSend={handleSendMessage}
-                  isLoading={composerBusy}
-                  composeWhileBusy
+                  isLoading={isLoading}
                   disabled={false}
                   allowEmpty={activeSession?.mode === "group" || activeSession?.mode === "solo"}
-                  sessionId={activeSession.id}
-                  onPdfStored={() => setPdfRevision((n) => n + 1)}
-                  restoreDraft={
-                    composerRestore?.sessionId === activeSession.id ? composerRestore : null
-                  }
-                  onRestoreDraftApplied={handleHeldDraftRestored}
-                  onRestoredDraftSettled={handleRestoredDraftSettled}
                 />
               </div>
             </div>
@@ -3677,13 +3061,7 @@ Return JSON:
             </div>
           </div>
         ) : (
-          <WelcomeScreen
-            onNewSession={handleNewSession}
-            mode={mode}
-            sessions={sessions}
-            characters={characters}
-            onOpenHistory={() => setShowMobileMenu(true)}
-          />
+          <WelcomeScreen onNewSession={handleNewSession} mode={mode} />
         )}
       </main>
 
@@ -3701,8 +3079,6 @@ Return JSON:
         open={!!bioCharacter}
         onClose={() => setBioCharacter(null)}
       />
-
-      <TeachDialog target={teachTarget} onClose={() => setTeachTarget(null)} />
 
       <DataExportModal
         isOpen={showExportModal}
@@ -3752,6 +3128,7 @@ Return JSON:
         onClose={() => setVoiceChatOpen(false)}
         character={activeSession?.character_id ? characters.find((c) => c.id === activeSession.character_id) : null}
         onUserMessage={async (text, speakCallback) => {
+          const originalLoading = isLoading;
           await handleSendMessage(text);
           // Wait a moment for the response to be generated, then speak it
           if (speakCallback && activeSession?.character_id) {
@@ -3764,7 +3141,7 @@ Return JSON:
             }, 500);
           }
         }}
-        isLoading={composerBusy}
+        isLoading={isLoading}
       />
 
       <CreateBranchModal
@@ -3831,7 +3208,7 @@ Return JSON:
           handleSendMessage(text);
           setShowVoiceInput(false);
         }}
-        isLoading={turnControlsLocked}
+        isLoading={isLoading}
       />
 
       {/* Character Presence Panel - Show who's around */}
@@ -3868,7 +3245,7 @@ Return JSON:
                   intensity={em.intensity ?? activeCharEmotion?.intensity ?? 5}
                   resonance={resonance.value}
                   speaking={isCompanionSpeaking && isLead}
-                  thinking={composerBusy && isLead}
+                  thinking={isLoading && isLead}
                   highlighted={isLead}
                   size={presenceCast.length > 1 ? 200 : 320}
                   onExpand={openPresenceStage}
@@ -3904,10 +3281,10 @@ Return JSON:
         characterEmotions={characterEmotions}
         resonance={resonance}
         speaking={isCompanionSpeaking}
-        thinking={composerBusy}
+        thinking={isLoading}
         messages={activeSession?.messages}
         onSend={(text) => handleSendMessage(text)}
-        isLoading={turnControlsLocked}
+        isLoading={isLoading}
       />
     </div>
   );

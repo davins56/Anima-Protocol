@@ -105,6 +105,7 @@ export function buildCrossoverAwareness(
   const otherDescriptions = others
     .map((c) => {
       const parts = [c.name || "Unknown"];
+      if (c.universe) parts.push(`from ${c.universe}`);
       if (c.archetype) parts.push(`(${c.archetype})`);
       return `• ${parts.join(" ")}`;
     })
@@ -118,9 +119,9 @@ export function buildCrossoverAwareness(
   let awareness = `CROSSOVER AWARENESS — Others present in this scene:\n${otherDescriptions}`;
 
   if (isCrossUniverse) {
-    awareness += `\n\nThis is a CROSS-UNIVERSE encounter. People whose lives are not yours are here with you. React as you would — wonder, wariness, recognition, or tension. Do not name anyone's life as a film, a comic, or a franchise.`;
+    awareness += `\n\nThis is a CROSS-UNIVERSE encounter. Characters from different worlds are meeting. React authentically — with wonder, wariness, recognition, or tension as your character would. Reference the strangeness or significance of worlds colliding.`;
   } else {
-    awareness += `\n\nThese people share your world. React to them as you naturally would — as allies, rivals, strangers, or something more complex.`;
+    awareness += `\n\nThese characters share your world. React to them as you naturally would — as allies, rivals, strangers, or something more complex.`;
   }
 
   return awareness;

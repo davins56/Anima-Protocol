@@ -39,9 +39,7 @@ export default function LoreBook() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    base44.entities.ChatSession.list("-updated_date", 100)
-      .then((rows) => setSessions(Array.isArray(rows) ? rows : []))
-      .catch(() => setSessions([]));
+    base44.entities.ChatSession.list("-updated_date", 100).then(setSessions);
   }, []);
 
   useEffect(() => {

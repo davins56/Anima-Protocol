@@ -83,7 +83,6 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
-        import torch  # type: ignore
         from unsloth import FastLanguageModel  # type: ignore
         from datasets import Dataset  # type: ignore
         from trl import SFTConfig, SFTTrainer  # type: ignore
@@ -160,10 +159,7 @@ def main() -> None:
             logging_steps=10,
             save_strategy="epoch",
             eval_strategy="epoch" if eval_dataset is not None else "no",
-            # T4 / V100 have no bf16; Ampere+ does. Picking the wrong one
-            # crashes at the first step.
-            bf16=torch.cuda.is_bf16_supported(),
-            fp16=not torch.cuda.is_bf16_supported(),
+            bf16=True,
             optim="adamw_8bit",
             report_to=[],
         ),
