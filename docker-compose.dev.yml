@@ -63,7 +63,7 @@ services:
         condition: service_healthy
     environment:
       OLLAMA_HOST: ollama:11434
-      ANIMA_BOOTSTRAP_BASE: ${ANIMA_BOOTSTRAP_BASE:-qwen2.5:3b}
+      ANIMA_BOOTSTRAP_BASE: ${ANIMA_BOOTSTRAP_BASE:-qwen2.5:0.5b}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |

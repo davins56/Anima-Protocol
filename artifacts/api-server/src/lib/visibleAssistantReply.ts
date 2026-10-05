@@ -46,6 +46,74 @@ export function finalizeAssistantReply(
   return "";
 }
 
+const SENTENCE_END_RE = /[.!?…]["'”’)\]*_~]*(?=\s|$)/g;
+const COMPLETE_SENTENCE_RE = /[.!?…]["'”’)\]*_~]*$/;
+
+/**
+ * Lone `*action*` spans. Bold `**labels**` are not action lines.
+ * `closeAt` is the index just after the last closed action.
+ */
+function scanActionMarkers(value: string): { closeAt: number; unclosed: boolean } {
+  let i = 0;
+  let closeAt = -1;
+  let unclosed = false;
+  while (i < value.length) {
+    if (value[i] !== "*") {
+      i += 1;
+      continue;
+    }
+    if (value[i + 1] === "*") {
+      i += 2;
+      continue;
+    }
+    let j = i + 1;
+    while (j < value.length && value[j] !== "*") j += 1;
+    if (j >= value.length || value[j + 1] === "*") {
+      unclosed = true;
+      break;
+    }
+    closeAt = j + 1;
+    unclosed = false;
+    i = j + 1;
+  }
+  return { closeAt, unclosed };
+}
+
+/**
+ * A reply cut off by the token cap or a stall ends mid-word
+ * ("...the quiet, undist"). Keep the longer of the last finished sentence
+ * or the last closed `*action*`. If neither exists, keep the text and close
+ * an open action so a lone `*` is not left hanging.
+ */
+export function trimToLastCompleteSentence(text: string): string {
+  const value = String(text ?? "").trimEnd();
+  if (!value || COMPLETE_SENTENCE_RE.test(value)) return value;
+  let sentenceEnd = -1;
+  for (const match of value.matchAll(SENTENCE_END_RE)) {
+    const index = match.index ?? 0;
+    // "Mr. Smith" is not a sentence end.
+    if (/\b(?:Mr|Mrs|Ms|Dr|St|Jr|Sr|vs|etc|e\.g|i\.e)$/i.test(value.slice(0, index))) continue;
+    sentenceEnd = index + match[0].length;
+  }
+  const action = scanActionMarkers(value);
+  const cut = Math.max(sentenceEnd, action.closeAt);
+  if (cut > 0) return value.slice(0, cut).trimEnd();
+  if (action.unclosed) return `${value}*`;
+  return value;
+}
+
+/** Token-cap and stall cuts share one trim. A stopped-early fragment is left alone. */
+export function settleCappedReply(
+  text: string,
+  meta: { timedOut?: boolean; finishReason?: string | null; stoppedEarly?: boolean } = {},
+): string {
+  if (meta.stoppedEarly) return text;
+  if (meta.timedOut || meta.finishReason === "length") {
+    return trimToLastCompleteSentence(text);
+  }
+  return text;
+}
+
 export function createVisibleReplyFilter() {
   let raw = "";
   let emittedVisible = "";

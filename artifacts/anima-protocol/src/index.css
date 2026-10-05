@@ -41,31 +41,7 @@
     --text-base: 1rem;
     --text-lg: 1.125rem;
     --text-xl: 1.25rem;
-  }
-
-  /* Light theme — applied via class OR via OS preference */
-  @media (prefers-color-scheme: light) {
-    :root:not(.dark) {
-      --background: 0 0% 100%;
-      --foreground: 220 20% 15%;
-      --card: 0 0% 100%;
-      --card-foreground: 220 20% 15%;
-      --popover: 0 0% 100%;
-      --popover-foreground: 220 20% 15%;
-      --primary: 185 100% 40%;
-      --primary-foreground: 0 0% 100%;
-      --secondary: 220 20% 85%;
-      --secondary-foreground: 220 20% 20%;
-      --muted: 220 20% 90%;
-      --muted-foreground: 220 20% 40%;
-      --accent: 185 80% 45%;
-      --accent-foreground: 0 0% 100%;
-      --destructive: 0 84% 50%;
-      --destructive-foreground: 0 0% 100%;
-      --border: 220 20% 80%;
-      --input: 220 20% 93%;
-      --ring: 185 100% 40%;
-    }
+    color-scheme: dark;
   }
 
   :root.light {
@@ -88,6 +64,7 @@
     --border: 220 20% 80%;
     --input: 220 20% 93%;
     --ring: 185 100% 40%;
+    color-scheme: light;
   }
 }
 

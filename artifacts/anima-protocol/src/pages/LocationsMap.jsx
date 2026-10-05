@@ -12,7 +12,9 @@ export default function LocationsMap() {
   const [selectedSession, setSelectedSession] = useState(sessionId || "");
 
   useEffect(() => {
-    base44.entities.ChatSession.list("-updated_date", 100).then(setSessions);
+    base44.entities.ChatSession.list("-updated_date", 100)
+      .then((rows) => setSessions(Array.isArray(rows) ? rows : []))
+      .catch(() => setSessions([]));
   }, []);
 
   return (

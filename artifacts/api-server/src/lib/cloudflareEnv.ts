@@ -41,6 +41,7 @@ export const CLOUDFLARE_RUNTIME_ENV_NAMES = [
   "ANIMA_LOCAL_LLM_API_KEY",
   "ANIMA_LOCAL_LLM_BACKEND",
   "ANIMA_LOCAL_LLM_BASE_URL",
+  "ANIMA_LOCAL_LLM_FALLBACK",
   "ANIMA_MINIMAX_API_KEY",
   "ANIMA_MINIMAX_BASE_URL",
   "ANIMA_MINIMAX_MODEL",
@@ -67,6 +68,11 @@ export const CLOUDFLARE_RUNTIME_ENV_NAMES = [
   "FIRECRAWL_DEV",
   "FIREWORKS_AI_KEY",
   "GEMINI_API_KEY",
+  // Optional: start the own-model trainer right after a lesson instead of
+  // waiting for its 15-minute schedule — see docs/own-model.md.
+  "GITHUB_TRAINER_REF",
+  "GITHUB_TRAINER_REPO",
+  "GITHUB_TRAINER_TOKEN",
   "GROQ_API_KEY",
   "KIMI_API_KEY",
   "LEONARDO_AI_API",
@@ -238,6 +244,16 @@ export function resolveDatabaseUrl(
  * Read a binding from the current isolate: process.env, the last mirrored
  * cache, the current request `env`, then `import { env } from "cloudflare:workers"`.
  */
+/**
+ * Non-string Worker bindings (Durable Object namespaces, Hyperdrive).
+ * String secrets still go through `readRuntimeEnv`.
+ */
+export function readRuntimeBinding(name: string): unknown {
+  const fromRequest = lastRequestEnv?.[name];
+  if (fromRequest != null) return fromRequest;
+  return importableEnv?.[name];
+}
+
 export function readRuntimeEnv(name: string): string | undefined {
   const fromProcess = unwrapBindingString(process.env[name]);
   if (fromProcess) return fromProcess;

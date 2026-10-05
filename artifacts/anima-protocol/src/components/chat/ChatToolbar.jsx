@@ -13,6 +13,7 @@ import ProtocolUpgradeConsole from "./ProtocolUpgradeConsole";
 import DeviceScanConsole from "./DeviceScanConsole";
 import PortaledFixedPanel from "./PortaledFixedPanel";
 import { useAuth } from "@/lib/AuthContext";
+import { AI_COMPANION_HEADER_LINE } from "@/lib/aiCompanionNotice";
 
 export default function ChatToolbar({
   activeSession,
@@ -42,6 +43,7 @@ export default function ChatToolbar({
   onAvatarClick,
   llmProvider,
   onOpenStage,
+  onOpenHistory,
 }) {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -84,6 +86,18 @@ export default function ChatToolbar({
         </div>
 
         <div className="ml-auto flex items-center gap-2 px-3 flex-shrink-0">
+          {typeof onOpenHistory === "function" && (
+            <button
+              type="button"
+              onClick={onOpenHistory}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-primary/30 text-primary/70 hover:text-primary hover:border-primary/50 font-mono text-[9px] tracking-widest uppercase transition-all"
+              title="Recent chats"
+              aria-label="Recent chats"
+            >
+              <History className="w-3 h-3" />
+              Chats
+            </button>
+          )}
           {onOpenStage && (
             <button
               type="button"
@@ -114,6 +128,13 @@ export default function ChatToolbar({
           </button>
         </div>
       </div>
+
+      <p
+        data-testid="ai-companion-header-line"
+        className="w-full px-3 py-2 text-base leading-snug text-cyan-50 border-t border-cyan-300/40 bg-cyan-950/70"
+      >
+        {AI_COMPANION_HEADER_LINE}
+      </p>
 
       <PortaledFixedPanel
         open={showActionsPanel}

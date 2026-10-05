@@ -86,7 +86,7 @@ export async function loadRelationshipState(animaId: string, userId: string): Pr
     return { ...data, updatedAt: row.updatedAt ? row.updatedAt.toISOString() : data.updatedAt };
   } catch (err) {
     if (isMissingRelationError(err)) return null;
-    throw err;
+    return null;
   }
 }
 

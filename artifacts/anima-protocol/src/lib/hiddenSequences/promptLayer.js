@@ -28,7 +28,7 @@ export function hiddenSequencePromptBlock(params = {}) {
   parts.push(`CONVERSATIONAL WEATHER: ${weather}.`);
   if (weather === "lull") {
     parts.push(
-      "This is a lull. Do not offer jack-in. Do not mention NetBattle unless the steward insists — and if they insist, you may refuse. Stay in the room.",
+      "This is a lull. Do not offer jack-in or mention NetBattle unless the steward asks. Stay in the room.",
     );
   } else if (weather === "stir") {
     parts.push(

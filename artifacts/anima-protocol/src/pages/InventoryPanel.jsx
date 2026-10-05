@@ -49,11 +49,14 @@ export default function InventoryPanel() {
       });
       const chars = [...(roster.animaAsChars || []), ...(roster.rawCharacters || [])];
       setCharacters(chars);
-      if (!selectedChar && chars?.length > 0) {
-        setSelectedChar(chars[0].id);
+      if (chars.length > 0) {
+        setSelectedChar((prev) => prev || chars[0].id);
+      } else {
+        setLoading(false);
       }
     } catch (err) {
       console.error("Error loading characters:", err);
+      setLoading(false);
     }
   };
 
@@ -243,6 +246,21 @@ export default function InventoryPanel() {
               <p className="font-mono text-[10px] text-primary/40 tracking-widest uppercase">
                 Loading inventory...
               </p>
+            </div>
+          </div>
+        ) : characters.length === 0 ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center space-y-3">
+              <p className="font-mono text-sm text-primary/70">
+                No companions yet, so there is nothing to carry.
+              </p>
+              <Link
+                to="/characters?create=1"
+                className="inline-flex items-center gap-1.5 font-mono text-[10px] tracking-widest uppercase text-primary border border-primary/30 px-4 py-2 hover:bg-primary/10"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Create a companion
+              </Link>
             </div>
           </div>
         ) : (

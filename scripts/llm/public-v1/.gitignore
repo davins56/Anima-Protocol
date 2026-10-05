@@ -1,3 +1,4 @@
 proxy-token
 tunnel-token
 logs/
+__pycache__/

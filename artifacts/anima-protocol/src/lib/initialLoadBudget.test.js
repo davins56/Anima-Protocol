@@ -52,6 +52,14 @@ describe("initial module graph budget", () => {
     expect(shell).toContain(
       'const CustomiseAnima = lazy(() => import("./pages/CustomiseAnima"))',
     );
+    expect(shell).toContain(
+      'const OnboardingFlow = lazy(() => import("./pages/OnboardingFlow"))',
+    );
+    expect(shell).toContain(
+      'import UserNotRegisteredError from "@/components/UserNotRegisteredError"',
+    );
+    expect(shell).toContain("<ClerkLoaded>");
+    expect(shell).toContain("Sign-up could not load");
     expect(shell).toContain('lazy(() => import("./app/extraPages"))');
     expect(shell).not.toContain('import("./pages/ProgressDashboard")');
     expect(shell).not.toContain('import("./pages/StoryAnalyticsDashboard")');
@@ -88,6 +96,9 @@ describe("initial module graph budget", () => {
     expect(shell).toContain("function SignedInHome");
     expect(shell).not.toMatch(
       /function SignedInHome\(\)[\s\S]{0,800}if \(state === "checking"\) return <PageLoader/,
+    );
+    expect(shell).toMatch(
+      /function SignedInHome\(\)[\s\S]+<OnboardingFlow/,
     );
   });
 

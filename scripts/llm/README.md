@@ -6,7 +6,7 @@ Build a **chat LLM you own** — public open weights + local inference — so co
 
 - Prefer a self-hosted Anima model (Ollama/vLLM) — no Gemini/Groq/ChatGPT flagship chain.
 - Optional OpenRouter path for Venice Uncensored (Cognitive Computations × Venice.ai) or free open-weight models when you have no GPU host.
-- Bootstrap on a laptop (Ollama + Qwen2.5 3B → `anima-chat`, or Dolphin → `anima-uncensored`).
+- Bootstrap on a laptop (Ollama + Qwen2.5 0.5B → `anima-chat`, or Dolphin → `anima-uncensored`).
 - Upgrade on GPU (fine-tune Ministral 3 8B → vLLM / GGUF).
 - Export conversation data in ShareGPT / ChatML / Alpaca JSONL.
 - Retrieve long-term memory before every generation.
@@ -116,7 +116,7 @@ That is still Ollama `anima-chat`, not vLLM. Do not commit `proxy-token` or
 
 | Role | Model | Notes |
 |------|-------|-------|
-| Bootstrap chat | `anima-chat` ← `qwen2.5:3b` | CPU / laptop, ~2 GB |
+| Bootstrap chat | `anima-chat` ← `qwen2.5:0.5b` | CPU / laptop, ~400 MB |
 | Primary GPU chat | Fine-tuned Ministral 3 8B | Q4_K_M / FP8 on ~8–16 GB |
 | Fine-tune base | `mistralai/Ministral-3-8B-Base-2512` | BF16 Base for LoRA/QLoRA |
 | Chat backend | `ANIMA_LOCAL_LLM_BASE_URL` | The only chat backend — no Gemini/Groq/Kimi/Grok/Gateway path exists |
@@ -129,7 +129,7 @@ documented families are:
 | Family | Ollama example | vLLM / Hugging Face example | OpenRouter free example |
 |--------|----------------|-----------------------------|-------------------------|
 | Llama | `llama3.1:8b` | `meta-llama/Llama-3.1-8B-Instruct` | `meta-llama/llama-3.3-70b-instruct:free` |
-| Qwen | `qwen2.5:3b` | `Qwen/Qwen2.5-7B-Instruct` | `qwen/qwen-2.5-7b-instruct:free` |
+| Qwen | `qwen2.5:0.5b` | `Qwen/Qwen2.5-7B-Instruct` | `qwen/qwen-2.5-7b-instruct:free` |
 | Mistral | `mistral:7b` | `mistralai/Ministral-3-8B-Instruct-2512` | `mistralai/mistral-small-3.2-24b-instruct:free` |
 | Gemma | `gemma3:4b` | `google/gemma-3-4b-it` | `google/gemma-3-12b-it:free` |
 | DeepSeek | `deepseek-r1:7b` | `deepseek-ai/DeepSeek-R1-Distill-Qwen-7B` | `deepseek/deepseek-r1:free` |

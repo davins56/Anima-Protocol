@@ -85,6 +85,9 @@ describe("Cloudflare Worker module init", () => {
     expect(workerDb).toMatch(/getDbDriver\(\) === "postgres-js"/);
     expect(workerDb).toMatch(/createPostgresJsSql/);
     expect(workerDb).toMatch(/drizzle-orm\/postgres-js/);
+    expect(workerDb).toMatch(/getDbRequestEpoch/);
+    expect(workerDb).toMatch(/isCloudflareWorkerRuntime/);
+    expect(workerDb).not.toMatch(/if \(!dbInstance\) getQueryable\(\);/);
     expect(bootstrap).toMatch(/ANIMA_DB_DRIVER/);
     expect(bootstrap).toMatch(/postgres-js/);
     expect(bootstrap).toMatch(/bindImportableEnv/);

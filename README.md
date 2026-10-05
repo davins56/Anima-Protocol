@@ -183,20 +183,20 @@ Then start the api-server / frontend as usual (below) — they connect to this s
 
 ### Local Ollama chat (no cloud API)
 
-Chat talks to a self-hosted OpenAI-compatible endpoint. On local Node the default is **Ollama** at `http://localhost:11434/v1`. No cloud LLM key is required.
+Chat talks to a self-hosted Ollama host. The API reads `ANIMA_LOCAL_LLM_BASE_URL` and `ANIMA_OLLAMA_MODEL_STANDARD` on the server and calls native `POST /api/chat` (the `/v1` suffix is stripped). No cloud LLM key is required. Do not put the Ollama URL in frontend code.
 
 1. Install Ollama from https://ollama.com and start it (`ollama serve` if it is not already running).
 2. Pull a small model and create the Anima tag:
 
    ```bash
-   ollama pull qwen2.5:3b
+   ollama pull qwen2.5:0.5b
    pnpm llm:up          # creates anima-chat from that base, then smoke-tests
    ```
 
    Or skip the branded tag and use the pulled model directly:
 
    ```bash
-   export ANIMA_OLLAMA_MODEL_STANDARD=qwen2.5:3b
+   export ANIMA_OLLAMA_MODEL_STANDARD=qwen2.5:0.5b
    ```
 
 3. Point the API at it (these are the `.env.example` defaults):

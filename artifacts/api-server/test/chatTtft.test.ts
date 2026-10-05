@@ -45,10 +45,13 @@ vi.mock("../src/lib/llmFailover", () => ({
   isOpenRouterGenericProviderError: () => false,
   isOpenRouterZdrOrDataPolicyError: () => false,
   isLocalOnlyProviderChain: () => true,
+  isWorkerSubrequestLimitError: () => false,
   localOnlyTimeoutMessage: () =>
     "The self-hosted Anima LLM took too long to reply. The model may still be waking — wait a moment and send again. Chat does not fall through to OpenRouter.",
   OPENROUTER_FREE_PROVIDER_HINT: "OpenRouter free-tier hint",
   OPENROUTER_ZDR_PRIVACY_HINT: "OpenRouter ZDR privacy hint",
+  LOCAL_LLM_SUBREQUEST_HINT:
+    "The companion could not finish this reply because the chat service is busy. Please try again in a moment. Chat does not fall through to OpenRouter or MiniMax.",
   remapGenericProviderError: (err: Error) => err,
 }));
 

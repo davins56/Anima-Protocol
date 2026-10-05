@@ -4,17 +4,7 @@ import {
   Plus, Settings, Sparkles, Stars, Swords, UserCircle, Users, Wand2, X,
 } from "lucide-react";
 import { formatResonance, resonanceMood, getPathMeta } from "@/lib/soulprint";
-
-function timeAgo(dateStr) {
-  if (!dateStr) return "";
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
+import RecentChats from "@/components/chat/RecentChats";
 
 function SheetFrame({ title, children, onClose }) {
   return (
@@ -324,65 +314,13 @@ export default function HomeFloorSheets({
 
       {panel === "recents" && (
         <SheetFrame title="Recents" onClose={onClose}>
-          {sessions.length === 0 ? (
-            <p className="font-mono text-[11px] text-cyan-400/40 text-center py-8 uppercase tracking-widest">
-              Nothing to continue yet
-            </p>
-          ) : (
-            <div className="border border-cyan-400/10">
-              {sessions.map((session, idx) => {
-                const allMsgs = session.messages || [];
-                const lastAssistant = [...allMsgs].reverse().find(
-                  (m) =>
-                    m.role === "assistant" &&
-                    m.type !== "event" &&
-                    m.character_name !== "__typing__" &&
-                    m.character_name !== "__thinking__",
-                );
-                const rawPreview =
-                  lastAssistant?.content ||
-                  allMsgs[allMsgs.length - 1]?.content ||
-                  session.last_message ||
-                  "";
-                const preview = rawPreview
-                  .replace(/\[[^\]]*\]/g, "")
-                  .replace(/[*_`]/g, "")
-                  .trim()
-                  .slice(0, 90);
-                const charTag = session.character_name || (session.mode === "group" ? "Group" : null);
-                return (
-                  <button
-                    key={session.id}
-                    type="button"
-                    onClick={() => onNavigate(`/chat/${session.id}`)}
-                    className={`w-full flex items-center gap-3 text-left px-4 py-3 hover:bg-cyan-400/5 transition-all group ${
-                      idx !== sessions.length - 1 ? "border-b border-cyan-400/10" : ""
-                    }`}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-[11px] tracking-[0.2em] text-cyan-200 uppercase truncate">
-                          {session.title || `Session ${idx + 1}`}
-                        </span>
-                        {charTag && (
-                          <span className="font-mono text-[8px] tracking-widest text-cyan-400/30 uppercase border border-cyan-400/15 px-1.5 py-0.5 flex-shrink-0">
-                            {charTag}
-                          </span>
-                        )}
-                      </div>
-                      {preview && (
-                        <p className="font-mono text-[10px] text-cyan-400/35 leading-relaxed line-clamp-2 mt-0.5">{preview}</p>
-                      )}
-                    </div>
-                    <span className="font-mono text-[9px] text-cyan-400/25 flex-shrink-0">
-                      {timeAgo(session.updated_date || session.created_date)}
-                    </span>
-                    <ChevronRight className="w-3.5 h-3.5 text-cyan-400/20 group-hover:text-cyan-400/50 flex-shrink-0" />
-                  </button>
-                );
-              })}
-            </div>
-          )}
+          <RecentChats
+            sessions={sessions}
+            characters={anima ? [anima] : []}
+            onOpen={(session) => onNavigate(`/chat/${session.id}`)}
+            onNewSession={() => onNavigate("/chat")}
+            onCreateCompanion={() => onNavigate("/characters?create=1")}
+          />
           <button
             type="button"
             onClick={() => onNavigate("/chat")}

@@ -230,7 +230,8 @@ export function classifyDbError(err: unknown): DbErrorInfo {
     /does not exist/i.test(message) ||
     /malformed array literal/i.test(message) ||
     /invalid input syntax/i.test(message) ||
-    /could not determine data type/i.test(message);
+    /could not determine data type/i.test(message) ||
+    /Cannot perform I\/O on behalf of a different request/i.test(message);
 
   if (!looksLikeDb) {
     return {

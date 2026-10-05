@@ -58,6 +58,85 @@ describe("chunkTextDelta / chunkIsReasoning", () => {
 });
 
 describe("consumeLlmStream", () => {
+  it("stops early when stopWhen matches and ends the upstream iterator", async () => {
+    let pulls = 0;
+    let upstreamEnded = false;
+    async function* source() {
+      try {
+        const parts = ["The room stays ", "quiet while she ", "watches the door ", "and keeps going."];
+        for (const part of parts) {
+          pulls += 1;
+          yield { choices: [{ delta: { content: part } }] };
+        }
+      } finally {
+        upstreamEnded = true;
+      }
+    }
+    const result = await consumeLlmStream(source(), {
+      stopWhen: (visible) => visible.length >= 20,
+    });
+    expect(result.stoppedEarly).toBe(true);
+    expect(result.timedOut).toBe(false);
+    expect(result.content.length).toBeGreaterThanOrEqual(20);
+    expect(result.content).not.toContain("keeps going");
+    expect(pulls).toBeLessThan(4);
+    expect(upstreamEnded).toBe(true);
+  });
+
+  it("awaits iterator.return before resolving when stopWhen fires", async () => {
+    let releaseReturn: () => void = () => {};
+    const returnGate = new Promise<void>((resolve) => {
+      releaseReturn = resolve;
+    });
+    let returnFinished = false;
+    let pulls = 0;
+    const stream = {
+      [Symbol.asyncIterator]() {
+        return {
+          async next() {
+            pulls += 1;
+            if (pulls === 1) {
+              return {
+                done: false as const,
+                value: { choices: [{ delta: { content: "The room stays quiet while she watches" } }] },
+              };
+            }
+            return {
+              done: false as const,
+              value: { choices: [{ delta: { content: " the rest that must not be pulled" } }] },
+            };
+          },
+          async return() {
+            await returnGate;
+            returnFinished = true;
+            return { done: true as const, value: undefined };
+          },
+        };
+      },
+    };
+
+    let settled = false;
+    const pending = consumeLlmStream(stream, {
+      stopWhen: () => true,
+    }).then((result) => {
+      settled = true;
+      return result;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(settled).toBe(false);
+    expect(returnFinished).toBe(false);
+    expect(pulls).toBe(1);
+
+    releaseReturn();
+    const result = await pending;
+    expect(returnFinished).toBe(true);
+    expect(settled).toBe(true);
+    expect(result.stoppedEarly).toBe(true);
+    expect(result.content).toContain("The room stays quiet");
+    expect(result.content).not.toContain("must not be pulled");
+  });
+
   it("accumulates content until the upstream iterator ends", async () => {
     const deltas: string[] = [];
     const result = await consumeLlmStream(fromChunks([{ content: "Hel" }, { content: "lo" }]), {

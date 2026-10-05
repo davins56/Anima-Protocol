@@ -32,6 +32,9 @@ vi.mock("@/api/base44Client", () => ({
           { id: "a1", name: "Serenity", tagline: "Guide of the Protocol", assigned_user: "john@example.com" },
         ]),
       },
+      ChatSession: {
+        list: vi.fn().mockResolvedValue([]),
+      },
     },
     integrations: {
       Core: {
@@ -79,6 +82,41 @@ describe("WelcomeScreen", () => {
     expect(container.textContent).toContain("SERENITY.AI");
     expect(container.textContent).toContain("+ Initialize Session");
     expect(container.textContent).toContain("Design Companion");
+  });
+
+  it("shows an empty Recent Chats state for signed-in users with no sessions", async () => {
+    const { container } = renderWelcomeScreen({ sessions: [] });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(container.textContent).toContain("Recent Chats");
+    expect(container.textContent).toContain("No conversations yet");
+    expect(container.textContent).toContain("Create companion");
+    expect(container.textContent).toContain("Start a chat");
+  });
+
+  it("lists existing sessions so they can be resumed instead of starting a new chat", async () => {
+    const { container } = renderWelcomeScreen({
+      sessions: [
+        {
+          id: "sess-9",
+          title: "Lumen",
+          last_message: "The hall is still empty.",
+          updated_date: new Date().toISOString(),
+          character_id: "c1",
+          mode: "solo",
+        },
+      ],
+      characters: [{ id: "c1", name: "Lumen", avatar_url: "/api/storage/lumen.webp" }],
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(container.querySelector('[data-testid="recent-chat-sess-9"]')).toBeTruthy();
+    expect(container.textContent).toContain("Lumen");
+    expect(container.textContent).toContain("The hall is still empty.");
   });
 
   it("opens CreateCompanionModal in Design Your Companion mode when Design Companion is clicked", async () => {
