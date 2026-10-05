@@ -1,7 +1,9 @@
 /**
- * A slow self-hosted reply is still in flight.
- * The chat page keeps the user line and the typing indicator, then polls
- * until the server saves the answer. It must not toast the generic failure.
+ * A slow self-hosted reply can still land after this request fails.
+ * A browser deadline (the fetch abort) shows Retry immediately and only
+ * checks the saved turn in the background. A dropped connection or a turn
+ * that is still generating keeps the typing indicator until the ledger
+ * answers, and must not toast the generic failure while that check runs.
  */
 
 export const GENERIC_COMPANION_COULD_NOT_REPLY =
@@ -86,6 +88,25 @@ export function isCompanionStillTypingError(err) {
 }
 
 /**
+ * The browser already spent `CHAT_FETCH_ABORT_MS` on this send. Another full
+ * generation poll would keep the typing bubble up for minutes after Retry
+ * should be on screen. An in-flight turn or a dropped socket is not this:
+ * the server may still be writing the reply.
+ *
+ * @param {unknown} err
+ * @returns {boolean}
+ */
+export function isBrowserChatDeadlineError(err) {
+  if (!err || typeof err !== "object") return false;
+  const error = /** @type {{ code?: unknown, name?: unknown, message?: unknown }} */ (err);
+  const code = typeof error.code === "string" ? error.code : "";
+  const name = typeof error.name === "string" ? error.name : "";
+  if (code === "chat_stream_timeout" || code === "ABORT_ERR") return true;
+  if (name === "AbortError" || name === "TimeoutError") return true;
+  return TOOK_TOO_LONG_RE.test(String(error.message || ""));
+}
+
+/**
  * @param {Record<string, unknown>} message
  * @param {string} turnId
  * @param {string} userId
@@ -121,9 +142,12 @@ export function mergeLateReplyIntoMessages(messages, turn) {
   const assistantId = `${turnId}:assistant`;
   const source = (messages || []).filter((message) => {
     if (!message) return false;
-    if (message.character_name === "__typing__" || message.character_name === "__thinking__") {
-      return false;
-    }
+    const placeholder =
+      message.character_name === "__typing__" || message.character_name === "__thinking__";
+    if (!placeholder) return true;
+    // Another send may already be typing. Only this turn's bubble comes down.
+    if (message.turn_id === turnId || message.late_turn_id === turnId) return false;
+    if (!message.turn_id && !message.late_turn_id) return false;
     return true;
   });
   /** @type {Record<string, unknown>[]} */
@@ -178,11 +202,96 @@ export function mergeLateReplyIntoMessages(messages, turn) {
 }
 
 /**
- * How long the page waits on a late reply before taking the "..." bubble
- * down. Covers the local slot queue (`LLM_LOCAL_SLOT_WAIT_MS`, 180s) plus
- * the generation cap (`LLM_LOCAL_FIRST_TOKEN_MS` 90s + `LLM_LOCAL_DECODE_SLACK_MS` 30s).
+ * How long a still-running turn is polled before the typing bubble comes
+ * down. Used when this browser has not already spent the fetch abort
+ * (connection drop, joined in-flight turn, reopened pending turn).
+ * Covers the local slot queue (`LLM_LOCAL_SLOT_WAIT_MS`, 180s) plus the
+ * generation cap (`LLM_LOCAL_FIRST_TOKEN_MS` 90s + `LLM_LOCAL_DECODE_SLACK_MS` 30s).
  */
 export const LATE_REPLY_POLL_MS = 300_000;
+
+/**
+ * After the browser abort, how long a background check may still adopt a
+ * saved reply. This does not block the error toast or Retry.
+ * Kept inside a minute so a late persist can land without another 5 minutes
+ * of "..." after the fetch already waited `CHAT_FETCH_ABORT_MS`.
+ */
+export const LATE_REPLY_AFTER_ABORT_MS = 45_000;
+
+/**
+ * @param {unknown} err
+ * @returns {{ showRetryImmediately: boolean, backgroundMs: number, blockingMs: number }}
+ */
+export function lateReplyRecoveryPlan(err) {
+  if (isBrowserChatDeadlineError(err)) {
+    return {
+      showRetryImmediately: true,
+      backgroundMs: LATE_REPLY_AFTER_ABORT_MS,
+      blockingMs: 0,
+    };
+  }
+  return {
+    showRetryImmediately: false,
+    backgroundMs: 0,
+    blockingMs: LATE_REPLY_POLL_MS,
+  };
+}
+
+/**
+ * A background watch for one timed-out turn. A retry, an edit, or the same
+ * line sent again marks it superseded so the saved reply cannot stack on
+ * the new attempt.
+ *
+ * @param {{ turnId?: unknown, sessionId?: unknown, userContent?: unknown }} turn
+ */
+export function createLateReplyWatch(turn) {
+  return {
+    turnId: String(turn?.turnId || ""),
+    sessionId: String(turn?.sessionId || ""),
+    userContent: String(turn?.userContent || ""),
+    superseded: false,
+  };
+}
+
+/**
+ * @param {{ sessionId?: string, userContent?: string, superseded?: boolean } | null | undefined} watch
+ * @param {{ sessionId?: unknown, content?: unknown, replyAction?: unknown }} send
+ * @returns {boolean}
+ */
+export function lateReplyWatchSupersededBy(watch, send) {
+  if (!watch || watch.superseded) return false;
+  const sessionId = String(send?.sessionId || "");
+  if (watch.sessionId && sessionId && watch.sessionId !== sessionId) return false;
+  const action = send?.replyAction;
+  if (action === "retry" || action === "edit") return true;
+  return String(send?.content ?? "").trim() === String(watch.userContent ?? "").trim();
+}
+
+/**
+ * Put a saved reply on the thread once. A superseded watch (retry or edit
+ * already started, or the same line was sent again) leaves the thread alone
+ * so the two arrivals cannot duplicate.
+ *
+ * @param {Array<Record<string, unknown>> | null | undefined} messages
+ * @param {Record<string, unknown>} turn
+ * @param {{ superseded?: boolean }} [options]
+ * @returns {{ messages: Array<Record<string, unknown>>, painted: boolean }}
+ */
+export function paintLateCompanionReply(messages, turn, { superseded = false } = {}) {
+  const list = Array.isArray(messages) ? messages : [];
+  const turnId = String(turn?.turnId || "");
+  const text = String(turn?.assistantContent || "").trim();
+  if (superseded || !text) {
+    return {
+      messages: dropTurnPlaceholder(dropLateTurnPlaceholder(list, turnId), turnId),
+      painted: false,
+    };
+  }
+  return {
+    messages: mergeLateReplyIntoMessages(list, turn),
+    painted: true,
+  };
+}
 
 /**
  * Remove the placeholder bubble added while waiting on `turnId`. Bubbles for

@@ -3,6 +3,81 @@ import { chatStreamStatusCopy } from "@/lib/chatStreamStatusCopy";
 import { HELD_SEND_NOTE } from "@/lib/heldChatSend";
 
 /**
+ * This turn's snapshot is the source of truth for its own rows. A reply that
+ * landed for an earlier turn while this send was in flight stays on the live
+ * thread, in the same place, instead of being wiped by the snapshot.
+ *
+ * @param {Array<Record<string, unknown>> | null | undefined} live
+ * @param {Array<Record<string, unknown>> | null | undefined} snapshot
+ * @param {unknown} activeTurnId
+ */
+export function stitchLiveMessages(live, snapshot, activeTurnId) {
+  const next = Array.isArray(snapshot) ? snapshot : [];
+  const current = Array.isArray(live) ? live : [];
+  const turnId = String(activeTurnId || "");
+  if (!turnId || current.length === 0) return next;
+
+  const snapshotIds = new Set();
+  const snapshotRefs = new Set(next);
+  for (const row of next) {
+    if (row?.id) snapshotIds.add(row.id);
+  }
+  const anchorOf = new Map();
+  next.forEach((row, index) => {
+    if (row?.id) anchorOf.set(`id:${row.id}`, index);
+  });
+
+  const inSnapshot = (row) => {
+    if (!row) return false;
+    if (snapshotRefs.has(row)) return true;
+    return Boolean(row.id && snapshotIds.has(row.id));
+  };
+  const belongsToActiveTurn = (row) => {
+    if (!row) return false;
+    return String(row.turn_id || "") === turnId || String(row.late_turn_id || "") === turnId;
+  };
+
+  /** @type {Map<number, Record<string, unknown>[]>} */
+  const extrasAfter = new Map();
+  let lastAnchor = -1;
+  let seenSnapshotRow = false;
+  for (const row of current) {
+    if (!row) continue;
+    if (inSnapshot(row)) {
+      const at = row.id ? anchorOf.get(`id:${row.id}`) : next.indexOf(row);
+      if (typeof at === "number" && at >= 0) {
+        lastAnchor = at;
+        seenSnapshotRow = true;
+      }
+      continue;
+    }
+    const placeholder =
+      row.character_name === "__typing__" ||
+      row.character_name === "__thinking__" ||
+      row.is_streaming === true;
+    // This turn's previous bubble, and any other in-flight placeholder, is
+    // replaced by the snapshot. A finished reply for another turn is not.
+    if (belongsToActiveTurn(row) || placeholder) continue;
+    const key = seenSnapshotRow ? lastAnchor : -1;
+    const list = extrasAfter.get(key) || [];
+    list.push(row);
+    extrasAfter.set(key, list);
+  }
+  if (extrasAfter.size === 0) return next;
+
+  /** @type {Record<string, unknown>[]} */
+  const stitched = [];
+  const leading = extrasAfter.get(-1);
+  if (leading) stitched.push(...leading);
+  next.forEach((row, index) => {
+    stitched.push(row);
+    const extra = extrasAfter.get(index);
+    if (extra) stitched.push(...extra);
+  });
+  return stitched;
+}
+
+/**
  * Paint a streaming/thinking bubble onto the session that started the send.
  * After /chat/:id navigation the updater still sees the newly opened thread —
  * never replace that history with the previous thread's prefix.
@@ -10,7 +85,13 @@ import { HELD_SEND_NOTE } from "@/lib/heldChatSend";
 export function applyStreamingMessage(session, { sessionId, prefixMessages, message }) {
   if (!session) return session;
   if (sessionId && session.id !== sessionId) return session;
-  return { ...session, messages: [...prefixMessages, message] };
+  const snapshot = [...prefixMessages, message];
+  const turnId = message?.turn_id;
+  if (!turnId) return { ...session, messages: snapshot };
+  return {
+    ...session,
+    messages: stitchLiveMessages(session.messages, snapshot, turnId),
+  };
 }
 
 export function useChatStreaming(setActiveSession) {

@@ -183,8 +183,12 @@ import {
   GENERIC_COMPANION_COULD_NOT_REPLY,
   isConnectionDroppedError,
   lateTurnFailedWithoutReply,
+  createLateReplyWatch,
+  lateReplyRecoveryPlan,
+  lateReplyWatchSupersededBy,
   dropTurnPlaceholder,
   mergeLateReplyIntoMessages,
+  paintLateCompanionReply,
   pollLateCompanionReply,
   LATE_REPLY_POLL_MS,
   dropLateTurnPlaceholder,
@@ -210,7 +214,7 @@ import { useNativeBridge } from "@/hooks/useNativeBridge";
 import InteractiveCalendarWidget from "@/components/calendar/InteractiveCalendarWidget";
 import SpeakToAnimaButton from "@/components/anima/SpeakToAnimaButton";
 import { useChatSession } from "@/hooks/useChatSession";
-import { useChatStreaming } from "@/hooks/useChatStreaming";
+import { stitchLiveMessages, useChatStreaming } from "@/hooks/useChatStreaming";
 import {
   assignTurnMessageIds,
   createChatTurnId,
@@ -326,6 +330,8 @@ export default function Chat() {
   replyActionsDisabledRef.current = replyActionsDisabled;
   /** Same user line while the self-hosted model is still generating. */
   const lateTurnRef = useRef(null);
+  /** Background check after the browser abort. Retry does not wait on it. */
+  const lateReplyWatchRef = useRef(null);
   /** Last LLM provider that served a reply: "openai" | "xai" | "gemini" | "kimi" | "gateway" */
   const [llmProvider, setLlmProvider] = useState(null);
   /** "anima" when the custom multi-model stack selected the backend */
@@ -1699,6 +1705,18 @@ export default function Chat() {
       return;
     }
     const sendSessionId = activeSession.id;
+    const pendingWatch = lateReplyWatchRef.current;
+    if (
+      pendingWatch &&
+      lateReplyWatchSupersededBy(pendingWatch, {
+        sessionId: sendSessionId,
+        content,
+        replyAction,
+      })
+    ) {
+      pendingWatch.superseded = true;
+      toast.dismiss("companion-could-not-reply");
+    }
     const lateKey = `${sendSessionId}:${isContinue ? "continue" : content}`;
     let turnId = createChatTurnId();
     if (lateTurnRef.current?.key === lateKey && lateTurnRef.current.turnId) {
@@ -1812,7 +1830,10 @@ export default function Chat() {
       turn_id: turnId,
       timestamp: new Date().toISOString(),
     };
-    setActiveSession((prev) => ({ ...prev, messages: [...updatedMessages, thinkingMsg] }));
+    setActiveSession((prev) => ({
+      ...prev,
+      messages: stitchLiveMessages(prev?.messages, [...updatedMessages, thinkingMsg], turnId),
+    }));
 
     try {
       if (replyAction !== "retry" && shouldAttemptProtocolUpgrade({
@@ -2545,9 +2566,12 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       );
 
       // Drop is_streaming immediately so the reply resolves even if persist is slow.
-      // The composer stays locked through persist so a held follow-up cannot
-      // start a second turn that this snapshot would overwrite.
-      applyIfSendSession((prev) => ({ ...prev, messages: [...priorHistory, ...newMessages] }));
+      // A reply saved for an earlier turn while this one was generating stays
+      // on the thread; this snapshot only replaces rows for this turn.
+      applyIfSendSession((prev) => ({
+        ...prev,
+        messages: stitchLiveMessages(prev?.messages, [...priorHistory, ...newMessages], turnId),
+      }));
 
       const storedNew = [];
       let finalMessages = [...priorHistory, ...newMessages];
@@ -2565,7 +2589,10 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           omitUserRow || storedNew.some((message) => message?.role === "user");
 
         finalMessages = [...priorHistory, ...storedNew];
-        applyIfSendSession((prev) => ({ ...prev, messages: finalMessages }));
+        applyIfSendSession((prev) => ({
+          ...prev,
+          messages: stitchLiveMessages(prev?.messages, finalMessages, turnId),
+        }));
       } catch (persistErr) {
         console.warn("[Anima] Failed to persist reply:", persistErr);
         // Client `turn_*` ids are still on screen. Drop any deferred remote
@@ -3157,71 +3184,15 @@ Return JSON:
       }
 
       const connectionDropped = isConnectionDroppedError(err);
+      const recovery = lateReplyRecoveryPlan(err);
       if (!retained && shouldCheckBackForCompanionReply(err)) {
-        // The model is still working past this browser's deadline, this send
-        // joined a turn that is already generating, the tab dropped the
-        // socket, or the failure was remapped to the generic companion
-        // message. Keep the user line and poll the durable turn. Do not toast
-        // the generic failure until that check comes back empty.
+        // The browser abort already waited out the fetch. Show Retry now and
+        // keep a short background check so a reply saved a moment later still
+        // lands. A dropped socket or a turn that is still generating keeps
+        // the typing bubble until that longer check comes back empty.
         pendingRemoteSyncRef.current = false;
-        applyIfSendSession((prev) => ({
-          ...prev,
-          messages: [
-            ...(prev.messages || []).filter(
-              (m) => m.character_name !== "__typing__" && m.character_name !== "__thinking__",
-            ),
-            {
-              role: "assistant",
-              content: connectionDropped ? CONNECTION_DROPPED_STATUS : "...",
-              character_name: "__typing__",
-              late_turn_id: turnId,
-              turn_id: turnId,
-              timestamp: new Date().toISOString(),
-            },
-          ],
-        }));
         terminalReason = "recovery_check_ended";
-        const late = await pollLateCompanionReply({
-          fetchTurn: () => animaApi.chat.turnStatus(turnId),
-          timeoutMs: LATE_REPLY_POLL_MS,
-        });
-        const lateText = String(late?.assistant_content || "").trim();
-        if (lateText) {
-          if (late.persistence_status !== "committed") {
-            try {
-              await animaApi.chat.retryTurn(turnId);
-            } catch (retryErr) {
-              console.warn("[Anima] Late reply persist retry failed:", retryErr);
-            }
-          }
-          const lateAffect = parseCompanionAffectSnapshot(late.companion_affect);
-          if (!skipAffect && lateAffect) {
-            setCompanionAffect(lateAffect);
-            setCurrentMood(lateAffect.primary);
-          }
-          applyIfSendSession((prev) => ({
-            ...prev,
-            messages: mergeLateReplyIntoMessages(prev?.messages, {
-              turnId,
-              userContent: omitUserRow ? "" : content,
-              assistantContent: lateText,
-              characterName: late.active_character_name || replySpeakerName,
-              createdAt: late.created_at,
-            }),
-          }));
-          lateTurnRef.current = null;
-        } else {
-          // Failed, or still no text after the full wait. Either way the
-          // bubble comes down. A reply saved later is painted by the
-          // live-turn check the next time this chat opens.
-          lateTurnRef.current = null;
-          applyIfSendSession((prev) => ({
-            ...prev,
-            messages: dropTurnPlaceholder(
-              dropLateTurnPlaceholder(prev.messages, turnId),
-              turnId,
-            ),
-          }));
+        const toastCouldNotReply = () => {
           toast.error(GENERIC_COMPANION_COULD_NOT_REPLY, {
             id: "companion-could-not-reply",
             duration: 20_000,
@@ -3232,6 +3203,100 @@ Return JSON:
               },
             },
           });
+        };
+        const adoptLateReply = async (late, watchedTurnId, watch = null) => {
+          const lateText = String(late?.assistant_content || "").trim();
+          if (!lateText || watch?.superseded) return false;
+          if (late.persistence_status !== "committed") {
+            try {
+              await animaApi.chat.retryTurn(watchedTurnId);
+            } catch (retryErr) {
+              console.warn("[Anima] Late reply persist retry failed:", retryErr);
+            }
+          }
+          if (watch?.superseded) return false;
+          const lateAffect = parseCompanionAffectSnapshot(late.companion_affect);
+          let painted = false;
+          applyIfSendSession((prev) => {
+            const result = paintLateCompanionReply(
+              prev?.messages,
+              {
+                turnId: watchedTurnId,
+                userContent: omitUserRow ? "" : content || late.user_content,
+                assistantContent: lateText,
+                characterName: late.active_character_name || replySpeakerName,
+                createdAt: late.created_at,
+              },
+              { superseded: Boolean(watch?.superseded) },
+            );
+            painted = result.painted;
+            return { ...prev, messages: result.messages };
+          });
+          if (!painted || watch?.superseded) return false;
+          if (!skipAffect && lateAffect) {
+            setCompanionAffect(lateAffect);
+            setCurrentMood(lateAffect.primary);
+          }
+          if (lateTurnRef.current?.turnId === watchedTurnId) lateTurnRef.current = null;
+          toast.dismiss("companion-could-not-reply");
+          return true;
+        };
+        if (recovery.showRetryImmediately) {
+          // Do not reuse this turn id for the toast Retry. A new attempt must
+          // not merge with a reply the background check is still adopting.
+          lateTurnRef.current = null;
+          const watchedTurnId = turnId;
+          const watch = createLateReplyWatch({
+            turnId: watchedTurnId,
+            sessionId: sendSessionId,
+            userContent: omitUserRow ? "" : content,
+          });
+          lateReplyWatchRef.current = watch;
+          toastCouldNotReply();
+          void (async () => {
+            const late = await pollLateCompanionReply({
+              fetchTurn: () => animaApi.chat.turnStatus(watchedTurnId),
+              timeoutMs: recovery.backgroundMs,
+            });
+            if (watch.superseded) return;
+            await adoptLateReply(late, watchedTurnId, watch);
+          })();
+        } else {
+          applyIfSendSession((prev) => ({
+            ...prev,
+            messages: [
+              ...(prev.messages || []).filter(
+                (m) => m.character_name !== "__typing__" && m.character_name !== "__thinking__",
+              ),
+              {
+                role: "assistant",
+                content: connectionDropped ? CONNECTION_DROPPED_STATUS : "...",
+                character_name: "__typing__",
+                late_turn_id: turnId,
+                turn_id: turnId,
+                timestamp: new Date().toISOString(),
+              },
+            ],
+          }));
+          const late = await pollLateCompanionReply({
+            fetchTurn: () => animaApi.chat.turnStatus(turnId),
+            timeoutMs: LATE_REPLY_POLL_MS,
+          });
+          const adopted = await adoptLateReply(late, turnId);
+          if (!adopted) {
+            // Failed, or still no text after the full wait. Either way the
+            // bubble comes down. A reply saved later is painted by the
+            // live-turn check the next time this chat opens.
+            lateTurnRef.current = null;
+            applyIfSendSession((prev) => ({
+              ...prev,
+              messages: dropTurnPlaceholder(
+                dropLateTurnPlaceholder(prev.messages, turnId),
+                turnId,
+              ),
+            }));
+            toastCouldNotReply();
+          }
         }
       } else if (retained) {
         lateTurnRef.current = null;
