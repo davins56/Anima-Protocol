@@ -28,7 +28,11 @@ describe("AnimaLLM Client", () => {
           lastRequestBody = null;
         }
 
-        if (req.url === "/v1/chat/completions") {
+        const requestPath = (req.url ?? "").split("?")[0];
+        if (
+          requestPath === "/v1/chat/completions" ||
+          requestPath === "/chat/completions"
+        ) {
           if (lastRequestBody?.stream) {
             res.writeHead(200, {
               "Content-Type": "text/event-stream",
@@ -182,10 +186,16 @@ describe("AnimaLLM Client", () => {
       const bare = serverUrl.replace(/\/v1$/, "");
       const fromOption = new AnimaLLM({ baseUrl: bare });
       const optionRes = await fromOption.generateResponse({
-        prompt: "Testing URL normalization",
+        prompt: "Testing explicit baseUrl",
       });
       expect(optionRes.content).toBe("I am Anima, your digital companion.");
-      expect(lastRequestUrl).toBe("/v1/chat/completions");
+      expect(lastRequestUrl).toBe("/chat/completions");
+
+      const customRoot = new AnimaLLM({ baseUrl: `${bare}/openai` });
+      await expect(
+        customRoot.generateResponse({ prompt: "Do not rewrite explicit baseUrl" }),
+      ).rejects.toThrow();
+      expect(lastRequestUrl).toBe("/openai/chat/completions");
 
       const withSlash = new AnimaLLM({ baseUrl: `${serverUrl}/` });
       const slashRes = await withSlash.generateResponse({

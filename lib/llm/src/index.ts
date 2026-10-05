@@ -6,6 +6,7 @@
  * lean api-server bundle never pulls the training tooling.
  */
 export * from "./registry";
+export * from "./openaiBaseUrl";
 export * from "./client";
 export * from "./embeddings";
 export * from "./memory/retrieval";

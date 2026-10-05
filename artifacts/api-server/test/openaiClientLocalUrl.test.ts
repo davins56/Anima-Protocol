@@ -195,4 +195,27 @@ describe("localLlmBaseUrl runtime matrix", () => {
     expect(readExplicitLocalLlmBaseUrl()).toBe("https://llm.anima-protocol.com/v1");
     expect(localLlmBaseUrl()).toBe("https://llm.anima-protocol.com/v1");
   });
+
+  it("appends /v1 on the pathname and keeps the query string and hash", () => {
+    clearLocalLlmEnv();
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://host/proxy?token=x";
+    expect(readExplicitLocalLlmBaseUrl()).toBe("https://host/proxy/v1?token=x");
+    expect(localLlmBaseUrl()).toBe("https://host/proxy/v1?token=x");
+
+    process.env.VLLM_BASE_URL = "https://other.example/proxy?token=x#frag";
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    expect(readExplicitLocalLlmBaseUrl()).toBe(
+      "https://other.example/proxy/v1?token=x#frag",
+    );
+  });
+
+  it("treats /V1 as already versioned", () => {
+    clearLocalLlmEnv();
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://host/V1";
+    expect(readExplicitLocalLlmBaseUrl()).toBe("https://host/V1");
+    expect(localLlmBaseUrl()).toBe("https://host/V1");
+
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://host/V1/?token=x";
+    expect(readExplicitLocalLlmBaseUrl()).toBe("https://host/V1?token=x");
+  });
 });
