@@ -12,7 +12,7 @@ import {
   chatCompletionHttpFailure,
   createChatCompletionWithFailover,
 } from "./lib/llmFailover";
-import { llmAiChatOpenTimeoutMs, openStreamAbort } from "./lib/chatTimeouts";
+import { combineAbortSignals, llmAiChatOpenTimeoutMs, openStreamAbort } from "./lib/chatTimeouts";
 import { tryBeginCompanionLlmTurn } from "./lib/sidecarLlm";
 import { acquireLocalLlmBackground } from "./lib/localLlmSlot";
 import { createRateLimit } from "./lib/rateLimit";
@@ -171,7 +171,7 @@ app.post("/api/ai/chat", async (req: Request, res: Response) => {
     });
     return;
   }
-  const background = await acquireLocalLlmBackground("ai-chat");
+  const background = await acquireLocalLlmBackground("ai-chat", { job: "ai-chat" });
   if (!background) {
     releaseSlot();
     res.status(429).json({
@@ -195,9 +195,10 @@ app.post("/api/ai/chat", async (req: Request, res: Response) => {
   try {
     const result = await createChatCompletionWithFailover({
       tier: "standard",
-      maxTokens: 256,
+      maxTokens: background.maxTokens(256),
       messages: chatMessages,
-      signal: open.signal,
+      signal: combineAbortSignals(open.signal, background.signal),
+      localOnly: true,
     });
     const content = visibleAssistantReply(result.content);
     if (!String(content).trim()) {

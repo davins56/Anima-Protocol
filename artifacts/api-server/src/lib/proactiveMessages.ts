@@ -24,6 +24,7 @@ import { routeModel } from "./modelRouter";
 import { buildCompanionPrompt, type CharacterData } from "./promptBuilder";
 import { loadOperatorModel } from "./operatorModel";
 import { notifyUser } from "./storeEvents";
+import { logger } from "./logger";
 import { generateAutonomousReflection } from "./animaJournal";
 import { addSharedArtifact } from "./homeWorld";
 
@@ -280,7 +281,12 @@ async function loadCandidate(
   return null;
 }
 
-async function generateMessage(userId: string, candidate: Candidate): Promise<string> {
+async function generateMessage(
+  userId: string,
+  candidate: Candidate,
+  signal: AbortSignal,
+  maxTokens: number,
+): Promise<string> {
   const [memory] = await db
     .select()
     .from(companionMemories)
@@ -325,21 +331,19 @@ async function generateMessage(userId: string, candidate: Candidate): Promise<st
     deepMode: false,
     conversationDepth: candidate.recentMessages.length,
   });
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 25_000);
-  timer.unref?.();
   try {
     const completion = await createChatCompletionWithFailover({
       tier: "light",
       model: routed.model,
-      maxTokens: 120,
+      maxTokens,
       temperature: 0.8,
       messages: [{ role: "system", content: prompt }],
-      signal: controller.signal,
+      signal,
+      localOnly: true,
     });
     return sanitizeProactiveMessage(completion.content);
   } finally {
-    clearTimeout(timer);
+    // The background grant owns the abort. Nothing else to clear.
   }
 }
 
@@ -559,7 +563,9 @@ async function runClaim(claim: ClaimedPreference): Promise<ProactiveRunResult> {
         reason: "Companion chat in progress",
       };
     }
-    const background = await acquireLocalLlmBackground(`proactive:${claim.userId}`);
+    const background = await acquireLocalLlmBackground(`proactive:${claim.userId}`, {
+      job: "proactive",
+    });
     if (!background) {
       return {
         status: "skipped",
@@ -570,7 +576,12 @@ async function runClaim(claim: ClaimedPreference): Promise<ProactiveRunResult> {
     let content = "";
     let delivered = 0;
     try {
-      content = await generateMessage(claim.userId, candidate);
+      content = await generateMessage(
+        claim.userId,
+        candidate,
+        background.signal,
+        background.maxTokens(120),
+      );
       if (!content) {
         throw new Error("The model returned an empty proactive message");
       }
@@ -603,6 +614,10 @@ async function runClaim(claim: ClaimedPreference): Promise<ProactiveRunResult> {
 }
 
 export async function runProactiveMessageBatch(): Promise<ProactiveRunResult[]> {
+  const { drainDeferredLocalLlmJobs } = await import("./deferredLocalLlm");
+  await drainDeferredLocalLlmJobs().catch((error) => {
+    logger.warn({ error }, "Deferred local LLM drain failed");
+  });
   if (!proactivePushConfigured()) {
     throw new Error("VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY are required");
   }

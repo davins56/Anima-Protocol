@@ -7,6 +7,7 @@ import { exec } from "child_process";
 import { createRateLimit } from "../lib/rateLimit";
 import { resolveModel } from "../lib/modelRouter";
 import { createChatCompletionWithFailover } from "../lib/llmFailover";
+import { acquireLocalLlmBackground } from "../lib/localLlmSlot";
 import {
   fetchGithubArchiveFiles,
   validateGithubArchiveRef,
@@ -457,13 +458,28 @@ Rules:
     ];
 
     const heavy = resolveModel("heavy");
-    const completion = await createChatCompletionWithFailover({
+    const background = await acquireLocalLlmBackground("codespace", { job: "codespace" });
+    if (!background) {
+      res.status(429).json({
+        error: "The companion is using the model. Try again in a moment.",
+        code: "llm_busy",
+      });
+      return;
+    }
+    let completion;
+    try {
+    completion = await createChatCompletionWithFailover({
       tier: "heavy",
       model: heavy.model,
-      maxTokens: heavy.maxTokens,
+      maxTokens: background.maxTokens(heavy.maxTokens),
       messages: baseMessages as any,
       tools: tools as any,
+      signal: background.signal,
+      localOnly: true,
     });
+    } finally {
+      await background.release();
+    }
 
     res.json({
       result: {

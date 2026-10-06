@@ -83,7 +83,7 @@ import {
   type CharacterData,
 } from "../lib/promptBuilder";
 import { beginCompanionLlmTurn, companionTurnsOpenForUser } from "../lib/sidecarLlm";
-import { localLlmSlotEnabled, waitForLocalChatSlot } from "../lib/localLlmSlot";
+import { acquireLocalLlmBackground, localLlmSlotEnabled, waitForLocalChatSlot } from "../lib/localLlmSlot";
 import {
   FOURTH_WALL_RETRY_MAX_TOKENS,
   fourthWallRetryAllowed,
@@ -1684,10 +1684,14 @@ function toSceneMindCharacters(characters: MsgData[]): SceneMindCharacter[] {
 async function runSceneMindDirector(prompt: string): Promise<string | null> {
   try {
     const routed = routeModel("who speaks next", { deepMode: false });
-    const result = await createChatCompletionWithFailover({
+    const background = await acquireLocalLlmBackground("scene-mind", { job: "scene-mind" });
+    if (!background) return null;
+    let result;
+    try {
+    result = await createChatCompletionWithFailover({
       tier: "light",
       model: routed.model,
-      maxTokens: 32,
+      maxTokens: background.maxTokens(32),
       temperature: 0.4,
       messages: [
         {
@@ -1697,7 +1701,12 @@ async function runSceneMindDirector(prompt: string): Promise<string | null> {
         },
         { role: "user", content: prompt },
       ],
+      signal: background.signal,
+      localOnly: true,
     });
+    } finally {
+      await background.release();
+    }
     const name = String(result.content || "")
       .trim()
       .split(/\n/)[0]

@@ -615,6 +615,24 @@ async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
     "index:anima_narrative_arcs_user_anima_uq",
   );
 
+  await run(
+    `CREATE TABLE IF NOT EXISTS "local_llm_deferred_jobs" (
+      "id" text PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "kind" text NOT NULL,
+      "payload" jsonb DEFAULT '{}'::jsonb NOT NULL,
+      "attempts" integer DEFAULT 0 NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "updated_at" timestamp DEFAULT now() NOT NULL
+    )`,
+    "table:local_llm_deferred_jobs",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "local_llm_deferred_jobs_kind_idx"
+       ON "local_llm_deferred_jobs" USING btree ("kind","created_at")`,
+    "index:local_llm_deferred_jobs_kind_idx",
+  );
+
   // Column default added after initial conversations table existed in prod.
   await run(
     `ALTER TABLE "conversations" ALTER COLUMN "user_id" SET DEFAULT ''`,

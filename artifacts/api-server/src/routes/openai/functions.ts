@@ -14,10 +14,11 @@ import {
 import {
   isPostTurnSidecarFunction,
   shouldSkipSidecarLlm,
+  sidecarLlmFeatureEnabled,
   userHasOpenCompanionTurn,
 } from "../../lib/sidecarLlm";
 import { acquireLocalLlmBackground } from "../../lib/localLlmSlot";
-import { abortWhenClientLeaves, combineAbortSignals } from "../../lib/chatTimeouts";
+import { abortWhenClientLeaves, capBackgroundNumPredict, combineAbortSignals } from "../../lib/chatTimeouts";
 import { matchLoreKeywordContext, type LoreMatchEntry } from "../../lib/loreKeywordMatch";
 import { visibleAssistantReply } from "../../lib/visibleAssistantReply";
 import { getOpenAIClient, hasOpenAIKey, hasOpenRouterKey } from "../../lib/openaiClient";
@@ -89,39 +90,62 @@ async function llm(
   systemPrompt: string,
   userPrompt: string,
   maxTokens = 1024,
-  opts?: { sidecar?: boolean; timeoutMs?: number; signal?: AbortSignal },
+  opts?: {
+    sidecar?: boolean;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+    job?: "sidecar" | "memory-extract" | "openai-user" | "context-analysis" | "codespace";
+    /** Slot book id. Unique per deferred memory so two extracts do not share a hold. */
+    slotId?: string;
+    onDefer?: () => Promise<void> | void;
+    /** Drain already holds the slot and passes its abort signal. */
+    slotHeld?: boolean;
+  },
 ): Promise<string> {
-  if (opts?.sidecar && shouldSkipSidecarLlm()) {
+  // Feature flag off: there is no sidecar model job to defer. Occupancy and
+  // the quiet window are handled by admitBackgroundJob so memory extraction
+  // is queued instead of dropped.
+  if (opts?.sidecar && !sidecarLlmFeatureEnabled()) {
     return "";
   }
   const scope = invokeLlmScope.getStore();
+  // An open companion turn owns the model. Memory extraction is the
+  // exception: it is deferred instead of dropped. Every other llm() call
+  // (sidecar or a named helper like respondMentalLine) waits.
   if (
+    opts?.job !== "memory-extract" &&
     chainIsLocalOnly() &&
     scope?.userId &&
     userHasOpenCompanionTurn(scope.userId)
   ) {
     return "";
   }
-  const background = opts?.sidecar
-    ? await acquireLocalLlmBackground("sidecar")
-    : null;
-  if (opts?.sidecar && !background) return "";
+  const job = opts?.job ?? (opts?.sidecar ? "sidecar" : "openai-user");
+  const background = opts?.slotHeld
+    ? {
+        release: async () => {},
+        signal: opts.signal ?? new AbortController().signal,
+        maxTokens: (requested?: number) => capBackgroundNumPredict(requested),
+      }
+    : await acquireLocalLlmBackground(opts?.slotId || job, { job, onDefer: opts?.onDefer });
+  if (!background) return "";
   try {
     const timeoutMs =
       typeof opts?.timeoutMs === "number" && opts.timeoutMs > 0
         ? opts.timeoutMs
         : GENERIC_LLM_TIMEOUT_MS;
-    const signals = [AbortSignal.timeout(timeoutMs)];
+    const signals = [AbortSignal.timeout(timeoutMs), background.signal];
     if (scope?.signal) signals.push(scope.signal);
     if (opts?.signal) signals.push(opts.signal);
     const result = await createChatCompletionWithFailover({
       tier: "standard",
-      maxTokens,
+      maxTokens: background.maxTokens(maxTokens),
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
       signal: combineAbortSignals(...signals),
+      localOnly: true,
     });
     const visible = visibleAssistantReply(result.content);
     if (!String(visible).trim()) {
@@ -359,9 +383,16 @@ async function analyzeTextContext(text: string): Promise<ContextAnalysis> {
 // Reads an uploaded photo with a vision model: OCRs any visible text and
 // describes the image, then distills it into the same ContextAnalysis shape.
 async function analyzeImageContext(dataUrl: string): Promise<ContextAnalysis> {
+  const background = await acquireLocalLlmBackground("context-analysis", {
+    job: "context-analysis",
+  });
+  if (!background) return emptyAnalysis();
+  try {
   const result = await createChatCompletionWithFailover({
     tier: "standard",
-    maxTokens: 1500,
+    maxTokens: background.maxTokens(1500),
+    signal: background.signal,
+    localOnly: true,
     messages: [
       { role: "system", content: CONTEXT_SYSTEM_PROMPT },
       {
@@ -379,6 +410,9 @@ async function analyzeImageContext(dataUrl: string): Promise<ContextAnalysis> {
     ],
   });
   return parseContextAnalysis(result.content);
+  } finally {
+    await background.release();
+  }
 }
 
 // Merge the extracted analysis onto the user's existing UserContext row (the
@@ -453,6 +487,12 @@ async function extractCharacterMemories(
   userMessage: string,
   aiResponse: string,
   existing: { category?: string; fact?: string }[],
+  opts?: {
+    onDefer?: () => Promise<void> | void;
+    signal?: AbortSignal;
+    slotHeld?: boolean;
+    slotId?: string;
+  },
 ): Promise<{ category: string; fact: string }[]> {
   if (!userMessage.trim() && !aiResponse.trim()) return [];
   // Hard caps on model input: a memory save is an authenticated, repeatable
@@ -477,7 +517,14 @@ async function extractCharacterMemories(
       "ONLY the JSON array.",
     `EXISTING MEMORIES:\n${existingList}\n\nLATEST EXCHANGE:\nUser: ${clip(userMessage)}\nCharacter: ${clip(aiResponse)}`,
     512,
-    { sidecar: true },
+    {
+      sidecar: true,
+      job: "memory-extract",
+      slotId: opts?.slotId,
+      onDefer: opts?.onDefer,
+      signal: opts?.signal,
+      slotHeld: opts?.slotHeld,
+    },
   ).catch(() => "[]");
   let parsed: unknown;
   try {
@@ -510,6 +557,7 @@ async function saveCharacterMemories(
   userId: string,
   characterId: string,
   data: Record<string, unknown>,
+  opts?: { force?: boolean; signal?: AbortSignal },
 ): Promise<{ created: number; memories: Record<string, unknown>[] }> {
   const userMessage =
     typeof data.user_message === "string" ? data.user_message : "";
@@ -527,6 +575,13 @@ async function saveCharacterMemories(
     }
   }
 
+  let deferred = false;
+  const { createHash } = await import("node:crypto");
+  const digest = createHash("sha256")
+    .update(`${userMessage}\n${aiResponse}`)
+    .digest("hex")
+    .slice(0, 16);
+  const memoryJobId = `memory:${userId}:${characterId}:${digest}`;
   const candidates = await extractCharacterMemories(
     userMessage,
     aiResponse,
@@ -534,7 +589,31 @@ async function saveCharacterMemories(
       category: String(m.category ?? ""),
       fact: String(m.fact ?? ""),
     })),
+    opts?.force
+      ? { signal: opts.signal, slotHeld: true }
+      : {
+          slotId: memoryJobId,
+          onDefer: async () => {
+            deferred = true;
+            const { deferLocalLlmJob } = await import("../../lib/deferredLocalLlm");
+            await deferLocalLlmJob({
+              id: memoryJobId,
+              userId,
+              kind: "memory-extract",
+              payload: {
+                userId,
+                characterId,
+                user_message: userMessage,
+                ai_response: aiResponse,
+                session_id: sessionId,
+              },
+            });
+          },
+        },
   );
+  if (deferred) {
+    return { created: 0, memories: current };
+  }
 
   const now = new Date().toISOString();
   const rows: (typeof userEntities.$inferInsert)[] = [];
@@ -581,6 +660,20 @@ async function saveCharacterMemories(
 
   const memories = await loadCharacterMemories(userId, characterId);
   return { created: rows.length, memories };
+}
+
+/** Drain path: the slot is already held. Does not defer again. */
+export async function runDeferredCharacterMemory(
+  payload: Record<string, unknown>,
+  ctx: { signal: AbortSignal; maxTokens: number },
+): Promise<void> {
+  const userId = String(payload.userId || "");
+  const characterId = String(payload.characterId || "");
+  if (!userId || !characterId) return;
+  await saveCharacterMemories(userId, characterId, payload, {
+    force: true,
+    signal: ctx.signal,
+  });
 }
 
 // --- Narrative inventory persistence ----------------------------------------
@@ -1479,16 +1572,25 @@ router.post("/invoke/:fnName", async (req, res) => {
         ];
 
         const heavy = resolveModel("heavy");
+        const background = await acquireLocalLlmBackground("codespace", {
+          job: "codespace",
+        });
+        if (!background) {
+          result = { error: "The companion is using the model. Try again in a moment." };
+          break;
+        }
+        try {
         const completion = await createChatCompletionWithFailover({
           tier: "heavy",
           model: heavy.model,
-          maxTokens: heavy.maxTokens,
+          maxTokens: background.maxTokens(heavy.maxTokens),
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           messages: baseMessages as any,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           tools: tools as any,
+          signal: background.signal,
+          localOnly: true,
         });
-
         result = {
           message: {
             role: "assistant",
@@ -1496,6 +1598,9 @@ router.post("/invoke/:fnName", async (req, res) => {
             tool_calls: completion.toolCalls ?? null,
           },
         };
+        } finally {
+          await background.release();
+        }
         break;
       }
 
