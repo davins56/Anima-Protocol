@@ -214,5 +214,11 @@
       "binding": "HYPERDRIVE",
       "id": "bae77549623a4320b10211ca499fdb93"
     }
-  ]
+  ],
+  // Same minute as vercel.json's proactive cron. Drains deferred local-model
+  // jobs (evolution, distilled memory) after the chat quiet window. The
+  // handler does not send proactive pushes.
+  "triggers": {
+    "crons": ["15 * * * *"]
+  }
 }

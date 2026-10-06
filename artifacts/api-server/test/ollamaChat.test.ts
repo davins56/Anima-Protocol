@@ -779,4 +779,67 @@ describe("probeOllamaModelListed", () => {
     ).rejects.toThrow(/HTTP 500/);
   });
 });
+
+describe("Ollama abort closes the HTTP connection", () => {
+  it("passes the caller signal to fetch and aborts that request", async () => {
+    const controller = new AbortController();
+    let seen: AbortSignal | undefined;
+    const fetchImpl = ((_url: unknown, init?: { signal?: AbortSignal | null }) => {
+      seen = init?.signal ?? undefined;
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            model: "anima-chat",
+            message: { role: "assistant", content: "ok" },
+            done: true,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    }) as typeof fetch;
+    await createOllamaChatCompletion(
+      {
+        model: "anima-chat",
+        baseUrl: "https://llm.anima-protocol.com/v1",
+        messages: [{ role: "user", content: "hi" }],
+        signal: controller.signal,
+      },
+      process.env,
+      fetchImpl,
+    );
+    expect(seen).toBe(controller.signal);
+    controller.abort();
+    expect(seen?.aborted).toBe(true);
+  });
+
+  it("closes the socket when the caller aborts an in-flight generate", async () => {
+    const controller = new AbortController();
+    let started = false;
+    let closed = false;
+    const { server, origin } = await listenStub((req, res) => {
+      started = true;
+      req.on("close", () => {
+        closed = true;
+        if (!res.writableEnded) res.end();
+      });
+    });
+    const pending = createOllamaChatCompletion({
+      model: "anima-chat",
+      baseUrl: `${origin}/v1`,
+      messages: [{ role: "user", content: "hi" }],
+      signal: controller.signal,
+    });
+    for (let i = 0; i < 50 && !started; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(started).toBe(true);
+    controller.abort();
+    await expect(pending).rejects.toThrow(/abort/i);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(closed).toBe(true);
+    await new Promise<void>((resolve, reject) =>
+      server.close((err) => (err ? reject(err) : resolve())),
+    );
+  });
+});
 });

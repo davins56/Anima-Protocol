@@ -10,14 +10,23 @@ import { resolveModel } from "../../lib/modelRouter";
 import {
   createChatCompletionWithFailover,
   isLocalOnlyProviderChain,
+  LocalModelHeldForChatError,
 } from "../../lib/llmFailover";
 import {
   isPostTurnSidecarFunction,
   shouldSkipSidecarLlm,
+  sidecarLlmFeatureEnabled,
   userHasOpenCompanionTurn,
 } from "../../lib/sidecarLlm";
 import { acquireLocalLlmBackground } from "../../lib/localLlmSlot";
-import { abortWhenClientLeaves, combineAbortSignals } from "../../lib/chatTimeouts";
+import { localLlmJobLimits } from "../../lib/localLlmPriority";
+import { DeferredLlmRetryError, isDeferredLlmRetry } from "../../lib/deferredLocalLlm";
+import {
+  abortWhenClientLeaves,
+  combineAbortSignals,
+  LLM_MEMORY_EXTRACT_NUM_PREDICT,
+  LLM_MEMORY_EXTRACT_WALL_MS,
+} from "../../lib/chatTimeouts";
 import { matchLoreKeywordContext, type LoreMatchEntry } from "../../lib/loreKeywordMatch";
 import { visibleAssistantReply } from "../../lib/visibleAssistantReply";
 import { getOpenAIClient, hasOpenAIKey, hasOpenRouterKey } from "../../lib/openaiClient";
@@ -89,40 +98,84 @@ async function llm(
   systemPrompt: string,
   userPrompt: string,
   maxTokens = 1024,
-  opts?: { sidecar?: boolean; timeoutMs?: number; signal?: AbortSignal },
+  opts?: {
+    sidecar?: boolean;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+    job?: "sidecar" | "memory-extract" | "openai-user" | "context-analysis" | "codespace";
+    /** Slot book id. Unique per deferred memory so two extracts do not share a hold. */
+    slotId?: string;
+    onDefer?: () => Promise<void> | void;
+    /** Drain already holds the slot and passes its abort signal. */
+    slotHeld?: boolean;
+  },
 ): Promise<string> {
-  if (opts?.sidecar && shouldSkipSidecarLlm()) {
+  // Feature flag off: there is no sidecar model job to defer. Occupancy and
+  // the quiet window are handled by admitBackgroundJob so memory extraction
+  // is queued instead of dropped.
+  if (opts?.sidecar && !sidecarLlmFeatureEnabled()) {
     return "";
   }
   const scope = invokeLlmScope.getStore();
+  // An open companion turn owns the model. Memory extraction is the
+  // exception: it is deferred instead of dropped. Every other llm() call
+  // (sidecar or a named helper like respondMentalLine) waits.
   if (
+    opts?.job !== "memory-extract" &&
     chainIsLocalOnly() &&
     scope?.userId &&
     userHasOpenCompanionTurn(scope.userId)
   ) {
     return "";
   }
-  const background = opts?.sidecar
-    ? await acquireLocalLlmBackground("sidecar")
-    : null;
-  if (opts?.sidecar && !background) return "";
+  const job = opts?.job ?? (opts?.sidecar ? "sidecar" : "openai-user");
+  const limits = localLlmJobLimits(job);
+  // Short sidecars and deferred memory stay on the local model. User-waited
+  // helpers (context analysis, and anything else that is not a sidecar)
+  // keep getProviderChain() and the token count they asked for.
+  const localOnly = limits.budget === "short" || limits.budget === "memory";
+  const background = opts?.slotHeld
+    ? {
+        release: async () => {},
+        signal: opts.signal ?? new AbortController().signal,
+        maxTokens: (requested?: number) =>
+          limits.tokenCap == null
+            ? Math.max(1, Math.floor(requested && requested > 0 ? requested : maxTokens))
+            : Math.min(limits.tokenCap, Math.max(1, Math.floor(requested && requested > 0 ? requested : limits.tokenCap))),
+      }
+    : await acquireLocalLlmBackground(opts?.slotId || job, { job, onDefer: opts?.onDefer });
+  if (!background) return "";
   try {
     const timeoutMs =
       typeof opts?.timeoutMs === "number" && opts.timeoutMs > 0
         ? opts.timeoutMs
-        : GENERIC_LLM_TIMEOUT_MS;
-    const signals = [AbortSignal.timeout(timeoutMs)];
+        : job === "memory-extract"
+          ? LLM_MEMORY_EXTRACT_WALL_MS
+          : GENERIC_LLM_TIMEOUT_MS;
+    const signals = [AbortSignal.timeout(timeoutMs), background.signal];
     if (scope?.signal) signals.push(scope.signal);
-    if (opts?.signal) signals.push(opts.signal);
-    const result = await createChatCompletionWithFailover({
-      tier: "standard",
-      maxTokens,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      signal: combineAbortSignals(...signals),
-    });
+    if (opts?.signal && opts.signal !== background.signal) signals.push(opts.signal);
+    let result: Awaited<ReturnType<typeof createChatCompletionWithFailover>>;
+    try {
+      result = await createChatCompletionWithFailover({
+        tier: "standard",
+        maxTokens: localOnly ? background.maxTokens(maxTokens) : maxTokens,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        signal: combineAbortSignals(...signals),
+        localOnly,
+        ollamaPredictCeiling:
+          job === "memory-extract" ? LLM_MEMORY_EXTRACT_NUM_PREDICT : undefined,
+      });
+    } catch (err) {
+      if (err instanceof LocalModelHeldForChatError) {
+        if (job === "memory-extract" && opts?.slotHeld) throw err;
+        return "";
+      }
+      throw err;
+    }
     const visible = visibleAssistantReply(result.content);
     if (!String(visible).trim()) {
       throw new Error("The companion returned an empty reply. Please try again.");
@@ -352,16 +405,28 @@ export function parseContextAnalysis(raw: string): ContextAnalysis {
 }
 
 async function analyzeTextContext(text: string): Promise<ContextAnalysis> {
-  const raw = await llm(CONTEXT_SYSTEM_PROMPT, text.slice(0, 12000), 1500);
+  const raw = await llm(CONTEXT_SYSTEM_PROMPT, text.slice(0, 12000), 1500, {
+    job: "context-analysis",
+  });
+  if (!raw.trim()) {
+    const { localChatActivityActive } = await import("../../lib/localLlmPriority");
+    if (await localChatActivityActive()) throw new LocalModelHeldForChatError();
+  }
   return parseContextAnalysis(raw);
 }
 
 // Reads an uploaded photo with a vision model: OCRs any visible text and
 // describes the image, then distills it into the same ContextAnalysis shape.
 async function analyzeImageContext(dataUrl: string): Promise<ContextAnalysis> {
+  const background = await acquireLocalLlmBackground("context-analysis", {
+    job: "context-analysis",
+  });
+  if (!background) throw new LocalModelHeldForChatError();
+  try {
   const result = await createChatCompletionWithFailover({
     tier: "standard",
     maxTokens: 1500,
+    signal: background.signal,
     messages: [
       { role: "system", content: CONTEXT_SYSTEM_PROMPT },
       {
@@ -379,6 +444,9 @@ async function analyzeImageContext(dataUrl: string): Promise<ContextAnalysis> {
     ],
   });
   return parseContextAnalysis(result.content);
+  } finally {
+    await background.release();
+  }
 }
 
 // Merge the extracted analysis onto the user's existing UserContext row (the
@@ -446,15 +514,44 @@ function normalizeFact(fact: unknown): string {
     .trim();
 }
 
+/**
+ * A truncated or aborted extraction is not "nothing to remember".
+ * The drain path throws so the row stays queued. The inline path persists
+ * the same payload and returns, so the chat turn is not failed.
+ */
+async function requeueMemoryExtract(
+  opts: { onDefer?: () => Promise<void> | void; slotHeld?: boolean } | undefined,
+  err: unknown,
+): Promise<void> {
+  const retry = new DeferredLlmRetryError(
+    err instanceof Error && err.message
+      ? err.message
+      : "memory extract did not finish",
+  );
+  if (opts?.slotHeld) throw retry;
+  if (opts?.onDefer) {
+    await opts.onDefer();
+    return;
+  }
+  if (isDeferredLlmRetry(err)) throw retry;
+}
+
 // Ask the model to distill 0-3 NEW durable memories from the latest exchange,
-// skipping anything already remembered. Returns [] on any parse/LLM failure so a
-// failed extraction never blocks the chat.
+// skipping anything already remembered. A truncated or aborted run is
+// re-queued. A real `[]` is nothing new and is done.
 async function extractCharacterMemories(
   userMessage: string,
   aiResponse: string,
   existing: { category?: string; fact?: string }[],
+  opts?: {
+    onDefer?: () => Promise<void> | void;
+    signal?: AbortSignal;
+    slotHeld?: boolean;
+    slotId?: string;
+  },
 ): Promise<{ category: string; fact: string }[]> {
   if (!userMessage.trim() && !aiResponse.trim()) return [];
+  if (!sidecarLlmFeatureEnabled()) return [];
   // Hard caps on model input: a memory save is an authenticated, repeatable
   // LLM call, so bound both the exchange text and the existing-memory context
   // to keep token cost (and prompt size) predictable regardless of payload.
@@ -463,7 +560,9 @@ async function extractCharacterMemories(
     existing.length > 0
       ? existing.slice(0, 40).map((m) => `- ${m.fact}`).join("\n")
       : "(none yet)";
-  const raw = await llm(
+  let raw = "";
+  try {
+    raw = await llm(
     "You maintain a long-term memory log that an AI character keeps about the " +
       "specific person they are talking to. From the latest exchange, extract " +
       "durable facts genuinely worth remembering across future conversations: " +
@@ -476,18 +575,33 @@ async function extractCharacterMemories(
       "one concise sentence. If nothing is worth remembering, return []. Output " +
       "ONLY the JSON array.",
     `EXISTING MEMORIES:\n${existingList}\n\nLATEST EXCHANGE:\nUser: ${clip(userMessage)}\nCharacter: ${clip(aiResponse)}`,
-    512,
-    { sidecar: true },
-  ).catch(() => "[]");
+    LLM_MEMORY_EXTRACT_NUM_PREDICT,
+    {
+      sidecar: true,
+      job: "memory-extract",
+      slotId: opts?.slotId,
+      onDefer: opts?.onDefer,
+      signal: opts?.signal,
+      slotHeld: opts?.slotHeld,
+    },
+  );
+  } catch (err) {
+    await requeueMemoryExtract(opts, err);
+    return [];
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(
       raw.replace(/```json/gi, "").replace(/```/g, "").trim(),
     );
-  } catch {
+  } catch (err) {
+    await requeueMemoryExtract(opts, err);
     return [];
   }
-  if (!Array.isArray(parsed)) return [];
+  if (!Array.isArray(parsed)) {
+    await requeueMemoryExtract(opts, new DeferredLlmRetryError("memory JSON was truncated or unparseable"));
+    return [];
+  }
   return parsed
     .map((m) => {
       const obj = (m ?? {}) as { category?: unknown; fact?: unknown };
@@ -510,6 +624,7 @@ async function saveCharacterMemories(
   userId: string,
   characterId: string,
   data: Record<string, unknown>,
+  opts?: { force?: boolean; signal?: AbortSignal },
 ): Promise<{ created: number; memories: Record<string, unknown>[] }> {
   const userMessage =
     typeof data.user_message === "string" ? data.user_message : "";
@@ -527,6 +642,13 @@ async function saveCharacterMemories(
     }
   }
 
+  let deferred = false;
+  const { createHash } = await import("node:crypto");
+  const digest = createHash("sha256")
+    .update(`${userMessage}\n${aiResponse}`)
+    .digest("hex")
+    .slice(0, 16);
+  const memoryJobId = `memory:${userId}:${characterId}:${digest}`;
   const candidates = await extractCharacterMemories(
     userMessage,
     aiResponse,
@@ -534,7 +656,31 @@ async function saveCharacterMemories(
       category: String(m.category ?? ""),
       fact: String(m.fact ?? ""),
     })),
+    opts?.force
+      ? { signal: opts.signal, slotHeld: true }
+      : {
+          slotId: memoryJobId,
+          onDefer: async () => {
+            deferred = true;
+            const { deferLocalLlmJob } = await import("../../lib/deferredLocalLlm");
+            await deferLocalLlmJob({
+              id: memoryJobId,
+              userId,
+              kind: "memory-extract",
+              payload: {
+                userId,
+                characterId,
+                user_message: userMessage,
+                ai_response: aiResponse,
+                session_id: sessionId,
+              },
+            });
+          },
+        },
   );
+  if (deferred) {
+    return { created: 0, memories: current };
+  }
 
   const now = new Date().toISOString();
   const rows: (typeof userEntities.$inferInsert)[] = [];
@@ -581,6 +727,20 @@ async function saveCharacterMemories(
 
   const memories = await loadCharacterMemories(userId, characterId);
   return { created: rows.length, memories };
+}
+
+/** Drain path: the slot is already held. Does not defer again. */
+export async function runDeferredCharacterMemory(
+  payload: Record<string, unknown>,
+  ctx: { signal: AbortSignal; maxTokens: number },
+): Promise<void> {
+  const userId = String(payload.userId || "");
+  const characterId = String(payload.characterId || "");
+  if (!userId || !characterId) return;
+  await saveCharacterMemories(userId, characterId, payload, {
+    force: true,
+    signal: ctx.signal,
+  });
 }
 
 // --- Narrative inventory persistence ----------------------------------------
@@ -1479,6 +1639,14 @@ router.post("/invoke/:fnName", async (req, res) => {
         ];
 
         const heavy = resolveModel("heavy");
+        const background = await acquireLocalLlmBackground("codespace", {
+          job: "codespace",
+        });
+        if (!background) {
+          result = { error: "The companion is using the model. Try again in a moment." };
+          break;
+        }
+        try {
         const completion = await createChatCompletionWithFailover({
           tier: "heavy",
           model: heavy.model,
@@ -1487,8 +1655,8 @@ router.post("/invoke/:fnName", async (req, res) => {
           messages: baseMessages as any,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           tools: tools as any,
+          signal: background.signal,
         });
-
         result = {
           message: {
             role: "assistant",
@@ -1496,6 +1664,9 @@ router.post("/invoke/:fnName", async (req, res) => {
             tool_calls: completion.toolCalls ?? null,
           },
         };
+        } finally {
+          await background.release();
+        }
         break;
       }
 
@@ -1592,8 +1763,16 @@ router.post("/invoke/:fnName", async (req, res) => {
     res.json({ result });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    const code =
+      err && typeof err === "object" && "code" in err
+        ? String((err as { code?: unknown }).code || "")
+        : "";
     if (!res.headersSent) {
-      res.status(500).json({ error: msg });
+      if (code === "llm_busy") {
+        res.status(429).json({ error: msg, code });
+      } else {
+        res.status(500).json({ error: msg });
+      }
     }
   } finally {
     clientLeft.cancel();

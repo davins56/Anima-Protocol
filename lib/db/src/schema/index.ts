@@ -147,6 +147,32 @@ export const chatTurns = pgTable(
 
 export type ChatTurn = typeof chatTurns.$inferSelect;
 
+/**
+ * Background local-model work that must not be dropped while someone is
+ * chatting (milestone evolution, distilled memories). The proactive cron
+ * drains rows once `chat_turns` shows the quiet window is clear.
+ */
+export const localLlmDeferredJobs = pgTable(
+  "local_llm_deferred_jobs",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    kind: text("kind").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+    attempts: integer("attempts").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    localLlmDeferredKindIdx: index("local_llm_deferred_jobs_kind_idx").on(
+      t.kind,
+      t.createdAt,
+    ),
+  }),
+);
+
+export type LocalLlmDeferredJob = typeof localLlmDeferredJobs.$inferSelect;
+
 export const companionMemories = pgTable(
   "companion_memories",
   {
