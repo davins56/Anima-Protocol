@@ -18,7 +18,7 @@ import {
   type MsgData,
 } from "@workspace/db";
 import { createChatCompletionWithFailover } from "./llmFailover";
-import { companionLlmTurnOpen } from "./sidecarLlm";
+import { localChatActivityActive } from "./localLlmPriority";
 import { acquireLocalLlmBackground } from "./localLlmSlot";
 import { routeModel } from "./modelRouter";
 import { buildCompanionPrompt, type CharacterData } from "./promptBuilder";
@@ -556,7 +556,7 @@ async function runClaim(claim: ClaimedPreference): Promise<ProactiveRunResult> {
         reason: "No eligible inactive chat",
       };
     }
-    if (companionLlmTurnOpen()) {
+    if (await localChatActivityActive()) {
       return {
         status: "skipped",
         userId: claim.userId,

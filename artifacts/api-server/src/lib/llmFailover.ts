@@ -529,6 +529,32 @@ function applyBackgroundRequestLimits<T extends {
 }
 
 /**
+ * Background `localOnly` calls must not open an Ollama request while
+ * `chat_turns` says someone is chatting. Ollama runs one generate at a
+ * time, in arrival order, so a request that is already sent sits ahead of
+ * the reply until its HTTP connection closes.
+ */
+export class LocalModelHeldForChatError extends Error {
+  readonly code = "llm_busy";
+
+  constructor() {
+    super("The local model is reserved for an active chat.");
+    this.name = "LocalModelHeldForChatError";
+  }
+}
+
+async function refuseBackgroundSendWhileChatActive(localOnly?: boolean): Promise<void> {
+  if (!localOnly) return;
+  const { localChatActivityActive } = await import("./localLlmPriority");
+  // Ledger only. A caller that already incremented the same-isolate
+  // companion counter (the ai-chat probe) must still be allowed to send.
+  // Another isolate's chat is visible in chat_turns.
+  if (await localChatActivityActive({ ledgerOnly: true })) {
+    throw new LocalModelHeldForChatError();
+  }
+}
+
+/**
  * Ordered chat providers. A usable self-hosted Anima LLM
  * (`ANIMA_LOCAL_LLM_BASE_URL`, model anima-chat) is preferred over Workers
  * AI DeepSeek and over OpenAI. customOnly / local-preferred is fail-closed:
@@ -2463,6 +2489,7 @@ async function runLocalStreamWithOptionalBackup(
   req: ChatStreamRequest,
   hasNextChain: boolean,
 ): Promise<ChatStreamResult> {
+  await refuseBackgroundSendWhileChatActive(req.localOnly);
   const primary = localLlmBaseUrl();
   if (!primary) throw new Error(LOCAL_LLM_SETUP_HINT);
   const backup = usableLocalLlmBackupBaseUrl(process.env, primary);
@@ -2493,6 +2520,7 @@ async function runLocalCompletionWithOptionalBackup(
   req: ChatCompletionRequest,
   hasNextChain: boolean,
 ): Promise<ChatCompletionResult> {
+  await refuseBackgroundSendWhileChatActive(req.localOnly);
   const primary = localLlmBaseUrl();
   if (!primary) throw new Error(LOCAL_LLM_SETUP_HINT);
   const backup = usableLocalLlmBackupBaseUrl(process.env, primary);

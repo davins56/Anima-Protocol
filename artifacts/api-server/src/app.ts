@@ -171,7 +171,10 @@ app.post("/api/ai/chat", async (req: Request, res: Response) => {
     });
     return;
   }
-  const background = await acquireLocalLlmBackground("ai-chat", { job: "ai-chat" });
+  const background = await acquireLocalLlmBackground("ai-chat", {
+    job: "ai-chat",
+    ledgerOnly: true,
+  });
   if (!background) {
     releaseSlot();
     res.status(429).json({

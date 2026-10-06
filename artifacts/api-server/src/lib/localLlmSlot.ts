@@ -234,6 +234,11 @@ export type AcquireBackgroundOptions = {
    * quiet window. Still yields when a chat turn arrives.
    */
   force?: boolean;
+  /**
+   * Caller already holds the same-isolate companion counter. The quiet
+   * window is still the Postgres ledger.
+   */
+  ledgerOnly?: boolean;
   /** Called once when the job is deferred instead of started. */
   onDefer?: () => Promise<void> | void;
 };
@@ -251,7 +256,7 @@ export async function acquireLocalLlmBackground(
   const job = options.job ?? "sidecar";
   const coordinator = getLocalLlmSlotCoordinator();
   if (!options.force) {
-    const decision = await admitBackgroundJob(job);
+    const decision = await admitBackgroundJob(job, { ledgerOnly: options.ledgerOnly });
     if (decision === "skip") return null;
     if (decision === "defer") {
       // The row in local_llm_deferred_jobs is the queue. Parking a slot-book

@@ -10,6 +10,7 @@ import { resolveModel } from "../../lib/modelRouter";
 import {
   createChatCompletionWithFailover,
   isLocalOnlyProviderChain,
+  LocalModelHeldForChatError,
 } from "../../lib/llmFailover";
 import {
   isPostTurnSidecarFunction,
@@ -137,16 +138,22 @@ async function llm(
     const signals = [AbortSignal.timeout(timeoutMs), background.signal];
     if (scope?.signal) signals.push(scope.signal);
     if (opts?.signal) signals.push(opts.signal);
-    const result = await createChatCompletionWithFailover({
-      tier: "standard",
-      maxTokens: background.maxTokens(maxTokens),
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      signal: combineAbortSignals(...signals),
-      localOnly: true,
-    });
+    let result: Awaited<ReturnType<typeof createChatCompletionWithFailover>>;
+    try {
+      result = await createChatCompletionWithFailover({
+        tier: "standard",
+        maxTokens: background.maxTokens(maxTokens),
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        signal: combineAbortSignals(...signals),
+        localOnly: true,
+      });
+    } catch (err) {
+      if (err instanceof LocalModelHeldForChatError) return "";
+      throw err;
+    }
     const visible = visibleAssistantReply(result.content);
     if (!String(visible).trim()) {
       throw new Error("The companion returned an empty reply. Please try again.");

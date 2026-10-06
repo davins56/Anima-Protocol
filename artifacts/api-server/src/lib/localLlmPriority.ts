@@ -5,13 +5,17 @@
  * Interactive `/chat/messages` turns (including retry, edit, and continue)
  * take the slot ahead of every background job. See `localLlmSlot.ts`.
  *
- * Cross-instance "is anyone chatting?" is the Postgres `chat_turns` ledger
- * (`localModelChatIsActive`): a pending turn with a live lease, or any turn
- * created inside `ACTIVE_CHAT_QUIET_WINDOW_MS`. The in-process companion
- * counter covers the moment before that row is visible. The slot Durable
- * Object orders the generate itself. Deferred payloads live in
- * `local_llm_deferred_jobs` so a Worker isolate can exit and a later cron
- * still runs them. In-memory maps are not enough across isolates.
+ * Ollama serves generates strictly in arrival order and one at a time.
+ * A background job must read shared storage and refuse to send before it
+ * opens its HTTP request. The Worker runs each request and each cron in
+ * its own isolate, so that signal is the Postgres `chat_turns` ledger
+ * (`localModelChatIsActive`): a pending turn with a live lease, or any
+ * turn created inside `ACTIVE_CHAT_QUIET_WINDOW_MS`. The in-process
+ * companion counter is only a same-isolate hint for the moment before
+ * that row is visible. It never authorizes a send on its own.
+ * The slot Durable Object orders who may generate after that check.
+ * Deferred payloads live in `local_llm_deferred_jobs` so a Worker isolate
+ * can exit and a later cron still runs them.
  *
  * Fail-closed: background completions pass `localOnly: true`, which selects
  * `localOnlyProviderChain()` (the self-hosted model only). OpenRouter,
@@ -58,9 +62,11 @@ export type LocalLlmJobPolicy = {
 
 /**
  * Call-site policy. `run` while active means the work does not take the
- * model (or it is the interactive reply). `yield` may start between
- * messages but aborts when a chat turn arrives. `defer` is persisted and
- * run once the quiet window is clear. `skip` is dropped for this attempt.
+ * model (or it is the interactive reply). `yield` does not start a new
+ * request while the ledger says chat is active — Ollama would queue that
+ * request ahead of the reply. A generate that already started is aborted
+ * by closing its HTTP connection. `defer` is persisted and run once the
+ * quiet window is clear. `skip` is dropped for this attempt.
  */
 export const LOCAL_LLM_JOBS: Record<LocalLlmJobId, LocalLlmJobPolicy> = {
   "chat-reply": {
@@ -126,32 +132,32 @@ export const LOCAL_LLM_JOBS: Record<LocalLlmJobId, LocalLlmJobPolicy> = {
   "model-tutor": {
     priority: "background",
     whenActive: "yield",
-    notes: "Steward lesson draft. May run between messages; aborts when a chat turn arrives.",
+    notes: "Steward lesson draft. Does not start while the ledger says chat is active. An in-flight draft aborts by closing the Ollama request.",
   },
   "own-model-teacher": {
     priority: "background",
     whenActive: "yield",
-    notes: "Own-model teacher draft. Yields to an interactive reply.",
+    notes: "Own-model teacher draft. Does not start during the quiet window. An in-flight draft aborts by closing the Ollama request.",
   },
   codespace: {
     priority: "background",
     whenActive: "yield",
-    notes: "Codespace agent completion. Yields to an interactive reply.",
+    notes: "Codespace agent completion. Does not start during the quiet window. An in-flight call aborts by closing the Ollama request.",
   },
   "openai-user": {
     priority: "background",
     whenActive: "yield",
-    notes: "Signed-in /api/openai completion that is not a post-turn sidecar.",
+    notes: "Signed-in /api/openai completion that is not a post-turn sidecar. Does not start during the quiet window.",
   },
   "ai-chat": {
     priority: "background",
     whenActive: "yield",
-    notes: "POST /api/ai/chat probe. Yields to an interactive reply.",
+    notes: "POST /api/ai/chat probe. Does not start during the quiet window. An in-flight call aborts by closing the Ollama request.",
   },
   "context-analysis": {
     priority: "background",
     whenActive: "yield",
-    notes: "Uploaded file/image context. Yields to an interactive reply.",
+    notes: "Uploaded file/image context. Does not start during the quiet window.",
   },
 };
 
@@ -167,31 +173,51 @@ export function setLocalChatActivityProbeForTests(
 }
 
 /**
- * True when background work must not start a generate.
- * In-flight companion turns count even before the ledger row is visible.
- * The ledger covers other isolates and the few minutes after a send.
+ * True when a background job must not open an Ollama request.
+ *
+ * Production always reads `chat_turns`. A same-isolate companion counter
+ * can only add "active" (the row may not be visible yet). It cannot clear
+ * the ledger, and another isolate cannot see it. Tests set
+ * `setLocalChatActivityProbeForTests` instead of sharing one schema's
+ * fixture turns. A ledger error is treated as active so the job does not send.
  */
-export async function localChatActivityActive(): Promise<boolean> {
-  if (companionLlmTurnOpen()) return true;
+async function sharedChatActivity(): Promise<boolean> {
   if (activityProbe) return activityProbe();
   // Vitest shares one Postgres schema. A fixture turn would quiet every
   // later file. Tests that care set `setLocalChatActivityProbeForTests`.
-  // Production always reads the chat_turns ledger.
   if (String(process.env.VITEST || "").trim().toLowerCase() === "true") return false;
   try {
     return await localModelChatIsActive();
   } catch {
-    // Unknown activity: do not take the only slot.
     return true;
   }
 }
 
-export async function admitBackgroundJob(job: LocalLlmJobId): Promise<BackgroundAdmission> {
+/**
+ * `ledgerOnly` is for a caller that already took the same-isolate companion
+ * counter for itself (the `/api/ai/chat` probe). That counter is not visible
+ * to other isolates and must not block the caller's own request. Other
+ * isolates are still seen through `chat_turns`.
+ */
+export async function localChatActivityActive(opts?: {
+  ledgerOnly?: boolean;
+}): Promise<boolean> {
+  if (await sharedChatActivity()) return true;
+  if (opts?.ledgerOnly) return false;
+  return companionLlmTurnOpen();
+}
+
+export async function admitBackgroundJob(
+  job: LocalLlmJobId,
+  opts?: { ledgerOnly?: boolean },
+): Promise<BackgroundAdmission> {
   const policy = LOCAL_LLM_JOBS[job];
   if (policy.priority !== "background") return "run";
-  const active = await localChatActivityActive();
+  const active = await localChatActivityActive(opts);
   if (!active) return "run";
-  if (policy.whenActive === "run" || policy.whenActive === "yield") return "run";
+  // Yield used to mean "start anyway and abort later". Ollama would already
+  // have that request queued ahead of the reply. Do not send.
+  if (policy.whenActive === "yield" || policy.whenActive === "skip") return "skip";
   return policy.whenActive;
 }
 
