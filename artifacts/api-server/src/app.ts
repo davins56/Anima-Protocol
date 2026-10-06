@@ -198,10 +198,9 @@ app.post("/api/ai/chat", async (req: Request, res: Response) => {
   try {
     const result = await createChatCompletionWithFailover({
       tier: "standard",
-      maxTokens: background.maxTokens(256),
+      maxTokens: 256,
       messages: chatMessages,
       signal: combineAbortSignals(open.signal, background.signal),
-      localOnly: true,
     });
     const content = visibleAssistantReply(result.content);
     if (!String(content).trim()) {

@@ -19,7 +19,14 @@ import {
   userHasOpenCompanionTurn,
 } from "../../lib/sidecarLlm";
 import { acquireLocalLlmBackground } from "../../lib/localLlmSlot";
-import { abortWhenClientLeaves, capBackgroundNumPredict, combineAbortSignals } from "../../lib/chatTimeouts";
+import { localLlmJobLimits } from "../../lib/localLlmPriority";
+import { DeferredLlmRetryError, isDeferredLlmRetry } from "../../lib/deferredLocalLlm";
+import {
+  abortWhenClientLeaves,
+  combineAbortSignals,
+  LLM_MEMORY_EXTRACT_NUM_PREDICT,
+  LLM_MEMORY_EXTRACT_WALL_MS,
+} from "../../lib/chatTimeouts";
 import { matchLoreKeywordContext, type LoreMatchEntry } from "../../lib/loreKeywordMatch";
 import { visibleAssistantReply } from "../../lib/visibleAssistantReply";
 import { getOpenAIClient, hasOpenAIKey, hasOpenRouterKey } from "../../lib/openaiClient";
@@ -122,11 +129,19 @@ async function llm(
     return "";
   }
   const job = opts?.job ?? (opts?.sidecar ? "sidecar" : "openai-user");
+  const limits = localLlmJobLimits(job);
+  // Short sidecars and deferred memory stay on the local model. User-waited
+  // helpers (context analysis, and anything else that is not a sidecar)
+  // keep getProviderChain() and the token count they asked for.
+  const localOnly = limits.budget === "short" || limits.budget === "memory";
   const background = opts?.slotHeld
     ? {
         release: async () => {},
         signal: opts.signal ?? new AbortController().signal,
-        maxTokens: (requested?: number) => capBackgroundNumPredict(requested),
+        maxTokens: (requested?: number) =>
+          limits.tokenCap == null
+            ? Math.max(1, Math.floor(requested && requested > 0 ? requested : maxTokens))
+            : Math.min(limits.tokenCap, Math.max(1, Math.floor(requested && requested > 0 ? requested : limits.tokenCap))),
       }
     : await acquireLocalLlmBackground(opts?.slotId || job, { job, onDefer: opts?.onDefer });
   if (!background) return "";
@@ -134,24 +149,31 @@ async function llm(
     const timeoutMs =
       typeof opts?.timeoutMs === "number" && opts.timeoutMs > 0
         ? opts.timeoutMs
-        : GENERIC_LLM_TIMEOUT_MS;
+        : job === "memory-extract"
+          ? LLM_MEMORY_EXTRACT_WALL_MS
+          : GENERIC_LLM_TIMEOUT_MS;
     const signals = [AbortSignal.timeout(timeoutMs), background.signal];
     if (scope?.signal) signals.push(scope.signal);
-    if (opts?.signal) signals.push(opts.signal);
+    if (opts?.signal && opts.signal !== background.signal) signals.push(opts.signal);
     let result: Awaited<ReturnType<typeof createChatCompletionWithFailover>>;
     try {
       result = await createChatCompletionWithFailover({
         tier: "standard",
-        maxTokens: background.maxTokens(maxTokens),
+        maxTokens: localOnly ? background.maxTokens(maxTokens) : maxTokens,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
         signal: combineAbortSignals(...signals),
-        localOnly: true,
+        localOnly,
+        ollamaPredictCeiling:
+          job === "memory-extract" ? LLM_MEMORY_EXTRACT_NUM_PREDICT : undefined,
       });
     } catch (err) {
-      if (err instanceof LocalModelHeldForChatError) return "";
+      if (err instanceof LocalModelHeldForChatError) {
+        if (job === "memory-extract" && opts?.slotHeld) throw err;
+        return "";
+      }
       throw err;
     }
     const visible = visibleAssistantReply(result.content);
@@ -383,7 +405,13 @@ export function parseContextAnalysis(raw: string): ContextAnalysis {
 }
 
 async function analyzeTextContext(text: string): Promise<ContextAnalysis> {
-  const raw = await llm(CONTEXT_SYSTEM_PROMPT, text.slice(0, 12000), 1500);
+  const raw = await llm(CONTEXT_SYSTEM_PROMPT, text.slice(0, 12000), 1500, {
+    job: "context-analysis",
+  });
+  if (!raw.trim()) {
+    const { localChatActivityActive } = await import("../../lib/localLlmPriority");
+    if (await localChatActivityActive()) throw new LocalModelHeldForChatError();
+  }
   return parseContextAnalysis(raw);
 }
 
@@ -393,13 +421,12 @@ async function analyzeImageContext(dataUrl: string): Promise<ContextAnalysis> {
   const background = await acquireLocalLlmBackground("context-analysis", {
     job: "context-analysis",
   });
-  if (!background) return emptyAnalysis();
+  if (!background) throw new LocalModelHeldForChatError();
   try {
   const result = await createChatCompletionWithFailover({
     tier: "standard",
-    maxTokens: background.maxTokens(1500),
+    maxTokens: 1500,
     signal: background.signal,
-    localOnly: true,
     messages: [
       { role: "system", content: CONTEXT_SYSTEM_PROMPT },
       {
@@ -487,9 +514,31 @@ function normalizeFact(fact: unknown): string {
     .trim();
 }
 
+/**
+ * A truncated or aborted extraction is not "nothing to remember".
+ * The drain path throws so the row stays queued. The inline path persists
+ * the same payload and returns, so the chat turn is not failed.
+ */
+async function requeueMemoryExtract(
+  opts: { onDefer?: () => Promise<void> | void; slotHeld?: boolean } | undefined,
+  err: unknown,
+): Promise<void> {
+  const retry = new DeferredLlmRetryError(
+    err instanceof Error && err.message
+      ? err.message
+      : "memory extract did not finish",
+  );
+  if (opts?.slotHeld) throw retry;
+  if (opts?.onDefer) {
+    await opts.onDefer();
+    return;
+  }
+  if (isDeferredLlmRetry(err)) throw retry;
+}
+
 // Ask the model to distill 0-3 NEW durable memories from the latest exchange,
-// skipping anything already remembered. Returns [] on any parse/LLM failure so a
-// failed extraction never blocks the chat.
+// skipping anything already remembered. A truncated or aborted run is
+// re-queued. A real `[]` is nothing new and is done.
 async function extractCharacterMemories(
   userMessage: string,
   aiResponse: string,
@@ -502,6 +551,7 @@ async function extractCharacterMemories(
   },
 ): Promise<{ category: string; fact: string }[]> {
   if (!userMessage.trim() && !aiResponse.trim()) return [];
+  if (!sidecarLlmFeatureEnabled()) return [];
   // Hard caps on model input: a memory save is an authenticated, repeatable
   // LLM call, so bound both the exchange text and the existing-memory context
   // to keep token cost (and prompt size) predictable regardless of payload.
@@ -510,7 +560,9 @@ async function extractCharacterMemories(
     existing.length > 0
       ? existing.slice(0, 40).map((m) => `- ${m.fact}`).join("\n")
       : "(none yet)";
-  const raw = await llm(
+  let raw = "";
+  try {
+    raw = await llm(
     "You maintain a long-term memory log that an AI character keeps about the " +
       "specific person they are talking to. From the latest exchange, extract " +
       "durable facts genuinely worth remembering across future conversations: " +
@@ -523,7 +575,7 @@ async function extractCharacterMemories(
       "one concise sentence. If nothing is worth remembering, return []. Output " +
       "ONLY the JSON array.",
     `EXISTING MEMORIES:\n${existingList}\n\nLATEST EXCHANGE:\nUser: ${clip(userMessage)}\nCharacter: ${clip(aiResponse)}`,
-    512,
+    LLM_MEMORY_EXTRACT_NUM_PREDICT,
     {
       sidecar: true,
       job: "memory-extract",
@@ -532,16 +584,24 @@ async function extractCharacterMemories(
       signal: opts?.signal,
       slotHeld: opts?.slotHeld,
     },
-  ).catch(() => "[]");
+  );
+  } catch (err) {
+    await requeueMemoryExtract(opts, err);
+    return [];
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(
       raw.replace(/```json/gi, "").replace(/```/g, "").trim(),
     );
-  } catch {
+  } catch (err) {
+    await requeueMemoryExtract(opts, err);
     return [];
   }
-  if (!Array.isArray(parsed)) return [];
+  if (!Array.isArray(parsed)) {
+    await requeueMemoryExtract(opts, new DeferredLlmRetryError("memory JSON was truncated or unparseable"));
+    return [];
+  }
   return parsed
     .map((m) => {
       const obj = (m ?? {}) as { category?: unknown; fact?: unknown };
@@ -1590,13 +1650,12 @@ router.post("/invoke/:fnName", async (req, res) => {
         const completion = await createChatCompletionWithFailover({
           tier: "heavy",
           model: heavy.model,
-          maxTokens: background.maxTokens(heavy.maxTokens),
+          maxTokens: heavy.maxTokens,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           messages: baseMessages as any,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           tools: tools as any,
           signal: background.signal,
-          localOnly: true,
         });
         result = {
           message: {
@@ -1704,8 +1763,16 @@ router.post("/invoke/:fnName", async (req, res) => {
     res.json({ result });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    const code =
+      err && typeof err === "object" && "code" in err
+        ? String((err as { code?: unknown }).code || "")
+        : "";
     if (!res.headersSent) {
-      res.status(500).json({ error: msg });
+      if (code === "llm_busy") {
+        res.status(429).json({ error: msg, code });
+      } else {
+        res.status(500).json({ error: msg });
+      }
     }
   } finally {
     clientLeft.cancel();

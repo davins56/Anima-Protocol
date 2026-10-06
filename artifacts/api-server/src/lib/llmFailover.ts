@@ -63,9 +63,7 @@ import {
 import { getOpenWeightChatModel, resolveModelSpec } from "@workspace/llm";
 import { LlmStreamTimeoutError } from "./consumeLlmStream";
 import {
-  capBackgroundNumPredict,
   combineAbortSignals,
-  LLM_BACKGROUND_WALL_MS,
   LLM_LOCAL_FAILOVER_ATTEMPT_MS,
   LLM_LOCAL_FIRST_TOKEN_MS,
   openStreamAbort,
@@ -285,8 +283,8 @@ export interface ChatStreamRequest {
   /** Cancel the in-flight stream open (e.g. a caller-side timeout). */
   signal?: AbortSignal;
   /**
-   * Background work. Chain is the self-hosted model only, and the token
-   * budget is the background cap. Interactive chat leaves this unset.
+   * True background streams stay on the self-hosted model. User-waited
+   * routes leave this unset so they keep `getProviderChain()`.
    */
   localOnly?: boolean;
 }
@@ -324,8 +322,12 @@ export function honorCallerMaxTokens(
 export function localOllamaMaxTokens(
   requested: number | undefined,
   modelMax: number,
+  ceiling?: number,
 ): number {
-  return capOllamaNumPredict(honorCallerMaxTokens(requested, modelMax));
+  return capOllamaNumPredict(
+    honorCallerMaxTokens(requested, modelMax),
+    ceiling,
+  );
 }
 
 export interface ChatStreamResult {
@@ -349,10 +351,17 @@ export interface ChatCompletionRequest {
   /** Cancel the in-flight request (e.g. a caller-side timeout) instead of leaving it running server-side. */
   signal?: AbortSignal;
   /**
-   * Background work. Chain is the self-hosted model only, and the token
-   * budget is the background cap. Interactive chat leaves this unset.
+   * True background work stays on the self-hosted model. Token budget and
+   * wall time belong to the caller (the slot grant). User-waited routes
+   * leave this unset so they keep `getProviderChain()`.
    */
   localOnly?: boolean;
+  /**
+   * Native Ollama otherwise clamps `num_predict` to `OLLAMA_NUM_PREDICT_CAP`
+   * (200). Deferred JSON jobs raise it to their own budget. Chat replies
+   * leave this unset.
+   */
+  ollamaPredictCeiling?: number;
 }
 
 export interface ChatCompletionResult {
@@ -512,20 +521,6 @@ function localUsable(): boolean {
  */
 export function localOnlyProviderChain(): LlmProviderId[] {
   return localUsable() ? ["local"] : [];
-}
-
-function applyBackgroundRequestLimits<T extends {
-  localOnly?: boolean;
-  maxTokens: number;
-  signal?: AbortSignal;
-}>(req: T): T {
-  if (!req.localOnly) return req;
-  const wall = AbortSignal.timeout(LLM_BACKGROUND_WALL_MS);
-  return {
-    ...req,
-    maxTokens: capBackgroundNumPredict(req.maxTokens),
-    signal: req.signal ? combineAbortSignals(req.signal, wall) : wall,
-  };
 }
 
 /**
@@ -2439,7 +2434,8 @@ async function completeFromLocalHost(
       const native = await createOllamaChatCompletion({
         model: m.model,
         messages: req.messages,
-        maxTokens: localOllamaMaxTokens(req.maxTokens, m.maxTokens),
+        maxTokens: localOllamaMaxTokens(req.maxTokens, m.maxTokens, req.ollamaPredictCeiling),
+        numPredictCeiling: req.ollamaPredictCeiling,
         temperature: req.temperature,
         signal,
         baseUrl,
@@ -2458,7 +2454,7 @@ async function completeFromLocalHost(
     return client.chat.completions.create(
       {
         model: m.model,
-        max_tokens: localOllamaMaxTokens(req.maxTokens, m.maxTokens),
+        max_tokens: localOllamaMaxTokens(req.maxTokens, m.maxTokens, req.ollamaPredictCeiling),
         messages: req.messages,
         ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
         ...(hasTools ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" } : {}),
@@ -2550,7 +2546,6 @@ async function runLocalCompletionWithOptionalBackup(
 /** Open a streaming chat completion (Workers AI when bound, else local Anima LLM). */
 export async function createChatStreamWithFailover(req: ChatStreamRequest): Promise<ChatStreamResult> {
   beginChatProviderTurn();
-  req = applyBackgroundRequestLimits(req);
   if (cloudFlagshipMisconfigured() && !hasWorkersAiBinding() && !req.localOnly) {
     throw new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }
@@ -2648,7 +2643,6 @@ export async function createChatCompletionWithFailover(
   req: ChatCompletionRequest,
 ): Promise<ChatCompletionResult> {
   beginChatProviderTurn();
-  req = applyBackgroundRequestLimits(req);
   if (cloudFlagshipMisconfigured() && !hasWorkersAiBinding() && !req.localOnly) {
     throw new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }

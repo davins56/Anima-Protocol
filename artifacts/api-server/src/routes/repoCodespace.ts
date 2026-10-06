@@ -471,11 +471,10 @@ Rules:
     completion = await createChatCompletionWithFailover({
       tier: "heavy",
       model: heavy.model,
-      maxTokens: background.maxTokens(heavy.maxTokens),
+      maxTokens: heavy.maxTokens,
       messages: baseMessages as any,
       tools: tools as any,
       signal: background.signal,
-      localOnly: true,
     });
     } finally {
       await background.release();

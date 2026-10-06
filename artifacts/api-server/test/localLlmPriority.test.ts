@@ -10,6 +10,10 @@ import {
   LLM_BACKGROUND_NUM_PREDICT,
   LLM_BACKGROUND_WALL_MS,
   LLM_BACKGROUND_YIELD_MS,
+  LLM_EVOLUTION_NUM_PREDICT,
+  LLM_EVOLUTION_WALL_MS,
+  LLM_MEMORY_EXTRACT_NUM_PREDICT,
+  LLM_MEMORY_EXTRACT_WALL_MS,
 } from "../src/lib/chatTimeouts";
 import {
   clearDeferredLlmRunnersForTests,
@@ -35,6 +39,7 @@ import {
   admitBackgroundJob,
   backgroundProviderChain,
   LOCAL_LLM_JOBS,
+  localLlmJobLimits,
   setLocalChatActivityProbeForTests,
 } from "../src/lib/localLlmPriority";
 import { emotionalStateWithTurnMood } from "../src/lib/turnMoodWrite";
@@ -75,6 +80,24 @@ describe("local model priority", () => {
     expect(LLM_BACKGROUND_WALL_MS).toBeGreaterThan(LLM_BACKGROUND_YIELD_MS);
     expect(capBackgroundNumPredict(2_048)).toBe(LLM_BACKGROUND_NUM_PREDICT);
     expect(capBackgroundNumPredict(16)).toBe(16);
+    expect(localLlmJobLimits("evolution")).toMatchObject({
+      tokenCap: LLM_EVOLUTION_NUM_PREDICT,
+      wallMs: LLM_EVOLUTION_WALL_MS,
+    });
+    expect(localLlmJobLimits("memory-extract")).toMatchObject({
+      tokenCap: LLM_MEMORY_EXTRACT_NUM_PREDICT,
+      wallMs: LLM_MEMORY_EXTRACT_WALL_MS,
+    });
+    expect(LLM_EVOLUTION_NUM_PREDICT).toBe(512);
+    expect(LLM_MEMORY_EXTRACT_NUM_PREDICT).toBe(256);
+    expect(LLM_EVOLUTION_WALL_MS).toBeGreaterThan(LLM_BACKGROUND_YIELD_MS);
+    expect(LLM_MEMORY_EXTRACT_WALL_MS).toBeGreaterThan(LLM_BACKGROUND_YIELD_MS);
+    expect((LLM_EVOLUTION_NUM_PREDICT / 9) * 1000).toBeLessThan(LLM_EVOLUTION_WALL_MS);
+    expect(localLlmJobLimits("codespace").tokenCap).toBeNull();
+    expect(localLlmJobLimits("context-analysis").tokenCap).toBeNull();
+    expect(localLlmJobLimits("model-tutor").wallMs).toBeNull();
+    expect(localLlmJobLimits("ai-chat").wallMs).toBeNull();
+    expect(localLlmJobLimits("journal").tokenCap).toBe(LLM_BACKGROUND_NUM_PREDICT);
   });
 
   it("defers state jobs and skips optional jobs during the quiet window, then runs them", async () => {
@@ -303,6 +326,123 @@ describe("local model priority", () => {
       restore("ANIMA_OLLAMA_NATIVE_CHAT", previous.native);
       restore("ANIMA_LOCAL_LLM_SLOT", previous.slot);
       restore("ANIMA_LOCAL_LLM_FALLBACK", previous.fallback);
+    }
+  }, 4_000);
+
+  it("gives deferred evolution 512 tokens and re-queues a truncated JSON reply", async () => {
+    setLocalChatActivityProbeForTests(async () => false);
+    const store = memoryStore();
+    setDeferredJobStoreForTests(store);
+    const previous = {
+      url: process.env.ANIMA_LOCAL_LLM_BASE_URL,
+      native: process.env.ANIMA_OLLAMA_NATIVE_CHAT,
+      slot: process.env.ANIMA_LOCAL_LLM_SLOT,
+    };
+    delete process.env.ANIMA_LOCAL_LLM_SLOT;
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    process.env.ANIMA_OLLAMA_NATIVE_CHAT = "1";
+    const previousFetch = globalThis.fetch;
+    let numPredict = 0;
+    globalThis.fetch = (async (_url: unknown, init?: { body?: string }) => {
+      const body = JSON.parse(String(init?.body || "{}")) as {
+        options?: { num_predict?: number };
+      };
+      numPredict = Number(body.options?.num_predict || 0);
+      return new Response(
+        JSON.stringify({ model: "anima-chat", message: { content: '{"milestone":' } }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch;
+    try {
+      await deferLocalLlmJob({
+        id: "evolution:user:anima:50",
+        userId: "user",
+        kind: "evolution",
+        payload: {
+          animaId: "anima",
+          userId: "user",
+          conversationCount: 50,
+          historySummary: "a long friendship",
+          targetMilestone: 50,
+        },
+      });
+      const drained = await drainDeferredLocalLlmJobs();
+      expect(drained.ran).toBe(0);
+      expect(store.jobs.has("evolution:user:anima:50")).toBe(true);
+      expect(numPredict).toBe(LLM_EVOLUTION_NUM_PREDICT);
+    } finally {
+      globalThis.fetch = previousFetch;
+      const restore = (name: string, value: string | undefined) => {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      };
+      restore("ANIMA_LOCAL_LLM_BASE_URL", previous.url);
+      restore("ANIMA_OLLAMA_NATIVE_CHAT", previous.native);
+      restore("ANIMA_LOCAL_LLM_SLOT", previous.slot);
+    }
+  });
+
+  it("re-queues deferred evolution when chat aborts the generate", async () => {
+    setLocalChatActivityProbeForTests(async () => false);
+    const store = memoryStore();
+    setDeferredJobStoreForTests(store);
+    const previous = {
+      url: process.env.ANIMA_LOCAL_LLM_BASE_URL,
+      native: process.env.ANIMA_OLLAMA_NATIVE_CHAT,
+      slot: process.env.ANIMA_LOCAL_LLM_SLOT,
+    };
+    delete process.env.ANIMA_LOCAL_LLM_SLOT;
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    process.env.ANIMA_OLLAMA_NATIVE_CHAT = "1";
+    setLocalLlmSlotCoordinatorForTests({
+      chatStep: async () => ({ granted: true, position: 0 }),
+      tryBackground: async () => true,
+      enqueueBackground: async () => 1,
+      pollBackground: async () => ({ held: true, yield: true }),
+      heartbeat: async () => true,
+      release: async () => {},
+    });
+    const previousFetch = globalThis.fetch;
+    globalThis.fetch = ((_url: unknown, init?: { signal?: AbortSignal | null }) => {
+      return new Promise((_resolve, reject) => {
+        const signal = init?.signal;
+        const fail = () => reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+        if (!signal) {
+          reject(new Error("missing abort signal"));
+          return;
+        }
+        if (signal.aborted) {
+          fail();
+          return;
+        }
+        signal.addEventListener("abort", fail, { once: true });
+      });
+    }) as typeof fetch;
+    try {
+      await deferLocalLlmJob({
+        id: "evolution:user:anima:100",
+        userId: "user",
+        kind: "evolution",
+        payload: {
+          animaId: "anima",
+          userId: "user",
+          conversationCount: 100,
+          historySummary: "still talking",
+          targetMilestone: 100,
+        },
+      });
+      const drained = await drainDeferredLocalLlmJobs();
+      expect(drained.ran).toBe(0);
+      expect(store.jobs.has("evolution:user:anima:100")).toBe(true);
+    } finally {
+      globalThis.fetch = previousFetch;
+      const restore = (name: string, value: string | undefined) => {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      };
+      restore("ANIMA_LOCAL_LLM_BASE_URL", previous.url);
+      restore("ANIMA_OLLAMA_NATIVE_CHAT", previous.native);
+      restore("ANIMA_LOCAL_LLM_SLOT", previous.slot);
     }
   }, 4_000);
 });
