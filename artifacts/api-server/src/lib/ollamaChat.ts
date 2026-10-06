@@ -42,6 +42,11 @@ export interface OllamaChatRequest {
   model: string;
   messages: ChatCompletionMessageParam[];
   maxTokens?: number;
+  /**
+   * Raises the 200-token `num_predict` ceiling for one call. Deferred JSON
+   * jobs use this. Chat replies leave it unset.
+   */
+  numPredictCeiling?: number;
   temperature?: number;
   signal?: AbortSignal;
   /** Override `ANIMA_LOCAL_LLM_BASE_URL` for the backup host. */
@@ -348,12 +353,17 @@ export const COMPANION_CHAT_TEMPERATURE = 0.65;
  */
 export const OLLAMA_NUM_PREDICT_CAP = 200;
 
-export function capOllamaNumPredict(requested: number | undefined): number {
+export function capOllamaNumPredict(
+  requested: number | undefined,
+  ceiling: number = OLLAMA_NUM_PREDICT_CAP,
+): number {
+  const limit =
+    Number.isFinite(ceiling) && ceiling > 0 ? Math.floor(ceiling) : OLLAMA_NUM_PREDICT_CAP;
   const raw =
     typeof requested === "number" && Number.isFinite(requested) && requested > 0
       ? Math.floor(requested)
-      : OLLAMA_NUM_PREDICT_CAP;
-  return Math.min(Math.max(1, raw), OLLAMA_NUM_PREDICT_CAP);
+      : limit;
+  return Math.min(Math.max(1, raw), limit);
 }
 
 function maxTemperature(env: NodeJS.ProcessEnv = process.env): number {
@@ -368,7 +378,7 @@ function ollamaOptions(
   const options: Record<string, number> = {
     ...OLLAMA_CHAT_SAMPLING,
     num_ctx: ollamaNumCtx(env),
-    num_predict: capOllamaNumPredict(req.maxTokens),
+    num_predict: capOllamaNumPredict(req.maxTokens, req.numPredictCeiling),
   };
   if (typeof req.temperature === "number" && Number.isFinite(req.temperature)) {
     options.temperature = Math.min(Math.max(req.temperature, 0), maxTemperature(env));

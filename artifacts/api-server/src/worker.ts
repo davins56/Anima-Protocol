@@ -83,4 +83,29 @@ export default {
 
     return fetchAssetsRejectingSpaHtml(request, env.ASSETS);
   },
+
+  /**
+   * Hourly, same minute as the Vercel proactive cron. Drains milestone
+   * evolution and distilled memories that waited out the chat quiet window.
+   * Does not send proactive pushes — that stays on `/api/notifications/proactive/run`.
+   */
+  async scheduled(
+    _controller: { cron: string },
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<void> {
+    ctx.waitUntil(
+      (async () => {
+        try {
+          await applyCloudflareRequestEnv(env);
+          const { drainDeferredLocalLlmJobs } = await import("./lib/deferredLocalLlm");
+          const { logger } = await import("./lib/logger");
+          const summary = await drainDeferredLocalLlmJobs();
+          logger.info(summary, "Deferred local LLM cron drain");
+        } catch (err) {
+          console.error("Deferred local LLM cron drain failed", err);
+        }
+      })(),
+    );
+  },
 };

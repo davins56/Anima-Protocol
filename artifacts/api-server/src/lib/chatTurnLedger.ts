@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
+import { ACTIVE_CHAT_QUIET_WINDOW_MS } from "./chatTimeouts";
 import {
   chatTurns,
   db,
@@ -485,6 +486,39 @@ export async function markChatTurnWaiting(
       })
       .where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId))),
   );
+}
+
+/**
+ * Cross-instance signal that the local model should stay with chat.
+ * A pending turn whose lease is not stale is in flight. Any turn created
+ * inside the quiet window means someone just sent a message and may send
+ * another. One Ollama slot, so this is global, not per user.
+ */
+export async function localModelChatIsActive(
+  now = new Date(),
+  windowMs = ACTIVE_CHAT_QUIET_WINDOW_MS,
+): Promise<boolean> {
+  const quietAfter = new Date(now.getTime() - windowMs);
+  const staleBefore = new Date(now.getTime() - STALE_PENDING_LEASE_MS);
+  const [row] = await withTransientDbRetry(() =>
+    db
+      .select({ id: chatTurns.id })
+      .from(chatTurns)
+      .where(
+        or(
+          and(
+            eq(chatTurns.status, "pending"),
+            or(
+              and(isNull(chatTurns.leaseExpiresAt), gt(chatTurns.updatedAt, staleBefore)),
+              gt(chatTurns.leaseExpiresAt, staleBefore),
+            ),
+          ),
+          gt(chatTurns.createdAt, quietAfter),
+        ),
+      )
+      .limit(1),
+  );
+  return Boolean(row);
 }
 
 export async function chatTurnHasRemoteWaiter(
