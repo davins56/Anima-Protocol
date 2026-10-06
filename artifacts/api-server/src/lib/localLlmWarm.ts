@@ -250,6 +250,10 @@ async function warmOnce(
   const signal = combineAbortSignals(...signals);
 
   try {
+    // Last check before the bytes leave. The slot flag is not a substitute
+    // for the chat_turns ledger on another isolate.
+    const { localChatActivityActive } = await import("./localLlmPriority");
+    if (await localChatActivityActive()) return "busy";
     const response = await fetchImpl(url, {
       method: "POST",
       headers,

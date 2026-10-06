@@ -2,7 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { db } from "../db/index";
 import { animaJournals } from "../db/schema";
 import { createChatCompletionWithFailover } from "./llmFailover";
-import { companionLlmTurnOpen } from "./sidecarLlm";
+import { localChatActivityActive } from "./localLlmPriority";
 import { acquireLocalLlmBackground } from "./localLlmSlot";
 
 export type JournalEntryType =
@@ -126,7 +126,8 @@ Relationship intensity (0-100): ${params.relationshipLevel ?? 40}
 
 Output ONLY the journal body text, no title prefix.`;
 
-  if (companionLlmTurnOpen()) return null;
+  // Ledger (and a same-isolate turn) before any request is built.
+  if (await localChatActivityActive()) return null;
   const background = await acquireLocalLlmBackground(`journal:${params.userId}`, {
     job: "journal",
   });

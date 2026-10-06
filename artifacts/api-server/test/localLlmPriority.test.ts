@@ -20,7 +20,11 @@ import {
   type DeferredJobStore,
   type DeferredLocalLlmJob,
 } from "../src/lib/deferredLocalLlm";
-import { localOnlyProviderChain } from "../src/lib/llmFailover";
+import {
+  createChatCompletionWithFailover,
+  LocalModelHeldForChatError,
+  localOnlyProviderChain,
+} from "../src/lib/llmFailover";
 import {
   acquireLocalLlmBackground,
   createMemoryLocalLlmSlot,
@@ -81,6 +85,12 @@ describe("local model priority", () => {
     expect(await admitBackgroundJob("llm-warm")).toBe("skip");
     expect(await admitBackgroundJob("sidecar")).toBe("skip");
     expect(await admitBackgroundJob("scene-mind")).toBe("skip");
+    expect(await admitBackgroundJob("model-tutor")).toBe("skip");
+    expect(await admitBackgroundJob("own-model-teacher")).toBe("skip");
+    expect(await admitBackgroundJob("codespace")).toBe("skip");
+    expect(await admitBackgroundJob("openai-user")).toBe("skip");
+    expect(await admitBackgroundJob("ai-chat")).toBe("skip");
+    expect(await admitBackgroundJob("context-analysis")).toBe("skip");
     expect(await admitBackgroundJob("evolution")).toBe("defer");
     expect(await admitBackgroundJob("memory-extract")).toBe("defer");
     expect(await admitBackgroundJob("mood-affect")).toBe("run");
@@ -130,6 +140,7 @@ describe("local model priority", () => {
       expect(store.jobs.size).toBe(0);
       expect(await admitBackgroundJob("proactive")).toBe("run");
       expect(await admitBackgroundJob("evolution")).toBe("run");
+      expect(await admitBackgroundJob("model-tutor")).toBe("run");
     } finally {
       const restore = (name: string, value: string | undefined) => {
         if (value === undefined) delete process.env[name];
@@ -191,4 +202,107 @@ describe("local model priority", () => {
       restore("OPENROUTER_API_KEY", previous.key);
     }
   });
+
+  it("does not open an Ollama request while the chat ledger is active", async () => {
+    setLocalChatActivityProbeForTests(async () => true);
+    const previous = process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    const previousNative = process.env.ANIMA_OLLAMA_NATIVE_CHAT;
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    process.env.ANIMA_OLLAMA_NATIVE_CHAT = "1";
+    const previousFetch = globalThis.fetch;
+    let called = false;
+    globalThis.fetch = (async () => {
+      called = true;
+      throw new Error("Ollama was called");
+    }) as typeof fetch;
+    try {
+      await expect(
+        createChatCompletionWithFailover({
+          tier: "standard",
+          maxTokens: 32,
+          messages: [{ role: "user", content: "background" }],
+          localOnly: true,
+        }),
+      ).rejects.toBeInstanceOf(LocalModelHeldForChatError);
+      expect(called).toBe(false);
+    } finally {
+      globalThis.fetch = previousFetch;
+      if (previous === undefined) delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+      else process.env.ANIMA_LOCAL_LLM_BASE_URL = previous;
+      if (previousNative === undefined) delete process.env.ANIMA_OLLAMA_NATIVE_CHAT;
+      else process.env.ANIMA_OLLAMA_NATIVE_CHAT = previousNative;
+    }
+  });
+
+  it("passes the abort signal through to the Ollama fetch and closes it when chat yields", async () => {
+    setLocalChatActivityProbeForTests(async () => false);
+    const previous = {
+      url: process.env.ANIMA_LOCAL_LLM_BASE_URL,
+      native: process.env.ANIMA_OLLAMA_NATIVE_CHAT,
+      slot: process.env.ANIMA_LOCAL_LLM_SLOT,
+      fallback: process.env.ANIMA_LOCAL_LLM_FALLBACK,
+    };
+    delete process.env.ANIMA_LOCAL_LLM_SLOT;
+    delete process.env.ANIMA_LOCAL_LLM_FALLBACK;
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    process.env.ANIMA_OLLAMA_NATIVE_CHAT = "1";
+    let polls = 0;
+    setLocalLlmSlotCoordinatorForTests({
+      chatStep: async () => ({ granted: true, position: 0 }),
+      tryBackground: async () => true,
+      enqueueBackground: async () => 1,
+      pollBackground: async () => {
+        polls += 1;
+        return { held: true, yield: true };
+      },
+      heartbeat: async () => true,
+      release: async () => {},
+    });
+    const previousFetch = globalThis.fetch;
+    let seenUrl = "";
+    let seen: AbortSignal | undefined;
+    globalThis.fetch = ((_url: unknown, init?: { signal?: AbortSignal | null }) => {
+      seenUrl = String(_url);
+      seen = init?.signal ?? undefined;
+      return new Promise((_resolve, reject) => {
+        const fail = () => reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+        if (!seen) {
+          reject(new Error("Ollama fetch was missing an abort signal"));
+          return;
+        }
+        if (seen.aborted) {
+          fail();
+          return;
+        }
+        seen.addEventListener("abort", fail, { once: true });
+      });
+    }) as typeof fetch;
+    try {
+      const grant = await acquireLocalLlmBackground("journal-abort", { job: "journal" });
+      expect(grant).not.toBeNull();
+      await expect(
+        createChatCompletionWithFailover({
+          tier: "standard",
+          maxTokens: 32,
+          messages: [{ role: "user", content: "background" }],
+          signal: grant!.signal,
+          localOnly: true,
+        }),
+      ).rejects.toThrow(/abort|took too long/i);
+      expect(seenUrl).toContain("/api/chat");
+      expect(seen?.aborted).toBe(true);
+      expect(polls).toBeGreaterThan(0);
+      await grant!.release();
+    } finally {
+      globalThis.fetch = previousFetch;
+      const restore = (name: string, value: string | undefined) => {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      };
+      restore("ANIMA_LOCAL_LLM_BASE_URL", previous.url);
+      restore("ANIMA_OLLAMA_NATIVE_CHAT", previous.native);
+      restore("ANIMA_LOCAL_LLM_SLOT", previous.slot);
+      restore("ANIMA_LOCAL_LLM_FALLBACK", previous.fallback);
+    }
+  }, 4_000);
 });
