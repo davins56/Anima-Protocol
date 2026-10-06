@@ -431,7 +431,7 @@ router.post("/lessons/draft", async (req, res) => {
     try {
     completion = await createChatCompletionWithFailover({
       tier: "light",
-      maxTokens: background.maxTokens(400),
+      maxTokens: 400,
       temperature: 0.7,
       messages: buildDraftMessages({
         context: normalizeLessonContext(body.context),
@@ -440,7 +440,6 @@ router.post("/lessons/draft", async (req, res) => {
         advice,
       }),
       signal: combineAbortSignals(AbortSignal.timeout(DRAFT_TIMEOUT_MS), background.signal),
-      localOnly: true,
     });
     } finally {
       await background.release();

@@ -241,11 +241,10 @@ router.post(
       try {
       completion = await createChatCompletionWithFailover({
         tier: "light",
-        maxTokens: background.maxTokens(300),
+        maxTokens: 300,
         temperature: 0.7,
         messages: buildTeacherMessages({ context, advice }),
         signal: combineAbortSignals(AbortSignal.timeout(TEACHER_TIMEOUT_MS), background.signal),
-        localOnly: true,
       });
       } finally {
         await background.release();

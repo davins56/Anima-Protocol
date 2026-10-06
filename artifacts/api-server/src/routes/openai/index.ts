@@ -108,7 +108,10 @@ async function streamSignedInCompletion(
     deepMode?: boolean;
     conversationDepth?: number;
     requestedMaxTokens?: number;
+    /** Yield abort from the slot. Does not by itself shorten the open budget. */
     signal?: AbortSignal;
+    /** Sidecar streams use the short local cap. User-waited streams do not. */
+    backgroundCaps?: boolean;
     onComplete?: (
       fullResponse: string,
       meta: {
@@ -127,11 +130,11 @@ async function streamSignedInCompletion(
       deepMode: opts.deepMode,
       conversationDepth: opts.conversationDepth ?? opts.chatMessages.length,
     });
-    const maxTokens = opts.signal
+    const maxTokens = opts.backgroundCaps
       ? capBackgroundNumPredict(resolveMaxTokens(opts.requestedMaxTokens, routed.maxTokens))
       : resolveMaxTokens(opts.requestedMaxTokens, routed.maxTokens);
     const open = openStreamAbort(
-      opts.signal
+      opts.backgroundCaps
         ? LLM_BACKGROUND_WALL_MS
         : llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() }),
     );
@@ -143,7 +146,7 @@ async function streamSignedInCompletion(
         maxTokens,
         messages: opts.chatMessages,
         signal: opts.signal ? combineAbortSignals(open.signal, opts.signal) : open.signal,
-        localOnly: Boolean(opts.signal),
+        localOnly: Boolean(opts.backgroundCaps),
       });
     } finally {
       open.cancel();
@@ -404,10 +407,13 @@ router.post("/v1/chat/completions", async (req, res) => {
       const completion = await createChatCompletionWithFailover({
         tier: routed.tier,
         model: routed.model,
-        maxTokens: background.maxTokens(resolveMaxTokens(requestedMaxTokens, routed.maxTokens)),
+        maxTokens:
+          body.sidecar === true
+            ? background.maxTokens(resolveMaxTokens(requestedMaxTokens, routed.maxTokens))
+            : resolveMaxTokens(requestedMaxTokens, routed.maxTokens),
         messages: chatMessages,
         signal: background.signal,
-        localOnly: true,
+        localOnly: body.sidecar === true,
       });
       const content = visibleAssistantReply(completion.content);
       if (!String(content).trim()) {
@@ -441,6 +447,7 @@ router.post("/v1/chat/completions", async (req, res) => {
     conversationDepth: chatMessages.length,
     requestedMaxTokens,
     signal: background.signal,
+    backgroundCaps: body.sidecar === true,
   });
   } finally {
     await background?.release();

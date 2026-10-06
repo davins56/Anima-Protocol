@@ -15,7 +15,38 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { db, localLlmDeferredJobs, withTransientDbRetry } from "@workspace/db";
 import { logger } from "./logger";
 import { acquireLocalLlmBackground } from "./localLlmSlot";
-import { localChatActivityActive, type LocalLlmJobId } from "./localLlmPriority";
+import {
+  localChatActivityActive,
+  localLlmJobLimits,
+  type LocalLlmJobId,
+} from "./localLlmPriority";
+
+/**
+ * The generate was aborted or its JSON did not parse. Drain leaves the
+ * row in place (attempts already incremented, capped by MAX_ATTEMPTS).
+ * Inline callers persist the same payload and try again once chat is idle.
+ */
+export class DeferredLlmRetryError extends Error {
+  readonly retry = true;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "DeferredLlmRetryError";
+  }
+}
+
+export function isDeferredLlmRetry(err: unknown): boolean {
+  if (err instanceof DeferredLlmRetryError) return true;
+  if (!err || typeof err !== "object") return false;
+  const name = "name" in err ? String((err as { name?: unknown }).name || "") : "";
+  if (name === "AbortError" || name === "DeferredLlmRetryError" || name === "LocalModelHeldForChatError") {
+    return true;
+  }
+  const code = "code" in err ? String((err as { code?: unknown }).code || "") : "";
+  if (code === "llm_busy") return true;
+  const message = "message" in err ? String((err as { message?: unknown }).message || "") : "";
+  return /aborted|abort/i.test(message);
+}
 
 export type DeferredLocalLlmJob = {
   id: string;
@@ -214,10 +245,16 @@ export async function drainDeferredLocalLlmJobs(): Promise<{ ran: number; waitin
       continue;
     }
     try {
-      await run(job, { signal: grant.signal, maxTokens: grant.maxTokens() });
+      const limits = localLlmJobLimits(job.kind);
+      await run(job, {
+        signal: grant.signal,
+        maxTokens: limits.tokenCap ?? grant.maxTokens(),
+      });
       await store().remove(job.id);
       ran += 1;
     } catch (error) {
+      // Abort and unparseable JSON stay queued. claim() already counted
+      // an attempt, and list() stops after MAX_ATTEMPTS.
       logger.warn({ error, id: job.id, kind: job.kind }, "Deferred local LLM job failed");
     } finally {
       await grant.release();

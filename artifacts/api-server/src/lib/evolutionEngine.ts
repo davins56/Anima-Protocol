@@ -2,7 +2,12 @@ import { and, eq, sql } from "drizzle-orm";
 import { createChatCompletionWithFailover } from "./llmFailover";
 import { sidecarLlmFeatureEnabled } from "./sidecarLlm";
 import { acquireLocalLlmBackground } from "./localLlmSlot";
-import { deferLocalLlmJob } from "./deferredLocalLlm";
+import {
+  deferLocalLlmJob,
+  DeferredLlmRetryError,
+  isDeferredLlmRetry,
+} from "./deferredLocalLlm";
+import { LLM_EVOLUTION_NUM_PREDICT } from "./chatTimeouts";
 import { db } from "../db/index";
 import { animaEvolution } from "../db/schema";
 
@@ -150,29 +155,56 @@ export async function maybeTriggerMilestoneEvolution(params: {
         id: jobId,
         userId: params.userId,
         kind: "evolution",
-        payload: {
-          animaId: params.animaId,
-          userId: params.userId,
-          conversationCount: params.conversationCount,
-          historySummary: params.historySummary,
-          isVoidTurn: Boolean(params.isVoidTurn),
-          significantExperienceCount: experienceCount,
-          alreadyMilestone: Number(params.alreadyMilestone) || 0,
-          targetMilestone,
-        },
+        payload: evolutionDeferPayload(params, experienceCount, targetMilestone),
       }),
   });
   if (!background) return null;
+  const payload = evolutionDeferPayload(params, experienceCount, targetMilestone);
   try {
     return await writeMilestoneEvolution(
       params,
       targetMilestone,
       experienceCount,
-      { signal: background.signal, maxTokens: background.maxTokens(256) },
+      { signal: background.signal, maxTokens: LLM_EVOLUTION_NUM_PREDICT },
     );
+  } catch (err) {
+    if (isDeferredLlmRetry(err)) {
+      await deferLocalLlmJob({
+        id: jobId,
+        userId: params.userId,
+        kind: "evolution",
+        payload,
+      });
+      return null;
+    }
+    throw err;
   } finally {
     await background.release();
   }
+}
+
+function evolutionDeferPayload(
+  params: {
+    animaId: string;
+    userId: string;
+    conversationCount: number;
+    historySummary: string;
+    isVoidTurn?: boolean;
+    alreadyMilestone?: number;
+  },
+  experienceCount: number,
+  targetMilestone: number,
+): Record<string, unknown> {
+  return {
+    animaId: params.animaId,
+    userId: params.userId,
+    conversationCount: params.conversationCount,
+    historySummary: params.historySummary,
+    isVoidTurn: Boolean(params.isVoidTurn),
+    significantExperienceCount: experienceCount,
+    alreadyMilestone: Number(params.alreadyMilestone) || 0,
+    targetMilestone,
+  };
 }
 
 export async function runDeferredMilestoneEvolution(
@@ -257,21 +289,19 @@ OUTPUT SCHEMA:
     messages: [{ role: "system", content: evolutionPrompt }],
     signal: ctx.signal,
     localOnly: true,
+    ollamaPredictCeiling: LLM_EVOLUTION_NUM_PREDICT,
   });
   const raw = completion.content;
-  let parsed: EvolutionDelta | null = null;
+  let parsed: EvolutionDelta;
   try {
-    parsed = JSON.parse(raw) as EvolutionDelta;
-  } catch {
-    // Fallback: minimal delta if JSON parsing fails.
-    parsed = {
-      version: 1,
-      appliedAt: new Date().toISOString(),
-      milestone: targetMilestone,
-      traitsDelta: { secondary: {}, tertiary: {}, shadow: {} },
-      quirkAdditions: [],
-      voidBias: params.isVoidTurn ? 0.3 : 0,
-    };
+    const value = JSON.parse(raw) as EvolutionDelta;
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new DeferredLlmRetryError("evolution JSON was truncated or unparseable");
+    }
+    parsed = value;
+  } catch (err) {
+    if (err instanceof DeferredLlmRetryError) throw err;
+    throw new DeferredLlmRetryError("evolution JSON was truncated or unparseable");
   }
 
   const rationale = `Generated evolution delta for milestone ${targetMilestone}.`;

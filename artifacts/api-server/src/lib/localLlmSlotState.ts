@@ -188,7 +188,7 @@ export function applyTryBackground(
   now: number,
   ttlMs: number,
   queueTtlMs: number,
-  background: { leaseMs: number; wallMs: number } = {
+  background: { leaseMs: number; wallMs: number | null } = {
     leaseMs: LLM_BACKGROUND_SLOT_TTL_MS,
     wallMs: LLM_BACKGROUND_WALL_MS,
   },

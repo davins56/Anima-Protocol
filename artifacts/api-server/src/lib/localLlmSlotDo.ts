@@ -29,11 +29,6 @@ import {
 
 const STORAGE_KEY = "book";
 
-const BACKGROUND_LIMITS = {
-  leaseMs: LLM_BACKGROUND_SLOT_TTL_MS,
-  wallMs: LLM_BACKGROUND_WALL_MS,
-};
-
 export class LocalLlmSlot extends DurableObject {
   async chatStep(turnId: string): Promise<SlotStep> {
     return this.mutate((book, now) =>
@@ -48,7 +43,13 @@ export class LocalLlmSlot extends DurableObject {
     );
   }
 
-  async tryBackground(id: string): Promise<boolean> {
+  async tryBackground(id: string, wallMs?: number | null): Promise<boolean> {
+    const wall =
+      wallMs === null
+        ? null
+        : typeof wallMs === "number" && Number.isFinite(wallMs) && wallMs > 0
+          ? wallMs
+          : LLM_BACKGROUND_WALL_MS;
     return this.mutate((book, now) =>
       applyTryBackground(
         book,
@@ -56,7 +57,7 @@ export class LocalLlmSlot extends DurableObject {
         now,
         LLM_LOCAL_SLOT_TTL_MS,
         LLM_LOCAL_SLOT_QUEUE_TTL_MS,
-        BACKGROUND_LIMITS,
+        { leaseMs: LLM_BACKGROUND_SLOT_TTL_MS, wallMs: wall },
       ),
     );
   }

@@ -129,18 +129,40 @@ export const LLM_BACKGROUND_SLOT_TTL_MS = 4_000;
 export const LLM_BACKGROUND_YIELD_POLL_MS = 500;
 
 /**
- * Token cap for background local generates. Chat replies use up to
- * `OLLAMA_NUM_PREDICT_CAP` (200). At ~9 tokens/s on one vCPU, 80 tokens is
- * about nine seconds of decode and fits inside `LLM_BACKGROUND_WALL_MS`.
+ * Token cap for short background local generates (proactive, journal, warm,
+ * sidecars, scene-mind). Chat replies use up to `OLLAMA_NUM_PREDICT_CAP`
+ * (200). At ~9 tokens/s on one vCPU, 80 tokens is about nine seconds of
+ * decode and fits inside `LLM_BACKGROUND_WALL_MS`.
+ * Milestone evolution and memory extraction use their own budgets below.
  */
 export const LLM_BACKGROUND_NUM_PREDICT = 80;
 
 export function capBackgroundNumPredict(requested: number | undefined): number {
+  return capNumPredict(requested, LLM_BACKGROUND_NUM_PREDICT);
+}
+
+/**
+ * Milestone evolution returns a JSON personality delta. 80 tokens truncates
+ * it. 512 tokens is about a minute of decode at ~9 tokens/s; the wall leaves
+ * room for prefill. The call stays preemptible: a chat turn still waits at
+ * most `LLM_BACKGROUND_YIELD_MS`.
+ */
+export const LLM_EVOLUTION_NUM_PREDICT = 512;
+export const LLM_EVOLUTION_WALL_MS = 90_000;
+
+/**
+ * Distilled character-memory extraction returns a short JSON array. 256
+ * tokens is about half a minute of decode. Wall is 60s so prefill fits.
+ */
+export const LLM_MEMORY_EXTRACT_NUM_PREDICT = 256;
+export const LLM_MEMORY_EXTRACT_WALL_MS = 60_000;
+
+export function capNumPredict(requested: number | undefined, ceiling: number): number {
   const raw =
     typeof requested === "number" && Number.isFinite(requested) && requested > 0
       ? Math.floor(requested)
-      : LLM_BACKGROUND_NUM_PREDICT;
-  return Math.min(Math.max(1, raw), LLM_BACKGROUND_NUM_PREDICT);
+      : ceiling;
+  return Math.min(Math.max(1, raw), Math.max(1, Math.floor(ceiling)));
 }
 
 /**

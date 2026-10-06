@@ -17,7 +17,6 @@
 
 import { readRuntimeBinding } from "./cloudflareEnv";
 import {
-  capBackgroundNumPredict,
   LLM_BACKGROUND_SLOT_TTL_MS,
   LLM_BACKGROUND_WALL_MS,
   LLM_BACKGROUND_YIELD_MS,
@@ -33,6 +32,8 @@ import { isLocalOnlyProviderChain } from "./llmFailover";
 import {
   admitBackgroundJob,
   backgroundJobDefers,
+  capLocalLlmJobTokens,
+  localLlmJobLimits,
   type LocalLlmJobId,
 } from "./localLlmPriority";
 import { backgroundLlmSignal } from "./sidecarLlm";
@@ -72,9 +73,19 @@ export class LocalLlmSlotClientLeftError extends Error {
   }
 }
 
+export type BackgroundAcquireLimits = {
+  /**
+   * Slot-book wall. Null keeps the holder until release or a chat yield.
+   * Short background jobs use the 12s wall. Evolution and memory use a
+   * longer wall so their JSON can finish. User-waited routes pass null
+   * and keep their own timeout.
+   */
+  wallMs: number | null;
+};
+
 export type LocalLlmSlotCoordinator = {
   chatStep(turnId: string): Promise<SlotStep>;
-  tryBackground(id: string): Promise<boolean>;
+  tryBackground(id: string, limits?: BackgroundAcquireLimits): Promise<boolean>;
   enqueueBackground(id: string): Promise<number>;
   pollBackground(id: string): Promise<BackgroundPoll>;
   heartbeat(id: string): Promise<boolean>;
@@ -91,7 +102,7 @@ export type LocalChatSlotGrant = {
 
 type SlotStub = {
   chatStep(turnId: string): Promise<SlotStep>;
-  tryBackground(id: string): Promise<boolean>;
+  tryBackground(id: string, wallMs?: number | null): Promise<boolean>;
   enqueueBackground(id: string): Promise<number>;
   pollBackground(id: string): Promise<BackgroundPoll>;
   heartbeat(id: string): Promise<boolean>;
@@ -156,8 +167,13 @@ export function createMemoryLocalLlmSlot(options?: {
   return {
     chatStep: (turnId) =>
       run(() => applyChatStep(book, turnId, now(), ttlMs, queueTtlMs, yieldMs)),
-    tryBackground: (id) =>
-      run(() => applyTryBackground(book, id, now(), ttlMs, queueTtlMs, backgroundLimits)),
+    tryBackground: (id, limits) =>
+      run(() =>
+        applyTryBackground(book, id, now(), ttlMs, queueTtlMs, {
+          leaseMs: backgroundLimits.leaseMs,
+          wallMs: limits ? limits.wallMs : backgroundLimits.wallMs,
+        }),
+      ),
     enqueueBackground: (id) =>
       run(() => applyEnqueueBackground(book, id, now(), queueTtlMs)),
     pollBackground: (id) =>
@@ -184,7 +200,7 @@ function createDoCoordinator(namespace: SlotNamespace): LocalLlmSlotCoordinator 
   const stub = () => namespace.getByName(SLOT_OBJECT_NAME);
   return {
     chatStep: (turnId) => stub().chatStep(turnId),
-    tryBackground: (id) => stub().tryBackground(id),
+    tryBackground: (id, limits) => stub().tryBackground(id, limits ? limits.wallMs : undefined),
     enqueueBackground: (id) => stub().enqueueBackground(id),
     pollBackground: (id) => stub().pollBackground(id),
     heartbeat: (id) => stub().heartbeat(id),
@@ -212,11 +228,11 @@ export function resetLocalLlmSlotForTests(): void {
   memorySlot = undefined;
 }
 
-const noopGrant = {
-  release: async () => {},
-  signal: new AbortController().signal,
-  maxTokens: (requested: number) => requested,
-};
+const noopSignal = new AbortController().signal;
+
+function grantMaxTokens(job: LocalLlmJobId): (requested?: number) => number {
+  return (requested?: number) => capLocalLlmJobTokens(job, requested);
+}
 
 export type LocalBackgroundGrant = {
   release: () => Promise<void>;
@@ -252,9 +268,10 @@ export async function acquireLocalLlmBackground(
   id: string,
   options: AcquireBackgroundOptions = {},
 ): Promise<LocalBackgroundGrant | null> {
-  if (!localLlmSlotEnabled()) return noopGrant;
   const job = options.job ?? "sidecar";
-  const coordinator = getLocalLlmSlotCoordinator();
+  const limits = localLlmJobLimits(job);
+  // The ledger check happens before any Ollama request, including when the
+  // slot book is off. Ollama is still one-at-a-time and FIFO.
   if (!options.force) {
     const decision = await admitBackgroundJob(job, { ledgerOnly: options.ledgerOnly });
     if (decision === "skip") return null;
@@ -265,7 +282,15 @@ export async function acquireLocalLlmBackground(
       return null;
     }
   }
-  const granted = await coordinator.tryBackground(id);
+  if (!localLlmSlotEnabled()) {
+    return {
+      release: async () => {},
+      signal: noopSignal,
+      maxTokens: grantMaxTokens(job),
+    };
+  }
+  const coordinator = getLocalLlmSlotCoordinator();
+  const granted = await coordinator.tryBackground(id, { wallMs: limits.wallMs });
   if (!granted) {
     if (!options.force && backgroundJobDefers(job)) {
       await options.onDefer?.();
@@ -273,8 +298,13 @@ export async function acquireLocalLlmBackground(
     return null;
   }
   const abort = new AbortController();
-  const wall = setTimeout(() => abort.abort(), LLM_BACKGROUND_WALL_MS);
-  wall.unref?.();
+  // User-waited routes keep their own timeout. A wall here would cut a
+  // 25s draft or an 8192-token codespace call. Yield still aborts them.
+  const wall =
+    limits.wallMs != null
+      ? setTimeout(() => abort.abort(), limits.wallMs)
+      : null;
+  wall?.unref?.();
   const onBackgroundAbort = () => abort.abort();
   const background = backgroundLlmSignal();
   if (background.aborted) abort.abort();
@@ -291,11 +321,11 @@ export async function acquireLocalLlmBackground(
   let released = false;
   return {
     signal: abort.signal,
-    maxTokens: (requested?: number) => capBackgroundNumPredict(requested),
+    maxTokens: grantMaxTokens(job),
     release: async () => {
       if (released) return;
       released = true;
-      clearTimeout(wall);
+      if (wall) clearTimeout(wall);
       clearInterval(timer);
       background.removeEventListener("abort", onBackgroundAbort);
       await coordinator.release(id);

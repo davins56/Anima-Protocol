@@ -17,14 +17,29 @@
  * Deferred payloads live in `local_llm_deferred_jobs` so a Worker isolate
  * can exit and a later cron still runs them.
  *
- * Fail-closed: background completions pass `localOnly: true`, which selects
- * `localOnlyProviderChain()` (the self-hosted model only). OpenRouter,
- * OpenAI, and Workers AI are not added to get around the slot.
+ * Fail-closed for true background work: those completions pass `localOnly:
+ * true`, which selects `localOnlyProviderChain()` (the self-hosted model
+ * only). OpenRouter, OpenAI, and Workers AI are not added to get around
+ * the slot.
+ *
+ * Routes a person triggers and waits on (lesson draft, own-model teacher,
+ * codespace, file/image context, non-sidecar `/v1/chat/completions`,
+ * `/api/ai/chat`) keep the provider chain, token budget, and timeout they
+ * had before this queue. They still refuse to start while the ledger says
+ * companion chat is active, and an in-flight local generate stays
+ * preemptible. They do not use the short background cap.
  */
 
 import {
   ACTIVE_CHAT_QUIET_WINDOW_MS,
   capBackgroundNumPredict,
+  capNumPredict,
+  LLM_EVOLUTION_NUM_PREDICT,
+  LLM_EVOLUTION_WALL_MS,
+  LLM_MEMORY_EXTRACT_NUM_PREDICT,
+  LLM_MEMORY_EXTRACT_WALL_MS,
+  LLM_BACKGROUND_NUM_PREDICT,
+  LLM_BACKGROUND_WALL_MS,
 } from "./chatTimeouts";
 import { localModelChatIsActive } from "./chatTurnLedger";
 import { localOnlyProviderChain, type LlmProviderId } from "./llmFailover";
@@ -53,10 +68,20 @@ export type LocalLlmJobId =
 /** What a job does while a chat turn is in flight or inside the quiet window. */
 export type ActiveChatBehavior = "run" | "defer" | "skip" | "yield";
 
+/**
+ * `short` — 80 tokens and a 12s wall (optional background work).
+ * `evolution` / `memory` — JSON jobs with a budget that can parse, and a
+ * wall that fits ~9 tokens/s. Still aborted when chat asks the slot to yield.
+ * `caller` — user-waited route. Original token budget and timeout. The slot
+ * only aborts the call when a companion chat turn wants the model.
+ */
+export type LocalLlmBudget = "short" | "evolution" | "memory" | "caller";
+
 export type LocalLlmJobPolicy = {
   /** interactive = `/chat/messages`. inline = no model call. background = the slot. */
   priority: "interactive" | "inline" | "background";
   whenActive: ActiveChatBehavior;
+  budget: LocalLlmBudget;
   notes: string;
 };
 
@@ -72,92 +97,110 @@ export const LOCAL_LLM_JOBS: Record<LocalLlmJobId, LocalLlmJobPolicy> = {
   "chat-reply": {
     priority: "interactive",
     whenActive: "run",
+    budget: "caller",
     notes: "POST /chat/messages generate, including retry, edit, and continue.",
   },
   "mood-affect": {
     priority: "inline",
     whenActive: "run",
+    budget: "caller",
     notes: "evolveCompanionAffectFromUser/Companion. No model call.",
   },
   relationship: {
     priority: "inline",
     whenActive: "run",
+    budget: "caller",
     notes: "maybeTriggerRelationshipEvolution heuristic. No model call.",
   },
   "turn-memory": {
     priority: "inline",
     whenActive: "run",
+    budget: "caller",
     notes: "upsertTurnMemory stores the exchange as a fact. No model call.",
   },
   "narrative-arc": {
     priority: "inline",
     whenActive: "run",
+    budget: "caller",
     notes: "maybeTriggerNarrativeArc heuristic. No model call.",
   },
   evolution: {
     priority: "background",
     whenActive: "defer",
-    notes: "Milestone personality delta. Deferred until chat is idle, then the local model.",
+    budget: "evolution",
+    notes: "Milestone personality delta. Deferred until chat is idle, then the local model at 512 tokens. A truncated or aborted run is re-queued.",
   },
   "memory-extract": {
     priority: "background",
     whenActive: "defer",
-    notes: "Distilled characterMemory facts. Deferred until idle. The turn fact is already stored.",
+    budget: "memory",
+    notes: "Distilled characterMemory facts. Deferred until idle, then 256 tokens. The turn fact is already stored. A truncated or aborted run is re-queued.",
   },
   proactive: {
     priority: "background",
     whenActive: "skip",
-    notes: "Proactive check-in. Skipped during the quiet window; cron tries again later.",
+    budget: "short",
+    notes: "Proactive check-in. Skipped during the quiet window; cron tries again later. Short local cap.",
   },
   journal: {
     priority: "background",
     whenActive: "skip",
-    notes: "Autonomous journal reflection. Skipped during the quiet window.",
+    budget: "short",
+    notes: "Autonomous journal reflection. Skipped during the quiet window. Short local cap.",
   },
   "llm-warm": {
     priority: "background",
     whenActive: "skip",
+    budget: "short",
     notes: "Weight warm-up. Skipped so it cannot sit in front of a reply.",
   },
   sidecar: {
     priority: "background",
     whenActive: "skip",
-    notes: "Quests, lore, world events, choices, suggestions, and other optional invokes.",
+    budget: "short",
+    notes: "Quests, lore, world events, choices, suggestions, and other optional invokes. Short local cap.",
   },
   "scene-mind": {
     priority: "background",
     whenActive: "skip",
-    notes: "Optional director on POST /scene-mind. Least-recent speaker is used instead.",
+    budget: "short",
+    notes: "Optional director on POST /scene-mind. Least-recent speaker is used instead. Short local cap.",
   },
   "model-tutor": {
     priority: "background",
     whenActive: "yield",
-    notes: "Steward lesson draft. Does not start while the ledger says chat is active. An in-flight draft aborts by closing the Ollama request.",
+    budget: "caller",
+    notes: "Steward lesson draft. Original chain, 400 tokens, and draft timeout. Does not start while the ledger says chat is active. An in-flight local generate aborts when chat yields.",
   },
   "own-model-teacher": {
     priority: "background",
     whenActive: "yield",
-    notes: "Own-model teacher draft. Does not start during the quiet window. An in-flight draft aborts by closing the Ollama request.",
+    budget: "caller",
+    notes: "Own-model teacher draft. Original chain, 300 tokens, and teacher timeout. Does not start during the quiet window. An in-flight local generate aborts when chat yields.",
   },
   codespace: {
     priority: "background",
     whenActive: "yield",
-    notes: "Codespace agent completion. Does not start during the quiet window. An in-flight call aborts by closing the Ollama request.",
+    budget: "caller",
+    notes: "Codespace agent completion. Original heavy token budget and provider chain. Does not start during the quiet window. An in-flight local generate aborts when chat yields.",
   },
   "openai-user": {
     priority: "background",
     whenActive: "yield",
-    notes: "Signed-in /api/openai completion that is not a post-turn sidecar. Does not start during the quiet window.",
+    budget: "caller",
+    notes: "Signed-in /v1/chat/completions that is not a post-turn sidecar, including the stream. Original chain, tokens, and open timeout. Does not start during the quiet window.",
   },
   "ai-chat": {
     priority: "background",
     whenActive: "yield",
-    notes: "POST /api/ai/chat probe. Does not start during the quiet window. An in-flight call aborts by closing the Ollama request.",
+    budget: "caller",
+    notes: "POST /api/ai/chat probe. Original 256-token budget and ai-chat open timeout. Does not start during the quiet window. An in-flight local generate aborts when chat yields.",
   },
   "context-analysis": {
     priority: "background",
     whenActive: "yield",
-    notes: "Uploaded file/image context. Does not start during the quiet window.",
+    budget: "caller",
+    notes: "Uploaded file/image context. Original chain and 1500-token budget (vision stays on whatever provider the chain already used). 429 while the ledger says chat is active.",
   },
 };
 
@@ -237,6 +280,53 @@ export function backgroundProviderChain(): LlmProviderId[] {
 
 export function backgroundMaxTokens(requested: number | undefined): number {
   return capBackgroundNumPredict(requested);
+}
+
+export type LocalLlmJobLimits = {
+  budget: LocalLlmBudget;
+  /** Null means the caller's own timeout is the wall. Yield abort still applies. */
+  wallMs: number | null;
+  /** Null means the caller's maxTokens is left alone. */
+  tokenCap: number | null;
+};
+
+export function localLlmJobLimits(job: LocalLlmJobId): LocalLlmJobLimits {
+  const budget = LOCAL_LLM_JOBS[job].budget;
+  if (budget === "evolution") {
+    return {
+      budget,
+      wallMs: LLM_EVOLUTION_WALL_MS,
+      tokenCap: LLM_EVOLUTION_NUM_PREDICT,
+    };
+  }
+  if (budget === "memory") {
+    return {
+      budget,
+      wallMs: LLM_MEMORY_EXTRACT_WALL_MS,
+      tokenCap: LLM_MEMORY_EXTRACT_NUM_PREDICT,
+    };
+  }
+  if (budget === "caller") {
+    return { budget, wallMs: null, tokenCap: null };
+  }
+  return {
+    budget,
+    wallMs: LLM_BACKGROUND_WALL_MS,
+    tokenCap: LLM_BACKGROUND_NUM_PREDICT,
+  };
+}
+
+/** Clamp to the job cap. Caller-budget jobs return the requested count. */
+export function capLocalLlmJobTokens(job: LocalLlmJobId, requested?: number): number {
+  const cap = localLlmJobLimits(job).tokenCap;
+  if (cap == null) {
+    const raw =
+      typeof requested === "number" && Number.isFinite(requested) && requested > 0
+        ? Math.floor(requested)
+        : 0;
+    return Math.max(1, raw);
+  }
+  return capNumPredict(requested, cap);
 }
 
 export { ACTIVE_CHAT_QUIET_WINDOW_MS };
