@@ -19,6 +19,7 @@ vi.mock("../src/lib/llmFailover", () => ({
 }));
 
 import functionsRouter from "../src/routes/openai/functions";
+import { setLocalChatActivityProbeForTests } from "../src/lib/localLlmPriority";
 import {
   beginCompanionLlmTurn,
   resetCompanionLlmTurnForTests,
@@ -46,6 +47,13 @@ beforeEach(() => {
   createMock.mockReset();
   createMock.mockImplementation(async () => ({ content: "warmer, more direct" }));
   resetCompanionLlmTurnForTests();
+  // This file unsets VITEST to test the sidecar flag. That would otherwise
+  // read chat_turns left by earlier files and treat the suite as active chat.
+  setLocalChatActivityProbeForTests(async () => false);
+});
+
+afterAll(() => {
+  setLocalChatActivityProbeForTests(null);
 });
 
 async function invoke(fnName: string): Promise<{ status: number; json: { result?: unknown } }> {

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { chatTurns, db, ensureSchemaOnce } from "@workspace/db";
+import { ACTIVE_CHAT_QUIET_WINDOW_MS } from "../src/lib/chatTimeouts";
 import {
   beginChatTurn,
   checkpointGeneratedTurn,
@@ -12,6 +13,7 @@ import {
   markTurnFailed,
   pendingTurnLeaseIsStale,
   readChatTurn,
+  localModelChatIsActive,
   sessionHasOlderPendingChatTurn,
   retryableChatTurns,
   STALE_PENDING_LEASE_MS,
@@ -32,6 +34,23 @@ afterAll(async () => {
 });
 
 describe("chat turn ledger", () => {
+  it("treats a turn created inside the quiet window as active chat", async () => {
+    const quietId = `turn_${prefix}_quiet`;
+    await beginChatTurn({
+      id: quietId,
+      sessionId,
+      userId,
+      userContent: "still here",
+      persistenceOwner: "server",
+    });
+    expect(await localModelChatIsActive()).toBe(true);
+    const afterQuietWindow = new Date(
+      Date.now() + ACTIVE_CHAT_QUIET_WINDOW_MS + 10 * 60 * 1000,
+    );
+    expect(await localModelChatIsActive(afterQuietWindow)).toBe(false);
+    await db.delete(chatTurns).where(eq(chatTurns.id, quietId));
+  });
+
   it("uses stable message ids and idempotently reopens a known turn", async () => {
     const ids = turnMessageIds(turnId);
     expect(ids).toEqual({

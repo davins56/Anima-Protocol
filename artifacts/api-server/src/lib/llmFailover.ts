@@ -63,7 +63,9 @@ import {
 import { getOpenWeightChatModel, resolveModelSpec } from "@workspace/llm";
 import { LlmStreamTimeoutError } from "./consumeLlmStream";
 import {
+  capBackgroundNumPredict,
   combineAbortSignals,
+  LLM_BACKGROUND_WALL_MS,
   LLM_LOCAL_FAILOVER_ATTEMPT_MS,
   LLM_LOCAL_FIRST_TOKEN_MS,
   openStreamAbort,
@@ -282,6 +284,11 @@ export interface ChatStreamRequest {
   temperature?: number;
   /** Cancel the in-flight stream open (e.g. a caller-side timeout). */
   signal?: AbortSignal;
+  /**
+   * Background work. Chain is the self-hosted model only, and the token
+   * budget is the background cap. Interactive chat leaves this unset.
+   */
+  localOnly?: boolean;
 }
 
 /**
@@ -341,6 +348,11 @@ export interface ChatCompletionRequest {
   toolChoice?: OpenAI.Chat.Completions.ChatCompletionToolChoiceOption;
   /** Cancel the in-flight request (e.g. a caller-side timeout) instead of leaving it running server-side. */
   signal?: AbortSignal;
+  /**
+   * Background work. Chain is the self-hosted model only, and the token
+   * budget is the background cap. Interactive chat leaves this unset.
+   */
+  localOnly?: boolean;
 }
 
 export interface ChatCompletionResult {
@@ -491,6 +503,29 @@ export function resolveLocalModel(tier: ModelTier): ResolvedModel {
 
 function localUsable(): boolean {
   return hasLocalLlm() && !cloudFlagshipMisconfigured();
+}
+
+/**
+ * Background generates stay on the self-hosted model. Fallback flags and
+ * cloud keys do not apply. An unusable local host yields an empty chain
+ * so the call fails closed instead of hopping to Workers AI or OpenRouter.
+ */
+export function localOnlyProviderChain(): LlmProviderId[] {
+  return localUsable() ? ["local"] : [];
+}
+
+function applyBackgroundRequestLimits<T extends {
+  localOnly?: boolean;
+  maxTokens: number;
+  signal?: AbortSignal;
+}>(req: T): T {
+  if (!req.localOnly) return req;
+  const wall = AbortSignal.timeout(LLM_BACKGROUND_WALL_MS);
+  return {
+    ...req,
+    maxTokens: capBackgroundNumPredict(req.maxTokens),
+    signal: req.signal ? combineAbortSignals(req.signal, wall) : wall,
+  };
 }
 
 /**
@@ -2487,10 +2522,11 @@ async function runLocalCompletionWithOptionalBackup(
 /** Open a streaming chat completion (Workers AI when bound, else local Anima LLM). */
 export async function createChatStreamWithFailover(req: ChatStreamRequest): Promise<ChatStreamResult> {
   beginChatProviderTurn();
-  if (cloudFlagshipMisconfigured() && !hasWorkersAiBinding()) {
+  req = applyBackgroundRequestLimits(req);
+  if (cloudFlagshipMisconfigured() && !hasWorkersAiBinding() && !req.localOnly) {
     throw new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }
-  const chain = getProviderChain();
+  const chain = req.localOnly ? localOnlyProviderChain() : getProviderChain();
   if (!chain.length) throw noProviderConfiguredError();
 
   let lastErr: unknown;
@@ -2584,10 +2620,11 @@ export async function createChatCompletionWithFailover(
   req: ChatCompletionRequest,
 ): Promise<ChatCompletionResult> {
   beginChatProviderTurn();
-  if (cloudFlagshipMisconfigured() && !hasWorkersAiBinding()) {
+  req = applyBackgroundRequestLimits(req);
+  if (cloudFlagshipMisconfigured() && !hasWorkersAiBinding() && !req.localOnly) {
     throw new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }
-  const chain = getProviderChain();
+  const chain = req.localOnly ? localOnlyProviderChain() : getProviderChain();
   if (!chain.length) throw noProviderConfiguredError();
 
   let lastErr: unknown;

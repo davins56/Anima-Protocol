@@ -238,15 +238,16 @@ async function warmOnce(
     "./localLlmSlot"
   );
   const slot = localLlmSlotEnabled(env)
-    ? await acquireLocalLlmBackground("llm-warm")
+    ? await acquireLocalLlmBackground("llm-warm", { job: "llm-warm" })
     : null;
   if (localLlmSlotEnabled(env) && !slot) return "busy";
 
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const signals = [timeoutSignal];
+  if (slot && "signal" in slot && slot.signal) signals.push(slot.signal);
   const background = localCallSignal();
-  const signal = background
-    ? combineAbortSignals(timeoutSignal, background)
-    : timeoutSignal;
+  if (background) signals.push(background);
+  const signal = combineAbortSignals(...signals);
 
   try {
     const response = await fetchImpl(url, {

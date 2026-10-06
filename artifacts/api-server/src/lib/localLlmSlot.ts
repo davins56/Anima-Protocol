@@ -5,9 +5,11 @@
  * Node, vitest, and a Worker that has not bound the object yet share an
  * in-process book — correct for one process, not across isolates.
  *
- * Chat turns wait FIFO. Background callers try once and skip when the slot
- * is held or a chat turn is already waiting. The 90s first-token budget
- * starts at acquisition, not when the turn joins the queue.
+ * Chat turns wait FIFO and jump ahead of every queued background job.
+ * A background holder is told to yield as soon as a chat turn arrives.
+ * Chat waits at most `LLM_BACKGROUND_YIELD_MS` for that abort, then takes
+ * the slot. The 90s first-token budget starts at acquisition, not while
+ * the turn is queued.
  *
  * Hosted / non-local chains never take the slot. `ANIMA_LOCAL_LLM_SLOT=false`
  * turns the feature off. The default is on whenever the chain is local-only.
@@ -15,6 +17,11 @@
 
 import { readRuntimeBinding } from "./cloudflareEnv";
 import {
+  capBackgroundNumPredict,
+  LLM_BACKGROUND_SLOT_TTL_MS,
+  LLM_BACKGROUND_WALL_MS,
+  LLM_BACKGROUND_YIELD_MS,
+  LLM_BACKGROUND_YIELD_POLL_MS,
   LLM_LOCAL_FIRST_TOKEN_MS,
   LLM_LOCAL_SLOT_HEARTBEAT_MS,
   LLM_LOCAL_SLOT_POLL_MS,
@@ -24,11 +31,20 @@ import {
 } from "./chatTimeouts";
 import { isLocalOnlyProviderChain } from "./llmFailover";
 import {
+  admitBackgroundJob,
+  backgroundJobDefers,
+  type LocalLlmJobId,
+} from "./localLlmPriority";
+import { backgroundLlmSignal } from "./sidecarLlm";
+import {
   applyChatStep,
+  applyEnqueueBackground,
   applyHeartbeat,
+  applyPollBackground,
   applyRelease,
   applyTryBackground,
   emptySlotBook,
+  type BackgroundPoll,
   type SlotBook,
   type SlotStep,
 } from "./localLlmSlotState";
@@ -59,6 +75,8 @@ export class LocalLlmSlotClientLeftError extends Error {
 export type LocalLlmSlotCoordinator = {
   chatStep(turnId: string): Promise<SlotStep>;
   tryBackground(id: string): Promise<boolean>;
+  enqueueBackground(id: string): Promise<number>;
+  pollBackground(id: string): Promise<BackgroundPoll>;
   heartbeat(id: string): Promise<boolean>;
   release(id: string): Promise<void>;
 };
@@ -74,6 +92,8 @@ export type LocalChatSlotGrant = {
 type SlotStub = {
   chatStep(turnId: string): Promise<SlotStep>;
   tryBackground(id: string): Promise<boolean>;
+  enqueueBackground(id: string): Promise<number>;
+  pollBackground(id: string): Promise<BackgroundPoll>;
   heartbeat(id: string): Promise<boolean>;
   release(id: string): Promise<void>;
 };
@@ -111,6 +131,9 @@ export function createMemoryLocalLlmSlot(options?: {
   now?: () => number;
   ttlMs?: number;
   queueTtlMs?: number;
+  yieldMs?: number;
+  backgroundLeaseMs?: number;
+  backgroundWallMs?: number;
 }): LocalLlmSlotCoordinator {
   const book: SlotBook = emptySlotBook();
   const now = options?.now ?? (() => Date.now());
@@ -125,11 +148,20 @@ export function createMemoryLocalLlmSlot(options?: {
     );
     return result;
   };
+  const backgroundLimits = {
+    leaseMs: options?.backgroundLeaseMs ?? LLM_BACKGROUND_SLOT_TTL_MS,
+    wallMs: options?.backgroundWallMs ?? LLM_BACKGROUND_WALL_MS,
+  };
+  const yieldMs = options?.yieldMs ?? LLM_BACKGROUND_YIELD_MS;
   return {
     chatStep: (turnId) =>
-      run(() => applyChatStep(book, turnId, now(), ttlMs, queueTtlMs)),
+      run(() => applyChatStep(book, turnId, now(), ttlMs, queueTtlMs, yieldMs)),
     tryBackground: (id) =>
-      run(() => applyTryBackground(book, id, now(), ttlMs, queueTtlMs)),
+      run(() => applyTryBackground(book, id, now(), ttlMs, queueTtlMs, backgroundLimits)),
+    enqueueBackground: (id) =>
+      run(() => applyEnqueueBackground(book, id, now(), queueTtlMs)),
+    pollBackground: (id) =>
+      run(() => applyPollBackground(book, id, now(), queueTtlMs)),
     heartbeat: (id) =>
       run(() => applyHeartbeat(book, id, now(), ttlMs, queueTtlMs)),
     release: (id) =>
@@ -153,6 +185,8 @@ function createDoCoordinator(namespace: SlotNamespace): LocalLlmSlotCoordinator 
   return {
     chatStep: (turnId) => stub().chatStep(turnId),
     tryBackground: (id) => stub().tryBackground(id),
+    enqueueBackground: (id) => stub().enqueueBackground(id),
+    pollBackground: (id) => stub().pollBackground(id),
     heartbeat: (id) => stub().heartbeat(id),
     release: (id) => stub().release(id),
   };
@@ -180,29 +214,85 @@ export function resetLocalLlmSlotForTests(): void {
 
 const noopGrant = {
   release: async () => {},
+  signal: new AbortController().signal,
+  maxTokens: (requested: number) => requested,
+};
+
+export type LocalBackgroundGrant = {
+  release: () => Promise<void>;
+  /** Aborts when chat asks this holder to yield, or the wall cap hits. */
+  signal: AbortSignal;
+  /** Clamp a requested token budget to the background cap. */
+  maxTokens: (requested?: number) => number;
+};
+
+export type AcquireBackgroundOptions = {
+  /** Which policy row to apply. Defaults to skip-while-chatting. */
+  job?: LocalLlmJobId;
+  /**
+   * Drain path: take the slot if chat is not waiting, even inside the
+   * quiet window. Still yields when a chat turn arrives.
+   */
+  force?: boolean;
+  /** Called once when the job is deferred instead of started. */
+  onDefer?: () => Promise<void> | void;
 };
 
 /**
  * Try to take the slot for work that is not a chat turn.
- * `null` means skip this call. A noop release means the feature is off.
+ * `null` means skip or defer this call. A noop release means the feature is off.
+ * While the grant is held, `signal` aborts if a chat turn wants the slot.
  */
 export async function acquireLocalLlmBackground(
   id: string,
-): Promise<{ release: () => Promise<void> } | null> {
+  options: AcquireBackgroundOptions = {},
+): Promise<LocalBackgroundGrant | null> {
   if (!localLlmSlotEnabled()) return noopGrant;
+  const job = options.job ?? "sidecar";
   const coordinator = getLocalLlmSlotCoordinator();
+  if (!options.force) {
+    const decision = await admitBackgroundJob(job);
+    if (decision === "skip") return null;
+    if (decision === "defer") {
+      // The row in local_llm_deferred_jobs is the queue. Parking a slot-book
+      // entry here blocks drain when the stored id and this id differ.
+      await options.onDefer?.();
+      return null;
+    }
+  }
   const granted = await coordinator.tryBackground(id);
-  if (!granted) return null;
+  if (!granted) {
+    if (!options.force && backgroundJobDefers(job)) {
+      await options.onDefer?.();
+    }
+    return null;
+  }
+  const abort = new AbortController();
+  const wall = setTimeout(() => abort.abort(), LLM_BACKGROUND_WALL_MS);
+  wall.unref?.();
+  const onBackgroundAbort = () => abort.abort();
+  const background = backgroundLlmSignal();
+  if (background.aborted) abort.abort();
+  else background.addEventListener("abort", onBackgroundAbort, { once: true });
   const timer = setInterval(() => {
-    void coordinator.heartbeat(id).catch(() => {});
-  }, LLM_LOCAL_SLOT_HEARTBEAT_MS);
+    void coordinator
+      .pollBackground(id)
+      .then((status) => {
+        if (!status.held || status.yield) abort.abort();
+      })
+      .catch(() => {});
+  }, LLM_BACKGROUND_YIELD_POLL_MS);
   timer.unref?.();
   let released = false;
   return {
+    signal: abort.signal,
+    maxTokens: (requested?: number) => capBackgroundNumPredict(requested),
     release: async () => {
       if (released) return;
       released = true;
+      clearTimeout(wall);
       clearInterval(timer);
+      background.removeEventListener("abort", onBackgroundAbort);
       await coordinator.release(id);
     },
   };

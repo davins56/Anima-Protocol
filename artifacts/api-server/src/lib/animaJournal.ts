@@ -127,14 +127,18 @@ Relationship intensity (0-100): ${params.relationshipLevel ?? 40}
 Output ONLY the journal body text, no title prefix.`;
 
   if (companionLlmTurnOpen()) return null;
-  const background = await acquireLocalLlmBackground(`journal:${params.userId}`);
+  const background = await acquireLocalLlmBackground(`journal:${params.userId}`, {
+    job: "journal",
+  });
   if (!background) return null;
   try {
     const completion = await createChatCompletionWithFailover({
       tier: "light",
-      maxTokens: 320,
+      maxTokens: background.maxTokens(320),
       temperature: 0.85,
       messages: [{ role: "system", content: prompt }],
+      signal: background.signal,
+      localOnly: true,
     });
 
     const content = String(completion.content || "").trim();

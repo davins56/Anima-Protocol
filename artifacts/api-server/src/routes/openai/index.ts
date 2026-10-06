@@ -13,7 +13,13 @@ import {
   consumeLlmStream,
   LlmStreamTimeoutError,
 } from "../../lib/consumeLlmStream";
-import { llmOpenTimeoutMs, openStreamAbort } from "../../lib/chatTimeouts";
+import {
+  capBackgroundNumPredict,
+  combineAbortSignals,
+  LLM_BACKGROUND_WALL_MS,
+  llmOpenTimeoutMs,
+  openStreamAbort,
+} from "../../lib/chatTimeouts";
 import { shouldSkipSidecarLlm } from "../../lib/sidecarLlm";
 import { acquireLocalLlmBackground } from "../../lib/localLlmSlot";
 import { visibleAssistantReply } from "../../lib/visibleAssistantReply";
@@ -102,6 +108,7 @@ async function streamSignedInCompletion(
     deepMode?: boolean;
     conversationDepth?: number;
     requestedMaxTokens?: number;
+    signal?: AbortSignal;
     onComplete?: (
       fullResponse: string,
       meta: {
@@ -120,9 +127,13 @@ async function streamSignedInCompletion(
       deepMode: opts.deepMode,
       conversationDepth: opts.conversationDepth ?? opts.chatMessages.length,
     });
-    const maxTokens = resolveMaxTokens(opts.requestedMaxTokens, routed.maxTokens);
+    const maxTokens = opts.signal
+      ? capBackgroundNumPredict(resolveMaxTokens(opts.requestedMaxTokens, routed.maxTokens))
+      : resolveMaxTokens(opts.requestedMaxTokens, routed.maxTokens);
     const open = openStreamAbort(
-      llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() }),
+      opts.signal
+        ? LLM_BACKGROUND_WALL_MS
+        : llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() }),
     );
     let completion;
     try {
@@ -131,7 +142,8 @@ async function streamSignedInCompletion(
         model: routed.model,
         maxTokens,
         messages: opts.chatMessages,
-        signal: open.signal,
+        signal: opts.signal ? combineAbortSignals(open.signal, opts.signal) : open.signal,
+        localOnly: Boolean(opts.signal),
       });
     } finally {
       open.cancel();
@@ -337,10 +349,19 @@ router.post("/v1/chat/completions", async (req, res) => {
     respondSkippedSidecar(res, body.stream !== false);
     return;
   }
-  const background =
-    body.sidecar === true ? await acquireLocalLlmBackground("openai-sidecar") : null;
-  if (body.sidecar === true && !background) {
-    respondSkippedSidecar(res, body.stream !== false);
+  const background = await acquireLocalLlmBackground(
+    body.sidecar === true ? "openai-sidecar" : "openai-user",
+    { job: body.sidecar === true ? "sidecar" : "openai-user" },
+  );
+  if (!background) {
+    if (body.sidecar === true) {
+      respondSkippedSidecar(res, body.stream !== false);
+      return;
+    }
+    res.status(429).json({
+      error: "The companion is using the model. Try again in a moment.",
+      code: "llm_busy",
+    });
     return;
   }
 
@@ -383,8 +404,10 @@ router.post("/v1/chat/completions", async (req, res) => {
       const completion = await createChatCompletionWithFailover({
         tier: routed.tier,
         model: routed.model,
-        maxTokens: resolveMaxTokens(requestedMaxTokens, routed.maxTokens),
+        maxTokens: background.maxTokens(resolveMaxTokens(requestedMaxTokens, routed.maxTokens)),
         messages: chatMessages,
+        signal: background.signal,
+        localOnly: true,
       });
       const content = visibleAssistantReply(completion.content);
       if (!String(content).trim()) {
@@ -417,6 +440,7 @@ router.post("/v1/chat/completions", async (req, res) => {
     deepMode,
     conversationDepth: chatMessages.length,
     requestedMaxTokens,
+    signal: background.signal,
   });
   } finally {
     await background?.release();

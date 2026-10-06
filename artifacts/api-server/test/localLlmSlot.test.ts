@@ -184,6 +184,8 @@ describe("local Ollama slot", () => {
     );
     expect(slotDo).toContain("applyChatStep");
     expect(slotDo).toContain("applyTryBackground");
+    expect(slotDo).toContain("applyEnqueueBackground");
+    expect(slotDo).toContain("applyPollBackground");
     expect(slotDo).toContain("applyHeartbeat");
     expect(slotDo).toContain("applyRelease");
     const wrangler = readFileSync(join(repoRoot, "wrangler.jsonc"), "utf8");
@@ -192,6 +194,46 @@ describe("local Ollama slot", () => {
     expect(wrangler).toContain('"tag": "v1-local-llm-slot"');
     expect(wrangler).toContain('"new_sqlite_classes": ["LocalLlmSlot"]');
     expect(wrangler).not.toMatch(/Durable Objects need Workers Paid/);
+  });
+
+  it("lets a chat turn jump ahead of a queued background job", async () => {
+    const slot = createMemoryLocalLlmSlot();
+    expect(await slot.enqueueBackground("journal")).toBe(1);
+    expect((await slot.chatStep("user-turn")).granted).toBe(true);
+    expect(await slot.tryBackground("journal")).toBe(false);
+    await slot.release("user-turn");
+    expect(await slot.tryBackground("journal")).toBe(true);
+    await slot.release("journal");
+  });
+
+  it("yields a running background generate so chat waits at most the bound", async () => {
+    let now = 0;
+    const yieldMs = 1_000;
+    const slot = createMemoryLocalLlmSlot({
+      now: () => now,
+      yieldMs,
+      backgroundLeaseMs: 60_000,
+      backgroundWallMs: 60_000,
+      ttlMs: 60_000,
+    });
+    expect(await slot.tryBackground("journal")).toBe(true);
+    expect(await slot.pollBackground("journal")).toEqual({ held: true, yield: false });
+
+    const grant = await waitForLocalChatSlot({
+      turnId: "user-turn",
+      coordinator: slot,
+      onWaiting: () => {},
+      now: () => now,
+      sleep: async (ms) => {
+        now += ms;
+      },
+      pollMs: yieldMs,
+      waitMs: 180_000,
+    });
+    expect(grant.waitedMs).toBeLessThanOrEqual(yieldMs);
+    expect(grant.waitedMs).toBe(yieldMs);
+    expect(await slot.pollBackground("journal")).toEqual({ held: false, yield: true });
+    await grant.release();
   });
 
   it("gives background callers a noop lease when the feature is off", async () => {
