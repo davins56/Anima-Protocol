@@ -85,6 +85,24 @@ describe("presentMemoryReview", () => {
     expect(shown.core).toEqual([
       expect.objectContaining({ fact_id: "core-name", editable: false, protected: true }),
     ]);
+
+    const protectedMoment = presentMemoryReview({
+      about_you: [],
+      companion: [
+        {
+          fact_id: "her-promise",
+          text: "She kept a quiet promise.",
+          about: "companion",
+          section: "companion",
+          memory_class: "episodic",
+          protected: true,
+          editable: false,
+        },
+      ],
+      core: [],
+    });
+    expect(protectedMoment.companion.map((item) => item.fact_id)).toEqual(["her-promise"]);
+    expect(protectedMoment.core).toEqual([]);
     expect(memoryScreenTitle("Natasha")).toBe("What Natasha remembers");
     expect(memoryEmptyLine("Natasha")).toBe("Natasha hasn't remembered anything yet.");
   });

@@ -50,12 +50,20 @@ describe("lexical memory overlap", () => {
               protected: true,
               memory_class: "core",
             },
+            {
+              forgotten: true,
+              fact_id: "gone",
+              text: "The human's name is Eve.",
+              object: "Eve",
+              created_at: now,
+            },
           ],
         },
       ],
       { topK: 5 },
     );
     expect(scored.map((item) => item.fact.text).join("\n")).not.toMatch(/not applied/i);
+    expect(scored.map((item) => item.fact.text).join("\n")).not.toMatch(/Eve/);
     expect(scored.map((item) => item.fact.text).join("\n")).toMatch(/Sam/);
   });
 

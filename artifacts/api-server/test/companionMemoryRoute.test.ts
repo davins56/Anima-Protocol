@@ -223,24 +223,33 @@ describe("companion memory review route", () => {
     });
     expect(response.status).toBe(200);
     const payload = (await response.json()) as {
+      changed: boolean;
       review: { about_you: { fact_id: string; text: string; about: string }[]; companion: { text: string }[] };
     };
-    expect(payload.review.about_you.find((item) => item.fact_id === "user-name")).toMatchObject({
-      text: "The human's name is Samuel.",
-      about: "user",
-    });
+    expect(payload.changed).toBe(true);
+    const corrected = payload.review.about_you.find((item) => item.text === "The human's name is Samuel.");
+    expect(corrected).toMatchObject({ about: "user" });
+    expect(corrected?.fact_id).not.toBe("user-name");
     expect(payload.review.companion.map((item) => item.text)).toEqual([
       "Natasha kept the key from the bridge.",
     ]);
 
     const memory = await storedRow();
     const saved = (memory?.facts || []).find(
-      (item) => item && (item as { fact_id?: string }).fact_id === "user-name",
-    ) as { text?: string; about?: string; object?: string; memory_class?: string };
+      (item) => item && (item as { text?: string }).text === "The human's name is Samuel.",
+    ) as { text?: string; about?: string; object?: string; value?: string; memory_class?: string; user_edited?: boolean };
     expect(saved.text).toBe("The human's name is Samuel.");
     expect(saved.about).toBe("user");
-    expect(saved.object).toBe("Sam");
+    expect(saved.object).toBe("Samuel");
+    expect(saved.value).toBe("Samuel");
+    expect(saved.user_edited).toBe(true);
     expect(saved.memory_class).toBe("semantic");
+    const tombstone = (memory?.facts || []).find(
+      (item) => item && (item as { fact_id?: string }).fact_id === "user-name",
+    ) as { forgotten?: boolean; object?: string; text?: string };
+    expect(tombstone.forgotten).toBe(true);
+    expect(tombstone.object).toBe("Sam");
+    expect(tombstone.text).toBeUndefined();
     expect((memory?.facts || []).some((item) => (item as { type?: string }).type === "turn")).toBe(
       true,
     );
@@ -284,20 +293,41 @@ describe("companion memory review route", () => {
   });
 
   it("deletes one of her memories through companion_memories and leaves the rest", async () => {
+    await db.insert(memoryEmbeddings).values({
+      userId: ownerId,
+      characterId,
+      factId: "her-key",
+      text: "Natasha kept the key from the bridge.",
+      memoryType: "factual",
+      embedding: [0.3, 0.4],
+      model: "hash-bow-v1",
+    });
     const response = await call(ownerId, "DELETE", `/chat/memories/${characterId}/facts/her-key`);
     expect(response.status).toBe(200);
     const payload = (await response.json()) as {
+      changed: boolean;
       review: { companion: unknown[]; about_you: { fact_id: string }[]; core: { fact_id: string }[] };
     };
+    expect(payload.changed).toBe(true);
     expect(payload.review.companion).toEqual([]);
     expect(payload.review.about_you.map((item) => item.fact_id)).toEqual(["user-name"]);
     expect(payload.review.core.map((item) => item.fact_id)).toEqual(["core-name"]);
 
     const memory = await storedRow();
+    const her = (memory?.facts || []).find(
+      (item) => item && (item as { fact_id?: string }).fact_id === "her-key",
+    ) as { forgotten?: boolean; text?: string; object?: string };
+    expect(her.forgotten).toBe(true);
+    expect(her.object).toBe("the key");
+    expect(her.text).toBeUndefined();
     const ids = (memory?.facts || []).map((item) => (item as { fact_id?: string }).fact_id);
-    expect(ids).not.toContain("her-key");
     expect(ids).toContain("user-name");
     expect(ids).toContain("core-name");
+    const embeddings = await db
+      .select()
+      .from(memoryEmbeddings)
+      .where(eq(memoryEmbeddings.userId, ownerId));
+    expect(embeddings.map((row) => row.factId)).toEqual(["user-name"]);
     expect((memory?.facts || []).some((item) => (item as { type?: string }).type === "turn")).toBe(
       true,
     );

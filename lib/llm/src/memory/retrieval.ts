@@ -186,7 +186,8 @@ export function retrieveRelevantMemories(
           : { text: String(rawFact) };
       // Core proposals are stored so identity is not rewritten in place.
       // They stay out of the prompt until a later phase applies them.
-      if (fact.proposal === true) continue;
+      // Forgotten facts stay in the row as tombstones and must not return.
+      if (fact.proposal === true || fact.forgotten === true) continue;
       const memoryType = classifyFact(fact);
       const hScore = heuristicScore(memoryType, fact, contextHint, preferTypes);
 

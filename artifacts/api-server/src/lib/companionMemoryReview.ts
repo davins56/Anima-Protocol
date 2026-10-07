@@ -6,16 +6,21 @@
  * User facts stay in their own list, even if someone rewrites the sentence.
  */
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   companionMemories,
   db,
   memoryEmbeddings,
-  withTransientDbRetry,
 } from "@workspace/db";
 import { factIdFor } from "./memoryEmbeddings";
 import {
+  isForgottenFact,
   isPolicyFact,
+  objectFromCorrectedText,
+  policyDedupeKey,
+  policyFactId,
+  withCompanionMemoryLock,
+  type ForgottenFact,
   type MemoryAbout,
   type MemoryClass,
   type PolicyFact,
@@ -178,11 +183,54 @@ export function editCompanionMemoryFact(
   if (text === fact.text.trim()) {
     return { ok: true, changed: false, review: groupCompanionMemories(facts), facts };
   }
-  const next = facts.map((item) => {
-    if (!isPolicyFact(item) || item.fact_id !== factId) return item;
-    return { ...item, text, updated_at: now };
+  const nextObject = objectFromCorrectedText(fact.predicate, text);
+  const priorKey = policyDedupeKey(fact);
+  const nextKey = policyDedupeKey({
+    about: fact.about,
+    subject: fact.subject,
+    predicate: fact.predicate,
+    object: nextObject,
   });
+  const keyChanged = nextKey !== priorKey;
+  const nextFact: PolicyFact = {
+    ...fact,
+    text,
+    object: nextObject,
+    value: nextObject,
+    user_edited: true,
+    updated_at: now,
+    fact_id: keyChanged ? policyFactId(nextKey) : fact.fact_id,
+  };
+  let next = facts.map((item) =>
+    isPolicyFact(item) && item.fact_id === factId ? nextFact : item,
+  );
+  // Only the old triple is forgotten. A custom fact id that still names the
+  // same subject, predicate, and object stays as it is.
+  if (keyChanged) next = replaceForgotten(next, toForgottenFact(fact, now));
   return { ok: true, changed: true, review: groupCompanionMemories(next), facts: next };
+}
+
+function toForgottenFact(fact: PolicyFact, now: string): ForgottenFact {
+  return {
+    forgotten: true,
+    fact_id: fact.fact_id,
+    about: fact.about,
+    subject: fact.subject,
+    predicate: fact.predicate,
+    object: fact.object,
+    deleted_at: now,
+  };
+}
+
+function replaceForgotten(facts: unknown[], marker: ForgottenFact): unknown[] {
+  const key = policyDedupeKey(marker);
+  let seen = false;
+  const next = facts.map((item) => {
+    if (!isForgottenFact(item) || policyDedupeKey(item) !== key) return item;
+    seen = true;
+    return marker;
+  });
+  return seen ? next : [...next, marker];
 }
 
 export function deleteCompanionMemoryFact(
@@ -202,7 +250,9 @@ export function deleteCompanionMemoryFact(
   if (fact.memory_class !== "episodic" && fact.memory_class !== "semantic") {
     return lockedResult();
   }
-  const next = facts.filter((item) => !(isPolicyFact(item) && item.fact_id === factId));
+  const marker = toForgottenFact(fact, new Date().toISOString());
+  const withoutLive = facts.filter((item) => !(isPolicyFact(item) && item.fact_id === factId));
+  const next = replaceForgotten(withoutLive, marker);
   return { ok: true, changed: true, review: groupCompanionMemories(next), facts: next };
 }
 
@@ -251,9 +301,7 @@ export async function applyCompanionMemoryChange(input: {
     return { ok: false, status: 400, error: "That memory could not be found.", code: "memory_not_found" };
   }
 
-  return withTransientDbRetry(() =>
-    db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`${userId}:${characterId}`}))`);
+  return withCompanionMemoryLock(userId, characterId, async (tx) => {
       const [existing] = await tx
         .select()
         .from(companionMemories)
@@ -288,9 +336,12 @@ export async function applyCompanionMemoryChange(input: {
       if (input.action === "edit") {
         const cleaned = cleanMemoryText(input.text);
         if (cleaned) embeddingIds.push(factIdFor(cleaned));
+        const updated = changed.facts.find(
+          (item): item is PolicyFact => isPolicyFact(item) && item.text === cleaned,
+        );
+        if (updated) embeddingIds.push(updated.fact_id);
       }
       await dropFactEmbeddings(tx, userId, characterId, embeddingIds);
       return changed;
-    }),
-  );
+  });
 }

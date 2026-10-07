@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 
 vi.mock("@/api/animaApi", () => ({
   animaApi: {
@@ -140,5 +140,40 @@ describe("What she remembers", () => {
     await waitFor(() => {
       expect(animaApi.chat.forgetCompanionMemory).toHaveBeenCalledWith("natasha", "her-key");
     });
+  });
+
+  it("clears the previous companion when the character changes", async () => {
+    animaApi.chat.companionMemory.mockImplementation((id) => {
+      if (id === "clint") return Promise.reject(new Error("Could not open"));
+      return Promise.resolve({ review });
+    });
+    function Switcher() {
+      const navigate = useNavigate();
+      return (
+        <button type="button" onClick={() => navigate("/what-she-remembers/clint?name=Clint")}>
+          Open Clint
+        </button>
+      );
+    }
+    render(
+      <MemoryRouter initialEntries={["/what-she-remembers/natasha?name=Natasha"]}>
+        <Routes>
+          <Route
+            path="/what-she-remembers/:characterId"
+            element={
+              <>
+                <Switcher />
+                <WhatSheRemembers />
+              </>
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await screen.findByText("The human's name is Sam.");
+    fireEvent.click(screen.getByRole("button", { name: "Open Clint" }));
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(document.body.textContent).not.toContain("The human's name is Sam.");
+    expect(document.body.textContent).not.toContain("kept the key");
   });
 });
