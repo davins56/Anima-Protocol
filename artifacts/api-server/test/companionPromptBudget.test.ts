@@ -345,10 +345,10 @@ describe("companion prompt prefill budget", () => {
   it("drops the synchro paragraph sentence by sentence from its end", () => {
     const tail = "Show willingness to deepen — curiosity, attentiveness, measured warmth.";
     const earlier = "Be genuinely present but don't presume deep familiarity yet.";
-    const build = (count: number) => {
+    const build = (pad: number) => {
       const character = {
         ...natasha,
-        personality: `mark ${"word ".repeat(count)}`,
+        personality: `mark ${"word ".repeat(200)}`,
         backstory: "B",
         speaking_style: "S",
       };
@@ -358,7 +358,7 @@ describe("companion prompt prefill budget", () => {
         recentMessages: [],
         memories: [],
         mode: "solo",
-        content: "Hi",
+        content: `Hi ${"x".repeat(pad)}`,
         synchroState: turn.synchroState,
         companionAffect: turn.companionAffect,
       });
@@ -377,9 +377,11 @@ describe("companion prompt prefill budget", () => {
     expect(unshrunk.moodText).toContain(earlier);
     expect(unshrunk.moodText.indexOf(earlier)).toBeLessThan(unshrunk.moodText.indexOf(tail));
 
+    // Personality is capped, so a longer card does not grow the prompt.
+    // Pad the user turn until only the last synchro sentence has to yield.
     let packed = "";
-    for (let count = 200; count <= 250; count += 1) {
-      const text = build(count)
+    for (let pad = 300; pad <= 520; pad += 20) {
+      const text = build(pad)
         .map((message) => message.content)
         .join("\n");
       if (
@@ -671,7 +673,7 @@ describe("companion prompt prefill budget", () => {
         },
       ],
       mode: "solo" as const,
-      pdfContext: "PDF_CACHE short excerpt",
+      pdfContext: `PDF_CACHE ${"excerpt word ".repeat(40)}`,
       repositoryKnowledge: "REPO_LORE ancient map",
       synchroState: turn.synchroState,
       companionAffect: turn.companionAffect,
@@ -712,8 +714,9 @@ describe("companion prompt prefill budget", () => {
     expect(cachePrefix).toContain("Labor Day (2026-09-07)");
     expect(system.indexOf("MEMORY_CACHE")).toBeGreaterThan(regionEnd);
     expect(system.indexOf("31°C, clear")).toBeGreaterThan(system.indexOf("MEMORY_CACHE"));
-    // PDF still yields first. The in-world lines are short enough that a
-    // one-line repository note now fits beside region, memory, weather, and mood.
+    // PDF still yields first. The first-person persona leaves room for a
+    // one-line repository note beside region, memory, weather, and mood.
+    // A longer excerpt still does not.
     expect(system).toContain("REPO_LORE");
     expect(system).not.toContain("PDF_CACHE");
     expect(estimateLocalPromptTokens(system)).toBeLessThanOrEqual(LOCAL_PROMPT_MAX_TOKENS);
