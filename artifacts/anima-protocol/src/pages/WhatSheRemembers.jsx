@@ -53,6 +53,11 @@ export default function WhatSheRemembers() {
 
   useEffect(() => {
     let cancelled = false;
+    setReview(null);
+    setEditingId(null);
+    setDraft("");
+    setConfirmId(null);
+    setBusyId(null);
     setLoading(true);
     setError("");
     animaApi.chat

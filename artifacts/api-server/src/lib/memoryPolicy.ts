@@ -11,11 +11,12 @@
  */
 
 import { createHash } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   companionMemories,
   db,
   ensureSchemaOnce,
+  memoryEmbeddings,
   withTransientDbRetry,
 } from "@workspace/db";
 import { synchroStrengthFromEmotionalState } from "./companionAffect";
@@ -89,6 +90,27 @@ export type PolicyFact = {
   turn_id?: string;
   fact_id: string;
   created_at: string;
+  /** Set when a person corrected this sentence. Consolidation must not rewrite it. */
+  user_edited?: boolean;
+  /** Mirrors `object` after a correction so the structured value matches the sentence. */
+  value?: string;
+  updated_at?: string;
+};
+
+/**
+ * A forgotten fact stays in the same `facts` array. It has no memory class and
+ * no sentence, so it is not a policy fact and it does not appear on the
+ * review screen. Consolidation and extraction match it by the normalized
+ * subject/predicate/object key and refuse to store that fact again.
+ */
+export type ForgottenFact = {
+  forgotten: true;
+  fact_id: string;
+  about: MemoryAbout;
+  subject: string;
+  predicate: string;
+  object: string;
+  deleted_at: string;
 };
 
 type RawHit = {
@@ -158,9 +180,23 @@ export function policyFactId(key: string): string {
   return createHash("sha256").update(key).digest("hex").slice(0, 24);
 }
 
+export function isForgottenFact(item: unknown): item is ForgottenFact {
+  if (!item || typeof item !== "object") return false;
+  const rec = item as Record<string, unknown>;
+  return (
+    rec.forgotten === true &&
+    typeof rec.fact_id === "string" &&
+    (rec.about === "user" || rec.about === "companion") &&
+    typeof rec.subject === "string" &&
+    typeof rec.predicate === "string" &&
+    typeof rec.object === "string"
+  );
+}
+
 export function isPolicyFact(item: unknown): item is PolicyFact {
   if (!item || typeof item !== "object") return false;
   const rec = item as Record<string, unknown>;
+  if (rec.forgotten === true) return false;
   const memoryClass = rec.memory_class;
   const about = rec.about;
   return (
@@ -270,32 +306,51 @@ function namesMatch(object: string, companionName: string): boolean {
   return right.split(" ").some((part) => part.length >= 3 && part === left);
 }
 
+const USER_SENTENCE_PREFIX: Record<string, string> = {
+  name: "The human's name is ",
+  called: "The human prefers to be called ",
+  lives_in: "The human lives in ",
+  from: "The human is from ",
+  works: "The human works ",
+  prefers: "The human prefers ",
+  enjoys: "The human enjoys ",
+  dislikes: "The human dislikes ",
+  felt: "The human felt this: ",
+  did: "The human did this: ",
+};
+
+const REPEATED_FACT_PREFIX = "The human has done this more than once: ";
+
 function userFactText(predicate: string, object: string, repeated = false): string {
-  if (repeated) return `The human has done this more than once: ${object}.`;
-  switch (predicate) {
-    case "name":
-      return `The human's name is ${object}.`;
-    case "called":
-      return `The human prefers to be called ${object}.`;
-    case "lives_in":
-      return `The human lives in ${object}.`;
-    case "from":
-      return `The human is from ${object}.`;
-    case "works":
-      return `The human works ${object}.`;
-    case "prefers":
-      return `The human prefers ${object}.`;
-    case "enjoys":
-      return `The human enjoys ${object}.`;
-    case "dislikes":
-      return `The human dislikes ${object}.`;
-    case "felt":
-      return `The human felt this: ${object}.`;
-    case "did":
-      return `The human did this: ${object}.`;
-    default:
-      return `The human ${predicate}: ${object}.`;
+  if (repeated) return `${REPEATED_FACT_PREFIX}${object}.`;
+  const prefix = USER_SENTENCE_PREFIX[predicate];
+  if (prefix) return `${prefix}${object}.`;
+  return `The human ${predicate}: ${object}.`;
+}
+
+/**
+ * Pull the structured object back out of a corrected sentence so `object`
+ * and `value` stay aligned with the words the person saved.
+ */
+export function objectFromCorrectedText(predicate: string, text: string): string {
+  const cleaned = text.replace(/\s+/g, " ").trim();
+  const prefixes = [
+    USER_SENTENCE_PREFIX[predicate],
+    `The human ${predicate}: `,
+    REPEATED_FACT_PREFIX,
+    ...Object.values(USER_SENTENCE_PREFIX),
+  ];
+  const seen = new Set<string>();
+  for (const prefix of prefixes) {
+    if (!prefix) continue;
+    const key = prefix.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (cleaned.toLowerCase().startsWith(key)) {
+      return cleanObject(cleaned.slice(prefix.length));
+    }
   }
+  return cleanObject(cleaned);
 }
 
 function coreProposalText(name: string, predicate: string, object: string): string {
@@ -625,20 +680,31 @@ function findPolicy(facts: unknown[], key: string): PolicyFact | undefined {
   );
 }
 
+function findForgotten(facts: unknown[], key: string): ForgottenFact | undefined {
+  return facts.find(
+    (item): item is ForgottenFact => isForgottenFact(item) && policyDedupeKey(item) === key,
+  );
+}
+
 function capPolicyFacts(facts: unknown[]): unknown[] {
   const policy = facts.filter(isPolicyFact);
   if (policy.length <= POLICY_FACT_CAP) return facts;
   const droppable = policy
-    .filter((fact) => !(fact.protected && fact.memory_class === "core"))
+    .filter((fact) => fact.user_edited !== true && !(fact.protected && fact.memory_class === "core"))
     .sort((a, b) => a.importance - b.importance);
-  const dropIds = new Set(droppable.slice(0, policy.length - POLICY_FACT_CAP).map((fact) => fact.fact_id));
+  const overflow = policy.length - POLICY_FACT_CAP;
+  const dropIds = new Set(droppable.slice(0, overflow).map((fact) => fact.fact_id));
   return facts.filter((item) => !isPolicyFact(item) || !dropIds.has(item.fact_id));
 }
 
+function isTurnCrumb(item: unknown): boolean {
+  return Boolean(item && typeof item === "object" && !isPolicyFact(item) && !isForgottenFact(item));
+}
+
 /**
- * Keep classified facts when the turn crumb window slides. Turn rows stay
- * capped; policy rows are not evicted by that window.
- * Returns null when this turn was already stored.
+ * Keep classified facts and forgotten markers when the turn crumb window
+ * slides. Turn rows stay capped. Policy rows and tombstones are not evicted
+ * by that window. Returns null when this turn was already stored.
  */
 export function appendTurnMemoryFact(
   existing: unknown[],
@@ -648,20 +714,16 @@ export function appendTurnMemoryFact(
   if (
     turnId &&
     existing.some(
-      (item) =>
-        item &&
-        typeof item === "object" &&
-        !isPolicyFact(item) &&
-        (item as Record<string, unknown>).turn_id === turnId,
+      (item) => isTurnCrumb(item) && (item as Record<string, unknown>).turn_id === turnId,
     )
   ) {
     return null;
   }
-  const policy = existing.filter(isPolicyFact);
-  const turns = existing.filter((item) => !isPolicyFact(item));
+  const kept = existing.filter((item) => isPolicyFact(item) || isForgottenFact(item));
+  const turns = existing.filter(isTurnCrumb);
   const nextTurns = turns.slice(-(TURN_FACT_CAP - 1));
   nextTurns.push(turnFact);
-  return [...policy, ...nextTurns.slice(-TURN_FACT_CAP)] as Record<string, unknown>[];
+  return [...kept, ...nextTurns.slice(-TURN_FACT_CAP)] as Record<string, unknown>[];
 }
 
 export function consolidateExchange(input: {
@@ -719,6 +781,14 @@ export function consolidateExchange(input: {
       object: hit.object,
     });
     candidates.push(decision.candidate);
+
+    // A forgotten key must not be saved or promoted back into a live fact.
+    // A sentence the person corrected keeps its wording, including an
+    // episodic fact that would otherwise be rewritten on the next repeat.
+    if (findForgotten(facts, key) || prior?.user_edited === true) {
+      discarded += 1;
+      continue;
+    }
 
     if (prior?.memory_class === "episodic") {
       const repeats = (prior.repeats ?? 1) + 1;
@@ -812,6 +882,87 @@ export function buildMemoryPolicyJob(input: {
   };
 }
 
+type CompanionMemoryTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Same companion-row lock the review route uses, held for one transaction. */
+export async function withCompanionMemoryLock<T>(
+  userId: string,
+  characterId: string,
+  run: (tx: CompanionMemoryTx) => Promise<T>,
+): Promise<T> {
+  return withTransientDbRetry(() =>
+    db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`${userId}:${characterId}`}))`);
+      return run(tx);
+    }),
+  );
+}
+
+async function readCompanionFactRows(
+  tx: CompanionMemoryTx,
+  userId: string,
+  characterId: string,
+): Promise<unknown[]> {
+  const [existing] = await tx
+    .select({ facts: companionMemories.facts })
+    .from(companionMemories)
+    .where(and(eq(companionMemories.userId, userId), eq(companionMemories.characterId, characterId)))
+    .limit(1);
+  return Array.isArray(existing?.facts) ? existing.facts : [];
+}
+
+function embeddablePolicyFacts(facts: unknown[]): PolicyFact[] {
+  return facts.filter(isPolicyFact).filter((fact) => fact.proposal !== true);
+}
+
+/**
+ * Read and append a turn crumb inside the companion lock, so a review edit
+ * or delete that commits first cannot be overwritten by a stale snapshot.
+ * Returns false when this turn was already stored.
+ */
+export async function persistCompanionTurnFact(input: {
+  userId: string;
+  characterId: string;
+  turnFact: Record<string, unknown>;
+  now?: Date;
+}): Promise<boolean> {
+  const userId = input.userId.trim();
+  const characterId = input.characterId.trim();
+  if (!userId || !characterId) return false;
+  const now = input.now ?? new Date();
+  return withCompanionMemoryLock(userId, characterId, async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(companionMemories)
+      .where(and(eq(companionMemories.userId, userId), eq(companionMemories.characterId, characterId)))
+      .limit(1);
+    const facts = appendTurnMemoryFact(
+      Array.isArray(existing?.facts) ? existing.facts : [],
+      input.turnFact,
+    );
+    if (!facts) return false;
+    await tx
+      .insert(companionMemories)
+      .values({
+        userId,
+        characterId,
+        summary: existing?.summary ?? "",
+        facts,
+        emotionalState: existing?.emotionalState ?? {},
+        resonanceNotes: existing?.resonanceNotes ?? "",
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [companionMemories.userId, companionMemories.characterId],
+        set: {
+          facts,
+          updatedAt: now,
+        },
+      });
+    return true;
+  });
+}
+
 /**
  * Background consolidation. Reads the companion row (emotion + synchro) and
  * the existing relationship level, then writes facts only. Does not call a
@@ -841,69 +992,93 @@ export async function runDeferredMemoryPolicy(
 
   const relationship = await loadRelationshipState(characterId, userId);
   const now = new Date();
-  const result = await withTransientDbRetry(() =>
-    db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`${userId}:${characterId}`}))`);
-      const [existing] = await tx
-        .select()
-        .from(companionMemories)
-        .where(and(eq(companionMemories.userId, userId), eq(companionMemories.characterId, characterId)))
-        .limit(1);
-      const signals = memoryPolicySignals(existing?.emotionalState);
-      let relationshipImportance = signals.synchroImportance ?? 0;
-      if (relationship && typeof relationship.relationship_level === "number") {
-        relationshipImportance = clamp01(relationship.relationship_level / 100);
-      }
-      const consolidated = consolidateExchange({
-        userContent,
-        assistantContent,
-        companionName,
-        existingFacts: Array.isArray(existing?.facts) ? existing.facts : [],
-        emotionalIntensity: signals.emotionalIntensity,
-        relationshipImportance,
-        sessionId,
-        turnId,
-      });
-      if (consolidated.saved.length === 0 && consolidated.promoted === 0) return consolidated;
-      const facts = consolidated.facts as Record<string, unknown>[];
-      await tx
-        .insert(companionMemories)
-        .values({
-          userId,
-          characterId,
-          summary: existing?.summary ?? "",
+  const result = await withCompanionMemoryLock(userId, characterId, async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(companionMemories)
+      .where(and(eq(companionMemories.userId, userId), eq(companionMemories.characterId, characterId)))
+      .limit(1);
+    const signals = memoryPolicySignals(existing?.emotionalState);
+    let relationshipImportance = signals.synchroImportance ?? 0;
+    if (relationship && typeof relationship.relationship_level === "number") {
+      relationshipImportance = clamp01(relationship.relationship_level / 100);
+    }
+    const consolidated = consolidateExchange({
+      userContent,
+      assistantContent,
+      companionName,
+      existingFacts: Array.isArray(existing?.facts) ? existing.facts : [],
+      emotionalIntensity: signals.emotionalIntensity,
+      relationshipImportance,
+      sessionId,
+      turnId,
+    });
+    if (consolidated.saved.length === 0 && consolidated.promoted === 0) return consolidated;
+    const facts = consolidated.facts as Record<string, unknown>[];
+    await tx
+      .insert(companionMemories)
+      .values({
+        userId,
+        characterId,
+        summary: existing?.summary ?? "",
+        facts,
+        emotionalState: existing?.emotionalState ?? {},
+        resonanceNotes: existing?.resonanceNotes ?? "",
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [companionMemories.userId, companionMemories.characterId],
+        set: {
           facts,
-          emotionalState: existing?.emotionalState ?? {},
-          resonanceNotes: existing?.resonanceNotes ?? "",
           updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [companionMemories.userId, companionMemories.characterId],
-          set: {
-            facts,
-            updatedAt: now,
-          },
-        });
-      return consolidated;
-    }),
-  );
+        },
+      });
+    return consolidated;
+  });
 
   if (result.saved.length === 0 && result.promoted === 0) return;
-  const embeddable = result.facts.filter(isPolicyFact).filter((fact) => fact.proposal !== true);
-  if (embeddable.length === 0) return;
-  try {
-    await upsertMemoryEmbeddings({
-      userId,
-      characterId,
-      facts: embeddable.map((fact) => ({
-        type: fact.type,
-        text: fact.text,
-        session_id: fact.session_id,
-        created_at: fact.created_at,
-        fact_id: fact.fact_id,
-      })),
-    });
-  } catch {
-    // Facts are already stored. Keyword retrieval still works.
+
+  // Re-read under the lock. A review delete or correction that landed after
+  // consolidation must not be embedded from this job's earlier snapshot.
+  const embeddable = await withCompanionMemoryLock(userId, characterId, async (tx) =>
+    embeddablePolicyFacts(await readCompanionFactRows(tx, userId, characterId)),
+  );
+  if (embeddable.length > 0) {
+    try {
+      await upsertMemoryEmbeddings({
+        userId,
+        characterId,
+        facts: embeddable.map((fact) => ({
+          type: fact.type,
+          text: fact.text,
+          session_id: fact.session_id,
+          created_at: fact.created_at,
+          fact_id: fact.fact_id,
+        })),
+      });
+    } catch {
+      // Facts are already stored. Keyword retrieval still works.
+    }
   }
+
+  const embeddedIds = embeddable.map((fact) => fact.fact_id);
+  if (embeddedIds.length === 0) return;
+  await withCompanionMemoryLock(userId, characterId, async (tx) => {
+    const live = new Set(
+      embeddablePolicyFacts(await readCompanionFactRows(tx, userId, characterId)).map(
+        (fact) => fact.fact_id,
+      ),
+    );
+    const stale = embeddedIds.filter((id) => !live.has(id));
+    if (stale.length === 0) return;
+    await tx
+      .delete(memoryEmbeddings)
+      .where(
+        and(
+          eq(memoryEmbeddings.userId, userId),
+          eq(memoryEmbeddings.characterId, characterId),
+          inArray(memoryEmbeddings.factId, stale),
+        ),
+      );
+  });
 }
