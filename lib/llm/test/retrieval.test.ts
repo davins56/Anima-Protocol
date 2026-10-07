@@ -29,6 +29,36 @@ describe("lexical memory overlap", () => {
     expect(scored[0]?.fact.text).toMatch(/window/i);
   });
 
+  it("leaves protected core proposals out of the prompt set", () => {
+    const scored = retrieveRelevantMemories(
+      [
+        {
+          characterId: "c1",
+          facts: [
+            {
+              type: "factual",
+              text: "The human's name is Sam.",
+              created_at: now,
+              about: "user",
+              memory_class: "semantic",
+            },
+            {
+              type: "factual",
+              text: "Protected identity proposal (not applied): Natasha Romanoff — name Natasha Romanoff.",
+              created_at: now,
+              proposal: true,
+              protected: true,
+              memory_class: "core",
+            },
+          ],
+        },
+      ],
+      { topK: 5 },
+    );
+    expect(scored.map((item) => item.fact.text).join("\n")).not.toMatch(/not applied/i);
+    expect(scored.map((item) => item.fact.text).join("\n")).toMatch(/Sam/);
+  });
+
   it("does not let one repeated word take the full lexical boost", () => {
     const scored = retrieveRelevantMemories(
       [
