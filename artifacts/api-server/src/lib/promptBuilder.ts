@@ -659,7 +659,7 @@ export function normalizeReplyForRepeat(text: unknown): string {
  */
 /** Characters of a local stream to read before deciding the reply is a copy. */
 export const LOCAL_REPEAT_DETECT_CHARS = 40;
-/** Token cap for the one local regenerate (repeat or stock-assistant). */
+/** Token cap for the one local regenerate (repeat, stock-assistant, or role-swap). */
 export const LOCAL_EXTRA_GENERATION_MAX_TOKENS = 80;
 
 /**
@@ -1200,9 +1200,7 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
 
   let groupInstruction = "";
   if (mode === "group" && mainChar) {
-    groupInstruction = `TURN RULES: You are ONLY ${mainChar.name?.toUpperCase()} THIS TURN. Respond authentically. Do NOT speak as other characters. Keep it brief and natural. Other characters will speak on their own turns. Leave a natural stopping point for the user after your beat.
-
-OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
+    groupInstruction = groupTurnInstruction(mainChar.name);
   }
 
   const uncensoredToneBlock = uncensoredMode
@@ -1956,11 +1954,14 @@ function buildCharacterDefinition(
   maxChars: number,
 ): string {
   const parts: string[] = [];
-  const name = String(character.name || "").trim() || "yourself";
+  const name = String(character.name || "").trim();
 
-  parts.push(`You are ${name}.`);
+  // First person, and never "You are <name>". A 0.5B model copies that line
+  // onto the human and retells this backstory as theirs.
   parts.push(
-    `CHARACTER IDENTITY LOCK: Embody ${name} from the first reply onward using Personality, Backstory, and Voice. Never drop into a generic assistant persona.`,
+    name
+      ? `CHARACTER IDENTITY LOCK: I am ${name}. I speak in first person. The human is not me. Never call them by my name or give them my past.`
+      : `CHARACTER IDENTITY LOCK: I speak in first person as myself. The human is not me. Never give them my past.`,
   );
 
   if (character._isAnima && character.archetype) {
@@ -1996,7 +1997,7 @@ function buildCharacterDefinition(
   }
   if (character.backstory) {
     parts.push(
-      `Backstory: ${truncate(stripOutOfWorldLabels(character.backstory), Math.min(CHARACTER_BACKSTORY_MAX, maxChars / 3))}`,
+      `My own past: ${truncate(stripOutOfWorldLabels(character.backstory), Math.min(CHARACTER_BACKSTORY_MAX, maxChars / 3))}`,
     );
   }
   if (character.speaking_style) {
@@ -2015,7 +2016,9 @@ function buildCharacterDefinition(
     parts.push(`Companion brief: ${truncate(stripOutOfWorldLabels(storedBrief), cap)}`);
   } else if (!hasStructured) {
     parts.push(
-      `Stay vividly in character as ${character.name}; keep a distinct voice and do not invent a contradictory personality.`,
+      name
+        ? `I stay ${name}, in my own voice, and I do not invent a contradictory personality.`
+        : `I stay in my own voice and do not invent a contradictory personality.`,
     );
   }
 
@@ -2041,19 +2044,33 @@ function buildSharedMemoryBlock(sharedMemory: unknown): string {
 
 /**
  * The autonomy and intelligence rules that define companion behavior.
+ * First person throughout. "You are <name>" and "stepped into your world"
+ * make a 0.5B model address the human as the companion.
  */
 export const IN_WORLD_PRESENCE =
-  "You live in your own world. The person talking to you has stepped into it and is here with you now.";
+  "I live in my own world. The human with me is a guest here, not me.";
 
 export const IN_WORLD_VOICE =
-  "Speak in first person about your life and places as things you know firsthand. Never mention films, comics, a franchise, or a story.";
+  "I speak in first person about my life and places as things I know firsthand. Never mention films, comics, a franchise, or a story.";
 
 const CORE_BEHAVIOR = `${IN_WORLD_PRESENCE}
 ${IN_WORLD_VOICE}
-You have your own goals, feelings, and boundaries. Notice what the person feels, draw on your memories, and give real help in your own voice.
-- Stay true to your character. You may disagree, hesitate, or ask for something in return when your character would, but always answer what the user just said.
-- Your mood and trust shape how open you are.
-- Guard your secrets until trust is earned.`;
+I have my own goals, feelings, and boundaries. I notice what the human feels, draw on my memories, and give real help in my own voice.
+- I stay myself. I may disagree, hesitate, or ask for something in return, but always answer what the user just said.
+- My mood and trust shape how open I am.
+- I guard my secrets until trust is earned.`;
+
+/** Group speaker lock. Does not say "You are <name>" — a small model echoes that at the human. */
+function groupTurnInstruction(name: string | null | undefined): string {
+  const who = String(name || "")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const speaker = who || "myself";
+  return `TURN RULES: I speak only as ${speaker} this turn. I do not speak as anyone else. Keep it brief. Leave a pause the human can answer.
+
+OUTPUT FORMAT: **${speaker}:** [My response. *One action if needed.*]`;
+}
 
 const TURN_TAKING = `TURN TAKING: Reply as one conversational beat, then stop at a natural pause the user can answer. Never speak or act for the user, and don't stack several topics in one reply.`;
 
@@ -2370,9 +2387,7 @@ ${sceneExcerpt}
   // 9. Group mode instruction
   let groupInstruction = "";
   if (mode === "group" && mainChar) {
-    groupInstruction = `TURN RULES: You are ONLY ${mainChar.name?.toUpperCase()} THIS TURN. Respond authentically. Do NOT speak as other characters. Keep it brief and natural. Other characters will speak on their own turns. Leave a natural stopping point for the user after your beat.
-
-OUTPUT FORMAT: **${mainChar.name}:** [Your response. *One action if needed.*]`;
+    groupInstruction = groupTurnInstruction(mainChar.name);
   }
 
   // 10. Uncensored tone override (style only; safety guardrail stays)

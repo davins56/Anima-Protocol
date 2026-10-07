@@ -97,6 +97,7 @@ import {
   pronounFromPersona,
   stockAssistantDeflection,
 } from "../lib/stockAssistantLine";
+import { isRoleSwapReply, roleSwapRetryReminder } from "../lib/roleSwapReply";
 import { extractOperatorModelFromProfile } from "../lib/operatorModel";
 import {
   incrementConversationCount,
@@ -2646,7 +2647,7 @@ router.post("/messages", async (req, res) => {
     // A self-harm turn keeps the generated reply. Swapping it for the
     // in-character dodge would drop the care the model just offered.
     // The crisis card and the care note are unchanged; this only skips
-    // the stock, repeat, and fourth-wall machinery.
+    // the stock, repeat, fourth-wall, and role-swap machinery.
     const crisisTurn = Boolean(crisisResourceCard);
     const replyIsStock = (text: unknown) =>
       !crisisTurn && isStockAssistantLine(text, personaParts);
@@ -2697,7 +2698,8 @@ router.post("/messages", async (req, res) => {
         if (
           retriedText.trim() &&
           !replyIsStock(retriedText) &&
-          !replyBreaksFourthWall(retriedText)
+          !replyBreaksFourthWall(retriedText) &&
+          !isRoleSwapReply(retriedText, activeChar?.name)
         ) {
           usedModel = retry.model;
           usedTier = retry.tier;
@@ -2714,10 +2716,15 @@ router.post("/messages", async (req, res) => {
         retryOpen.cancel();
       }
     };
-    const guardReminder = (stock: boolean, fourthWall: boolean): string =>
+    const guardReminder = (
+      stock: boolean,
+      fourthWall: boolean,
+      roleSwap: boolean,
+    ): string =>
       [
         stock ? inCharacterRetryReminder(activeChar?.name) : "",
         fourthWall ? inWorldRetryReminder(activeChar?.name) : "",
+        roleSwap ? roleSwapRetryReminder(activeChar?.name) : "",
       ]
         .filter(Boolean)
         .join("\n");
@@ -2785,7 +2792,8 @@ router.post("/messages", async (req, res) => {
       }
       const ensembleStock = !crisisTurn && replyIsStock(fullResponse);
       const ensembleFourth = replyBreaksFourthWall(fullResponse) && fourthWallRetryOpen();
-      if (ensembleStock || ensembleFourth) {
+      const ensembleSwap = !crisisTurn && isRoleSwapReply(fullResponse, activeChar?.name);
+      if (ensembleStock || ensembleFourth || ensembleSwap) {
         const retryBudgetMs = repeatRetryBudgetMs(Date.now() - requestStartedAt);
         let otherWorkQueued = companionTurnsOpenForUser(userId) > 1;
         if (retryBudgetMs > 0 && !generateSignal.aborted && !otherWorkQueued) {
@@ -2802,16 +2810,16 @@ router.post("/messages", async (req, res) => {
         const recovered =
           retryBudgetMs > 0 && !generateSignal.aborted && !otherWorkQueued
             ? await regenerateGuardedReply(
-                guardedRetryMaxTokens(true, ensembleFourth),
-                guardReminder(ensembleStock, ensembleFourth),
+                guardedRetryMaxTokens(true, ensembleFourth && !ensembleSwap),
+                guardReminder(ensembleStock, ensembleFourth, ensembleSwap),
                 ensembleStock,
               )
             : null;
         if (recovered) {
           fullResponse = recovered;
-        } else if (ensembleStock) {
+        } else if (ensembleStock || ensembleSwap) {
           fullResponse = stockDeflection();
-          noteStockAssistantLine("deflect");
+          if (ensembleStock) noteStockAssistantLine("deflect");
         }
       }
       if (fullResponse.trim()) emitDelta(fullResponse);
@@ -2848,7 +2856,7 @@ router.post("/messages", async (req, res) => {
       let held = "";
       let flushed = false;
       let suppressFourthWall = false;
-      let cutReason: "repeat" | "stock" | null = null;
+      let cutReason: "repeat" | "stock" | "role_swap" | null = null;
       const streamed = await consumeLlmStream(completion.stream, {
         ...consumeOpts,
         onDelta: (delta) => {
@@ -2865,6 +2873,12 @@ router.post("/messages", async (req, res) => {
           held += delta;
           if (cutReason || suppressFourthWall) return;
           const visible = held.trim();
+          // Stop before the 40-character repeat window. "You are Natasha"
+          // is already the bug, and the droplet has one slot.
+          if (!crisisTurn && isRoleSwapReply(visible, activeChar?.name)) {
+            cutReason = "role_swap";
+            return;
+          }
           // Keep the whole reply. A clear narration is not shown until the
           // one short backup finishes, or until we decide to keep it.
           if (replyBreaksFourthWall(visible)) {
@@ -2914,9 +2928,15 @@ router.post("/messages", async (req, res) => {
         (cutReason === "stock" || replyIsStock(fullResponse) || replyIsStock(held));
       const fourthWall =
         replyBreaksFourthWall(fullResponse) && fourthWallRetryOpen();
+      const swapped =
+        !crisisTurn &&
+        localHost &&
+        (cutReason === "role_swap" ||
+          isRoleSwapReply(fullResponse, activeChar?.name) ||
+          isRoleSwapReply(held, activeChar?.name));
       let otherWorkQueued = false;
       const wantsExtra =
-        (repeated || stockLine || fourthWall) &&
+        (repeated || stockLine || fourthWall || swapped) &&
         retryBudgetMs > 0 &&
         !generateSignal.aborted &&
         !streamed.timedOut;
@@ -2935,10 +2955,10 @@ router.post("/messages", async (req, res) => {
         }
       }
       // One extra generation per turn, shared by the repeat retry, the
-      // stock-assistant retry, and the fourth-wall retry. Repeat wins when
-      // more than one matches: dropping the copied line is the more specific
-      // fix, and a stock or fourth-wall result still deflects below without
-      // a second generate.
+      // stock-assistant retry, the fourth-wall retry, and the role-swap
+      // retry. Repeat wins when more than one matches: dropping the copied
+      // line is the more specific fix, and a stock, fourth-wall, or
+      // role-swap result still deflects below without a second generate.
       let extraGenerationUsed = false;
       let repeatResolved = false;
       const canRegenerate = wantsExtra && !otherWorkQueued;
@@ -2986,7 +3006,8 @@ router.post("/messages", async (req, res) => {
           });
           if (
             retriedText.trim() &&
-            !isRepeatedReply(retriedText, [fullResponse, copiedReply || ""])
+            !isRepeatedReply(retriedText, [fullResponse, copiedReply || ""]) &&
+            !isRoleSwapReply(retriedText, activeChar?.name)
           ) {
             fullResponse = retriedText;
             flushed = false;
@@ -3003,11 +3024,15 @@ router.post("/messages", async (req, res) => {
         } finally {
           retryOpen.cancel();
         }
-      } else if (canRegenerate && (stockLine || fourthWall) && !extraGenerationUsed) {
+      } else if (
+        canRegenerate &&
+        (stockLine || fourthWall || swapped) &&
+        !extraGenerationUsed
+      ) {
         extraGenerationUsed = true;
         const recovered = await regenerateGuardedReply(
-          guardedRetryMaxTokens(localHost, fourthWall),
-          guardReminder(stockLine, fourthWall),
+          guardedRetryMaxTokens(localHost, fourthWall && !swapped),
+          guardReminder(stockLine, fourthWall, swapped),
           stockLine,
         );
         if (recovered) {
@@ -3031,6 +3056,16 @@ router.post("/messages", async (req, res) => {
           fullResponse = stockDeflection();
           flushed = false;
           noteStockAssistantLine("deflect");
+        }
+        const unresolvedSwap =
+          localHost &&
+          (isRoleSwapReply(fullResponse, activeChar?.name) ||
+            (cutReason === "role_swap" &&
+              !String(fullResponse || "").trim() &&
+              isRoleSwapReply(held, activeChar?.name)));
+        if (unresolvedSwap) {
+          fullResponse = stockDeflection();
+          flushed = false;
         }
       }
       if (localHost && !flushed && fullResponse.trim()) {

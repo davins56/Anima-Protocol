@@ -694,17 +694,17 @@ describe("buildCompanionPrompt", () => {
       content: "Hi",
     });
     expect(prompt).toContain(
-      "You live in your own world. The person talking to you has stepped into it and is here with you now.",
+      "I live in my own world. The human with me is a guest here, not me.",
     );
     expect(prompt).toContain(
-      "You have your own goals, feelings, and boundaries. Notice what the person feels, draw on your memories, and give real help in your own voice.",
+      "I have my own goals, feelings, and boundaries. I notice what the human feels, draw on my memories, and give real help in my own voice.",
     );
     expect(prompt).toContain("always answer what the user just said");
     expect(prompt).toContain("CLIENT-PROVIDED SCENE CONTEXT");
     expect(prompt).toContain("2-4 sentences");
     expect(
       prompt.indexOf(
-        "You live in your own world. The person talking to you has stepped into it and is here with you now.",
+        "I live in my own world. The human with me is a guest here, not me.",
       ),
     ).toBeLessThan(prompt.indexOf("CLIENT-PROVIDED SCENE CONTEXT"));
   });
@@ -1035,7 +1035,8 @@ describe("buildGroupCompanionPrompt", () => {
       content: "What do you both think?",
     });
 
-    expect(prompt).toContain("ONLY SERENITY THIS TURN");
+    expect(prompt).toContain("I speak only as Serenity this turn");
+    expect(prompt).not.toMatch(/You are ONLY SERENITY/i);
     expect(prompt).toContain("**Serenity:**");
     expect(prompt).not.toContain(MEMORY_BACKGROUND_LINE);
   });
@@ -1136,7 +1137,7 @@ describe("buildGroupCompanionPrompt", () => {
 
     // Client prompt remains authoritative; do not inject conflicting Serenity rules.
     expect(prompt).toContain("YOU ARE ONLY LINDA THIS TURN");
-    expect(prompt).not.toContain("ONLY SERENITY THIS TURN");
+    expect(prompt).not.toContain("I speak only as Serenity this turn");
     expect(prompt).not.toContain("CHARACTER:\n");
   });
 });
