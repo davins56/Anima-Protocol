@@ -3,8 +3,10 @@
  *
  * Mood, relationship, narrative arc, and the turn-memory fact do not use
  * the model (see LOCAL_LLM_JOBS). Milestone evolution and distilled
- * character memories do. Those are written here when chat is active and
- * run by `drainDeferredLocalLlmJobs` once the quiet window is clear.
+ * character memories do. Memory policy is deferred the same way, and its
+ * runner only writes companion_memories — it does not call the model.
+ * Model jobs are written here when chat is active and run by
+ * `drainDeferredLocalLlmJobs` once the quiet window is clear.
  *
  * Postgres is the cross-instance copy. Tests can replace the store.
  * The proactive cron calls the drain; a Worker isolate does not stay up
@@ -212,6 +214,12 @@ async function runnerFor(kind: string): Promise<DeferredRunner | null> {
     const mod = await import("../routes/openai/functions");
     return async (job, ctx) => {
       await mod.runDeferredCharacterMemory(job.payload, ctx);
+    };
+  }
+  if (kind === "memory-policy") {
+    const mod = await import("./memoryPolicy");
+    return async (job, ctx) => {
+      await mod.runDeferredMemoryPolicy(job.payload, ctx);
     };
   }
   return null;
