@@ -100,7 +100,7 @@ async function forgetTurnMemories(
           .limit(1);
         if (!existing) return;
         const facts = Array.isArray(existing.facts) ? existing.facts : [];
-        const kept = factsWithoutTurn(facts, turnId);
+        const kept = factsWithoutTurn(facts, turnId) as Record<string, unknown>[];
         if (kept.length === facts.length) return;
         const removed = facts.filter((item) => !kept.includes(item));
         const factIds = removed

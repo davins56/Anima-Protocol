@@ -33,15 +33,21 @@ function isRetryDroppable(message) {
   return message.role === "assistant" || message.type === "event";
 }
 
-/** Start of her reply, including earlier bubbles and events from the same turn. */
+/**
+ * Start of her reply. Bubbles that share this turn, and events sitting in
+ * that run, are part of it. A previous assistant line with no turn id is a
+ * different reply and stays.
+ */
 function replyRunStart(list, index) {
   const turnId = messageTurnId(list[index]);
+  if (!turnId) return index;
   let start = index;
   for (let i = index - 1; i >= 0; i -= 1) {
     const message = list[i];
     if (!isRetryDroppable(message)) break;
     const otherTurn = messageTurnId(message);
-    if (turnId && otherTurn && otherTurn !== turnId) break;
+    if (otherTurn && otherTurn !== turnId) break;
+    if (!otherTurn && message.role === "assistant" && message.type !== "event") break;
     start = i;
   }
   return start;
