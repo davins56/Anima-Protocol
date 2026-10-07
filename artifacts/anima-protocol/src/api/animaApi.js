@@ -327,6 +327,25 @@ export const animaApi = {
      */
     companionMemory: (characterId) =>
       request(`/chat/memories/${encodeURIComponent(characterId)}`).then((r) => r.json()),
+
+    /**
+     * Correct one episodic, semantic, or user-fact sentence.
+     * Does not call a model and does not change mood or persona.
+     */
+    updateCompanionMemory: (characterId, factId, text) =>
+      request(
+        `/chat/memories/${encodeURIComponent(characterId)}/facts/${encodeURIComponent(factId)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ text }),
+        },
+      ).then((r) => r.json()),
+
+    forgetCompanionMemory: (characterId, factId) =>
+      request(
+        `/chat/memories/${encodeURIComponent(characterId)}/facts/${encodeURIComponent(factId)}`,
+        { method: "DELETE" },
+      ).then((r) => r.json()),
   },
 
   /**

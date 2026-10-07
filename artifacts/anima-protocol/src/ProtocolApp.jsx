@@ -1527,6 +1527,12 @@ const AuthenticatedApp = () => {
                 }
               />
               <Route
+                path="/what-she-remembers/:characterId"
+                element={
+                    <ExtraPage name="WhatSheRemembers" />
+                }
+              />
+              <Route
                 path="/story-reader/:sessionId"
                 element={
                     <ExtraPage name="StoryReader" />

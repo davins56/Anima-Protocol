@@ -216,6 +216,10 @@ import {
 } from "../lib/replyReplacement";
 import { deferLocalLlmJob } from "../lib/deferredLocalLlm";
 import { appendTurnMemoryFact, buildMemoryPolicyJob } from "../lib/memoryPolicy";
+import {
+  applyCompanionMemoryChange,
+  groupCompanionMemories,
+} from "../lib/companionMemoryReview";
 import { scheduleWorkerBackground } from "../lib/workerBackground";
 import { logger } from "../lib/logger";
 import {
@@ -1673,6 +1677,7 @@ router.get("/memories/:characterId", async (req, res) => {
         emotionalState: {},
         resonanceNotes: "",
       },
+      review: groupCompanionMemories([]),
       companion_affect: companionAffectSnapshotFromEmotionalState({}),
     });
     return;
@@ -1683,10 +1688,44 @@ router.get("/memories/:characterId", async (req, res) => {
       ...memory,
       facts: normalizeMemoryFacts(memory.facts),
     },
+    review: groupCompanionMemories(memory.facts),
     companion_affect: companionAffectSnapshotFromEmotionalState(
       memory.emotionalState as Record<string, unknown>,
     ),
   });
+});
+
+async function changeCompanionMemory(
+  req: Request,
+  res: Response,
+  action: "edit" | "delete",
+) {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+
+  const characterId = String(req.params.characterId || "").trim();
+  const factId = String(req.params.factId || "").trim();
+  const text = action === "edit" ? (req.body as { text?: unknown } | undefined)?.text : undefined;
+  const result = await applyCompanionMemoryChange({
+    userId,
+    characterId,
+    factId,
+    action,
+    text,
+  });
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error, code: result.code });
+    return;
+  }
+  res.json({ review: result.review });
+}
+
+router.patch("/memories/:characterId/facts/:factId", async (req, res) => {
+  await changeCompanionMemory(req, res, "edit");
+});
+
+router.delete("/memories/:characterId/facts/:factId", async (req, res) => {
+  await changeCompanionMemory(req, res, "delete");
 });
 
 function toSceneMindCharacters(characters: MsgData[]): SceneMindCharacter[] {
