@@ -101,7 +101,7 @@ Identity lock wins over learned language. Serenity is not Aelynd. The Operator M
 | System | Job | Already in Anima | Gap |
 |--------|-----|------------------|-----|
 | **1. Serenity Core** | Persistent Anima identity. Personality, backstory, voice, identity lock. | Character / Anima entities in `user_entities`. `promptBuilder` CHARACTER IDENTITY LOCK. Evolution deltas. Onboard Serenity. | Aelynd is not a first-class second core. Do not merge her into Serenity. |
-| **2. Memory** | What the bond remembers. | `companion_memories` (summary, facts, `emotionalState`, resonance notes). `memory_embeddings`. Retrieval in `promptBuilder`. Optional SuperMemory overlay. | **Memory policy** (what to keep, forget, crystallize) is still ad hoc. Phase 3. |
+| **2. Memory** | What the bond remembers. | `companion_memories` (summary, facts, `emotionalState`, resonance notes). `memory_embeddings`. Retrieval in `promptBuilder`. Optional SuperMemory overlay. | **Memory policy v1** classifies episodic / semantic / core on `companion_memories.facts` after a meaningful exchange. Scoring is deterministic. The job is deferred so chat keeps the local slot. User facts stay about the human. Core is a protected proposal and does not overwrite identity. No second store. |
 | **3. Operator Model** | Structured model of the steward (Hub DNA analogue). | **v1 in this PR.** JSON on `user_profiles.data.operator_model`. `GET`/`PUT` `/api/operator-model`. Bounded prompt injection. | Learning / auto-extract from chat. UI editor. Not in v1. |
 | **4. Emotion Engine** | Bond affect and conversational climate. | `synchroEngine` + `resonanceState` persisted on `companion_memories.emotionalState`. Hidden Sequences weather (`lull` / `stir` / `storm`). Intimacy heat (adult, gated). **Self-state v1 live** (`companionAffect`, nested `emotionalState.selfState`). | Agency tick still planned. Resonance Key radiation consumes `radiationEventFromAffect` — not implemented. |
 | **5. Agency Engine** | Act without a user turn when it matters; stay silent when it does not. | Hourly proactive-message cron + Web Push. Scene mind / codespace agent prompts. Protocol-upgrade weave (steward-gated). | No general **agency tick**. Proactive is outreach, not perceive→relevance→act/silence. Phase 4. |
@@ -209,7 +209,7 @@ Proactive messages today skip steps 2 and 4 (they fire on a clock). The Kernel m
 |-------|------|----------|
 | **1. Operator Model v1** | Schema normalize, `user_profiles` persistence, Clerk GET/PUT, bounded prompt snippet. | **Yes.** |
 | **2. Self-state** | Persist the v1 shape; inject a short self-state line when relevant. | **Yes.** See `docs/companion-affect.md`. |
-| **3. Memory policy** | Explicit keep / forget / crystallize rules on `companion_memories` (still that table). | No. |
+| **3. Memory policy** | Explicit keep / classify / crystallize rules on `companion_memories` (still that table). v1 is live: episodic, semantic, protected core proposals. | v1 live. |
 | **4. Agency loop** | Perceive → interpret → memory → relevance → act/silence, wrapping proactive as one actuator. | No. |
 | **5. Embodiment Serenity + Aelynd** | Distinct identities on the **same** `AnimaVesselMesh` stack. Aelynd is not a Serenity skin. | No. |
 | **6. Thin Kernel orchestrator** | A small module that calls existing systems in order. No new chat, no new renderer, no new DB. | No. |
