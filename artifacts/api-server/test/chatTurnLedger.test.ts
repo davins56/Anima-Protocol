@@ -9,6 +9,7 @@ import {
   classifyChatTurnReuse,
   decideDurableTurnJoin,
   latestOpenChatTurn,
+  markChatTurnReplaced,
   markTurnCommitted,
   markTurnFailed,
   pendingTurnLeaseIsStale,
@@ -436,5 +437,87 @@ describe("chat turn ledger", () => {
 
     await db.update(chatTurns).set({ status: "failed" }).where(eq(chatTurns.id, older));
     expect(await latestOpenChatTurn(userId, liveSession, now)).toBeNull();
+  });
+
+  it("does not let a late checkpoint restore a reply the user replaced", async () => {
+    const replacedId = `turn_${prefix}_replaced`;
+    const newerId = `turn_${prefix}_newer`;
+    const retrySession = `${sessionId}_retry`;
+    await beginChatTurn({
+      id: replacedId,
+      sessionId: retrySession,
+      userId,
+      userContent: "hello",
+      persistenceOwner: "server",
+    });
+    await checkpointGeneratedTurn({
+      id: replacedId,
+      userId,
+      assistantContent: "the reply being retried",
+      metadata: { provider: "test" },
+    });
+    await markChatTurnReplaced(replacedId, userId, newerId);
+    await checkpointGeneratedTurn({
+      id: replacedId,
+      userId,
+      assistantContent: "the reply being retried",
+      metadata: { provider: "late" },
+    });
+    const retired = await readChatTurn(replacedId, userId);
+    expect(retired).toMatchObject({
+      status: "failed",
+      assistantContent: "",
+    });
+    expect(retired?.metadata).toMatchObject({ replaced: true, superseded_by: newerId });
+
+    await db
+      .update(chatTurns)
+      .set({
+        status: "generated",
+        assistantContent: "should not repair",
+        persistenceOwner: "server",
+        metadata: { replaced: true },
+      })
+      .where(eq(chatTurns.id, replacedId));
+    const retryable = await retryableChatTurns(userId, retrySession, 5);
+    expect(retryable.some((turn) => turn.id === replacedId)).toBe(false);
+
+    await beginChatTurn({
+      id: newerId,
+      sessionId: retrySession,
+      userId,
+      userContent: "hello",
+      persistenceOwner: "client",
+    });
+    await db
+      .update(chatTurns)
+      .set({ createdAt: new Date(Date.now() - 5_000) })
+      .where(eq(chatTurns.id, replacedId));
+    await db
+      .update(chatTurns)
+      .set({ status: "pending", assistantContent: "", metadata: {} })
+      .where(eq(chatTurns.id, replacedId));
+    const newer = await readChatTurn(newerId, userId);
+    expect(
+      await sessionHasOlderPendingChatTurn(
+        userId,
+        retrySession,
+        newerId,
+        newer?.createdAt ?? new Date(),
+      ),
+    ).toBe(true);
+    expect(
+      await sessionHasOlderPendingChatTurn(
+        userId,
+        retrySession,
+        newerId,
+        newer?.createdAt ?? new Date(),
+        new Date(),
+        [replacedId],
+      ),
+    ).toBe(false);
+
+    await db.delete(chatTurns).where(eq(chatTurns.id, replacedId));
+    await db.delete(chatTurns).where(eq(chatTurns.id, newerId));
   });
 });

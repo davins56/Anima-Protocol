@@ -87,6 +87,8 @@ export async function regenerateMessageFlow(idx, { confirm, activeSession, isLoa
     replyAction: "retry",
     history: plan.kept,
     priorMessages: messages,
+    replacedTurnId: plan.replacedTurnId || "",
+    replacedMessageIds: plan.replacedMessageIds || [],
   });
   if (result?.started === false) {
     const restoredPreview = messages[messages.length - 1]?.content?.slice(0, 60) || "";

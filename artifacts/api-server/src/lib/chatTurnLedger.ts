@@ -1,4 +1,5 @@
-import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, ne, notInArray, or, sql } from "drizzle-orm";
+import { turnMetadataReplaced } from "./replyReplacement";
 import { ACTIVE_CHAT_QUIET_WINDOW_MS } from "./chatTimeouts";
 import {
   chatTurns,
@@ -189,9 +190,59 @@ export async function checkpointGeneratedTurn(input: {
         waitingUntil: null,
         updatedAt: new Date(),
       })
-      .where(and(eq(chatTurns.id, input.id), eq(chatTurns.userId, input.userId))),
+      .where(
+        and(
+          eq(chatTurns.id, input.id),
+          eq(chatTurns.userId, input.userId),
+          // A retry already cleared this reply. Do not write it back.
+          sql`coalesce(${chatTurns.metadata}->>'replaced', '') <> 'true'`,
+        ),
+      ),
   );
 }
+
+/**
+ * The user asked for a new reply. Clear this turn so a late checkpoint or
+ * persist cannot put the old text back on the thread or into memory.
+ */
+export async function markChatTurnReplaced(
+  id: string,
+  userId: string,
+  supersededBy: string,
+): Promise<ChatTurn | null> {
+  return withTransientDbRetry(() =>
+    db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${id}`}))`);
+      const [row] = await tx
+        .select()
+        .from(chatTurns)
+        .where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId)))
+        .limit(1);
+      if (!row) return null;
+      const metadata = {
+        ...(row.metadata ?? {}),
+        replaced: true,
+        superseded_by: supersededBy,
+      };
+      const [updated] = await tx
+        .update(chatTurns)
+        .set({
+          metadata,
+          assistantContent: "",
+          status: row.status === "committed" ? row.status : "failed",
+          lastError: "Replaced by a new reply",
+          leaseExpiresAt: null,
+          waitingUntil: null,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId)))
+        .returning();
+      return updated ?? null;
+    }),
+  );
+}
+
+export { turnMetadataReplaced };
 
 export async function markTurnCommitted(
   id: string,
@@ -311,8 +362,10 @@ export async function sessionHasOlderPendingChatTurn(
   turnId: string,
   createdAt: Date,
   now = new Date(),
+  ignoreTurnIds: readonly string[] = [],
 ): Promise<boolean> {
   const staleBefore = new Date(now.getTime() - STALE_PENDING_LEASE_MS);
+  const ignore = ignoreTurnIds.map((id) => String(id || "")).filter((id) => id && id !== turnId);
   const [row] = await withTransientDbRetry(() =>
     db
       .select({ id: chatTurns.id })
@@ -323,6 +376,7 @@ export async function sessionHasOlderPendingChatTurn(
           eq(chatTurns.sessionId, sessionId),
           eq(chatTurns.status, "pending"),
           ne(chatTurns.id, turnId),
+          ...(ignore.length > 0 ? [notInArray(chatTurns.id, ignore)] : []),
           or(
             lt(chatTurns.createdAt, createdAt),
             and(eq(chatTurns.createdAt, createdAt), lt(chatTurns.id, turnId)),
@@ -401,6 +455,7 @@ export async function retryableChatTurns(
         sql`char_length(btrim(${chatTurns.assistantContent})) > 0`,
       ),
     ),
+    sql`coalesce(${chatTurns.metadata}->>'replaced', '') <> 'true'`,
     lt(chatTurns.retryCount, 5),
   ];
   if (latestCommitted?.createdAt) {
