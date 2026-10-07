@@ -67,7 +67,7 @@ vi.mock("../src/lib/localEnsemble", () => ensembleMocks);
 import chatRouter from "../src/routes/chat";
 import { COMPANION_CHAT_TEMPERATURE } from "../src/lib/ollamaChat";
 import { SHORT_REPLY_MAX_TOKENS } from "../src/lib/chatTimeouts";
-import { messagesForLocalOllama } from "../src/lib/promptBuilder";
+import { LOCAL_EXTRA_GENERATION_MAX_TOKENS, messagesForLocalOllama } from "../src/lib/promptBuilder";
 import { COMPANION_CRISIS_TURN_LINE } from "../src/lib/therapySafety";
 import {
   beginChatTurn,
@@ -1408,7 +1408,7 @@ describe("chat lifecycle", () => {
       const retrySystem = messagesForLocalOllama(retry.messages)[0]?.content;
       expect(retrySystem).toBe(firstSystem);
       expect(retrySystem).toContain(
-        "You live in your own world. The person talking to you has stepped into it and is here with you now.",
+        "I live in my own world. The human with me is a guest here, not me.",
       );
       expect(retrySystem).not.toContain("Stay Aria.");
       expect(retry.maxTokens).toBe(fourthWallReply.FOURTH_WALL_RETRY_MAX_TOKENS);
@@ -1523,6 +1523,204 @@ describe("chat lifecycle", () => {
         .map((event) => String(event.content))
         .join("");
       expect(shown).toBe(quiet);
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(callsBefore + 1);
+    } finally {
+      installHelloStream();
+    }
+  });
+
+  it("regenerates once when a local reply addresses the user as the companion", async () => {
+    const swapTurn = `turn_${prefix}_role_swap`;
+    const handed =
+      "[Pause] You are Aria, former keeper of the gate. You defected and built a family. What brings you to our world?";
+    const mine = "I keep the gate. Ask me what you came to ask.";
+    let generated = 0;
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => {
+      generated += 1;
+      return streamOf(generated === 1 ? handed : mine);
+    });
+    try {
+      const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+      const res = await request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: swapTurn,
+          session_id: sessionId,
+          content: "Who are you?",
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+        }),
+      });
+      expect(res.status).toBe(200);
+      const events = sseEvents(await res.text());
+      const shown = events
+        .filter((event) => typeof event.content === "string")
+        .map((event) => String(event.content))
+        .join("");
+      expect(shown).toBe(mine);
+      expect(shown).not.toMatch(/You are Aria/i);
+      expect(events.at(-1)).toMatchObject({ done: true, visible: mine });
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(callsBefore + 2);
+      const first = llmMocks.createChatStreamWithFailover.mock.calls[callsBefore]?.[0] as {
+        messages: Array<{ role: string; content: string }>;
+      };
+      const retry = llmMocks.createChatStreamWithFailover.mock.calls[callsBefore + 1]?.[0] as {
+        maxTokens: number;
+        messages: Array<{ role: string; content: string }>;
+      };
+      const firstSystem = messagesForLocalOllama(first.messages)[0]?.content;
+      const retrySystem = messagesForLocalOllama(retry.messages)[0]?.content;
+      expect(retrySystem).toBe(firstSystem);
+      expect(retry.maxTokens).toBe(LOCAL_EXTRA_GENERATION_MAX_TOKENS);
+      const retryUser = String(messagesForLocalOllama(retry.messages).at(-1)?.content);
+      expect(retryUser).toContain("The human is a guest, not Aria.");
+      expect(retryUser).toContain("Answer in your own first person as Aria.");
+      expect(retryUser).not.toMatch(/You are Aria/i);
+      expect(String(firstSystem)).not.toMatch(/You are Aria/i);
+    } finally {
+      installHelloStream();
+    }
+  });
+
+  it("does not show a second role-swap and does not generate a third time", async () => {
+    const swapTurn = `turn_${prefix}_role_swap_again`;
+    const handed = "You are Aria, and this life is yours now.";
+    let generated = 0;
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => {
+      generated += 1;
+      return streamOf(generated === 1 ? handed : "You are Aria still.");
+    });
+    try {
+      const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+      const res = await request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: swapTurn,
+          session_id: sessionId,
+          content: "Who are you?",
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+        }),
+      });
+      expect(res.status).toBe(200);
+      const events = sseEvents(await res.text());
+      const shown = events
+        .filter((event) => typeof event.content === "string")
+        .map((event) => String(event.content))
+        .join("");
+      expect(shown).toBe("*Aria studies you for a moment.* Ask me that again, differently.");
+      expect(shown).not.toMatch(/You are Aria/i);
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(callsBefore + 2);
+    } finally {
+      installHelloStream();
+    }
+  });
+
+  it("does not regenerate when the reply is not handing over the companion's name", async () => {
+    const plainTurn = `turn_${prefix}_not_role_swap`;
+    const answer = "You are brave. I stay where I am.";
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => streamOf(answer));
+    try {
+      const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+      const res = await request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: plainTurn,
+          session_id: sessionId,
+          content: "Should I go?",
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+        }),
+      });
+      expect(res.status).toBe(200);
+      const events = sseEvents(await res.text());
+      const shown = events
+        .filter((event) => typeof event.content === "string")
+        .map((event) => String(event.content))
+        .join("");
+      expect(shown).toBe(answer);
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(callsBefore + 1);
+    } finally {
+      installHelloStream();
+    }
+  });
+
+  it("does not regenerate a role-swap on a hosted provider", async () => {
+    const hostedTurn = `turn_${prefix}_hosted_role_swap`;
+    const handed = "You are Aria, former keeper of the gate.";
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => ({
+      ...streamOf(handed),
+      provider: "openrouter",
+    }));
+    try {
+      const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+      const res = await request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: hostedTurn,
+          session_id: sessionId,
+          content: "Who are you?",
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+        }),
+      });
+      expect(res.status).toBe(200);
+      const events = sseEvents(await res.text());
+      const shown = events
+        .filter((event) => typeof event.content === "string")
+        .map((event) => String(event.content))
+        .join("");
+      expect(shown).toBe(handed);
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(callsBefore + 1);
+    } finally {
+      installHelloStream();
+    }
+  });
+
+  it("keeps a role-swap reply on a crisis turn", async () => {
+    const crisisSwap = `turn_${prefix}_crisis_role_swap`;
+    const handed = "You are Aria. Please stay. Call someone you trust.";
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => streamOf(handed));
+    try {
+      const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+      const res = await request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: crisisSwap,
+          session_id: sessionId,
+          content: "I want to kill myself",
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+        }),
+      });
+      expect(res.status).toBe(200);
+      const events = sseEvents(await res.text());
+      const shown = events
+        .filter((event) => typeof event.content === "string")
+        .map((event) => String(event.content))
+        .join("");
+      expect(shown).toBe(handed);
+      expect(events.some((event) => event.crisis_resource)).toBe(true);
       expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(callsBefore + 1);
     } finally {
       installHelloStream();

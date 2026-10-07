@@ -6,6 +6,7 @@
  */
 
 import { LLM_LOCAL_FIRST_TOKEN_MS } from "./chatTimeouts";
+import { IN_WORLD_PRESENCE, IN_WORLD_VOICE } from "./promptBuilder";
 
 const FOURTH_WALL_PATTERNS: RegExp[] = [
   /\bmarvel cinematic universe\b/i,
@@ -105,5 +106,5 @@ export function inWorldRetryReminder(name: string | null | undefined): string {
     .replace(/\s+/g, " ")
     .trim();
   const stay = who ? `Stay ${who}. ` : "";
-  return `${stay}You live in your own world. The person talking to you has stepped into it and is here with you now. Speak in first person about your life and places as things you know firsthand. Never mention films, comics, a franchise, or a story.`;
+  return `${stay}${IN_WORLD_PRESENCE} ${IN_WORLD_VOICE}`;
 }
