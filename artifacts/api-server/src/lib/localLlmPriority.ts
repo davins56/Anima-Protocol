@@ -52,6 +52,7 @@ export type LocalLlmJobId =
   | "llm-warm"
   | "evolution"
   | "memory-extract"
+  | "memory-policy"
   | "mood-affect"
   | "relationship"
   | "turn-memory"
@@ -135,6 +136,12 @@ export const LOCAL_LLM_JOBS: Record<LocalLlmJobId, LocalLlmJobPolicy> = {
     whenActive: "defer",
     budget: "memory",
     notes: "Distilled characterMemory facts. Deferred until idle, then 256 tokens. The turn fact is already stored. A truncated or aborted run is re-queued.",
+  },
+  "memory-policy": {
+    priority: "background",
+    whenActive: "defer",
+    budget: "short",
+    notes: "Deterministic keep/classify on companion_memories. Deferred until chat is idle. Does not call the model.",
   },
   proactive: {
     priority: "background",

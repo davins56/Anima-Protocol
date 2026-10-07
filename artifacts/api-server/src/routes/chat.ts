@@ -214,6 +214,8 @@ import {
   replyActionOf,
   turnSkipsAffect,
 } from "../lib/replyReplacement";
+import { deferLocalLlmJob } from "../lib/deferredLocalLlm";
+import { appendTurnMemoryFact, buildMemoryPolicyJob } from "../lib/memoryPolicy";
 import { scheduleWorkerBackground } from "../lib/workerBackground";
 import { logger } from "../lib/logger";
 import {
@@ -891,19 +893,11 @@ async function upsertTurnMemory(params: {
         )
         .limit(1),
     );
-    const facts = Array.isArray(existing?.facts) ? existing.facts.slice(-24) : [];
-    if (
-      params.turnId &&
-      facts.some(
-        (item) =>
-          item &&
-          typeof item === "object" &&
-          (item as Record<string, unknown>).turn_id === params.turnId,
-      )
-    ) {
-      continue;
-    }
-    facts.push(fact);
+    const facts = appendTurnMemoryFact(
+      Array.isArray(existing?.facts) ? existing.facts : [],
+      fact,
+    );
+    if (!facts) continue;
     await withTransientDbRetry(() =>
       db
         .insert(companionMemories)
@@ -1218,6 +1212,30 @@ async function recordTurnContinuity(turn: ChatTurn): Promise<void> {
     userContent: turn.userContent,
     assistantContent: turn.assistantContent,
   });
+  const activeId = metadata.active_character_id
+    ? String(metadata.active_character_id)
+    : characterIds[0];
+  const companionName = metadata.active_character_name
+    ? String(metadata.active_character_name)
+    : "";
+  if (activeId) {
+    const job = buildMemoryPolicyJob({
+      userId: turn.userId,
+      characterId: activeId,
+      sessionId: turn.sessionId,
+      turnId: turn.id,
+      companionName,
+      userContent: turn.userContent,
+      assistantContent: turn.assistantContent,
+    });
+    if (job) {
+      try {
+        await deferLocalLlmJob(job);
+      } catch {
+        // Consolidation must not fail the chat turn.
+      }
+    }
+  }
 }
 
 async function applyRelationshipPostProcess(params: {

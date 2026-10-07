@@ -116,6 +116,7 @@ describe("local model priority", () => {
     expect(await admitBackgroundJob("context-analysis")).toBe("skip");
     expect(await admitBackgroundJob("evolution")).toBe("defer");
     expect(await admitBackgroundJob("memory-extract")).toBe("defer");
+    expect(await admitBackgroundJob("memory-policy")).toBe("defer");
     expect(await admitBackgroundJob("mood-affect")).toBe("run");
     expect(await admitBackgroundJob("relationship")).toBe("run");
     expect(await admitBackgroundJob("turn-memory")).toBe("run");
@@ -193,6 +194,8 @@ describe("local model priority", () => {
     expect(LOCAL_LLM_JOBS["turn-memory"].priority).toBe("inline");
     expect(LOCAL_LLM_JOBS.evolution.whenActive).toBe("defer");
     expect(LOCAL_LLM_JOBS["memory-extract"].whenActive).toBe("defer");
+    expect(LOCAL_LLM_JOBS["memory-policy"].whenActive).toBe("defer");
+    expect(LOCAL_LLM_JOBS["memory-policy"].priority).toBe("background");
     expect(LOCAL_LLM_JOBS.proactive.whenActive).toBe("skip");
     expect(LOCAL_LLM_JOBS.journal.whenActive).toBe("skip");
   });
