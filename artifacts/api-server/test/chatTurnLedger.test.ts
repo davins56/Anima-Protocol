@@ -482,42 +482,46 @@ describe("chat turn ledger", () => {
     const retryable = await retryableChatTurns(userId, retrySession, 5);
     expect(retryable.some((turn) => turn.id === replacedId)).toBe(false);
 
+    const olderId = `turn_${prefix}_ignore_older`;
+    const busyNewerId = `turn_${prefix}_ignore_newer`;
+    const ignoreSession = `${sessionId}_ignore`;
     await beginChatTurn({
-      id: newerId,
-      sessionId: retrySession,
+      id: olderId,
+      sessionId: ignoreSession,
       userId,
       userContent: "hello",
       persistenceOwner: "client",
     });
-    await db
-      .update(chatTurns)
-      .set({ createdAt: new Date(Date.now() - 5_000) })
-      .where(eq(chatTurns.id, replacedId));
-    await db
-      .update(chatTurns)
-      .set({ status: "pending", assistantContent: "", metadata: {} })
-      .where(eq(chatTurns.id, replacedId));
-    const newer = await readChatTurn(newerId, userId);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await beginChatTurn({
+      id: busyNewerId,
+      sessionId: ignoreSession,
+      userId,
+      userContent: "hello",
+      persistenceOwner: "client",
+    });
+    const busyNewer = await readChatTurn(busyNewerId, userId);
     expect(
       await sessionHasOlderPendingChatTurn(
         userId,
-        retrySession,
-        newerId,
-        newer?.createdAt ?? new Date(),
+        ignoreSession,
+        busyNewerId,
+        busyNewer!.createdAt,
       ),
     ).toBe(true);
     expect(
       await sessionHasOlderPendingChatTurn(
         userId,
-        retrySession,
-        newerId,
-        newer?.createdAt ?? new Date(),
+        ignoreSession,
+        busyNewerId,
+        busyNewer!.createdAt,
         new Date(),
-        [replacedId],
+        [olderId],
       ),
     ).toBe(false);
 
     await db.delete(chatTurns).where(eq(chatTurns.id, replacedId));
-    await db.delete(chatTurns).where(eq(chatTurns.id, newerId));
+    await db.delete(chatTurns).where(eq(chatTurns.id, olderId));
+    await db.delete(chatTurns).where(eq(chatTurns.id, busyNewerId));
   });
 });
