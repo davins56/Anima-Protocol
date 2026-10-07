@@ -14,6 +14,7 @@ import DeviceScanConsole from "./DeviceScanConsole";
 import PortaledFixedPanel from "./PortaledFixedPanel";
 import { useAuth } from "@/lib/AuthContext";
 import { AI_COMPANION_HEADER_LINE } from "@/lib/aiCompanionNotice";
+import { sessionMemoryTargets } from "@/lib/whatSheRemembers";
 
 export default function ChatToolbar({
   activeSession,
@@ -53,6 +54,7 @@ export default function ChatToolbar({
   const [showProtocolUpgrade, setShowProtocolUpgrade] = useState(false);
   const [showDeviceScan, setShowDeviceScan] = useState(false);
   const onlineButtonRef = useRef(null);
+  const memoryTargets = sessionMemoryTargets(activeSession, characters);
   const activeChar = (characters || []).find((c) => c.id === activeSession?.character_id);
   const chattingWithAnima = Boolean(activeChar?._isAnima) && activeSession?.mode === "solo";
 
@@ -146,6 +148,26 @@ export default function ChatToolbar({
         backdropTestId="chat-online-actions-backdrop"
       >
               <div className="flex flex-col">
+
+                {memoryTargets.length > 0 && (
+                  <div className="px-3 py-2 border-b border-primary/10">
+                    <p className="font-mono text-[8px] text-primary/30 tracking-widest uppercase mb-1.5">Memory</p>
+                    <div className="flex flex-col gap-0.5">
+                      {memoryTargets.map((target) => (
+                        <Link
+                          key={target.id}
+                          to={target.to}
+                          data-testid="what-she-remembers-link"
+                          onClick={() => setShowActionsPanel(false)}
+                          className="flex items-center gap-3 px-2 min-h-11 text-base text-primary/80 hover:text-primary hover:bg-primary/5 transition-all rounded touch-manipulation"
+                        >
+                          <Brain className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+                          <span className="min-w-0 leading-snug">{target.label}</span>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Navigation */}
                 <div className="px-3 py-2 border-b border-primary/10">

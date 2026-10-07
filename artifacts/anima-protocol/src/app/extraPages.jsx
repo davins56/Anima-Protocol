@@ -102,6 +102,7 @@ const PAGES = {
   TermsOfUse: lazy(() => import("../pages/TermsOfUse")),
   TimelineDashboard: lazy(() => import("../pages/TimelineDashboard")),
   WhatIfScenarios: lazy(() => import("../pages/WhatIfScenarios")),
+  WhatSheRemembers: lazy(() => import("../pages/WhatSheRemembers")),
   Wiki: lazy(() => import("../pages/Wiki")),
   WorldCalendar: lazy(() => import("../pages/WorldCalendar")),
   WorldCalendarDashboard: lazy(() => import("../pages/WorldCalendarDashboard")),
