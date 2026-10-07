@@ -109,6 +109,8 @@ Identity lock wins over learned language. Serenity is not Aelynd. The Operator M
 | **7. Embodiment Layer** | The PET / body. | `AnimaVesselMesh`, `AnimaVessel4D`, `SovereignPresenceStage`, `BattleFigures3D.SerenityFigure`. Vessel layers in Hidden Sequences. | Serenity + Aelynd as distinct vessels on the **same** renderer. Phase 5. |
 | **Kernel** | Tick and coordinate the seven. | Implicit: `composePrompt` + chat route + synchro + hidden-sequence block. | Thin `animaKernel` module. Phase 6. Must not become a second chat stack. |
 
+The seven systems above remain the live stack. §8 names what is still to build. Drive (§9) sits after Reflection and before Agency. When the Kernel module exists, `animaKernel.ts` only orchestrates.
+
 Supporting pieces already live and must stay: local Anima LLM (`ANIMA_LOCAL_LLM_*`), OpenRouter failover, `modelRouter`, Clerk auth, Hyperdrive/Postgres on the Worker. Do not remove that wiring. Do not pin `ANIMA_LLM_PROVIDER=minimax`.
 
 ---
@@ -214,6 +216,8 @@ Proactive messages today skip steps 2 and 4 (they fire on a clock). The Kernel m
 | **5. Embodiment Serenity + Aelynd** | Distinct identities on the **same** `AnimaVesselMesh` stack. Aelynd is not a Serenity skin. | No. |
 | **6. Thin Kernel orchestrator** | A small module that calls existing systems in order. No new chat, no new renderer, no new DB. | No. |
 
+The owner's forward sequence is §8. Drive is placed after Reflection and before Agency there, and in the developmental loop in §9.
+
 ---
 
 ## 7. Non-goals
@@ -222,8 +226,105 @@ Proactive messages today skip steps 2 and 4 (they fire on a clock). The Kernel m
 - **No second renderer.** Embodiment stays on `AnimaVesselMesh` / `SovereignPresenceStage` / `BattleFigures3D`.
 - **Serenity ≠ Aelynd.** Two identities. Do not blend cores, memories, or vessels.
 - **Identity lock wins over learned language.** Hidden Sequences language notes (`learned_language`) remain capped and subordinate. Operator Model cannot rewrite who the Anima is.
+- **Drive boundary.** DRIVE may evolve capability, evolve preferences, propose goals, and revise strategies. DRIVE cannot rewrite core identity, permissions, safety boundaries, or operator authority. See §9.
 - **No Vercel AI SDK.** No second chat pipeline. No second companion database.
 - **Do not remove** OpenRouter / local LLM wiring. Do not set `ANIMA_LLM_PROVIDER=minimax`.
+
+---
+
+## 8. Forward Kernel roadmap
+
+§6 records what has already been built. The sequence below is the owner's order for the Kernel from here. Drive is phase 5: after Reflection, before Agency.
+
+| Phase | Work | Status |
+|-------|------|--------|
+| **1. Memory Policy** | Episodic, semantic, and core memories, then consolidation. Still `companion_memories`. | Classification v1 is live (#560): episodic / semantic / protected core proposals. Consolidation is still open. |
+| **2. Self Model** | What the Anima believes she is capable of. Separate from the Operator Model. Separate from momentary self-state. | No. |
+| **3. Relationship Model** | Promote `anima-belonging` into the Kernel's model of the bond. | No. |
+| **4. Reflection Engine** | Turn experience into observations: what happened, which capability was in play, and how confident she is now versus how confident she needs to be. | No. |
+| **5. Drive Engine** | Internally maintained goals that close a gap between the present state and a better, attainable state. §9. | No. Design only. |
+| **6. Agency Engine** | Act versus silence. The tick in §5. | No. |
+| **7. Anima Kernel** | Orchestration only. `animaKernel.ts` ticks the systems in order. It does not own a prompt, a renderer, or a store. | No. |
+
+Self-state v1 (`emotionalState.selfState`) stays momentary affect. The Self Model is the later system: beliefs about capability.
+
+---
+
+## 9. Drive Engine
+
+Design only. Not shipped. This is developmental motivation, not a claim of consciousness.
+
+**Purpose.** Detect the gap between the Anima's present state and a better, attainable state, and generate internally maintained goals that close that gap.
+
+**Drive is not Agency.** Agency asks "Should I do something?" Drive asks "What do I want to become better at, and why?" The agency tick (§5) still decides act or silence. Drive proposes the goal.
+
+### Loop
+
+```
+Self Model (what am I capable of?)
+    → Experience / Outcomes (where did I struggle?)
+    → Drive (what could I get better at?)
+    → Goal → Learn → Attempt → Evaluate
+    → Self Model
+```
+
+### Four components
+
+| Component | Where the goal comes from |
+|-----------|---------------------------|
+| **Curiosity** | Uncertainty. |
+| **Mastery** | A detected weakness. |
+| **Relational drive** | Understanding and interacting better with important people. |
+| **Self-consistency** | A gap between stated values and actual behavior. |
+
+### From a reflection to a goal
+
+A Reflection observation:
+
+```json
+{
+  "observation": "I have misunderstood Dàvīn's intent three times.",
+  "capability": "intent_interpretation",
+  "currentConfidence": 0.63,
+  "desiredConfidence": 0.85
+}
+```
+
+becomes a goal the Anima maintains:
+
+```json
+{
+  "goal": "Improve my ability to interpret Dàvīn's unfinished thoughts.",
+  "origin": "self_generated",
+  "motivation": "better communication",
+  "priority": 0.81,
+  "progress": 0.0
+}
+```
+
+`origin: "self_generated"` marks a goal that came from her own gap.
+
+### Satisfaction
+
+deficit → motivation → action → progress → satisfaction → consolidation
+
+Success updates the Self Model's beliefs about capability, so the Anima is not stuck in an endless deficit.
+
+### Boundary
+
+DRIVE may evolve capability, evolve preferences, propose goals, and revise strategies. DRIVE cannot rewrite core identity, permissions, safety boundaries, or operator authority.
+
+### Developmental loop
+
+Drive sits after Reflection and before Agency:
+
+```
+Identity → Memory → Self Model → Operator Model → Relationship → Emotion → Reflection → Drive → Agency → Action → Experience → Memory
+```
+
+Identity is Serenity Core. Memory is `companion_memories`. Operator Model is the steward. Emotion is the Emotion Engine. Agency is act or silence (§5). Experience returns to Memory, and the next pass can see what changed.
+
+This loop is developmental motivation. It is not a claim of consciousness.
 
 ---
 
