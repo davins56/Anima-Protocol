@@ -163,6 +163,10 @@ describe("ChatToolbar Online actions panel", () => {
     expect(panel.style.zIndex).toBe("1001");
     expect(panel.style.position).toBe("fixed");
     expect(panel.textContent).toContain("Inventory");
+    expect(panel.textContent).toContain("What she remembers");
+    expect(panel.querySelector('[data-testid="what-she-remembers-link"]')?.getAttribute("href")).toContain(
+      "/what-she-remembers/char-1",
+    );
     expect(panel.textContent).toContain("Mental Line");
     expect(panel.textContent).toContain("Orchestrate");
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
