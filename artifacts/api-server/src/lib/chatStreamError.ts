@@ -36,6 +36,24 @@ const CONVERSATION_CONTEXT_GENERIC =
   "Couldn't load this conversation. Please try again.";
 const GENERIC_COMPANION_FAILURE =
   "The companion could not reply. Please try again.";
+
+/** Mid-reply Ollama drops and raw `api_error` lines. Retryable, no host detail. */
+export const COMPANION_REPLY_CUT_OFF_HINT =
+  "The companion could not finish this reply. Please try again.";
+
+const OLLAMA_CONNECTION_RE =
+  /ollama\s*\/api\/chat|stream ended before the reply finished|ollama model server is not running/i;
+
+function isOllamaConnectionOrApiError(err: unknown): boolean {
+  if (err && typeof err === "object") {
+    const code = (err as { code?: unknown }).code;
+    if (code === "authentication_error" || code === "model_not_found") return false;
+    if (code === "api_error") return true;
+  }
+  const raw = err instanceof Error ? err.message : String(err ?? "");
+  return OLLAMA_CONNECTION_RE.test(raw);
+}
+
 const GENERIC_HTTP_STATUS_RE =
   /^(?:API\s+error:\s*\d{3}|HTTP\s*\d{3}|Request\s+failed\s+with\s+status\s+code\s+\d{3})$/i;
 
@@ -102,6 +120,12 @@ export function streamErrorMessage(err: unknown): string {
       isLocalOnlyProviderChain()
       ? localOnlyTimeoutMessage()
       : "The companion took too long to reply. Please try again.";
+  }
+
+  // Ollama drops use code ECONNRESET, which classifyDbError also treats as
+  // Postgres. Map them first so the toast is not "Couldn't load this conversation".
+  if (isOllamaConnectionOrApiError(err)) {
+    return COMPANION_REPLY_CUT_OFF_HINT;
   }
 
   const dbInfo = classifyDbError(err);

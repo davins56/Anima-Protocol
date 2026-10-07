@@ -187,6 +187,23 @@ describe("chatTurnErrorMessage", () => {
     ).toBe("Couldn't load this conversation. Please try again.");
   });
 
+  it("hides raw Ollama connection and stream-drop text", () => {
+    const dropped = chatTurnErrorMessage(
+      new Error("Ollama /api/chat stream ended before the reply finished"),
+    );
+    expect(dropped).toBe("The companion could not finish this reply. Please try again.");
+    expect(dropped).not.toMatch(/ollama/i);
+    const unreachable = chatTurnErrorMessage(
+      new Error(
+        "The Ollama model server is not running or not reachable. Start it with `ollama serve`.",
+      ),
+    );
+    expect(unreachable).toBe(
+      "The companion could not finish this reply. Please try again.",
+    );
+    expect(unreachable).not.toMatch(/ollama serve/i);
+  });
+
   it("keeps local-only timeout copy so the HUD does not look like a silent hang", () => {
     const localTimeout =
       "The self-hosted Anima LLM took too long to reply. The model may still be waking — wait a moment and send again. Chat does not fall through to OpenRouter.";

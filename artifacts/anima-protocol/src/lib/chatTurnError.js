@@ -23,6 +23,8 @@ const WORKER_SUBREQUEST_RE =
   /too many subrequests|subrequest limit/i;
 const SQL_LEAK_RE =
   /Failed query\b|from\s+"companion_memories"|select\s+"id"\s*,\s*"user_id"|params:\s*user_/i;
+const OLLAMA_CONNECTION_RE =
+  /ollama\s*\/api\/chat|stream ended before the reply finished|ollama model server is not running/i;
 
 const WORKERS_AI_FREE_QUOTA_HINT =
   "Workers AI daily free quota exhausted — enable Workers Paid or temporarily allow OpenRouter failover";
@@ -127,6 +129,10 @@ export function chatTurnErrorMessage(err) {
     /Cannot perform I\/O on behalf of a different request/i.test(raw)
   ) {
     return "Couldn't load this conversation. Please try again.";
+  }
+  // Ollama connection drops and raw /api/chat errors must not become the toast.
+  if (OLLAMA_CONNECTION_RE.test(raw)) {
+    return "The companion could not finish this reply. Please try again.";
   }
   // Local-only timeout / connection copy from `/chat/messages` is already HUD-safe.
   return raw;

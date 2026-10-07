@@ -37,6 +37,7 @@ import {
 import { retrievePdfContext } from "../lib/pdf/store";
 import {
   consumeLlmStream,
+  interruptedStreamKeepsReply,
   LlmStreamTimeoutError,
 } from "../lib/consumeLlmStream.js";
 import {
@@ -158,7 +159,7 @@ import {
   noteCompanionCrisisResource,
   type CrisisResourceCard,
 } from "../lib/therapySafety";
-import { ChatPipelineTelemetry } from "../lib/chatTelemetry";
+import { ChatPipelineTelemetry, chatErrorClass } from "../lib/chatTelemetry";
 import { streamErrorMessage } from "../lib/chatStreamError";
 import { optionalChatContext } from "../lib/optionalChatContext";
 import { classifyDbError, errorCauseBlob } from "../lib/dbErrors";
@@ -2644,9 +2645,16 @@ router.post("/messages", async (req, res) => {
   usedTier = routed.tier;
 
   let producingTokens = false;
-  const emitDelta = (delta: string) => {
-    if (delta) producingTokens = true;
+  // The local host holds the first ~40 characters for the repeat / role-swap
+  // checks. Flip this on the first upstream chunk, not when that text is
+  // released, so a disconnect in the hold window is still "generating".
+  const noteUpstreamChunk = () => {
+    producingTokens = true;
     telemetry.markFirstToken();
+  };
+  const emitDelta = (delta: string) => {
+    if (delta) noteUpstreamChunk();
+    else telemetry.markFirstToken();
     sse.markStreaming();
     writeSse(res, { content: delta });
   };
@@ -2655,6 +2663,7 @@ router.post("/messages", async (req, res) => {
   const generationBudgetMs = llmChatMessagesOpenTimeoutMs({ freeTierCascade });
   const consumeOpts = {
     onDelta: emitDelta,
+    onActivity: noteUpstreamChunk,
     onReasoning: emitReasoning,
     firstChunkMs: llmChatMessagesFirstChunkMs({ freeTierCascade }),
     totalMs: llmChatMessagesStreamTotalMs({ freeTierCascade }),
@@ -2696,6 +2705,7 @@ router.post("/messages", async (req, res) => {
     });
     const generateSignal = combineAbortSignals(open.signal, abandoned.signal);
     try {
+    let streamInterrupted = false;
     const personaParts = [
       activeChar?.personality,
       activeChar?.backstory,
@@ -2746,6 +2756,7 @@ router.post("/messages", async (req, res) => {
         });
         const retriedText = settleCappedReply(finalizeAssistantReply(retried.content), {
           timedOut: retried.timedOut,
+          interrupted: retried.interrupted,
           finishReason: retried.finishReason,
           stoppedEarly: retried.stoppedEarly,
         });
@@ -2843,14 +2854,16 @@ router.post("/messages", async (req, res) => {
         });
         fullResponse = settleCappedReply(finalizeAssistantReply(streamed.content), {
           timedOut: streamed.timedOut,
+          interrupted: streamed.interrupted,
           finishReason: streamed.finishReason,
           stoppedEarly: streamed.stoppedEarly,
         });
+        streamInterrupted = interruptedStreamKeepsReply(streamed);
       }
       const ensembleStock = !crisisTurn && replyIsStock(fullResponse);
       const ensembleFourth = replyBreaksFourthWall(fullResponse) && fourthWallRetryOpen();
       const ensembleSwap = !crisisTurn && isRoleSwapReply(fullResponse, activeChar?.name);
-      if (ensembleStock || ensembleFourth || ensembleSwap) {
+      if (!streamInterrupted && (ensembleStock || ensembleFourth || ensembleSwap)) {
         const retryBudgetMs = repeatRetryBudgetMs(Date.now() - requestStartedAt);
         let otherWorkQueued = companionTurnsOpenForUser(userId) > 1;
         if (retryBudgetMs > 0 && !generateSignal.aborted && !otherWorkQueued) {
@@ -2960,11 +2973,15 @@ router.post("/messages", async (req, res) => {
         },
         stopWhen: () => cutReason !== null,
       });
-      // A stall, a deadline, or finish_reason "length" stops mid-word.
-      // `done.visible` repaints the bubble, so the saved and shown reply
-      // both end on a finished sentence or a closed action. No extra call.
+      // A stall, a deadline, an upstream drop, or finish_reason "length"
+      // stops mid-word. `done.visible` repaints the bubble, so the saved
+      // and shown reply both end on a finished sentence or a closed action.
+      // An interrupted reply that already has text is a finished turn: trim,
+      // persist, send done, and do not spend the extra regenerate.
+      streamInterrupted = interruptedStreamKeepsReply(streamed);
       fullResponse = settleCappedReply(finalizeAssistantReply(streamed.content), {
         timedOut: streamed.timedOut,
+        interrupted: streamed.interrupted,
         finishReason: streamed.finishReason,
         stoppedEarly: streamed.stoppedEarly,
       });
@@ -2996,7 +3013,8 @@ router.post("/messages", async (req, res) => {
         (repeated || stockLine || fourthWall || swapped) &&
         retryBudgetMs > 0 &&
         !generateSignal.aborted &&
-        !streamed.timedOut;
+        !streamed.timedOut &&
+        !streamInterrupted;
       if (wantsExtra) {
         otherWorkQueued = companionTurnsOpenForUser(userId) > 1;
         if (!otherWorkQueued) {
@@ -3024,7 +3042,7 @@ router.post("/messages", async (req, res) => {
         shouldRegenerateRepeatedReply({
           retryBudgetMs,
           aborted: generateSignal.aborted,
-          timedOut: Boolean(streamed.timedOut),
+          timedOut: Boolean(streamed.timedOut || streamInterrupted),
           repeated,
           otherWorkQueued,
         })
@@ -3058,6 +3076,7 @@ router.post("/messages", async (req, res) => {
           });
           const retriedText = settleCappedReply(finalizeAssistantReply(retried.content), {
             timedOut: retried.timedOut,
+            interrupted: retried.interrupted,
             finishReason: retried.finishReason,
             stoppedEarly: retried.stoppedEarly,
           });
@@ -3141,6 +3160,7 @@ router.post("/messages", async (req, res) => {
     void releaseLocalSlot();
   }
 
+    telemetry.markReplySettled();
     // An empty completion used to look like a successful turn on the client
     // (thinking/typing cleared, no visible reply). Fail loudly instead.
     // Unclosed / think-only DeepSeek R1 output is recovered by finalizeAssistantReply.
@@ -3281,6 +3301,7 @@ router.post("/messages", async (req, res) => {
       provider: usedProvider,
       model: usedModel,
       stream_timeout: err instanceof LlmStreamTimeoutError,
+      error_class: chatErrorClass(err),
     });
   } finally {
     clearInterval(leaseHeartbeat);

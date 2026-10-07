@@ -11,6 +11,10 @@
  *   thinking tokens do not trip "took too long" before the reply starts.
  * - If we already have visible text and the stream stalls, treat that as the
  *   end of the reply instead of hanging forever.
+ * - If the upstream throws after visible text has arrived (Ollama cut the
+ *   socket, or an `{"error":...}` line), keep that text and mark the reply
+ *   interrupted — the same outcome as a stall. Rethrow when nothing visible
+ *   arrived.
  * - If nothing usable arrives before the first-chunk deadline, throw.
  */
 
@@ -84,6 +88,11 @@ export interface ConsumeLlmStreamOptions {
    * so the cancelled generate has released the single local slot.
    */
   stopWhen?: (visible: string) => boolean;
+  /**
+   * Fires once per upstream chunk, before visible text is released. Callers
+   * that hold the opening of a reply still need to know generation started.
+   */
+  onActivity?: () => void;
 }
 
 export interface ConsumeLlmStreamResult {
@@ -93,10 +102,22 @@ export interface ConsumeLlmStreamResult {
   /** True when `stopWhen` ended the stream before the model finished. */
   stoppedEarly?: boolean;
   /**
+   * True when the upstream iterator threw after visible text had arrived.
+   * `timedOut` is also set so the reply is trimmed and saved like a stall.
+   */
+  interrupted: boolean;
+  /**
    * Last provider finish reason. Ollama `done_reason: "length"` arrives as
    * `"length"`, and cloud streams use the same `finish_reason`.
    */
   finishReason: string | null;
+}
+
+/** An upstream drop that already produced text finishes the turn. */
+export function interruptedStreamKeepsReply(
+  result: Pick<ConsumeLlmStreamResult, "content" | "interrupted">,
+): boolean {
+  return result.interrupted === true && result.content.trim().length > 0;
 }
 
 type WaitResult =
@@ -140,7 +161,10 @@ export async function consumeLlmStream(
   // with inner text when the iterator ends or the first-chunk budget expires.
   const hasVisible = () => filter.hasPostThinkAnswer();
 
-  const finalize = (timedOut: boolean): ConsumeLlmStreamResult => {
+  const finalize = (
+    timedOut: boolean,
+    interrupted = false,
+  ): ConsumeLlmStreamResult => {
     const finished = filter.finish();
     const visible = finalizeAssistantReply(
       finished.visible,
@@ -152,7 +176,7 @@ export async function consumeLlmStream(
     } else if (visible && !emittedAny) {
       opts.onDelta?.(visible);
     }
-    return { content: visible, timedOut, finishReason };
+    return { content: visible, timedOut, interrupted, finishReason };
   };
 
   const nextWithDeadline = async (): Promise<WaitResult> => {
@@ -187,7 +211,14 @@ export async function consumeLlmStream(
         throw timeoutError(rawContent);
       }
 
-      const waited = await nextWithDeadline();
+      let waited: WaitResult;
+      try {
+        waited = await nextWithDeadline();
+      } catch (err) {
+        const kept = finalize(true, true);
+        if (kept.content) return kept;
+        throw err;
+      }
       if (waited.kind === "timeout") {
         const result = finalize(true);
         if (result.content) return result;
@@ -198,6 +229,7 @@ export async function consumeLlmStream(
       }
 
       lastActivity = Date.now();
+      opts.onActivity?.();
       const chunk = waited.result.value;
       const reason = chunk?.choices?.[0]?.finish_reason;
       if (typeof reason === "string" && reason) finishReason = reason;
@@ -230,7 +262,13 @@ export async function consumeLlmStream(
       }
     }
     await settleReturn();
-    return { content: streamedVisible, timedOut: false, stoppedEarly: true, finishReason };
+    return {
+      content: streamedVisible,
+      timedOut: false,
+      interrupted: false,
+      stoppedEarly: true,
+      finishReason,
+    };
   } finally {
     // Don't await return() on the timeout path — a hung upstream iterator
     // would block the deadline this helper exists to provide. The early-stop
