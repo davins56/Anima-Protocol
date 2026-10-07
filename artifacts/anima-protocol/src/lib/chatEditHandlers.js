@@ -47,6 +47,8 @@ export async function editMessageFlow(idx, newText, { confirm, activeSession, is
     replyAction: "edit",
     history: plan.kept,
     priorMessages: messages,
+    replacedTurnId: plan.replacedTurnId || "",
+    replacedMessageIds: plan.replacedMessageIds || [],
   });
   if (result?.started === false) {
     const restoredPreview = messages[messages.length - 1]?.content?.slice(0, 60) || "";

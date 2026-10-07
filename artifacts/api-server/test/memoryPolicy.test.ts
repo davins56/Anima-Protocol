@@ -2,12 +2,14 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import {
+  chatTurns,
   companionMemories,
   db,
   ensureSchemaOnce,
   userEntities,
   userProfiles,
 } from "@workspace/db";
+import { beginChatTurn, markChatTurnReplaced } from "../src/lib/chatTurnLedger";
 import { CONTINUE_USER_TURN } from "../src/lib/promptBuilder";
 import { DeferredLlmRetryError } from "../src/lib/deferredLocalLlm";
 import {
@@ -16,6 +18,7 @@ import {
   buildMemoryPolicyJob,
   consolidateExchange,
   decideMemoryCandidate,
+  factsWithoutTurn,
   isPolicyFact,
   memoryPolicySignals,
   policyDedupeKey,
@@ -490,6 +493,58 @@ describe("memory policy persistence", () => {
       .where(eq(userEntities.entityId, characterId))
       .limit(1);
     expect((character?.data as { backstory?: string }).backstory).toBe("ORIGINAL BACKSTORY");
+  });
+
+  it("drops facts that belong to a replaced turn and leaves the rest", () => {
+    const facts = [
+      { type: "turn", turn_id: "turn_old", text: "old reply" },
+      { type: "factual", text: "likes tea" },
+      { type: "policy", turn_id: "turn_old", text: "also old" },
+    ];
+    expect(factsWithoutTurn(facts, "turn_old")).toEqual([{ type: "factual", text: "likes tea" }]);
+    expect(factsWithoutTurn(facts, "")).toEqual(facts);
+  });
+
+  it("does not store a memory for a reply the user already replaced", async () => {
+    const userId = `${PREFIX}user`;
+    const characterId = `${PREFIX}replaced`;
+    const turnId = `turn_${PREFIX}replaced`.replace(/_+$/, "");
+    await beginChatTurn({
+      id: turnId,
+      sessionId: `${PREFIX}sess`,
+      userId,
+      userContent: "I trust you with this completely.",
+      persistenceOwner: "client",
+      metadata: { character_ids: [characterId] },
+    });
+    await markChatTurnReplaced(turnId, userId, `turn_${PREFIX}next`.replace(/_+$/, ""));
+    await db.insert(companionMemories).values({
+      userId,
+      characterId,
+      summary: "",
+      facts: [],
+      emotionalState: {},
+      resonanceNotes: "",
+    });
+    await runDeferredMemoryPolicy(
+      {
+        userId,
+        characterId,
+        sessionId: `${PREFIX}sess`,
+        turnId,
+        companionName: "Aria",
+        userContent: "I trust you with this completely.",
+        assistantContent: "I am here with you.",
+      },
+      { signal: new AbortController().signal },
+    );
+    const [memory] = await db
+      .select()
+      .from(companionMemories)
+      .where(and(eq(companionMemories.userId, userId), eq(companionMemories.characterId, characterId)))
+      .limit(1);
+    expect(memory?.facts).toEqual([]);
+    await db.delete(chatTurns).where(eq(chatTurns.id, turnId));
   });
 
   it("stops before any write when the slot has already aborted", async () => {

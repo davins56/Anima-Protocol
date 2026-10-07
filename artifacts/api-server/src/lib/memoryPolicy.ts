@@ -19,10 +19,12 @@ import {
   withTransientDbRetry,
 } from "@workspace/db";
 import { synchroStrengthFromEmotionalState } from "./companionAffect";
+import { readChatTurn } from "./chatTurnLedger";
 import { DeferredLlmRetryError } from "./deferredLocalLlm";
 import { upsertMemoryEmbeddings } from "./memoryEmbeddings";
 import { CONTINUE_USER_TURN } from "./promptBuilder";
 import { loadRelationshipState } from "./relationshipEngine";
+import { turnMetadataReplaced } from "./replyReplacement";
 import { isRoleSwapReply } from "./roleSwapReply";
 
 export const IMPORTANCE_DISCARD_BELOW = 0.3;
@@ -640,6 +642,19 @@ function capPolicyFacts(facts: unknown[]): unknown[] {
  * capped; policy rows are not evicted by that window.
  * Returns null when this turn was already stored.
  */
+/**
+ * Drop turn crumbs and policy facts that were extracted from a reply the
+ * user replaced. Facts with no turn id stay; they are not that reply.
+ */
+export function factsWithoutTurn(facts: unknown[], turnId: string): unknown[] {
+  const id = turnId.trim();
+  if (!id) return Array.isArray(facts) ? facts.slice() : [];
+  return (Array.isArray(facts) ? facts : []).filter((item) => {
+    if (!item || typeof item !== "object") return true;
+    return String((item as { turn_id?: unknown }).turn_id || "") !== id;
+  });
+}
+
 export function appendTurnMemoryFact(
   existing: unknown[],
   turnFact: Record<string, unknown>,
@@ -833,6 +848,12 @@ export async function runDeferredMemoryPolicy(
   const turnId = payload.turnId ? String(payload.turnId) : undefined;
   if (!userId || !characterId) return;
   if (!isMeaningfulExchange(userContent, assistantContent)) return;
+  if (turnId) {
+    const turn = await readChatTurn(turnId, userId).catch(() => null);
+    // A missing ledger row is a normal client turn. Only a turn the user
+    // already replaced must not become a memory.
+    if (turn && turnMetadataReplaced(turn.metadata)) return;
+  }
 
   await ensureSchemaOnce();
   if (ctx.signal.aborted) {

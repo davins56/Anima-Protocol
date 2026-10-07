@@ -1003,6 +1003,29 @@ describe("composeCompanionChatMessages", () => {
     ]);
   });
 
+  it("drops every bubble of a retried group reply, not only the first", () => {
+    const question = "What is the tide today?";
+    const messages = composeCompanionChatMessages({
+      characters: [character],
+      activeCharacter: character,
+      memories: [],
+      recentMessages: [
+        { id: "turn_old:user", role: "user", content: question },
+        { id: "turn_old:assistant", role: "assistant", content: "The garden is quiet." },
+        { id: "turn_old:assistant:1", role: "assistant", content: "The harbor is not." },
+        { role: "assistant", type: "event", content: "A bell rings." },
+        { id: "turn_retry:user", role: "user", content: question },
+      ],
+      mode: "group",
+      content: question,
+    });
+    const conversation = messages.filter((message) => message.role !== "system");
+    expect(conversation.filter((message) => message.content === question)).toHaveLength(1);
+    expect(conversation.some((message) => message.content === "The garden is quiet.")).toBe(false);
+    expect(conversation.some((message) => message.content === "The harbor is not.")).toBe(false);
+    expect(conversation.some((message) => message.content === "A bell rings.")).toBe(false);
+  });
+
   it("omits inlined history from composePrompt when asked", () => {
     const prompt = composePrompt({
       characters: [character],
