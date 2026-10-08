@@ -19,6 +19,7 @@ import {
   formatMemoriesForPrompt,
   buildMemorySummaryBlock,
 } from "./memoryRetrieval";
+import { messageTurnId } from "./replyReplacement";
 import {
   initResonanceState,
   detectResonanceShift,
@@ -584,16 +585,7 @@ export const CONTINUE_USER_TURN =
   "I'm here with you. Go on in your own first person, then pause for me.";
 
 function messageTurnKey(message: MsgData): string | null {
-  const id = String(message.id || "");
-  if (id.endsWith(":user")) return id.slice(0, -":user".length);
-  if (id.endsWith(":assistant")) return id.slice(0, -":assistant".length);
-  const metadata = message.metadata;
-  if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
-    const turnId = (metadata as { turn_id?: unknown }).turn_id;
-    if (turnId) return String(turnId);
-  }
-  if (message.turn_id) return String(message.turn_id);
-  return null;
+  return messageTurnId(message) || null;
 }
 
 /**
@@ -616,16 +608,22 @@ export function omitRetriedUserTurn(
     if (key) droppedTurns.add(key);
   }
   const kept: MsgData[] = [];
-  for (let i = 0; i < recentMessages.length; i++) {
-    const message = recentMessages[i]!;
+  let skippingTail = false;
+  for (const message of recentMessages) {
     const key = messageTurnKey(message);
     const isDuplicateUser =
       message.role === "user" && String(message.content ?? "").trim() === needle;
-    if ((key && droppedTurns.has(key)) || isDuplicateUser) {
+    if (isDuplicateUser || (key && droppedTurns.has(key))) {
+      // Her whole reply follows that line: later bubbles, events, and a
+      // group turn's extra speakers. Stopping after one bubble left the
+      // rest in the prompt.
+      skippingTail = true;
+      continue;
+    }
+    if (skippingTail) {
       if (message.role === "user") {
-        const next = recentMessages[i + 1];
-        const nextKey = next ? messageTurnKey(next) : null;
-        if (next?.role === "assistant" && (!nextKey || nextKey === key)) i += 1;
+        skippingTail = false;
+        kept.push(message);
       }
       continue;
     }

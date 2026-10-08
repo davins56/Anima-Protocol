@@ -10,11 +10,16 @@ import { HELD_SEND_NOTE } from "@/lib/heldChatSend";
  * @param {Array<Record<string, unknown>> | null | undefined} live
  * @param {Array<Record<string, unknown>> | null | undefined} snapshot
  * @param {unknown} activeTurnId
+ * @param {{ omitTurnIds?: Iterable<string> | null, omitMessageIds?: Iterable<string> | null }} [options]
+ *   Replies the user already retried. They stay out even when this snapshot
+ *   omitted them and an older paint still has them.
  */
-export function stitchLiveMessages(live, snapshot, activeTurnId) {
+export function stitchLiveMessages(live, snapshot, activeTurnId, options) {
   const next = Array.isArray(snapshot) ? snapshot : [];
   const current = Array.isArray(live) ? live : [];
   const turnId = String(activeTurnId || "");
+  const omitTurnIds = new Set(options?.omitTurnIds || []);
+  const omitMessageIds = new Set(options?.omitMessageIds || []);
   if (!turnId || current.length === 0) return next;
 
   const snapshotIds = new Set();
@@ -51,6 +56,10 @@ export function stitchLiveMessages(live, snapshot, activeTurnId) {
       }
       continue;
     }
+    const rowId = row.id ? String(row.id) : "";
+    if (rowId && omitMessageIds.has(rowId)) continue;
+    const rowTurn = String(row.turn_id || row.late_turn_id || "");
+    if (row.role !== "user" && rowTurn && omitTurnIds.has(rowTurn)) continue;
     const placeholder =
       row.character_name === "__typing__" ||
       row.character_name === "__thinking__" ||
@@ -82,7 +91,7 @@ export function stitchLiveMessages(live, snapshot, activeTurnId) {
  * After /chat/:id navigation the updater still sees the newly opened thread —
  * never replace that history with the previous thread's prefix.
  */
-export function applyStreamingMessage(session, { sessionId, prefixMessages, message }) {
+export function applyStreamingMessage(session, { sessionId, prefixMessages, message, omitTurnIds, omitMessageIds }) {
   if (!session) return session;
   if (sessionId && session.id !== sessionId) return session;
   const snapshot = [...prefixMessages, message];
@@ -90,15 +99,16 @@ export function applyStreamingMessage(session, { sessionId, prefixMessages, mess
   if (!turnId) return { ...session, messages: snapshot };
   return {
     ...session,
-    messages: stitchLiveMessages(session.messages, snapshot, turnId),
+    messages: stitchLiveMessages(session.messages, snapshot, turnId, { omitTurnIds, omitMessageIds }),
   };
 }
 
 export function useChatStreaming(setActiveSession) {
   const createStreamUi = useCallback(
-    ({ sessionId, updatedMessages, characterName, timestamp, onDelta, turnId }) => {
+    ({ sessionId, updatedMessages, characterName, timestamp, onDelta, turnId, omitTurnIds, omitMessageIds }) => {
       let paintedTokens = false;
       const resolveTurnId = () => (typeof turnId === "function" ? turnId() : turnId);
+      const resolveOmit = (value) => (typeof value === "function" ? value() : value);
 
       const replaceTransient = (message) => {
         const id = resolveTurnId();
@@ -107,6 +117,8 @@ export function useChatStreaming(setActiveSession) {
             sessionId,
             prefixMessages: updatedMessages,
             message: id ? { ...message, turn_id: id } : message,
+            omitTurnIds: resolveOmit(omitTurnIds),
+            omitMessageIds: resolveOmit(omitMessageIds),
           }),
         );
       };

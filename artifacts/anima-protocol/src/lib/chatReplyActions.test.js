@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   lastReplyActionIndexes,
+  messagesAfterDiscardingReply,
   planEditResend,
   planRetryReply,
   replyActionsAreLocked,
@@ -71,6 +72,53 @@ describe("planRetryReply", () => {
     expect(narration.ok).toBe(true);
     expect(narration.userContent).toBe("");
     expect(narration.kept).toEqual([]);
+  });
+
+  it("drops every bubble of the same turn, including a group reply", () => {
+    const grouped = planRetryReply(
+      [
+        { id: "t0:assistant", turn_id: "t0", role: "assistant", content: "older" },
+        { id: "t1:user", turn_id: "t1", role: "user", content: "talk" },
+        { id: "t1:assistant", turn_id: "t1", role: "assistant", content: "first" },
+        { id: "t1:event", turn_id: "t1", role: "assistant", type: "event", content: "bell" },
+        { id: "t1:assistant:1", turn_id: "t1", role: "assistant", content: "second" },
+      ],
+      4,
+    );
+    expect(grouped.ok).toBe(true);
+    expect(grouped.kept.map((message) => message.content)).toEqual(["older", "talk"]);
+    expect(grouped.replacedTurnId).toBe("t1");
+    expect(grouped.replacedMessageIds).toEqual([
+      "t1:assistant",
+      "t1:event",
+      "t1:assistant:1",
+    ]);
+  });
+});
+
+describe("messagesAfterDiscardingReply", () => {
+  it("removes her reply and a hung placeholder, and keeps his line", () => {
+    const next = messagesAfterDiscardingReply(
+      [
+        { id: "t1:user", turn_id: "t1", role: "user", content: "hello" },
+        { id: "t1:assistant", turn_id: "t1", role: "assistant", content: "old" },
+        { turn_id: "t1", role: "assistant", content: "...", character_name: "__typing__" },
+        { id: "t2:assistant", turn_id: "t2", role: "assistant", content: "other" },
+      ],
+      { turnId: "t1" },
+    );
+    expect(next.map((message) => message.content)).toEqual(["hello", "other"]);
+  });
+
+  it("removes his rewritten line when the edit lists that id", () => {
+    const next = messagesAfterDiscardingReply(
+      [
+        { id: "t1:user", turn_id: "t1", role: "user", content: "old wording" },
+        { id: "t1:assistant", turn_id: "t1", role: "assistant", content: "reply" },
+      ],
+      { turnId: "t1", messageIds: ["t1:user", "t1:assistant"] },
+    );
+    expect(next).toEqual([]);
   });
 });
 
