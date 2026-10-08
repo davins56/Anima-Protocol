@@ -48,16 +48,21 @@ export function finalizeAssistantReply(
 
 const SENTENCE_END_RE = /[.!?…]["'”’)\]*_~]*(?=\s|$)/g;
 const COMPLETE_SENTENCE_RE = /[.!?…]["'”’)\]*_~]*$/;
-const HONORIFIC_RE =
-  /\b(?:Mr|Mrs|Ms|Dr|St|Jr|Sr|vs|etc|e\.g|i\.e|(?:[A-Za-z]\.)+[A-Za-z])$/i;
+const NAMED_HONORIFIC_RE =
+  /\b(?:Mr|Mrs|Ms|Dr|St|Jr|Sr|vs|etc|e\.g|i\.e)$/i;
+const INITIALISM_RE = /(?:[A-Za-z]\.)+[A-Za-z]$/;
 
 /** Index just after the last real sentence end, or -1 when there is none. */
 function lastSentenceEnd(value: string): number {
   let sentenceEnd = -1;
   for (const match of value.matchAll(SENTENCE_END_RE)) {
     const index = match.index ?? 0;
-    // "Mr. Smith" is not a sentence end.
-    if (HONORIFIC_RE.test(value.slice(0, index))) continue;
+    const before = value.slice(0, index);
+    const rest = value.slice(index + match[0].length).trim();
+    // "Mr. Smith" and a cut-off "Dr." are not sentence ends.
+    if (NAMED_HONORIFIC_RE.test(before)) continue;
+    // "the U.S. last year" is not a sentence end. "I live in the U.S." is.
+    if (INITIALISM_RE.test(before) && rest) continue;
     sentenceEnd = index + match[0].length;
   }
   return sentenceEnd;

@@ -31,6 +31,9 @@ describe("visibleAssistantReply", () => {
     ).toBe("I stay.");
     expect(trimToLastFullSentence("no punctuation at all")).toBe("no punctuation at all");
     expect(trimToLastFullSentence("Earlier. I spoke to Dr.")).toBe("Earlier.");
+    expect(trimToLastFullSentence("Earlier. I live in the U.S.")).toBe(
+      "Earlier. I live in the U.S.",
+    );
     expect(trimToLastFullSentence("I moved to the U.S. last year and then")).toBe(
       "I moved to the U.S. last year and then",
     );

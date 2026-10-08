@@ -155,7 +155,8 @@ describe("ChatPipelineTelemetry failure phase", () => {
     expect(telemetrySource).toContain('if (outcome === "failed") console.info(payload)');
     const pendingAt = chatRoute.indexOf("await sessionHasOlderPendingChatTurn(");
     expect(pendingAt).toBeGreaterThan(-1);
-    expect(chatRoute.slice(pendingAt, pendingAt + 700)).toContain('closePipeline("failed"');
+    expect(chatRoute.slice(pendingAt, pendingAt + 900)).toContain('closePipeline("failed"');
+    expect(chatRoute.slice(pendingAt, pendingAt + 1400)).toContain("durableSse?.stop()");
     const checkpointAt = chatRoute.indexOf("checkpointGeneratedTurnOnce({");
     const doneAt = chatRoute.indexOf("writeSse(res, {", checkpointAt);
     expect(checkpointAt).toBeGreaterThan(-1);
