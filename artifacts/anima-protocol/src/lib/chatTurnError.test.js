@@ -170,6 +170,16 @@ describe("chatTurnErrorMessage", () => {
     expect(message).not.toMatch(/anima-chat-llm\.fly\.dev/i);
   });
 
+  it("remaps a raw database operation timeout to retryable conversation copy", () => {
+    const message = chatTurnErrorMessage(
+      new Error("Database operation aborted due to timeout after 5000ms"),
+    );
+    expect(message).toBe(
+      "Couldn't load this conversation — the database timed out. Please try again.",
+    );
+    expect(message).not.toMatch(/ETIMEOUT|aborted due to timeout/i);
+  });
+
   it("remaps a pre-token Database unavailable toast to conversation copy", () => {
     expect(chatTurnErrorMessage(new Error("Database unavailable"))).toBe(
       "Couldn't load this conversation. Please try again.",

@@ -87,11 +87,26 @@ async function createSchema() {
   }
 }
 
+function isDeadlock(err: unknown): boolean {
+  return Boolean(err && typeof err === "object" && (err as { code?: string }).code === "40P01");
+}
+
 async function dropSchema() {
   const client = adminClient();
   await client.connect();
   try {
-    await client.query(`DROP SCHEMA IF EXISTS "${TEST_SCHEMA}" CASCADE`);
+    // A chat turn's background checkpoint can still hold a row lock when this
+    // schema is dropped. Postgres aborts one side of that deadlock; retry the
+    // drop after the other transaction finishes.
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        await client.query(`DROP SCHEMA IF EXISTS "${TEST_SCHEMA}" CASCADE`);
+        return;
+      } catch (err) {
+        if (!isDeadlock(err) || attempt === 3) throw err;
+        await new Promise((resolve) => setTimeout(resolve, 200 * (attempt + 1)));
+      }
+    }
   } finally {
     await client.end();
   }

@@ -159,6 +159,23 @@ describe("mergeLateReplyIntoMessages", () => {
     expect(again.filter((message) => message.character_name === "__typing__")).toEqual([]);
   });
 
+  it("marks a late cut-off reply so Retry can replace it", () => {
+    const merged = mergeLateReplyIntoMessages([], {
+      turnId: "turn_cut",
+      userContent: "My name is Mira.",
+      assistantContent: "You came back.",
+      characterName: "Aria",
+      reply_interrupted: true,
+      cut_off: true,
+    });
+    expect(merged[1]).toMatchObject({
+      role: "assistant",
+      content: "You came back.",
+      reply_interrupted: true,
+      cut_off: true,
+    });
+  });
+
   it("inserts the late reply under its own user message when newer turns exist", () => {
     const merged = mergeLateReplyIntoMessages(
       [
@@ -355,6 +372,25 @@ describe("chat page shows Retry before the background check", () => {
     expect(chat).toContain("lateReplyWatchSupersededBy");
     expect(chat).toContain("paintLateCompanionReply");
     expect(chat).toContain('const omitUserRow = isContinue || replyAction === "retry"');
+  });
+});
+
+describe("cut-off replies skip client mining", () => {
+  const chat = readFileSync(path.join(process.cwd(), "src/pages/Chat.jsx"), "utf8");
+
+  it("does not parse reply image tags or event rows when the server marked the reply cut off", () => {
+    const start = chat.indexOf("const wantsImage = replyCutOff.reply_interrupted");
+    expect(start).toBeGreaterThan(-1);
+    const block = chat.slice(start, start + 5000);
+    expect(block.startsWith(
+      "const wantsImage = replyCutOff.reply_interrupted\n        ? userRequestedImage(content)\n        : parseImagePrompts(result).length > 0 || userRequestedImage(content);",
+    )).toBe(true);
+    expect(block).toContain('replyText: replyCutOff.reply_interrupted ? "" : result');
+    expect(block).toContain(
+      "while (!replyCutOff.reply_interrupted && (match = tagScanner.exec(result))",
+    );
+    const moodAt = chat.indexOf("} else if (!replyCutOff.reply_interrupted)", start);
+    expect(moodAt).toBeGreaterThan(start);
   });
 });
 
