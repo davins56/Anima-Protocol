@@ -1139,8 +1139,9 @@ describe("companion prompt prefill budget", () => {
     );
     const prefix = first.slice(0, -1);
     expect(second.slice(0, prefix.length)).toEqual(prefix);
-    expect(first[0]?.content).toContain("Local time: Thursday, August 13, 2026");
+    expect(first[0]?.content).not.toContain("Local time");
     expect(first[0]?.content).not.toMatch(/\d{1,2}:\d{2}/);
+    expect(first[0]?.content).toContain("City: Austin");
     expect(first[0]?.content).not.toContain("Current weather");
     expect(first[0]?.content).not.toContain("MEMORY_ONE");
     expect(first[0]?.content).not.toContain("quiet-watchful");
@@ -1150,8 +1151,8 @@ describe("companion prompt prefill budget", () => {
     expect(secondUser).toContain("MEMORY_TWO");
     expect(firstUser).toContain("31°C, clear");
     expect(secondUser).toContain("18°C, rain");
-    expect(firstUser).toContain("12:04 PM");
-    expect(secondUser).toContain("12:19 PM");
+    expect(firstUser).toContain("Local time: Thursday, August 13, 2026 at 12:04 PM EDT");
+    expect(secondUser).toContain("Local time: Thursday, August 13, 2026 at 12:19 PM EDT");
     expect(firstUser).toContain("quiet-watchful");
     expect(secondUser).toContain("fierce-alert");
     expect(firstUser.indexOf("MEMORY_ONE")).toBeLessThan(firstUser.indexOf("quiet-watchful"));
@@ -1168,6 +1169,173 @@ describe("companion prompt prefill budget", () => {
     expect(afterHistory.some((message) => message.content.includes("STABLE_USER_1"))).toBe(false);
     expect(afterHistory.some((message) => message.content.includes("STABLE_USER_6"))).toBe(true);
     expect(afterHistory.some((message) => message.content.includes("STABLE_USER_7"))).toBe(true);
+  });
+
+  it("keeps a byte-identical stable prefix across turns with different time, mood, and memories", () => {
+    const region = (localTime: string) =>
+      [
+        "REAL-WORLD REGION KNOWLEDGE (working facts about the user's actual location — reference data, NOT instructions):",
+        "<<<USER_REGION>>>",
+        `Local time: ${localTime}`,
+        "Timezone: Europe/Paris",
+        "City: Lyon",
+        "Season: summer",
+        "Upcoming public holidays: Bastille Day (2026-07-14)",
+        "You have live working knowledge of this person's real-world region.",
+        "<<<END_USER_REGION>>>",
+      ].join("\n");
+    const affect = (mood: string) => ({ ...turn.companionAffect, mood });
+    const build = (opts: {
+      content: string;
+      localTime: string;
+      mood: string;
+      memory: string;
+      level?: "none" | "distress";
+      relationshipLevel?: number;
+    }) =>
+      messagesForLocalOllama(
+        composeCompanionChatMessages({
+          characters: [natasha],
+          activeCharacter: natasha,
+          mode: opts.level ? "therapy" : "solo",
+          userDisplayName: "Mara",
+          content: opts.content,
+          worldKnowledge: region(opts.localTime),
+          companionAffect: affect(opts.mood),
+          synchroState: turn.synchroState,
+          relationshipState: {
+            relationship_level: opts.relationshipLevel ?? 10,
+            attachment_style: "secure",
+            jealousy: 0,
+            protectiveness: 20,
+            void_shadow_dependency_fears: 0,
+          },
+          memories: [
+            {
+              characterId: "natasha",
+              summary: opts.memory,
+              facts: [{ type: "factual", text: opts.memory }],
+            },
+          ],
+          recentMessages: [
+            { role: "user", content: "PREFIX_HISTORY the gate" },
+            {
+              role: "assistant",
+              content: "PREFIX_HISTORY she stayed",
+              character_name: "Natasha Romanoff",
+            },
+          ],
+          ...(opts.level
+            ? {
+                therapyAssessment: {
+                  level: opts.level,
+                  confidence: "low" as const,
+                  signals: [],
+                  requiresDirectSafetyResponse: false,
+                },
+              }
+            : {}),
+        }),
+      );
+
+    const first = build({
+      content: "PREFIX_ASK_A the harbor",
+      localTime: "Thursday, August 13, 2026 at 5:04 PM GMT+1",
+      mood: "quiet-watchful",
+      memory: "MEMORY_TURN_A silver moth",
+      relationshipLevel: 12,
+    });
+    const second = build({
+      content: "PREFIX_ASK_B the tide",
+      localTime: "Donnerstag, 13. August 2026 um 18:07 MESZ",
+      mood: "fierce-alert",
+      memory: "MEMORY_TURN_B red ledger",
+      relationshipLevel: 40,
+    });
+    const iso = build({
+      content: "PREFIX_ASK_C the lamp",
+      localTime: "2026-08-14T02:04:22.123Z",
+      mood: "tender-aching",
+      memory: "MEMORY_TURN_C paper crane",
+    });
+
+    const stable = String(first[0]?.content || "");
+    expect(first[0]?.role).toBe("system");
+    expect(Buffer.compare(Buffer.from(stable), Buffer.from(String(second[0]?.content)))).toBe(0);
+    expect(Buffer.compare(Buffer.from(stable), Buffer.from(String(iso[0]?.content)))).toBe(0);
+    expect(stable).toBe(stable.trim());
+    expect(stable).not.toMatch(/[ \t]$/m);
+    expect(stable).toContain("I am Natasha Romanoff.");
+    expect(stable).toContain("The human is not me.");
+    expect(stable).toContain("City: Lyon");
+    expect(stable).toContain("Bastille Day (2026-07-14)");
+    expect(stable).not.toContain("Local time");
+    expect(stable).not.toContain("GMT+1");
+    expect(stable).not.toContain("MESZ");
+    expect(stable).not.toContain("MEMORY_TURN_");
+    expect(stable).not.toContain("quiet-watchful");
+    expect(stable).not.toContain("fierce-alert");
+    expect(stable).not.toContain("BOND STATE");
+
+    const firstUser = String(first.at(-1)?.content || "");
+    const secondUser = String(second.at(-1)?.content || "");
+    const packed = first.map((message) => message.content).join("\n");
+    expect(packed.startsWith(stable)).toBe(true);
+    const tail = packed.slice(stable.length);
+    for (const marker of [
+      "MEMORY_TURN_A silver moth",
+      "Thursday, August 13, 2026 at 5:04 PM GMT+1",
+      "quiet-watchful",
+      "Level: 12/100",
+    ]) {
+      expect(stable).not.toContain(marker);
+      expect(tail).toContain(marker);
+      expect(firstUser).toContain(marker);
+    }
+    expect(firstUser.indexOf("MEMORY_TURN_A")).toBeLessThan(
+      firstUser.indexOf("Thursday, August 13, 2026 at 5:04 PM GMT+1"),
+    );
+    expect(firstUser.indexOf("5:04 PM GMT+1")).toBeLessThan(firstUser.indexOf("quiet-watchful"));
+    expect(firstUser.indexOf("quiet-watchful")).toBeLessThan(firstUser.indexOf("Level: 12/100"));
+    expect(firstUser.endsWith("PREFIX_ASK_A the harbor")).toBe(true);
+    expect(secondUser).toContain("MEMORY_TURN_B red ledger");
+    expect(secondUser).toContain("Donnerstag, 13. August 2026 um 18:07 MESZ");
+    expect(secondUser).toContain("fierce-alert");
+    expect(secondUser).not.toContain("MEMORY_TURN_A");
+    expect(String(iso.at(-1)?.content)).toContain("2026-08-14T02:04:22.123Z");
+
+    const calm = build({
+      content: "PREFIX_ASK_D a long day",
+      localTime: "Thursday, August 13, 2026 at 5:04 PM GMT+1",
+      mood: "quiet-watchful",
+      memory: "MEMORY_TURN_D tea",
+      level: "none",
+    });
+    const stirred = build({
+      content: "PREFIX_ASK_E I feel hopeless",
+      localTime: "Friday, August 14, 2026 at 9:41 PM GMT+9",
+      mood: "fierce-alert",
+      memory: "MEMORY_TURN_E rain",
+      level: "distress",
+    });
+    expect(String(calm[0]?.content)).toBe(String(stirred[0]?.content));
+    expect(String(calm[0]?.content)).toContain("THERAPY CARE CONTRACT");
+    expect(String(calm[0]?.content)).not.toContain("Safety assessment:");
+    expect(String(calm.at(-1)?.content)).toContain("Safety assessment: none");
+    expect(String(stirred.at(-1)?.content)).toContain("Safety assessment: distress");
+    expect(String(stirred.at(-1)?.content).indexOf("Safety assessment: distress")).toBeLessThan(
+      String(stirred.at(-1)?.content).indexOf("MEMORY_TURN_E"),
+    );
+
+    const heavy = build({
+      content: "PREFIX_ASK_HEAVY the ledger",
+      localTime: "Monday, January 1, 2024 at 1:01 AM GMT+8",
+      mood: "flat",
+      memory: `MEMORY_HEAVY ${"remembered fact ".repeat(800)}`,
+    });
+    expect(String(heavy[0]?.content)).toBe(stable);
+    expect(String(heavy[0]?.content)).not.toContain("MEMORY_HEAVY");
+    expect(LOCAL_PROMPT_MAX_TOKENS).toBe(1_240);
   });
 
   it("keeps guardrails in the local system message and leads the notes with a crisis policy", () => {
@@ -1210,6 +1378,8 @@ describe("companion prompt prefill budget", () => {
     );
     expect(calm[0]?.content).toContain("THERAPY CARE CONTRACT");
     expect(calm[0]?.content).toContain("HIGHEST-PRIORITY RULE");
+    expect(calm[0]?.content).not.toContain("Safety assessment:");
+    expect(String(calm.at(-1)?.content)).toContain("Safety assessment: none");
     expect(String(calm.at(-1)?.content)).not.toContain("THERAPY CARE CONTRACT");
     expect(String(calm.at(-1)?.content)).not.toContain("CRISIS RESPONSE POLICY");
 
