@@ -185,6 +185,21 @@ export function keepArrivals(kept, latest, discarded) {
   return [...base, ...extra];
 }
 
+/**
+ * Thread written back when a replace fails. The pre-trim snapshot returns,
+ * plus any stored message that arrived after it. Rows with no id are not
+ * arrivals — they are the snapshot the trim already copied.
+ *
+ * @param {Array<Record<string, unknown>> | null | undefined} snapshot
+ * @param {Array<Record<string, unknown>> | null | undefined} latest
+ */
+export function restoredThread(snapshot, latest) {
+  const base = listOf(snapshot);
+  if (!Array.isArray(latest)) return base;
+  const identified = latest.filter((message) => message?.id);
+  return keepArrivals(base, identified, { messageIds: [], turnIds: [] });
+}
+
 function isPlaceholder(message) {
   if (!message || typeof message !== "object") return false;
   if (message.is_streaming === true) return true;

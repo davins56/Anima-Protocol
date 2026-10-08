@@ -11,7 +11,7 @@
 // function) as injected deps so the tests can drive them directly.
 
 import { base44 } from "@/api/base44Client";
-import { planRetryReply } from "@/lib/chatReplyActions";
+import { planRetryReply, restoredThread } from "@/lib/chatReplyActions";
 
 // Compute the short "last_message" preview the page stores alongside a session.
 function lastMessagePreview(messages) {
@@ -94,14 +94,21 @@ export async function regenerateMessageFlow(idx, { confirm, activeSession, isLoa
     replacedMessageIds: plan.replacedMessageIds || [],
   });
   if (result?.started === false) {
-    const restoredPreview = messages[messages.length - 1]?.content?.slice(0, 60) || "";
+    let restored = messages;
+    try {
+      const latest = await base44.entities.ChatSession.get(activeSession.id);
+      restored = restoredThread(messages, latest?.messages);
+    } catch {
+      // The pre-trim snapshot is the fallback when the fresh read fails.
+    }
+    const restoredPreview = restored[restored.length - 1]?.content?.slice(0, 60) || "";
     await base44.entities.ChatSession.update(activeSession.id, {
-      messages,
+      messages: restored,
       last_message: restoredPreview,
     });
     setActiveSession((prev) =>
       prev && prev.id === activeSession.id
-        ? { ...prev, messages, last_message: restoredPreview }
+        ? { ...prev, messages: restored, last_message: restoredPreview }
         : prev,
     );
   }
