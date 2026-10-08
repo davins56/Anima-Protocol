@@ -767,48 +767,62 @@ async function updateStoreSessionMetadata(
   content: string,
   sharedFact?: Record<string, unknown>,
 ) {
-  const [row] = await db
-    .select()
-    .from(userEntities)
-    .where(
-      and(
-        eq(userEntities.userId, userId),
-        eq(userEntities.entityName, CHAT_SESSION),
-        eq(userEntities.entityId, sessionId),
-      ),
-    )
-    .limit(1);
-  if (!row) return;
-  const data = asObject(row.data);
-  const now = new Date().toISOString();
-  const currentSharedMemory = Array.isArray(data.shared_memory)
-    ? data.shared_memory.slice(-24)
-    : [];
-  if (sharedFact) {
-    const factTurnId = sharedFact.turn_id;
-    const already =
-      factTurnId != null &&
-      currentSharedMemory.some(
-        (item) =>
-          item &&
-          typeof item === "object" &&
-          (item as Record<string, unknown>).turn_id === factTurnId,
-      );
-    if (!already) currentSharedMemory.push(sharedFact);
-  }
-  await db
-    .update(userEntities)
-    .set({
-      data: {
-        ...data,
-        last_message: truncate(content, 80),
-        title: data.title || truncate(content, 40) || "New session",
-        shared_memory: currentSharedMemory,
-        updated_date: now,
-      },
-      updatedAt: new Date(),
-    })
-    .where(eq(userEntities.id, row.id));
+  await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${userId}), hashtext(${sessionId}))`,
+    );
+    const [row] = await tx
+      .select()
+      .from(userEntities)
+      .where(
+        and(
+          eq(userEntities.userId, userId),
+          eq(userEntities.entityName, CHAT_SESSION),
+          eq(userEntities.entityId, sessionId),
+        ),
+      )
+      .limit(1);
+    if (!row) return;
+    let fact = sharedFact;
+    const factTurnId = fact && typeof fact.turn_id === "string" ? fact.turn_id : "";
+    if (factTurnId) {
+      const [turn] = await tx
+        .select({ metadata: chatTurns.metadata })
+        .from(chatTurns)
+        .where(and(eq(chatTurns.id, factTurnId), eq(chatTurns.userId, userId)))
+        .limit(1);
+      if (turn && turnMetadataReplaced(turn.metadata)) fact = undefined;
+    }
+    const data = asObject(row.data);
+    const now = new Date().toISOString();
+    const currentSharedMemory = Array.isArray(data.shared_memory)
+      ? data.shared_memory.slice(-24)
+      : [];
+    if (fact) {
+      const already =
+        factTurnId &&
+        currentSharedMemory.some(
+          (item) =>
+            item &&
+            typeof item === "object" &&
+            (item as Record<string, unknown>).turn_id === factTurnId,
+        );
+      if (!already) currentSharedMemory.push(fact);
+    }
+    await tx
+      .update(userEntities)
+      .set({
+        data: {
+          ...data,
+          last_message: truncate(content, 80),
+          title: data.title || truncate(content, 40) || "New session",
+          shared_memory: currentSharedMemory,
+          updated_date: now,
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(userEntities.id, row.id));
+  });
 }
 
 async function loadMemories(userId: string, characterIds: string[]) {

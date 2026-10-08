@@ -1453,7 +1453,6 @@ export default function Chat() {
     });
 
   const retryHungCompanionReply = async ({ sessionId, userContent, turnId, messageIds }) => {
-    rememberSupersededReply(turnId, messageIds);
     if (activeSessionRef.current?.id !== sessionId) return;
     let source = activeSessionRef.current.messages || [];
     try {
@@ -1465,6 +1464,21 @@ export default function Chat() {
     if (activeSessionRef.current?.id !== sessionId) return;
     const trimmed = messagesAfterDiscardingReply(source, { turnId, messageIds });
     const last_message = String(trimmed[trimmed.length - 1]?.content || "").slice(0, 60);
+    const restore = async () => {
+      if (turnId) supersededTurnIdsRef.current.delete(String(turnId));
+      for (const id of messageIds || []) {
+        if (id) supersededMessageIdsRef.current.delete(String(id));
+      }
+      const preview = String(source[source.length - 1]?.content || "").slice(0, 60);
+      setActiveSession((prev) =>
+        prev && prev.id === sessionId ? { ...prev, messages: source, last_message: preview } : prev,
+      );
+      await base44.entities.ChatSession.update(sessionId, {
+        messages: source,
+        last_message: preview,
+      }).catch(() => {});
+    };
+    rememberSupersededReply(turnId, messageIds);
     setActiveSession((prev) =>
       prev && prev.id === sessionId ? { ...prev, messages: trimmed, last_message } : prev,
     );
@@ -1474,10 +1488,14 @@ export default function Chat() {
         last_message,
       });
     } catch {
-      // The send still retires the turn. A failed trim must not start a second write.
+      await restore();
+      return;
     }
-    if (activeSessionRef.current?.id !== sessionId) return;
-    void handleSendMessageRef.current?.({
+    if (activeSessionRef.current?.id !== sessionId) {
+      await restore();
+      return;
+    }
+    const result = await handleSendMessageRef.current?.({
       text: userContent || "",
       replyAction: "retry",
       history: trimmed,
@@ -1485,6 +1503,7 @@ export default function Chat() {
       replacedTurnId: turnId || "",
       replacedMessageIds: messageIds || [],
     });
+    if (result?.started === false) await restore();
   };
 
   useEffect(() => {

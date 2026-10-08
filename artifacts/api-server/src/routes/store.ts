@@ -3,6 +3,7 @@ import { getAuth } from "@clerk/express";
 
 
 import {
+  chatTurns,
   db,
   userEntities,
   userProfiles,
@@ -17,6 +18,7 @@ import {
   withTransientDbRetry,
   type MsgData,
 } from "@workspace/db";
+import { messageTurnId, turnMetadataReplaced } from "../lib/replyReplacement";
 import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import type { Request, Response, NextFunction } from "express";
 import { addClient, removeClient, notifyUser } from "../lib/storeEvents";
@@ -980,6 +982,26 @@ router.post("/messages/counts", async (req, res) => {
   res.json(counts);
 });
 
+type StoreTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** A late append must not put back a companion reply the user already replaced. */
+async function nonUserTurnIsReplaced(
+  tx: StoreTx,
+  userId: string,
+  message: MsgData,
+): Promise<boolean> {
+  if (message.role === "user") return false;
+  const turnId = messageTurnId(message);
+  if (!turnId) return false;
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${turnId}`}))`);
+  const [turn] = await tx
+    .select({ metadata: chatTurns.metadata })
+    .from(chatTurns)
+    .where(and(eq(chatTurns.id, turnId), eq(chatTurns.userId, userId)))
+    .limit(1);
+  return Boolean(turn && turnMetadataReplaced(turn.metadata));
+}
+
 // POST /messages { session_id, message } — append ONE message. The server
 // assigns the next seq atomically (within a transaction) so an append never has
 // to send or rewrite the existing history. This is the hot path.
@@ -1017,6 +1039,7 @@ router.post("/messages", async (req, res) => {
       created_date: msg.created_date ?? now,
       updated_date: now,
     };
+    if (await nonUserTurnIsReplaced(tx, userId, data)) return null;
     await tx.insert(userEntities).values({
       userId,
       entityName: CHAT_MESSAGE,
@@ -1025,6 +1048,10 @@ router.post("/messages", async (req, res) => {
     });
     return data;
   });
+  if (!created) {
+    res.status(409).json({ error: "Turn was replaced" });
+    return;
+  }
   res.status(201).json(created);
 });
 
@@ -1080,6 +1107,7 @@ router.post("/messages/replace", async (req, res) => {
         created_date: prev?.created_date ?? msg.created_date ?? now,
         updated_date: now,
       };
+      if (await nonUserTurnIsReplaced(tx, userId, data)) continue;
       await tx
         .insert(userEntities)
         .values({ userId, entityName: CHAT_MESSAGE, entityId: id, data })
