@@ -160,7 +160,12 @@ import {
   noteCompanionCrisisResource,
   type CrisisResourceCard,
 } from "../lib/therapySafety";
-import { ChatPipelineTelemetry, chatErrorClass } from "../lib/chatTelemetry";
+import {
+  ChatPipelineTelemetry,
+  chatErrorClass,
+  chatErrorCode,
+  replySurvivesDatabaseTimeout,
+} from "../lib/chatTelemetry";
 import { streamErrorMessage } from "../lib/chatStreamError";
 import { optionalChatContext } from "../lib/optionalChatContext";
 import { classifyDbError, errorCauseBlob } from "../lib/dbErrors";
@@ -395,7 +400,7 @@ async function streamDurableFollow(
   flight: ChatTurnFlightReservation,
   work: ReturnType<typeof awaitDurableTurnOwner>,
 ): Promise<
-  | { action: "finished" }
+  | { action: "finished"; error?: unknown; replayed?: boolean }
   | {
       action: "generate";
       turn: ChatTurn;
@@ -410,7 +415,7 @@ async function streamDurableFollow(
       flight.resolve(result.outcome);
       if (result.outcome.content) writeSse(res, { content: result.outcome.content });
       writeSse(res, { ...result.outcome.done, joined: true, replayed: true });
-      return { action: "finished" };
+      return { action: "finished", replayed: true };
     }
     handoff = true;
     return { action: "generate", turn: result.turn, sse };
@@ -421,7 +426,7 @@ async function streamDurableFollow(
       flight.fail(err);
     }
     writeSse(res, { error: streamErrorMessage(err) });
-    return { action: "finished" };
+    return { action: "finished", error: err };
   } finally {
     if (!handoff) {
       sse.stop();
@@ -437,17 +442,18 @@ async function streamDurableFollow(
 async function writeJoinedTurn(
   res: Response,
   result: Promise<ChatTurnFlightOutcome>,
-) {
+): Promise<{ ok: boolean; error?: unknown }> {
   try {
     const outcome = await result;
     writeFlightSse(res, { ...outcome, done: { ...outcome.done, joined: true } });
+    return { ok: true };
   } catch (err) {
     if (isChatTurnFlightElsewhere(err)) {
       res.status(409).json({
         error: "This chat turn is already being processed.",
         code: "turn_in_flight",
       });
-      return;
+      return { ok: false, error: err };
     }
     const sse = openChatSse(res);
     try {
@@ -456,6 +462,7 @@ async function writeJoinedTurn(
       sse.stop();
       if (!res.writableEnded) res.end();
     }
+    return { ok: false, error: err };
   }
 }
 
@@ -1572,6 +1579,34 @@ async function applyRelationshipPostProcessFromTurn(turn: ChatTurn): Promise<voi
 const leftoverTurnRepair = new Map<string, Promise<void>>();
 const turnPersistInFlight = new Map<string, Promise<void>>();
 
+/** One extra attempt after the driver's own retries. False means deliver anyway. */
+async function checkpointGeneratedTurnWithRetry(input: {
+  id: string;
+  userId: string;
+  assistantContent: string;
+  metadata?: Record<string, unknown>;
+}): Promise<boolean> {
+  try {
+    await checkpointGeneratedTurn(input);
+    return true;
+  } catch (error) {
+    logger.warn(
+      { error, turnId: input.id },
+      "Generated-turn checkpoint failed; retrying once",
+    );
+    try {
+      await checkpointGeneratedTurn(input);
+      return true;
+    } catch (retryError) {
+      logger.warn(
+        { error: retryError, turnId: input.id },
+        "Generated-turn checkpoint failed; delivering the reply anyway",
+      );
+      return false;
+    }
+  }
+}
+
 async function retryTurnPersistence(turn: ChatTurn): Promise<void> {
   const existing = turnPersistInFlight.get(turn.id);
   if (existing) return existing;
@@ -2153,8 +2188,30 @@ router.post("/messages", async (req, res) => {
     return;
   }
 
-  const session = await loadStoreSession(userId, sessionId);
+  const sessionLoadTelemetry = new ChatPipelineTelemetry({
+    turnId: normalizeTurnId(body.turn_id || body.idempotency_key),
+    sessionId,
+    mode: body.mode || "solo",
+  });
+  let session: Awaited<ReturnType<typeof loadStoreSession>> | undefined;
+  try {
+    session = await loadStoreSession(userId, sessionId);
+  } catch (err) {
+    logger.error({ err }, "Chat message stream failed");
+    sessionLoadTelemetry.report("failed", {
+      error_class: chatErrorClass(err),
+      error_code: chatErrorCode(err),
+    });
+    if (!res.headersSent) {
+      res.status(503).json({ error: streamErrorMessage(err) });
+    }
+    return;
+  }
   if (!session) {
+    sessionLoadTelemetry.report("failed", {
+      error_class: "SessionNotFound",
+      error_code: "session_not_found",
+    });
     res.status(404).json({ error: "Session not found" });
     return;
   }
@@ -2193,6 +2250,15 @@ router.post("/messages", async (req, res) => {
     sessionId,
     mode,
   });
+  let pipelineClosed = false;
+  const closePipeline = (
+    outcome: "completed" | "failed",
+    details: Record<string, unknown> = {},
+  ) => {
+    if (pipelineClosed) return;
+    pipelineClosed = true;
+    telemetry.report(outcome, details);
+  };
   let flight = reserveChatTurnFlight(turnId, content);
   if (flight.mismatched) {
     turnId = normalizeTurnId("");
@@ -2203,15 +2269,28 @@ router.post("/messages", async (req, res) => {
     res.on("close", () => {
       if (joinerWatch.left()) flight.releaseWaiter();
     });
+    let joined: { ok: boolean; error?: unknown } = { ok: false };
     try {
-      await writeJoinedTurn(res, flight.result);
+      joined = await writeJoinedTurn(res, flight.result);
     } finally {
       flight.releaseWaiter();
       joinerWatch.cancel();
     }
+    closePipeline(joined.ok ? "completed" : "failed", {
+      joined: true,
+      ...(joined.ok
+        ? {}
+        : {
+            error_class: chatErrorClass(joined.error),
+            error_code: chatErrorCode(joined.error),
+          }),
+    });
     return;
   }
-  let turnStart = await beginChatTurn({
+  let turnStart!: Awaited<ReturnType<typeof beginChatTurn>>;
+  let adoptedSse: ReturnType<typeof openChatSse> | null = null;
+  try {
+  turnStart = await beginChatTurn({
     id: turnId,
     sessionId,
     userId,
@@ -2220,7 +2299,6 @@ router.post("/messages", async (req, res) => {
     metadata: turnMetadata,
   });
 
-  let adoptedSse: ReturnType<typeof openChatSse> | null = null;
   const followDurableTurn = async (turn: ChatTurn): Promise<boolean> => {
     const joinerWatch = watchClientLeave(res);
     const followed = await streamDurableFollow(
@@ -2233,7 +2311,21 @@ router.post("/messages", async (req, res) => {
       }),
     );
     joinerWatch.cancel();
-    if (followed.action === "finished") return false;
+    if (followed.action === "finished") {
+      if (followed.error) {
+        closePipeline("failed", {
+          joined: true,
+          error_class: chatErrorClass(followed.error),
+          error_code: chatErrorCode(followed.error),
+        });
+      } else {
+        closePipeline("completed", {
+          joined: true,
+          replayed: Boolean(followed.replayed),
+        });
+      }
+      return false;
+    }
     turnStart = { turn: followed.turn, created: false };
     adoptedSse = followed.sse;
     turnId = followed.turn.id;
@@ -2246,6 +2338,7 @@ router.post("/messages", async (req, res) => {
       const outcome = replayFlightOutcome(turnStart.turn);
       flight.resolve(outcome);
       writeFlightSse(res, outcome);
+      closePipeline("completed", { replayed: true });
       return;
     }
     if (reuse === "conflict") {
@@ -2274,6 +2367,29 @@ router.post("/messages", async (req, res) => {
       const handedOff = await followDurableTurn(turnStart.turn);
       if (!handedOff) return;
     }
+  }
+  } catch (err) {
+    logger.error({ err }, "Chat message stream failed");
+    try {
+      flight.fail(err);
+    } catch {
+      // The flight was already settled.
+    }
+    closePipeline("failed", {
+      error_class: chatErrorClass(err),
+      error_code: chatErrorCode(err),
+    });
+    if (!res.headersSent) {
+      res.status(503).json({ error: streamErrorMessage(err) });
+    } else {
+      writeSse(res, { error: streamErrorMessage(err) });
+      try {
+        if (!res.writableEnded) res.end();
+      } catch {
+        // The browser already left.
+      }
+    }
+    return;
   }
 
   // A second message in this conversation must not queue another generate
@@ -2325,6 +2441,10 @@ router.post("/messages", async (req, res) => {
         code: CONVERSATION_BUSY_CODE,
       });
     }
+    closePipeline("failed", {
+      error_class: "Error",
+      error_code: CONVERSATION_BUSY_CODE,
+    });
     return;
   }
 
@@ -2377,6 +2497,8 @@ router.post("/messages", async (req, res) => {
   hintLocalLlmWarm();
   let streamSucceeded = false;
   let fullResponse = "";
+  // Checkpoint metadata for a late persist retry if the first write timed out.
+  let pipelineMetadata: Record<string, unknown> = turnMetadata;
   // True when the saved reply is a trimmed partial from a dropped stream.
   let replyCutOff = false;
   let releaseBackground = () => {};
@@ -2491,6 +2613,10 @@ router.post("/messages", async (req, res) => {
         [undefined, null, null] as const,
       )
     : Promise.resolve([undefined, null, null] as const);
+  // Already parallel. Wall time is the slowest branch. On the Worker a
+  // required read (characters or recent messages) that hits the 5s query
+  // cap is tried twice, so one stuck query is about 10s — not the sum of
+  // every lookup. Optional branches fall back in optionalChatContext.
   const [
     characters,
     memories,
@@ -3416,24 +3542,16 @@ router.post("/messages", async (req, res) => {
       ...(skipAffect ? { skip_affect: true, reply_action: replyAction } : {}),
       ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
     };
-    try {
-      await telemetry.measure(
-        "turn_checkpoint_ms",
-        checkpointGeneratedTurn({
-          id: turnId,
-          userId,
-          assistantContent: fullResponse,
-          metadata: generatedMetadata,
-        }),
-      );
-    } catch (error) {
-      // The model already replied. A Hyperdrive blip here must not replace
-      // the answer with "Database unavailable" — leftover-turn repair retries.
-      logger.warn(
-        { error, turnId },
-        "Generated-turn checkpoint failed; delivering the reply anyway",
-      );
-    }
+    pipelineMetadata = generatedMetadata;
+    const checkpointSaved = await telemetry.measure(
+      "turn_checkpoint_ms",
+      checkpointGeneratedTurnWithRetry({
+        id: turnId,
+        userId,
+        assistantContent: fullResponse,
+        metadata: generatedMetadata,
+      }),
+    );
     // Close the SSE as soon as the model is done. Persistence / evolution LLM
     // calls used to run before `done`, so the Chat page stayed on Processing...
     // until those finished (or hung).
@@ -3461,7 +3579,7 @@ router.post("/messages", async (req, res) => {
       turn_id: turnId,
       user_message_id: turnStart.turn.userMessageId,
       assistant_message_id: turnStart.turn.assistantMessageId,
-      persistence_status: "generated",
+      persistence_status: checkpointSaved ? "generated" : "checkpoint_failed",
       persistence_owner: persistenceOwner,
       companion_affect: evolvedAffectSnapshot,
       ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
@@ -3485,34 +3603,85 @@ router.post("/messages", async (req, res) => {
         turn_id: turnId,
         user_message_id: turnStart.turn.userMessageId,
         assistant_message_id: turnStart.turn.assistantMessageId,
-        persistence_status: "generated",
+        persistence_status: checkpointSaved ? "generated" : "checkpoint_failed",
         persistence_owner: persistenceOwner,
         companion_affect: evolvedAffectSnapshot,
         ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
         joined: true,
       },
     });
-    telemetry.report("completed", {
+    closePipeline("completed", {
       provider: usedProvider,
       fallback_provider: failedOver ? usedProvider : null,
       model: usedModel,
       stream_stalled: false,
-      persistence_status: "generated",
+      persistence_status: checkpointSaved ? "generated" : "checkpoint_failed",
     });
   } catch (err) {
-    logger.error({ err }, "Chat message stream failed");
-    flight.fail(err);
-    await markTurnFailed(turnId, userId, err).catch(() => {});
-    writeSse(res, {
-      error: streamErrorMessage(err),
-      ...(crisisResourceCard ? { crisis_resource: crisisResourceCard } : {}),
-    });
-    telemetry.report("failed", {
-      provider: usedProvider,
-      model: usedModel,
-      stream_timeout: err instanceof LlmStreamTimeoutError,
-      error_class: chatErrorClass(err),
-    });
+    const kept = String(fullResponse || "").trim();
+    if (replySurvivesDatabaseTimeout(kept, telemetry.currentPhase(), err)) {
+      logger.warn(
+        { err, turnId },
+        "Database timeout after the reply started; keeping the text",
+      );
+      let checkpointSaved = false;
+      try {
+        checkpointSaved = await checkpointGeneratedTurnWithRetry({
+          id: turnId,
+          userId,
+          assistantContent: kept,
+          metadata: {
+            ...pipelineMetadata,
+            ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
+          },
+        });
+      } catch {
+        checkpointSaved = false;
+      }
+      if (!checkpointSaved) {
+        void markTurnFailed(turnId, userId, err).catch(() => {});
+      }
+      streamSucceeded = true;
+      const keptDone = {
+        done: true,
+        visible: kept,
+        ...(crisisResourceCard ? { crisis_resource: crisisResourceCard } : {}),
+        model: usedModel,
+        tier: usedTier,
+        provider: usedProvider,
+        brand: usedBrand,
+        failed_over: failedOver,
+        turn_id: turnId,
+        user_message_id: turnStart.turn.userMessageId,
+        assistant_message_id: turnStart.turn.assistantMessageId,
+        persistence_status: checkpointSaved ? "generated" : "checkpoint_failed",
+        persistence_owner: persistenceOwner,
+        ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
+      };
+      writeSse(res, keptDone);
+      flight.resolve({ content: kept, done: { ...keptDone, joined: true } });
+      closePipeline("completed", {
+        provider: usedProvider,
+        model: usedModel,
+        persistence_status: checkpointSaved ? "generated" : "checkpoint_failed",
+        database_timeout: true,
+      });
+    } else {
+      logger.error({ err }, "Chat message stream failed");
+      flight.fail(err);
+      writeSse(res, {
+        error: streamErrorMessage(err),
+        ...(crisisResourceCard ? { crisis_resource: crisisResourceCard } : {}),
+      });
+      closePipeline("failed", {
+        provider: usedProvider,
+        model: usedModel,
+        stream_timeout: err instanceof LlmStreamTimeoutError,
+        error_class: chatErrorClass(err),
+        error_code: chatErrorCode(err),
+      });
+      void markTurnFailed(turnId, userId, err).catch(() => {});
+    }
   } finally {
     clearInterval(leaseHeartbeat);
     stopHeartbeat();
@@ -3537,8 +3706,23 @@ router.post("/messages", async (req, res) => {
       if (serverPersist || lateClient) {
       const persistenceStartedAt = Date.now();
       try {
-        const generatedTurn = await readChatTurn(turnId, userId);
-        if (!generatedTurn) throw new Error("Generated turn checkpoint is missing");
+        let generatedTurn = await readChatTurn(turnId, userId);
+        if (
+          generatedTurn &&
+          !String(generatedTurn.assistantContent || "").trim() &&
+          String(fullResponse).trim()
+        ) {
+          const saved = await checkpointGeneratedTurnWithRetry({
+            id: turnId,
+            userId,
+            assistantContent: fullResponse,
+            metadata: pipelineMetadata,
+          });
+          if (saved) generatedTurn = await readChatTurn(turnId, userId);
+        }
+        if (!generatedTurn || !String(generatedTurn.assistantContent || "").trim()) {
+          throw new Error("Generated turn checkpoint is missing");
+        }
         await retryTurnPersistence(generatedTurn);
         logger.info(
           {

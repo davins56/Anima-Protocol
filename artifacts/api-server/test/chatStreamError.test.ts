@@ -100,6 +100,22 @@ describe("streamErrorMessage does not regress LLM / Worker timeouts", () => {
     expect(message).not.toMatch(/Failed query/i);
   });
 
+  it("maps DbOperationTimeoutError / ETIMEOUT to a retryable conversation message", () => {
+    const timeout = Object.assign(
+      new Error("Database operation aborted due to timeout after 5000ms"),
+      { name: "DbOperationTimeoutError", code: "ETIMEOUT" },
+    );
+    const message = streamErrorMessage(timeout);
+    expect(message).toBe(
+      "Couldn't load this conversation — the database timed out. Please try again.",
+    );
+    expect(message).not.toMatch(/ETIMEOUT|aborted due to timeout/i);
+    const wrapped = new Error("Failed query: select 1");
+    (wrapped as Error & { cause?: unknown }).cause = timeout;
+    expect(streamErrorMessage(wrapped)).toBe(message);
+    expect(streamErrorMessage(wrapped)).not.toMatch(/Failed query/i);
+  });
+
   it("does not leak SQL when a drizzle wrapper's cause is the Worker wall timeout", () => {
     const wrapped = new Error("Failed query: select 1\nparams:");
     wrapped.name = "DrizzleQueryError";
