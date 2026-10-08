@@ -77,8 +77,9 @@ export function replacedTurnIdsOf(metadata: unknown): string[] {
   if (!Array.isArray(raw)) return [];
   const ids: string[] = [];
   for (const item of raw) {
-    const id = String(item || "").trim();
-    if (!id || ids.includes(id)) continue;
+    if (typeof item !== "string") continue;
+    const id = item.trim();
+    if (!id || id.length > 200 || ids.includes(id)) continue;
     ids.push(id);
     if (ids.length >= 80) break;
   }

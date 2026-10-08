@@ -179,10 +179,10 @@ import {
 import {
   keepArrivals,
   messageTurnId,
-  messagesAfterDiscardingReply,
   releaseDiscardedIds,
   rememberDiscardedIds,
   replyActionsAreLocked,
+  threadForHungRetry,
   suffixReplacement,
 } from "@/lib/chatReplyActions";
 import HeldOutgoingBubble from "@/components/chat/HeldOutgoingBubble";
@@ -1498,7 +1498,7 @@ export default function Chat() {
       return Boolean(turnId && message?.role !== "user" && messageTurnId(message) === turnId);
     });
     const suffix = start >= 0 ? suffixReplacement(source, start) : null;
-    const trimmed = messagesAfterDiscardingReply(source, { turnId, messageIds });
+    const trimmed = threadForHungRetry(source, start, { turnId, messageIds });
     const last_message = String(trimmed[trimmed.length - 1]?.content || "").slice(0, 60);
     const restore = async () => {
       releaseDiscardedIds(supersededTurnIdsRef.current, supersededMessageIdsRef.current, {

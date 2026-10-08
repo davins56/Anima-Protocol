@@ -2,8 +2,17 @@ import { describe, expect, it } from "vitest";
 import {
   emotionalStateWithTurnBond,
   emotionalStateWithTurnMood,
+  moodLoopStops,
   moodTurnAlreadyWritten,
 } from "../src/lib/turnMoodWrite";
+
+describe("moodLoopStops", () => {
+  it("stops only when the turn was replaced, and keeps writing the other characters", () => {
+    expect(moodLoopStops("replaced")).toBe(true);
+    expect(moodLoopStops("skipped")).toBe(false);
+    expect(moodLoopStops("written")).toBe(false);
+  });
+});
 
 describe("emotionalStateWithTurnMood", () => {
   it("stamps the turn once and leaves a retry unchanged", () => {
