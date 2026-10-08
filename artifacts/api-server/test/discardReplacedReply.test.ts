@@ -404,4 +404,78 @@ describe("discardReplacedCompanionReply", () => {
       .where(eq(memoryEmbeddings.characterId, `${characterId}_embed`));
     expect(embeddings).toHaveLength(1);
   });
+
+  it("keeps the replacement when memory cleanup fails after the reply is deleted", async () => {
+    const session = `${sessionId}_memfail`;
+    const turnId = `${oldTurnId}_memfail`;
+    const replacing = `${newTurnId}_memfail`;
+    await beginChatTurn({
+      id: turnId,
+      sessionId: session,
+      userId,
+      userContent: "hello again",
+      persistenceOwner: "client",
+      metadata: { character_ids: [characterId] },
+    });
+    await db.insert(userEntities).values([
+      {
+        userId,
+        entityName: CHAT_MESSAGE,
+        entityId: `${turnId}:user`,
+        data: {
+          id: `${turnId}:user`,
+          session_id: session,
+          role: "user",
+          content: "hello again",
+          turn_id: turnId,
+          seq: 0,
+        },
+      },
+      {
+        userId,
+        entityName: CHAT_MESSAGE,
+        entityId: `${turnId}:assistant`,
+        data: {
+          id: `${turnId}:assistant`,
+          session_id: session,
+          role: "assistant",
+          content: "the reply that stays gone",
+          turn_id: turnId,
+          seq: 1,
+        },
+      },
+    ]);
+
+    const discarded = await discardReplacedCompanionReply(
+      {
+        userId,
+        sessionId: session,
+        replacingTurnId: replacing,
+        replyAction: "retry",
+        userContent: "hello again",
+        replacedTurnId: turnId,
+        messageIds: [`${turnId}:assistant`],
+        fromMessageId: `${turnId}:assistant`,
+        characterIds: [characterId],
+      },
+      {
+        forgetMemory: async () => {
+          throw new Error("memory down");
+        },
+      },
+    );
+
+    expect(discarded.turnId).toBe(turnId);
+    const turn = await readChatTurn(turnId, userId);
+    expect(turn?.metadata).toMatchObject({ replaced: true, superseded_by: replacing });
+    const rows = await db
+      .select()
+      .from(userEntities)
+      .where(and(eq(userEntities.userId, userId), eq(userEntities.entityName, CHAT_MESSAGE)));
+    const contents = rows
+      .map((row) => row.data as { content?: string; session_id?: string })
+      .filter((data) => data.session_id === session)
+      .map((data) => data.content);
+    expect(contents).toEqual(["hello again"]);
+  });
 });

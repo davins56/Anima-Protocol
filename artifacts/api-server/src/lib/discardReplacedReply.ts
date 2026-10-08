@@ -22,6 +22,7 @@ import {
   withTransientDbRetry,
 } from "@workspace/db";
 import { markChatTurnReplaced, readChatTurn } from "./chatTurnLedger";
+import { logger } from "./logger";
 import { factIdFor } from "./memoryEmbeddings";
 import { factsWithoutTurn } from "./memoryPolicy";
 import {
@@ -391,17 +392,22 @@ export async function forgetReplacedTurnMemory(turn: {
  * and this send is going to generate. Returns every turn the suffix
  * retired so the prompt can drop them even if a row delete is still catching up.
  */
-export async function discardReplacedCompanionReply(input: {
-  userId: string;
-  sessionId: string;
-  replacingTurnId: string;
-  replyAction: ReplyKind;
-  userContent: string;
-  replacedTurnId?: string | null;
-  messageIds?: string[];
-  fromMessageId?: string | null;
-  characterIds?: string[];
-}): Promise<ReplacedReplyPlan> {
+export async function discardReplacedCompanionReply(
+  input: {
+    userId: string;
+    sessionId: string;
+    replacingTurnId: string;
+    replyAction: ReplyKind;
+    userContent: string;
+    replacedTurnId?: string | null;
+    messageIds?: string[];
+    fromMessageId?: string | null;
+    characterIds?: string[];
+  },
+  hooks?: {
+    forgetMemory?: (userId: string, sessionId: string, turnId: string) => Promise<void>;
+  },
+): Promise<ReplacedReplyPlan> {
   const plan = await inspectReplacedReply(input);
   if (plan.turnIds.length === 0 && plan.messageIds.length === 0 && plan.fromSeq == null) {
     return plan;
@@ -418,6 +424,10 @@ export async function discardReplacedCompanionReply(input: {
     messageIds: plan.messageIds,
     fromSeq: plan.fromSeq,
   });
+  // Mark and delete already committed in their own transactions. A later
+  // memory failure must not reject the send: the old reply is gone, and a
+  // 503 would leave the conversation with neither that reply nor the new one.
+  // The replaced flag still blocks a deferred memory job from writing it back.
   const fallbackCharacters = (input.characterIds || [])
     .map((id) => String(id || "").trim())
     .filter(Boolean);
@@ -425,9 +435,21 @@ export async function discardReplacedCompanionReply(input: {
     const characterIds = [
       ...new Set([...characterIdsFromMetadata(turn.metadata), ...fallbackCharacters]),
     ];
-    if (characterIds.length === 0) continue;
-    await forgetTurnMemories(input.userId, characterIds, turn.id);
-    await stripSharedTurnFact(input.userId, input.sessionId, turn.id);
+    try {
+      if (hooks?.forgetMemory) {
+        await hooks.forgetMemory(input.userId, input.sessionId, turn.id);
+      } else {
+        if (characterIds.length > 0) {
+          await forgetTurnMemories(input.userId, characterIds, turn.id);
+        }
+        await stripSharedTurnFact(input.userId, input.sessionId, turn.id);
+      }
+    } catch (error) {
+      logger.warn(
+        { error, turnId: turn.id, replacingTurnId: input.replacingTurnId },
+        "Could not forget memory for a replaced reply; the reply is already removed",
+      );
+    }
   }
   return plan;
 }
