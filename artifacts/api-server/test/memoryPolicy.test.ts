@@ -17,9 +17,11 @@ import {
   IMPORTANCE_WEIGHTS,
   appendTurnMemoryFact,
   buildMemoryPolicyJob,
+  buildMemoryReembedJob,
   consolidateExchange,
   decideMemoryCandidate,
   isForgottenFact,
+  isLegacyTextFact,
   isPolicyFact,
   memoryPolicySignals,
   persistCompanionTurnFact,
@@ -30,7 +32,8 @@ import {
   type PolicyFact,
 } from "../src/lib/memoryPolicy";
 import * as memoryEmbeddingWrites from "../src/lib/memoryEmbeddings";
-import { retrieveRelevantMemories } from "../src/lib/memoryRetrieval";
+import { factIdFor, searchMemoriesSemantically, upsertMemoryEmbeddings } from "../src/lib/memoryEmbeddings";
+import { formatMemoriesForPrompt, retrieveRelevantMemories } from "../src/lib/memoryRetrieval";
 
 const PREFIX = `mempol_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_`;
 
@@ -307,10 +310,28 @@ describe("memory policy keeps people separate", () => {
     });
     expect(next).not.toBeNull();
     expect(policyOf(next || [])).toHaveLength(1);
-    expect((next || []).filter((item) => !isPolicyFact(item))).toHaveLength(24);
+    expect((next || []).filter((item) => !isPolicyFact(item) && !isLegacyTextFact(item))).toHaveLength(24);
     expect(appendTurnMemoryFact(next || [], { type: "turn", turn_id: "t-new", text: "dup" })).toBe(
       null,
     );
+  });
+
+  it("keeps a legacy text fact that has no memory class when the turn window slides", () => {
+    const legacy = { type: "factual", text: "The human once mentioned a red scarf." };
+    const turns = Array.from({ length: 24 }, (_, index) => ({
+      type: "turn",
+      turn_id: `t${index}`,
+      text: `User: ${index} | Companion: ok`,
+    }));
+    const next = appendTurnMemoryFact([legacy, ...turns], {
+      type: "turn",
+      turn_id: "t-new",
+      text: "User: later | Companion: still here",
+    });
+    expect(next).not.toBeNull();
+    expect(next?.some((item) => item.text === legacy.text)).toBe(true);
+    expect(next?.filter((item) => isLegacyTextFact(item))).toHaveLength(1);
+    expect(next?.filter((item) => !isLegacyTextFact(item))).toHaveLength(24);
   });
 
   it("enqueues a deferred job and does not call a chat model", () => {
@@ -827,5 +848,313 @@ describe("a turn write cannot undo a review change", () => {
     expect(facts.some((item) => item && (item as { turn_id?: string }).turn_id === `race-${characterId}`)).toBe(
       true,
     );
+  });
+
+  it("does not let an in-flight embedding write the old sentence back over a same-id correction", async () => {
+    const characterId = `${PREFIX}stale-embed`;
+    const userId = await seedName(characterId);
+    const corrected = [
+      {
+        type: "factual",
+        memory_class: "semantic",
+        text: "The human's name is Samuel.",
+        subject: "user",
+        predicate: "name",
+        object: "Samuel",
+        value: "Samuel",
+        about: "user",
+        importance: 0.91,
+        confidence: 0.9,
+        emotional_weight: 0.2,
+        identity_relevant: false,
+        user_edited: true,
+        fact_id: "user-name",
+        created_at: "2026-04-01T00:00:00.000Z",
+        updated_at: "2026-06-02T00:00:00.000Z",
+      },
+    ];
+    await db.insert(memoryEmbeddings).values({
+      userId,
+      characterId,
+      factId: "user-name",
+      text: "The human's name is Samuel.",
+      memoryType: "factual",
+      embedding: [0.4, 0.6],
+      model: "hash-bow-v1",
+    });
+
+    const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    let writing: Promise<number> | null = null;
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`${userId}:${characterId}`]);
+      let settled = false;
+      writing = upsertMemoryEmbeddings({
+        userId,
+        characterId,
+        facts: [
+          {
+            type: "factual",
+            fact_id: "user-name",
+            text: "The human's name is Sam.",
+          },
+        ],
+      }).finally(() => {
+        settled = true;
+      });
+      const deadline = Date.now() + 4000;
+      while (!settled && Date.now() < deadline) {
+        const waiting = await client.query<{ waiting: number }>(
+          "SELECT COUNT(*)::int AS waiting FROM pg_locks WHERE locktype = 'advisory' AND NOT granted",
+        );
+        if ((waiting.rows[0]?.waiting ?? 0) > 0) break;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      expect(settled).toBe(false);
+      await client.query(
+        "UPDATE companion_memories SET facts = $1::jsonb WHERE user_id = $2 AND character_id = $3",
+        [JSON.stringify(corrected), userId, characterId],
+      );
+      await client.query("COMMIT");
+      await expect(writing).resolves.toBe(0);
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
+      if (writing) await writing.catch(() => {});
+      throw err;
+    } finally {
+      await client.end();
+    }
+
+    const rows = await db
+      .select()
+      .from(memoryEmbeddings)
+      .where(and(eq(memoryEmbeddings.userId, userId), eq(memoryEmbeddings.characterId, characterId)));
+    expect(rows.map((row) => row.text)).toEqual(["The human's name is Samuel."]);
+    expect(rows.some((row) => row.text === "The human's name is Sam.")).toBe(false);
+  });
+
+  it("forgets the source turn and its embedding so the forgotten name cannot reach the prompt", async () => {
+    const userId = `${PREFIX}user`;
+    const characterId = `${PREFIX}forget-prompt`;
+    const turnText = "User: My name is Sam. | Companion: I hear you.";
+    const city = "The human lives in Lisbon.";
+    await db.insert(companionMemories).values({
+      userId,
+      characterId,
+      summary: "kept",
+      facts: [
+        {
+          type: "turn",
+          turn_id: "name-turn",
+          text: turnText,
+          created_at: "2026-06-01T00:00:00.000Z",
+        },
+        {
+          type: "factual",
+          memory_class: "semantic",
+          text: "The human's name is Sam.",
+          subject: "user",
+          predicate: "name",
+          object: "Sam",
+          about: "user",
+          importance: 0.91,
+          confidence: 0.9,
+          emotional_weight: 0.2,
+          identity_relevant: false,
+          fact_id: "user-name",
+          turn_id: "name-turn",
+          created_at: "2026-04-01T00:00:00.000Z",
+        },
+        {
+          type: "factual",
+          memory_class: "semantic",
+          text: city,
+          subject: "user",
+          predicate: "lives_in",
+          object: "Lisbon",
+          about: "user",
+          importance: 0.7,
+          confidence: 0.8,
+          emotional_weight: 0.1,
+          identity_relevant: false,
+          fact_id: "user-city",
+          created_at: "2026-04-02T00:00:00.000Z",
+        },
+      ],
+      emotionalState: {},
+      resonanceNotes: "",
+    });
+    await db.insert(memoryEmbeddings).values([
+      {
+        userId,
+        characterId,
+        factId: factIdFor(turnText),
+        text: turnText,
+        memoryType: "turn",
+        embedding: [0.1, 0.1],
+        model: "hash-bow-v1",
+      },
+      {
+        userId,
+        characterId,
+        factId: "user-name",
+        text: "The human's name is Sam.",
+        memoryType: "factual",
+        embedding: [0.2, 0.2],
+        model: "hash-bow-v1",
+      },
+      {
+        userId,
+        characterId,
+        factId: "user-city",
+        text: city,
+        memoryType: "factual",
+        embedding: [0.3, 0.3],
+        model: "hash-bow-v1",
+      },
+    ]);
+
+    const removed = await applyCompanionMemoryChange({
+      userId,
+      characterId,
+      factId: "user-name",
+      action: "delete",
+    });
+    expect(removed.ok).toBe(true);
+
+    const [memory] = await db
+      .select()
+      .from(companionMemories)
+      .where(and(eq(companionMemories.userId, userId), eq(companionMemories.characterId, characterId)))
+      .limit(1);
+    const facts = Array.isArray(memory?.facts) ? memory.facts : [];
+    expect(facts.some((item) => item && (item as { type?: string }).type === "turn")).toBe(false);
+    expect(JSON.stringify(facts)).not.toMatch(/My name is Sam/);
+
+    const rows = await db
+      .select()
+      .from(memoryEmbeddings)
+      .where(and(eq(memoryEmbeddings.userId, userId), eq(memoryEmbeddings.characterId, characterId)));
+    expect(rows.map((row) => row.factId)).toEqual(["user-city"]);
+
+    const prompt = formatMemoriesForPrompt(
+      retrieveRelevantMemories([{ characterId, facts }], { contextHint: "what is my name Sam", topK: 8 }),
+      new Map(),
+    );
+    expect(prompt).not.toMatch(/\bSam\b/);
+    expect(prompt).toMatch(/Lisbon/);
+
+    const hits = await searchMemoriesSemantically({
+      userId,
+      characterId,
+      query: "what is my name Sam",
+      topK: 8,
+    });
+    expect(hits.map((hit) => hit.text).join("\n")).not.toMatch(/\bSam\b/);
+  });
+
+  it("re-embeds the corrected sentence and leaves a different fact that shares the new wording", async () => {
+    const userId = `${PREFIX}user`;
+    const characterId = `${PREFIX}reembed`;
+    const decoyText = "The human's name is Samuel.";
+    await db.insert(companionMemories).values({
+      userId,
+      characterId,
+      summary: "kept",
+      facts: [
+        {
+          type: "factual",
+          memory_class: "semantic",
+          text: "The human's name is Sam.",
+          subject: "user",
+          predicate: "name",
+          object: "Sam",
+          about: "user",
+          importance: 0.91,
+          confidence: 0.9,
+          emotional_weight: 0.2,
+          identity_relevant: false,
+          fact_id: "user-name",
+          created_at: "2026-04-01T00:00:00.000Z",
+        },
+        {
+          type: "factual",
+          memory_class: "semantic",
+          text: decoyText,
+          subject: "companion",
+          predicate: "kept",
+          object: "a note",
+          about: "companion",
+          importance: 0.4,
+          confidence: 0.5,
+          emotional_weight: 0.1,
+          identity_relevant: false,
+          fact_id: "her-note",
+          created_at: "2026-04-02T00:00:00.000Z",
+        },
+      ],
+      emotionalState: {},
+      resonanceNotes: "",
+    });
+    await db.insert(memoryEmbeddings).values([
+      {
+        userId,
+        characterId,
+        factId: "user-name",
+        text: "The human's name is Sam.",
+        memoryType: "factual",
+        embedding: [0.1, 0.2],
+        model: "hash-bow-v1",
+      },
+      {
+        userId,
+        characterId,
+        factId: "her-note",
+        text: decoyText,
+        memoryType: "factual",
+        embedding: [0.9, 0.1],
+        model: "hash-bow-v1",
+      },
+    ]);
+
+    const edited = await applyCompanionMemoryChange({
+      userId,
+      characterId,
+      factId: "user-name",
+      action: "edit",
+      text: "The human's name is Samuel.",
+    });
+    expect(edited.ok).toBe(true);
+    if (!edited.ok) return;
+    expect(edited.focusFactId).toBeTruthy();
+    expect(edited.focusFactId).not.toBe("her-note");
+
+    const afterEdit = await db
+      .select()
+      .from(memoryEmbeddings)
+      .where(and(eq(memoryEmbeddings.userId, userId), eq(memoryEmbeddings.characterId, characterId)));
+    expect(afterEdit.map((row) => row.factId)).toEqual(["her-note"]);
+
+    const job = buildMemoryReembedJob({
+      userId,
+      characterId,
+      factId: edited.focusFactId,
+    });
+    expect(job?.kind).toBe("memory-policy");
+    expect(job?.payload.reembedOnly).toBe(true);
+    expect(job?.payload.factId).toBe(edited.focusFactId);
+
+    await runDeferredMemoryPolicy(job?.payload || {}, { signal: new AbortController().signal });
+
+    const rows = await db
+      .select()
+      .from(memoryEmbeddings)
+      .where(and(eq(memoryEmbeddings.userId, userId), eq(memoryEmbeddings.characterId, characterId)));
+    const byId = new Map(rows.map((row) => [row.factId, row.text]));
+    expect(byId.get("her-note")).toBe(decoyText);
+    expect(byId.get(edited.focusFactId || "")).toBe("The human's name is Samuel.");
+    expect(rows.some((row) => row.text === "The human's name is Sam.")).toBe(false);
+    expect(rows.every((row) => row.model === "hash-bow-v1")).toBe(true);
   });
 });

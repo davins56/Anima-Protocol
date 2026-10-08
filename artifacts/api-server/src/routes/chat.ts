@@ -215,7 +215,7 @@ import {
   turnSkipsAffect,
 } from "../lib/replyReplacement";
 import { deferLocalLlmJob } from "../lib/deferredLocalLlm";
-import { buildMemoryPolicyJob, persistCompanionTurnFact } from "../lib/memoryPolicy";
+import { buildMemoryPolicyJob, buildMemoryReembedJob, persistCompanionTurnFact } from "../lib/memoryPolicy";
 import {
   applyCompanionMemoryChange,
   groupCompanionMemories,
@@ -1683,6 +1683,20 @@ async function changeCompanionMemory(
   if (!result.ok) {
     res.status(result.status).json({ error: result.error, code: result.code });
     return;
+  }
+  if (result.changed && action === "edit") {
+    const job = buildMemoryReembedJob({
+      userId,
+      characterId,
+      factId: result.focusFactId,
+    });
+    if (job) {
+      try {
+        await deferLocalLlmJob(job);
+      } catch {
+        // The corrected sentence is already stored. Search can catch up later.
+      }
+    }
   }
   res.json({ review: result.review, changed: result.changed });
 }

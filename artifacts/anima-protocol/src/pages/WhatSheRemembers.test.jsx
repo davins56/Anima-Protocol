@@ -176,4 +176,62 @@ describe("What she remembers", () => {
     expect(document.body.textContent).not.toContain("The human's name is Sam.");
     expect(document.body.textContent).not.toContain("kept the key");
   });
+
+  it("ignores a correction that finishes after the companion changes", async () => {
+    let finishEdit = () => {};
+    animaApi.chat.companionMemory.mockImplementation((id) => {
+      if (id === "clint") {
+        return Promise.resolve({ review: { about_you: [], companion: [], core: [] } });
+      }
+      return Promise.resolve({ review });
+    });
+    animaApi.chat.updateCompanionMemory.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishEdit = () =>
+            resolve({
+              review: {
+                ...review,
+                about_you: [{ ...review.about_you[0], text: "The human's name is Samuel." }],
+              },
+            });
+        }),
+    );
+    function Switcher() {
+      const navigate = useNavigate();
+      return (
+        <button type="button" onClick={() => navigate("/what-she-remembers/clint?name=Clint")}>
+          Open Clint
+        </button>
+      );
+    }
+    render(
+      <MemoryRouter initialEntries={["/what-she-remembers/natasha?name=Natasha"]}>
+        <Routes>
+          <Route
+            path="/what-she-remembers/:characterId"
+            element={
+              <>
+                <Switcher />
+                <WhatSheRemembers />
+              </>
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await screen.findByText("The human's name is Sam.");
+    fireEvent.click(screen.getAllByRole("button", { name: "Correct" })[0]);
+    fireEvent.change(screen.getByLabelText("Correct this memory"), {
+      target: { value: "The human's name is Samuel." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open Clint" }));
+    expect(await screen.findByText("Clint hasn't remembered anything yet.")).toBeTruthy();
+    finishEdit();
+    await waitFor(() => {
+      expect(document.body.textContent).not.toContain("The human's name is Samuel.");
+    });
+    expect(document.body.textContent).not.toContain("The human's name is Sam.");
+  });
 });
