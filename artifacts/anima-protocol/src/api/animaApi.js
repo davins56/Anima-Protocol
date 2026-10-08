@@ -124,7 +124,14 @@ async function* postAuthedSse(path, body) {
     yield* readSseJsonStream(res.body);
   } catch (err) {
     if (err?.name === "AbortError" || err?.code === "ABORT_ERR") {
-      throw chatStreamTimeoutError();
+      // The deadline timer is the only caller of controller.abort(). A stop,
+      // a chat switch, or leaving the page aborts the fetch without that signal.
+      if (controller.signal.aborted) {
+        throw chatStreamTimeoutError();
+      }
+      const cancel = err instanceof Error ? err : new Error("The reply was cancelled.");
+      cancel.code = "chat_user_cancel";
+      throw cancel;
     }
     throw err;
   } finally {
