@@ -141,6 +141,22 @@ describe("discarded reply ids", () => {
     expect(messageIds.size).toBe(0);
   });
 
+  it("keeps an id hidden until every retry that claimed it has released it", () => {
+    const turnIds = new Set();
+    const messageIds = new Set();
+    const counts = new Map();
+    const target = { turnId: "t1", messageIds: ["a"] };
+    rememberDiscardedIds(turnIds, messageIds, target, counts);
+    rememberDiscardedIds(turnIds, messageIds, target, counts);
+    releaseDiscardedIds(turnIds, messageIds, target, counts);
+    expect(turnIds.has("t1")).toBe(true);
+    expect(messageIds.has("a")).toBe(true);
+    releaseDiscardedIds(turnIds, messageIds, target, counts);
+    expect(turnIds.size).toBe(0);
+    expect(messageIds.size).toBe(0);
+    expect(counts.size).toBe(0);
+  });
+
   it("drops later suffix turns before merging a message that arrived after the snapshot", () => {
     const source = [
       { id: "u", turn_id: "t1", role: "user", content: "hi" },

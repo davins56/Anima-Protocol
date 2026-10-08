@@ -362,6 +362,8 @@ export default function Chat() {
   const lateReplyWatchRef = useRef(null);
   const supersededTurnIdsRef = useRef(new Set());
   const supersededMessageIdsRef = useRef(new Set());
+  const supersededCountsRef = useRef(new Map());
+  const hungRetryInFlightRef = useRef(false);
   /** Last LLM provider that served a reply: "openai" | "xai" | "gemini" | "kimi" | "gateway" */
   const [llmProvider, setLlmProvider] = useState(null);
   /** "anima" when the custom multi-model stack selected the backend */
@@ -1455,10 +1457,12 @@ export default function Chat() {
   };
 
   const rememberSupersededReply = (turnId, messageIds) => {
-    rememberDiscardedIds(supersededTurnIdsRef.current, supersededMessageIdsRef.current, {
-      turnId,
-      messageIds,
-    });
+    rememberDiscardedIds(
+      supersededTurnIdsRef.current,
+      supersededMessageIdsRef.current,
+      { turnId, messageIds },
+      supersededCountsRef.current,
+    );
   };
 
   const stitchThread = (live, snapshot, activeTurnId) =>
@@ -1470,15 +1474,20 @@ export default function Chat() {
   const retryHungCompanionReply = async ({ sessionId, userContent, turnId, messageIds }) => {
     if (replyActionsDisabledRef.current) return;
     if (activeSessionRef.current?.id !== sessionId) return;
+    if (hungRetryInFlightRef.current) return;
+    hungRetryInFlightRef.current = true;
+    try {
     const knownIds = (messageIds || []).map((id) => (id ? String(id) : "")).filter(Boolean);
     // Hide the reply before the fresh read. The late-reply watcher can paint
     // it while ChatSession.get is still pending.
     rememberSupersededReply(turnId, knownIds);
     const releaseKnown = () => {
-      releaseDiscardedIds(supersededTurnIdsRef.current, supersededMessageIdsRef.current, {
-        turnId,
-        messageIds: knownIds,
-      });
+      releaseDiscardedIds(
+        supersededTurnIdsRef.current,
+        supersededMessageIdsRef.current,
+        { turnId, messageIds: knownIds },
+        supersededCountsRef.current,
+      );
     };
     let source = activeSessionRef.current.messages || [];
     try {
@@ -1501,11 +1510,16 @@ export default function Chat() {
     const trimmed = threadForHungRetry(source, start, { turnId, messageIds });
     const last_message = String(trimmed[trimmed.length - 1]?.content || "").slice(0, 60);
     const restore = async () => {
-      releaseDiscardedIds(supersededTurnIdsRef.current, supersededMessageIdsRef.current, {
-        turnId,
-        turnIds: suffix?.replacedTurnIds || [],
-        messageIds: [...knownIds, ...(suffix?.replacedMessageIds || [])],
-      });
+      releaseDiscardedIds(
+        supersededTurnIdsRef.current,
+        supersededMessageIdsRef.current,
+        {
+          turnId,
+          turnIds: suffix?.replacedTurnIds || [],
+          messageIds: [...knownIds, ...(suffix?.replacedMessageIds || [])],
+        },
+        supersededCountsRef.current,
+      );
       let restored = source;
       try {
         const latest = await base44.entities.ChatSession.get(sessionId);
@@ -1526,10 +1540,15 @@ export default function Chat() {
         last_message: preview,
       }).catch(() => {});
     };
-    rememberDiscardedIds(supersededTurnIdsRef.current, supersededMessageIdsRef.current, {
-      turnIds: suffix?.replacedTurnIds || [],
-      messageIds: suffix?.replacedMessageIds || [],
-    });
+    rememberDiscardedIds(
+      supersededTurnIdsRef.current,
+      supersededMessageIdsRef.current,
+      {
+        turnIds: suffix?.replacedTurnIds || [],
+        messageIds: suffix?.replacedMessageIds || [],
+      },
+      supersededCountsRef.current,
+    );
     setActiveSession((prev) =>
       prev && prev.id === sessionId ? { ...prev, messages: trimmed, last_message } : prev,
     );
@@ -1576,6 +1595,9 @@ export default function Chat() {
       replacedMessageIds: suffix?.replacedMessageIds || messageIds || [],
     });
     if (result?.started === false) await restore();
+    } finally {
+      hungRetryInFlightRef.current = false;
+    }
   };
 
   useEffect(() => {

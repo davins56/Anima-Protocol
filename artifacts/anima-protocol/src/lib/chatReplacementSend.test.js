@@ -29,6 +29,10 @@ describe("retry and edit stay on the one send path", () => {
     const fn = chat.slice(start, end);
     const mark = fn.indexOf("rememberSupersededReply(turnId, knownIds)");
     const read = fn.indexOf("ChatSession.get(sessionId)");
+    const claimed = fn.indexOf("hungRetryInFlightRef.current = true");
+    expect(fn.indexOf("if (hungRetryInFlightRef.current) return")).toBeGreaterThan(-1);
+    expect(claimed).toBeGreaterThan(-1);
+    expect(claimed).toBeLessThan(read);
     expect(mark).toBeGreaterThan(-1);
     expect(read).toBeGreaterThan(mark);
     expect(fn).toContain("releaseDiscardedIds");

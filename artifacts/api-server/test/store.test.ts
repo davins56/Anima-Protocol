@@ -28,6 +28,7 @@ import {
   userEntities,
   userProfiles,
   backfillChatMessages,
+  CHAT_MESSAGE,
 } from "@workspace/db";
 import { like } from "drizzle-orm";
 import { beginChatTurn, markChatTurnReplaced } from "../src/lib/chatTurnLedger";
@@ -1160,6 +1161,48 @@ describe("chat messages stored as individual rows", () => {
       })
     ).json;
     expect(appended.seq).toBe(2);
+  });
+
+  it("merges blob messages that are not already rows instead of dropping them", async () => {
+    const U = user("msg_partial_migrate");
+    const session = (
+      await call(U, "POST", "/ChatSession", {
+        title: "Partial",
+        messages: [
+          { id: "blob_only", role: "user", content: "from the blob" },
+          { id: "already_row", role: "assistant", content: "already stored" },
+        ],
+      })
+    ).json;
+    // Insert the row directly. POST /messages would migrate the blob first and
+    // hide a migration that treats any existing row as a finished copy.
+    await db.insert(userEntities).values({
+      userId: U,
+      entityName: CHAT_MESSAGE,
+      entityId: "already_row",
+      data: {
+        id: "already_row",
+        session_id: session.id,
+        role: "assistant",
+        content: "already stored",
+        seq: 4,
+      },
+    });
+
+    const list = (
+      await call(U, "GET", `/messages?session_id=${session.id}`)
+    ).json as Json[];
+    expect(list.map((m) => m.content)).toEqual(["already stored", "from the blob"]);
+    expect(list.map((m) => m.seq)).toEqual([4, 5]);
+
+    const reread = (await call(U, "GET", `/ChatSession/${session.id}`)).json;
+    expect(reread.messages).toEqual([]);
+    expect(reread.messages_migrated).toBe(true);
+
+    const again = (
+      await call(U, "GET", `/messages?session_id=${session.id}`)
+    ).json as Json[];
+    expect(again.map((m) => m.id)).toEqual(list.map((m) => m.id));
   });
 
   it("concurrent appends to one session get unique, gapless seq", async () => {
