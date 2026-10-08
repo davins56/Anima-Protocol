@@ -849,6 +849,58 @@ describe("memory policy persistence", () => {
     await db.delete(chatTurns).where(eq(chatTurns.id, newId));
   });
 
+  it("does not store his fact on a turn that is still replaced after the retry chain cap", async () => {
+    const userId = `${PREFIX}user`;
+    const characterId = `${PREFIX}hop-cap`;
+    const sessionId = `${PREFIX}hop-sess`;
+    const ids = Array.from({ length: 10 }, (_, index) => `turn_${PREFIX}hop_${index}`);
+    for (const id of ids) {
+      await beginChatTurn({
+        id,
+        sessionId,
+        userId,
+        userContent: "My name is Sam.",
+        persistenceOwner: "client",
+        metadata: { reply_action: "retry", skip_affect: true, character_ids: [characterId] },
+      });
+    }
+    for (let index = 0; index < ids.length - 1; index += 1) {
+      await markChatTurnReplaced(ids[index]!, userId, ids[index + 1]!);
+    }
+    await db.insert(companionMemories).values({
+      userId,
+      characterId,
+      summary: "",
+      facts: [],
+      emotionalState: {},
+      resonanceNotes: "",
+    });
+
+    await runDeferredMemoryPolicy(
+      {
+        userId,
+        characterId,
+        sessionId,
+        turnId: ids[0],
+        companionName: "Mira",
+        userContent: "My name is Sam.",
+        assistantContent: "I am Mira.",
+        userOnly: true,
+      },
+      { signal: new AbortController().signal },
+    );
+
+    const [memory] = await db
+      .select()
+      .from(companionMemories)
+      .where(and(eq(companionMemories.userId, userId), eq(companionMemories.characterId, characterId)))
+      .limit(1);
+    expect(policyOf(Array.isArray(memory?.facts) ? memory.facts : [])).toHaveLength(0);
+    for (const id of ids) {
+      await db.delete(chatTurns).where(eq(chatTurns.id, id));
+    }
+  });
+
   it("does not bring a forgotten fact back on the next memory-policy run", async () => {
     const userId = `${PREFIX}user`;
     const characterId = `${PREFIX}forgotten`;

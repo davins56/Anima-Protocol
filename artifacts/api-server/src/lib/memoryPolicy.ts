@@ -1176,6 +1176,8 @@ async function turnIdForUserFactSave(
     if (replyActionOf(successor?.reply_action) !== "retry") return null;
     current = next;
   }
+  const landed = await readTurnMetadata(tx, current, userId);
+  if (landed && turnMetadataReplaced(landed)) return null;
   return current;
 }
 
