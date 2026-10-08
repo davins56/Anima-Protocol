@@ -34,6 +34,7 @@ vi.mock("@/api/base44Client", () => {
           (message) => message?.id && !ids.has(String(message.id)),
         );
         if (extras.length > 0) next.messages = [...next.messages, ...extras];
+        next.last_message = String(next.messages[next.messages.length - 1]?.content || "").slice(0, 60);
         delete next.keep_arrivals;
       }
       const rec = { ...existing, ...next, id };
@@ -229,5 +230,6 @@ describe("editMessageFlow (rewrite his message and request a new reply)", () => 
     expect(result.status).toBe("not_started");
     const stored = await base44.entities.ChatSession.get(session.id);
     expect(stored.messages.map((message) => message.id)).toEqual(["u1", "a1", "fresh"]);
+    expect(stored.last_message).toBe("from another device");
   });
 });

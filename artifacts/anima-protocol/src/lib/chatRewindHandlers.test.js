@@ -34,6 +34,7 @@ vi.mock("@/api/base44Client", () => {
           (message) => message?.id && !ids.has(String(message.id)),
         );
         if (extras.length > 0) next.messages = [...next.messages, ...extras];
+        next.last_message = String(next.messages[next.messages.length - 1]?.content || "").slice(0, 60);
         delete next.keep_arrivals;
       }
       const rec = { ...existing, ...next, id };
@@ -382,5 +383,6 @@ describe("regenerateMessageFlow (confirm-and-rewrite a reply)", () => {
       "a2",
       "fresh",
     ]);
+    expect(stored.last_message).toBe("from another device");
   });
 });
