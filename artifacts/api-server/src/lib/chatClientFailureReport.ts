@@ -132,8 +132,12 @@ export function recordChatClientFailure(input: {
   };
 
   const now = input.now ?? Date.now();
-  const key = `${userId}|${log.turn_id || log.session_id}|${log.failure_type}`;
-  if (!remember(key, now)) return { ok: true, duplicate: true, log: null };
+  // Same attempt, same type: one line. No turn id means a later failure in
+  // this chat is a different event — the per-minute rate limit still applies.
+  if (log.turn_id) {
+    const key = `${userId}|${log.turn_id}|${log.failure_type}`;
+    if (!remember(key, now)) return { ok: true, duplicate: true, log: null };
+  }
 
   logger.info(log, "chat_client_failure");
   return { ok: true, duplicate: false, log };

@@ -18,6 +18,7 @@ const ENGINE_TYPE_ERROR_RE =
 const AUTH_RE = /^(?:unauthorized|not signed in)\b|session may have expired/i;
 const EMPTY_REPLY_RE = /empty reply/i;
 const TIMEOUT_RE = /took too long/i;
+const STILL_REPLYING_RE = /still finishing the last reply/i;
 const BUSY_RE = /still finishing the last reply|already being processed/i;
 
 /** @type {Set<string>} */
@@ -256,6 +257,25 @@ export function classifyChatClientFailure(input = {}) {
 }
 
 /**
+ * A stop, a page leave, or "she's still replying" is not a failed turn.
+ * The fetch deadline (`chat_stream_timeout`) still is.
+ *
+ * @param {{ error?: unknown }} [input]
+ * @returns {boolean}
+ */
+export function isIgnoredChatClientFailure(input = {}) {
+  const facts = errorFacts(input.error);
+  if (facts.code === "chat_user_cancel") return true;
+  if (facts.code === "conversation_busy" || STILL_REPLYING_RE.test(facts.message)) {
+    return true;
+  }
+  const deadline =
+    facts.code === "chat_stream_timeout" || TIMEOUT_RE.test(facts.message);
+  if (deadline) return false;
+  return facts.name === "AbortError" || facts.code === "ABORT_ERR";
+}
+
+/**
  * Allowlisted report. Never copies message, reply, or memory text.
  *
  * @param {{
@@ -321,19 +341,21 @@ export function buildChatClientFailureReport(input = {}) {
  * @returns {boolean}
  */
 function takeReportSlot(key) {
-  if (reportedKeys.has(key)) return false;
+  if (key && reportedKeys.has(key)) return false;
   const now = Date.now();
   if (now - windowStarted > 60_000) {
     windowStarted = now;
     windowCount = 0;
   }
   if (windowCount >= MAX_PER_MINUTE) return false;
-  reportedKeys.add(key);
-  windowCount += 1;
-  if (reportedKeys.size > 200) {
-    const oldest = reportedKeys.values().next().value;
-    if (oldest) reportedKeys.delete(oldest);
+  if (key) {
+    reportedKeys.add(key);
+    if (reportedKeys.size > 200) {
+      const oldest = reportedKeys.values().next().value;
+      if (oldest) reportedKeys.delete(oldest);
+    }
   }
+  windowCount += 1;
   return true;
 }
 
@@ -388,9 +410,13 @@ async function postChatClientFailureWithRetry(report) {
  * @returns {Promise<{ sent: boolean, reason?: string, report?: Record<string, unknown> }>}
  */
 export async function deliverChatClientFailure(input) {
+  if (isIgnoredChatClientFailure(input)) return { sent: false, reason: "ignored" };
   const report = buildChatClientFailureReport(input);
   if (!report) return { sent: false, reason: "invalid" };
-  const key = `${report.turn_id || report.session_id}:${report.failure_type}`;
+  // Dedupe retries of this attempt only. A missing attempt id must not
+  // suppress the next failure in the same chat.
+  const turnId = typeof report.turn_id === "string" ? report.turn_id : "";
+  const key = turnId ? `${turnId}:${report.failure_type}` : "";
   if (!takeReportSlot(key)) return { sent: false, reason: "deduped" };
   try {
     await postChatClientFailureWithRetry(report);

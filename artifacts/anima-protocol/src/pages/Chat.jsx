@@ -3166,12 +3166,6 @@ Return JSON:
         console.error(err);
       } else if (isConversationBusyError(err)) {
         console.error(err);
-        reportChatClientFailure({
-          error: err,
-          sessionId: sendSessionId,
-          turnId,
-          partialKept: false,
-        });
         lateTurnRef.current = null;
         skipHeldFlush = true;
         terminalReason = "error";

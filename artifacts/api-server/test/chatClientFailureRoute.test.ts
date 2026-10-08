@@ -131,6 +131,29 @@ describe("POST /chat/client-failure", () => {
     expect(logged).toContain("turn_019");
   });
 
+  it("logs two failed sends in one session and does not lock the session", async () => {
+    const info = vi.spyOn(logger, "info").mockImplementation(() => {});
+    const send = (body: Record<string, unknown>) =>
+      fetch(`${baseUrl}/chat/client-failure`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-test-user": "user_123",
+        },
+        body: JSON.stringify(body),
+      });
+    expect((await send(reportBody({ turn_id: "turn_a", session_id: "sess_same" }))).status).toBe(204);
+    expect((await send(reportBody({ turn_id: "turn_b", session_id: "sess_same" }))).status).toBe(204);
+    expect((await send(reportBody({ turn_id: "turn_b", session_id: "sess_same" }))).status).toBe(204);
+    const withoutTurn = reportBody({ session_id: "sess_same" });
+    delete withoutTurn.turn_id;
+    expect((await send(withoutTurn)).status).toBe(204);
+    expect((await send({ ...withoutTurn, ms_to_failure: 900 })).status).toBe(204);
+    expect(info).toHaveBeenCalledTimes(4);
+    const turnIds = info.mock.calls.map((call) => (call[0] as { turn_id: string | null }).turn_id);
+    expect(turnIds).toEqual(["turn_a", "turn_b", null, null]);
+  });
+
   it("logs a duplicate turn once", async () => {
     const info = vi.spyOn(logger, "info").mockImplementation(() => {});
     const send = () =>

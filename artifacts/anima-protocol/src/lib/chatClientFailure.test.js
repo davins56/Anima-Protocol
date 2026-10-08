@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildChatClientFailureReport,
@@ -198,6 +199,89 @@ describe("chat client failure report", () => {
     expect(fetchMock.mock.calls[0][1].keepalive).toBe(true);
   });
 
+  it("reports two separate failed sends in one session", async () => {
+    const input = {
+      error: new TypeError("Load failed"),
+      sessionId: "sess_same",
+      msToFailure: 10,
+      msToFirstToken: null,
+      appVersion: "abc",
+      userAgent: "ua",
+    };
+    expect(
+      (await deliverChatClientFailure({ ...input, turnId: "turn_attempt_a" })).sent,
+    ).toBe(true);
+    expect(
+      (await deliverChatClientFailure({ ...input, turnId: "turn_attempt_b", msToFailure: 40 })).sent,
+    ).toBe(true);
+    expect(
+      (await deliverChatClientFailure({ ...input, turnId: "turn_attempt_b", msToFailure: 40 })).reason,
+    ).toBe("deduped");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const bodies = fetchMock.mock.calls.map((call) => JSON.parse(call[1].body));
+    expect(bodies.map((body) => body.turn_id)).toEqual(["turn_attempt_a", "turn_attempt_b"]);
+    expect(bodies.every((body) => body.session_id === "sess_same")).toBe(true);
+    expect(bodies.every((body) => body.failure_type === "network_lost")).toBe(true);
+  });
+
+  it("does not suppress a later failure when the attempt id is missing", async () => {
+    const input = {
+      error: new TypeError("Load failed"),
+      sessionId: "sess_same",
+      msToFailure: 10,
+      msToFirstToken: null,
+      userAgent: "ua",
+    };
+    expect((await deliverChatClientFailure(input)).sent).toBe(true);
+    expect((await deliverChatClientFailure({ ...input, msToFailure: 20 })).sent).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not report a stop, a page leave, or a reply that is still in progress", async () => {
+    const cases = [];
+    const abort = new Error("The operation was aborted.");
+    abort.name = "AbortError";
+    cases.push(abort);
+    const dropped = withTrace(
+      new Error("The operation was aborted."),
+      trace({ sawFirstToken: true, partialKept: true }),
+    );
+    dropped.name = "AbortError";
+    cases.push(dropped);
+    const pageLeave = new Error("The operation was aborted.");
+    pageLeave.code = "chat_user_cancel";
+    pageLeave.name = "AbortError";
+    cases.push(pageLeave);
+    const busy = new Error("She's still finishing the last reply.");
+    busy.code = "conversation_busy";
+    cases.push(busy);
+    cases.push(new Error("She's still finishing the last reply."));
+
+    for (const [index, error] of cases.entries()) {
+      const result = await deliverChatClientFailure({
+        error,
+        sessionId: "sess_1",
+        turnId: `turn_ignore_${index}`,
+        msToFailure: 4,
+        userAgent: "ua",
+      });
+      expect(result).toEqual({ sent: false, reason: "ignored" });
+    }
+
+    const timeout = new Error("The companion took too long to reply. Please try again.");
+    timeout.code = "chat_stream_timeout";
+    const reported = await deliverChatClientFailure({
+      error: timeout,
+      sessionId: "sess_1",
+      turnId: "turn_deadline",
+      msToFailure: 310000,
+      userAgent: "ua",
+    });
+    expect(reported.sent).toBe(true);
+    expect(reported.report.failure_type).toBe("no_first_token");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("dedupes one type per turn and still reports a different type", async () => {
     const input = {
       error: new TypeError("Load failed"),
@@ -290,6 +374,15 @@ describe("chat client failure report", () => {
     expect(bodies.some((body) => body.includes(SECRET_REPLY))).toBe(false);
     expect(bodies.some((body) => body.includes(SECRET_USER))).toBe(false);
     expect(bodies.some((body) => body.includes(SECRET_MEMORY))).toBe(false);
+  });
+
+  it("does not report the expected still-replying branch in Chat", () => {
+    const chat = readFileSync("src/pages/Chat.jsx", "utf8");
+    const start = chat.indexOf("} else if (isConversationBusyError(err)) {");
+    const end = chat.indexOf("} else {", start);
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    expect(chat.slice(start, end)).not.toContain("reportChatClientFailure");
   });
 
   it("refuses a report with no session id", () => {

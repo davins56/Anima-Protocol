@@ -4,6 +4,7 @@ import { collectRegionHints } from "@/lib/userRegion";
 import { chatStreamStatusCopy } from "@/lib/chatStreamStatusCopy";
 import { streamChatReply } from "@/lib/streamChatReply";
 import { replyWasKept, reportChatClientFailure } from "@/lib/chatClientFailure";
+import { createChatTurnId } from "@/hooks/useChatPersistence";
 
 function createChatMessage(role, content, { characterName = null, attachments = [], type = undefined } = {}) {
   return {
@@ -61,6 +62,7 @@ export function useChatNucleus({ sessionId, initialMessages = [], characters = [
         type: "typing",
       });
       setMessages((prev) => [...prev, typingMessage]);
+      const attemptId = createChatTurnId();
 
       try {
         const stream = animaApi.chat.sendMessage({
@@ -135,6 +137,7 @@ export function useChatNucleus({ sessionId, initialMessages = [], characters = [
         reportChatClientFailure({
           error: err,
           sessionId,
+          turnId: attemptId,
           partialKept: replyWasKept({ partial: err?.partialContent }),
         });
         setError(messageText);
