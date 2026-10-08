@@ -12,7 +12,9 @@ function listOf(messages) {
   return Array.isArray(messages) ? messages : [];
 }
 
-/** Turn id on a row, or the prefix of `turn_x:assistant:1`. */
+const MESSAGE_ROLE_SUFFIX = /:(?:user|assistant|event)(?::\d+)?$/;
+
+/** Turn id on a row, or the id with a `:user` / `:assistant` / `:event` suffix removed. */
 export function messageTurnId(message) {
   if (!message || typeof message !== "object") return "";
   if (message.turn_id) return String(message.turn_id);
@@ -22,8 +24,8 @@ export function messageTurnId(message) {
     return String(metadata.turn_id);
   }
   const id = message.id ? String(message.id) : "";
-  const marker = id.indexOf(":");
-  return marker > 0 ? id.slice(0, marker) : "";
+  const suffix = MESSAGE_ROLE_SUFFIX.exec(id);
+  return suffix && suffix.index > 0 ? id.slice(0, suffix.index) : "";
 }
 
 function isRetryDroppable(message) {
@@ -55,16 +57,19 @@ function replyRunStart(list, index) {
 
 function discardedReplyIds(list, start) {
   const messageIds = [];
-  let turnId = "";
+  let fromMessageId = "";
+  const targetTurn = messageTurnId(list[start]);
   for (const message of list.slice(start)) {
-    if (!message || message.role === "user") continue;
-    if (message.id) messageIds.push(String(message.id));
-    if (!turnId) {
-      const id = messageTurnId(message);
-      if (id) turnId = id;
-    }
+    if (!message?.id) continue;
+    const id = String(message.id);
+    messageIds.push(id);
+    if (!fromMessageId) fromMessageId = id;
   }
-  return { replacedTurnId: turnId, replacedMessageIds: messageIds };
+  return {
+    replacedTurnId: targetTurn,
+    replacedFromMessageId: fromMessageId,
+    replacedMessageIds: messageIds,
+  };
 }
 
 function isPlaceholder(message) {
@@ -123,6 +128,7 @@ export function planRetryReply(messages, index) {
       userContent,
       discardedCount: 0,
       replacedTurnId: "",
+      replacedFromMessageId: "",
       replacedMessageIds: [],
     };
   }
@@ -179,21 +185,20 @@ export function planEditResend(messages, index, newText) {
   if (!target || target.role !== "user") return { ok: false, reason: "not_user" };
   const discarded = list.slice(index);
   const replacedMessageIds = [];
-  let replacedTurnId = "";
+  let replacedFromMessageId = "";
   for (const message of discarded) {
-    if (!message) continue;
-    if (message.id) replacedMessageIds.push(String(message.id));
-    if (!replacedTurnId) {
-      const id = messageTurnId(message);
-      if (id) replacedTurnId = id;
-    }
+    if (!message?.id) continue;
+    const id = String(message.id);
+    replacedMessageIds.push(id);
+    if (!replacedFromMessageId) replacedFromMessageId = id;
   }
   return {
     ok: true,
     kept: list.slice(0, index),
     content,
     discardedCount: list.length - index,
-    replacedTurnId,
+    replacedTurnId: messageTurnId(target),
+    replacedFromMessageId,
     replacedMessageIds,
   };
 }

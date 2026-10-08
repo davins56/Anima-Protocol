@@ -12,7 +12,10 @@ import {
   userEntities,
 } from "@workspace/db";
 import { beginChatTurn, checkpointGeneratedTurn, readChatTurn } from "../src/lib/chatTurnLedger";
-import { discardReplacedCompanionReply } from "../src/lib/discardReplacedReply";
+import {
+  discardReplacedCompanionReply,
+  inspectReplacedReply,
+} from "../src/lib/discardReplacedReply";
 import { factIdFor } from "../src/lib/memoryEmbeddings";
 
 const prefix = `discard_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -188,5 +191,170 @@ describe("discardReplacedCompanionReply", () => {
     expect((session?.data as { shared_memory?: unknown[] }).shared_memory).toEqual([
       { turn_id: "turn_keep", text: "still true", type: "crossover_turn" },
     ]);
+  });
+
+  it("deletes the whole suffix from the anchor seq, past the forty-id list", async () => {
+    const session = `${sessionId}_long`;
+    const turnId = `${oldTurnId}_long`;
+    await beginChatTurn({
+      id: turnId,
+      sessionId: session,
+      userId,
+      userContent: "trim me",
+      persistenceOwner: "client",
+    });
+    const rows = [
+      {
+        userId,
+        entityName: CHAT_MESSAGE,
+        entityId: "keep-user",
+        data: {
+          id: "keep-user",
+          session_id: session,
+          role: "user",
+          content: "trim me",
+          seq: 0,
+          turn_id: turnId,
+        },
+      },
+      {
+        userId,
+        entityName: CHAT_MESSAGE,
+        entityId: "anchor",
+        data: {
+          id: "anchor",
+          session_id: session,
+          role: "assistant",
+          content: "old",
+          seq: 1,
+          turn_id: turnId,
+        },
+      },
+    ];
+    for (let seq = 2; seq <= 46; seq += 1) {
+      rows.push({
+        userId,
+        entityName: CHAT_MESSAGE,
+        entityId: `extra-${seq}`,
+        data: {
+          id: `extra-${seq}`,
+          session_id: session,
+          role: seq % 2 === 0 ? "user" : "assistant",
+          content: `extra ${seq}`,
+          seq,
+          turn_id: `${turnId}_later`,
+        },
+      });
+    }
+    await db.insert(userEntities).values(rows);
+    await discardReplacedCompanionReply({
+      userId,
+      sessionId: session,
+      replacingTurnId: `${newTurnId}_long`,
+      replyAction: "edit",
+      userContent: "rewritten",
+      replacedTurnId: turnId,
+      fromMessageId: "anchor",
+      messageIds: rows.slice(1, 41).map((row) => row.entityId),
+    });
+    const left = await db
+      .select()
+      .from(userEntities)
+      .where(and(eq(userEntities.userId, userId), eq(userEntities.entityName, CHAT_MESSAGE)));
+    const contents = left
+      .map((row) => row.data as { content?: string; session_id?: string })
+      .filter((data) => data.session_id === session)
+      .map((data) => data.content);
+    expect(contents).toEqual(["trim me"]);
+  });
+
+  it("does not retire a different turn that only shares the same text", async () => {
+    const session = `${sessionId}_same`;
+    const older = `${oldTurnId}_same_old`;
+    const newer = `${oldTurnId}_same_new`;
+    await beginChatTurn({
+      id: older,
+      sessionId: session,
+      userId,
+      userContent: "echo",
+      persistenceOwner: "client",
+    });
+    await beginChatTurn({
+      id: newer,
+      sessionId: session,
+      userId,
+      userContent: "echo",
+      persistenceOwner: "client",
+    });
+    await db.insert(userEntities).values([
+      {
+        userId,
+        entityName: CHAT_MESSAGE,
+        entityId: "older-user",
+        data: { id: "older-user", session_id: session, role: "user", content: "echo", seq: 0, turn_id: older },
+      },
+      {
+        userId,
+        entityName: CHAT_MESSAGE,
+        entityId: "older-assistant",
+        data: {
+          id: "older-assistant",
+          session_id: session,
+          role: "assistant",
+          content: "first echo",
+          seq: 1,
+          turn_id: older,
+        },
+      },
+      {
+        userId,
+        entityName: CHAT_MESSAGE,
+        entityId: "newer-user",
+        data: { id: "newer-user", session_id: session, role: "user", content: "echo", seq: 2, turn_id: newer },
+      },
+      {
+        userId,
+        entityName: CHAT_MESSAGE,
+        entityId: "newer-assistant",
+        data: {
+          id: "newer-assistant",
+          session_id: session,
+          role: "assistant",
+          content: "second echo",
+          seq: 3,
+          turn_id: newer,
+        },
+      },
+    ]);
+    const ambiguous = await inspectReplacedReply({
+      userId,
+      sessionId: session,
+      replacingTurnId: `${newTurnId}_same`,
+      replyAction: "retry",
+      userContent: "echo",
+    });
+    expect(ambiguous.turnId).toBe("");
+
+    await discardReplacedCompanionReply({
+      userId,
+      sessionId: session,
+      replacingTurnId: `${newTurnId}_same`,
+      replyAction: "retry",
+      userContent: "echo",
+      replacedTurnId: newer,
+      fromMessageId: "newer-assistant",
+      messageIds: ["newer-assistant"],
+    });
+    const olderTurn = await readChatTurn(older, userId);
+    expect(olderTurn?.metadata).not.toMatchObject({ replaced: true });
+    const left = await db
+      .select()
+      .from(userEntities)
+      .where(and(eq(userEntities.userId, userId), eq(userEntities.entityName, CHAT_MESSAGE)));
+    const contents = left
+      .map((row) => row.data as { content?: string; session_id?: string })
+      .filter((data) => data.session_id === session)
+      .map((data) => data.content);
+    expect(contents).toEqual(["echo", "first echo", "echo"]);
   });
 });

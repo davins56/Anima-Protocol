@@ -48,6 +48,7 @@ export async function editMessageFlow(idx, newText, { confirm, activeSession, is
     history: plan.kept,
     priorMessages: messages,
     replacedTurnId: plan.replacedTurnId || "",
+    replacedFromMessageId: plan.replacedFromMessageId || "",
     replacedMessageIds: plan.replacedMessageIds || [],
   });
   if (result?.started === false) {

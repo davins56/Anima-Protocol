@@ -266,6 +266,7 @@ describe("regenerateMessageFlow (confirm-and-rewrite a reply)", () => {
       text: "hello",
       replyAction: "retry",
       replacedTurnId: "t1",
+      replacedFromMessageId: "t1:assistant",
       replacedMessageIds: ["t1:assistant", "t1:assistant:1"],
     });
     expect(sendMessage.mock.calls[0][0].history.map((message) => message.content)).toEqual(["hello"]);

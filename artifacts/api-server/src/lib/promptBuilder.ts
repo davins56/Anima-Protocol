@@ -624,7 +624,14 @@ export function omitRetriedUserTurn(
       if (message.role === "user") {
         skippingTail = false;
         kept.push(message);
+        continue;
       }
+      const metadata = message.metadata;
+      const source =
+        metadata && typeof metadata === "object" && !Array.isArray(metadata)
+          ? (metadata as { source?: unknown }).source
+          : "";
+      if (source === "proactive_push") kept.push(message);
       continue;
     }
     kept.push(message);

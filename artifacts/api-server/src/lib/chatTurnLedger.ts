@@ -260,7 +260,13 @@ export async function markTurnCommitted(
         committedAt: now,
         updatedAt: now,
       })
-      .where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId))),
+      .where(
+        and(
+          eq(chatTurns.id, id),
+          eq(chatTurns.userId, userId),
+          sql`coalesce(${chatTurns.metadata}->>'replaced', '') <> 'true'`,
+        ),
+      ),
   );
 }
 

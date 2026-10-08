@@ -6,6 +6,7 @@ export default defineConfig({
       "test/clerkDiagnostics.test.ts",
       "test/imageUploads.test.ts",
       "test/consumeLlmStream.test.ts",
+      "test/chatTelemetry.test.ts",
       "test/localEnsemble.test.ts",
       "test/chatStreamError.test.ts",
       "test/localLlmWarm.test.ts",

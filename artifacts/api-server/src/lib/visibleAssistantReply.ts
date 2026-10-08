@@ -102,13 +102,18 @@ export function trimToLastCompleteSentence(text: string): string {
   return value;
 }
 
-/** Token-cap and stall cuts share one trim. A stopped-early fragment is left alone. */
+/** Token-cap, stall, and interrupted-stream cuts share one trim. A stopped-early fragment is left alone. */
 export function settleCappedReply(
   text: string,
-  meta: { timedOut?: boolean; finishReason?: string | null; stoppedEarly?: boolean } = {},
+  meta: {
+    timedOut?: boolean;
+    finishReason?: string | null;
+    stoppedEarly?: boolean;
+    interrupted?: boolean;
+  } = {},
 ): string {
-  if (meta.stoppedEarly) return text;
-  if (meta.timedOut || meta.finishReason === "length") {
+  if (meta.stoppedEarly && !meta.interrupted) return text;
+  if (meta.timedOut || meta.interrupted || meta.finishReason === "length") {
     return trimToLastCompleteSentence(text);
   }
   return text;

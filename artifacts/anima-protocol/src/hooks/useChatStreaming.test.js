@@ -103,6 +103,22 @@ describe("applyStreamingMessage", () => {
     ).toEqual(["t1:user", "t2:user", "..."]);
   });
 
+  it("drops a replaced reply that the snapshot still contains", () => {
+    const user = { id: "t1:user", turn_id: "t1", role: "user", content: "Hello" };
+    const oldReply = { id: "t1:assistant", turn_id: "t1", role: "assistant", content: "Old." };
+    const typing = {
+      turn_id: "t2",
+      role: "assistant",
+      content: "...",
+      character_name: "__typing__",
+    };
+    expect(
+      stitchLiveMessages([user, oldReply, typing], [user, oldReply, typing], "t2", {
+        omitTurnIds: ["t1"],
+      }).map((message) => message.id || message.content),
+    ).toEqual(["t1:user", "..."]);
+  });
+
   it("does not duplicate a late reply that is already in the snapshot", () => {
     const user1 = { id: "t1:user", turn_id: "t1", role: "user", content: "Hello" };
     const late = { id: "t1:assistant", turn_id: "t1", role: "assistant", content: "I stayed." };

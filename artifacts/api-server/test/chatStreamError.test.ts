@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { LlmStreamTimeoutError } from "../src/lib/consumeLlmStream.js";
-import { streamErrorMessage } from "../src/lib/chatStreamError";
+import {
+  COMPANION_REPLY_CUT_OFF_HINT,
+  streamErrorMessage,
+} from "../src/lib/chatStreamError";
+import { OLLAMA_UNAVAILABLE_HINT } from "../src/lib/ollamaChat";
 import {
   LOCAL_LLM_SUBREQUEST_HINT,
   OPENROUTER_FREE_PROVIDER_HINT,
@@ -124,6 +128,49 @@ describe("streamErrorMessage OpenRouter hop leftovers", () => {
     expect(streamErrorMessage(new Error("HTTP 503"))).not.toMatch(
       /companion service encountered an issue/i,
     );
+  });
+});
+
+describe("streamErrorMessage Ollama connection and api_error", () => {
+  it("maps a mid-stream drop to retryable copy", () => {
+    const err = Object.assign(
+      new Error("Ollama /api/chat stream ended before the reply finished"),
+      { name: "APIConnectionError", code: "ECONNRESET" },
+    );
+    expect(streamErrorMessage(err)).toBe(COMPANION_REPLY_CUT_OFF_HINT);
+    expect(streamErrorMessage(err)).not.toMatch(/ollama|conversation|database/i);
+  });
+
+  it("maps an Ollama api_error line to retryable copy", () => {
+    const err = Object.assign(new Error("llama runner process has terminated"), {
+      name: "OllamaChatError",
+      code: "api_error",
+    });
+    expect(streamErrorMessage(err)).toBe(COMPANION_REPLY_CUT_OFF_HINT);
+    expect(streamErrorMessage(err)).not.toMatch(/llama runner/i);
+  });
+
+  it("maps the Ollama unreachable hint without leaking host setup", () => {
+    const message = streamErrorMessage(new Error(OLLAMA_UNAVAILABLE_HINT));
+    expect(message).toBe(COMPANION_REPLY_CUT_OFF_HINT);
+    expect(message).not.toMatch(/ollama serve|ANIMA_LOCAL_LLM_BASE_URL/i);
+  });
+
+  it("still treats a bare ECONNRESET as a conversation failure", () => {
+    const err = Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" });
+    expect(streamErrorMessage(err)).toBe(
+      "Couldn't load this conversation. Please try again.",
+    );
+  });
+
+  it("keeps an Ollama authentication failure specific", () => {
+    const err = Object.assign(
+      new Error(
+        "Ollama authentication failed (401). Check ANIMA_LOCAL_LLM_API_KEY on the API host.",
+      ),
+      { code: "authentication_error" },
+    );
+    expect(streamErrorMessage(err)).toMatch(/authentication failed/i);
   });
 });
 

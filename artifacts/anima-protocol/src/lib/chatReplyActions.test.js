@@ -88,11 +88,30 @@ describe("planRetryReply", () => {
     expect(grouped.ok).toBe(true);
     expect(grouped.kept.map((message) => message.content)).toEqual(["older", "talk"]);
     expect(grouped.replacedTurnId).toBe("t1");
+    expect(grouped.replacedFromMessageId).toBe("t1:assistant");
     expect(grouped.replacedMessageIds).toEqual([
       "t1:assistant",
       "t1:event",
       "t1:assistant:1",
     ]);
+  });
+
+  it("lists later user rows and does not adopt a newer turn when the reply has no turn id", () => {
+    const plan = planRetryReply(
+      [
+        { id: "u0", turn_id: "t0", role: "user", content: "first" },
+        { id: "narration", role: "assistant", content: "stage" },
+        { id: "u1", turn_id: "t-new", role: "user", content: "later" },
+        { id: "a1", turn_id: "t-new", role: "assistant", content: "new reply" },
+      ],
+      1,
+    );
+    expect(plan.ok).toBe(true);
+    expect(plan.kept.map((message) => message.id)).toEqual(["u0"]);
+    expect(plan.replacedTurnId).toBe("");
+    expect(plan.replacedFromMessageId).toBe("narration");
+    expect(plan.replacedMessageIds).toEqual(["narration", "u1", "a1"]);
+    expect(plan.replacedMessageIds).not.toContain("u0");
   });
 });
 
