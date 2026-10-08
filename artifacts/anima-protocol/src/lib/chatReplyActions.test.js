@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   keepArrivals,
   lastReplyActionIndexes,
+  threadForHungRetry,
   messagesAfterDiscardingReply,
   planEditResend,
   planRetryReply,
@@ -138,6 +139,27 @@ describe("discarded reply ids", () => {
     });
     expect(turnIds.size).toBe(0);
     expect(messageIds.size).toBe(0);
+  });
+
+  it("drops later suffix turns before merging a message that arrived after the snapshot", () => {
+    const source = [
+      { id: "u", turn_id: "t1", role: "user", content: "hi" },
+      { id: "a", turn_id: "t1", role: "assistant", content: "old" },
+      { id: "u2", turn_id: "t2", role: "user", content: "later" },
+      { id: "a2", turn_id: "t2", role: "assistant", content: "later reply" },
+    ];
+    const trimmed = threadForHungRetry(source, 1, { turnId: "t1", messageIds: ["a"] });
+    expect(trimmed.map((message) => message.id)).toEqual(["u"]);
+    const latest = [
+      ...source,
+      { id: "fresh", role: "user", content: "from another device" },
+    ];
+    const saved = keepArrivals(trimmed, latest, {
+      messageIds: ["a", "u2", "a2"],
+      turnIds: ["t1", "t2"],
+    });
+    expect(saved.map((message) => message.id)).toEqual(["u", "fresh"]);
+    expect(keepArrivals(trimmed, trimmed, { messageIds: [], turnIds: [] })).toBe(trimmed);
   });
 
   it("keeps a message that arrived after the snapshot when a retry is restored", () => {

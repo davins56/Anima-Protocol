@@ -5,6 +5,7 @@ import {
   omitPersistedUserRow,
   replacedFromMessageIdOf,
   replacedMessageIdsOf,
+  replacedTurnIdsOf,
   replyActionOf,
   shouldDiscardStoredMessage,
   turnMetadataReplaced,
@@ -45,6 +46,11 @@ describe("reply replacement affect guard", () => {
     expect(replacedFromMessageIdOf({ replaced_from_message_id: "x".repeat(201) })).toBe("");
     expect(replacedMessageIdsOf({ replaced_message_ids: [" a ", "a", ""] })).toEqual(["a"]);
     expect(replacedMessageIdsOf(null)).toEqual([]);
+    expect(
+      replacedTurnIdsOf({
+        replaced_turn_ids: [" t1 ", 12, "t1", "x".repeat(201), "t2"],
+      }),
+    ).toEqual(["t1", "t2"]);
     expect(clientTurnMetadata({ replaced: true, superseded_by: "t2", mode: "solo" })).toEqual({
       mode: "solo",
     });

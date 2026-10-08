@@ -93,10 +93,6 @@ export function suffixReplacement(list, start) {
 }
 
 /**
- * Messages that landed after the trim was planned. They stay unless they
- * belong to the suffix being replaced.
- */
-/**
  * Hide a reply the user is replacing, including every later turn in the suffix.
  *
  * @param {Set<string>} turnIds
@@ -131,9 +127,29 @@ export function releaseDiscardedIds(turnIds, messageIds, target = {}) {
   }
 }
 
+/**
+ * Thread a hung retry keeps. The suffix starts at `start`, so later turns
+ * are not already "kept" when new arrivals are merged back in.
+ *
+ * @param {Array<Record<string, unknown>> | null | undefined} source
+ * @param {number} start
+ * @param {{ turnId?: string, messageIds?: string[] }} [target]
+ */
+export function threadForHungRetry(source, start, target = {}) {
+  const list = listOf(source);
+  if (start >= 0) return list.slice(0, start);
+  return messagesAfterDiscardingReply(list, target);
+}
+
+/**
+ * Messages that landed after the trim was planned. They stay unless they
+ * belong to the suffix being replaced. The same array comes back when
+ * nothing new arrived.
+ */
 export function keepArrivals(kept, latest, discarded) {
+  const base = listOf(kept);
   const keptIds = new Set(
-    listOf(kept).map((message) => (message?.id ? String(message.id) : "")).filter(Boolean),
+    base.map((message) => (message?.id ? String(message.id) : "")).filter(Boolean),
   );
   const dropIds = new Set((discarded?.messageIds || []).map(String));
   const dropTurns = new Set((discarded?.turnIds || []).map(String).filter(Boolean));
@@ -145,7 +161,8 @@ export function keepArrivals(kept, latest, discarded) {
     if (turn && dropTurns.has(turn)) continue;
     extra.push(message);
   }
-  return [...listOf(kept), ...extra];
+  if (extra.length === 0) return base;
+  return [...base, ...extra];
 }
 
 function isPlaceholder(message) {

@@ -207,6 +207,7 @@ import { planTurnMessageSeqs, type SeqRow } from "../lib/chatMessageOrder";
 import {
   emotionalStateWithTurnBond,
   emotionalStateWithTurnMood,
+  moodLoopStops,
   moodTurnAlreadyWritten,
   relationshipTurnAlreadyWritten,
   savedMomentsTurnAlreadyWritten,
@@ -1199,7 +1200,7 @@ async function writeTurnMoodFromMetadata(turn: ChatTurn): Promise<void> {
           .from(chatTurns)
           .where(and(eq(chatTurns.id, turn.id), eq(chatTurns.userId, turn.userId)))
           .limit(1);
-        if (latestMoodTurn && turnMetadataReplaced(latestMoodTurn.metadata)) return false;
+        if (latestMoodTurn && turnMetadataReplaced(latestMoodTurn.metadata)) return "replaced" as const;
         const [memory] = await tx
           .select({
             summary: companionMemories.summary,
@@ -1217,7 +1218,7 @@ async function writeTurnMoodFromMetadata(turn: ChatTurn): Promise<void> {
           .limit(1);
         const current = (memory?.emotionalState as Record<string, unknown> | null) ?? {};
         const next = emotionalStateWithTurnMood(current, turn.id, selfState);
-        if (!next.wrote) return false;
+        if (!next.wrote) return "skipped" as const;
         await tx
           .insert(companionMemories)
           .values({
@@ -1236,10 +1237,10 @@ async function writeTurnMoodFromMetadata(turn: ChatTurn): Promise<void> {
               updatedAt: now,
             },
           });
-        return true;
+        return "written" as const;
       }),
     );
-    if (!wrote) return;
+    if (moodLoopStops(wrote)) return;
   }
 }
 
@@ -2350,18 +2351,21 @@ router.post("/messages", async (req, res) => {
       discardedReply.fromMessageId)
   ) {
     try {
-      discardedReply = await discardReplacedCompanionReply({
-        userId,
-        sessionId,
-        replacingTurnId: turnStart.turn.id,
-        replyAction,
-        userContent: content,
-        replacedTurnId: discardedReply.turnId || replacedTurnIdOf(body.metadata),
-        replacedTurnIds: replacedTurnIdsOf(body.metadata),
-        messageIds: discardedReply.messageIds,
-        fromMessageId: discardedReply.fromMessageId,
-        characterIds,
-      });
+      discardedReply = await discardReplacedCompanionReply(
+        {
+          userId,
+          sessionId,
+          replacingTurnId: turnStart.turn.id,
+          replyAction,
+          userContent: content,
+          replacedTurnId: discardedReply.turnId || replacedTurnIdOf(body.metadata),
+          replacedTurnIds: replacedTurnIdsOf(body.metadata),
+          messageIds: discardedReply.messageIds,
+          fromMessageId: discardedReply.fromMessageId,
+          characterIds,
+        },
+        { plan: discardedReply },
+      );
     } catch (error) {
       await failReplacement(error);
       return;

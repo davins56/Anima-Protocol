@@ -46,6 +46,11 @@ export function savedMomentsTurnAlreadyWritten(
  * Merge this turn's mood into the existing emotional blob.
  * Returns the previous blob unchanged when this turn was already written.
  */
+/** Only a replaced turn stops the remaining characters. A stamp or an empty mood skips just this one. */
+export function moodLoopStops(result: "replaced" | "skipped" | "written"): boolean {
+  return result === "replaced";
+}
+
 export function emotionalStateWithTurnMood(
   emotionalState: Record<string, unknown> | null | undefined,
   turnId: string,

@@ -133,12 +133,29 @@ export async function inspectReplacedReply(input: {
   const fromSeq = anchor ? messageSeq(anchor.message) : null;
   const anchorTurn = anchor ? messageTurnId(anchor.message) : "";
   const turnIds: string[] = [];
-  for (const id of input.replacedTurnIds || []) {
-    const value = String(id || "").trim();
-    if (!value || value === input.replacingTurnId) continue;
-    const turn = await readChatTurn(value, input.userId);
-    if (turn && turn.sessionId === input.sessionId) {
-      addTurn(turnIds, turn.id, input.replacingTurnId);
+  const replacedIds = [
+    ...new Set(
+      (input.replacedTurnIds || [])
+        .map((id) => String(id || "").trim())
+        .filter((id) => id && id !== input.replacingTurnId),
+    ),
+  ];
+  if (replacedIds.length > 0) {
+    const turns = await withTransientDbRetry(() =>
+      db
+        .select({ id: chatTurns.id })
+        .from(chatTurns)
+        .where(
+          and(
+            eq(chatTurns.userId, input.userId),
+            eq(chatTurns.sessionId, input.sessionId),
+            inArray(chatTurns.id, replacedIds),
+          ),
+        ),
+    );
+    const found = new Set(turns.map((turn) => turn.id));
+    for (const id of replacedIds) {
+      if (found.has(id)) addTurn(turnIds, id, input.replacingTurnId);
     }
   }
 
@@ -435,9 +452,10 @@ export async function discardReplacedCompanionReply(
   },
   hooks?: {
     forgetMemory?: (userId: string, sessionId: string, turnId: string) => Promise<void>;
+    plan?: ReplacedReplyPlan;
   },
 ): Promise<ReplacedReplyPlan> {
-  const plan = await inspectReplacedReply(input);
+  const plan = hooks?.plan ?? (await inspectReplacedReply(input));
   if (plan.turnIds.length === 0 && plan.messageIds.length === 0 && plan.fromSeq == null) {
     return plan;
   }
