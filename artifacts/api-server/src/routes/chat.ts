@@ -2465,6 +2465,15 @@ router.post("/messages", async (req, res) => {
       res.status(503).json({ error: streamErrorMessage(err) });
     } else {
       writeSse(res, { error: streamErrorMessage(err) });
+      // A durable follow may already have opened the SSE heartbeat.
+      // That assignment sits in a closure, so control-flow still sees null.
+      const durableSse = adoptedSse as ReturnType<typeof openChatSse> | null;
+      durableSse?.stop();
+      try {
+        if (!res.writableEnded) res.end();
+      } catch {
+        // The browser already left.
+      }
     }
     return;
   }

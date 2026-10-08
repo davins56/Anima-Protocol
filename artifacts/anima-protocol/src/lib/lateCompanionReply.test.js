@@ -382,7 +382,9 @@ describe("cut-off replies skip client mining", () => {
     const start = chat.indexOf("const wantsImage = replyCutOff.reply_interrupted");
     expect(start).toBeGreaterThan(-1);
     const block = chat.slice(start, start + 5000);
-    expect(block).toContain("userRequestedImage(content)");
+    expect(block.startsWith(
+      "const wantsImage = replyCutOff.reply_interrupted\n        ? userRequestedImage(content)\n        : parseImagePrompts(result).length > 0 || userRequestedImage(content);",
+    )).toBe(true);
     expect(block).toContain('replyText: replyCutOff.reply_interrupted ? "" : result');
     expect(block).toContain(
       "while (!replyCutOff.reply_interrupted && (match = tagScanner.exec(result))",
