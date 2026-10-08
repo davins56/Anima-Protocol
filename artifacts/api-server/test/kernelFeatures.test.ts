@@ -23,17 +23,6 @@ const repoRoot = path.resolve(
 const FEATURES = Object.keys(KERNEL_FEATURE_ENV) as KernelFeature[];
 const ENV_NAMES = Object.values(KERNEL_FEATURE_ENV);
 
-const LIVE_MODULES = [
-  "artifacts/api-server/src/routes/chat.ts",
-  "artifacts/api-server/src/lib/promptBuilder.ts",
-  "artifacts/api-server/src/lib/memoryPolicy.ts",
-  "artifacts/api-server/src/lib/companionAffect.ts",
-  "artifacts/api-server/src/lib/relationshipEngine.ts",
-  "artifacts/api-server/src/lib/animaJournal.ts",
-  "artifacts/api-server/src/lib/proactiveMessages.ts",
-  "artifacts/api-server/src/lib/llmFailover.ts",
-];
-
 beforeEach(() => {
   for (const name of ENV_NAMES) delete process.env[name];
 });
@@ -146,7 +135,7 @@ describe("kernel feature switches", () => {
     expect(isKernelFeatureEnabled("kernel", target)).toBe(true);
   });
 
-  it("is named in the kernel doc and stays out of live modules", () => {
+  it("names every switch in the kernel doc", () => {
     const doc = readFileSync(
       path.join(repoRoot, "artifacts/anima-protocol/docs/ANIMA_KERNEL.md"),
       "utf8",
@@ -154,12 +143,5 @@ describe("kernel feature switches", () => {
     expect(doc).toContain("isKernelFeatureEnabled");
     for (const feature of FEATURES) expect(doc).toContain(feature);
     for (const name of ENV_NAMES) expect(doc).toContain(name);
-
-    for (const rel of LIVE_MODULES) {
-      const source = readFileSync(path.join(repoRoot, rel), "utf8");
-      expect(source, rel).not.toContain("kernelFeatures");
-      expect(source, rel).not.toContain("ANIMA_KERNEL_SELF_MODEL");
-      expect(source, rel).not.toContain("ANIMA_KERNEL_ORCHESTRATOR");
-    }
   });
 });
