@@ -159,6 +159,23 @@ describe("mergeLateReplyIntoMessages", () => {
     expect(again.filter((message) => message.character_name === "__typing__")).toEqual([]);
   });
 
+  it("marks a late cut-off reply so Retry can replace it", () => {
+    const merged = mergeLateReplyIntoMessages([], {
+      turnId: "turn_cut",
+      userContent: "My name is Mira.",
+      assistantContent: "You came back.",
+      characterName: "Aria",
+      reply_interrupted: true,
+      cut_off: true,
+    });
+    expect(merged[1]).toMatchObject({
+      role: "assistant",
+      content: "You came back.",
+      reply_interrupted: true,
+      cut_off: true,
+    });
+  });
+
   it("inserts the late reply under its own user message when newer turns exist", () => {
     const merged = mergeLateReplyIntoMessages(
       [

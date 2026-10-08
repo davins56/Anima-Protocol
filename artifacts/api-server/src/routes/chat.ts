@@ -166,6 +166,7 @@ import { optionalChatContext } from "../lib/optionalChatContext";
 import { classifyDbError, errorCauseBlob } from "../lib/dbErrors";
 import {
   finalizeAssistantReply,
+  isCutOffReply,
   settleCappedReply,
 } from "../lib/visibleAssistantReply";
 import {
@@ -887,17 +888,27 @@ async function upsertTurnMemory(params: {
   sessionId: string;
   userContent: string;
   assistantContent: string;
+  /** A cut-off reply stores the user line only. The half-reply is not a fact. */
+  omitAssistant?: boolean;
 }) {
-  if (params.characterIds.length === 0 || !params.assistantContent.trim()) return;
+  if (params.characterIds.length === 0) return;
+  if (params.omitAssistant) {
+    if (!params.userContent.trim()) return;
+  } else if (!params.assistantContent.trim()) {
+    return;
+  }
   const now = new Date();
+  const text = params.omitAssistant
+    ? `User: ${truncate(params.userContent, 240)}`
+    : `User: ${truncate(params.userContent, 240)} | Companion: ${truncate(
+        params.assistantContent,
+        320,
+      )}`;
   const fact = {
     type: "turn",
     turn_id: params.turnId,
     session_id: params.sessionId,
-    text: `User: ${truncate(params.userContent, 240)} | Companion: ${truncate(
-      params.assistantContent,
-      320,
-    )}`,
+    text,
     created_at: now.toISOString(),
   };
   for (const characterId of params.characterIds) {
@@ -1078,6 +1089,7 @@ async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
           metadata: { turn_id: turn.id },
         }
       : null;
+  const cutOff = isCutOffReply(metadata);
   const assistantMessage = {
     id: turn.assistantMessageId,
     role: "assistant",
@@ -1085,7 +1097,11 @@ async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
     character_id: activeCharacterId,
     character_name: activeCharacterName,
     timestamp: new Date(turn.createdAt.getTime() + 1).toISOString(),
-    metadata: { turn_id: turn.id },
+    ...(cutOff ? { reply_interrupted: true, cut_off: true } : {}),
+    metadata: {
+      turn_id: turn.id,
+      ...(cutOff ? { reply_interrupted: true, cut_off: true } : {}),
+    },
   };
   const wroteMessages = await writeTurnMessagesInOrder(turn, {
     user: userMessage,
@@ -1228,18 +1244,21 @@ async function recordTurnContinuity(turn: ChatTurn): Promise<void> {
   const metadata = asObject(turn.metadata);
   const characterIds = asStringArray(metadata.character_ids);
   const isCrossover = metadata.is_crossover === true;
+  const cutOff = isCutOffReply(metadata);
   const sharedFact = isCrossover
     ? {
         type: "crossover_turn",
         turn_id: turn.id,
-        text: `User: ${truncate(turn.userContent, 180)} | Reply: ${truncate(turn.assistantContent, 260)}`,
+        text: cutOff
+          ? `User: ${truncate(turn.userContent, 180)}`
+          : `User: ${truncate(turn.userContent, 180)} | Reply: ${truncate(turn.assistantContent, 260)}`,
         created_at: new Date().toISOString(),
       }
     : undefined;
   await updateStoreSessionMetadata(
     turn.userId,
     turn.sessionId,
-    turn.userContent || turn.assistantContent,
+    cutOff ? turn.userContent : turn.userContent || turn.assistantContent,
     sharedFact,
   );
   await upsertTurnMemory({
@@ -1248,7 +1267,8 @@ async function recordTurnContinuity(turn: ChatTurn): Promise<void> {
     characterIds,
     sessionId: turn.sessionId,
     userContent: turn.userContent,
-    assistantContent: turn.assistantContent,
+    assistantContent: cutOff ? "" : turn.assistantContent,
+    omitAssistant: cutOff,
   });
   const activeId = metadata.active_character_id
     ? String(metadata.active_character_id)
@@ -1264,7 +1284,8 @@ async function recordTurnContinuity(turn: ChatTurn): Promise<void> {
       turnId: turn.id,
       companionName,
       userContent: turn.userContent,
-      assistantContent: turn.assistantContent,
+      assistantContent: cutOff ? "" : turn.assistantContent,
+      userOnly: cutOff,
     });
     if (job) {
       try {
@@ -1293,6 +1314,8 @@ async function applyRelationshipPostProcess(params: {
   significantExperienceCount: number;
   synchroState: SynchroState | null;
   companionAffect?: CompanionAffect | null;
+  /** The model stream dropped. Do not read the half-reply for mood or memory. */
+  replyCutOff?: boolean;
 }): Promise<void> {
   const {
     userId,
@@ -1307,9 +1330,13 @@ async function applyRelationshipPostProcess(params: {
     significantExperienceCount,
     synchroState,
     companionAffect,
+    replyCutOff = false,
   } = params;
+  const companionText = replyCutOff ? "" : assistantContent;
   if (characterIds.length > 0) {
-    const historySummary = `User said: ${truncate(content, 420)}\nCompanion replied: ${truncate(assistantContent, 520)}`;
+    const historySummary = replyCutOff
+      ? `User said: ${truncate(content, 420)}`
+      : `User said: ${truncate(content, 420)}\nCompanion replied: ${truncate(assistantContent, 520)}`;
 
     for (const animaId of characterIds) {
       const updated = await incrementConversationCount({
@@ -1344,7 +1371,7 @@ async function applyRelationshipPostProcess(params: {
       });
     }
   }
-  if ((synchroState || companionAffect) && assistantContent) {
+  if ((synchroState || companionAffect) && (companionText || replyCutOff)) {
     const anchorId =
       activeCharacterId && characterIds.includes(activeCharacterId)
         ? activeCharacterId
@@ -1372,12 +1399,16 @@ async function applyRelationshipPostProcess(params: {
     const evolved =
       bondAlready || !synchroState
         ? null
-        : evolveSynchroFromCompanion(synchroState, assistantContent);
+        : replyCutOff
+          ? synchroState
+          : evolveSynchroFromCompanion(synchroState, companionText);
     const evolvedAffect =
       moodTurnAlreadyWritten(anchorState, turnId) || !companionAffect
         ? null
-        : evolveCompanionAffectFromCompanion(companionAffect, assistantContent);
-    if (evolved && !momentsAlready) {
+        : replyCutOff
+          ? companionAffect
+          : evolveCompanionAffectFromCompanion(companionAffect, companionText);
+    if (evolved && !momentsAlready && !replyCutOff) {
       try {
         const intimacy = Number(
           evolved.vector?.intimacy ?? evolved.vector?.synchroStrength ?? 0,
@@ -1453,7 +1484,10 @@ async function applyRelationshipPostProcess(params: {
       const next = emotionalStateWithTurnBond(current, turnId, {
         synchro: evolved ? serializeSynchroState(evolved) : null,
         selfState: evolvedAffect ? serializeCompanionAffect(evolvedAffect) : null,
-        saveMoment: Boolean(evolved) && !savedMomentsTurnAlreadyWritten(current, turnId),
+        saveMoment:
+          Boolean(evolved) &&
+          !replyCutOff &&
+          !savedMomentsTurnAlreadyWritten(current, turnId),
       });
       if (!next.wroteMood && !next.wroteRelationship && !next.wroteSavedMoments) {
         continue;
@@ -1531,6 +1565,7 @@ async function applyRelationshipPostProcessFromTurn(turn: ChatTurn): Promise<voi
     significantExperienceCount: learnedLife,
     synchroState,
     companionAffect,
+    replyCutOff: isCutOffReply(metadata),
   });
 }
 
@@ -1974,6 +2009,7 @@ function turnStatusPayload(turn: ChatTurn) {
     user_message_id: turn.userMessageId,
     companion_affect: metadata.companion_affect ?? null,
     active_character_name: metadata.active_character_name ?? null,
+    ...(isCutOffReply(metadata) ? { reply_interrupted: true, cut_off: true } : {}),
   };
 }
 
@@ -2341,6 +2377,8 @@ router.post("/messages", async (req, res) => {
   hintLocalLlmWarm();
   let streamSucceeded = false;
   let fullResponse = "";
+  // True when the saved reply is a trimmed partial from a dropped stream.
+  let replyCutOff = false;
   let releaseBackground = () => {};
   const backgroundDone = new Promise<void>((resolve) => {
     releaseBackground = resolve;
@@ -2893,7 +2931,7 @@ router.post("/messages", async (req, res) => {
       maxTokens: number,
       reminder: string,
       noteStock: boolean,
-    ): Promise<string | null> => {
+    ): Promise<{ text: string; interrupted: boolean } | null> => {
       const retryBudgetMs = repeatRetryBudgetMs(Date.now() - requestStartedAt);
       if (noteStock) noteStockAssistantLine("retry");
       const retryOpen = openStreamAbort(retryBudgetMs);
@@ -2933,7 +2971,10 @@ router.post("/messages", async (req, res) => {
           usedProvider = retry.provider;
           usedBrand = retry.brand;
           failedOver = retry.failedOver;
-          return retriedText;
+          return {
+            text: retriedText,
+            interrupted: interruptedStreamKeepsReply(retried),
+          };
         }
         return null;
       } catch (error) {
@@ -3018,6 +3059,7 @@ router.post("/messages", async (req, res) => {
           stoppedEarly: streamed.stoppedEarly,
         });
         streamInterrupted = interruptedStreamKeepsReply(streamed);
+        replyCutOff = streamInterrupted;
       }
       const ensembleStock = !crisisTurn && replyIsStock(fullResponse);
       const ensembleFourth = replyBreaksFourthWall(fullResponse) && fourthWallRetryOpen();
@@ -3045,7 +3087,8 @@ router.post("/messages", async (req, res) => {
               )
             : null;
         if (recovered) {
-          fullResponse = recovered;
+          fullResponse = recovered.text;
+          replyCutOff = recovered.interrupted;
         } else if (ensembleStock || ensembleSwap) {
           fullResponse = stockDeflection();
           if (ensembleStock) noteStockAssistantLine("deflect");
@@ -3138,6 +3181,7 @@ router.post("/messages", async (req, res) => {
       // An interrupted reply that already has text is a finished turn: trim,
       // persist, send done, and do not spend the extra regenerate.
       streamInterrupted = interruptedStreamKeepsReply(streamed);
+      replyCutOff = streamInterrupted;
       fullResponse = settleCappedReply(finalizeAssistantReply(streamed.content), {
         timedOut: streamed.timedOut,
         interrupted: streamed.interrupted,
@@ -3245,6 +3289,7 @@ router.post("/messages", async (req, res) => {
             !isRoleSwapReply(retriedText, activeChar?.name)
           ) {
             fullResponse = retriedText;
+            replyCutOff = interruptedStreamKeepsReply(retried);
             flushed = false;
             repeatResolved = true;
             usedModel = retry.model;
@@ -3271,17 +3316,18 @@ router.post("/messages", async (req, res) => {
           stockLine,
         );
         if (recovered) {
-          fullResponse = recovered;
+          fullResponse = recovered.text;
+          replyCutOff = recovered.interrupted;
           flushed = false;
         }
       }
       // A repeat stop leaves only the opening fragment. Never save or show
       // that fragment when the retry was skipped or failed. Crisis turns
       // keep whatever the model wrote.
-      if (!crisisTurn && cutReason === "repeat" && !repeatResolved) {
+      if (!replyCutOff && !crisisTurn && cutReason === "repeat" && !repeatResolved) {
         fullResponse = stockDeflection();
         flushed = false;
-      } else if (!crisisTurn) {
+      } else if (!replyCutOff && !crisisTurn) {
         const unresolvedStock =
           replyIsStock(fullResponse) ||
           (cutReason === "stock" &&
@@ -3331,7 +3377,9 @@ router.post("/messages", async (req, res) => {
     const evolvedCompanion =
       skipAffect || !companionAffect
         ? null
-        : evolveCompanionAffectFromCompanion(companionAffect, fullResponse);
+        : replyCutOff
+          ? companionAffect
+          : evolveCompanionAffectFromCompanion(companionAffect, fullResponse);
     const evolvedAffectSnapshot = evolvedCompanion
       ? toCompanionAffectSnapshot(
           evolvedCompanion,
@@ -3366,6 +3414,7 @@ router.post("/messages", async (req, res) => {
       companion_affect: skipAffect ? null : evolvedAffectSnapshot,
       mood_self_state: skipAffect ? null : evolvedMoodSelfState,
       ...(skipAffect ? { skip_affect: true, reply_action: replyAction } : {}),
+      ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
     };
     try {
       await telemetry.measure(
@@ -3415,6 +3464,7 @@ router.post("/messages", async (req, res) => {
       persistence_status: "generated",
       persistence_owner: persistenceOwner,
       companion_affect: evolvedAffectSnapshot,
+      ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
     });
     flight.resolve({
       content: fullResponse,
@@ -3438,6 +3488,7 @@ router.post("/messages", async (req, res) => {
         persistence_status: "generated",
         persistence_owner: persistenceOwner,
         companion_affect: evolvedAffectSnapshot,
+        ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
         joined: true,
       },
     });
@@ -3547,6 +3598,7 @@ router.post("/messages", async (req, res) => {
           : 0,
         synchroState,
         companionAffect,
+        replyCutOff,
       });
     } catch (postProcessError) {
       logger.warn(

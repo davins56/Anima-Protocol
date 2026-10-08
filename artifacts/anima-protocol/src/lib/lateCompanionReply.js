@@ -136,6 +136,15 @@ export function dropTurnPlaceholder(messages, turnId) {
   });
 }
 
+/** Flags Retry uses to replace a reply the model did not finish. */
+export function cutOffReplyFields(source) {
+  if (!source || typeof source !== "object") return {};
+  if (source.reply_interrupted === true || source.cut_off === true) {
+    return { reply_interrupted: true, cut_off: true };
+  }
+  return {};
+}
+
 export function mergeLateReplyIntoMessages(messages, turn) {
   const turnId = String(turn.turnId || "");
   const userId = `${turnId}:user`;
@@ -195,6 +204,7 @@ export function mergeLateReplyIntoMessages(messages, turn) {
       content: assistantContent,
       character_name: turn.characterName || "Character",
       timestamp: turn.createdAt || new Date().toISOString(),
+      ...cutOffReplyFields(turn),
     });
   }
   kept.splice(insertAt, 0, ...block);
