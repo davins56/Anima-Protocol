@@ -46,10 +46,13 @@ describe("retry and edit stay on the one send path", () => {
     const restoreBody = fn.slice(restoreStart, restoreEnd);
     expect(restoreBody).toContain("messages: source");
     expect(restoreBody).toContain("keep_arrivals: true");
-    const trimAt = fn.indexOf("messages: toSave");
-    expect(trimAt).toBeGreaterThan(restoreEnd);
-    expect(fn.slice(trimAt - 120, trimAt + 80)).not.toContain("keep_arrivals");
-    expect(fn.indexOf("await restore()", trimAt)).toBeGreaterThan(trimAt);
+    const localTrim = fn.indexOf("messages: toSave");
+    const persistedTrim = fn.indexOf("messages: toSave", localTrim + 1);
+    expect(localTrim).toBeGreaterThan(restoreEnd);
+    expect(persistedTrim).toBeGreaterThan(localTrim);
+    const restoreCall = fn.indexOf("await restore()", persistedTrim);
+    expect(restoreCall).toBeGreaterThan(persistedTrim);
+    expect(fn.slice(persistedTrim, restoreCall)).not.toContain("keep_arrivals");
   });
 
   it("restores the previous thread when replacement fails before the stream", () => {
