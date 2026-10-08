@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ChatPipelineTelemetry,
   chatErrorClass,
+  chatErrorCode,
+  replySurvivesDatabaseTimeout,
 } from "../src/lib/chatTelemetry";
 import { logger } from "../src/lib/logger";
 
@@ -19,6 +21,36 @@ describe("chatErrorClass", () => {
     expect(chatErrorClass(dropped)).toBe("APIConnectionError");
     expect(chatErrorClass(new TypeError("fail"))).toBe("TypeError");
     expect(chatErrorClass("nope")).toBe("NonError");
+  });
+
+  it("reads the error code, including through cause", () => {
+    const timeout = Object.assign(
+      new Error("Database operation aborted due to timeout after 5000ms"),
+      { name: "DbOperationTimeoutError", code: "ETIMEOUT" },
+    );
+    expect(chatErrorCode(timeout)).toBe("ETIMEOUT");
+    expect(chatErrorCode(new Error("no code", { cause: timeout }))).toBe("ETIMEOUT");
+    expect(chatErrorCode(new Error("plain"))).toBe("");
+  });
+});
+
+describe("replySurvivesDatabaseTimeout", () => {
+  const timeout = Object.assign(
+    new Error("Database operation aborted due to timeout after 5000ms"),
+    { name: "DbOperationTimeoutError", code: "ETIMEOUT" },
+  );
+
+  it("keeps text once generation has started", () => {
+    expect(replySurvivesDatabaseTimeout("I stay.", "decode", timeout)).toBe(true);
+    expect(replySurvivesDatabaseTimeout("I stay.", "post", timeout)).toBe(true);
+  });
+
+  it("does not keep a context-load timeout or an empty reply", () => {
+    expect(replySurvivesDatabaseTimeout("", "queue", timeout)).toBe(false);
+    expect(replySurvivesDatabaseTimeout("I stay.", "queue", timeout)).toBe(false);
+    expect(
+      replySurvivesDatabaseTimeout("I stay.", "decode", new Error("empty reply")),
+    ).toBe(false);
   });
 });
 
@@ -46,6 +78,7 @@ describe("ChatPipelineTelemetry failure phase", () => {
 
   it("logs failure_phase and error_class on a failed turn", () => {
     const info = vi.spyOn(logger, "info").mockImplementation(() => {});
+    const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => {});
     const telemetry = new ChatPipelineTelemetry({
       turnId: "turn-1",
       sessionId: "session-1",
@@ -64,10 +97,18 @@ describe("ChatPipelineTelemetry failure phase", () => {
         outcome: "failed",
         failure_phase: "decode",
         error_class: "APIConnectionError",
+        error_code: "",
         provider: "local",
         model: "anima-chat",
       }),
       "Chat pipeline telemetry",
+    );
+    expect(consoleInfo).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "chat_pipeline",
+        failure_phase: "decode",
+        error_class: "APIConnectionError",
+      }),
     );
   });
 
@@ -96,10 +137,14 @@ describe("ChatPipelineTelemetry failure phase", () => {
     expect(chatRoute).toContain("!streamInterrupted");
     expect(chatRoute).toContain("telemetry.markReplySettled()");
     expect(chatRoute).toContain("error_class: chatErrorClass(err)");
+    expect(chatRoute).toContain("error_code: chatErrorCode(err)");
+    expect(chatRoute).toContain("replySurvivesDatabaseTimeout");
     const telemetrySource = readFileSync(
       join(repoRoot, "artifacts/api-server/src/lib/chatTelemetry.ts"),
       "utf8",
     );
     expect(telemetrySource).toContain("failure_phase: this.phase");
+    expect(telemetrySource).toContain("error_code:");
+    expect(telemetrySource).toContain("console.info");
   });
 });

@@ -1,4 +1,9 @@
-import { classifyDbError, errorCauseBlob, isWorkerApiTimeoutError } from "./dbErrors";
+import {
+  classifyDbError,
+  errorCauseBlob,
+  isDbOperationTimeoutError,
+  isWorkerApiTimeoutError,
+} from "./dbErrors";
 import { LlmStreamTimeoutError } from "./consumeLlmStream.js";
 import {
   isLocalOnlyProviderChain,
@@ -120,6 +125,12 @@ export function streamErrorMessage(err: unknown): string {
       isLocalOnlyProviderChain()
       ? localOnlyTimeoutMessage()
       : "The companion took too long to reply. Please try again.";
+  }
+
+  // withTimeout on a Postgres call. Same ETIMEOUT code as the Worker wall,
+  // distinguished by name. Retryable, and never the raw "aborted after Nms".
+  if (isDbOperationTimeoutError(err)) {
+    return companionMemoryOrDbMessage(err);
   }
 
   // Ollama drops use code ECONNRESET, which classifyDbError also treats as
