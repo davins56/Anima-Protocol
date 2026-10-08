@@ -37,20 +37,27 @@ describe("retry and edit stay on the one send path", () => {
     expect(read).toBeGreaterThan(mark);
     expect(fn).toContain("releaseDiscardedIds");
     expect(fn).toContain("suffix?.replacedTurnIds");
-    expect(fn).toContain("keepArrivals(source, latest.messages");
+    expect(fn).toContain("keep_arrivals: true");
+    expect(fn).toContain("keepArrivals(trimmed, again.messages");
     expect(fn).toContain("activeSessionRef.current?.id === sessionId");
   });
 
   it("restores the previous thread when replacement fails before the stream", () => {
-    const start = chat.indexOf("const restorePriorMessages");
+    const helperStart = chat.indexOf("const restorePriorMessages");
+    const helperEnd = chat.indexOf("if (settled)", helperStart);
+    const helper = chat.slice(helperStart, helperEnd);
+    expect(helper).toContain("keep_arrivals: true");
+    expect(helper).toContain("messageData.priorMessages");
+    const start = chat.indexOf("} else if (replyAction && isReplyReplaceFailed(err))");
     const end = chat.indexOf("return { started: false }", start);
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
-    const branch = chat.slice(start, end);
-    expect(branch).toContain("restoredThread(");
-    expect(branch).toContain("messageData.priorMessages");
+    const branch = chat.slice(start, end + "return { started: false }".length);
+    const fail = branch.indexOf("isReplyReplaceFailed(err)");
+    const call = branch.indexOf("await restorePriorMessages();", fail);
+    expect(call).toBeGreaterThan(fail);
+    expect(branch.indexOf("return { started: false }", call)).toBeGreaterThan(call);
     expect(branch).toContain("releaseDiscardedIds");
-    expect(branch).toContain("isReplyReplaceFailed(err)");
   });
 
   it("skips a second mood write and a second user row on retry", () => {

@@ -1031,6 +1031,50 @@ describe("chat messages stored as individual rows", () => {
     expect(after.find((m) => m.id === m1.id)).toBeUndefined();
   });
 
+  it("keeps a stored arrival when a replace restores the snapshot", async () => {
+    const U = user("msg_keep_arrivals");
+    const sid = "sess_keep_arrivals";
+    const userRow = (
+      await call(U, "POST", "/messages", {
+        session_id: sid,
+        message: { role: "user", content: "hi" },
+      })
+    ).json;
+    const reply = (
+      await call(U, "POST", "/messages", {
+        session_id: sid,
+        message: { role: "assistant", content: "old" },
+      })
+    ).json;
+    await call(U, "POST", "/messages/replace", {
+      session_id: sid,
+      messages: [userRow],
+    });
+    const fresh = (
+      await call(U, "POST", "/messages", {
+        session_id: sid,
+        message: { role: "user", content: "from another device" },
+      })
+    ).json;
+    const restored = (
+      await call(U, "POST", "/messages/replace", {
+        session_id: sid,
+        messages: [userRow, reply],
+        keep_arrivals: true,
+      })
+    ).json as Json[];
+    expect(restored.map((message) => message.id)).toEqual([
+      userRow.id,
+      reply.id,
+      fresh.id,
+    ]);
+    expect(restored.map((message) => message.content)).toEqual([
+      "hi",
+      "old",
+      "from another device",
+    ]);
+  });
+
   it("keeps the prompt of a replaced turn and does not reinsert a later user line", async () => {
     const U = user("msg_replaced_user");
     const sid = "sess_replaced_user";

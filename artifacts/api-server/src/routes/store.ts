@@ -1067,21 +1067,50 @@ router.post("/messages", async (req, res) => {
   res.status(201).json(created);
 });
 
+/** Snapshot first, then stored rows whose ids are not in it, in seq order. */
+function messagesKeepingArrivals(snapshot: unknown[], current: Row[]): unknown[] {
+  const base = snapshot.map((raw) => asObject(raw));
+  const ids = new Set(
+    base
+      .map((message) => (message.id != null ? String(message.id) : ""))
+      .filter(Boolean),
+  );
+  const extras = current
+    .map((row) => row.data as MsgData)
+    .filter((message) => message.id != null && !ids.has(String(message.id)))
+    .sort((a, b) => {
+      const aSeq = Number(a.seq);
+      const bSeq = Number(b.seq);
+      const aNum = Number.isFinite(aSeq) ? aSeq : Number.MAX_SAFE_INTEGER;
+      const bNum = Number.isFinite(bSeq) ? bSeq : Number.MAX_SAFE_INTEGER;
+      return aNum - bNum;
+    });
+  return extras.length > 0 ? [...base, ...extras] : snapshot;
+}
+
 // POST /messages/replace { session_id, messages } — reconcile a full message
 // array against the stored rows. Backs the client's ChatSession.update({messages})
 // compatibility shim so the existing edit/delete/rewind flows keep working
 // unchanged. It diffs by message id so an edit updates ONE row, a rewind deletes
 // only the trimmed tail, etc. (rather than rewriting every row), and reassigns
 // seq by array position so order always follows the array.
+// `keep_arrivals` unions that array with rows already stored, inside this
+// transaction, after the session lock. An append waits on that lock, so it
+// cannot land between a read and this write and then be deleted.
 router.post("/messages/replace", async (req, res) => {
   const userId = getUserId(req);
-  const body = req.body as { session_id?: string; messages?: unknown };
+  const body = req.body as {
+    session_id?: string;
+    messages?: unknown;
+    keep_arrivals?: unknown;
+  };
   const sessionId = body.session_id;
   if (!sessionId || !Array.isArray(body.messages)) {
     res.status(400).json({ error: "session_id and messages[] are required" });
     return;
   }
-  const incoming = body.messages as unknown[];
+  const requested = body.messages as unknown[];
+  const keepArrivals = body.keep_arrivals === true;
   const out = await db.transaction(async (tx) => {
     await migrateSessionMessages(tx, userId, sessionId);
     const current: Row[] = await tx
@@ -1094,6 +1123,9 @@ router.post("/messages/replace", async (req, res) => {
           sessionIdEq(sessionId),
         ),
       );
+    const incoming = keepArrivals
+      ? messagesKeepingArrivals(requested, current)
+      : requested;
     const currentById = new Map<string, Row>();
     for (const r of current) currentById.set(String((r.data as MsgData).id), r);
 

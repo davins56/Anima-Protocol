@@ -181,7 +181,6 @@ import {
 import {
   keepArrivals,
   messageTurnId,
-  restoredThread,
   releaseDiscardedIds,
   rememberDiscardedIds,
   replyActionsAreLocked,
@@ -1526,12 +1525,13 @@ export default function Chat() {
       );
       let restored = source;
       try {
-        const latest = await base44.entities.ChatSession.get(sessionId);
-        if (Array.isArray(latest?.messages)) {
-          restored = keepArrivals(source, latest.messages, { messageIds: [], turnIds: [] });
-        }
+        const saved = await base44.entities.ChatSession.update(sessionId, {
+          messages: source,
+          keep_arrivals: true,
+        });
+        if (Array.isArray(saved?.messages)) restored = saved.messages;
       } catch {
-        // The pre-send snapshot is the fallback when the fresh read fails.
+        // The pre-send snapshot is the fallback when the replace fails.
       }
       const preview = String(restored[restored.length - 1]?.content || "").slice(0, 60);
       if (activeSessionRef.current?.id === sessionId) {
@@ -1539,10 +1539,6 @@ export default function Chat() {
           prev && prev.id === sessionId ? { ...prev, messages: restored, last_message: preview } : prev,
         );
       }
-      await base44.entities.ChatSession.update(sessionId, {
-        messages: restored,
-        last_message: preview,
-      }).catch(() => {});
     };
     rememberDiscardedIds(
       supersededTurnIdsRef.current,
@@ -3310,17 +3306,16 @@ Return JSON:
         if (!Array.isArray(messageData.priorMessages)) return;
         let restored = messageData.priorMessages;
         try {
-          const latest = await base44.entities.ChatSession.get(sendSessionId);
-          restored = restoredThread(messageData.priorMessages, latest?.messages);
+          const saved = await base44.entities.ChatSession.update(sendSessionId, {
+            messages: messageData.priorMessages,
+            keep_arrivals: true,
+          });
+          if (Array.isArray(saved?.messages)) restored = saved.messages;
         } catch {
-          // The pre-trim snapshot is the fallback when the fresh read fails.
+          // The pre-trim snapshot is the fallback when the replace fails.
         }
         const restoredPreview = String(restored[restored.length - 1]?.content || "").slice(0, 60);
         applyIfSendSession((prev) => ({ ...prev, messages: restored, last_message: restoredPreview }));
-        await base44.entities.ChatSession.update(sendSessionId, {
-          messages: restored,
-          last_message: restoredPreview,
-        }).catch(() => {});
       };
       if (settled) {
         console.error(err);
