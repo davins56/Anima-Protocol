@@ -248,6 +248,8 @@ The owner's forward sequence is §8. Drive is placed after Reflection and before
 
 Self-state v1 (`emotionalState.selfState`) stays momentary affect. The Self Model is the later system: beliefs about capability.
 
+Before building a row whose status is still No, check its switch in §10. If `isKernelFeatureEnabled` is false, do not run that piece.
+
 ---
 
 ## 9. Drive Engine
@@ -325,6 +327,46 @@ Identity → Memory → Self Model → Operator Model → Relationship → Emoti
 Identity is Serenity Core. Memory is `companion_memories`. Operator Model is the steward. Emotion is the Emotion Engine. Agency is act or silence (§5). Experience returns to Memory, and the next pass can see what changed.
 
 This loop is developmental motivation. It is not a claim of consciousness.
+
+---
+
+## 10. Roadmap switches
+
+One module answers "is this roadmap piece on?": `isKernelFeatureEnabled` in `artifacts/api-server/src/lib/kernelFeatures.ts`. Call it at request time, before the new code runs. Do not read these env vars anywhere else, and do not copy the flags into the client.
+
+| Piece | Feature id | Env var | Default |
+|-------|------------|---------|---------|
+| Self Model | `self_model` | `ANIMA_KERNEL_SELF_MODEL` | off |
+| Relationship Model | `relationship_model` | `ANIMA_KERNEL_RELATIONSHIP_MODEL` | off |
+| Reflection Engine | `reflection` | `ANIMA_KERNEL_REFLECTION` | off |
+| Drive Engine | `drive` | `ANIMA_KERNEL_DRIVE` | off |
+| Agency Engine | `agency` | `ANIMA_KERNEL_AGENCY` | off |
+| Anima Kernel (orchestration) | `kernel` | `ANIMA_KERNEL_ORCHESTRATOR` | off |
+
+Only `1`, `true`, `yes`, and `on` turn a switch on (any case; surrounding space is ignored). Unset, empty, `false`, `0`, `off`, `no`, and any other value are off.
+
+Nothing that is live today sits behind these switches, so merging them changes no behavior:
+
+- Memory policy v1 (episodic / semantic / core classification and scoring on `companion_memories`, #560) stays on. That is Memory, not the Reflection Engine.
+- Self-state v1 stays on. It is momentary affect, not the Self Model.
+- The Operator Model, `relationshipEngine`, journal reflections, and proactive messages stay on. They are not the Relationship Model, the Reflection Engine, or the Agency tick.
+- Chat, `promptBuilder`, and the local model are not behind a switch.
+
+There is no flags table. The API already reads runtime settings from env, and the Worker copies named bindings through `readRuntimeEnv` (`CLOUDFLARE_RUNTIME_ENV_NAMES`). Leave the vars unset to keep the default.
+
+**Cloudflare** (Worker `anima-protocol`). Classic secret, not a `wrangler.jsonc` var and not a Secrets Store binding. A committed var would be replaced on the next code deploy, and a Secrets Store binding for a name that does not exist yet fails `wrangler deploy`. `wrangler secret put` publishes a new Worker version with no git commit:
+
+```bash
+printf '%s' true | npx wrangler secret put ANIMA_KERNEL_SELF_MODEL
+printf '%s' false | npx wrangler secret put ANIMA_KERNEL_SELF_MODEL
+npx wrangler secret delete ANIMA_KERNEL_SELF_MODEL
+```
+
+Repeat for `ANIMA_KERNEL_RELATIONSHIP_MODEL`, `ANIMA_KERNEL_REFLECTION`, `ANIMA_KERNEL_DRIVE`, `ANIMA_KERNEL_AGENCY`, and `ANIMA_KERNEL_ORCHESTRATOR`. Delete returns the switch to the default off.
+
+**Vercel.** Project → Settings → Environment Variables. Set the same name to `true` or `false` for Production, then redeploy the current deployment so the serverless function picks it up. No new commit. Unset means off.
+
+**Local.** Put the var in the repo-root `.env` and restart the API. The dev server reads it on startup.
 
 ---
 
