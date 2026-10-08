@@ -2387,6 +2387,10 @@ async function streamFromLocalHost(
   const client = openAiClientForLocalBase(baseUrl);
   if (!client) throw new Error(LOCAL_LLM_SETUP_HINT);
   const preferred = resolveLocalModel(req.tier);
+  // Live companion chat posts to Ollama's native /api/chat (the tunnel
+  // serves :11434 directly). A body that ends without `done: true` throws,
+  // and consumeLlmStream keeps that partial. ANIMA_OLLAMA_NATIVE_CHAT=0
+  // uses the OpenAI-style /v1 stream, which is the same consumer.
   const { value: stream, resolved } = await withModelFallback(client, preferred, (m) =>
     useOllamaNativeChat()
       ? createOllamaChatStream({

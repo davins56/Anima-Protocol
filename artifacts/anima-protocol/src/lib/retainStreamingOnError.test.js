@@ -17,6 +17,8 @@ describe("retainStreamingOnError", () => {
       content: "Hello there",
       character_name: "Ava",
       is_streaming: false,
+      reply_interrupted: true,
+      cut_off: true,
     });
     expect(messages).toHaveLength(2);
     expect(messages[1].is_streaming).toBe(false);
@@ -38,6 +40,29 @@ describe("retainStreamingOnError", () => {
 
     expect(retained).toBeNull();
     expect(messages).toEqual([{ role: "user", content: "hi" }]);
+  });
+
+  it("cuts a dropped stream back to the last full sentence", () => {
+    const { messages, retained } = retainStreamingOnError([
+      {
+        role: "assistant",
+        content: "You came back. I was thin",
+        character_name: "Ava",
+        is_streaming: true,
+      },
+    ]);
+    expect(retained).toMatchObject({
+      content: "You came back.",
+      reply_interrupted: true,
+      cut_off: true,
+    });
+    expect(messages).toEqual([
+      expect.objectContaining({
+        content: "You came back.",
+        reply_interrupted: true,
+        cut_off: true,
+      }),
+    ]);
   });
 
   it("preserves already-finalized messages", () => {
