@@ -162,6 +162,7 @@ import {
 } from "@/lib/contentRatingInstruction";
 import { retainStreamingOnError } from "@/lib/retainStreamingOnError";
 import { chatTurnErrorMessage, shouldCheckBackForCompanionReply } from "@/lib/chatTurnError";
+import { replyWasKept, reportChatClientFailure } from "@/lib/chatClientFailure";
 import {
   browserLocalStorage,
   clearHeldDraftIfUnchanged,
@@ -3165,6 +3166,12 @@ Return JSON:
         console.error(err);
       } else if (isConversationBusyError(err)) {
         console.error(err);
+        reportChatClientFailure({
+          error: err,
+          sessionId: sendSessionId,
+          turnId,
+          partialKept: false,
+        });
         lateTurnRef.current = null;
         skipHeldFlush = true;
         terminalReason = "error";
@@ -3227,6 +3234,7 @@ Return JSON:
 
       // Best-effort persist so a deferred cross-device sync can't wipe the kept reply
       // (or the optimistic user turn that was never written because persist:false).
+      let saveFailed = false;
       if (sendSessionId) {
         try {
           if (!omitUserRow && !userMessagePersisted && content.trim()) {
@@ -3241,7 +3249,28 @@ Return JSON:
           // Skip the deferred remote refresh — it would replace local state with
           // server history that does not include this unpersisted turn.
           pendingRemoteSyncRef.current = false;
+          saveFailed = true;
         }
+      }
+      const partialKept = replyWasKept({
+        retained,
+        streamed: streamedSoFar,
+        partial: err?.partialContent,
+      });
+      reportChatClientFailure({
+        error: err,
+        sessionId: sendSessionId,
+        turnId,
+        partialKept,
+      });
+      if (saveFailed) {
+        reportChatClientFailure({
+          error: err,
+          sessionId: sendSessionId,
+          turnId,
+          partialKept: true,
+          saveFailed: true,
+        });
       }
 
       const crisisOnError = crisisCardFromPayload(err);
