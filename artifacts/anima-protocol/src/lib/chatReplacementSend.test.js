@@ -42,12 +42,15 @@ describe("retry and edit stay on the one send path", () => {
   });
 
   it("restores the previous thread when replacement fails before the stream", () => {
-    const start = chat.indexOf("} else if (replyAction && isReplyReplaceFailed(err))");
+    const start = chat.indexOf("const restorePriorMessages");
+    const end = chat.indexOf("return { started: false }", start);
     expect(start).toBeGreaterThan(-1);
-    const branch = chat.slice(start, start + 2500);
-    expect(branch).toContain("releaseDiscardedIds");
+    expect(end).toBeGreaterThan(start);
+    const branch = chat.slice(start, end);
+    expect(branch).toContain("restoredThread(");
     expect(branch).toContain("messageData.priorMessages");
-    expect(branch).toContain("return { started: false }");
+    expect(branch).toContain("releaseDiscardedIds");
+    expect(branch).toContain("isReplyReplaceFailed(err)");
   });
 
   it("skips a second mood write and a second user row on retry", () => {

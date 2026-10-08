@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   keepArrivals,
+  restoredThread,
   lastReplyActionIndexes,
   threadForHungRetry,
   messagesAfterDiscardingReply,
@@ -189,6 +190,25 @@ describe("discarded reply ids", () => {
     ];
     const restored = keepArrivals(source, latest, { messageIds: [], turnIds: [] });
     expect(restored.map((message) => message.id)).toEqual(["u", "a", "other"]);
+  });
+
+  it("keeps a stored arrival when a failed replace restores the snapshot", () => {
+    const snapshot = [
+      { id: "u", role: "user", content: "hi" },
+      { id: "a", role: "assistant", content: "old" },
+    ];
+    const latest = [
+      { id: "u", role: "user", content: "hi" },
+      { role: "assistant", content: "trimmed copy" },
+      { id: "fresh", role: "user", content: "from another device" },
+    ];
+    expect(restoredThread(snapshot, latest).map((message) => message.id)).toEqual([
+      "u",
+      "a",
+      "fresh",
+    ]);
+    expect(restoredThread(snapshot, null)).toBe(snapshot);
+    expect(restoredThread(snapshot, snapshot)).toBe(snapshot);
   });
 });
 

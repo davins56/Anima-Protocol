@@ -332,4 +332,42 @@ describe("regenerateMessageFlow (confirm-and-rewrite a reply)", () => {
     expect(stored.messages).toHaveLength(5);
     expect(sendMessage).toHaveBeenCalledTimes(1);
   });
+
+  it("keeps a message that arrived after the snapshot when the send cannot start", async () => {
+    const session = await makeSession([
+      { id: "u1", role: "user", content: "hello" },
+      { id: "a1", role: "assistant", content: "hi there" },
+      { id: "u2", role: "user", content: "tell me a story" },
+      { id: "a2", role: "assistant", content: "once upon a time" },
+    ]);
+    const confirm = vi.fn().mockResolvedValue(true);
+    const setActiveSession = vi.fn();
+    const sendMessage = vi.fn().mockImplementation(async () => {
+      const current = await base44.entities.ChatSession.get(session.id);
+      await base44.entities.ChatSession.update(session.id, {
+        messages: [
+          ...(current.messages || []),
+          { id: "fresh", role: "user", content: "from another device" },
+        ],
+      });
+      return { started: false };
+    });
+
+    await regenerateMessageFlow(3, {
+      confirm,
+      activeSession: session,
+      isLoading: false,
+      setActiveSession,
+      sendMessage,
+    });
+
+    const stored = await base44.entities.ChatSession.get(session.id);
+    expect(stored.messages.map((message) => message.id)).toEqual([
+      "u1",
+      "a1",
+      "u2",
+      "a2",
+      "fresh",
+    ]);
+  });
 });

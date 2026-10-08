@@ -181,6 +181,7 @@ import {
 import {
   keepArrivals,
   messageTurnId,
+  restoredThread,
   releaseDiscardedIds,
   rememberDiscardedIds,
   replyActionsAreLocked,
@@ -3305,6 +3306,22 @@ Return JSON:
       }
       }
     } catch (err) {
+      const restorePriorMessages = async () => {
+        if (!Array.isArray(messageData.priorMessages)) return;
+        let restored = messageData.priorMessages;
+        try {
+          const latest = await base44.entities.ChatSession.get(sendSessionId);
+          restored = restoredThread(messageData.priorMessages, latest?.messages);
+        } catch {
+          // The pre-trim snapshot is the fallback when the fresh read fails.
+        }
+        const restoredPreview = String(restored[restored.length - 1]?.content || "").slice(0, 60);
+        applyIfSendSession((prev) => ({ ...prev, messages: restored, last_message: restoredPreview }));
+        await base44.entities.ChatSession.update(sendSessionId, {
+          messages: restored,
+          last_message: restoredPreview,
+        }).catch(() => {});
+      };
       if (settled) {
         console.error(err);
       } else if (isConversationBusyError(err)) {
@@ -3314,13 +3331,7 @@ Return JSON:
         terminalReason = "error";
         pendingRemoteSyncRef.current = false;
         if (replyAction && Array.isArray(messageData.priorMessages)) {
-          const prior = messageData.priorMessages;
-          const restoredPreview = String(prior[prior.length - 1]?.content || "").slice(0, 60);
-          applyIfSendSession((prev) => ({ ...prev, messages: prior, last_message: restoredPreview }));
-          base44.entities.ChatSession.update(sendSessionId, {
-            messages: prior,
-            last_message: restoredPreview,
-          }).catch(() => {});
+          await restorePriorMessages();
           gateRef.current.release("error", ownerToken);
           syncGate();
         } else {
@@ -3347,15 +3358,7 @@ Return JSON:
         skipHeldFlush = true;
         terminalReason = "error";
         pendingRemoteSyncRef.current = false;
-        if (Array.isArray(messageData.priorMessages)) {
-          const prior = messageData.priorMessages;
-          const restoredPreview = String(prior[prior.length - 1]?.content || "").slice(0, 60);
-          applyIfSendSession((prev) => ({ ...prev, messages: prior, last_message: restoredPreview }));
-          base44.entities.ChatSession.update(sendSessionId, {
-            messages: prior,
-            last_message: restoredPreview,
-          }).catch(() => {});
-        }
+        await restorePriorMessages();
         gateRef.current.release("error", ownerToken);
         syncGate();
         return { started: false };
