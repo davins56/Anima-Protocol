@@ -1580,7 +1580,26 @@ async function applyRelationshipPostProcessFromTurn(turn: ChatTurn): Promise<voi
 const leftoverTurnRepair = new Map<string, Promise<void>>();
 const turnPersistInFlight = new Map<string, Promise<void>>();
 
-/** One extra attempt after the driver's own retries. False means deliver anyway. */
+/** The driver's own retries. False means the reply is delivered anyway. */
+async function checkpointGeneratedTurnOnce(input: {
+  id: string;
+  userId: string;
+  assistantContent: string;
+  metadata?: Record<string, unknown>;
+}): Promise<boolean> {
+  try {
+    await checkpointGeneratedTurn(input);
+    return true;
+  } catch (error) {
+    logger.warn(
+      { error, turnId: input.id },
+      "Generated-turn checkpoint failed; delivering the reply anyway",
+    );
+    return false;
+  }
+}
+
+/** One extra attempt after the driver, for the background persist. */
 async function checkpointGeneratedTurnWithRetry(input: {
   id: string;
   userId: string;
@@ -2209,7 +2228,9 @@ router.post("/messages", async (req, res) => {
     return;
   }
   if (!session) {
-    sessionLoadTelemetry.report("failed", {
+    // A missing session is a client 404, not a pipeline failure. Keep the
+    // event so the exit is visible without counting it as a failed turn.
+    sessionLoadTelemetry.report("completed", {
       error_class: "SessionNotFound",
       error_code: "session_not_found",
     });
@@ -2419,16 +2440,35 @@ router.post("/messages", async (req, res) => {
       logger.warn({ error, turnId: turnStart.turn.id }, "Could not resolve the reply being replaced");
     }
   }
-  if (
-    await sessionHasOlderPendingChatTurn(
+  let olderPending = false;
+  try {
+    olderPending = await sessionHasOlderPendingChatTurn(
       userId,
       sessionId,
       turnStart.turn.id,
       turnStart.turn.createdAt,
       new Date(),
       discardedReply.turnId ? [discardedReply.turnId] : [],
-    )
-  ) {
+    );
+  } catch (err) {
+    logger.error({ err }, "Chat message stream failed");
+    try {
+      flight.fail(err);
+    } catch {
+      // The flight was already settled.
+    }
+    closePipeline("failed", {
+      error_class: chatErrorClass(err),
+      error_code: chatErrorCode(err),
+    });
+    if (!res.headersSent) {
+      res.status(503).json({ error: streamErrorMessage(err) });
+    } else {
+      writeSse(res, { error: streamErrorMessage(err) });
+    }
+    return;
+  }
+  if (olderPending) {
     const busyError = new Error(CONVERSATION_BUSY_MESSAGE);
     flight.fail(busyError);
     try {
@@ -3591,9 +3631,11 @@ router.post("/messages", async (req, res) => {
       ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
     };
     pipelineMetadata = generatedMetadata;
+    // One checkpoint, then `done`. A second attempt waits in the background
+    // so a database timeout cannot hold the reply for another full window.
     const checkpointSaved = await telemetry.measure(
       "turn_checkpoint_ms",
-      checkpointGeneratedTurnWithRetry({
+      checkpointGeneratedTurnOnce({
         id: turnId,
         userId,
         assistantContent: fullResponse,
@@ -3672,24 +3714,13 @@ router.post("/messages", async (req, res) => {
         { err, turnId },
         "Database timeout after the reply started; keeping the text",
       );
-      let checkpointSaved = false;
-      try {
-        checkpointSaved = await checkpointGeneratedTurnWithRetry({
-          id: turnId,
-          userId,
-          assistantContent: kept,
-          metadata: {
-            ...pipelineMetadata,
-            ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
-          },
-        });
-      } catch {
-        checkpointSaved = false;
-      }
-      if (!checkpointSaved) {
-        void markTurnFailed(turnId, userId, err).catch(() => {});
-      }
+      // The database just timed out. Send the text now. The background
+      // persist retries the checkpoint; this catch does not wait on it.
       streamSucceeded = true;
+      pipelineMetadata = {
+        ...pipelineMetadata,
+        ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
+      };
       const keptDone = {
         done: true,
         visible: kept,
@@ -3702,7 +3733,7 @@ router.post("/messages", async (req, res) => {
         turn_id: turnId,
         user_message_id: turnStart.turn.userMessageId,
         assistant_message_id: turnStart.turn.assistantMessageId,
-        persistence_status: checkpointSaved ? "generated" : "checkpoint_failed",
+        persistence_status: "checkpoint_failed",
         persistence_owner: persistenceOwner,
         ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
       };
@@ -3711,7 +3742,7 @@ router.post("/messages", async (req, res) => {
       closePipeline("completed", {
         provider: usedProvider,
         model: usedModel,
-        persistence_status: checkpointSaved ? "generated" : "checkpoint_failed",
+        persistence_status: "checkpoint_failed",
         database_timeout: true,
       });
     } else {
@@ -3749,12 +3780,13 @@ router.post("/messages", async (req, res) => {
       }
       if (!streamSucceeded || !String(fullResponse).trim()) return;
 
-      const lateClient = clientLeft();
-      const serverPersist = persistenceOwner === "server" && shouldPersist;
-      if (serverPersist || lateClient) {
-      const persistenceStartedAt = Date.now();
+      // Client-owned turns leave before this runs. Retry a missing
+      // checkpoint here so the second attempt never blocks `done`.
+      // A retry that already replaced this turn is left alone.
+      let generatedTurn: Awaited<ReturnType<typeof readChatTurn>> = null;
       try {
-        let generatedTurn = await readChatTurn(turnId, userId);
+      generatedTurn = await readChatTurn(turnId, userId);
+      if (!generatedTurn || !turnMetadataReplaced(generatedTurn.metadata)) {
         if (
           generatedTurn &&
           !String(generatedTurn.assistantContent || "").trim() &&
@@ -3768,6 +3800,26 @@ router.post("/messages", async (req, res) => {
           });
           if (saved) generatedTurn = await readChatTurn(turnId, userId);
         }
+        if (
+          !generatedTurn ||
+          !String(generatedTurn.assistantContent || "").trim()
+        ) {
+          void markTurnFailed(
+            turnId,
+            userId,
+            new Error("Generated turn checkpoint is missing"),
+          ).catch(() => {});
+        }
+      }
+      } catch (error) {
+        logger.warn({ error, turnId }, "Background checkpoint retry failed");
+      }
+
+      const lateClient = clientLeft();
+      const serverPersist = persistenceOwner === "server" && shouldPersist;
+      if (serverPersist || lateClient) {
+      const persistenceStartedAt = Date.now();
+      try {
         if (!generatedTurn || !String(generatedTurn.assistantContent || "").trim()) {
           throw new Error("Generated turn checkpoint is missing");
         }
