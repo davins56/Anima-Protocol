@@ -160,12 +160,19 @@ import {
   noteCompanionCrisisResource,
   type CrisisResourceCard,
 } from "../lib/therapySafety";
-import { ChatPipelineTelemetry, chatErrorClass } from "../lib/chatTelemetry";
+import {
+  ChatPipelineTelemetry,
+  chatErrorClass,
+  chatErrorCode,
+  replySurvivesDatabaseTimeout,
+} from "../lib/chatTelemetry";
 import { streamErrorMessage } from "../lib/chatStreamError";
 import { optionalChatContext } from "../lib/optionalChatContext";
 import { classifyDbError, errorCauseBlob } from "../lib/dbErrors";
 import {
   finalizeAssistantReply,
+  isCutOffReply,
+  keptPartialNeedsCutOff,
   settleCappedReply,
 } from "../lib/visibleAssistantReply";
 import {
@@ -398,7 +405,7 @@ async function streamDurableFollow(
   flight: ChatTurnFlightReservation,
   work: ReturnType<typeof awaitDurableTurnOwner>,
 ): Promise<
-  | { action: "finished" }
+  | { action: "finished"; error?: unknown; replayed?: boolean }
   | {
       action: "generate";
       turn: ChatTurn;
@@ -413,7 +420,7 @@ async function streamDurableFollow(
       flight.resolve(result.outcome);
       if (result.outcome.content) writeSse(res, { content: result.outcome.content });
       writeSse(res, { ...result.outcome.done, joined: true, replayed: true });
-      return { action: "finished" };
+      return { action: "finished", replayed: true };
     }
     handoff = true;
     return { action: "generate", turn: result.turn, sse };
@@ -424,7 +431,7 @@ async function streamDurableFollow(
       flight.fail(err);
     }
     writeSse(res, { error: streamErrorMessage(err) });
-    return { action: "finished" };
+    return { action: "finished", error: err };
   } finally {
     if (!handoff) {
       sse.stop();
@@ -440,17 +447,18 @@ async function streamDurableFollow(
 async function writeJoinedTurn(
   res: Response,
   result: Promise<ChatTurnFlightOutcome>,
-) {
+): Promise<{ ok: boolean; error?: unknown }> {
   try {
     const outcome = await result;
     writeFlightSse(res, { ...outcome, done: { ...outcome.done, joined: true } });
+    return { ok: true };
   } catch (err) {
     if (isChatTurnFlightElsewhere(err)) {
       res.status(409).json({
         error: "This chat turn is already being processed.",
         code: "turn_in_flight",
       });
-      return;
+      return { ok: false, error: err };
     }
     const sse = openChatSse(res);
     try {
@@ -459,6 +467,7 @@ async function writeJoinedTurn(
       sse.stop();
       if (!res.writableEnded) res.end();
     }
+    return { ok: false, error: err };
   }
 }
 
@@ -905,17 +914,27 @@ async function upsertTurnMemory(params: {
   sessionId: string;
   userContent: string;
   assistantContent: string;
+  /** A cut-off reply stores the user line only. The half-reply is not a fact. */
+  omitAssistant?: boolean;
 }) {
-  if (params.characterIds.length === 0 || !params.assistantContent.trim()) return;
+  if (params.characterIds.length === 0) return;
+  if (params.omitAssistant) {
+    if (!params.userContent.trim()) return;
+  } else if (!params.assistantContent.trim()) {
+    return;
+  }
   const now = new Date();
+  const text = params.omitAssistant
+    ? `User: ${truncate(params.userContent, 240)}`
+    : `User: ${truncate(params.userContent, 240)} | Companion: ${truncate(
+        params.assistantContent,
+        320,
+      )}`;
   const fact = {
     type: "turn",
     turn_id: params.turnId,
     session_id: params.sessionId,
-    text: `User: ${truncate(params.userContent, 240)} | Companion: ${truncate(
-      params.assistantContent,
-      320,
-    )}`,
+    text,
     created_at: now.toISOString(),
   };
   for (const characterId of params.characterIds) {
@@ -1096,6 +1115,7 @@ async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
           metadata: { turn_id: turn.id },
         }
       : null;
+  const cutOff = isCutOffReply(metadata);
   const assistantMessage = {
     id: turn.assistantMessageId,
     role: "assistant",
@@ -1103,7 +1123,11 @@ async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
     character_id: activeCharacterId,
     character_name: activeCharacterName,
     timestamp: new Date(turn.createdAt.getTime() + 1).toISOString(),
-    metadata: { turn_id: turn.id },
+    ...(cutOff ? { reply_interrupted: true, cut_off: true } : {}),
+    metadata: {
+      turn_id: turn.id,
+      ...(cutOff ? { reply_interrupted: true, cut_off: true } : {}),
+    },
   };
   const wroteMessages = await writeTurnMessagesInOrder(turn, {
     user: userMessage,
@@ -1255,18 +1279,21 @@ async function recordTurnContinuity(turn: ChatTurn): Promise<void> {
   const metadata = asObject(turn.metadata);
   const characterIds = asStringArray(metadata.character_ids);
   const isCrossover = metadata.is_crossover === true;
+  const cutOff = isCutOffReply(metadata);
   const sharedFact = isCrossover
     ? {
         type: "crossover_turn",
         turn_id: turn.id,
-        text: `User: ${truncate(turn.userContent, 180)} | Reply: ${truncate(turn.assistantContent, 260)}`,
+        text: cutOff
+          ? `User: ${truncate(turn.userContent, 180)}`
+          : `User: ${truncate(turn.userContent, 180)} | Reply: ${truncate(turn.assistantContent, 260)}`,
         created_at: new Date().toISOString(),
       }
     : undefined;
   await updateStoreSessionMetadata(
     turn.userId,
     turn.sessionId,
-    turn.userContent || turn.assistantContent,
+    cutOff ? turn.userContent : turn.userContent || turn.assistantContent,
     sharedFact,
   );
   await upsertTurnMemory({
@@ -1275,7 +1302,8 @@ async function recordTurnContinuity(turn: ChatTurn): Promise<void> {
     characterIds,
     sessionId: turn.sessionId,
     userContent: turn.userContent,
-    assistantContent: turn.assistantContent,
+    assistantContent: cutOff ? "" : turn.assistantContent,
+    omitAssistant: cutOff,
   });
   const activeId = metadata.active_character_id
     ? String(metadata.active_character_id)
@@ -1291,7 +1319,8 @@ async function recordTurnContinuity(turn: ChatTurn): Promise<void> {
       turnId: turn.id,
       companionName,
       userContent: turn.userContent,
-      assistantContent: turn.assistantContent,
+      assistantContent: cutOff ? "" : turn.assistantContent,
+      userOnly: cutOff,
     });
     if (job) {
       try {
@@ -1320,6 +1349,8 @@ async function applyRelationshipPostProcess(params: {
   significantExperienceCount: number;
   synchroState: SynchroState | null;
   companionAffect?: CompanionAffect | null;
+  /** The model stream dropped. Do not read the half-reply for mood or memory. */
+  replyCutOff?: boolean;
 }): Promise<void> {
   const {
     userId,
@@ -1334,9 +1365,13 @@ async function applyRelationshipPostProcess(params: {
     significantExperienceCount,
     synchroState,
     companionAffect,
+    replyCutOff = false,
   } = params;
+  const companionText = replyCutOff ? "" : assistantContent;
   if (characterIds.length > 0) {
-    const historySummary = `User said: ${truncate(content, 420)}\nCompanion replied: ${truncate(assistantContent, 520)}`;
+    const historySummary = replyCutOff
+      ? `User said: ${truncate(content, 420)}`
+      : `User said: ${truncate(content, 420)}\nCompanion replied: ${truncate(assistantContent, 520)}`;
 
     for (const animaId of characterIds) {
       const updated = await incrementConversationCount({
@@ -1371,7 +1406,7 @@ async function applyRelationshipPostProcess(params: {
       });
     }
   }
-  if ((synchroState || companionAffect) && assistantContent) {
+  if ((synchroState || companionAffect) && (companionText || replyCutOff)) {
     const anchorId =
       activeCharacterId && characterIds.includes(activeCharacterId)
         ? activeCharacterId
@@ -1399,12 +1434,16 @@ async function applyRelationshipPostProcess(params: {
     const evolved =
       bondAlready || !synchroState
         ? null
-        : evolveSynchroFromCompanion(synchroState, assistantContent);
+        : replyCutOff
+          ? synchroState
+          : evolveSynchroFromCompanion(synchroState, companionText);
     const evolvedAffect =
       moodTurnAlreadyWritten(anchorState, turnId) || !companionAffect
         ? null
-        : evolveCompanionAffectFromCompanion(companionAffect, assistantContent);
-    if (evolved && !momentsAlready) {
+        : replyCutOff
+          ? companionAffect
+          : evolveCompanionAffectFromCompanion(companionAffect, companionText);
+    if (evolved && !momentsAlready && !replyCutOff) {
       try {
         const intimacy = Number(
           evolved.vector?.intimacy ?? evolved.vector?.synchroStrength ?? 0,
@@ -1480,7 +1519,10 @@ async function applyRelationshipPostProcess(params: {
       const next = emotionalStateWithTurnBond(current, turnId, {
         synchro: evolved ? serializeSynchroState(evolved) : null,
         selfState: evolvedAffect ? serializeCompanionAffect(evolvedAffect) : null,
-        saveMoment: Boolean(evolved) && !savedMomentsTurnAlreadyWritten(current, turnId),
+        saveMoment:
+          Boolean(evolved) &&
+          !replyCutOff &&
+          !savedMomentsTurnAlreadyWritten(current, turnId),
       });
       if (!next.wroteMood && !next.wroteRelationship && !next.wroteSavedMoments) {
         continue;
@@ -1558,11 +1600,59 @@ async function applyRelationshipPostProcessFromTurn(turn: ChatTurn): Promise<voi
     significantExperienceCount: learnedLife,
     synchroState,
     companionAffect,
+    replyCutOff: isCutOffReply(metadata),
   });
 }
 
 const leftoverTurnRepair = new Map<string, Promise<void>>();
 const turnPersistInFlight = new Map<string, Promise<void>>();
+
+/** The driver's own retries. False means the reply is delivered anyway. */
+async function checkpointGeneratedTurnOnce(input: {
+  id: string;
+  userId: string;
+  assistantContent: string;
+  metadata?: Record<string, unknown>;
+}): Promise<boolean> {
+  try {
+    await checkpointGeneratedTurn(input);
+    return true;
+  } catch (error) {
+    logger.warn(
+      { error, turnId: input.id },
+      "Generated-turn checkpoint failed; delivering the reply anyway",
+    );
+    return false;
+  }
+}
+
+/** One extra attempt after the driver, for the background persist. */
+async function checkpointGeneratedTurnWithRetry(input: {
+  id: string;
+  userId: string;
+  assistantContent: string;
+  metadata?: Record<string, unknown>;
+}): Promise<boolean> {
+  try {
+    await checkpointGeneratedTurn(input);
+    return true;
+  } catch (error) {
+    logger.warn(
+      { error, turnId: input.id },
+      "Generated-turn checkpoint failed; retrying once",
+    );
+    try {
+      await checkpointGeneratedTurn(input);
+      return true;
+    } catch (retryError) {
+      logger.warn(
+        { error: retryError, turnId: input.id },
+        "Generated-turn checkpoint failed; delivering the reply anyway",
+      );
+      return false;
+    }
+  }
+}
 
 async function retryTurnPersistence(turn: ChatTurn): Promise<void> {
   const existing = turnPersistInFlight.get(turn.id);
@@ -2001,6 +2091,7 @@ function turnStatusPayload(turn: ChatTurn) {
     user_message_id: turn.userMessageId,
     companion_affect: metadata.companion_affect ?? null,
     active_character_name: metadata.active_character_name ?? null,
+    ...(isCutOffReply(metadata) ? { reply_interrupted: true, cut_off: true } : {}),
   };
 }
 
@@ -2144,8 +2235,32 @@ router.post("/messages", async (req, res) => {
     return;
   }
 
-  const session = await loadStoreSession(userId, sessionId);
+  const sessionLoadTelemetry = new ChatPipelineTelemetry({
+    turnId: normalizeTurnId(body.turn_id || body.idempotency_key),
+    sessionId,
+    mode: body.mode || "solo",
+  });
+  let session: Awaited<ReturnType<typeof loadStoreSession>> | undefined;
+  try {
+    session = await loadStoreSession(userId, sessionId);
+  } catch (err) {
+    logger.error({ err }, "Chat message stream failed");
+    sessionLoadTelemetry.report("failed", {
+      error_class: chatErrorClass(err),
+      error_code: chatErrorCode(err),
+    });
+    if (!res.headersSent) {
+      res.status(503).json({ error: streamErrorMessage(err) });
+    }
+    return;
+  }
   if (!session) {
+    // A missing session is a client 404, not a pipeline failure. Keep the
+    // event so the exit is visible without counting it as a failed turn.
+    sessionLoadTelemetry.report("completed", {
+      error_class: "SessionNotFound",
+      error_code: "session_not_found",
+    });
     res.status(404).json({ error: "Session not found" });
     return;
   }
@@ -2184,6 +2299,15 @@ router.post("/messages", async (req, res) => {
     sessionId,
     mode,
   });
+  let pipelineClosed = false;
+  const closePipeline = (
+    outcome: "completed" | "failed",
+    details: Record<string, unknown> = {},
+  ) => {
+    if (pipelineClosed) return;
+    pipelineClosed = true;
+    telemetry.report(outcome, details);
+  };
   let flight = reserveChatTurnFlight(turnId, content);
   if (flight.mismatched) {
     turnId = normalizeTurnId("");
@@ -2194,15 +2318,28 @@ router.post("/messages", async (req, res) => {
     res.on("close", () => {
       if (joinerWatch.left()) flight.releaseWaiter();
     });
+    let joined: { ok: boolean; error?: unknown } = { ok: false };
     try {
-      await writeJoinedTurn(res, flight.result);
+      joined = await writeJoinedTurn(res, flight.result);
     } finally {
       flight.releaseWaiter();
       joinerWatch.cancel();
     }
+    closePipeline(joined.ok ? "completed" : "failed", {
+      joined: true,
+      ...(joined.ok
+        ? {}
+        : {
+            error_class: chatErrorClass(joined.error),
+            error_code: chatErrorCode(joined.error),
+          }),
+    });
     return;
   }
-  let turnStart = await beginChatTurn({
+  let turnStart!: Awaited<ReturnType<typeof beginChatTurn>>;
+  let adoptedSse: ReturnType<typeof openChatSse> | null = null;
+  try {
+  turnStart = await beginChatTurn({
     id: turnId,
     sessionId,
     userId,
@@ -2211,7 +2348,6 @@ router.post("/messages", async (req, res) => {
     metadata: turnMetadata,
   });
 
-  let adoptedSse: ReturnType<typeof openChatSse> | null = null;
   const followDurableTurn = async (turn: ChatTurn): Promise<boolean> => {
     const joinerWatch = watchClientLeave(res);
     const followed = await streamDurableFollow(
@@ -2224,7 +2360,21 @@ router.post("/messages", async (req, res) => {
       }),
     );
     joinerWatch.cancel();
-    if (followed.action === "finished") return false;
+    if (followed.action === "finished") {
+      if (followed.error) {
+        closePipeline("failed", {
+          joined: true,
+          error_class: chatErrorClass(followed.error),
+          error_code: chatErrorCode(followed.error),
+        });
+      } else {
+        closePipeline("completed", {
+          joined: true,
+          replayed: Boolean(followed.replayed),
+        });
+      }
+      return false;
+    }
     turnStart = { turn: followed.turn, created: false };
     adoptedSse = followed.sse;
     turnId = followed.turn.id;
@@ -2237,6 +2387,7 @@ router.post("/messages", async (req, res) => {
       const outcome = replayFlightOutcome(turnStart.turn);
       flight.resolve(outcome);
       writeFlightSse(res, outcome);
+      closePipeline("completed", { replayed: true });
       return;
     }
     if (reuse === "conflict") {
@@ -2265,6 +2416,29 @@ router.post("/messages", async (req, res) => {
       const handedOff = await followDurableTurn(turnStart.turn);
       if (!handedOff) return;
     }
+  }
+  } catch (err) {
+    logger.error({ err }, "Chat message stream failed");
+    try {
+      flight.fail(err);
+    } catch {
+      // The flight was already settled.
+    }
+    closePipeline("failed", {
+      error_class: chatErrorClass(err),
+      error_code: chatErrorCode(err),
+    });
+    if (!res.headersSent) {
+      res.status(503).json({ error: streamErrorMessage(err) });
+    } else {
+      writeSse(res, { error: streamErrorMessage(err) });
+      try {
+        if (!res.writableEnded) res.end();
+      } catch {
+        // The browser already left.
+      }
+    }
+    return;
   }
 
   // A second message in this conversation must not queue another generate
@@ -2318,16 +2492,44 @@ router.post("/messages", async (req, res) => {
       logger.warn({ error, turnId: turnStart.turn.id }, "Could not resolve the reply being replaced");
     }
   }
-  if (
-    await sessionHasOlderPendingChatTurn(
+  let olderPending = false;
+  try {
+    olderPending = await sessionHasOlderPendingChatTurn(
       userId,
       sessionId,
       turnStart.turn.id,
       turnStart.turn.createdAt,
       new Date(),
       discardedReply.turnIds,
-    )
-  ) {
+    );
+  } catch (err) {
+    logger.error({ err }, "Chat message stream failed");
+    try {
+      flight.fail(err);
+    } catch {
+      // The flight was already settled.
+    }
+    closePipeline("failed", {
+      error_class: chatErrorClass(err),
+      error_code: chatErrorCode(err),
+    });
+    if (!res.headersSent) {
+      res.status(503).json({ error: streamErrorMessage(err) });
+    } else {
+      writeSse(res, { error: streamErrorMessage(err) });
+      // A durable follow may already have opened the SSE heartbeat.
+      // That assignment sits in a closure, so control-flow still sees null.
+      const durableSse = adoptedSse as ReturnType<typeof openChatSse> | null;
+      durableSse?.stop();
+      try {
+        if (!res.writableEnded) res.end();
+      } catch {
+        // The browser already left.
+      }
+    }
+    return;
+  }
+  if (olderPending) {
     const busyError = new Error(CONVERSATION_BUSY_MESSAGE);
     flight.fail(busyError);
     try {
@@ -2341,6 +2543,10 @@ router.post("/messages", async (req, res) => {
         code: CONVERSATION_BUSY_CODE,
       });
     }
+    closePipeline("failed", {
+      error_class: "Error",
+      error_code: CONVERSATION_BUSY_CODE,
+    });
     return;
   }
 
@@ -2401,6 +2607,10 @@ router.post("/messages", async (req, res) => {
   hintLocalLlmWarm();
   let streamSucceeded = false;
   let fullResponse = "";
+  // Checkpoint metadata for a late persist retry if the first write timed out.
+  let pipelineMetadata: Record<string, unknown> = turnMetadata;
+  // True when the saved reply is a trimmed partial from a dropped stream.
+  let replyCutOff = false;
   let releaseBackground = () => {};
   const backgroundDone = new Promise<void>((resolve) => {
     releaseBackground = resolve;
@@ -2513,6 +2723,10 @@ router.post("/messages", async (req, res) => {
         [undefined, null, null] as const,
       )
     : Promise.resolve([undefined, null, null] as const);
+  // Already parallel. Wall time is the slowest branch. On the Worker a
+  // required read (characters or recent messages) that hits the 5s query
+  // cap is tried twice, so one stuck query is about 10s — not the sum of
+  // every lookup. Optional branches fall back in optionalChatContext.
   const [
     characters,
     memories,
@@ -2956,7 +3170,7 @@ router.post("/messages", async (req, res) => {
       maxTokens: number,
       reminder: string,
       noteStock: boolean,
-    ): Promise<string | null> => {
+    ): Promise<{ text: string; interrupted: boolean } | null> => {
       const retryBudgetMs = repeatRetryBudgetMs(Date.now() - requestStartedAt);
       if (noteStock) noteStockAssistantLine("retry");
       const retryOpen = openStreamAbort(retryBudgetMs);
@@ -2996,7 +3210,16 @@ router.post("/messages", async (req, res) => {
           usedProvider = retry.provider;
           usedBrand = retry.brand;
           failedOver = retry.failedOver;
-          return retriedText;
+          return {
+            text: retriedText,
+            interrupted:
+              interruptedStreamKeepsReply(retried) ||
+              keptPartialNeedsCutOff(
+                finalizeAssistantReply(retried.content),
+                retriedText,
+                retried,
+              ),
+          };
         }
         return null;
       } catch (error) {
@@ -3043,6 +3266,8 @@ router.post("/messages", async (req, res) => {
       }
       ensembleMinds = drafts.map((d) => d.label);
 
+      let ensembleSettled = "";
+      let ensemblePartial = false;
       if (drafts.length === 1) {
         // Only one mind produced anything usable — nothing to combine.
         usedModel = drafts[0]!.model;
@@ -3081,6 +3306,15 @@ router.post("/messages", async (req, res) => {
           stoppedEarly: streamed.stoppedEarly,
         });
         streamInterrupted = interruptedStreamKeepsReply(streamed);
+        replyCutOff = streamInterrupted;
+        ensembleSettled = fullResponse;
+        ensemblePartial =
+          !streamInterrupted &&
+          keptPartialNeedsCutOff(
+            finalizeAssistantReply(streamed.content),
+            ensembleSettled,
+            streamed,
+          );
       }
       const ensembleStock = !crisisTurn && replyIsStock(fullResponse);
       const ensembleFourth = replyBreaksFourthWall(fullResponse) && fourthWallRetryOpen();
@@ -3108,11 +3342,22 @@ router.post("/messages", async (req, res) => {
               )
             : null;
         if (recovered) {
-          fullResponse = recovered;
+          fullResponse = recovered.text;
+          replyCutOff = recovered.interrupted;
         } else if (ensembleStock || ensembleSwap) {
           fullResponse = stockDeflection();
           if (ensembleStock) noteStockAssistantLine("deflect");
         }
+      }
+      // A stall, or a token cap that shortened the text or never finished
+      // a sentence, is still a partial. Mark it only when the role-swap /
+      // stock guards left that text in place, so those replacements still run.
+      if (
+        !replyCutOff &&
+        ensemblePartial &&
+        fullResponse.trim() === ensembleSettled.trim()
+      ) {
+        replyCutOff = true;
       }
       if (fullResponse.trim()) emitDelta(fullResponse);
     } else {
@@ -3201,6 +3446,7 @@ router.post("/messages", async (req, res) => {
       // An interrupted reply that already has text is a finished turn: trim,
       // persist, send done, and do not spend the extra regenerate.
       streamInterrupted = interruptedStreamKeepsReply(streamed);
+      replyCutOff = streamInterrupted;
       fullResponse = settleCappedReply(finalizeAssistantReply(streamed.content), {
         timedOut: streamed.timedOut,
         interrupted: streamed.interrupted,
@@ -3210,6 +3456,14 @@ router.post("/messages", async (req, res) => {
       if (localHost && !flushed && !cutReason && held && !fullResponse) {
         fullResponse = held;
       }
+      const mainSettled = fullResponse;
+      const mainPartial =
+        !streamInterrupted &&
+        keptPartialNeedsCutOff(
+          finalizeAssistantReply(streamed.content) || held,
+          mainSettled,
+          streamed,
+        );
 
       const retryBudgetMs = repeatRetryBudgetMs(Date.now() - requestStartedAt);
       const copiedReply = crisisTurn
@@ -3308,6 +3562,13 @@ router.post("/messages", async (req, res) => {
             !isRoleSwapReply(retriedText, activeChar?.name)
           ) {
             fullResponse = retriedText;
+            replyCutOff =
+              interruptedStreamKeepsReply(retried) ||
+              keptPartialNeedsCutOff(
+                finalizeAssistantReply(retried.content),
+                retriedText,
+                retried,
+              );
             flushed = false;
             repeatResolved = true;
             usedModel = retry.model;
@@ -3334,17 +3595,18 @@ router.post("/messages", async (req, res) => {
           stockLine,
         );
         if (recovered) {
-          fullResponse = recovered;
+          fullResponse = recovered.text;
+          replyCutOff = recovered.interrupted;
           flushed = false;
         }
       }
       // A repeat stop leaves only the opening fragment. Never save or show
       // that fragment when the retry was skipped or failed. Crisis turns
       // keep whatever the model wrote.
-      if (!crisisTurn && cutReason === "repeat" && !repeatResolved) {
+      if (!replyCutOff && !crisisTurn && cutReason === "repeat" && !repeatResolved) {
         fullResponse = stockDeflection();
         flushed = false;
-      } else if (!crisisTurn) {
+      } else if (!replyCutOff && !crisisTurn) {
         const unresolvedStock =
           replyIsStock(fullResponse) ||
           (cutReason === "stock" &&
@@ -3365,6 +3627,13 @@ router.post("/messages", async (req, res) => {
           fullResponse = stockDeflection();
           flushed = false;
         }
+      }
+      if (
+        !replyCutOff &&
+        mainPartial &&
+        fullResponse.trim() === mainSettled.trim()
+      ) {
+        replyCutOff = true;
       }
       if (localHost && !flushed && fullResponse.trim()) {
         emitDelta(fullResponse);
@@ -3394,7 +3663,9 @@ router.post("/messages", async (req, res) => {
     const evolvedCompanion =
       skipAffect || !companionAffect
         ? null
-        : evolveCompanionAffectFromCompanion(companionAffect, fullResponse);
+        : replyCutOff
+          ? companionAffect
+          : evolveCompanionAffectFromCompanion(companionAffect, fullResponse);
     const evolvedAffectSnapshot = evolvedCompanion
       ? toCompanionAffectSnapshot(
           evolvedCompanion,
@@ -3429,25 +3700,20 @@ router.post("/messages", async (req, res) => {
       companion_affect: skipAffect ? null : evolvedAffectSnapshot,
       mood_self_state: skipAffect ? null : evolvedMoodSelfState,
       ...(skipAffect ? { skip_affect: true, reply_action: replyAction } : {}),
+      ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
     };
-    try {
-      await telemetry.measure(
-        "turn_checkpoint_ms",
-        checkpointGeneratedTurn({
-          id: turnId,
-          userId,
-          assistantContent: fullResponse,
-          metadata: generatedMetadata,
-        }),
-      );
-    } catch (error) {
-      // The model already replied. A Hyperdrive blip here must not replace
-      // the answer with "Database unavailable" — leftover-turn repair retries.
-      logger.warn(
-        { error, turnId },
-        "Generated-turn checkpoint failed; delivering the reply anyway",
-      );
-    }
+    pipelineMetadata = generatedMetadata;
+    // One checkpoint, then `done`. A second attempt waits in the background
+    // so a database timeout cannot hold the reply for another full window.
+    const checkpointSaved = await telemetry.measure(
+      "turn_checkpoint_ms",
+      checkpointGeneratedTurnOnce({
+        id: turnId,
+        userId,
+        assistantContent: fullResponse,
+        metadata: generatedMetadata,
+      }),
+    );
     // Close the SSE as soon as the model is done. Persistence / evolution LLM
     // calls used to run before `done`, so the Chat page stayed on Processing...
     // until those finished (or hung).
@@ -3475,9 +3741,10 @@ router.post("/messages", async (req, res) => {
       turn_id: turnId,
       user_message_id: turnStart.turn.userMessageId,
       assistant_message_id: turnStart.turn.assistantMessageId,
-      persistence_status: "generated",
+      persistence_status: checkpointSaved ? "generated" : "checkpoint_failed",
       persistence_owner: persistenceOwner,
       companion_affect: evolvedAffectSnapshot,
+      ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
     });
     flight.resolve({
       content: fullResponse,
@@ -3498,33 +3765,74 @@ router.post("/messages", async (req, res) => {
         turn_id: turnId,
         user_message_id: turnStart.turn.userMessageId,
         assistant_message_id: turnStart.turn.assistantMessageId,
-        persistence_status: "generated",
+        persistence_status: checkpointSaved ? "generated" : "checkpoint_failed",
         persistence_owner: persistenceOwner,
         companion_affect: evolvedAffectSnapshot,
+        ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
         joined: true,
       },
     });
-    telemetry.report("completed", {
+    closePipeline("completed", {
       provider: usedProvider,
       fallback_provider: failedOver ? usedProvider : null,
       model: usedModel,
       stream_stalled: false,
-      persistence_status: "generated",
+      persistence_status: checkpointSaved ? "generated" : "checkpoint_failed",
     });
   } catch (err) {
-    logger.error({ err }, "Chat message stream failed");
-    flight.fail(err);
-    await markTurnFailed(turnId, userId, err).catch(() => {});
-    writeSse(res, {
-      error: streamErrorMessage(err),
-      ...(crisisResourceCard ? { crisis_resource: crisisResourceCard } : {}),
-    });
-    telemetry.report("failed", {
-      provider: usedProvider,
-      model: usedModel,
-      stream_timeout: err instanceof LlmStreamTimeoutError,
-      error_class: chatErrorClass(err),
-    });
+    const kept = String(fullResponse || "").trim();
+    if (replySurvivesDatabaseTimeout(kept, telemetry.currentPhase(), err)) {
+      logger.warn(
+        { err, turnId },
+        "Database timeout after the reply started; keeping the text",
+      );
+      // The database just timed out. Send the text now. The background
+      // persist retries the checkpoint; this catch does not wait on it.
+      streamSucceeded = true;
+      pipelineMetadata = {
+        ...pipelineMetadata,
+        ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
+      };
+      const keptDone = {
+        done: true,
+        visible: kept,
+        ...(crisisResourceCard ? { crisis_resource: crisisResourceCard } : {}),
+        model: usedModel,
+        tier: usedTier,
+        provider: usedProvider,
+        brand: usedBrand,
+        failed_over: failedOver,
+        turn_id: turnId,
+        user_message_id: turnStart.turn.userMessageId,
+        assistant_message_id: turnStart.turn.assistantMessageId,
+        persistence_status: "checkpoint_failed",
+        persistence_owner: persistenceOwner,
+        ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
+      };
+      writeSse(res, keptDone);
+      flight.resolve({ content: kept, done: { ...keptDone, joined: true } });
+      closePipeline("completed", {
+        provider: usedProvider,
+        model: usedModel,
+        persistence_status: "checkpoint_failed",
+        database_timeout: true,
+      });
+    } else {
+      logger.error({ err }, "Chat message stream failed");
+      flight.fail(err);
+      writeSse(res, {
+        error: streamErrorMessage(err),
+        ...(crisisResourceCard ? { crisis_resource: crisisResourceCard } : {}),
+      });
+      closePipeline("failed", {
+        provider: usedProvider,
+        model: usedModel,
+        stream_timeout: err instanceof LlmStreamTimeoutError,
+        error_class: chatErrorClass(err),
+        error_code: chatErrorCode(err),
+      });
+      void markTurnFailed(turnId, userId, err).catch(() => {});
+    }
   } finally {
     clearInterval(leaseHeartbeat);
     stopHeartbeat();
@@ -3544,13 +3852,49 @@ router.post("/messages", async (req, res) => {
       }
       if (!streamSucceeded || !String(fullResponse).trim()) return;
 
+      // Client-owned turns leave before this runs. Retry a missing
+      // checkpoint here so the second attempt never blocks `done`.
+      // A retry that already replaced this turn is left alone.
+      let generatedTurn: Awaited<ReturnType<typeof readChatTurn>> = null;
+      try {
+      generatedTurn = await readChatTurn(turnId, userId);
+      if (!generatedTurn || !turnMetadataReplaced(generatedTurn.metadata)) {
+        if (
+          generatedTurn &&
+          !String(generatedTurn.assistantContent || "").trim() &&
+          String(fullResponse).trim()
+        ) {
+          const saved = await checkpointGeneratedTurnWithRetry({
+            id: turnId,
+            userId,
+            assistantContent: fullResponse,
+            metadata: pipelineMetadata,
+          });
+          if (saved) generatedTurn = await readChatTurn(turnId, userId);
+        }
+        if (
+          !generatedTurn ||
+          !String(generatedTurn.assistantContent || "").trim()
+        ) {
+          void markTurnFailed(
+            turnId,
+            userId,
+            new Error("Generated turn checkpoint is missing"),
+          ).catch(() => {});
+        }
+      }
+      } catch (error) {
+        logger.warn({ error, turnId }, "Background checkpoint retry failed");
+      }
+
       const lateClient = clientLeft();
       const serverPersist = persistenceOwner === "server" && shouldPersist;
       if (serverPersist || lateClient) {
       const persistenceStartedAt = Date.now();
       try {
-        const generatedTurn = await readChatTurn(turnId, userId);
-        if (!generatedTurn) throw new Error("Generated turn checkpoint is missing");
+        if (!generatedTurn || !String(generatedTurn.assistantContent || "").trim()) {
+          throw new Error("Generated turn checkpoint is missing");
+        }
         await retryTurnPersistence(generatedTurn);
         logger.info(
           {
@@ -3610,6 +3954,7 @@ router.post("/messages", async (req, res) => {
           : 0,
         synchroState,
         companionAffect,
+        replyCutOff,
       });
     } catch (postProcessError) {
       logger.warn(

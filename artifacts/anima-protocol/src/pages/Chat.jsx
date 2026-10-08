@@ -143,7 +143,7 @@ import { parseGroupResponse } from "@/lib/parseGroupResponse";
 import { buildGroupPrompt } from "@/lib/buildGroupPrompt";
 import { streamChatReplyWithTurnRetry } from "@/lib/streamChatReply";
 import { scheduleLocationContextInject } from "@/lib/locationContextInject";
-import { finalizeAssistantReply } from "@/lib/visibleAssistantReply";
+import { finalizeAssistantReply, trimToLastFullSentence } from "@/lib/visibleAssistantReply";
 import {
   CONTINUE_IN_FIRST_PERSON,
   buildLeanSoloClientContext,
@@ -162,6 +162,7 @@ import {
 } from "@/lib/contentRatingInstruction";
 import { retainStreamingOnError } from "@/lib/retainStreamingOnError";
 import { chatTurnErrorMessage, shouldCheckBackForCompanionReply } from "@/lib/chatTurnError";
+import { replyWasKept, reportChatClientFailure } from "@/lib/chatClientFailure";
 import {
   browserLocalStorage,
   clearHeldDraftIfUnchanged,
@@ -196,6 +197,7 @@ import {
   lateReplyRecoveryPlan,
   lateReplyWatchSupersededBy,
   dropTurnPlaceholder,
+  cutOffReplyFields,
   mergeLateReplyIntoMessages,
   paintLateCompanionReply,
   pollLateCompanionReply,
@@ -1632,6 +1634,7 @@ export default function Chat() {
               userContent: turn.user_content,
               assistantContent: text,
               characterName: turn.active_character_name,
+              ...cutOffReplyFields(turn),
             }),
           };
         });
@@ -1789,6 +1792,7 @@ export default function Chat() {
               assistantContent: text,
               characterName: live.active_character_name || pending.characterName,
               createdAt: live.created_at,
+              ...cutOffReplyFields(live),
             }),
           };
         });
@@ -1837,6 +1841,7 @@ export default function Chat() {
               assistantContent: lateText,
               characterName: live.active_character_name,
               createdAt: live.created_at,
+              ...cutOffReplyFields(live),
             }),
           };
         });
@@ -2583,7 +2588,8 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         userMessage.id = `${turnId}:user`;
         userMessage.turn_id = turnId;
       }
-      if (!skipAffect && ownModelTurn?.learning && resultPayload.brand === "own") {
+      const replyCutOff = cutOffReplyFields(resultPayload);
+      if (!skipAffect && !replyCutOff.reply_interrupted && ownModelTurn?.learning && resultPayload.brand === "own") {
         // "Always learning": Anima drafts what it would have said and the
         // own model learns it in the background.
         queueOwnModelLesson({ turnId, messages: messagesForModel(updatedMessages) });
@@ -2600,7 +2606,10 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         throw new Error("The companion returned an empty reply. Please try again.");
       }
       lateTurnRef.current = null;
-      if (hiddenThread.hidden.jack_in.speak_first || hiddenThread.consumeReturn().pendingId) {
+      if (
+        !replyCutOff.reply_interrupted &&
+        (hiddenThread.hidden.jack_in.speak_first || hiddenThread.consumeReturn().pendingId)
+      ) {
         hiddenThread.finishIntegration(result);
         hiddenThread.clearReturnFlag();
       }
@@ -2642,8 +2651,9 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // Companions (onboard Serenity and user-created Animas) may also emit
       // [IMAGE: ...] so this turn can attach a generated still.
       const eventTagRegex = /\[(EMOTION|LOCATION):([^\]]+)\]/gi;
-      const wantsImage =
-        parseImagePrompts(result).length > 0 || userRequestedImage(content);
+      const wantsImage = replyCutOff.reply_interrupted
+        ? userRequestedImage(content)
+        : parseImagePrompts(result).length > 0 || userRequestedImage(content);
       let imageAttachments = [];
       if (wantsImage) {
         const imageProgressText = stripImageTags(result.replace(eventTagRegex, "")).trim() || result;
@@ -2656,7 +2666,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         }));
         try {
           const resolved = await resolveChatImageAttachments({
-            replyText: result,
+            replyText: replyCutOff.reply_interrupted ? "" : result,
             userText: content,
             character: activeChar,
             generateImage: (args) => base44.integrations.Core.GenerateImage(args),
@@ -2682,7 +2692,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       const eventMessages = [];
       let match;
       const tagScanner = new RegExp(eventTagRegex.source, "gi");
-      while ((match = tagScanner.exec(result)) !== null) {
+      while (!replyCutOff.reply_interrupted && (match = tagScanner.exec(result)) !== null) {
         const kind = match[1].toLowerCase();
         const value = match[2].trim();
         eventMessages.push({
@@ -2709,7 +2719,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
               [activeChar.id]: { ...(prev[activeChar.id] || {}), ...fromAffect },
             }));
           }
-        } else {
+        } else if (!replyCutOff.reply_interrupted) {
           setCurrentMood(detectMood(result));
         }
       }
@@ -2732,6 +2742,9 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // is marked (and can be taught) after it is saved and reloaded.
       if (resultPayload.brand) {
         newAiMessages = newAiMessages.map((m) => ({ ...m, llm_brand: resultPayload.brand }));
+      }
+      if (replyCutOff.reply_interrupted) {
+        newAiMessages = newAiMessages.map((m) => ({ ...m, ...replyCutOff }));
       }
 
       if (imageAttachments.length && newAiMessages[0]) {
@@ -2803,8 +2816,9 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       loadSessions().catch(() => {});
 
       // Retry and edit already wrote mood, memory, and the other once-per-turn
-      // side effects. A second pass would double-count affect.
-      if (!skipAffect) {
+      // side effects. A second pass would double-count affect. A cut-off
+      // reply is not sent into these jobs — the half-reply is not a memory.
+      if (!skipAffect && !replyCutOff.reply_interrupted) {
       // Update calendar based on elapsed real-world time (every 10 messages)
       if (finalMessages.length % 10 === 0) {
         base44.functions.invoke("updateSeasonalContext", {
@@ -3362,10 +3376,12 @@ Return JSON:
         // If state was mid-frame and lost the partial, recover from the local
         // accumulator / error.partialContent when available.
         if (!retained) {
-          const partial = finalizeAssistantReply(
-            err?.partialContent,
-            streamedSoFar,
-          );
+          const partial = trimToLastFullSentence(
+            finalizeAssistantReply(
+              err?.partialContent,
+              streamedSoFar,
+            ),
+          ).trim();
           if (partial) {
             retained = {
               role: "assistant",
@@ -3375,6 +3391,8 @@ Return JSON:
               is_streaming: false,
               turn_id: turnId,
               id: `${turnId}:assistant`,
+              reply_interrupted: true,
+              cut_off: true,
             };
             return { ...prev, messages: [...messages, retained] };
           }
@@ -3384,6 +3402,7 @@ Return JSON:
 
       // Best-effort persist so a deferred cross-device sync can't wipe the kept reply
       // (or the optimistic user turn that was never written because persist:false).
+      let saveFailed = false;
       if (sendSessionId) {
         try {
           if (!omitUserRow && !userMessagePersisted && content.trim()) {
@@ -3398,7 +3417,28 @@ Return JSON:
           // Skip the deferred remote refresh — it would replace local state with
           // server history that does not include this unpersisted turn.
           pendingRemoteSyncRef.current = false;
+          saveFailed = true;
         }
+      }
+      const partialKept = replyWasKept({
+        retained,
+        streamed: streamedSoFar,
+        partial: err?.partialContent,
+      });
+      reportChatClientFailure({
+        error: err,
+        sessionId: sendSessionId,
+        turnId,
+        partialKept,
+      });
+      if (saveFailed) {
+        reportChatClientFailure({
+          error: err,
+          sessionId: sendSessionId,
+          turnId,
+          partialKept: true,
+          saveFailed: true,
+        });
       }
 
       const crisisOnError = crisisCardFromPayload(err);
@@ -3462,6 +3502,7 @@ Return JSON:
                 assistantContent: lateText,
                 characterName: late.active_character_name || replySpeakerName,
                 createdAt: late.created_at,
+                ...cutOffReplyFields(late),
               },
               { superseded: Boolean(watch?.superseded) },
             );

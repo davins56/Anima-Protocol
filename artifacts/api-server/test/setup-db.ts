@@ -95,10 +95,10 @@ async function dropSchema() {
   const client = adminClient();
   await client.connect();
   try {
-    // Parallel files drop their schemas while another worker may still hold
-    // a row lock. Postgres reports that as a deadlock; the next attempt
-    // succeeds once that transaction ends.
-    for (let attempt = 0; attempt < 4; attempt++) {
+    // Parallel files, and a chat turn's background checkpoint, can still hold
+    // a row lock when this schema is dropped. Postgres aborts one side of
+    // that deadlock; retry the drop after the other transaction finishes.
+    for (let attempt = 0; attempt < 4; attempt += 1) {
       try {
         await client.query(`DROP SCHEMA IF EXISTS "${TEST_SCHEMA}" CASCADE`);
         return;

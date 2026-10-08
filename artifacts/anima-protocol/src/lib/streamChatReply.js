@@ -3,6 +3,24 @@ import {
   finalizeAssistantReply,
 } from "./visibleAssistantReply";
 
+function rememberChatClientTrace(err, trace) {
+  if (!err || typeof err !== "object") return;
+  if (Object.prototype.hasOwnProperty.call(err, "chatClientTrace")) return;
+  try {
+    Object.defineProperty(err, "chatClientTrace", {
+      value: trace,
+      enumerable: false,
+      configurable: true,
+    });
+  } catch {
+    try {
+      err.chatClientTrace = trace;
+    } catch {
+      /* A frozen error still propagates. The report can classify without a trace. */
+    }
+  }
+}
+
 /**
  * Consume a chat SSE async-iterable and surface tokens as they arrive.
  *
@@ -11,6 +29,7 @@ import {
  * is the authoritative paint so an unclosed DeepSeek `<think>` still lands.
  *
  * onDelta receives the accumulated visible text so far.
+ * A thrown error gets `chatClientTrace` (timings and flags only, never reply text).
  *
  * @param {AsyncIterable<{ content?: string, done?: boolean, error?: string, status?: string }>} events
  * @param {{ onDelta?: (accumulated: string) => void, onFirstToken?: (accumulated: string) => void, onStatus?: (event: object) => void }} [hooks]
@@ -24,6 +43,35 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus 
   let rafId = null;
   const replyFilter = createVisibleReplyFilter();
   const hasRaf = typeof requestAnimationFrame === "function";
+  const startedAt = Date.now();
+  let firstTokenAt = null;
+  let sawQueueWait = false;
+  let leftQueue = false;
+  let serverError = false;
+
+  const currentTrace = () => ({
+    startedAt,
+    firstTokenAt,
+    sawQueueWait,
+    leftQueue: leftQueue || firstTokenAt != null,
+    sawFirstToken: firstTokenAt != null,
+    partialKept: Boolean(String(content || "").trim()),
+    serverError,
+  });
+
+  const noteStreamStatus = (event) => {
+    if (!event || typeof event !== "object") return;
+    if (event.status === "waiting") sawQueueWait = true;
+    const progressPhase = event.phase;
+    if (
+      event.status === "thinking" ||
+      event.status === "ensemble" ||
+      (event.status === "progress" &&
+        (progressPhase === "waking" || progressPhase === "generating"))
+    ) {
+      leftQueue = true;
+    }
+  };
 
   const flush = () => {
     rafId = null;
@@ -50,6 +98,7 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus 
     content = visible;
     if (!sawFirst) {
       sawFirst = true;
+      if (firstTokenAt == null) firstTokenAt = Date.now();
       onFirstToken?.(content);
     }
     scheduleDelta(content);
@@ -61,12 +110,14 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus 
         crisisResource = event.crisis_resource;
       }
       if (event?.error) {
+        serverError = true;
         const err = new Error(event.error);
         if (content) err.partialContent = content;
         if (crisisResource) err.crisisResource = crisisResource;
         throw err;
       }
       if (event?.status) {
+        noteStreamStatus(event);
         onStatus?.(event);
       }
       if (event?.content && !event?.done) {
@@ -84,6 +135,9 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus 
         break;
       }
     }
+  } catch (err) {
+    rememberChatClientTrace(err, currentTrace());
+    throw err;
   } finally {
     if (rafId != null && typeof cancelAnimationFrame === "function") {
       cancelAnimationFrame(rafId);

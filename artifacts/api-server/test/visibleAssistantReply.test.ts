@@ -3,8 +3,11 @@ import {
   createVisibleReplyFilter,
   finalizeAssistantReply,
   hasThinkMarkup,
+  isCutOffReply,
   settleCappedReply,
   trimToLastCompleteSentence,
+  keptPartialNeedsCutOff,
+  trimToLastFullSentence,
   visibleAssistantReply,
 } from "../src/lib/visibleAssistantReply";
 
@@ -117,13 +120,58 @@ describe("trimToLastCompleteSentence", () => {
     ).toBe("I stay. *She looks across the room*");
   });
 
-  it("trims an interrupted reply the same way as a stall", () => {
+  it("cuts an interrupted reply back to the last full sentence", () => {
     expect(
       settleCappedReply("You came back. I was thin", {
         interrupted: true,
         timedOut: true,
       }),
     ).toBe("You came back.");
+    expect(
+      settleCappedReply(
+        "I stay. *She looks across the room* and the quiet, undist",
+        { interrupted: true, timedOut: true },
+      ),
+    ).toBe("I stay.");
+    expect(trimToLastFullSentence("no punctuation at all")).toBe(
+      "no punctuation at all",
+    );
+    expect(trimToLastFullSentence("Earlier. I spoke to Dr.")).toBe("Earlier.");
+    expect(trimToLastFullSentence("Earlier. I live in the U.S.")).toBe(
+      "Earlier. I live in the U.S.",
+    );
+    expect(trimToLastFullSentence("I moved to the U.S. last year and then")).toBe(
+      "I moved to the U.S. last year and then",
+    );
+    expect(trimToLastFullSentence("I moved to the U.S. Then I left. and")).toBe(
+      "I moved to the U.S. Then I left.",
+    );
+    expect(keptPartialNeedsCutOff("I stay. and the", "I stay.", { timedOut: true })).toBe(
+      true,
+    );
+    expect(
+      keptPartialNeedsCutOff("I stay. and the", "I stay.", { finishReason: "length" }),
+    ).toBe(true);
+    expect(
+      keptPartialNeedsCutOff("I stay.", "I stay.", { finishReason: "length" }),
+    ).toBe(false);
+    expect(
+      keptPartialNeedsCutOff(
+        "and the quiet undist",
+        "and the quiet undist",
+        { finishReason: "length" },
+      ),
+    ).toBe(true);
+    expect(
+      keptPartialNeedsCutOff("I spoke to Dr.", "I spoke to Dr.", {
+        finishReason: "length",
+      }),
+    ).toBe(true);
+    expect(keptPartialNeedsCutOff("I stay.", "", { timedOut: true })).toBe(false);
+    expect(keptPartialNeedsCutOff("I stay.", "I stay.", {})).toBe(false);
+    expect(isCutOffReply({ reply_interrupted: true })).toBe(true);
+    expect(isCutOffReply({ cut_off: true })).toBe(true);
+    expect(isCutOffReply({ interrupted: true })).toBe(false);
     expect(
       settleCappedReply("You came back. I was thin", { stoppedEarly: true }),
     ).toBe("You came back. I was thin");
