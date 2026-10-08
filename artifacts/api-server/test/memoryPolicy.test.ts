@@ -20,6 +20,7 @@ import {
   appendTurnMemoryFact,
   buildMemoryPolicyJob,
   buildMemoryReembedJob,
+  buildUserOnlyMemoryPolicyJob,
   consolidateExchange,
   decideMemoryCandidate,
   factsWithoutTurn,
@@ -533,6 +534,200 @@ describe("memory policy persistence", () => {
     expect(factsWithoutTurn(facts, "")).toEqual(facts);
   });
 
+  it("keeps his name on retry, drops her reply, and protects corrections", () => {
+    const exchanged = consolidateExchange({
+      userContent: "My name is Sam.",
+      assistantContent: "I hear you.",
+      companionName: "Natasha Romanoff",
+      turnId: "turn_old",
+    });
+    expect(policyOf(exchanged.facts).some((fact) => fact.object === "Sam")).toBe(true);
+    const companion = {
+      type: "factual" as const,
+      memory_class: "core" as const,
+      text: "Protected identity proposal (not applied): Natasha Romanoff — name Natasha Romanoff.",
+      subject: "companion",
+      predicate: "name",
+      object: "Natasha Romanoff",
+      about: "companion" as const,
+      importance: 0.99,
+      confidence: 0.8,
+      emotional_weight: 1,
+      identity_relevant: true,
+      protected: true,
+      proposal: true,
+      fact_id: "companion-name",
+      created_at: "2026-04-01T00:00:00.000Z",
+      turn_id: "turn_old",
+    };
+    const corrected = {
+      type: "factual" as const,
+      memory_class: "semantic" as const,
+      text: "The human enjoys chess.",
+      subject: "user",
+      predicate: "enjoys",
+      object: "chess",
+      about: "user" as const,
+      importance: 0.7,
+      confidence: 0.7,
+      emotional_weight: 0,
+      identity_relevant: false,
+      fact_id: "user-chess",
+      created_at: "2026-04-01T00:00:00.000Z",
+      turn_id: "turn_old",
+      user_edited: true,
+    };
+    const tombstone = {
+      forgotten: true as const,
+      fact_id: "user-walk",
+      about: "user" as const,
+      subject: "user",
+      predicate: "did",
+      object: "walked the bridge",
+      deleted_at: "2026-04-02T00:00:00.000Z",
+      turn_id: "turn_old",
+      source_text: "The human did this: walked the bridge.",
+    };
+    const unsupported = {
+      ...corrected,
+      text: "The human lives in Paris.",
+      predicate: "lives_in",
+      object: "Paris",
+      fact_id: "user-paris",
+      user_edited: false,
+    };
+    const facts = [
+      ...exchanged.facts,
+      companion,
+      { type: "turn", turn_id: "turn_old", text: "User: My name is Sam. | Companion: old" },
+      corrected,
+      tombstone,
+      unsupported,
+    ];
+    const retry = {
+      replyAction: "retry" as const,
+      userContent: "My name is Sam.",
+      companionName: "Natasha Romanoff",
+      replacingTurnId: "turn_new",
+    };
+    const kept = factsWithoutTurn(facts, "turn_old", retry);
+    const names = policyOf(kept).filter((fact) => fact.object === "Sam");
+    expect(names).toHaveLength(1);
+    expect(names[0]?.about).toBe("user");
+    expect(names[0]?.turn_id).toBe("turn_new");
+    expect(policyOf(kept).some((fact) => fact.about === "companion")).toBe(false);
+    expect(kept.some((item) => isPolicyFact(item) === false && (item as { type?: string }).type === "turn")).toBe(
+      false,
+    );
+    expect(policyOf(kept).some((fact) => fact.object === "Paris")).toBe(false);
+    expect(policyOf(kept).find((fact) => fact.fact_id === "user-chess")?.user_edited).toBe(true);
+    expect(kept.some((item) => isForgottenFact(item) && item.fact_id === "user-walk")).toBe(true);
+
+    const edited = factsWithoutTurn(facts, "turn_old", {
+      replyAction: "edit",
+      userContent: "My name is Sam.",
+      companionName: "Natasha Romanoff",
+      replacingTurnId: "turn_new",
+    });
+    expect(policyOf(edited).some((fact) => fact.object === "Sam" || fact.about === "companion")).toBe(false);
+    expect(policyOf(edited).find((fact) => fact.fact_id === "user-chess")?.user_edited).toBe(true);
+    expect(edited.some((item) => isForgottenFact(item) && item.object === "walked the bridge")).toBe(true);
+
+    const again = factsWithoutTurn(kept, "turn_new", {
+      ...retry,
+      replacingTurnId: "turn_third",
+    });
+    expect(policyOf(again).filter((fact) => fact.object === "Sam")).toHaveLength(1);
+    expect(policyOf(again).find((fact) => fact.object === "Sam")?.turn_id).toBe("turn_third");
+  });
+
+  it("does not store the same fact key twice when retry retags it", () => {
+    const first = consolidateExchange({
+      userContent: "My name is Sam.",
+      assistantContent: "I hear you.",
+      companionName: "Natasha Romanoff",
+      turnId: "turn_earlier",
+    });
+    const sam = policyOf(first.facts)[0];
+    expect(sam?.object).toBe("Sam");
+    const kept = factsWithoutTurn(
+      [sam, { ...sam, turn_id: "turn_old" }],
+      "turn_old",
+      {
+        replyAction: "retry",
+        userContent: "My name is Sam.",
+        companionName: "Natasha Romanoff",
+        replacingTurnId: "turn_new",
+      },
+    );
+    expect(policyOf(kept)).toHaveLength(1);
+    expect(policyOf(kept)[0]?.turn_id).toBe("turn_earlier");
+  });
+
+  it("saves only his words when consolidating a retry, and does not save them twice", () => {
+    const job = buildUserOnlyMemoryPolicyJob({
+      userId: "user",
+      characterId: "character",
+      sessionId: "session",
+      turnId: "turn_new",
+      companionName: "Natasha Romanoff",
+      userContent: "My name is Sam.",
+    });
+    expect(job?.kind).toBe("memory-policy");
+    expect(job?.payload.userOnly).toBe(true);
+    expect(job?.payload.assistantContent).toBe("");
+    expect(job?.payload.userContent).toBe("My name is Sam.");
+    expect(job?.payload.turnId).toBe("turn_new");
+    expect(
+      buildUserOnlyMemoryPolicyJob({
+        userId: "user",
+        characterId: "character",
+        sessionId: "session",
+        turnId: "turn_new",
+        companionName: "Natasha Romanoff",
+        userContent: "hi",
+      }),
+    ).toBeNull();
+
+    const named = consolidateExchange({
+      userOnly: true,
+      userContent: "My name is Sam.",
+      assistantContent: "I am Natasha Romanoff.",
+      companionName: "Natasha Romanoff",
+      emotionalIntensity: 1,
+      relationshipImportance: 1,
+      turnId: "turn_new",
+    });
+    expect(policyOf(named.facts)).toHaveLength(1);
+    expect(policyOf(named.facts)[0]?.about).toBe("user");
+    expect(policyOf(named.facts)[0]?.object).toBe("Sam");
+
+    const first = consolidateExchange({
+      userOnly: true,
+      userContent: "Yesterday I started a new job at the docks.",
+      assistantContent: "I am Natasha Romanoff.",
+      companionName: "Natasha Romanoff",
+      emotionalIntensity: 1,
+      relationshipImportance: 1,
+    });
+    expect(policyOf(first.facts)).toHaveLength(1);
+    expect(policyOf(first.facts)[0]?.memory_class).toBe("episodic");
+    const second = consolidateExchange({
+      userOnly: true,
+      userContent: "Yesterday I started a new job at the docks.",
+      assistantContent: "I am Natasha Romanoff.",
+      companionName: "Natasha Romanoff",
+      emotionalIntensity: 1,
+      relationshipImportance: 1,
+      existingFacts: first.facts,
+    });
+    expect(second.saved).toHaveLength(0);
+    expect(second.promoted).toBe(0);
+    expect(policyOf(second.facts)).toHaveLength(1);
+    expect(policyOf(second.facts)[0]?.memory_class).toBe("episodic");
+    expect(policyOf(second.facts).some((fact) => fact.about === "companion")).toBe(false);
+  });
+
   it("does not store a memory for a reply the user already replaced", async () => {
     const userId = `${PREFIX}user`;
     const characterId = `${PREFIX}replaced`;
@@ -574,6 +769,84 @@ describe("memory policy persistence", () => {
       .limit(1);
     expect(memory?.facts).toEqual([]);
     await db.delete(chatTurns).where(eq(chatTurns.id, turnId));
+  });
+
+  it("saves his fact once on the replacing turn when retry lands before the old job", async () => {
+    const userId = `${PREFIX}user`;
+    const characterId = `${PREFIX}user-only`;
+    const oldId = `turn_${PREFIX}user_only_old`;
+    const newId = `turn_${PREFIX}user_only_new`;
+    await beginChatTurn({
+      id: oldId,
+      sessionId: `${PREFIX}sess`,
+      userId,
+      userContent: "My name is Sam.",
+      persistenceOwner: "client",
+      metadata: { character_ids: [characterId] },
+    });
+    await markChatTurnReplaced(oldId, userId, newId);
+    await beginChatTurn({
+      id: newId,
+      sessionId: `${PREFIX}sess`,
+      userId,
+      userContent: "My name is Sam.",
+      persistenceOwner: "client",
+      metadata: { reply_action: "retry", skip_affect: true, character_ids: [characterId] },
+    });
+    await db.insert(companionMemories).values({
+      userId,
+      characterId,
+      summary: "",
+      facts: [],
+      emotionalState: { selfState: { intensity: 100 }, synchroStrength: 100 },
+      resonanceNotes: "",
+    });
+
+    await runDeferredMemoryPolicy(
+      {
+        userId,
+        characterId,
+        turnId: oldId,
+        companionName: "Mira",
+        userContent: "My name is Sam.",
+        assistantContent: "I am Mira.",
+      },
+      { signal: new AbortController().signal },
+    );
+    const [before] = await db
+      .select()
+      .from(companionMemories)
+      .where(and(eq(companionMemories.userId, userId), eq(companionMemories.characterId, characterId)))
+      .limit(1);
+    expect(policyOf(Array.isArray(before?.facts) ? before.facts : [])).toHaveLength(0);
+
+    const signal = new AbortController().signal;
+    const payload = {
+      userId,
+      characterId,
+      sessionId: `${PREFIX}sess`,
+      turnId: oldId,
+      companionName: "Mira",
+      userContent: "My name is Sam.",
+      assistantContent: "I am Mira.",
+      userOnly: true,
+    };
+    await runDeferredMemoryPolicy(payload, { signal });
+    await runDeferredMemoryPolicy(payload, { signal });
+
+    const [memory] = await db
+      .select()
+      .from(companionMemories)
+      .where(and(eq(companionMemories.userId, userId), eq(companionMemories.characterId, characterId)))
+      .limit(1);
+    const facts = policyOf(Array.isArray(memory?.facts) ? memory.facts : []);
+    expect(facts).toHaveLength(1);
+    expect(facts[0]?.object).toBe("Sam");
+    expect(facts[0]?.about).toBe("user");
+    expect(facts[0]?.turn_id).toBe(newId);
+    expect(facts.some((fact) => fact.about === "companion")).toBe(false);
+    await db.delete(chatTurns).where(eq(chatTurns.id, oldId));
+    await db.delete(chatTurns).where(eq(chatTurns.id, newId));
   });
 
   it("does not bring a forgotten fact back on the next memory-policy run", async () => {

@@ -22,9 +22,16 @@ import {
   withTransientDbRetry,
 } from "@workspace/db";
 import { markChatTurnReplaced, readChatTurn } from "./chatTurnLedger";
+import { deferLocalLlmJob } from "./deferredLocalLlm";
+import { logger } from "./logger";
 import { factIdFor } from "./memoryEmbeddings";
-import { factsWithoutTurn } from "./memoryPolicy";
-import { shouldDiscardStoredMessage, type ReplyAction } from "./replyReplacement";
+import {
+  buildUserOnlyMemoryPolicyJob,
+  factsWithoutTurn,
+  userTurnNeedsPolicySave,
+  type TurnFactRetention,
+} from "./memoryPolicy";
+import { replyActionOf, shouldDiscardStoredMessage, type ReplyAction } from "./replyReplacement";
 
 type ReplyKind = ReplyAction;
 
@@ -77,65 +84,111 @@ export async function resolveReplacedTurnId(input: {
   return prior?.id ?? "";
 }
 
+function embeddingIdOf(item: unknown): string {
+  if (!item || typeof item !== "object") return "";
+  const fact = item as { text?: unknown; fact_id?: unknown; source_text?: unknown };
+  const explicit = fact.fact_id ? String(fact.fact_id).trim() : "";
+  const text = String(fact.text || fact.source_text || "").trim();
+  if (!text && !explicit) return "";
+  return factIdFor(text, explicit || undefined);
+}
+
+function embeddingIdsDropped(before: unknown[], after: unknown[]): string[] {
+  const kept = new Set(after.map(embeddingIdOf).filter(Boolean));
+  const dropped: string[] = [];
+  for (const item of before) {
+    const id = embeddingIdOf(item);
+    if (!id || kept.has(id) || dropped.includes(id)) continue;
+    dropped.push(id);
+  }
+  return dropped;
+}
+
+function companionNameFromMetadata(metadata: Record<string, unknown>): string {
+  return typeof metadata.active_character_name === "string"
+    ? metadata.active_character_name.trim()
+    : "";
+}
+
+function activeCharacterId(
+  metadata: Record<string, unknown>,
+  characterIds: string[],
+): string {
+  const requested =
+    typeof metadata.active_character_id === "string" ? metadata.active_character_id.trim() : "";
+  if (requested && characterIds.includes(requested)) return requested;
+  return characterIds[0] || requested;
+}
+
+async function rewriteCharacterFacts(
+  userId: string,
+  characterId: string,
+  turnId: string,
+  retention: TurnFactRetention,
+): Promise<unknown[]> {
+  let keptFacts: unknown[] = [];
+  await withTransientDbRetry(() =>
+    db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${`${userId}:${characterId}`}))`,
+      );
+      const [existing] = await tx
+        .select()
+        .from(companionMemories)
+        .where(
+          and(
+            eq(companionMemories.userId, userId),
+            eq(companionMemories.characterId, characterId),
+          ),
+        )
+        .limit(1);
+      if (!existing) return;
+      const facts = Array.isArray(existing.facts) ? existing.facts : [];
+      const kept = factsWithoutTurn(facts, turnId, retention) as Record<string, unknown>[];
+      keptFacts = kept;
+      if (JSON.stringify(kept) === JSON.stringify(facts)) return;
+      const factIds = embeddingIdsDropped(facts, kept);
+      await tx
+        .update(companionMemories)
+        .set({ facts: kept, updatedAt: new Date() })
+        .where(eq(companionMemories.id, existing.id));
+      if (factIds.length > 0) {
+        await tx
+          .delete(memoryEmbeddings)
+          .where(
+            and(
+              eq(memoryEmbeddings.userId, userId),
+              eq(memoryEmbeddings.characterId, characterId),
+              inArray(memoryEmbeddings.factId, factIds),
+            ),
+          );
+      }
+    }),
+  );
+  return keptFacts;
+}
+
 async function forgetTurnMemories(
   userId: string,
   characterIds: string[],
   turnId: string,
-): Promise<void> {
+  retention: TurnFactRetention,
+): Promise<Map<string, unknown[]>> {
+  const keptByCharacter = new Map<string, unknown[]>();
   for (const characterId of [...characterIds].sort()) {
-    await withTransientDbRetry(() =>
-      db.transaction(async (tx) => {
-        await tx.execute(
-          sql`SELECT pg_advisory_xact_lock(hashtext(${`${userId}:${characterId}`}))`,
-        );
-        const [existing] = await tx
-          .select()
-          .from(companionMemories)
-          .where(
-            and(
-              eq(companionMemories.userId, userId),
-              eq(companionMemories.characterId, characterId),
-            ),
-          )
-          .limit(1);
-        if (!existing) return;
-        const facts = Array.isArray(existing.facts) ? existing.facts : [];
-        const kept = factsWithoutTurn(facts, turnId) as Record<string, unknown>[];
-        if (kept.length === facts.length) return;
-        const removed = facts.filter((item) => !kept.includes(item));
-        const factIds = removed
-          .map((item) => {
-            if (!item || typeof item !== "object") return "";
-            const fact = item as { text?: unknown; fact_id?: unknown };
-            const text = String(fact.text || "").trim();
-            if (!text && !fact.fact_id) return "";
-            return factIdFor(text, fact.fact_id ? String(fact.fact_id) : undefined);
-          })
-          .filter(Boolean);
-        await tx
-          .update(companionMemories)
-          .set({ facts: kept, updatedAt: new Date() })
-          .where(eq(companionMemories.id, existing.id));
-        if (factIds.length > 0) {
-          await tx
-            .delete(memoryEmbeddings)
-            .where(
-              and(
-                eq(memoryEmbeddings.userId, userId),
-                eq(memoryEmbeddings.characterId, characterId),
-                inArray(memoryEmbeddings.factId, factIds),
-              ),
-            );
-        }
-      }),
+    keptByCharacter.set(
+      characterId,
+      await rewriteCharacterFacts(userId, characterId, turnId, retention),
     );
   }
+  return keptByCharacter;
 }
 
 async function stripSharedTurnFact(
   userId: string,
   sessionId: string,
   turnId: string,
+  retention: TurnFactRetention,
 ): Promise<void> {
   await withTransientDbRetry(() =>
     db.transaction(async (tx) => {
@@ -153,8 +206,8 @@ async function stripSharedTurnFact(
       if (!row) return;
       const data = asObject(row.data);
       const shared = Array.isArray(data.shared_memory) ? data.shared_memory : [];
-      const kept = factsWithoutTurn(shared, turnId);
-      if (kept.length === shared.length) return;
+      const kept = factsWithoutTurn(shared, turnId, retention);
+      if (JSON.stringify(kept) === JSON.stringify(shared)) return;
       await tx
         .update(userEntities)
         .set({
@@ -241,21 +294,88 @@ async function deleteReplacedMessages(input: {
   );
 }
 
+function asMetadata(metadata: unknown): Record<string, unknown> {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return {};
+  return metadata as Record<string, unknown>;
+}
+
+async function retainReplacedTurnMemory(input: {
+  userId: string;
+  sessionId: string;
+  turnId: string;
+  characterIds: string[];
+  metadata: Record<string, unknown>;
+  replyAction: ReplyAction;
+  userContent: string;
+  replacingTurnId: string;
+}): Promise<void> {
+  const characterIds = [...input.characterIds];
+  const requestedActive =
+    typeof input.metadata.active_character_id === "string"
+      ? input.metadata.active_character_id.trim()
+      : "";
+  if (requestedActive && !characterIds.includes(requestedActive)) characterIds.push(requestedActive);
+  if (!input.turnId) return;
+  const retention: TurnFactRetention = {
+    replyAction: input.replyAction,
+    userContent: input.userContent,
+    companionName: companionNameFromMetadata(input.metadata),
+    replacingTurnId: input.replacingTurnId,
+  };
+  const keptByCharacter =
+    characterIds.length > 0
+      ? await forgetTurnMemories(input.userId, characterIds, input.turnId, retention)
+      : new Map<string, unknown[]>();
+  await stripSharedTurnFact(input.userId, input.sessionId, input.turnId, retention);
+  if (input.replyAction !== "retry" || !input.replacingTurnId) return;
+  const activeId = activeCharacterId(input.metadata, characterIds);
+  if (!activeId) return;
+  const facts = keptByCharacter.get(activeId) ?? [];
+  if (!userTurnNeedsPolicySave(facts, input.userContent, retention.companionName || "")) return;
+  const job = buildUserOnlyMemoryPolicyJob({
+    userId: input.userId,
+    characterId: activeId,
+    sessionId: input.sessionId,
+    turnId: input.replacingTurnId,
+    companionName: retention.companionName || "",
+    userContent: input.userContent,
+  });
+  if (!job) return;
+  try {
+    await deferLocalLlmJob(job);
+  } catch (error) {
+    logger.warn({ error, turnId: input.replacingTurnId }, "Could not queue user memory after retry");
+  }
+}
+
 /** Remove memories already stored for a turn the user replaced. */
 export async function forgetReplacedTurnMemory(turn: {
   id: string;
   userId: string;
   sessionId: string;
   metadata: unknown;
+  userContent?: string;
 }): Promise<void> {
-  const metadata =
-    turn.metadata && typeof turn.metadata === "object" && !Array.isArray(turn.metadata)
-      ? (turn.metadata as Record<string, unknown>)
-      : {};
-  const characterIds = characterIdsFromMetadata(metadata);
-  if (!turn.id || characterIds.length === 0) return;
-  await forgetTurnMemories(turn.userId, characterIds, turn.id);
-  await stripSharedTurnFact(turn.userId, turn.sessionId, turn.id);
+  const metadata = asMetadata(turn.metadata);
+  const replacingTurnId =
+    typeof metadata.superseded_by === "string" ? metadata.superseded_by.trim() : "";
+  let replyAction: ReplyAction = "edit";
+  if (replacingTurnId) {
+    const next = await readChatTurn(replacingTurnId, turn.userId).catch(() => null);
+    const action = replyActionOf(asMetadata(next?.metadata).reply_action);
+    if (action) replyAction = action;
+  }
+  const stored = turn.userContent ?? (await readChatTurn(turn.id, turn.userId))?.userContent ?? "";
+  await retainReplacedTurnMemory({
+    userId: turn.userId,
+    sessionId: turn.sessionId,
+    turnId: turn.id,
+    characterIds: characterIdsFromMetadata(metadata),
+    metadata,
+    replyAction,
+    userContent: stored,
+    replacingTurnId,
+  });
 }
 
 export type DiscardedReply = {
@@ -307,9 +427,17 @@ export async function discardReplacedCompanionReply(input: {
       ...(input.characterIds || []).map((id) => String(id || "").trim()).filter(Boolean),
     ]),
   ];
-  if (turnId && characterIds.length > 0) {
-    await forgetTurnMemories(input.userId, characterIds, turnId);
-    await stripSharedTurnFact(input.userId, input.sessionId, turnId);
+  if (turnId) {
+    await retainReplacedTurnMemory({
+      userId: input.userId,
+      sessionId: input.sessionId,
+      turnId,
+      characterIds,
+      metadata,
+      replyAction: input.replyAction,
+      userContent: input.userContent,
+      replacingTurnId: input.replacingTurnId,
+    });
   }
   return { turnId, messageIds };
 }
