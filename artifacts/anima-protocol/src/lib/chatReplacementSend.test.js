@@ -37,14 +37,26 @@ describe("retry and edit stay on the one send path", () => {
     expect(read).toBeGreaterThan(mark);
     expect(fn).toContain("releaseDiscardedIds");
     expect(fn).toContain("suffix?.replacedTurnIds");
-    expect(fn).toContain("keep_arrivals: true");
     expect(fn).toContain("keepArrivals(trimmed, again.messages");
     expect(fn).toContain("activeSessionRef.current?.id === sessionId");
+    const restoreStart = fn.indexOf("const restore = async");
+    const restoreEnd = fn.indexOf("rememberDiscardedIds", restoreStart);
+    expect(restoreStart).toBeGreaterThan(-1);
+    expect(restoreEnd).toBeGreaterThan(restoreStart);
+    const restoreBody = fn.slice(restoreStart, restoreEnd);
+    expect(restoreBody).toContain("messages: source");
+    expect(restoreBody).toContain("keep_arrivals: true");
+    const trimAt = fn.indexOf("messages: toSave");
+    expect(trimAt).toBeGreaterThan(restoreEnd);
+    expect(fn.slice(trimAt - 120, trimAt + 80)).not.toContain("keep_arrivals");
+    expect(fn.indexOf("await restore()", trimAt)).toBeGreaterThan(trimAt);
   });
 
   it("restores the previous thread when replacement fails before the stream", () => {
     const helperStart = chat.indexOf("const restorePriorMessages");
     const helperEnd = chat.indexOf("if (settled)", helperStart);
+    expect(helperStart).toBeGreaterThan(-1);
+    expect(helperEnd).toBeGreaterThan(helperStart);
     const helper = chat.slice(helperStart, helperEnd);
     expect(helper).toContain("keep_arrivals: true");
     expect(helper).toContain("messageData.priorMessages");
