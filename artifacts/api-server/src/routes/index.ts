@@ -8,6 +8,7 @@ import storeRouter from "./store";
 import storageRouter from "./storage";
 import pdfRouter from "./pdf";
 import chatRouter from "./chat";
+import chatClientFailureRouter from "./chatClientFailure";
 import llmWarmRouter from "./llmWarm";
 import intimacyRouter from "./intimacy";
 import operatorModelRouter from "./operatorModel";
@@ -28,6 +29,8 @@ router.use("/openai", openaiFunctionsRouter);
 router.use(elevenLabsRouter);
 router.use(characterImageRouter);
 router.use(battleModelsRouter);
+// Before the chat router so a failure report does not wait on schema setup.
+router.use("/chat/client-failure", chatClientFailureRouter);
 router.use("/chat", chatRouter);
 router.use("/llm", llmWarmRouter);
 router.use("/intimacy", intimacyRouter);

@@ -7,6 +7,8 @@ export default defineConfig({
       "test/imageUploads.test.ts",
       "test/consumeLlmStream.test.ts",
       "test/chatTelemetry.test.ts",
+      "test/chatFailureTypes.sync.test.ts",
+      "test/chatClientFailureRoute.test.ts",
       "test/localEnsemble.test.ts",
       "test/chatStreamError.test.ts",
       "test/localLlmWarm.test.ts",
