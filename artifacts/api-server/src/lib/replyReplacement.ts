@@ -61,6 +61,30 @@ export function messageSeq(message: unknown): number | null {
   return null;
 }
 
+/** Drop fields only the server may set. A client must not retire its own new turn. */
+export function clientTurnMetadata(metadata: unknown): Record<string, unknown> {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return {};
+  const copy = { ...(metadata as Record<string, unknown>) };
+  delete copy.replaced;
+  delete copy.superseded_by;
+  return copy;
+}
+
+/** Turn ids the client already dropped. Capped so a retry cannot mark the whole ledger. */
+export function replacedTurnIdsOf(metadata: unknown): string[] {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return [];
+  const raw = (metadata as { replaced_turn_ids?: unknown }).replaced_turn_ids;
+  if (!Array.isArray(raw)) return [];
+  const ids: string[] = [];
+  for (const item of raw) {
+    const id = String(item || "").trim();
+    if (!id || ids.includes(id)) continue;
+    ids.push(id);
+    if (ids.length >= 80) break;
+  }
+  return ids;
+}
+
 /** Ids the client already dropped from the thread. Capped so a retry cannot wipe the session. */
 export function replacedMessageIdsOf(metadata: unknown): string[] {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return [];

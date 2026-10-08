@@ -176,7 +176,13 @@ import {
   sessionControlsLocked,
   writeHeldDraft,
 } from "@/lib/heldChatSend";
-import { messagesAfterDiscardingReply, replyActionsAreLocked } from "@/lib/chatReplyActions";
+import {
+  keepArrivals,
+  messageTurnId,
+  messagesAfterDiscardingReply,
+  replyActionsAreLocked,
+  suffixReplacement,
+} from "@/lib/chatReplyActions";
 import HeldOutgoingBubble from "@/components/chat/HeldOutgoingBubble";
 import {
   CONNECTION_DROPPED_STATUS,
@@ -241,8 +247,15 @@ function replacementSendMetadata(messageData) {
   const ids = Array.isArray(messageData?.replacedMessageIds)
     ? messageData.replacedMessageIds.map((id) => String(id || "").trim()).filter(Boolean).slice(0, 40)
     : [];
+  const turnIds = Array.isArray(messageData?.replacedTurnIds)
+    ? messageData.replacedTurnIds.map((id) => String(id || "").trim()).filter(Boolean).slice(0, 80)
+    : [];
+  const fromSeq = messageData?.replacedFromSeq;
+  const seq = typeof fromSeq === "number" && Number.isFinite(fromSeq) ? fromSeq : null;
   return {
     ...(turnId ? { replaced_turn_id: turnId } : {}),
+    ...(turnIds.length > 0 ? { replaced_turn_ids: turnIds } : {}),
+    ...(seq != null ? { replaced_from_seq: seq } : {}),
     ...(fromId ? { replaced_from_message_id: fromId } : {}),
     ...(ids.length > 0 ? { replaced_message_ids: ids } : {}),
   };
@@ -1453,6 +1466,7 @@ export default function Chat() {
     });
 
   const retryHungCompanionReply = async ({ sessionId, userContent, turnId, messageIds }) => {
+    if (replyActionsDisabledRef.current) return;
     if (activeSessionRef.current?.id !== sessionId) return;
     let source = activeSessionRef.current.messages || [];
     try {
@@ -1461,7 +1475,15 @@ export default function Chat() {
     } catch {
       // The open thread is the fallback when the fresh read fails.
     }
+    if (replyActionsDisabledRef.current) return;
     if (activeSessionRef.current?.id !== sessionId) return;
+    const listedIds = (messageIds || []).map(String);
+    const start = source.findIndex((message) => {
+      const id = message?.id ? String(message.id) : "";
+      if (id && listedIds.includes(id)) return true;
+      return Boolean(turnId && message?.role !== "user" && messageTurnId(message) === turnId);
+    });
+    const suffix = start >= 0 ? suffixReplacement(source, start) : null;
     const trimmed = messagesAfterDiscardingReply(source, { turnId, messageIds });
     const last_message = String(trimmed[trimmed.length - 1]?.content || "").slice(0, 60);
     const restore = async () => {
@@ -1478,14 +1500,35 @@ export default function Chat() {
         last_message: preview,
       }).catch(() => {});
     };
-    rememberSupersededReply(turnId, messageIds);
+    rememberSupersededReply(turnId, suffix?.replacedMessageIds || messageIds);
+    for (const id of suffix?.replacedTurnIds || []) {
+      if (id) supersededTurnIdsRef.current.add(String(id));
+    }
     setActiveSession((prev) =>
       prev && prev.id === sessionId ? { ...prev, messages: trimmed, last_message } : prev,
     );
+    let toSave = trimmed;
+    try {
+      const again = await base44.entities.ChatSession.get(sessionId);
+      if (Array.isArray(again?.messages)) {
+        toSave = keepArrivals(trimmed, again.messages, {
+          messageIds: suffix?.replacedMessageIds || listedIds,
+          turnIds: suffix?.replacedTurnIds || (turnId ? [turnId] : []),
+        });
+      }
+    } catch {
+      // The planned trim is still safe when the second read fails.
+    }
+    const savedPreview = String(toSave[toSave.length - 1]?.content || "").slice(0, 60);
+    if (toSave !== trimmed) {
+      setActiveSession((prev) =>
+        prev && prev.id === sessionId ? { ...prev, messages: toSave, last_message: savedPreview } : prev,
+      );
+    }
     try {
       await base44.entities.ChatSession.update(sessionId, {
-        messages: trimmed,
-        last_message,
+        messages: toSave,
+        last_message: savedPreview,
       });
     } catch {
       await restore();
@@ -1498,10 +1541,13 @@ export default function Chat() {
     const result = await handleSendMessageRef.current?.({
       text: userContent || "",
       replyAction: "retry",
-      history: trimmed,
+      history: toSave,
       priorMessages: source,
-      replacedTurnId: turnId || "",
-      replacedMessageIds: messageIds || [],
+      replacedTurnId: turnId || suffix?.replacedTurnId || "",
+      replacedTurnIds: suffix?.replacedTurnIds || (turnId ? [turnId] : []),
+      replacedFromSeq: suffix?.replacedFromSeq,
+      replacedFromMessageId: suffix?.replacedFromMessageId || "",
+      replacedMessageIds: suffix?.replacedMessageIds || messageIds || [],
     });
     if (result?.started === false) await restore();
   };
@@ -1753,12 +1799,15 @@ export default function Chat() {
   };
 
   const handleSendMessage = async (message) => {
-    if (!activeSession?.id) return;
     const messageData = typeof message === "string" ? { text: message, attachments: undefined } : (message || {});
     const replyAction =
       messageData.replyAction === "retry" || messageData.replyAction === "edit"
         ? messageData.replyAction
         : null;
+    if (!activeSession?.id) {
+      if (replyAction) return { started: false };
+      return;
+    }
     const skipAffect = replyAction != null;
     const historyBase = Array.isArray(messageData.history) ? messageData.history : null;
     const decision = gateRef.current.accept(activeSession.id, message);
@@ -1798,6 +1847,7 @@ export default function Chat() {
       releaseChatSendLock(sendingRef, sendLock);
       gateRef.current.release("reply_finished", ownerToken);
       syncGate();
+      if (replyAction) return { started: false };
       return;
     }
     const sendSessionId = activeSession.id;

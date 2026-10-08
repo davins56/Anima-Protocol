@@ -1115,6 +1115,7 @@ export async function runDeferredMemoryPolicy(
     return;
   }
   if (!isMeaningfulExchange(userContent, assistantContent)) return;
+  await ensureSchemaOnce();
   if (turnId) {
     // A missing ledger row is a normal client turn. A read failure stays
     // queued so a replaced reply is not stored as if the row were absent.
@@ -1122,7 +1123,6 @@ export async function runDeferredMemoryPolicy(
     if (turn && turnMetadataReplaced(turn.metadata)) return;
   }
 
-  await ensureSchemaOnce();
   if (ctx.signal.aborted) {
     throw new DeferredLlmRetryError("memory policy waited for chat");
   }

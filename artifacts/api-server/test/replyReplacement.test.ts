@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  clientTurnMetadata,
   messageTurnId,
   omitPersistedUserRow,
   replacedFromMessageIdOf,
@@ -44,6 +45,9 @@ describe("reply replacement affect guard", () => {
     expect(replacedFromMessageIdOf({ replaced_from_message_id: "x".repeat(201) })).toBe("");
     expect(replacedMessageIdsOf({ replaced_message_ids: [" a ", "a", ""] })).toEqual(["a"]);
     expect(replacedMessageIdsOf(null)).toEqual([]);
+    expect(clientTurnMetadata({ replaced: true, superseded_by: "t2", mode: "solo" })).toEqual({
+      mode: "solo",
+    });
     expect(
       replacedMessageIdsOf({
         replaced_message_ids: Array.from({ length: 45 }, (_, index) => `id-${index}`),

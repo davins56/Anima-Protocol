@@ -107,6 +107,7 @@ export async function inspectReplacedReply(input: {
   replyAction: ReplyKind;
   userContent: string;
   replacedTurnId?: string | null;
+  replacedTurnIds?: string[];
   messageIds?: string[];
   fromMessageId?: string | null;
 }): Promise<ReplacedReplyPlan> {
@@ -123,6 +124,14 @@ export async function inspectReplacedReply(input: {
   const fromSeq = anchor ? messageSeq(anchor.message) : null;
   const anchorTurn = anchor ? messageTurnId(anchor.message) : "";
   const turnIds: string[] = [];
+  for (const id of input.replacedTurnIds || []) {
+    const value = String(id || "").trim();
+    if (!value || value === input.replacingTurnId) continue;
+    const turn = await readChatTurn(value, input.userId);
+    if (turn && turn.sessionId === input.sessionId) {
+      addTurn(turnIds, turn.id, input.replacingTurnId);
+    }
+  }
 
   if (fromSeq != null) {
     for (const item of stored) {
@@ -179,7 +188,7 @@ export async function inspectReplacedReply(input: {
     turnId,
     turnIds,
     messageIds,
-    fromMessageId: anchor ? fromMessageId : "",
+    fromMessageId,
     fromSeq,
   };
 }
@@ -191,6 +200,7 @@ export async function resolveReplacedTurnId(input: {
   replyAction: ReplyKind;
   userContent: string;
   replacedTurnId?: string | null;
+  replacedTurnIds?: string[];
   messageIds?: string[];
   fromMessageId?: string | null;
 }): Promise<string> {
@@ -355,14 +365,20 @@ async function deleteReplacedMessages(input: {
             ),
           );
       }
-      if (dropEntityIds.length > 0) {
+      const typedIds = [
+        ...new Set([
+          ...dropEntityIds,
+          ...(input.fromSeq == null ? input.messageIds : []),
+        ]),
+      ];
+      if (typedIds.length > 0) {
         await tx
           .delete(chatMessages)
           .where(
             and(
               eq(chatMessages.userId, input.userId),
               eq(chatMessages.sessionId, input.sessionId),
-              inArray(chatMessages.id, [...new Set(dropEntityIds)]),
+              inArray(chatMessages.id, typedIds),
             ),
           );
       }
@@ -400,6 +416,7 @@ export async function discardReplacedCompanionReply(
     replyAction: ReplyKind;
     userContent: string;
     replacedTurnId?: string | null;
+    replacedTurnIds?: string[];
     messageIds?: string[];
     fromMessageId?: string | null;
     characterIds?: string[];

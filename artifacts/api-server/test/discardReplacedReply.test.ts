@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import {
   CHAT_MESSAGE,
   CHAT_SESSION,
@@ -350,7 +350,8 @@ describe("discardReplacedCompanionReply", () => {
     const left = await db
       .select()
       .from(userEntities)
-      .where(and(eq(userEntities.userId, userId), eq(userEntities.entityName, CHAT_MESSAGE)));
+      .where(and(eq(userEntities.userId, userId), eq(userEntities.entityName, CHAT_MESSAGE)))
+      .orderBy(asc(userEntities.id));
     const contents = left
       .map((row) => row.data as { content?: string; session_id?: string })
       .filter((data) => data.session_id === session)
@@ -403,6 +404,12 @@ describe("discardReplacedCompanionReply", () => {
       .from(memoryEmbeddings)
       .where(eq(memoryEmbeddings.characterId, `${characterId}_embed`));
     expect(embeddings).toHaveLength(1);
+    const [memory] = await db
+      .select()
+      .from(companionMemories)
+      .where(eq(companionMemories.characterId, `${characterId}_embed`));
+    const facts = Array.isArray(memory?.facts) ? memory.facts : [];
+    expect(facts).toEqual([{ type: "factual", text: shared, fact_id: "tea" }]);
   });
 
   it("keeps the replacement when memory cleanup fails after the reply is deleted", async () => {
@@ -477,5 +484,46 @@ describe("discardReplacedCompanionReply", () => {
       .filter((data) => data.session_id === session)
       .map((data) => data.content);
     expect(contents).toEqual(["hello again"]);
+  });
+
+  it("retires later turns the client already trimmed off the thread", async () => {
+    const session = `${sessionId}_gone`;
+    const first = `${oldTurnId}_gone`;
+    const later = `${oldTurnId}_gone_later`;
+    const other = `${oldTurnId}_gone_other`;
+    for (const id of [first, later]) {
+      await beginChatTurn({
+        id,
+        sessionId: session,
+        userId,
+        userContent: "hello",
+        persistenceOwner: "client",
+        metadata: { character_ids: [characterId] },
+      });
+    }
+    await beginChatTurn({
+      id: other,
+      sessionId: `${session}_else`,
+      userId,
+      userContent: "hello",
+      persistenceOwner: "client",
+      metadata: {},
+    });
+    const discarded = await discardReplacedCompanionReply({
+      userId,
+      sessionId: session,
+      replacingTurnId: `${newTurnId}_gone`,
+      replyAction: "retry",
+      userContent: "hello",
+      replacedTurnId: first,
+      replacedTurnIds: [first, later, other],
+    });
+    expect(discarded.turnIds).toEqual([first, later]);
+    const firstTurn = await readChatTurn(first, userId);
+    const laterTurn = await readChatTurn(later, userId);
+    const otherTurn = await readChatTurn(other, userId);
+    expect(firstTurn?.metadata).toMatchObject({ replaced: true });
+    expect(laterTurn?.metadata).toMatchObject({ replaced: true });
+    expect(otherTurn?.metadata).not.toMatchObject({ replaced: true });
   });
 });

@@ -103,6 +103,16 @@ describe("applyStreamingMessage", () => {
     ).toEqual(["t1:user", "t2:user", "..."]);
   });
 
+  it("drops a replaced reply whose turn id is only in the message id", () => {
+    const user = { id: "t1:user", role: "user", content: "Hello" };
+    const oldReply = { id: "t1:assistant", role: "assistant", content: "Old." };
+    expect(
+      stitchLiveMessages([user, oldReply], [user, oldReply], "t2", {
+        omitTurnIds: ["t1"],
+      }).map((message) => message.id),
+    ).toEqual(["t1:user"]);
+  });
+
   it("drops a replaced reply that the snapshot still contains", () => {
     const user = { id: "t1:user", turn_id: "t1", role: "user", content: "Hello" };
     const oldReply = { id: "t1:assistant", turn_id: "t1", role: "assistant", content: "Old." };

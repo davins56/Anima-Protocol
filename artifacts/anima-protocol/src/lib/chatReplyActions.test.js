@@ -88,6 +88,7 @@ describe("planRetryReply", () => {
     expect(grouped.ok).toBe(true);
     expect(grouped.kept.map((message) => message.content)).toEqual(["older", "talk"]);
     expect(grouped.replacedTurnId).toBe("t1");
+    expect(grouped.replacedTurnIds).toEqual(["t1"]);
     expect(grouped.replacedFromMessageId).toBe("t1:assistant");
     expect(grouped.replacedMessageIds).toEqual([
       "t1:assistant",
@@ -109,6 +110,7 @@ describe("planRetryReply", () => {
     expect(plan.ok).toBe(true);
     expect(plan.kept.map((message) => message.id)).toEqual(["u0"]);
     expect(plan.replacedTurnId).toBe("");
+    expect(plan.replacedTurnIds).toEqual(["t-new"]);
     expect(plan.replacedFromMessageId).toBe("narration");
     expect(plan.replacedMessageIds).toEqual(["narration", "u1", "a1"]);
     expect(plan.replacedMessageIds).not.toContain("u0");

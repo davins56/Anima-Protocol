@@ -55,11 +55,29 @@ function replyRunStart(list, index) {
   return start;
 }
 
-function discardedReplyIds(list, start) {
+function messageSeq(message) {
+  const seq = message?.seq;
+  if (typeof seq === "number" && Number.isFinite(seq)) return seq;
+  if (typeof seq === "string" && seq.trim() !== "" && Number.isFinite(Number(seq))) {
+    return Number(seq);
+  }
+  return null;
+}
+
+/** Ids, turn ids, and sequence of the suffix a retry or edit is dropping. */
+export function suffixReplacement(list, start) {
   const messageIds = [];
+  const turnIds = [];
   let fromMessageId = "";
+  let fromSeq = null;
   const targetTurn = messageTurnId(list[start]);
   for (const message of list.slice(start)) {
+    if (fromSeq == null) {
+      const seq = messageSeq(message);
+      if (seq != null) fromSeq = seq;
+    }
+    const turn = messageTurnId(message);
+    if (turn && !turnIds.includes(turn)) turnIds.push(turn);
     if (!message?.id) continue;
     const id = String(message.id);
     messageIds.push(id);
@@ -67,9 +85,32 @@ function discardedReplyIds(list, start) {
   }
   return {
     replacedTurnId: targetTurn,
+    replacedTurnIds: turnIds,
+    replacedFromSeq: fromSeq,
     replacedFromMessageId: fromMessageId,
     replacedMessageIds: messageIds,
   };
+}
+
+/**
+ * Messages that landed after the trim was planned. They stay unless they
+ * belong to the suffix being replaced.
+ */
+export function keepArrivals(kept, latest, discarded) {
+  const keptIds = new Set(
+    listOf(kept).map((message) => (message?.id ? String(message.id) : "")).filter(Boolean),
+  );
+  const dropIds = new Set((discarded?.messageIds || []).map(String));
+  const dropTurns = new Set((discarded?.turnIds || []).map(String).filter(Boolean));
+  const extra = [];
+  for (const message of listOf(latest)) {
+    const id = message?.id ? String(message.id) : "";
+    if (id && (keptIds.has(id) || dropIds.has(id))) continue;
+    const turn = messageTurnId(message);
+    if (turn && dropTurns.has(turn)) continue;
+    extra.push(message);
+  }
+  return [...listOf(kept), ...extra];
 }
 
 function isPlaceholder(message) {
@@ -128,6 +169,8 @@ export function planRetryReply(messages, index) {
       userContent,
       discardedCount: 0,
       replacedTurnId: "",
+      replacedTurnIds: [],
+      replacedFromSeq: null,
       replacedFromMessageId: "",
       replacedMessageIds: [],
     };
@@ -145,7 +188,7 @@ export function planRetryReply(messages, index) {
     kept,
     userContent,
     discardedCount: list.length - start,
-    ...discardedReplyIds(list, start),
+    ...suffixReplacement(list, start),
   };
 }
 
@@ -183,22 +226,13 @@ export function planEditResend(messages, index, newText) {
   if (!content) return { ok: false, reason: "empty" };
   const target = list[index];
   if (!target || target.role !== "user") return { ok: false, reason: "not_user" };
-  const discarded = list.slice(index);
-  const replacedMessageIds = [];
-  let replacedFromMessageId = "";
-  for (const message of discarded) {
-    if (!message?.id) continue;
-    const id = String(message.id);
-    replacedMessageIds.push(id);
-    if (!replacedFromMessageId) replacedFromMessageId = id;
-  }
+  const suffix = suffixReplacement(list, index);
   return {
     ok: true,
     kept: list.slice(0, index),
     content,
     discardedCount: list.length - index,
+    ...suffix,
     replacedTurnId: messageTurnId(target),
-    replacedFromMessageId,
-    replacedMessageIds,
   };
 }
