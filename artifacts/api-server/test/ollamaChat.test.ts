@@ -408,7 +408,7 @@ describe("ollamaChat adapter", () => {
     }
   });
 
-  it("fails a stream that ends without Ollama's done line", async () => {
+  it("keeps a partial reply when the stream ends without Ollama's done line", async () => {
     const { server, origin } = await listenStub((req, res) => {
       void readJson(req).then(() => {
         res.writeHead(200, { "Content-Type": "application/x-ndjson" });
@@ -425,10 +425,69 @@ describe("ollamaChat adapter", () => {
         model: "anima-chat",
         messages: [{ role: "user", content: "Hi" }],
       });
+      const result = await consumeLlmStream(stream);
+      expect(result.interrupted).toBe(true);
+      expect(result.timedOut).toBe(true);
+      expect(result.content).toBe("Half a");
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      );
+    }
+  });
+
+  it("still fails a stream that ends before any reply text", async () => {
+    const { server, origin } = await listenStub((req, res) => {
+      void readJson(req).then(() => {
+        res.writeHead(200, { "Content-Type": "application/x-ndjson" });
+        res.end();
+      });
+    });
+    process.env.ANIMA_RUNTIME = "node";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = `${origin}/v1`;
+
+    try {
+      const stream = await createOllamaChatStream({
+        model: "anima-chat",
+        messages: [{ role: "user", content: "Hi" }],
+      });
       await expect(consumeLlmStream(stream)).rejects.toMatchObject({
         name: "APIConnectionError",
         message: expect.stringContaining("ended before the reply finished"),
       });
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      );
+    }
+  });
+
+  it("keeps text already sent when a later line is an Ollama error", async () => {
+    const { server, origin } = await listenStub((req, res) => {
+      void readJson(req).then(() => {
+        res.writeHead(200, { "Content-Type": "application/x-ndjson" });
+        res.end(
+          [
+            JSON.stringify({
+              message: { role: "assistant", content: "Hello there. " },
+              done: false,
+            }),
+            JSON.stringify({ error: "llama runner process has terminated" }),
+          ].join("\n") + "\n",
+        );
+      });
+    });
+    process.env.ANIMA_RUNTIME = "node";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = `${origin}/v1`;
+
+    try {
+      const stream = await createOllamaChatStream({
+        model: "anima-chat",
+        messages: [{ role: "user", content: "Hi" }],
+      });
+      const result = await consumeLlmStream(stream);
+      expect(result.interrupted).toBe(true);
+      expect(result.content).toContain("Hello there.");
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((err) => (err ? reject(err) : resolve())),

@@ -615,8 +615,9 @@ async function* iterateOllamaNdjson(
       if (chunk) yield chunk;
     }
     // Ollama always ends a stream with a `done: true` line. Without it the
-    // host or a proxy cut the connection mid-reply — surface that instead of
-    // saving a truncated answer as if it were complete.
+    // host or a proxy cut the connection mid-reply. Throw so the consumer
+    // can keep a trimmed partial when text already arrived, instead of
+    // treating the cut as a finished reply.
     if (!sawDone && !isCancelled()) {
       throw new OllamaChatError(
         "Ollama /api/chat stream ended before the reply finished",

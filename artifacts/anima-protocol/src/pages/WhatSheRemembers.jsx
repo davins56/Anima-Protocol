@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ChevronLeft, Lock } from "lucide-react";
 import { animaApi } from "@/api/animaApi";
@@ -50,27 +50,30 @@ export default function WhatSheRemembers() {
   const [draft, setDraft] = useState("");
   const [confirmId, setConfirmId] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const requestTicket = useRef(0);
 
   useEffect(() => {
-    let cancelled = false;
+    const ticket = ++requestTicket.current;
+    setReview(null);
+    setEditingId(null);
+    setDraft("");
+    setConfirmId(null);
+    setBusyId(null);
     setLoading(true);
     setError("");
     animaApi.chat
       .companionMemory(characterId)
       .then((payload) => {
-        if (cancelled) return;
+        if (ticket !== requestTicket.current) return;
         setReview(presentMemoryReview(payload?.review));
       })
       .catch((err) => {
-        if (cancelled) return;
+        if (ticket !== requestTicket.current) return;
         setError(err?.message || "Her memories could not be opened.");
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (ticket === requestTicket.current) setLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
   }, [characterId]);
 
   const title = memoryScreenTitle(companionName);
@@ -88,29 +91,37 @@ export default function WhatSheRemembers() {
   const saveEdit = async (factId) => {
     const text = draft.replace(/\s+/g, " ").trim();
     if (!text || busyId) return;
+    const ticket = requestTicket.current;
+    const targetId = characterId;
     setBusyId(factId);
     setError("");
     try {
-      const payload = await animaApi.chat.updateCompanionMemory(characterId, factId, text);
+      const payload = await animaApi.chat.updateCompanionMemory(targetId, factId, text);
+      if (ticket !== requestTicket.current) return;
       applyReview(payload);
     } catch (err) {
+      if (ticket !== requestTicket.current) return;
       setError(err?.message || "That correction could not be saved.");
     } finally {
-      setBusyId(null);
+      if (ticket === requestTicket.current) setBusyId(null);
     }
   };
 
   const forget = async (factId) => {
     if (busyId) return;
+    const ticket = requestTicket.current;
+    const targetId = characterId;
     setBusyId(factId);
     setError("");
     try {
-      const payload = await animaApi.chat.forgetCompanionMemory(characterId, factId);
+      const payload = await animaApi.chat.forgetCompanionMemory(targetId, factId);
+      if (ticket !== requestTicket.current) return;
       applyReview(payload);
     } catch (err) {
+      if (ticket !== requestTicket.current) return;
       setError(err?.message || "That memory could not be forgotten.");
     } finally {
-      setBusyId(null);
+      if (ticket === requestTicket.current) setBusyId(null);
     }
   };
 
