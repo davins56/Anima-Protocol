@@ -7,7 +7,7 @@
 // send is marked `edit` so mood and memory are not written a second time.
 
 import { base44 } from "@/api/base44Client";
-import { planEditResend, restoredThread } from "@/lib/chatReplyActions";
+import { planEditResend } from "@/lib/chatReplyActions";
 
 function replacementBlocked(isLoading) {
   return typeof isLoading === "function" ? Boolean(isLoading()) : Boolean(isLoading);
@@ -54,18 +54,12 @@ export async function editMessageFlow(idx, newText, { confirm, activeSession, is
     replacedMessageIds: plan.replacedMessageIds || [],
   });
   if (result?.started === false) {
-    let restored = messages;
-    try {
-      const latest = await base44.entities.ChatSession.get(activeSession.id);
-      restored = restoredThread(messages, latest?.messages);
-    } catch {
-      // The pre-trim snapshot is the fallback when the fresh read fails.
-    }
-    const restoredPreview = restored[restored.length - 1]?.content?.slice(0, 60) || "";
-    await base44.entities.ChatSession.update(activeSession.id, {
-      messages: restored,
-      last_message: restoredPreview,
+    const saved = await base44.entities.ChatSession.update(activeSession.id, {
+      messages,
+      keep_arrivals: true,
     });
+    const restored = Array.isArray(saved?.messages) ? saved.messages : messages;
+    const restoredPreview = restored[restored.length - 1]?.content?.slice(0, 60) || "";
     setActiveSession((prev) =>
       prev && prev.id === activeSession.id
         ? { ...prev, messages: restored, last_message: restoredPreview }

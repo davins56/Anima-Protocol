@@ -23,7 +23,20 @@ vi.mock("@/api/base44Client", () => {
     },
     async update(id, data) {
       const existing = store(name).get(id) || { id };
-      const rec = { ...existing, ...data, id };
+      const next = { ...data };
+      if (next.keep_arrivals && Array.isArray(next.messages)) {
+        const ids = new Set(
+          next.messages
+            .map((message) => (message?.id ? String(message.id) : ""))
+            .filter(Boolean),
+        );
+        const extras = (Array.isArray(existing.messages) ? existing.messages : []).filter(
+          (message) => message?.id && !ids.has(String(message.id)),
+        );
+        if (extras.length > 0) next.messages = [...next.messages, ...extras];
+        delete next.keep_arrivals;
+      }
+      const rec = { ...existing, ...next, id };
       store(name).set(id, rec);
       return { ...rec };
     },
