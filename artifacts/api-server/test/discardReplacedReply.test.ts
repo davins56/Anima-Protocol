@@ -357,4 +357,51 @@ describe("discardReplacedCompanionReply", () => {
       .map((data) => data.content);
     expect(contents).toEqual(["echo", "first echo", "echo"]);
   });
+
+  it("keeps an embedding another fact still uses after the replaced turn is forgotten", async () => {
+    const session = `${sessionId}_embed`;
+    const turnId = `${oldTurnId}_embed`;
+    const shared = "likes tea";
+    await beginChatTurn({
+      id: turnId,
+      sessionId: session,
+      userId,
+      userContent: "tea",
+      persistenceOwner: "client",
+      metadata: { character_ids: [characterId] },
+    });
+    await db.insert(companionMemories).values({
+      userId,
+      characterId: `${characterId}_embed`,
+      summary: "",
+      facts: [
+        { type: "turn", turn_id: turnId, text: shared, fact_id: "tea" },
+        { type: "factual", text: shared, fact_id: "tea" },
+      ],
+      emotionalState: {},
+      resonanceNotes: "",
+    });
+    await db.insert(memoryEmbeddings).values({
+      userId,
+      characterId: `${characterId}_embed`,
+      factId: factIdFor(shared, "tea"),
+      text: shared,
+      memoryType: "factual",
+      embedding: [0.2],
+    });
+    await discardReplacedCompanionReply({
+      userId,
+      sessionId: session,
+      replacingTurnId: `${newTurnId}_embed`,
+      replyAction: "retry",
+      userContent: "tea",
+      replacedTurnId: turnId,
+      characterIds: [`${characterId}_embed`],
+    });
+    const embeddings = await db
+      .select()
+      .from(memoryEmbeddings)
+      .where(eq(memoryEmbeddings.characterId, `${characterId}_embed`));
+    expect(embeddings).toHaveLength(1);
+  });
 });

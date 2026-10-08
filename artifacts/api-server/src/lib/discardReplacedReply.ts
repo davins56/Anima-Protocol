@@ -223,15 +223,17 @@ async function forgetTurnMemories(
         const kept = factsWithoutTurn(facts, turnId) as Record<string, unknown>[];
         if (kept.length === facts.length) return;
         const removed = facts.filter((item) => !kept.includes(item));
+        const factKey = (item: unknown) => {
+          if (!item || typeof item !== "object") return "";
+          const fact = item as { text?: unknown; fact_id?: unknown };
+          const text = String(fact.text || "").trim();
+          if (!text && !fact.fact_id) return "";
+          return factIdFor(text, fact.fact_id ? String(fact.fact_id) : undefined);
+        };
+        const keptIds = new Set(kept.map(factKey).filter(Boolean));
         const factIds = removed
-          .map((item) => {
-            if (!item || typeof item !== "object") return "";
-            const fact = item as { text?: unknown; fact_id?: unknown };
-            const text = String(fact.text || "").trim();
-            if (!text && !fact.fact_id) return "";
-            return factIdFor(text, fact.fact_id ? String(fact.fact_id) : undefined);
-          })
-          .filter(Boolean);
+          .map(factKey)
+          .filter((id) => id && !keptIds.has(id));
         await tx
           .update(companionMemories)
           .set({ facts: kept, updatedAt: new Date() })
@@ -259,6 +261,9 @@ async function stripSharedTurnFact(
 ): Promise<void> {
   await withTransientDbRetry(() =>
     db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${userId}), hashtext(${sessionId}))`,
+      );
       const [row] = await tx
         .select()
         .from(userEntities)
