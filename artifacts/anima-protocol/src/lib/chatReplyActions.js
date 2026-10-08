@@ -96,6 +96,41 @@ export function suffixReplacement(list, start) {
  * Messages that landed after the trim was planned. They stay unless they
  * belong to the suffix being replaced.
  */
+/**
+ * Hide a reply the user is replacing, including every later turn in the suffix.
+ *
+ * @param {Set<string>} turnIds
+ * @param {Set<string>} messageIds
+ * @param {{ turnId?: string, turnIds?: string[], messageIds?: string[] }} [target]
+ */
+export function rememberDiscardedIds(turnIds, messageIds, target = {}) {
+  if (target.turnId) turnIds.add(String(target.turnId));
+  for (const id of target.turnIds || []) {
+    if (id) turnIds.add(String(id));
+  }
+  for (const id of target.messageIds || []) {
+    if (id) messageIds.add(String(id));
+  }
+}
+
+/**
+ * Put those ids back when the replacement never starts, so the restored
+ * reply is visible again. Suffix ids have to be released too.
+ *
+ * @param {Set<string>} turnIds
+ * @param {Set<string>} messageIds
+ * @param {{ turnId?: string, turnIds?: string[], messageIds?: string[] }} [target]
+ */
+export function releaseDiscardedIds(turnIds, messageIds, target = {}) {
+  if (target.turnId) turnIds.delete(String(target.turnId));
+  for (const id of target.turnIds || []) {
+    if (id) turnIds.delete(String(id));
+  }
+  for (const id of target.messageIds || []) {
+    if (id) messageIds.delete(String(id));
+  }
+}
+
 export function keepArrivals(kept, latest, discarded) {
   const keptIds = new Set(
     listOf(kept).map((message) => (message?.id ? String(message.id) : "")).filter(Boolean),

@@ -17,6 +17,7 @@ import {
   companionMemories,
   db,
   memoryEmbeddings,
+  migrateSessionMessages,
   sessionIdEq,
   userEntities,
   withTransientDbRetry,
@@ -116,6 +117,14 @@ export async function inspectReplacedReply(input: {
   ];
   const fromMessageId = String(input.fromMessageId || "").trim();
   const requested = String(input.replacedTurnId || "").trim();
+  // Legacy sessions still keep the thread on the ChatSession blob. Migrate
+  // it first so the anchor seq and the suffix are rows this delete can see.
+  // A later history read must not copy the old reply back after we remove it.
+  await withTransientDbRetry(() =>
+    db.transaction(async (tx) => {
+      await migrateSessionMessages(tx, input.userId, input.sessionId);
+    }),
+  );
   const rows = await loadSessionChatRows(input.userId, input.sessionId);
   const stored = rows.map((row) => ({ row, message: storedChatMessage(row) }));
   const anchor = fromMessageId
@@ -318,6 +327,9 @@ async function deleteReplacedMessages(input: {
   if (input.turnIds.length === 0 && input.messageIds.length === 0 && input.fromSeq == null) return;
   await withTransientDbRetry(() =>
     db.transaction(async (tx) => {
+      // Session lock first, then turn locks. The same order as append and
+      // replace, so this delete cannot deadlock with a message write.
+      await migrateSessionMessages(tx, input.userId, input.sessionId);
       for (const turnId of [...input.turnIds].sort()) {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${turnId}`}))`);
       }
@@ -358,9 +370,9 @@ async function deleteReplacedMessages(input: {
                 ${chatMessages.role} <> 'user'
                 AND (
                   ${chatMessages.metadata}->>'turn_id' = ${turnId}
-                  OR ${chatMessages.id} like ${`${turnId}:%`}
+                  OR strpos(${chatMessages.id}, ${`${turnId}:`}) = 1
                 )
-                AND ${chatMessages.id} not like ${`${turnId}:user%`}
+                AND strpos(${chatMessages.id}, ${`${turnId}:user`}) <> 1
               )`,
             ),
           );

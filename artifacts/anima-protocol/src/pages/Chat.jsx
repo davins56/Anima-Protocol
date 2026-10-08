@@ -180,6 +180,8 @@ import {
   keepArrivals,
   messageTurnId,
   messagesAfterDiscardingReply,
+  releaseDiscardedIds,
+  rememberDiscardedIds,
   replyActionsAreLocked,
   suffixReplacement,
 } from "@/lib/chatReplyActions";
@@ -1453,10 +1455,10 @@ export default function Chat() {
   };
 
   const rememberSupersededReply = (turnId, messageIds) => {
-    if (turnId) supersededTurnIdsRef.current.add(String(turnId));
-    for (const id of messageIds || []) {
-      if (id) supersededMessageIdsRef.current.add(String(id));
-    }
+    rememberDiscardedIds(supersededTurnIdsRef.current, supersededMessageIdsRef.current, {
+      turnId,
+      messageIds,
+    });
   };
 
   const stitchThread = (live, snapshot, activeTurnId) =>
@@ -1468,6 +1470,16 @@ export default function Chat() {
   const retryHungCompanionReply = async ({ sessionId, userContent, turnId, messageIds }) => {
     if (replyActionsDisabledRef.current) return;
     if (activeSessionRef.current?.id !== sessionId) return;
+    const knownIds = (messageIds || []).map((id) => (id ? String(id) : "")).filter(Boolean);
+    // Hide the reply before the fresh read. The late-reply watcher can paint
+    // it while ChatSession.get is still pending.
+    rememberSupersededReply(turnId, knownIds);
+    const releaseKnown = () => {
+      releaseDiscardedIds(supersededTurnIdsRef.current, supersededMessageIdsRef.current, {
+        turnId,
+        messageIds: knownIds,
+      });
+    };
     let source = activeSessionRef.current.messages || [];
     try {
       const fresh = await base44.entities.ChatSession.get(sessionId);
@@ -1475,9 +1487,11 @@ export default function Chat() {
     } catch {
       // The open thread is the fallback when the fresh read fails.
     }
-    if (replyActionsDisabledRef.current) return;
-    if (activeSessionRef.current?.id !== sessionId) return;
-    const listedIds = (messageIds || []).map(String);
+    if (replyActionsDisabledRef.current || activeSessionRef.current?.id !== sessionId) {
+      releaseKnown();
+      return;
+    }
+    const listedIds = knownIds;
     const start = source.findIndex((message) => {
       const id = message?.id ? String(message.id) : "";
       if (id && listedIds.includes(id)) return true;
@@ -1487,23 +1501,35 @@ export default function Chat() {
     const trimmed = messagesAfterDiscardingReply(source, { turnId, messageIds });
     const last_message = String(trimmed[trimmed.length - 1]?.content || "").slice(0, 60);
     const restore = async () => {
-      if (turnId) supersededTurnIdsRef.current.delete(String(turnId));
-      for (const id of messageIds || []) {
-        if (id) supersededMessageIdsRef.current.delete(String(id));
+      releaseDiscardedIds(supersededTurnIdsRef.current, supersededMessageIdsRef.current, {
+        turnId,
+        turnIds: suffix?.replacedTurnIds || [],
+        messageIds: [...knownIds, ...(suffix?.replacedMessageIds || [])],
+      });
+      let restored = source;
+      try {
+        const latest = await base44.entities.ChatSession.get(sessionId);
+        if (Array.isArray(latest?.messages)) {
+          restored = keepArrivals(source, latest.messages, { messageIds: [], turnIds: [] });
+        }
+      } catch {
+        // The pre-send snapshot is the fallback when the fresh read fails.
       }
-      const preview = String(source[source.length - 1]?.content || "").slice(0, 60);
-      setActiveSession((prev) =>
-        prev && prev.id === sessionId ? { ...prev, messages: source, last_message: preview } : prev,
-      );
+      const preview = String(restored[restored.length - 1]?.content || "").slice(0, 60);
+      if (activeSessionRef.current?.id === sessionId) {
+        setActiveSession((prev) =>
+          prev && prev.id === sessionId ? { ...prev, messages: restored, last_message: preview } : prev,
+        );
+      }
       await base44.entities.ChatSession.update(sessionId, {
-        messages: source,
+        messages: restored,
         last_message: preview,
       }).catch(() => {});
     };
-    rememberSupersededReply(turnId, suffix?.replacedMessageIds || messageIds);
-    for (const id of suffix?.replacedTurnIds || []) {
-      if (id) supersededTurnIdsRef.current.add(String(id));
-    }
+    rememberDiscardedIds(supersededTurnIdsRef.current, supersededMessageIdsRef.current, {
+      turnIds: suffix?.replacedTurnIds || [],
+      messageIds: suffix?.replacedMessageIds || [],
+    });
     setActiveSession((prev) =>
       prev && prev.id === sessionId ? { ...prev, messages: trimmed, last_message } : prev,
     );

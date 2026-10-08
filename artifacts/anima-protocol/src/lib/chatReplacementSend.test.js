@@ -23,6 +23,20 @@ describe("retry and edit stay on the one send path", () => {
     expect(chat).toContain("actionsDisabled={replyActionsDisabled}");
   });
 
+  it("hides a hung reply before the fresh read and restores every suffix id", () => {
+    const start = chat.indexOf("const retryHungCompanionReply");
+    const end = chat.indexOf("useEffect", start);
+    const fn = chat.slice(start, end);
+    const mark = fn.indexOf("rememberSupersededReply(turnId, knownIds)");
+    const read = fn.indexOf("ChatSession.get(sessionId)");
+    expect(mark).toBeGreaterThan(-1);
+    expect(read).toBeGreaterThan(mark);
+    expect(fn).toContain("releaseDiscardedIds");
+    expect(fn).toContain("suffix?.replacedTurnIds");
+    expect(fn).toContain("keepArrivals(source, latest.messages");
+    expect(fn).toContain("activeSessionRef.current?.id === sessionId");
+  });
+
   it("skips a second mood write and a second user row on retry", () => {
     expect(server).toContain("turnSkipsAffect");
     expect(server).toContain("omitPersistedUserRow");
