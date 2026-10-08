@@ -7,11 +7,31 @@ type ChatTelemetryFields = {
   mode: string;
 };
 
+/**
+ * Where a failed turn died.
+ * `queue` is everything before generation starts (including the local slot
+ * wait). `prefill` is after the slot is held and before the first upstream
+ * chunk. `decode` is once chunks are arriving. `post` is after the reply
+ * text is in hand (checkpoint / empty-reply).
+ */
+export type ChatFailurePhase = "queue" | "prefill" | "decode" | "post";
+
+/** Error.name for the chat_pipeline failed log. Not the message. */
+export function chatErrorClass(err: unknown): string {
+  if (err instanceof Error && err.name) return err.name;
+  if (err && typeof err === "object") {
+    const name = (err as { constructor?: { name?: unknown } }).constructor?.name;
+    if (typeof name === "string" && name) return name;
+  }
+  return "NonError";
+}
+
 export class ChatPipelineTelemetry {
   private readonly startedAt = performance.now();
   private generationStartedAt: number | null = null;
   private firstTokenAt: number | null = null;
   private readonly measurements: Record<string, number> = {};
+  private phase: ChatFailurePhase = "queue";
 
   constructor(private readonly fields: ChatTelemetryFields) {}
 
@@ -35,10 +55,21 @@ export class ChatPipelineTelemetry {
 
   startGeneration(): void {
     this.generationStartedAt = performance.now();
+    if (this.phase === "queue") this.phase = "prefill";
   }
 
   markFirstToken(): void {
     if (this.firstTokenAt == null) this.firstTokenAt = performance.now();
+    if (this.phase === "queue" || this.phase === "prefill") this.phase = "decode";
+  }
+
+  /** The model pass returned and the turn is in checkpoint / delivery. */
+  markReplySettled(): void {
+    this.phase = "post";
+  }
+
+  currentPhase(): ChatFailurePhase {
+    return this.phase;
   }
 
   record(name: string, valueMs: number): void {
@@ -70,6 +101,15 @@ export class ChatPipelineTelemetry {
         generation_ms: Math.round(endedAt - generationStart),
         ...this.measurements,
         ...details,
+        ...(outcome === "failed"
+          ? {
+              failure_phase: this.phase,
+              error_class:
+                typeof details.error_class === "string" && details.error_class
+                  ? details.error_class
+                  : "Error",
+            }
+          : {}),
       },
       "Chat pipeline telemetry",
     );

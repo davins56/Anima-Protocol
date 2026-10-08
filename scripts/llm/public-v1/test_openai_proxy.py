@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -194,6 +195,89 @@ class _ListOllama(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+
+class _DripUpstream(BaseHTTPRequestHandler):
+    """Flushes one short line, then waits. read() would sit until 8192 bytes."""
+
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, fmt: str, *args: object) -> None:
+        return
+
+    def do_POST(self) -> None:  # noqa: N802
+        length = int(self.headers.get("Content-Length") or 0)
+        if length:
+            self.rfile.read(length)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(b'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n')
+        self.wfile.flush()
+        self.server.first_flushed.set()  # type: ignore[attr-defined]
+        self.server.release.wait(15)  # type: ignore[attr-defined]
+        self.wfile.write(b'data: {"choices":[{"delta":{"content":" there"}}]}\n\n')
+        self.wfile.flush()
+
+
+class ProxyPassthroughStreamTests(unittest.TestCase):
+    def test_passthrough_forwards_the_first_line_before_the_burst_fills(self) -> None:
+        upstream = ThreadingHTTPServer(("127.0.0.1", 0), _DripUpstream)
+        upstream.first_flushed = threading.Event()  # type: ignore[attr-defined]
+        upstream.release = threading.Event()  # type: ignore[attr-defined]
+        threading.Thread(target=upstream.serve_forever, daemon=True).start()
+
+        proxy.TOKEN = "test-token"
+        proxy.UPSTREAM_HOST = f"127.0.0.1:{upstream.server_address[1]}"
+        previous_native = os.environ.get("ANIMA_LLM_PROXY_NATIVE")
+        os.environ["ANIMA_LLM_PROXY_NATIVE"] = "0"
+        listen = ThreadingHTTPServer(("127.0.0.1", 0), proxy.Handler)
+        threading.Thread(target=listen.serve_forever, daemon=True).start()
+        host, port = listen.server_address
+
+        try:
+            conn = http.client.HTTPConnection(host, port, timeout=2)
+            payload = json.dumps(
+                {
+                    "model": "anima-chat",
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "stream": True,
+                }
+            )
+            conn.request(
+                "POST",
+                "/v1/chat/completions",
+                body=payload,
+                headers={
+                    "Authorization": "Bearer test-token",
+                    "Content-Type": "application/json",
+                    "Content-Length": str(len(payload)),
+                },
+            )
+            resp = conn.getresponse()
+            self.assertEqual(resp.status, 200)
+            # The first line must arrive while the upstream is still holding
+            # the rest. resp.read(8192) blocks for a full buffer or EOF.
+            started = time.monotonic()
+            first = resp.fp.readline()
+            self.assertLess(time.monotonic() - started, 1.0)
+            self.assertIn(b"Hi", first)
+            self.assertFalse(upstream.release.is_set())  # type: ignore[attr-defined]
+            upstream.release.set()  # type: ignore[attr-defined]
+            rest = resp.read()
+            self.assertIn(b"there", rest)
+            conn.close()
+        finally:
+            upstream.release.set()  # type: ignore[attr-defined]
+            if previous_native is None:
+                os.environ.pop("ANIMA_LLM_PROXY_NATIVE", None)
+            else:
+                os.environ["ANIMA_LLM_PROXY_NATIVE"] = previous_native
+            listen.shutdown()
+            upstream.shutdown()
+            listen.server_close()
+            upstream.server_close()
 
 
 class ProxyListTests(unittest.TestCase):
