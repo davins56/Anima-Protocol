@@ -22,7 +22,7 @@ import {
   userEntities,
   withTransientDbRetry,
 } from "@workspace/db";
-import { markChatTurnReplaced, readChatTurn } from "./chatTurnLedger";
+import { markChatTurnReplacedOn, readChatTurn } from "./chatTurnLedger";
 import { logger } from "./logger";
 import { factIdFor } from "./memoryEmbeddings";
 import { factsWithoutTurn } from "./memoryPolicy";
@@ -331,25 +331,37 @@ async function stripSharedTurnFact(
 async function deleteReplacedMessages(input: {
   userId: string;
   sessionId: string;
+  replacingTurnId: string;
   turnIds: string[];
   messageIds: string[];
   fromSeq: number | null;
-}): Promise<void> {
+  beforeDelete?: () => Promise<void>;
+}): Promise<Array<{ id: string; metadata: Record<string, unknown> }>> {
   const target = {
     turnId: input.turnIds[0] || "",
     turnIds: input.turnIds,
     messageIds: input.messageIds,
     fromSeq: input.fromSeq,
   };
-  if (input.turnIds.length === 0 && input.messageIds.length === 0 && input.fromSeq == null) return;
-  await withTransientDbRetry(() =>
+  if (input.turnIds.length === 0 && input.messageIds.length === 0 && input.fromSeq == null) {
+    return [];
+  }
+  return withTransientDbRetry(() =>
     db.transaction(async (tx) => {
       // Session lock first, then turn locks. The same order as append and
       // replace, so this delete cannot deadlock with a message write.
       await migrateSessionMessages(tx, input.userId, input.sessionId);
+      const retired: Array<{ id: string; metadata: Record<string, unknown> }> = [];
       for (const turnId of [...input.turnIds].sort()) {
-        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${turnId}`}))`);
+        const replaced = await markChatTurnReplacedOn(
+          tx,
+          turnId,
+          input.userId,
+          input.replacingTurnId,
+        );
+        retired.push({ id: turnId, metadata: replaced?.metadata ?? {} });
       }
+      if (input.beforeDelete) await input.beforeDelete();
       const rows = await tx
         .select({
           id: userEntities.id,
@@ -411,6 +423,7 @@ async function deleteReplacedMessages(input: {
             ),
           );
       }
+      return retired;
     }),
   );
 }
@@ -435,7 +448,8 @@ export async function forgetReplacedTurnMemory(turn: {
 /**
  * Retire the previous reply. Safe to call once the new turn id is known
  * and this send is going to generate. Returns every turn the suffix
- * retired so the prompt can drop them even if a row delete is still catching up.
+ * retired. The mark and the row delete commit together, so a failed delete
+ * leaves the old reply usable.
  */
 export async function discardReplacedCompanionReply(
   input: {
@@ -453,27 +467,25 @@ export async function discardReplacedCompanionReply(
   hooks?: {
     forgetMemory?: (userId: string, sessionId: string, turnId: string) => Promise<void>;
     plan?: ReplacedReplyPlan;
+    beforeDelete?: () => Promise<void>;
   },
 ): Promise<ReplacedReplyPlan> {
   const plan = hooks?.plan ?? (await inspectReplacedReply(input));
   if (plan.turnIds.length === 0 && plan.messageIds.length === 0 && plan.fromSeq == null) {
     return plan;
   }
-  const retired: Array<{ id: string; metadata: Record<string, unknown> }> = [];
-  for (const turnId of plan.turnIds) {
-    const replaced = await markChatTurnReplaced(turnId, input.userId, input.replacingTurnId);
-    retired.push({ id: turnId, metadata: replaced?.metadata ?? {} });
-  }
-  await deleteReplacedMessages({
+  const retired = await deleteReplacedMessages({
     userId: input.userId,
     sessionId: input.sessionId,
+    replacingTurnId: input.replacingTurnId,
     turnIds: plan.turnIds,
     messageIds: plan.messageIds,
     fromSeq: plan.fromSeq,
+    beforeDelete: hooks?.beforeDelete,
   });
-  // Mark and delete already committed in their own transactions. A later
-  // memory failure must not reject the send: the old reply is gone, and a
-  // 503 would leave the conversation with neither that reply nor the new one.
+  // Mark and delete committed together. A later memory failure must not
+  // reject the send: the old reply is gone, and a 503 would leave the
+  // conversation with neither that reply nor the new one.
   // The replaced flag still blocks a deferred memory job from writing it back.
   const fallbackCharacters = (input.characterIds || [])
     .map((id) => String(id || "").trim())
