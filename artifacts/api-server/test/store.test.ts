@@ -23,12 +23,14 @@ vi.mock("@clerk/express", () => ({
 
 import storeRouter from "../src/routes/store";
 import {
+  chatTurns,
   db,
   userEntities,
   userProfiles,
   backfillChatMessages,
 } from "@workspace/db";
 import { like } from "drizzle-orm";
+import { beginChatTurn, markChatTurnReplaced } from "../src/lib/chatTurnLedger";
 
 // All test users share a unique-per-run prefix so cleanup can target only this
 // run's rows and concurrent runs never collide.
@@ -51,6 +53,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   // Remove only the rows this run created.
+  await db.delete(chatTurns).where(like(chatTurns.userId, `${PREFIX}%`));
   await db.delete(userEntities).where(like(userEntities.userId, `${PREFIX}%`));
   await db.delete(userProfiles).where(like(userProfiles.userId, `${PREFIX}%`));
   await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -1025,6 +1028,74 @@ describe("chat messages stored as individual rows", () => {
       .json as Json[];
     expect(after.map((m) => m.content)).toEqual(["first edited"]);
     expect(after.find((m) => m.id === m1.id)).toBeUndefined();
+  });
+
+  it("keeps the prompt of a replaced turn and does not reinsert a later user line", async () => {
+    const U = user("msg_replaced_user");
+    const sid = "sess_replaced_user";
+    const promptTurn = `${PREFIX}prompt`;
+    const laterTurn = `${PREFIX}later`;
+    await beginChatTurn({
+      id: promptTurn,
+      sessionId: sid,
+      userId: U,
+      userContent: "prompt",
+      persistenceOwner: "client",
+    });
+    await beginChatTurn({
+      id: laterTurn,
+      sessionId: sid,
+      userId: U,
+      userContent: "later",
+      persistenceOwner: "client",
+    });
+    const prompt = (
+      await call(U, "POST", "/messages", {
+        session_id: sid,
+        message: { id: `${promptTurn}:user`, role: "user", content: "prompt", turn_id: promptTurn },
+      })
+    ).json;
+    await call(U, "POST", "/messages", {
+      session_id: sid,
+      message: {
+        id: `${promptTurn}:assistant`,
+        role: "assistant",
+        content: "old reply",
+        turn_id: promptTurn,
+      },
+    });
+    await call(U, "POST", "/messages", {
+      session_id: sid,
+      message: { id: `${laterTurn}:user`, role: "user", content: "later question", turn_id: laterTurn },
+    });
+    await markChatTurnReplaced(promptTurn, U, "new-turn");
+    await markChatTurnReplaced(laterTurn, U, "new-turn");
+    await call(U, "POST", "/messages/replace", {
+      session_id: sid,
+      messages: [prompt],
+    });
+    const stale = await call(U, "POST", "/messages/replace", {
+      session_id: sid,
+      messages: [
+        prompt,
+        {
+          id: `${promptTurn}:assistant`,
+          role: "assistant",
+          content: "old reply",
+          turn_id: promptTurn,
+        },
+        {
+          id: `${laterTurn}:user`,
+          role: "user",
+          content: "later question",
+          turn_id: laterTurn,
+        },
+        { id: "fresh-user", role: "user", content: "a new line" },
+      ],
+    });
+    expect(stale.status).toBe(200);
+    const list = (await call(U, "GET", `/messages?session_id=${sid}`)).json as Json[];
+    expect(list.map((message) => message.content)).toEqual(["prompt", "a new line"]);
   });
 
   it("append after replace continues the seq from the surviving rows", async () => {

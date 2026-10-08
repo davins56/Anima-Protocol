@@ -526,4 +526,142 @@ describe("discardReplacedCompanionReply", () => {
     expect(laterTurn?.metadata).toMatchObject({ replaced: true });
     expect(otherTurn?.metadata).not.toMatchObject({ replaced: true });
   });
+
+  it("migrates a legacy session blob before deleting the replaced reply", async () => {
+    const session = `${sessionId}_legacy`;
+    const turnId = `${oldTurnId}_legacy`;
+    await beginChatTurn({
+      id: turnId,
+      sessionId: session,
+      userId,
+      userContent: "hello from the blob",
+      persistenceOwner: "client",
+      metadata: {},
+    });
+    await db.insert(userEntities).values({
+      userId,
+      entityName: CHAT_SESSION,
+      entityId: session,
+      data: {
+        id: session,
+        messages: [
+          { id: `${turnId}:user`, role: "user", content: "hello from the blob", turn_id: turnId },
+          { id: `${turnId}:assistant`, role: "assistant", content: "blob reply", turn_id: turnId },
+        ],
+      },
+    });
+    const discarded = await discardReplacedCompanionReply({
+      userId,
+      sessionId: session,
+      replacingTurnId: `${newTurnId}_legacy`,
+      replyAction: "retry",
+      userContent: "hello from the blob",
+      replacedTurnId: turnId,
+      fromMessageId: `${turnId}:assistant`,
+      messageIds: [`${turnId}:assistant`],
+    });
+    expect(discarded.turnId).toBe(turnId);
+    const rows = await db
+      .select()
+      .from(userEntities)
+      .where(and(eq(userEntities.userId, userId), eq(userEntities.entityName, CHAT_MESSAGE)));
+    const contents = rows
+      .map((row) => row.data as { content?: string; session_id?: string })
+      .filter((data) => data.session_id === session)
+      .map((data) => data.content);
+    expect(contents).toEqual(["hello from the blob"]);
+    const [stored] = await db
+      .select()
+      .from(userEntities)
+      .where(
+        and(
+          eq(userEntities.userId, userId),
+          eq(userEntities.entityName, CHAT_SESSION),
+          eq(userEntities.entityId, session),
+        ),
+      );
+    const data = stored?.data as { messages?: unknown[]; messages_migrated?: boolean };
+    expect(data.messages_migrated).toBe(true);
+    expect(data.messages).toEqual([]);
+  });
+
+  it("does not let an underscore in a turn id delete a different typed row", async () => {
+    const session = `${sessionId}_like`;
+    const turnId = `ab_${prefix}`;
+    const lookalike = `abX${prefix}:assistant`;
+    await beginChatTurn({
+      id: turnId,
+      sessionId: session,
+      userId,
+      userContent: "hello",
+      persistenceOwner: "client",
+      metadata: {},
+    });
+    await db.insert(userEntities).values([
+      {
+        userId,
+        entityName: CHAT_MESSAGE,
+        entityId: `${turnId}:user`,
+        data: {
+          id: `${turnId}:user`,
+          session_id: session,
+          role: "user",
+          content: "hello",
+          turn_id: turnId,
+          seq: 0,
+        },
+      },
+      {
+        userId,
+        entityName: CHAT_MESSAGE,
+        entityId: `${turnId}:assistant`,
+        data: {
+          id: `${turnId}:assistant`,
+          session_id: session,
+          role: "assistant",
+          content: "the real reply",
+          turn_id: turnId,
+          seq: 1,
+        },
+      },
+    ]);
+    await db.insert(chatMessages).values([
+      {
+        id: `${turnId}:user`,
+        sessionId: session,
+        userId,
+        role: "user",
+        content: "hello",
+        metadata: { turn_id: turnId },
+      },
+      {
+        id: `${turnId}:assistant`,
+        sessionId: session,
+        userId,
+        role: "assistant",
+        content: "the real reply",
+        metadata: { turn_id: turnId },
+      },
+      {
+        id: lookalike,
+        sessionId: session,
+        userId,
+        role: "assistant",
+        content: "a different turn",
+        metadata: { turn_id: `abX${prefix}` },
+      },
+    ]);
+    await discardReplacedCompanionReply({
+      userId,
+      sessionId: session,
+      replacingTurnId: `${newTurnId}_like`,
+      replyAction: "retry",
+      userContent: "hello",
+      replacedTurnId: turnId,
+      messageIds: [`${turnId}:assistant`],
+      fromMessageId: `${turnId}:assistant`,
+    });
+    const typed = await db.select().from(chatMessages).where(eq(chatMessages.sessionId, session));
+    expect(typed.map((row) => row.id).sort()).toEqual([`${turnId}:user`, lookalike].sort());
+  });
 });

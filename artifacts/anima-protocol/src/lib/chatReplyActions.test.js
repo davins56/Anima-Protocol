@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  keepArrivals,
   lastReplyActionIndexes,
   messagesAfterDiscardingReply,
   planEditResend,
   planRetryReply,
+  releaseDiscardedIds,
+  rememberDiscardedIds,
   replyActionsAreLocked,
 } from "./chatReplyActions";
 
@@ -114,6 +117,40 @@ describe("planRetryReply", () => {
     expect(plan.replacedFromMessageId).toBe("narration");
     expect(plan.replacedMessageIds).toEqual(["narration", "u1", "a1"]);
     expect(plan.replacedMessageIds).not.toContain("u0");
+  });
+});
+
+describe("discarded reply ids", () => {
+  it("releases every suffix id a failed retry had hidden", () => {
+    const turnIds = new Set();
+    const messageIds = new Set();
+    rememberDiscardedIds(turnIds, messageIds, {
+      turnId: "t1",
+      turnIds: ["t2"],
+      messageIds: ["t1:assistant", "t2:user", "t2:assistant"],
+    });
+    expect([...turnIds].sort()).toEqual(["t1", "t2"]);
+    expect(messageIds.has("t2:user")).toBe(true);
+    releaseDiscardedIds(turnIds, messageIds, {
+      turnId: "t1",
+      turnIds: ["t2"],
+      messageIds: ["t1:assistant", "t2:user", "t2:assistant"],
+    });
+    expect(turnIds.size).toBe(0);
+    expect(messageIds.size).toBe(0);
+  });
+
+  it("keeps a message that arrived after the snapshot when a retry is restored", () => {
+    const source = [
+      { id: "u", role: "user", content: "hi" },
+      { id: "a", role: "assistant", content: "old" },
+    ];
+    const latest = [
+      { id: "u", role: "user", content: "hi" },
+      { id: "other", role: "user", content: "from another device" },
+    ];
+    const restored = keepArrivals(source, latest, { messageIds: [], turnIds: [] });
+    expect(restored.map((message) => message.id)).toEqual(["u", "a", "other"]);
   });
 });
 

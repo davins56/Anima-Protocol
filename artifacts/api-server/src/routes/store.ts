@@ -984,22 +984,34 @@ router.post("/messages/counts", async (req, res) => {
 
 type StoreTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-/** A late append must not put back a companion reply the user already replaced. */
+/**
+ * A late write must not put back a companion reply the user already replaced.
+ * His existing line stays: it is the prompt this retry is answering, and
+ * dropping it would delete the row because replace only keeps what it writes.
+ * A user line that is not already stored is a later turn from the discarded
+ * suffix, so `blockNewUser` refuses to insert it again.
+ */
 async function nonUserTurnIsReplaced(
   tx: StoreTx,
   userId: string,
   message: MsgData,
+  opts?: { blockNewUser?: boolean; replaced?: Map<string, boolean> },
 ): Promise<boolean> {
-  if (message.role === "user") return false;
   const turnId = messageTurnId(message);
   if (!turnId) return false;
-  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${turnId}`}))`);
-  const [turn] = await tx
-    .select({ metadata: chatTurns.metadata })
-    .from(chatTurns)
-    .where(and(eq(chatTurns.id, turnId), eq(chatTurns.userId, userId)))
-    .limit(1);
-  return Boolean(turn && turnMetadataReplaced(turn.metadata));
+  if (message.role === "user" && !opts?.blockNewUser) return false;
+  let replaced = opts?.replaced?.get(turnId);
+  if (replaced == null) {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${turnId}`}))`);
+    const [turn] = await tx
+      .select({ metadata: chatTurns.metadata })
+      .from(chatTurns)
+      .where(and(eq(chatTurns.id, turnId), eq(chatTurns.userId, userId)))
+      .limit(1);
+    replaced = Boolean(turn && turnMetadataReplaced(turn.metadata));
+    opts?.replaced?.set(turnId, replaced);
+  }
+  return replaced;
 }
 
 // POST /messages { session_id, message } — append ONE message. The server
@@ -1098,6 +1110,7 @@ router.post("/messages/replace", async (req, res) => {
     const now = new Date().toISOString();
     const kept = new Set<string>();
     const result: MsgData[] = [];
+    const replacedTurns = new Map<string, boolean>();
     let i = 0;
     for (const raw of incoming) {
       const msg = asObject(raw);
@@ -1117,7 +1130,14 @@ router.post("/messages/replace", async (req, res) => {
         created_date: prev?.created_date ?? msg.created_date ?? now,
         updated_date: now,
       };
-      if (await nonUserTurnIsReplaced(tx, userId, data)) continue;
+      if (
+        await nonUserTurnIsReplaced(tx, userId, data, {
+          blockNewUser: data.role === "user" && !existingId,
+          replaced: replacedTurns,
+        })
+      ) {
+        continue;
+      }
       await tx
         .insert(userEntities)
         .values({ userId, entityName: CHAT_MESSAGE, entityId: id, data })

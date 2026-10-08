@@ -148,8 +148,9 @@ function replacedTurnIds(
  * True when this stored row is part of the reply a retry or edit is replacing.
  * A seq at or after the verified anchor removes the whole suffix, including
  * later user lines. An explicit id cannot reach a row that sorts before that
- * anchor. Matching a replaced turn removes her reply and leaves his line
- * unless the boundary already includes it.
+ * anchor. With no anchor, an exact listed id is enough on its own. Matching
+ * a replaced turn removes her reply and leaves his line unless the boundary
+ * or that listed id already includes it.
  */
 export function shouldDiscardStoredMessage(
   message: unknown,
@@ -168,11 +169,7 @@ export function shouldDiscardStoredMessage(
   const id = String(row.id || "");
   const listed = target.messageIds || [];
   const listedHit = Boolean(id && listed.some((item) => item === id));
-  if (listedHit && (fromSeq == null || seq == null || seq >= fromSeq)) {
-    if (fromSeq != null || seq == null) return true;
-    const turns = replacedTurnIds(target);
-    if (turns.size === 0 || turns.has(messageTurnId(message))) return true;
-  }
+  if (listedHit && (fromSeq == null || seq == null || seq >= fromSeq)) return true;
   if (row.role === "user") return false;
   const turns = replacedTurnIds(target);
   if (turns.size === 0) return false;

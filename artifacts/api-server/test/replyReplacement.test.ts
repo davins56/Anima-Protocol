@@ -75,5 +75,11 @@ describe("reply replacement affect guard", () => {
     expect(
       shouldDiscardStoredMessage({ id: "turn_other:assistant", role: "assistant" }, target),
     ).toBe(false);
+    expect(
+      shouldDiscardStoredMessage(
+        { id: "listed-late", role: "user", seq: 4, turn_id: "someone-else" },
+        { messageIds: ["listed-late"], turnIds: ["turn_old"] },
+      ),
+    ).toBe(true);
   });
 });
