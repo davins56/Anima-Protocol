@@ -215,7 +215,7 @@ import {
   turnSkipsAffect,
 } from "../lib/replyReplacement";
 import { deferLocalLlmJob } from "../lib/deferredLocalLlm";
-import { appendTurnMemoryFact, buildMemoryPolicyJob } from "../lib/memoryPolicy";
+import { buildMemoryPolicyJob, buildMemoryReembedJob, persistCompanionTurnFact } from "../lib/memoryPolicy";
 import {
   applyCompanionMemoryChange,
   groupCompanionMemories,
@@ -885,46 +885,13 @@ async function upsertTurnMemory(params: {
     created_at: now.toISOString(),
   };
   for (const characterId of params.characterIds) {
-    const [existing] = await withTransientDbRetry(() =>
-      db
-        .select()
-        .from(companionMemories)
-        .where(
-          and(
-            eq(companionMemories.userId, params.userId),
-            eq(companionMemories.characterId, characterId),
-          ),
-        )
-        .limit(1),
-    );
-    const facts = appendTurnMemoryFact(
-      Array.isArray(existing?.facts) ? existing.facts : [],
-      fact,
-    );
-    if (!facts) continue;
-    await withTransientDbRetry(() =>
-      db
-        .insert(companionMemories)
-        .values({
-          userId: params.userId,
-          characterId,
-          summary: existing?.summary ?? "",
-          facts,
-          emotionalState: existing?.emotionalState ?? {},
-          resonanceNotes: existing?.resonanceNotes ?? "",
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [
-            companionMemories.userId,
-            companionMemories.characterId,
-          ],
-          set: {
-            facts,
-            updatedAt: now,
-          },
-        }),
-    );
+    const wrote = await persistCompanionTurnFact({
+      userId: params.userId,
+      characterId,
+      turnFact: fact,
+      now,
+    });
+    if (!wrote) continue;
 
     // Index the new turn fact for hybrid semantic retrieval. Best-effort —
     // chat must not fail if the embedding endpoint / hash path errors.
@@ -1717,7 +1684,21 @@ async function changeCompanionMemory(
     res.status(result.status).json({ error: result.error, code: result.code });
     return;
   }
-  res.json({ review: result.review });
+  if (result.changed && action === "edit") {
+    const job = buildMemoryReembedJob({
+      userId,
+      characterId,
+      factId: result.focusFactId,
+    });
+    if (job) {
+      try {
+        await deferLocalLlmJob(job);
+      } catch {
+        // The corrected sentence is already stored. Search can catch up later.
+      }
+    }
+  }
+  res.json({ review: result.review, changed: result.changed });
 }
 
 router.patch("/memories/:characterId/facts/:factId", async (req, res) => {

@@ -6,8 +6,8 @@
  * no remote embedding endpoint is configured.
  */
 
-import { and, eq, inArray } from "drizzle-orm";
-import { db, memoryEmbeddings } from "@workspace/db";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { companionMemories, db, memoryEmbeddings } from "@workspace/db";
 import {
   classifyFact,
   compressMemoriesForContext,
@@ -30,6 +30,39 @@ export function factIdFor(text: string, explicitId?: string): string {
   return createHash("sha256").update(text.trim()).digest("hex").slice(0, 24);
 }
 
+function isLivePolicyText(
+  item: unknown,
+  factId: string,
+): item is { text: string } {
+  if (!item || typeof item !== "object") return false;
+  const rec = item as Record<string, unknown>;
+  if (rec.forgotten === true) return false;
+  const memoryClass = rec.memory_class;
+  return (
+    (memoryClass === "episodic" || memoryClass === "semantic" || memoryClass === "core") &&
+    rec.fact_id === factId &&
+    typeof rec.text === "string"
+  );
+}
+
+/**
+ * A policy fact is current only when the row still has this id and this
+ * sentence. A turn note is current only while some stored text still matches.
+ * Compared inside the companion lock so a correction cannot be overwritten.
+ */
+function embeddingTextIsCurrent(stored: unknown[], explicitId: string, text: string): boolean {
+  if (explicitId) {
+    const live = stored.find((item) => isLivePolicyText(item, explicitId));
+    return Boolean(live && live.text.trim() === text);
+  }
+  return stored.some((item) => {
+    if (!item || typeof item !== "object") return false;
+    const rec = item as Record<string, unknown>;
+    if (rec.forgotten === true) return false;
+    return typeof rec.text === "string" && rec.text.trim() === text;
+  });
+}
+
 /** Upsert embeddings for a batch of memory facts. */
 export async function upsertMemoryEmbeddings(opts: {
   userId: string;
@@ -44,38 +77,32 @@ export async function upsertMemoryEmbeddings(opts: {
 
   const embedded = await embedTexts(texts);
   let written = 0;
+  let cursor = 0;
 
-  for (let i = 0; i < facts.length; i++) {
-    const fact = facts[i]!;
+  for (const fact of facts) {
     const text = (fact.text || "").trim();
     if (!text) continue;
-    const embedding = embedded.embeddings[i] || hashEmbed(text);
-    const factId = factIdFor(text, fact.fact_id ? String(fact.fact_id) : undefined);
+    const embedding = embedded.embeddings[cursor] || hashEmbed(text);
+    cursor += 1;
+    const explicitId = fact.fact_id ? String(fact.fact_id).trim() : "";
+    const factId = factIdFor(text, explicitId || undefined);
     const memoryType = classifyFact(fact);
 
-    await db
-      .insert(memoryEmbeddings)
-      .values({
-        userId,
-        characterId,
-        factId,
-        text,
-        memoryType,
-        embedding,
-        model: embedded.model,
-        metadata: {
-          source_type: fact.type || null,
-          session_id: fact.session_id || null,
-        },
-        updatedAt: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: [
-          memoryEmbeddings.userId,
-          memoryEmbeddings.characterId,
-          memoryEmbeddings.factId,
-        ],
-        set: {
+    const stored = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`${userId}:${characterId}`}))`);
+      const [row] = await tx
+        .select({ facts: companionMemories.facts })
+        .from(companionMemories)
+        .where(and(eq(companionMemories.userId, userId), eq(companionMemories.characterId, characterId)))
+        .limit(1);
+      const current = Array.isArray(row?.facts) ? row.facts : [];
+      if (!embeddingTextIsCurrent(current, explicitId, text)) return false;
+      await tx
+        .insert(memoryEmbeddings)
+        .values({
+          userId,
+          characterId,
+          factId,
           text,
           memoryType,
           embedding,
@@ -85,9 +112,28 @@ export async function upsertMemoryEmbeddings(opts: {
             session_id: fact.session_id || null,
           },
           updatedAt: new Date(),
-        },
-      });
-    written += 1;
+        })
+        .onConflictDoUpdate({
+          target: [
+            memoryEmbeddings.userId,
+            memoryEmbeddings.characterId,
+            memoryEmbeddings.factId,
+          ],
+          set: {
+            text,
+            memoryType,
+            embedding,
+            model: embedded.model,
+            metadata: {
+              source_type: fact.type || null,
+              session_id: fact.session_id || null,
+            },
+            updatedAt: new Date(),
+          },
+        });
+      return true;
+    });
+    if (stored) written += 1;
   }
 
   return written;
