@@ -20,6 +20,8 @@ describe("chat stream client abort", () => {
     expect(animaApi).toContain("export const CHAT_STREAM_TIMEOUT_MS = 140_000");
     expect(animaApi).toContain("export const CHAT_FETCH_ABORT_MS = 310_000");
     expect(animaApi).toContain("setTimeout(() => controller.abort(), CHAT_FETCH_ABORT_MS)");
+    expect(animaApi).toContain("if (controller.signal.aborted)");
+    expect(animaApi).toContain('cancel.code = "chat_user_cancel"');
     expect(animaApi).toContain("requireChatAuthHeaders");
   });
 
