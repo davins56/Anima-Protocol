@@ -5,7 +5,13 @@ import {
   editCompanionMemoryFact,
   groupCompanionMemories,
 } from "../src/lib/companionMemoryReview";
-import { isForgottenFact, isPolicyFact } from "../src/lib/memoryPolicy";
+import {
+  consolidateExchange,
+  isForgottenFact,
+  isPolicyFact,
+  policyDedupeKey,
+  policyFactId,
+} from "../src/lib/memoryPolicy";
 
 const userName = {
   type: "factual",
@@ -159,6 +165,108 @@ describe("companion memory review grouping", () => {
     expect(stored?.value).toBe("Sam");
     expect(stored?.user_edited).toBe(true);
     expect(edited.facts?.some((item) => isForgottenFact(item))).toBe(false);
+  });
+
+  it("re-reads the predicate from the corrected sentence and does not keep the old one", () => {
+    const enjoys = {
+      ...userName,
+      text: "The human enjoys hiking.",
+      predicate: "enjoys",
+      object: "hiking",
+      fact_id: "user-enjoys",
+    };
+    const disliked = editCompanionMemoryFact([enjoys], "user-enjoys", "The human dislikes hiking.");
+    expect(disliked.ok).toBe(true);
+    if (!disliked.ok) return;
+    const stored = disliked.facts?.find((item) => isPolicyFact(item));
+    expect(stored?.predicate).toBe("dislikes");
+    expect(stored?.object).toBe("hiking");
+    expect(stored?.text).toBe("The human dislikes hiking.");
+    expect(disliked.facts?.some((item) => isForgottenFact(item) && item.predicate === "enjoys")).toBe(
+      true,
+    );
+
+    const renamed = editCompanionMemoryFact(
+      facts,
+      "user-name",
+      "The human enjoys chess.",
+    );
+    expect(renamed.ok).toBe(true);
+    if (!renamed.ok) return;
+    const chess = renamed.facts?.find((item) => isPolicyFact(item) && item.text === "The human enjoys chess.");
+    expect(chess?.predicate).toBe("enjoys");
+    expect(chess?.object).toBe("chess");
+    expect(chess?.predicate).not.toBe("name");
+    expect(renamed.facts?.some((item) => isForgottenFact(item) && item.predicate === "name" && item.object === "Sam")).toBe(
+      true,
+    );
+  });
+
+  it("files an informal name correction on the same key a later chat would use", () => {
+    const edited = editCompanionMemoryFact(facts, "user-name", "My name is Samuel.");
+    expect(edited.ok).toBe(true);
+    if (!edited.ok) return;
+    const key = policyDedupeKey({ about: "user", subject: "user", predicate: "name", object: "Samuel" });
+    const stored = edited.facts?.find((item) => isPolicyFact(item) && item.fact_id === policyFactId(key));
+    expect(stored?.predicate).toBe("name");
+    expect(stored?.object).toBe("Samuel");
+    expect(stored?.text).toBe("My name is Samuel.");
+    expect(edited.facts?.filter((item) => isPolicyFact(item) && item.predicate === "name")).toHaveLength(1);
+    const again = consolidateExchange({
+      userContent: "My name is Samuel.",
+      assistantContent: "Noted.",
+      companionName: "Natasha Romanoff",
+      existingFacts: edited.facts,
+    });
+    expect(again.facts.filter((item) => isPolicyFact(item) && item.predicate === "name")).toHaveLength(1);
+  });
+
+  it("keeps one fact when a correction lands on a triple that is already stored", () => {
+    const alexKey = policyDedupeKey({ about: "user", subject: "user", predicate: "name", object: "Alex" });
+    const alex = {
+      ...userName,
+      text: "The human's name is Alex.",
+      object: "Alex",
+      value: "Alex",
+      fact_id: policyFactId(alexKey),
+    };
+    const edited = editCompanionMemoryFact([userName, alex], "user-name", "The human's name is Alex.");
+    expect(edited.ok).toBe(true);
+    if (!edited.ok) return;
+    const live = edited.facts?.filter((item) => isPolicyFact(item) && item.predicate === "name") || [];
+    expect(live).toHaveLength(1);
+    expect(live[0]?.text).toBe("The human's name is Alex.");
+    expect(live[0]?.user_edited).toBe(true);
+    expect(live[0]?.fact_id).toBe(policyFactId(alexKey));
+    expect(new Set(live.map((item) => item.fact_id)).size).toBe(1);
+  });
+
+  it("keeps a long correction instead of cutting the value at 80 characters", () => {
+    const longName = "A".repeat(120);
+    const edited = editCompanionMemoryFact(facts, "user-name", `The human's name is ${longName}.`);
+    expect(edited.ok).toBe(true);
+    if (!edited.ok) return;
+    const stored = edited.facts?.find((item) => isPolicyFact(item) && item.predicate === "name");
+    expect(stored?.object).toBe(longName);
+    expect(stored?.value).toBe(longName);
+    expect((stored?.object || "").length).toBeGreaterThan(80);
+  });
+
+  it("drops the source turn when the fact is forgotten so the prompt cannot quote it", () => {
+    const turn = {
+      type: "turn",
+      turn_id: "name-turn",
+      text: "User: My name is Sam. | Companion: I hear you.",
+      created_at: "2026-06-01T00:00:00.000Z",
+    };
+    const named = { ...userName, turn_id: "name-turn" };
+    const removed = deleteCompanionMemoryFact([turn, named, herKey], "user-name");
+    expect(removed.ok).toBe(true);
+    if (!removed.ok) return;
+    expect(removed.facts?.some((item) => (item as { type?: string }).type === "turn")).toBe(false);
+    expect(JSON.stringify(removed.facts)).not.toMatch(/My name is Sam/);
+    expect(removed.facts?.some((item) => isForgottenFact(item) && item.object === "Sam")).toBe(true);
+    expect(removed.review.companion.map((item) => item.fact_id)).toEqual(["her-key"]);
   });
 
   it("does not call a model from the review module", () => {

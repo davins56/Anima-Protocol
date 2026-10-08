@@ -111,6 +111,10 @@ export type ForgottenFact = {
   predicate: string;
   object: string;
   deleted_at: string;
+  /** Chat turn this fact was taken from, when one was stored. */
+  turn_id?: string;
+  /** Sentence that was forgotten, so retrieval can keep it out of the prompt. */
+  source_text?: string;
 };
 
 type RawHit = {
@@ -294,8 +298,15 @@ export function decideMemoryCandidate(input: {
   };
 }
 
+/** Extraction objects stay short. A person's correction may use the full edit. */
+export const CORRECTED_VALUE_MAX = 500;
+
 function cleanObject(value: string): string {
   return value.replace(/\s+/g, " ").replace(/[.!?,;:]+$/g, "").trim().slice(0, 80);
+}
+
+function correctedValue(value: string): string {
+  return value.replace(/\s+/g, " ").replace(/[.!?,;:]+$/g, "").trim().slice(0, CORRECTED_VALUE_MAX);
 }
 
 function namesMatch(object: string, companionName: string): boolean {
@@ -328,29 +339,50 @@ function userFactText(predicate: string, object: string, repeated = false): stri
   return `The human ${predicate}: ${object}.`;
 }
 
+export type CorrectedFactShape = {
+  predicate: string;
+  object: string;
+  /** True when the sentence used a known prefix, so the predicate was re-read. */
+  matched: boolean;
+};
+
 /**
- * Pull the structured object back out of a corrected sentence so `object`
- * and `value` stay aligned with the words the person saved.
+ * Read the predicate from the corrected sentence, then the object that follows
+ * that prefix. "The human enjoys chess" is enjoys/chess, even when the stored
+ * fact used to be a name. A sentence with no known prefix keeps the old predicate.
+ * The value is not cut at the extraction cap; it follows the edit limit.
  */
-export function objectFromCorrectedText(predicate: string, text: string): string {
+export function shapeFromCorrectedText(fallbackPredicate: string, text: string): CorrectedFactShape {
   const cleaned = text.replace(/\s+/g, " ").trim();
-  const prefixes = [
-    USER_SENTENCE_PREFIX[predicate],
-    `The human ${predicate}: `,
-    REPEATED_FACT_PREFIX,
-    ...Object.values(USER_SENTENCE_PREFIX),
-  ];
-  const seen = new Set<string>();
-  for (const prefix of prefixes) {
-    if (!prefix) continue;
-    const key = prefix.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    if (cleaned.toLowerCase().startsWith(key)) {
-      return cleanObject(cleaned.slice(prefix.length));
+  const prefixes = Object.entries(USER_SENTENCE_PREFIX).sort((a, b) => b[1].length - a[1].length);
+  for (const [predicate, prefix] of prefixes) {
+    if (cleaned.toLowerCase().startsWith(prefix.toLowerCase())) {
+      return { predicate, object: correctedValue(cleaned.slice(prefix.length)), matched: true };
     }
   }
-  return cleanObject(cleaned);
+  if (cleaned.toLowerCase().startsWith(REPEATED_FACT_PREFIX.toLowerCase())) {
+    return {
+      predicate: fallbackPredicate,
+      object: correctedValue(cleaned.slice(REPEATED_FACT_PREFIX.length)),
+      matched: true,
+    };
+  }
+  const generic = new RegExp(`^the human ${fallbackPredicate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:\\s+`, "i");
+  if (generic.test(cleaned)) {
+    return {
+      predicate: fallbackPredicate,
+      object: correctedValue(cleaned.replace(generic, "")),
+      matched: true,
+    };
+  }
+  // The same phrases a chat turn would extract, so "My name is Samuel."
+  // lands on the name key instead of a second fact with the whole sentence.
+  const spoken = extractRaw(cleaned, "", "").filter((hit) => hit.about === "user");
+  if (spoken.length === 1) {
+    const hit = spoken[0]!;
+    return { predicate: hit.predicate, object: correctedValue(hit.object), matched: true };
+  }
+  return { predicate: fallbackPredicate, object: correctedValue(cleaned), matched: false };
 }
 
 function coreProposalText(name: string, predicate: string, object: string): string {
@@ -697,8 +729,26 @@ function capPolicyFacts(facts: unknown[]): unknown[] {
   return facts.filter((item) => !isPolicyFact(item) || !dropIds.has(item.fact_id));
 }
 
+/**
+ * Older rows stored a sentence with no memory class. Those are not chat
+ * crumbs, so the turn window must not drop them.
+ */
+export function isLegacyTextFact(item: unknown): boolean {
+  if (!item || typeof item !== "object") return false;
+  if (isPolicyFact(item) || isForgottenFact(item)) return false;
+  const rec = item as Record<string, unknown>;
+  if (rec.type === "turn" || typeof rec.turn_id === "string") return false;
+  return typeof rec.text === "string" && rec.text.trim().length > 0;
+}
+
 function isTurnCrumb(item: unknown): boolean {
-  return Boolean(item && typeof item === "object" && !isPolicyFact(item) && !isForgottenFact(item));
+  return Boolean(
+    item &&
+      typeof item === "object" &&
+      !isPolicyFact(item) &&
+      !isForgottenFact(item) &&
+      !isLegacyTextFact(item),
+  );
 }
 
 /**
@@ -719,7 +769,9 @@ export function appendTurnMemoryFact(
   ) {
     return null;
   }
-  const kept = existing.filter((item) => isPolicyFact(item) || isForgottenFact(item));
+  const kept = existing.filter(
+    (item) => isPolicyFact(item) || isForgottenFact(item) || isLegacyTextFact(item),
+  );
   const turns = existing.filter(isTurnCrumb);
   const nextTurns = turns.slice(-(TURN_FACT_CAP - 1));
   nextTurns.push(turnFact);
@@ -847,6 +899,34 @@ export function consolidateExchange(input: {
   return { facts, candidates, saved, discarded, promoted, coreProposed };
 }
 
+/** Re-index the corrected sentence on the existing deferred memory-policy path. */
+export function buildMemoryReembedJob(input: {
+  userId: string;
+  characterId: string;
+  factId?: string;
+}): {
+  id: string;
+  userId: string;
+  kind: "memory-policy";
+  payload: Record<string, unknown>;
+} | null {
+  const userId = input.userId.trim();
+  const characterId = input.characterId.trim();
+  const factId = input.factId?.trim() || "";
+  if (!userId || !characterId) return null;
+  return {
+    id: `memory-policy:reembed:${userId}:${characterId}:${factId || "all"}`,
+    userId,
+    kind: "memory-policy",
+    payload: {
+      userId,
+      characterId,
+      reembedOnly: true,
+      factId,
+    },
+  };
+}
+
 export function buildMemoryPolicyJob(input: {
   userId: string;
   characterId: string;
@@ -913,6 +993,30 @@ async function readCompanionFactRows(
 
 function embeddablePolicyFacts(facts: unknown[]): PolicyFact[] {
   return facts.filter(isPolicyFact).filter((fact) => fact.proposal !== true);
+}
+
+/** Index the sentences that are stored now. Does not call a chat model. */
+async function reembedCurrentFacts(userId: string, characterId: string, factId: string): Promise<void> {
+  const embeddable = await withCompanionMemoryLock(userId, characterId, async (tx) => {
+    const facts = embeddablePolicyFacts(await readCompanionFactRows(tx, userId, characterId));
+    return factId ? facts.filter((fact) => fact.fact_id === factId) : facts;
+  });
+  if (embeddable.length === 0) return;
+  try {
+    await upsertMemoryEmbeddings({
+      userId,
+      characterId,
+      facts: embeddable.map((fact) => ({
+        type: fact.type,
+        text: fact.text,
+        session_id: fact.session_id,
+        created_at: fact.created_at,
+        fact_id: fact.fact_id,
+      })),
+    });
+  } catch {
+    // Keyword retrieval still sees the corrected sentence.
+  }
 }
 
 /**
@@ -983,6 +1087,10 @@ export async function runDeferredMemoryPolicy(
   const sessionId = payload.sessionId ? String(payload.sessionId) : undefined;
   const turnId = payload.turnId ? String(payload.turnId) : undefined;
   if (!userId || !characterId) return;
+  if (payload.reembedOnly === true) {
+    await reembedCurrentFacts(userId, characterId, String(payload.factId || ""));
+    return;
+  }
   if (!isMeaningfulExchange(userContent, assistantContent)) return;
 
   await ensureSchemaOnce();
@@ -1064,12 +1172,22 @@ export async function runDeferredMemoryPolicy(
   const embeddedIds = embeddable.map((fact) => fact.fact_id);
   if (embeddedIds.length === 0) return;
   await withCompanionMemoryLock(userId, characterId, async (tx) => {
-    const live = new Set(
-      embeddablePolicyFacts(await readCompanionFactRows(tx, userId, characterId)).map(
-        (fact) => fact.fact_id,
-      ),
+    const liveText = new Map(
+      embeddablePolicyFacts(await readCompanionFactRows(tx, userId, characterId)).map((fact) => [
+        fact.fact_id,
+        fact.text.trim(),
+      ]),
     );
-    const stale = embeddedIds.filter((id) => !live.has(id));
+    const rows = await tx
+      .select({ factId: memoryEmbeddings.factId, text: memoryEmbeddings.text })
+      .from(memoryEmbeddings)
+      .where(and(eq(memoryEmbeddings.userId, userId), eq(memoryEmbeddings.characterId, characterId)));
+    const stale = embeddedIds.filter((id) => {
+      const live = liveText.get(id);
+      if (!live) return true;
+      const row = rows.find((item) => item.factId === id);
+      return Boolean(row && row.text.trim() !== live);
+    });
     if (stale.length === 0) return;
     await tx
       .delete(memoryEmbeddings)

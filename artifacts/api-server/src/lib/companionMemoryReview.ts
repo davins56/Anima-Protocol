@@ -16,9 +16,9 @@ import { factIdFor } from "./memoryEmbeddings";
 import {
   isForgottenFact,
   isPolicyFact,
-  objectFromCorrectedText,
   policyDedupeKey,
   policyFactId,
+  shapeFromCorrectedText,
   withCompanionMemoryLock,
   type ForgottenFact,
   type MemoryAbout,
@@ -50,7 +50,7 @@ export type CompanionMemoryReview = {
 };
 
 export type MemoryChangeResult =
-  | { ok: true; review: CompanionMemoryReview; changed: boolean }
+  | { ok: true; review: CompanionMemoryReview; changed: boolean; focusFactId?: string }
   | { ok: false; status: 400 | 403 | 404; error: string; code: string };
 
 const EMPTY_REVIEW: CompanionMemoryReview = {
@@ -183,31 +183,57 @@ export function editCompanionMemoryFact(
   if (text === fact.text.trim()) {
     return { ok: true, changed: false, review: groupCompanionMemories(facts), facts };
   }
-  const nextObject = objectFromCorrectedText(fact.predicate, text);
+  const shape = shapeFromCorrectedText(fact.predicate, text);
   const priorKey = policyDedupeKey(fact);
   const nextKey = policyDedupeKey({
     about: fact.about,
     subject: fact.subject,
-    predicate: fact.predicate,
-    object: nextObject,
+    predicate: shape.predicate,
+    object: shape.object,
   });
   const keyChanged = nextKey !== priorKey;
+  const lockedOwner =
+    keyChanged &&
+    facts.some(
+      (item) =>
+        isPolicyFact(item) &&
+        item.fact_id !== fact.fact_id &&
+        memoryFactLocked(item) &&
+        policyDedupeKey(item) === nextKey,
+    );
+  const episodic = shape.predicate === "did" || shape.predicate === "felt";
   const nextFact: PolicyFact = {
     ...fact,
     text,
-    object: nextObject,
-    value: nextObject,
+    predicate: shape.predicate,
+    object: shape.object,
+    value: shape.object,
     user_edited: true,
     updated_at: now,
-    fact_id: keyChanged ? policyFactId(nextKey) : fact.fact_id,
+    memory_class: shape.matched ? (episodic ? "episodic" : "semantic") : fact.memory_class,
+    fact_id: keyChanged && !lockedOwner ? policyFactId(nextKey) : fact.fact_id,
   };
   let next = facts.map((item) =>
     isPolicyFact(item) && item.fact_id === factId ? nextFact : item,
   );
   // Only the old triple is forgotten. A custom fact id that still names the
-  // same subject, predicate, and object stays as it is.
-  if (keyChanged) next = replaceForgotten(next, toForgottenFact(fact, now));
-  return { ok: true, changed: true, review: groupCompanionMemories(next), facts: next };
+  // same subject, predicate, and object stays as it is. A second live fact
+  // that already uses the new triple is the older duplicate and is dropped.
+  if (keyChanged) {
+    next = next.filter((item) => {
+      if (item === nextFact) return true;
+      if (!isPolicyFact(item) || policyDedupeKey(item) !== nextKey) return true;
+      return memoryFactLocked(item);
+    });
+    next = replaceForgotten(next, toForgottenFact(fact, now));
+  }
+  return {
+    ok: true,
+    changed: true,
+    review: groupCompanionMemories(next),
+    facts: next,
+    focusFactId: nextFact.fact_id,
+  };
 }
 
 function toForgottenFact(fact: PolicyFact, now: string): ForgottenFact {
@@ -219,7 +245,34 @@ function toForgottenFact(fact: PolicyFact, now: string): ForgottenFact {
     predicate: fact.predicate,
     object: fact.object,
     deleted_at: now,
+    turn_id: fact.turn_id,
+    source_text: fact.text,
   };
+}
+
+const WEAK_FORGOTTEN_OBJECTS = new Set([
+  "it",
+  "that",
+  "this",
+  "them",
+  "something",
+  "anything",
+  "stuff",
+]);
+
+function mentionsForgotten(text: string, object: string, source: string): boolean {
+  if (source && text.toLowerCase().includes(source.toLowerCase())) return true;
+  const needle = object.trim();
+  if (needle.length < 3 || WEAK_FORGOTTEN_OBJECTS.has(needle.toLowerCase())) return false;
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${escaped}\\b`, "i").test(text);
+}
+
+function isSourceTurn(item: unknown): item is Record<string, unknown> {
+  if (!item || typeof item !== "object") return false;
+  if (isPolicyFact(item) || isForgottenFact(item)) return false;
+  const rec = item as Record<string, unknown>;
+  return rec.type === "turn" || typeof rec.turn_id === "string";
 }
 
 function replaceForgotten(facts: unknown[], marker: ForgottenFact): unknown[] {
@@ -252,7 +305,13 @@ export function deleteCompanionMemoryFact(
   }
   const marker = toForgottenFact(fact, new Date().toISOString());
   const withoutLive = facts.filter((item) => !(isPolicyFact(item) && item.fact_id === factId));
-  const next = replaceForgotten(withoutLive, marker);
+  const withoutSource = withoutLive.filter((item) => {
+    if (!isSourceTurn(item)) return true;
+    const text = typeof item.text === "string" ? item.text : "";
+    const sameTurn = Boolean(fact.turn_id && item.turn_id === fact.turn_id);
+    return !(sameTurn || mentionsForgotten(text, fact.object, fact.text));
+  });
+  const next = replaceForgotten(withoutSource, marker);
   return { ok: true, changed: true, review: groupCompanionMemories(next), facts: next };
 }
 
@@ -331,17 +390,28 @@ export async function applyCompanionMemoryChange(input: {
         })
         .where(and(eq(companionMemories.userId, userId), eq(companionMemories.characterId, characterId)));
 
-      const embeddingIds = [factId];
-      if (prior?.text) embeddingIds.push(factIdFor(prior.text));
-      if (input.action === "edit") {
-        const cleaned = cleanMemoryText(input.text);
-        if (cleaned) embeddingIds.push(factIdFor(cleaned));
-        const updated = changed.facts.find(
-          (item): item is PolicyFact => isPolicyFact(item) && item.text === cleaned,
-        );
-        if (updated) embeddingIds.push(updated.fact_id);
+      const embeddingIds = new Set<string>([factId]);
+      if (prior?.text) embeddingIds.add(factIdFor(prior.text));
+      if (changed.focusFactId) embeddingIds.add(changed.focusFactId);
+      const afterPolicyIds = new Set(
+        changed.facts.filter(isPolicyFact).map((item) => item.fact_id),
+      );
+      for (const item of current) {
+        if (isPolicyFact(item) && !afterPolicyIds.has(item.fact_id)) {
+          embeddingIds.add(item.fact_id);
+          embeddingIds.add(factIdFor(item.text));
+        }
       }
-      await dropFactEmbeddings(tx, userId, characterId, embeddingIds);
+      const afterTurnKeys = new Set(
+        changed.facts.filter(isSourceTurn).map((item) => `${item.turn_id || ""}|${item.text || ""}`),
+      );
+      for (const item of current) {
+        if (!isSourceTurn(item)) continue;
+        const key = `${item.turn_id || ""}|${item.text || ""}`;
+        if (afterTurnKeys.has(key)) continue;
+        if (typeof item.text === "string" && item.text.trim()) embeddingIds.add(factIdFor(item.text));
+      }
+      await dropFactEmbeddings(tx, userId, characterId, [...embeddingIds]);
       return changed;
   });
 }

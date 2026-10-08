@@ -15,6 +15,7 @@ import {
   companionMemories,
   db,
   ensureSchemaOnce,
+  localLlmDeferredJobs,
   memoryEmbeddings,
   userEntities,
   userProfiles,
@@ -104,6 +105,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await db.delete(localLlmDeferredJobs).where(eq(localLlmDeferredJobs.userId, ownerId));
   await db.delete(memoryEmbeddings).where(eq(memoryEmbeddings.userId, ownerId));
   await db.delete(companionMemories).where(eq(companionMemories.userId, ownerId));
   await db.delete(companionMemories).where(eq(companionMemories.userId, otherId));
@@ -113,6 +115,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  await db.delete(localLlmDeferredJobs).where(eq(localLlmDeferredJobs.userId, ownerId));
   await db.delete(memoryEmbeddings).where(eq(memoryEmbeddings.userId, ownerId));
   await db.delete(companionMemories).where(eq(companionMemories.userId, ownerId));
   await db.delete(companionMemories).where(eq(companionMemories.userId, otherId));
@@ -237,7 +240,15 @@ describe("companion memory review route", () => {
     const memory = await storedRow();
     const saved = (memory?.facts || []).find(
       (item) => item && (item as { text?: string }).text === "The human's name is Samuel.",
-    ) as { text?: string; about?: string; object?: string; value?: string; memory_class?: string; user_edited?: boolean };
+    ) as {
+      fact_id?: string;
+      text?: string;
+      about?: string;
+      object?: string;
+      value?: string;
+      memory_class?: string;
+      user_edited?: boolean;
+    };
     expect(saved.text).toBe("The human's name is Samuel.");
     expect(saved.about).toBe("user");
     expect(saved.object).toBe("Samuel");
@@ -260,6 +271,18 @@ describe("companion memory review route", () => {
       .from(memoryEmbeddings)
       .where(eq(memoryEmbeddings.userId, ownerId));
     expect(embeddings).toEqual([]);
+    const jobs = await db
+      .select()
+      .from(localLlmDeferredJobs)
+      .where(eq(localLlmDeferredJobs.userId, ownerId));
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]?.kind).toBe("memory-policy");
+    expect(jobs[0]?.payload).toMatchObject({
+      reembedOnly: true,
+      userId: ownerId,
+      characterId,
+      factId: saved.fact_id,
+    });
     const urls = fetchSpy.mock.calls.map((callArgs) => String(callArgs[0]));
     expect(urls.some((url) => /embeddings|openrouter|openai\.com|api\.openai/i.test(url))).toBe(false);
     } finally {
