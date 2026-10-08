@@ -4,6 +4,7 @@ import {
   messageTurnId,
   omitPersistedUserRow,
   replacedFromMessageIdOf,
+  replacedTurnIdOf,
   replacedMessageIdsOf,
   replacedTurnIdsOf,
   replyActionOf,
@@ -44,6 +45,8 @@ describe("reply replacement affect guard", () => {
     expect(messageTurnId({ metadata: { turn_id: "turn_meta" } })).toBe("turn_meta");
     expect(replacedFromMessageIdOf({ replaced_from_message_id: " anchor " })).toBe("anchor");
     expect(replacedFromMessageIdOf({ replaced_from_message_id: "x".repeat(201) })).toBe("");
+    expect(replacedTurnIdOf({ replaced_turn_id: " turn_ok " })).toBe("turn_ok");
+    expect(replacedTurnIdOf({ replaced_turn_id: "x".repeat(201) })).toBe("");
     expect(replacedMessageIdsOf({ replaced_message_ids: [" a ", "a", ""] })).toEqual(["a"]);
     expect(replacedMessageIdsOf(null)).toEqual([]);
     expect(

@@ -41,6 +41,15 @@ describe("retry and edit stay on the one send path", () => {
     expect(fn).toContain("activeSessionRef.current?.id === sessionId");
   });
 
+  it("restores the previous thread when replacement fails before the stream", () => {
+    const start = chat.indexOf("} else if (replyAction && isReplyReplaceFailed(err))");
+    expect(start).toBeGreaterThan(-1);
+    const branch = chat.slice(start, start + 2500);
+    expect(branch).toContain("releaseDiscardedIds");
+    expect(branch).toContain("messageData.priorMessages");
+    expect(branch).toContain("return { started: false }");
+  });
+
   it("skips a second mood write and a second user row on retry", () => {
     expect(server).toContain("turnSkipsAffect");
     expect(server).toContain("omitPersistedUserRow");

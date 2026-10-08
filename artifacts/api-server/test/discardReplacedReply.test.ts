@@ -664,4 +664,69 @@ describe("discardReplacedCompanionReply", () => {
     const typed = await db.select().from(chatMessages).where(eq(chatMessages.sessionId, session));
     expect(typed.map((row) => row.id).sort()).toEqual([`${turnId}:user`, lookalike].sort());
   });
+
+  it("rolls the replaced mark back when the row delete does not commit", async () => {
+    const session = `${sessionId}_atomic`;
+    const turnId = `${oldTurnId}_atomic`;
+    await beginChatTurn({
+      id: turnId,
+      sessionId: session,
+      userId,
+      userContent: "hello",
+      persistenceOwner: "client",
+      metadata: {},
+    });
+    await db.insert(userEntities).values({
+      userId,
+      entityName: CHAT_MESSAGE,
+      entityId: `${turnId}:assistant`,
+      data: {
+        id: `${turnId}:assistant`,
+        session_id: session,
+        role: "assistant",
+        content: "still here",
+        turn_id: turnId,
+        seq: 1,
+      },
+    });
+    await expect(
+      discardReplacedCompanionReply(
+        {
+          userId,
+          sessionId: session,
+          replacingTurnId: `${newTurnId}_atomic`,
+          replyAction: "retry",
+          userContent: "hello",
+          replacedTurnId: turnId,
+          messageIds: [`${turnId}:assistant`],
+          fromMessageId: `${turnId}:assistant`,
+        },
+        {
+          plan: {
+            turnId,
+            turnIds: [turnId],
+            messageIds: [`${turnId}:assistant`],
+            fromMessageId: `${turnId}:assistant`,
+            fromSeq: 1,
+          },
+          beforeDelete: async () => {
+            throw new Error("delete failed");
+          },
+        },
+      ),
+    ).rejects.toThrow("delete failed");
+    const turn = await readChatTurn(turnId, userId);
+    expect(turn?.metadata).not.toMatchObject({ replaced: true });
+    const rows = await db
+      .select()
+      .from(userEntities)
+      .where(
+        and(
+          eq(userEntities.userId, userId),
+          eq(userEntities.entityName, CHAT_MESSAGE),
+          eq(userEntities.entityId, `${turnId}:assistant`),
+        ),
+      );
+    expect(rows).toHaveLength(1);
+  });
 });

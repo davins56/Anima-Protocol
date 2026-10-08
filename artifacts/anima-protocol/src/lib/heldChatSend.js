@@ -115,6 +115,12 @@ export function isConversationBusyError(err) {
   return /still finishing the last reply/i.test(String(error.message || ""));
 }
 
+/** The server refused to replace the previous reply before the stream started. */
+export function isReplyReplaceFailed(err) {
+  if (!err || typeof err !== "object") return false;
+  return /** @type {{ code?: unknown }} */ (err).code === "reply_replace_failed";
+}
+
 /**
  * The 90s first-token budget (local slot) or the browser abort that wraps it.
  *

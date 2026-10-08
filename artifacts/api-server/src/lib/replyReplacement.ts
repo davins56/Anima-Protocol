@@ -39,7 +39,9 @@ export function turnMetadataReplaced(metadata: unknown): boolean {
 export function replacedTurnIdOf(metadata: unknown): string {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return "";
   const value = (metadata as { replaced_turn_id?: unknown }).replaced_turn_id;
-  return typeof value === "string" ? value.trim() : "";
+  const id = typeof value === "string" ? value.trim() : "";
+  if (!id || id.length > 200) return "";
+  return id;
 }
 
 /** First stored row of the suffix. The server deletes from that row's seq down. */

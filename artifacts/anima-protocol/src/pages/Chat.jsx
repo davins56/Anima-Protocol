@@ -171,6 +171,7 @@ import {
   dropAppliedComposerRestore,
   heldDraftStorageKey,
   isConversationBusyError,
+  isReplyReplaceFailed,
   liveTurnStillBlocking,
   omitTurnMessages,
   sessionControlsLocked,
@@ -3317,6 +3318,33 @@ Return JSON:
           syncGate();
           armConversationBusyRetry(sendSessionId);
         }
+      } else if (replyAction && isReplyReplaceFailed(err)) {
+        releaseDiscardedIds(
+          supersededTurnIdsRef.current,
+          supersededMessageIdsRef.current,
+          {
+            turnId: messageData.replacedTurnId,
+            turnIds: messageData.replacedTurnIds,
+            messageIds: messageData.replacedMessageIds,
+          },
+          supersededCountsRef.current,
+        );
+        lateTurnRef.current = null;
+        skipHeldFlush = true;
+        terminalReason = "error";
+        pendingRemoteSyncRef.current = false;
+        if (Array.isArray(messageData.priorMessages)) {
+          const prior = messageData.priorMessages;
+          const restoredPreview = String(prior[prior.length - 1]?.content || "").slice(0, 60);
+          applyIfSendSession((prev) => ({ ...prev, messages: prior, last_message: restoredPreview }));
+          base44.entities.ChatSession.update(sendSessionId, {
+            messages: prior,
+            last_message: restoredPreview,
+          }).catch(() => {});
+        }
+        gateRef.current.release("error", ownerToken);
+        syncGate();
+        return { started: false };
       } else {
       console.error(err);
       terminalReason = composerTerminalReason(err);
