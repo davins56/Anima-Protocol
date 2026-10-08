@@ -242,10 +242,17 @@ export function memoryPolicySignals(emotionalState: unknown): {
   };
 }
 
-export function isMeaningfulExchange(userContent: string, assistantContent: string): boolean {
+export function isMeaningfulExchange(
+  userContent: string,
+  assistantContent: string,
+  opts?: { userOnly?: boolean },
+): boolean {
   const user = userContent.trim();
   const assistant = assistantContent.trim();
-  if (!user || !assistant) return false;
+  if (!user) return false;
+  // A cut-off reply still remembers the user's line. The half-reply is not
+  // required, and it must not be passed in.
+  if (!opts?.userOnly && !assistant) return false;
   if (user === CONTINUE_USER_TURN) return false;
   if (GREETING.test(user)) return false;
   return true;
@@ -803,6 +810,8 @@ export function consolidateExchange(input: {
   sessionId?: string;
   turnId?: string;
   now?: string;
+  /** Ignore assistant text. Used when the model stream was cut off. */
+  userOnly?: boolean;
 }): ConsolidationResult {
   const existing = Array.isArray(input.existingFacts) ? input.existingFacts.slice() : [];
   const empty: ConsolidationResult = {
@@ -813,7 +822,13 @@ export function consolidateExchange(input: {
     promoted: 0,
     coreProposed: 0,
   };
-  if (!isMeaningfulExchange(input.userContent, input.assistantContent)) return empty;
+  if (
+    !isMeaningfulExchange(input.userContent, input.assistantContent, {
+      userOnly: input.userOnly,
+    })
+  ) {
+    return empty;
+  }
 
   const emotionalIntensity = clamp01(input.emotionalIntensity ?? 0);
   const relationshipImportance = clamp01(input.relationshipImportance ?? 0);
@@ -825,7 +840,11 @@ export function consolidateExchange(input: {
   let promoted = 0;
   let coreProposed = 0;
 
-  for (const hit of extractRaw(input.userContent, input.assistantContent, input.companionName)) {
+  for (const hit of extractRaw(
+    input.userContent,
+    input.userOnly ? "" : input.assistantContent,
+    input.companionName,
+  )) {
     const key = policyDedupeKey(hit);
     const prior = findPolicy(facts, key);
     const novelty = !prior ? 1 : prior.memory_class === "episodic" ? REPEAT_NOVELTY : 0;
@@ -950,6 +969,8 @@ export function buildMemoryPolicyJob(input: {
   companionName: string;
   userContent: string;
   assistantContent: string;
+  /** Remember the user line only. The half-reply must not be stored. */
+  userOnly?: boolean;
 }): {
   id: string;
   userId: string;
@@ -960,7 +981,13 @@ export function buildMemoryPolicyJob(input: {
   const characterId = input.characterId.trim();
   const turnId = input.turnId.trim();
   if (!userId || !characterId || !turnId) return null;
-  if (!isMeaningfulExchange(input.userContent, input.assistantContent)) return null;
+  if (
+    !isMeaningfulExchange(input.userContent, input.assistantContent, {
+      userOnly: input.userOnly,
+    })
+  ) {
+    return null;
+  }
   return {
     id: `memory-policy:${userId}:${characterId}:${turnId}`,
     userId,
@@ -972,7 +999,8 @@ export function buildMemoryPolicyJob(input: {
       turnId,
       companionName: input.companionName.trim(),
       userContent: input.userContent.slice(0, 1000),
-      assistantContent: input.assistantContent.slice(0, 1000),
+      assistantContent: input.userOnly ? "" : input.assistantContent.slice(0, 1000),
+      ...(input.userOnly ? { userOnly: true } : {}),
     },
   };
 }
@@ -1097,7 +1125,8 @@ export async function runDeferredMemoryPolicy(
   const userId = String(payload.userId || "").trim();
   const characterId = String(payload.characterId || "").trim();
   const userContent = String(payload.userContent || "");
-  const assistantContent = String(payload.assistantContent || "");
+  const userOnly = payload.userOnly === true;
+  const assistantContent = userOnly ? "" : String(payload.assistantContent || "");
   const companionName = String(payload.companionName || "");
   const sessionId = payload.sessionId ? String(payload.sessionId) : undefined;
   const turnId = payload.turnId ? String(payload.turnId) : undefined;
@@ -1106,7 +1135,7 @@ export async function runDeferredMemoryPolicy(
     await reembedCurrentFacts(userId, characterId, String(payload.factId || ""));
     return;
   }
-  if (!isMeaningfulExchange(userContent, assistantContent)) return;
+  if (!isMeaningfulExchange(userContent, assistantContent, { userOnly })) return;
   if (turnId) {
     const turn = await readChatTurn(turnId, userId).catch(() => null);
     // A missing ledger row is a normal client turn. Only a turn the user
@@ -1141,6 +1170,7 @@ export async function runDeferredMemoryPolicy(
       relationshipImportance,
       sessionId,
       turnId,
+      userOnly,
     });
     if (consolidated.saved.length === 0 && consolidated.promoted === 0) return consolidated;
     const facts = consolidated.facts as Record<string, unknown>[];
