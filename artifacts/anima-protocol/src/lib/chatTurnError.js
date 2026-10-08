@@ -118,6 +118,11 @@ export function chatTurnErrorMessage(err) {
       "Retry shortly, or add credits at https://openrouter.ai/settings/credits for paid models."
     );
   }
+  // Postgres withTimeout (DbOperationTimeoutError / ETIMEOUT). The raw
+  // "aborted after Nms" line must not become the toast.
+  if (/database operation aborted due to timeout/i.test(raw)) {
+    return "Couldn't load this conversation — the database timed out. Please try again.";
+  }
   // A pre-token Hyperdrive / store 503 used to become the HUD toast
   // "Database unavailable" while the companion was still thinking.
   if (
