@@ -176,7 +176,7 @@ import {
   sessionControlsLocked,
   writeHeldDraft,
 } from "@/lib/heldChatSend";
-import { replyActionsAreLocked } from "@/lib/chatReplyActions";
+import { messagesAfterDiscardingReply, replyActionsAreLocked } from "@/lib/chatReplyActions";
 import HeldOutgoingBubble from "@/components/chat/HeldOutgoingBubble";
 import {
   CONNECTION_DROPPED_STATUS,
@@ -234,6 +234,17 @@ import {
 import { chatHistoryForLlm, crisisCardFromPayload, messagesForModel } from "@/lib/aiCompanionNotice";
 import { useAiCompanionNotice } from "@/hooks/useAiCompanionNotice";
 import SystemDisclosure from "@/components/chat/SystemDisclosure";
+
+function replacementSendMetadata(messageData) {
+  const turnId = String(messageData?.replacedTurnId || "").trim();
+  const ids = Array.isArray(messageData?.replacedMessageIds)
+    ? messageData.replacedMessageIds.map((id) => String(id || "").trim()).filter(Boolean).slice(0, 40)
+    : [];
+  return {
+    ...(turnId ? { replaced_turn_id: turnId } : {}),
+    ...(ids.length > 0 ? { replaced_message_ids: ids } : {}),
+  };
+}
 
 export default function Chat() {
   const confirm = useConfirm();
@@ -332,6 +343,8 @@ export default function Chat() {
   const lateTurnRef = useRef(null);
   /** Background check after the browser abort. Retry does not wait on it. */
   const lateReplyWatchRef = useRef(null);
+  const supersededTurnIdsRef = useRef(new Set());
+  const supersededMessageIdsRef = useRef(new Set());
   /** Last LLM provider that served a reply: "openai" | "xai" | "gemini" | "kimi" | "gateway" */
   const [llmProvider, setLlmProvider] = useState(null);
   /** "anima" when the custom multi-model stack selected the backend */
@@ -1424,6 +1437,44 @@ export default function Chat() {
     setTimeout(() => analyzeNarrative(), 500);
   };
 
+  const rememberSupersededReply = (turnId, messageIds) => {
+    if (turnId) supersededTurnIdsRef.current.add(String(turnId));
+    for (const id of messageIds || []) {
+      if (id) supersededMessageIdsRef.current.add(String(id));
+    }
+  };
+
+  const stitchThread = (live, snapshot, activeTurnId) =>
+    stitchLiveMessages(live, snapshot, activeTurnId, {
+      omitTurnIds: supersededTurnIdsRef.current,
+      omitMessageIds: supersededMessageIdsRef.current,
+    });
+
+  const retryHungCompanionReply = ({ sessionId, userContent, turnId, messageIds }) => {
+    rememberSupersededReply(turnId, messageIds);
+    const session = activeSessionRef.current;
+    const source = session && session.id === sessionId ? session.messages : [];
+    const trimmed = messagesAfterDiscardingReply(source, { turnId, messageIds });
+    const last_message = String(trimmed[trimmed.length - 1]?.content || "").slice(0, 60);
+    if (session && session.id === sessionId) {
+      setActiveSession((prev) =>
+        prev && prev.id === sessionId ? { ...prev, messages: trimmed, last_message } : prev,
+      );
+      base44.entities.ChatSession.update(sessionId, {
+        messages: trimmed,
+        last_message,
+      }).catch(() => {});
+    }
+    void handleSendMessageRef.current?.({
+      text: userContent || "",
+      replyAction: "retry",
+      history: trimmed,
+      priorMessages: trimmed,
+      replacedTurnId: turnId || "",
+      replacedMessageIds: messageIds || [],
+    });
+  };
+
   useEffect(() => {
     const sid = activeSession?.id;
     if (!sid) return undefined;
@@ -1438,6 +1489,7 @@ export default function Chat() {
       }
       if (cancelled || !live?.turn_id) return;
       const paint = (turn) => {
+        if (turn?.turn_id && supersededTurnIdsRef.current.has(String(turn.turn_id))) return;
         const text = String(turn?.assistant_content || "").trim();
         if (!text) return;
         const lateAffect = parseCompanionAffectSnapshot(turn.companion_affect);
@@ -1459,6 +1511,7 @@ export default function Chat() {
         });
       };
       if (!String(live.assistant_content || "").trim()) {
+        if (live.turn_id && supersededTurnIdsRef.current.has(String(live.turn_id))) return;
         if (live.persistence_status !== "pending" && live.persistence_status !== "generated") {
           return;
         }
@@ -1552,6 +1605,10 @@ export default function Chat() {
           return;
         }
         const text = String(live?.assistant_content || "").trim();
+        if (supersededTurnIdsRef.current.has(String(pending.turnId))) {
+          if (lateTurnRef.current?.turnId === pending.turnId) lateTurnRef.current = null;
+          return;
+        }
         if (!text) {
           if (!lateTurnFailedWithoutReply(live)) return;
           if (lateTurnRef.current?.turnId !== pending.turnId) return;
@@ -1572,7 +1629,11 @@ export default function Chat() {
             action: {
               label: "Retry",
               onClick: () => {
-                void handleSendMessageRef.current?.(pending.userContent || "");
+                retryHungCompanionReply({
+                  sessionId,
+                  userContent: pending.userContent || "",
+                  turnId: pending.turnId,
+                });
               },
             },
           });
@@ -1630,7 +1691,11 @@ export default function Chat() {
       }
       if (busyRetryTokenRef.current !== token) return;
       const lateText = String(live?.assistant_content || "").trim();
-      if (lateText && openSessionIdRef.current === sessionId) {
+      if (
+        lateText &&
+        openSessionIdRef.current === sessionId &&
+        !supersededTurnIdsRef.current.has(String(live?.turn_id || ""))
+      ) {
         const lateAffect = parseCompanionAffectSnapshot(live.companion_affect);
         if (lateAffect) {
           setCompanionAffect(lateAffect);
@@ -1715,7 +1780,11 @@ export default function Chat() {
       })
     ) {
       pendingWatch.superseded = true;
+      if (pendingWatch.turnId) supersededTurnIdsRef.current.add(String(pendingWatch.turnId));
       toast.dismiss("companion-could-not-reply");
+    }
+    if (replyAction) {
+      rememberSupersededReply(messageData.replacedTurnId, messageData.replacedMessageIds);
     }
     const lateKey = `${sendSessionId}:${isContinue ? "continue" : content}`;
     let turnId = createChatTurnId();
@@ -1832,7 +1901,7 @@ export default function Chat() {
     };
     setActiveSession((prev) => ({
       ...prev,
-      messages: stitchLiveMessages(prev?.messages, [...updatedMessages, thinkingMsg], turnId),
+      messages: stitchThread(prev?.messages, [...updatedMessages, thinkingMsg], turnId),
     }));
 
     try {
@@ -2305,6 +2374,8 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         characterName: charName,
         timestamp: streamTs,
         turnId: () => turnId,
+        omitTurnIds: () => supersededTurnIdsRef.current,
+        omitMessageIds: () => supersededMessageIdsRef.current,
         onDelta: (accumulated) => {
           streamedSoFar = accumulated;
         },
@@ -2363,7 +2434,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
               response_length: user?.settings?.ai_response_length || undefined,
               hidden_sequences: hiddenThread.hidden,
               conversational_weather: hiddenThread.weather,
-              ...(replyAction ? { reply_action: replyAction, skip_affect: true } : {}),
+              ...(replyAction ? { reply_action: replyAction, skip_affect: true, ...replacementSendMetadata(messageData) } : {}),
             },
             ...(ownModelTurn
               ? { ownModelReply: ownModelTurn.reply, ownModelVersion: ownModelTurn.version }
@@ -2570,7 +2641,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // on the thread; this snapshot only replaces rows for this turn.
       applyIfSendSession((prev) => ({
         ...prev,
-        messages: stitchLiveMessages(prev?.messages, [...priorHistory, ...newMessages], turnId),
+            messages: stitchThread(prev?.messages, [...priorHistory, ...newMessages], turnId),
       }));
 
       const storedNew = [];
@@ -2591,7 +2662,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         finalMessages = [...priorHistory, ...storedNew];
         applyIfSendSession((prev) => ({
           ...prev,
-          messages: stitchLiveMessages(prev?.messages, finalMessages, turnId),
+          messages: stitchThread(prev?.messages, finalMessages, turnId),
         }));
       } catch (persistErr) {
         console.warn("[Anima] Failed to persist reply:", persistErr);
@@ -3145,6 +3216,8 @@ Return JSON:
               character_name: replySpeakerName,
               timestamp: new Date().toISOString(),
               is_streaming: false,
+              turn_id: turnId,
+              id: `${turnId}:assistant`,
             };
             return { ...prev, messages: [...messages, retained] };
           }
@@ -3199,14 +3272,20 @@ Return JSON:
             action: {
               label: "Retry",
               onClick: () => {
-                void handleSendMessageRef.current?.(isContinue ? "" : message);
+                retryHungCompanionReply({
+                  sessionId: sendSessionId,
+                  userContent: isContinue ? "" : content,
+                  turnId,
+                });
               },
             },
           });
         };
         const adoptLateReply = async (late, watchedTurnId, watch = null) => {
           const lateText = String(late?.assistant_content || "").trim();
-          if (!lateText || watch?.superseded) return false;
+          if (!lateText || watch?.superseded || supersededTurnIdsRef.current.has(String(watchedTurnId))) {
+            return false;
+          }
           if (late.persistence_status !== "committed") {
             try {
               await animaApi.chat.retryTurn(watchedTurnId);

@@ -244,6 +244,31 @@ describe("regenerateMessageFlow (confirm-and-rewrite a reply)", () => {
       "hi there",
       "tell me a story",
     ]);
+    expect(sendMessage.mock.calls[0][0].replacedTurnId).toBe("");
+    expect(sendMessage.mock.calls[0][0].replacedMessageIds).toEqual([]);
+  });
+
+  it("tells the send which turn and bubbles the retry is replacing", async () => {
+    const session = await makeSession([
+      { id: "t1:user", turn_id: "t1", role: "user", content: "hello" },
+      { id: "t1:assistant", turn_id: "t1", role: "assistant", content: "first" },
+      { id: "t1:assistant:1", turn_id: "t1", role: "assistant", content: "second" },
+    ]);
+    const sendMessage = vi.fn().mockResolvedValue(undefined);
+    await regenerateMessageFlow(2, {
+      confirm: vi.fn().mockResolvedValue(true),
+      activeSession: session,
+      isLoading: false,
+      setActiveSession: vi.fn(),
+      sendMessage,
+    });
+    expect(sendMessage.mock.calls[0][0]).toMatchObject({
+      text: "hello",
+      replyAction: "retry",
+      replacedTurnId: "t1",
+      replacedMessageIds: ["t1:assistant", "t1:assistant:1"],
+    });
+    expect(sendMessage.mock.calls[0][0].history.map((message) => message.content)).toEqual(["hello"]);
   });
 
   it("does not start a retry while a turn is in flight or a message is waiting", async () => {

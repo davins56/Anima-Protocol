@@ -9,6 +9,7 @@ import {
   classifyChatTurnReuse,
   decideDurableTurnJoin,
   latestOpenChatTurn,
+  markChatTurnReplaced,
   markTurnCommitted,
   markTurnFailed,
   pendingTurnLeaseIsStale,
@@ -436,5 +437,91 @@ describe("chat turn ledger", () => {
 
     await db.update(chatTurns).set({ status: "failed" }).where(eq(chatTurns.id, older));
     expect(await latestOpenChatTurn(userId, liveSession, now)).toBeNull();
+  });
+
+  it("does not let a late checkpoint restore a reply the user replaced", async () => {
+    const replacedId = `turn_${prefix}_replaced`;
+    const newerId = `turn_${prefix}_newer`;
+    const retrySession = `${sessionId}_retry`;
+    await beginChatTurn({
+      id: replacedId,
+      sessionId: retrySession,
+      userId,
+      userContent: "hello",
+      persistenceOwner: "server",
+    });
+    await checkpointGeneratedTurn({
+      id: replacedId,
+      userId,
+      assistantContent: "the reply being retried",
+      metadata: { provider: "test" },
+    });
+    await markChatTurnReplaced(replacedId, userId, newerId);
+    await checkpointGeneratedTurn({
+      id: replacedId,
+      userId,
+      assistantContent: "the reply being retried",
+      metadata: { provider: "late" },
+    });
+    const retired = await readChatTurn(replacedId, userId);
+    expect(retired).toMatchObject({
+      status: "failed",
+      assistantContent: "",
+    });
+    expect(retired?.metadata).toMatchObject({ replaced: true, superseded_by: newerId });
+
+    await db
+      .update(chatTurns)
+      .set({
+        status: "generated",
+        assistantContent: "should not repair",
+        persistenceOwner: "server",
+        metadata: { replaced: true },
+      })
+      .where(eq(chatTurns.id, replacedId));
+    const retryable = await retryableChatTurns(userId, retrySession, 5);
+    expect(retryable.some((turn) => turn.id === replacedId)).toBe(false);
+
+    const olderId = `turn_${prefix}_ignore_older`;
+    const busyNewerId = `turn_${prefix}_ignore_newer`;
+    const ignoreSession = `${sessionId}_ignore`;
+    await beginChatTurn({
+      id: olderId,
+      sessionId: ignoreSession,
+      userId,
+      userContent: "hello",
+      persistenceOwner: "client",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await beginChatTurn({
+      id: busyNewerId,
+      sessionId: ignoreSession,
+      userId,
+      userContent: "hello",
+      persistenceOwner: "client",
+    });
+    const busyNewer = await readChatTurn(busyNewerId, userId);
+    expect(
+      await sessionHasOlderPendingChatTurn(
+        userId,
+        ignoreSession,
+        busyNewerId,
+        busyNewer!.createdAt,
+      ),
+    ).toBe(true);
+    expect(
+      await sessionHasOlderPendingChatTurn(
+        userId,
+        ignoreSession,
+        busyNewerId,
+        busyNewer!.createdAt,
+        new Date(),
+        [olderId],
+      ),
+    ).toBe(false);
+
+    await db.delete(chatTurns).where(eq(chatTurns.id, replacedId));
+    await db.delete(chatTurns).where(eq(chatTurns.id, olderId));
+    await db.delete(chatTurns).where(eq(chatTurns.id, busyNewerId));
   });
 });
