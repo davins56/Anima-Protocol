@@ -4,6 +4,8 @@ import { buildCharacterPrompt } from './buildCharacterPrompt';
 import { parseGroupResponse } from './parseGroupResponse';
 import { stripImageTags } from './chatImageGeneration';
 import { isTherapySession, buildTherapyInstruction } from './therapyManuals';
+import { reportChatClientFailure } from './chatClientFailure';
+import { createChatTurnId } from '../hooks/useChatPersistence';
 
 export async function sendChatMessage({
   content,
@@ -35,6 +37,8 @@ export async function sendChatMessage({
 
   const typingMsg = { role: "assistant", content: "...", character_name: "__typing__", timestamp: new Date().toISOString() };
   setActiveSession((prev) => ({ ...prev, messages: [...updatedMessages, typingMsg] }));
+  let keptPartial = false;
+  const attemptId = createChatTurnId();
 
   try {
     const activeChar = activeSession.character_id
@@ -101,6 +105,7 @@ export async function sendChatMessage({
     for await (const chunk of animaApi.sendMessage(conversationId, userContent, systemPrompt)) {
       if (chunk.done) break;
       if (chunk.content) {
+        keptPartial = true;
         fullResponse += chunk.content;
         // Stream partial response into the UI
         const partialMsg = {
@@ -141,6 +146,12 @@ export async function sendChatMessage({
     }
   } catch (err) {
     console.error(err);
+    reportChatClientFailure({
+      error: err,
+      sessionId: activeSession?.id,
+      turnId: attemptId,
+      partialKept: keptPartial,
+    });
     setActiveSession((prev) => ({
       ...prev,
       messages: (prev.messages || []).filter((m) => m.character_name !== "__typing__"),
