@@ -2520,8 +2520,9 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // Companions (onboard Serenity and user-created Animas) may also emit
       // [IMAGE: ...] so this turn can attach a generated still.
       const eventTagRegex = /\[(EMOTION|LOCATION):([^\]]+)\]/gi;
-      const wantsImage =
-        parseImagePrompts(result).length > 0 || userRequestedImage(content);
+      const wantsImage = replyCutOff.reply_interrupted
+        ? userRequestedImage(content)
+        : parseImagePrompts(result).length > 0 || userRequestedImage(content);
       let imageAttachments = [];
       if (wantsImage) {
         const imageProgressText = stripImageTags(result.replace(eventTagRegex, "")).trim() || result;
@@ -2534,7 +2535,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         }));
         try {
           const resolved = await resolveChatImageAttachments({
-            replyText: result,
+            replyText: replyCutOff.reply_interrupted ? "" : result,
             userText: content,
             character: activeChar,
             generateImage: (args) => base44.integrations.Core.GenerateImage(args),
@@ -2560,7 +2561,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       const eventMessages = [];
       let match;
       const tagScanner = new RegExp(eventTagRegex.source, "gi");
-      while ((match = tagScanner.exec(result)) !== null) {
+      while (!replyCutOff.reply_interrupted && (match = tagScanner.exec(result)) !== null) {
         const kind = match[1].toLowerCase();
         const value = match[2].trim();
         eventMessages.push({

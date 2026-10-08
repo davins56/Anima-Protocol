@@ -30,6 +30,10 @@ describe("visibleAssistantReply", () => {
       trimToLastFullSentence("I stay. *She looks across the room* and the quiet"),
     ).toBe("I stay.");
     expect(trimToLastFullSentence("no punctuation at all")).toBe("no punctuation at all");
+    expect(trimToLastFullSentence("Earlier. I spoke to Dr.")).toBe("Earlier.");
+    expect(trimToLastFullSentence("I moved to the U.S. last year and then")).toBe(
+      "I moved to the U.S. last year and then",
+    );
   });
 
   it("surfaces unclosed think through the stream filter without waiting for </think>", () => {

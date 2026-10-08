@@ -43,7 +43,7 @@ describe("retainStreamingOnError", () => {
   });
 
   it("cuts a dropped stream back to the last full sentence", () => {
-    const { retained } = retainStreamingOnError([
+    const { messages, retained } = retainStreamingOnError([
       {
         role: "assistant",
         content: "You came back. I was thin",
@@ -56,6 +56,13 @@ describe("retainStreamingOnError", () => {
       reply_interrupted: true,
       cut_off: true,
     });
+    expect(messages).toEqual([
+      expect.objectContaining({
+        content: "You came back.",
+        reply_interrupted: true,
+        cut_off: true,
+      }),
+    ]);
   });
 
   it("preserves already-finalized messages", () => {
