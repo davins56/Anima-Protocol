@@ -114,6 +114,7 @@ describe("ChatPipelineTelemetry failure phase", () => {
 
   it("does not attach failure fields to a completed turn", () => {
     const info = vi.spyOn(logger, "info").mockImplementation(() => {});
+    const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => {});
     const telemetry = new ChatPipelineTelemetry({
       turnId: "turn-1",
       sessionId: "session-1",
@@ -125,6 +126,7 @@ describe("ChatPipelineTelemetry failure phase", () => {
     expect(payload.outcome).toBe("completed");
     expect(payload).not.toHaveProperty("failure_phase");
     expect(payload).not.toHaveProperty("error_class");
+    expect(consoleInfo).not.toHaveBeenCalled();
   });
 
   it("wires the chat turn to keep an interrupted reply and log the failure phase", () => {
@@ -150,6 +152,28 @@ describe("ChatPipelineTelemetry failure phase", () => {
     );
     expect(telemetrySource).toContain("failure_phase: this.phase");
     expect(telemetrySource).toContain("error_code:");
-    expect(telemetrySource).toContain("console.info");
+    expect(telemetrySource).toContain('if (outcome === "failed") console.info(payload)');
+    const pendingAt = chatRoute.indexOf("await sessionHasOlderPendingChatTurn(");
+    expect(pendingAt).toBeGreaterThan(-1);
+    expect(chatRoute.slice(pendingAt, pendingAt + 700)).toContain('closePipeline("failed"');
+    const checkpointAt = chatRoute.indexOf("checkpointGeneratedTurnOnce({");
+    const doneAt = chatRoute.indexOf("writeSse(res, {", checkpointAt);
+    expect(checkpointAt).toBeGreaterThan(-1);
+    expect(doneAt).toBeGreaterThan(checkpointAt);
+    expect(chatRoute.slice(checkpointAt, doneAt)).not.toContain(
+      "checkpointGeneratedTurnWithRetry",
+    );
+    const surviveAt = chatRoute.indexOf("if (replySurvivesDatabaseTimeout");
+    const surviveDoneAt = chatRoute.indexOf("writeSse(res, keptDone)", surviveAt);
+    const surviveRetryAt = chatRoute.indexOf(
+      "checkpointGeneratedTurnWithRetry",
+      surviveAt,
+    );
+    expect(surviveAt).toBeGreaterThan(-1);
+    expect(surviveDoneAt).toBeGreaterThan(surviveAt);
+    expect(surviveRetryAt).toBeGreaterThan(surviveDoneAt);
+    const missingAt = chatRoute.indexOf('error_code: "session_not_found"');
+    const missingReport = chatRoute.lastIndexOf("sessionLoadTelemetry.report(", missingAt);
+    expect(chatRoute.slice(missingReport, missingAt)).toContain('"completed"');
   });
 });

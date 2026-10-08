@@ -148,7 +148,8 @@ export class ChatPipelineTelemetry {
     };
     logger.info(payload, "Chat pipeline telemetry");
     // Workers Logs index console.* reliably. pino's stdout line is the same
-    // event, but a cancelled isolate or a stdout drop must not hide it.
-    console.info(payload);
+    // event, but a cancelled isolate or a stdout drop must not hide a failure.
+    // Completed turns stay on the pino line so each success is not stored twice.
+    if (outcome === "failed") console.info(payload);
   }
 }
