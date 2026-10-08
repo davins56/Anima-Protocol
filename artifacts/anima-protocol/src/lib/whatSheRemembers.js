@@ -78,7 +78,10 @@ export function presentMemoryReview(review) {
       continue;
     }
     if (item.about !== "companion") continue;
-    if (item.section === "core" || item.memory_class === "core" || item.protected === true) {
+    // The server section decides the list. A protected episodic memory stays
+    // with her memories. Only a core section, or a core memory class, is a
+    // locked identity proposal.
+    if (item.section === "core" || item.memory_class === "core") {
       core.push({ ...item, editable: false, protected: true });
       continue;
     }
