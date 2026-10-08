@@ -92,39 +92,59 @@ export function suffixReplacement(list, start) {
   };
 }
 
+function claimDiscardedId(set, counts, kind, id) {
+  const value = String(id || "");
+  if (!value) return;
+  set.add(value);
+  if (!counts) return;
+  const key = `${kind}:${value}`;
+  counts.set(key, (counts.get(key) || 0) + 1);
+}
+
+function releaseClaimedId(set, counts, kind, id) {
+  const value = String(id || "");
+  if (!value) return;
+  if (counts) {
+    const key = `${kind}:${value}`;
+    const next = (counts.get(key) || 0) - 1;
+    if (next > 0) {
+      counts.set(key, next);
+      return;
+    }
+    counts.delete(key);
+  }
+  set.delete(value);
+}
+
 /**
  * Hide a reply the user is replacing, including every later turn in the suffix.
+ * `counts` keeps an id hidden until every owner has released it.
  *
  * @param {Set<string>} turnIds
  * @param {Set<string>} messageIds
  * @param {{ turnId?: string, turnIds?: string[], messageIds?: string[] }} [target]
+ * @param {Map<string, number>} [counts]
  */
-export function rememberDiscardedIds(turnIds, messageIds, target = {}) {
-  if (target.turnId) turnIds.add(String(target.turnId));
-  for (const id of target.turnIds || []) {
-    if (id) turnIds.add(String(id));
-  }
-  for (const id of target.messageIds || []) {
-    if (id) messageIds.add(String(id));
-  }
+export function rememberDiscardedIds(turnIds, messageIds, target = {}, counts) {
+  if (target.turnId) claimDiscardedId(turnIds, counts, "turn", target.turnId);
+  for (const id of target.turnIds || []) claimDiscardedId(turnIds, counts, "turn", id);
+  for (const id of target.messageIds || []) claimDiscardedId(messageIds, counts, "message", id);
 }
 
 /**
  * Put those ids back when the replacement never starts, so the restored
- * reply is visible again. Suffix ids have to be released too.
+ * reply is visible again. Suffix ids have to be released too. An id another
+ * retry still owns stays hidden.
  *
  * @param {Set<string>} turnIds
  * @param {Set<string>} messageIds
  * @param {{ turnId?: string, turnIds?: string[], messageIds?: string[] }} [target]
+ * @param {Map<string, number>} [counts]
  */
-export function releaseDiscardedIds(turnIds, messageIds, target = {}) {
-  if (target.turnId) turnIds.delete(String(target.turnId));
-  for (const id of target.turnIds || []) {
-    if (id) turnIds.delete(String(id));
-  }
-  for (const id of target.messageIds || []) {
-    if (id) messageIds.delete(String(id));
-  }
+export function releaseDiscardedIds(turnIds, messageIds, target = {}, counts) {
+  if (target.turnId) releaseClaimedId(turnIds, counts, "turn", target.turnId);
+  for (const id of target.turnIds || []) releaseClaimedId(turnIds, counts, "turn", id);
+  for (const id of target.messageIds || []) releaseClaimedId(messageIds, counts, "message", id);
 }
 
 /**
