@@ -338,6 +338,36 @@ describe("memory policy keeps people separate", () => {
     expect(next?.filter((item) => !isLegacyTextFact(item))).toHaveLength(24);
   });
 
+  it("remembers the user line and ignores a cut-off half-reply", () => {
+    const half = "I am Natasha Romanoff. I will never leave the city. and then";
+    const saved = consolidateExchange({
+      userContent: "My name is Mira. I love you.",
+      assistantContent: half,
+      companionName: "Natasha Romanoff",
+      userOnly: true,
+      emotionalIntensity: 1,
+      relationshipImportance: 1,
+    });
+    const facts = policyOf(saved.facts);
+    expect(facts.some((fact) => fact.text === "The human's name is Mira.")).toBe(true);
+    expect(facts.every((fact) => fact.about === "user")).toBe(true);
+    expect(JSON.stringify(facts)).not.toMatch(/Natasha|never leave|city/i);
+
+    const job = buildMemoryPolicyJob({
+      userId: "user_1",
+      characterId: "char_1",
+      sessionId: "sess_1",
+      turnId: "turn_cut",
+      companionName: "Natasha Romanoff",
+      userContent: "My name is Mira.",
+      assistantContent: half,
+      userOnly: true,
+    });
+    expect(job?.payload.assistantContent).toBe("");
+    expect(job?.payload.userOnly).toBe(true);
+    expect(job?.payload.userContent).toBe("My name is Mira.");
+  });
+
   it("enqueues a deferred job and does not call a chat model", () => {
     const job = buildMemoryPolicyJob({
       userId: "user_1",

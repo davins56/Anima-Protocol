@@ -775,7 +775,8 @@ export function messagesForRepeatRetry(
 
 interface CompanionLocalLayout {
   staticText: string;
-  regionDateText: string;
+  /** Region facts with the local-time line removed. Byte-stable across turns. */
+  regionStableText: string;
   /** Per-turn blocks, mood last. Folded into the final user turn on Ollama. */
   volatileBlocks: string[];
 }
@@ -1022,14 +1023,13 @@ export function roundRegionBlockClock(block: string): string {
 }
 
 const REGION_LOCAL_TIME_LINE_RE = /^\s*Local time\s*:/i;
-const REGION_CLOCK_SUFFIX_RE =
-  /\s+at\s+\d{1,2}:\d{2}(?:[\s\u00a0\u202f]*[AaPp][Mm])?(?:\s+[A-Za-z]{2,5})?\s*$/;
 
 /**
- * The region block stays in the cacheable prefix. A clock, even floored to
- * 15 minutes, changes that prefix through the day. Keep the date on the
- * Local time line and return the original clock line for the per-turn block.
- * Lines with no clock stay in the region as written.
+ * The rest of the region block stays in the cacheable prefix. The whole
+ * Local time line moves to the per-turn block: the date rolls at midnight,
+ * and the clock changes every minute. Stripping only an English
+ * `at HH:MM` suffix left `GMT+1`, `um 18:04`, and ISO timestamps in the
+ * prefix, so the next turn re-read everything after that line.
  */
 export function splitRegionDateAndTime(block: string): {
   regionText: string;
@@ -1038,15 +1038,14 @@ export function splitRegionDateAndTime(block: string): {
   const times: string[] = [];
   const region = String(block || "")
     .split("\n")
-    .map((line) => {
-      if (!REGION_LOCAL_TIME_LINE_RE.test(line) || !REGION_CLOCK_RE.test(line)) {
-        return line;
-      }
+    .filter((line) => {
+      if (!REGION_LOCAL_TIME_LINE_RE.test(line)) return true;
       const trimmed = line.trim();
       if (trimmed) times.push(trimmed);
-      return line.replace(REGION_CLOCK_SUFFIX_RE, "").replace(/[ \t]+$/g, "");
+      return false;
     })
     .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
   return { regionText: region, localTimeText: times.join("\n") };
 }
@@ -1055,8 +1054,8 @@ const REGION_WEATHER_LINE_RE = /^\s*Current weather\s*:/i;
 
 /**
  * Weather refreshes on its own and would bust the persona+region prefix.
- * Peel that one line out; the rest of the region block, including the
- * floored clock, stays in the stable prefix.
+ * Peel that one line out. Hosted prompts still floor the clock inside the
+ * region block. The Ollama prefix drops the whole Local time line instead.
  */
 function peelRegionWeather(block: string): { regionText: string; weatherText: string } {
   const weather: string[] = [];
@@ -1082,18 +1081,31 @@ export function splitRegionWeather(block: string): { regionText: string; weather
 }
 
 interface LocalCompanionSections {
-  /** Byte-stable persona and system instructions. No mood, memory, or clock. */
+  /** Byte-stable persona and system instructions. No mood, memory, clock, or date. */
   staticText: string;
   /**
+   * Stable slot: Self Model fact sheet (what this companion believes she can
+   * do). Empty until that sheet exists. It is part of `staticText`, after the
+   * persona and before the mode contract, so a later PR can fill it without
+   * reshuffling the prefix.
+   */
+  selfModelText: string;
+  /**
    * Per-turn mood and resonance. Changes every turn, so it is placed last
-   * in the system text, just before recent history. Never trimmed.
+   * in the per-turn tail, after the relationship-summary slot.
    */
   moodText: string;
-  /** Region and local time. Clock floored to 15 minutes. Weather is separate. Never trimmed. */
+  /**
+   * Per-turn slot: one-line relationship summary. It changes nightly, so it
+   * stays out of the cached prefix. Empty until that line exists. Rendered
+   * immediately before mood.
+   */
+  relationshipSummaryText: string;
+  /** Region including a floored clock. Hosted providers still use this block. */
   regionText: string;
-  /** Same region with the clock removed, so the date line can stay in the Ollama prefix. */
-  regionDateText: string;
-  /** Original Local time line, including the clock. Moves with the per-turn block. */
+  /** Region with the Local time line removed. This is the Ollama prefix half. */
+  regionStableText: string;
+  /** Original Local time line, date and clock included. Per-turn only. */
   localTimeText: string;
   /** Live weather. Sits after memories so a refresh does not bust the prefix. */
   weatherText: string;
@@ -1217,11 +1229,16 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
         )
       : { stable: "", turn: "" };
 
+  // Stable slot: Self Model fact sheet. Fill `selfModelFactSheet` later.
+  // It stays here, after the persona and before the mode contract.
+  const selfModelText = selfModelFactSheet();
+
   const staticText = joinPromptParts([
     CORE_BEHAVIOR,
     charDef ? `CHARACTER:\n${charDef}` : "",
     voiceBlock,
     crossoverBlock,
+    selfModelText,
     authoritativeModeBlock,
     groupInstruction,
     uncensoredToneBlock,
@@ -1317,9 +1334,12 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
   const loreText = sceneSplit.lore;
   const peeledRegion = peelRegionWeather(String(worldKnowledge || "").trim());
   const regionText = roundRegionBlockClock(peeledRegion.regionText);
-  const { regionText: regionDateText, localTimeText } = splitRegionDateAndTime(
+  const { regionText: regionStableText, localTimeText } = splitRegionDateAndTime(
     peeledRegion.regionText,
   );
+  // Per-turn slot: one-line relationship summary. Fill
+  // `relationshipSummaryLine` later. It stays immediately before mood.
+  const relationshipSummaryText = relationshipSummaryLine();
   const weatherText = peeledRegion.weatherText;
   const repositoryBlock = String(repositoryKnowledge || "").trim();
   const repositoryText =
@@ -1353,9 +1373,11 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
 
   return {
     staticText,
+    selfModelText,
     moodText,
+    relationshipSummaryText,
     regionText,
-    regionDateText,
+    regionStableText,
     localTimeText,
     weatherText,
     repositoryText,
@@ -1370,21 +1392,43 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
 }
 
 /**
- * Therapy care contract and the non-crisis assessment stay in the cached
- * system prefix. The crisis-response policy depends on this message, so it
- * moves into the per-turn notes, after the companion care line when that
- * line is present.
+ * Therapy care contract stays in the cached prefix. It does not name this
+ * message. The assessment level and the crisis-response policy both depend
+ * on this message, so they move into the per-turn notes. The companion care
+ * line, when present, is the bracket ahead of those notes.
  */
 function splitTherapySafetyForLocal(
   assessment: TherapySafetyAssessment,
   resource: CrisisResource,
 ): { stable: string; turn: string } {
   const full = therapySafetyPrompt(assessment, resource);
-  if (!assessment.requiresDirectSafetyResponse) return { stable: full, turn: "" };
-  const marker = "CRISIS RESPONSE POLICY";
-  const at = full.indexOf(marker);
-  if (at < 0) return { stable: full, turn: "" };
-  return { stable: full.slice(0, at).trim(), turn: full.slice(at).trim() };
+  const crisisAt = full.indexOf("CRISIS RESPONSE POLICY");
+  if (crisisAt >= 0) {
+    return { stable: full.slice(0, crisisAt).trim(), turn: full.slice(crisisAt).trim() };
+  }
+  const levelAt = full.indexOf("Safety assessment:");
+  if (levelAt >= 0) {
+    return { stable: full.slice(0, levelAt).trim(), turn: full.slice(levelAt).trim() };
+  }
+  return { stable: full.trim(), turn: "" };
+}
+
+/**
+ * Stable slot for the Self Model fact sheet. Same bytes on every turn of a
+ * companion. A later PR returns the sheet from here; do not insert it
+ * somewhere else in the prefix.
+ */
+function selfModelFactSheet(): string {
+  return "";
+}
+
+/**
+ * Per-turn slot for a one-line relationship summary. The line changes
+ * nightly, so it is not part of the cached prefix. A later PR returns it
+ * from here; it renders immediately before mood.
+ */
+function relationshipSummaryLine(): string {
+  return "";
 }
 
 /** Collapse a display name so it cannot break the one-line instruction. */
@@ -1545,12 +1589,13 @@ function isLocalClosingInstruction(content: string): boolean {
 /**
  * Qwen's chat template folds every system message into the top system block.
  * On the native Ollama path the system message keeps only the stable parts
- * (persona, then the region date). History follows. Everything that changes
- * per turn — the companion crisis care line when this turn fired one,
- * then a therapy crisis-response policy, then memories, weather, lore,
- * the clock, and mood — plus the answer-last
- * line (and the avoid-repeat line, when a retry added one) is bracketed at
- * the start of the final user turn. Guardrails stay in the system message.
+ * (persona, then the region without its Local time line). History follows.
+ * Everything that changes per turn — the companion crisis care line when
+ * this turn fired one, then a therapy assessment or crisis-response policy,
+ * then memories, weather, lore, the local date and clock, the relationship
+ * summary slot, and mood — plus the answer-last line (and the avoid-repeat
+ * line, when a retry added one) is bracketed at the start of the final user
+ * turn. Guardrails stay in the system message.
  * A blank line sets the user's own text apart from those notes, and it
  * stays last.
  * Cloud providers keep the separate system turns.
@@ -1597,7 +1642,7 @@ export function messagesForLocalOllama<T extends { role: string; content: string
   const history = messages
     .slice(1, start)
     .filter((message) => message.role === "user" || message.role === "assistant");
-  const stable = joinPromptParts([layout.staticText, layout.regionDateText]);
+  const stable = joinPromptParts([layout.staticText, layout.regionStableText]);
   const notes = [...layout.volatileBlocks, ...closing]
     .map((text) => text.trim())
     .filter(Boolean)
@@ -1619,8 +1664,9 @@ export function messagesForLocalOllama<T extends { role: string; content: string
  * message: persona, floored region, memories, weather, lore, scene, then
  * mood, then history, then the answer-last system turn, then the user.
  * Native Ollama does not send that system message. `messagesForLocalOllama`
- * rebuilds it as persona + region date, history, and a final user turn
- * whose bracketed prefix holds the per-turn blocks (mood last).
+ * rebuilds it as persona + region without the Local time line, history,
+ * and a final user turn whose bracketed prefix holds the per-turn blocks
+ * (relationship summary slot, then mood last).
  *
  * Trim PDF text first, then scene lines, then repository lore. Mood is
  * shortened before a short memory is dropped, when that is enough to fit.
@@ -1710,6 +1756,8 @@ export function composeCompanionChatMessages(
       firsthand,
       sceneText,
       sections.localTimeText,
+      // Per-turn slot: nightly relationship summary. Immediately before mood.
+      sections.relationshipSummaryText,
       moodText,
     ]
       .map((part) => String(part || "").trim())
@@ -1726,6 +1774,8 @@ export function composeCompanionChatMessages(
       sceneText,
       sections.crisisTurnText,
       sections.turnSafetyText,
+      // Per-turn slot: nightly relationship summary. Immediately before mood.
+      sections.relationshipSummaryText,
       moodText,
     ]);
     const messages: LlmChatMessage[] = [];
@@ -1742,7 +1792,7 @@ export function composeCompanionChatMessages(
     messages.push({ role: "user", content: userTurn });
     rememberCompanionLocalLayout(messages, {
       staticText: sections.staticText,
-      regionDateText: sections.regionDateText,
+      regionStableText: sections.regionStableText,
       volatileBlocks,
     });
     return messages;

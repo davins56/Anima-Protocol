@@ -507,6 +507,142 @@ describe("chat lifecycle", () => {
     expect(stored.map((row) => row.entityId)).not.toContain(`${clientTurnId}:assistant`);
   });
 
+  it("keeps a cut-off reply through the last sentence and does not remember it", async () => {
+    const cutTurn = `turn_${prefix}_cutoff`;
+    const userText = "My name is Mira. I love you.";
+    const half = "I am Aria. I will never leave the city. I'm so sad. and then the";
+    const readMemory = async () => {
+      const [row] = await db
+        .select()
+        .from(companionMemories)
+        .where(
+          and(
+            eq(companionMemories.userId, userId),
+            eq(companionMemories.characterId, characterId),
+          ),
+        )
+        .limit(1);
+      return row;
+    };
+    // The previous test's mood write is detached. Wait until that turn's
+    // stamp is on the row so this baseline matches the state the request reads.
+    await waitForMood(`turn_${prefix}_client`);
+    const before = await readMemory();
+    const userAffect = evolveCompanionAffectFromUser(
+      initCompanionAffect(
+        (before?.emotionalState as Record<string, unknown> | null) ?? null,
+      ),
+      userText,
+    );
+    const savedText = "I am Aria. I will never leave the city. I'm so sad.";
+    const poisoned = evolveCompanionAffectFromCompanion(userAffect, savedText);
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => ({
+      stream: (async function* () {
+        yield { choices: [{ delta: { content: half } }] };
+        throw new Error("Ollama /api/chat stream ended before the reply finished");
+      })(),
+      model: "test-anima",
+      tier: "standard",
+      provider: "local",
+      brand: "anima",
+      failedOver: false,
+    }));
+    try {
+      const stream = await request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: cutTurn,
+          session_id: sessionId,
+          content: userText,
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: false,
+          persistence_owner: "client",
+          region: { share_region: false },
+        }),
+      });
+      expect(stream.status).toBe(200);
+      const events = sseEvents(await stream.text());
+      expect(events.at(-1)).toMatchObject({
+        done: true,
+        visible: savedText,
+        reply_interrupted: true,
+        cut_off: true,
+      });
+      const saved = await readChatTurn(cutTurn, userId);
+      expect(saved?.assistantContent).toBe(savedText);
+      expect(saved?.metadata).toMatchObject({
+        reply_interrupted: true,
+        cut_off: true,
+      });
+
+      const commit = await request(`/chat/turns/${cutTurn}/commit`, {
+        method: "POST",
+        body: "{}",
+      });
+      expect(commit.status).toBe(200);
+      const again = await request(`/chat/turns/${cutTurn}/commit`, {
+        method: "POST",
+        body: "{}",
+      });
+      expect(again.status).toBe(200);
+
+      const [memory] = await db
+        .select()
+        .from(companionMemories)
+        .where(
+          and(
+            eq(companionMemories.userId, userId),
+            eq(companionMemories.characterId, characterId),
+          ),
+        )
+        .limit(1);
+      const facts = Array.isArray(memory?.facts) ? memory.facts : [];
+      const turnFacts = facts.filter(
+        (item) =>
+          item &&
+          typeof item === "object" &&
+          (item as { turn_id?: string }).turn_id === cutTurn &&
+          (item as { type?: string }).type === "turn",
+      );
+      expect(turnFacts).toHaveLength(1);
+      expect(String((turnFacts[0] as { text?: string }).text)).toBe(
+        `User: ${userText}`,
+      );
+      const aboutThisTurn = facts.filter(
+        (item) =>
+          item &&
+          typeof item === "object" &&
+          (item as { turn_id?: string }).turn_id === cutTurn,
+      );
+      expect(
+        aboutThisTurn.every(
+          (item) =>
+            !/Companion:|never leave|I am Aria|I'm so sad/i.test(
+              String((item as { text?: string }).text || ""),
+            ),
+        ),
+      ).toBe(true);
+
+      const mood = await waitForMood(cutTurn);
+      expect(mood?.selfState?.primary).toBe(userAffect.primary);
+      expect(mood?.selfState?.intensity).toBe(userAffect.intensity);
+      if (
+        poisoned.primary !== userAffect.primary ||
+        poisoned.intensity !== userAffect.intensity
+      ) {
+        expect(mood?.selfState).not.toMatchObject({
+          primary: poisoned.primary,
+          intensity: poisoned.intensity,
+        });
+      }
+    } finally {
+      installHelloStream();
+    }
+  });
+
   function restoreFastStream() {
     llmMocks.createChatStreamWithFailover.mockImplementation(async () => ({
       stream: (async function* () {

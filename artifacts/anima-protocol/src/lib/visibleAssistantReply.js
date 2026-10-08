@@ -29,6 +29,32 @@ export function visibleAssistantReply(raw, opts = {}) {
   return inners.join("\n\n");
 }
 
+const SENTENCE_END_RE = /[.!?…]["'”’)\]*_~]*(?=\s|$)/g;
+const NAMED_HONORIFIC_RE =
+  /\b(?:Mr|Mrs|Ms|Dr|St|Jr|Sr|vs|etc|e\.g|i\.e)$/i;
+const INITIALISM_RE = /(?:[A-Za-z]\.)+[A-Za-z]$/;
+
+/**
+ * Cut a dropped stream back to the last finished sentence.
+ * A fragment with no sentence end is kept so Retry can still replace it.
+ * `Dr.` is not a sentence end. `U.S.` is one only when nothing follows it.
+ */
+export function trimToLastFullSentence(text) {
+  const value = String(text ?? "").trimEnd();
+  if (!value) return value;
+  let sentenceEnd = -1;
+  for (const match of value.matchAll(SENTENCE_END_RE)) {
+    const index = match.index ?? 0;
+    const before = value.slice(0, index);
+    const rest = value.slice(index + match[0].length).trim();
+    if (NAMED_HONORIFIC_RE.test(before)) continue;
+    if (INITIALISM_RE.test(before) && rest) continue;
+    sentenceEnd = index + match[0].length;
+  }
+  if (sentenceEnd > 0) return value.slice(0, sentenceEnd).trimEnd();
+  return value;
+}
+
 /** Canonical visible text for a finished turn. Never waits for `</think>`. */
 export function finalizeAssistantReply(...parts) {
   for (const part of parts) {

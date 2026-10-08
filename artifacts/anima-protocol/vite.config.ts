@@ -28,6 +28,19 @@ const algoliaBranch =
   process.env.HEAD?.trim() ||
   "main";
 
+// Optional build revision for chat failure reports. Empty when the host
+// does not inject a commit. Never required for the app to run.
+const appCommit = (
+  process.env.VITE_APP_COMMIT ||
+  process.env.VERCEL_GIT_COMMIT_SHA ||
+  process.env.CF_PAGES_COMMIT_SHA ||
+  process.env.WORKERS_CI_COMMIT_SHA ||
+  process.env.GITHUB_SHA ||
+  ""
+)
+  .trim()
+  .slice(0, 64);
+
 const rawPort = process.env.FRONTEND_PORT ?? process.env.PORT ?? "5173";
 
 const port = parseInt(rawPort);
@@ -81,6 +94,7 @@ export default defineConfig({
     "import.meta.env.VITE_CLERK_PUBLISHABLE_KEY":
       JSON.stringify(clerkPublishableKey),
     "import.meta.env.VITE_ALGOLIA_BRANCH": JSON.stringify(algoliaBranch),
+    "import.meta.env.VITE_APP_COMMIT": JSON.stringify(appCommit),
   },
   plugins: [
     react({ jsxRuntime: "automatic" }),
