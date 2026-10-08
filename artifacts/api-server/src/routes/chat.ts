@@ -218,9 +218,11 @@ import {
 } from "../lib/discardReplacedReply";
 import {
   omitPersistedUserRow,
+  clientTurnMetadata,
   replacedFromMessageIdOf,
   replacedMessageIdsOf,
   replacedTurnIdOf,
+  replacedTurnIdsOf,
   replyActionOf,
   shouldDiscardStoredMessage,
   turnMetadataReplaced,
@@ -961,6 +963,7 @@ async function writeTurnMessagesInOrder(
   messages: { user: MsgData | null; assistant: MsgData },
 ): Promise<boolean> {
   return db.transaction(async (tx) => {
+    await migrateSessionMessages(tx, turn.userId, turn.sessionId);
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${turn.id}`}))`);
     const [locked] = await tx
       .select({ metadata: chatTurns.metadata })
@@ -968,7 +971,6 @@ async function writeTurnMessagesInOrder(
       .where(and(eq(chatTurns.id, turn.id), eq(chatTurns.userId, turn.userId)))
       .limit(1);
     if (locked && turnMetadataReplaced(locked.metadata)) return false;
-    await migrateSessionMessages(tx, turn.userId, turn.sessionId);
     const rows = await tx
       .select({
         id: userEntities.id,
@@ -1189,48 +1191,55 @@ async function writeTurnMoodFromMetadata(turn: ChatTurn): Promise<void> {
   if (characterIds.length === 0) return;
   const now = new Date();
   for (const characterId of characterIds) {
-    const [existing] = await withTransientDbRetry(() =>
-      db
-        .select({
-          summary: companionMemories.summary,
-          facts: companionMemories.facts,
-          emotionalState: companionMemories.emotionalState,
-          resonanceNotes: companionMemories.resonanceNotes,
-        })
-        .from(companionMemories)
-        .where(
-          and(
-            eq(companionMemories.userId, turn.userId),
-            eq(companionMemories.characterId, characterId),
-          ),
-        )
-        .limit(1),
-    );
-    const latestMoodTurn = await readChatTurn(turn.id, turn.userId);
-    if (latestMoodTurn && turnMetadataReplaced(latestMoodTurn.metadata)) return;
-    const current = (existing?.emotionalState as Record<string, unknown> | null) ?? {};
-    const next = emotionalStateWithTurnMood(current, turn.id, selfState);
-    if (!next.wrote) continue;
-    await withTransientDbRetry(() =>
-      db
-        .insert(companionMemories)
-        .values({
-          userId: turn.userId,
-          characterId,
-          summary: existing?.summary ?? "",
-          facts: Array.isArray(existing?.facts) ? existing.facts : [],
-          emotionalState: next.state,
-          resonanceNotes: existing?.resonanceNotes ?? "",
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [companionMemories.userId, companionMemories.characterId],
-          set: {
+    const wrote = await withTransientDbRetry(() =>
+      db.transaction(async (tx) => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${turn.id}`}))`);
+        const [latestMoodTurn] = await tx
+          .select({ metadata: chatTurns.metadata })
+          .from(chatTurns)
+          .where(and(eq(chatTurns.id, turn.id), eq(chatTurns.userId, turn.userId)))
+          .limit(1);
+        if (latestMoodTurn && turnMetadataReplaced(latestMoodTurn.metadata)) return false;
+        const [memory] = await tx
+          .select({
+            summary: companionMemories.summary,
+            facts: companionMemories.facts,
+            emotionalState: companionMemories.emotionalState,
+            resonanceNotes: companionMemories.resonanceNotes,
+          })
+          .from(companionMemories)
+          .where(
+            and(
+              eq(companionMemories.userId, turn.userId),
+              eq(companionMemories.characterId, characterId),
+            ),
+          )
+          .limit(1);
+        const current = (memory?.emotionalState as Record<string, unknown> | null) ?? {};
+        const next = emotionalStateWithTurnMood(current, turn.id, selfState);
+        if (!next.wrote) return false;
+        await tx
+          .insert(companionMemories)
+          .values({
+            userId: turn.userId,
+            characterId,
+            summary: memory?.summary ?? "",
+            facts: Array.isArray(memory?.facts) ? memory.facts : [],
             emotionalState: next.state,
+            resonanceNotes: memory?.resonanceNotes ?? "",
             updatedAt: now,
-          },
-        }),
+          })
+          .onConflictDoUpdate({
+            target: [companionMemories.userId, companionMemories.characterId],
+            set: {
+              emotionalState: next.state,
+              updatedAt: now,
+            },
+          });
+        return true;
+      }),
     );
+    if (!wrote) return;
   }
 }
 
@@ -2163,7 +2172,7 @@ router.post("/messages", async (req, res) => {
       ? "client"
       : "server";
   const turnMetadata = {
-    ...(body.metadata ?? {}),
+    ...clientTurnMetadata(body.metadata),
     mode,
     character_ids: characterIds,
     ...(replyAction ? { reply_action: replyAction, skip_affect: true } : {}),
@@ -2270,13 +2279,7 @@ router.post("/messages", async (req, res) => {
     fromSeq: null as number | null,
   };
   let discardedReply = emptyDiscardedReply;
-  const wantsReplace = Boolean(
-    replyAction &&
-      (emptyDiscardedReply.turnId ||
-        replacedTurnIdOf(body.metadata) ||
-        emptyDiscardedReply.fromMessageId ||
-        emptyDiscardedReply.messageIds.length > 0),
-  );
+  const wantsReplace = Boolean(replyAction);
   const failReplacement = async (error: unknown) => {
     logger.warn({ error, turnId: turnStart.turn.id }, "Could not discard the replaced companion reply");
     const retireError = new Error("Could not replace the previous reply");
@@ -2302,6 +2305,7 @@ router.post("/messages", async (req, res) => {
         replyAction,
         userContent: content,
         replacedTurnId: replacedTurnIdOf(body.metadata),
+        replacedTurnIds: replacedTurnIdsOf(body.metadata),
         messageIds: emptyDiscardedReply.messageIds,
         fromMessageId: emptyDiscardedReply.fromMessageId,
       });
@@ -2353,6 +2357,7 @@ router.post("/messages", async (req, res) => {
         replyAction,
         userContent: content,
         replacedTurnId: discardedReply.turnId || replacedTurnIdOf(body.metadata),
+        replacedTurnIds: replacedTurnIdsOf(body.metadata),
         messageIds: discardedReply.messageIds,
         fromMessageId: discardedReply.fromMessageId,
         characterIds,
@@ -3398,7 +3403,7 @@ router.post("/messages", async (req, res) => {
       ? serializeCompanionAffect(evolvedCompanion)
       : null;
     const generatedMetadata = {
-      ...(body.metadata ?? {}),
+      ...clientTurnMetadata(body.metadata),
       mode,
       session_title: String(sessionData.title || "New session"),
       character_ids: characterIds,

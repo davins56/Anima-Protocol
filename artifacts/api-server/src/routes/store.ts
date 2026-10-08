@@ -1085,6 +1085,16 @@ router.post("/messages/replace", async (req, res) => {
     const currentById = new Map<string, Row>();
     for (const r of current) currentById.set(String((r.data as MsgData).id), r);
 
+    const turnIds: string[] = [];
+    for (const raw of incoming) {
+      const turnId = messageTurnId(asObject(raw));
+      if (turnId && !turnIds.includes(turnId)) turnIds.push(turnId);
+    }
+    turnIds.sort();
+    for (const turnId of turnIds) {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${turnId}`}))`);
+    }
+
     const now = new Date().toISOString();
     const kept = new Set<string>();
     const result: MsgData[] = [];

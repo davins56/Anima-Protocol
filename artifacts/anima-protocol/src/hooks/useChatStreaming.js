@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { chatStreamStatusCopy } from "@/lib/chatStreamStatusCopy";
 import { HELD_SEND_NOTE } from "@/lib/heldChatSend";
+import { messageTurnId } from "@/lib/chatReplyActions";
 
 /**
  * This turn's snapshot is the source of truth for its own rows. A reply that
@@ -18,7 +19,7 @@ function rowIsOmitted(row, omitTurnIds, omitMessageIds) {
   if (!row) return false;
   const rowId = row.id ? String(row.id) : "";
   if (rowId && omitMessageIds.has(rowId)) return true;
-  const rowTurn = String(row.turn_id || row.late_turn_id || "");
+  const rowTurn = messageTurnId(row);
   return Boolean(row.role !== "user" && rowTurn && omitTurnIds.has(rowTurn));
 }
 
@@ -66,10 +67,7 @@ export function stitchLiveMessages(live, snapshot, activeTurnId, options) {
       }
       continue;
     }
-    const rowId = row.id ? String(row.id) : "";
-    if (rowId && omitMessageIds.has(rowId)) continue;
-    const rowTurn = String(row.turn_id || row.late_turn_id || "");
-    if (row.role !== "user" && rowTurn && omitTurnIds.has(rowTurn)) continue;
+    if (rowIsOmitted(row, omitTurnIds, omitMessageIds)) continue;
     const placeholder =
       row.character_name === "__typing__" ||
       row.character_name === "__thinking__" ||
