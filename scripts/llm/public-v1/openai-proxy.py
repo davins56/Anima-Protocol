@@ -467,7 +467,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if method == "HEAD":
                 return
             while True:
-                chunk = resp.read(8192)
+                # read() waits for the full 8192 bytes (or EOF), so a live
+                # generate arrives in ~60-token bursts. read1 returns the
+                # bytes already buffered, one NDJSON line at a time.
+                chunk = resp.read1(8192)
                 if not chunk:
                     break
                 self.wfile.write(chunk)
