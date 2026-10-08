@@ -88,6 +88,7 @@ export async function regenerateMessageFlow(idx, { confirm, activeSession, isLoa
     history: plan.kept,
     priorMessages: messages,
     replacedTurnId: plan.replacedTurnId || "",
+    replacedFromMessageId: plan.replacedFromMessageId || "",
     replacedMessageIds: plan.replacedMessageIds || [],
   });
   if (result?.started === false) {

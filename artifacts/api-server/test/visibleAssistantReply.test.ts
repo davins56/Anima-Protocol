@@ -3,6 +3,7 @@ import {
   createVisibleReplyFilter,
   finalizeAssistantReply,
   hasThinkMarkup,
+  settleCappedReply,
   trimToLastCompleteSentence,
   visibleAssistantReply,
 } from "../src/lib/visibleAssistantReply";
@@ -114,6 +115,18 @@ describe("trimToLastCompleteSentence", () => {
         "I stay. *She looks across the room* and the quiet, undist",
       ),
     ).toBe("I stay. *She looks across the room*");
+  });
+
+  it("trims an interrupted reply the same way as a stall", () => {
+    expect(
+      settleCappedReply("You came back. I was thin", {
+        interrupted: true,
+        timedOut: true,
+      }),
+    ).toBe("You came back.");
+    expect(
+      settleCappedReply("You came back. I was thin", { stoppedEarly: true }),
+    ).toBe("You came back. I was thin");
   });
 
   it("closes an open action when there is no sentence end", () => {

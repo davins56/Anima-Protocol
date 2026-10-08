@@ -7,7 +7,7 @@
  * row and deletes the stored reply before the new generate reads history.
  */
 
-import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import {
   CHAT_MESSAGE,
   CHAT_SESSION,
@@ -24,7 +24,12 @@ import {
 import { markChatTurnReplaced, readChatTurn } from "./chatTurnLedger";
 import { factIdFor } from "./memoryEmbeddings";
 import { factsWithoutTurn } from "./memoryPolicy";
-import { shouldDiscardStoredMessage, type ReplyAction } from "./replyReplacement";
+import {
+  messageSeq,
+  messageTurnId,
+  shouldDiscardStoredMessage,
+  type ReplyAction,
+} from "./replyReplacement";
 
 type ReplyKind = ReplyAction;
 
@@ -42,6 +47,142 @@ function characterIdsFromMetadata(metadata: Record<string, unknown> | null | und
   return [...ids];
 }
 
+export type ReplacedReplyPlan = {
+  turnId: string;
+  turnIds: string[];
+  messageIds: string[];
+  fromMessageId: string;
+  fromSeq: number | null;
+};
+
+type SessionChatRow = {
+  id: number;
+  entityId: string;
+  data: unknown;
+};
+
+function storedChatMessage(row: SessionChatRow): Record<string, unknown> {
+  const data = asObject(row.data);
+  return { ...data, id: data.id || row.entityId };
+}
+
+async function loadSessionChatRows(userId: string, sessionId: string): Promise<SessionChatRow[]> {
+  return withTransientDbRetry(() =>
+    db
+      .select({
+        id: userEntities.id,
+        entityId: userEntities.entityId,
+        data: userEntities.data,
+      })
+      .from(userEntities)
+      .where(
+        and(
+          eq(userEntities.userId, userId),
+          eq(userEntities.entityName, CHAT_MESSAGE),
+          sessionIdEq(sessionId),
+        ),
+      ),
+  );
+}
+
+function addTurn(ids: string[], turnId: string, replacingTurnId: string) {
+  const value = turnId.trim();
+  if (!value || value === replacingTurnId || ids.includes(value)) return;
+  ids.push(value);
+}
+
+/**
+ * Which reply this retry or edit is retiring.
+ *
+ * An explicit turn id wins when it belongs to this session. Otherwise the
+ * anchor message's own turn id, or a single turn shared by the listed ids.
+ * Identical user text selects a turn only when exactly one non-replaced
+ * turn has it. Several matches stay untouched.
+ */
+export async function inspectReplacedReply(input: {
+  userId: string;
+  sessionId: string;
+  replacingTurnId: string;
+  replyAction: ReplyKind;
+  userContent: string;
+  replacedTurnId?: string | null;
+  messageIds?: string[];
+  fromMessageId?: string | null;
+}): Promise<ReplacedReplyPlan> {
+  const messageIds = [
+    ...new Set((input.messageIds || []).map((id) => String(id || "").trim()).filter(Boolean)),
+  ];
+  const fromMessageId = String(input.fromMessageId || "").trim();
+  const requested = String(input.replacedTurnId || "").trim();
+  const rows = await loadSessionChatRows(input.userId, input.sessionId);
+  const stored = rows.map((row) => ({ row, message: storedChatMessage(row) }));
+  const anchor = fromMessageId
+    ? stored.find((item) => String(item.message.id || "") === fromMessageId)
+    : undefined;
+  const fromSeq = anchor ? messageSeq(anchor.message) : null;
+  const anchorTurn = anchor ? messageTurnId(anchor.message) : "";
+  const turnIds: string[] = [];
+
+  if (fromSeq != null) {
+    for (const item of stored) {
+      const seq = messageSeq(item.message);
+      if (seq == null || seq < fromSeq) continue;
+      addTurn(turnIds, messageTurnId(item.message), input.replacingTurnId);
+    }
+  } else if (anchorTurn) {
+    addTurn(turnIds, anchorTurn, input.replacingTurnId);
+  }
+
+  let turnId = "";
+  if (requested && requested !== input.replacingTurnId) {
+    const turn = await readChatTurn(requested, input.userId);
+    if (turn && turn.sessionId === input.sessionId) turnId = turn.id;
+  }
+  if (!turnId && anchorTurn && anchorTurn !== input.replacingTurnId) {
+    const turn = await readChatTurn(anchorTurn, input.userId);
+    if (!turn || turn.sessionId === input.sessionId) turnId = anchorTurn;
+  }
+  if (!turnId) {
+    const listedTurns = new Set<string>();
+    for (const id of messageIds) {
+      const hit = stored.find((item) => String(item.message.id || "") === id);
+      if (!hit) continue;
+      const idTurn = messageTurnId(hit.message);
+      if (idTurn && idTurn !== input.replacingTurnId) listedTurns.add(idTurn);
+    }
+    if (listedTurns.size === 1) turnId = [...listedTurns][0] || "";
+  }
+  if (!turnId && input.replyAction === "retry") {
+    const needle = input.userContent.trim();
+    if (needle) {
+      const matches = await withTransientDbRetry(() =>
+        db
+          .select({ id: chatTurns.id })
+          .from(chatTurns)
+          .where(
+            and(
+              eq(chatTurns.userId, input.userId),
+              eq(chatTurns.sessionId, input.sessionId),
+              eq(chatTurns.userContent, needle),
+              ne(chatTurns.id, input.replacingTurnId),
+              sql`coalesce(${chatTurns.metadata}->>'replaced', '') <> 'true'`,
+            ),
+          )
+          .limit(2),
+      );
+      if (matches.length === 1) turnId = matches[0]?.id ?? "";
+    }
+  }
+  addTurn(turnIds, turnId, input.replacingTurnId);
+  return {
+    turnId,
+    turnIds,
+    messageIds,
+    fromMessageId: anchor ? fromMessageId : "",
+    fromSeq,
+  };
+}
+
 export async function resolveReplacedTurnId(input: {
   userId: string;
   sessionId: string;
@@ -49,32 +190,11 @@ export async function resolveReplacedTurnId(input: {
   replyAction: ReplyKind;
   userContent: string;
   replacedTurnId?: string | null;
+  messageIds?: string[];
+  fromMessageId?: string | null;
 }): Promise<string> {
-  const requested = String(input.replacedTurnId || "").trim();
-  if (requested && requested !== input.replacingTurnId) {
-    const turn = await readChatTurn(requested, input.userId);
-    if (turn && turn.sessionId === input.sessionId) return turn.id;
-  }
-  if (input.replyAction !== "retry") return "";
-  const needle = input.userContent.trim();
-  if (!needle) return "";
-  const [prior] = await withTransientDbRetry(() =>
-    db
-      .select({ id: chatTurns.id })
-      .from(chatTurns)
-      .where(
-        and(
-          eq(chatTurns.userId, input.userId),
-          eq(chatTurns.sessionId, input.sessionId),
-          eq(chatTurns.userContent, needle),
-          ne(chatTurns.id, input.replacingTurnId),
-          sql`coalesce(${chatTurns.metadata}->>'replaced', '') <> 'true'`,
-        ),
-      )
-      .orderBy(desc(chatTurns.createdAt))
-      .limit(1),
-  );
-  return prior?.id ?? "";
+  const plan = await inspectReplacedReply(input);
+  return plan.turnId;
 }
 
 async function forgetTurnMemories(
@@ -169,17 +289,21 @@ async function stripSharedTurnFact(
 async function deleteReplacedMessages(input: {
   userId: string;
   sessionId: string;
-  turnId: string;
+  turnIds: string[];
   messageIds: string[];
+  fromSeq: number | null;
 }): Promise<void> {
-  const target = { turnId: input.turnId, messageIds: input.messageIds };
-  if (!input.turnId && input.messageIds.length === 0) return;
+  const target = {
+    turnId: input.turnIds[0] || "",
+    turnIds: input.turnIds,
+    messageIds: input.messageIds,
+    fromSeq: input.fromSeq,
+  };
+  if (input.turnIds.length === 0 && input.messageIds.length === 0 && input.fromSeq == null) return;
   await withTransientDbRetry(() =>
     db.transaction(async (tx) => {
-      if (input.turnId) {
-        await tx.execute(
-          sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${input.turnId}`}))`,
-        );
+      for (const turnId of [...input.turnIds].sort()) {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${turnId}`}))`);
       }
       const rows = await tx
         .select({
@@ -207,8 +331,7 @@ async function deleteReplacedMessages(input: {
       if (dropRowIds.length > 0) {
         await tx.delete(userEntities).where(inArray(userEntities.id, dropRowIds));
       }
-      const typedIds = [...new Set([...dropEntityIds, ...input.messageIds])];
-      if (input.turnId) {
+      for (const turnId of input.turnIds) {
         await tx
           .delete(chatMessages)
           .where(
@@ -218,22 +341,22 @@ async function deleteReplacedMessages(input: {
               sql`(
                 ${chatMessages.role} <> 'user'
                 AND (
-                  ${chatMessages.metadata}->>'turn_id' = ${input.turnId}
-                  OR ${chatMessages.id} like ${`${input.turnId}:%`}
+                  ${chatMessages.metadata}->>'turn_id' = ${turnId}
+                  OR ${chatMessages.id} like ${`${turnId}:%`}
                 )
-                AND ${chatMessages.id} not like ${`${input.turnId}:user%`}
+                AND ${chatMessages.id} not like ${`${turnId}:user%`}
               )`,
             ),
           );
       }
-      if (typedIds.length > 0) {
+      if (dropEntityIds.length > 0) {
         await tx
           .delete(chatMessages)
           .where(
             and(
               eq(chatMessages.userId, input.userId),
               eq(chatMessages.sessionId, input.sessionId),
-              inArray(chatMessages.id, typedIds),
+              inArray(chatMessages.id, [...new Set(dropEntityIds)]),
             ),
           );
       }
@@ -258,15 +381,10 @@ export async function forgetReplacedTurnMemory(turn: {
   await stripSharedTurnFact(turn.userId, turn.sessionId, turn.id);
 }
 
-export type DiscardedReply = {
-  turnId: string;
-  messageIds: string[];
-};
-
 /**
  * Retire the previous reply. Safe to call once the new turn id is known
- * and this send is going to generate. Returns the turn that was retired
- * so the prompt can drop it even if a row delete is still catching up.
+ * and this send is going to generate. Returns every turn the suffix
+ * retired so the prompt can drop them even if a row delete is still catching up.
  */
 export async function discardReplacedCompanionReply(input: {
   userId: string;
@@ -276,40 +394,35 @@ export async function discardReplacedCompanionReply(input: {
   userContent: string;
   replacedTurnId?: string | null;
   messageIds?: string[];
+  fromMessageId?: string | null;
   characterIds?: string[];
-}): Promise<DiscardedReply> {
-  const messageIds = (input.messageIds || []).map((id) => String(id || "").trim()).filter(Boolean);
-  const turnId = await resolveReplacedTurnId({
-    userId: input.userId,
-    sessionId: input.sessionId,
-    replacingTurnId: input.replacingTurnId,
-    replyAction: input.replyAction,
-    userContent: input.userContent,
-    replacedTurnId: input.replacedTurnId,
-  });
-  if (!turnId && messageIds.length === 0) {
-    return { turnId: "", messageIds };
+}): Promise<ReplacedReplyPlan> {
+  const plan = await inspectReplacedReply(input);
+  if (plan.turnIds.length === 0 && plan.messageIds.length === 0 && plan.fromSeq == null) {
+    return plan;
   }
-  let metadata: Record<string, unknown> = {};
-  if (turnId) {
+  const retired: Array<{ id: string; metadata: Record<string, unknown> }> = [];
+  for (const turnId of plan.turnIds) {
     const replaced = await markChatTurnReplaced(turnId, input.userId, input.replacingTurnId);
-    metadata = replaced?.metadata ?? {};
+    retired.push({ id: turnId, metadata: replaced?.metadata ?? {} });
   }
   await deleteReplacedMessages({
     userId: input.userId,
     sessionId: input.sessionId,
-    turnId,
-    messageIds,
+    turnIds: plan.turnIds,
+    messageIds: plan.messageIds,
+    fromSeq: plan.fromSeq,
   });
-  const characterIds = [
-    ...new Set([
-      ...characterIdsFromMetadata(metadata),
-      ...(input.characterIds || []).map((id) => String(id || "").trim()).filter(Boolean),
-    ]),
-  ];
-  if (turnId && characterIds.length > 0) {
-    await forgetTurnMemories(input.userId, characterIds, turnId);
-    await stripSharedTurnFact(input.userId, input.sessionId, turnId);
+  const fallbackCharacters = (input.characterIds || [])
+    .map((id) => String(id || "").trim())
+    .filter(Boolean);
+  for (const turn of retired) {
+    const characterIds = [
+      ...new Set([...characterIdsFromMetadata(turn.metadata), ...fallbackCharacters]),
+    ];
+    if (characterIds.length === 0) continue;
+    await forgetTurnMemories(input.userId, characterIds, turn.id);
+    await stripSharedTurnFact(input.userId, input.sessionId, turn.id);
   }
-  return { turnId, messageIds };
+  return plan;
 }

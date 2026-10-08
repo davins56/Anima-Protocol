@@ -14,12 +14,22 @@ import { HELD_SEND_NOTE } from "@/lib/heldChatSend";
  *   Replies the user already retried. They stay out even when this snapshot
  *   omitted them and an older paint still has them.
  */
+function rowIsOmitted(row, omitTurnIds, omitMessageIds) {
+  if (!row) return false;
+  const rowId = row.id ? String(row.id) : "";
+  if (rowId && omitMessageIds.has(rowId)) return true;
+  const rowTurn = String(row.turn_id || row.late_turn_id || "");
+  return Boolean(row.role !== "user" && rowTurn && omitTurnIds.has(rowTurn));
+}
+
 export function stitchLiveMessages(live, snapshot, activeTurnId, options) {
-  const next = Array.isArray(snapshot) ? snapshot : [];
   const current = Array.isArray(live) ? live : [];
   const turnId = String(activeTurnId || "");
   const omitTurnIds = new Set(options?.omitTurnIds || []);
   const omitMessageIds = new Set(options?.omitMessageIds || []);
+  const next = (Array.isArray(snapshot) ? snapshot : []).filter(
+    (row) => !rowIsOmitted(row, omitTurnIds, omitMessageIds),
+  );
   if (!turnId || current.length === 0) return next;
 
   const snapshotIds = new Set();

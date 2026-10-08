@@ -38,6 +38,7 @@ import {
 import { retrievePdfContext } from "../lib/pdf/store";
 import {
   consumeLlmStream,
+  interruptedStreamKeepsReply,
   LlmStreamTimeoutError,
 } from "../lib/consumeLlmStream.js";
 import {
@@ -159,7 +160,7 @@ import {
   noteCompanionCrisisResource,
   type CrisisResourceCard,
 } from "../lib/therapySafety";
-import { ChatPipelineTelemetry } from "../lib/chatTelemetry";
+import { ChatPipelineTelemetry, chatErrorClass } from "../lib/chatTelemetry";
 import { streamErrorMessage } from "../lib/chatStreamError";
 import { optionalChatContext } from "../lib/optionalChatContext";
 import { classifyDbError, errorCauseBlob } from "../lib/dbErrors";
@@ -213,10 +214,11 @@ import {
 import {
   discardReplacedCompanionReply,
   forgetReplacedTurnMemory,
-  resolveReplacedTurnId,
+  inspectReplacedReply,
 } from "../lib/discardReplacedReply";
 import {
   omitPersistedUserRow,
+  replacedFromMessageIdOf,
   replacedMessageIdsOf,
   replacedTurnIdOf,
   replyActionOf,
@@ -225,7 +227,12 @@ import {
   turnSkipsAffect,
 } from "../lib/replyReplacement";
 import { deferLocalLlmJob } from "../lib/deferredLocalLlm";
-import { appendTurnMemoryFact, buildMemoryPolicyJob, factsWithoutTurn } from "../lib/memoryPolicy";
+import {
+  buildMemoryPolicyJob,
+  buildMemoryReembedJob,
+  factsWithoutTurns,
+  persistCompanionTurnFact,
+} from "../lib/memoryPolicy";
 import {
   applyCompanionMemoryChange,
   groupCompanionMemories,
@@ -895,46 +902,13 @@ async function upsertTurnMemory(params: {
     created_at: now.toISOString(),
   };
   for (const characterId of params.characterIds) {
-    const [existing] = await withTransientDbRetry(() =>
-      db
-        .select()
-        .from(companionMemories)
-        .where(
-          and(
-            eq(companionMemories.userId, params.userId),
-            eq(companionMemories.characterId, characterId),
-          ),
-        )
-        .limit(1),
-    );
-    const facts = appendTurnMemoryFact(
-      Array.isArray(existing?.facts) ? existing.facts : [],
-      fact,
-    );
-    if (!facts) continue;
-    await withTransientDbRetry(() =>
-      db
-        .insert(companionMemories)
-        .values({
-          userId: params.userId,
-          characterId,
-          summary: existing?.summary ?? "",
-          facts,
-          emotionalState: existing?.emotionalState ?? {},
-          resonanceNotes: existing?.resonanceNotes ?? "",
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [
-            companionMemories.userId,
-            companionMemories.characterId,
-          ],
-          set: {
-            facts,
-            updatedAt: now,
-          },
-        }),
-    );
+    const wrote = await persistCompanionTurnFact({
+      userId: params.userId,
+      characterId,
+      turnFact: fact,
+      now,
+    });
+    if (!wrote) continue;
 
     // Index the new turn fact for hybrid semantic retrieval. Best-effort —
     // chat must not fail if the embedding endpoint / hash path errors.
@@ -1218,6 +1192,8 @@ async function writeTurnMoodFromMetadata(turn: ChatTurn): Promise<void> {
         )
         .limit(1),
     );
+    const latestMoodTurn = await readChatTurn(turn.id, turn.userId);
+    if (latestMoodTurn && turnMetadataReplaced(latestMoodTurn.metadata)) return;
     const current = (existing?.emotionalState as Record<string, unknown> | null) ?? {};
     const next = emotionalStateWithTurnMood(current, turn.id, selfState);
     if (!next.wrote) continue;
@@ -1783,7 +1759,21 @@ async function changeCompanionMemory(
     res.status(result.status).json({ error: result.error, code: result.code });
     return;
   }
-  res.json({ review: result.review });
+  if (result.changed && action === "edit") {
+    const job = buildMemoryReembedJob({
+      userId,
+      characterId,
+      factId: result.focusFactId,
+    });
+    if (job) {
+      try {
+        await deferLocalLlmJob(job);
+      } catch {
+        // The corrected sentence is already stored. Search can catch up later.
+      }
+    }
+  }
+  res.json({ review: result.review, changed: result.changed });
 }
 
 router.patch("/memories/:characterId/facts/:factId", async (req, res) => {
@@ -2066,16 +2056,16 @@ router.post("/turns/:turnId/retry", async (req, res) => {
     res.status(404).json({ error: "Turn not found" });
     return;
   }
-  if (turn.status === "committed") {
-    res.json({ turn_id: turn.id, persistence_status: turn.status });
-    return;
-  }
   if (turnMetadataReplaced(turn.metadata)) {
     res.status(409).json({
       error: "Turn was replaced",
       turn_id: turn.id,
       persistence_status: turn.status,
     });
+    return;
+  }
+  if (turn.status === "committed") {
+    res.json({ turn_id: turn.id, persistence_status: turn.status });
     return;
   }
   try {
@@ -2258,24 +2248,54 @@ router.post("/messages", async (req, res) => {
   // above. This only rejects a newer turn while an older one is pending.
   // The reply this send is replacing does not count: a hung generate must
   // not block the retry that retires it. Slot priority is unchanged.
-  let discardedReply = {
+  const emptyDiscardedReply = {
     turnId: "",
+    turnIds: [] as string[],
     messageIds: replacedMessageIdsOf(body.metadata),
+    fromMessageId: replacedFromMessageIdOf(body.metadata),
+    fromSeq: null as number | null,
+  };
+  let discardedReply = emptyDiscardedReply;
+  const wantsReplace = Boolean(
+    replyAction &&
+      (emptyDiscardedReply.turnId ||
+        replacedTurnIdOf(body.metadata) ||
+        emptyDiscardedReply.fromMessageId ||
+        emptyDiscardedReply.messageIds.length > 0),
+  );
+  const failReplacement = async (error: unknown) => {
+    logger.warn({ error, turnId: turnStart.turn.id }, "Could not discard the replaced companion reply");
+    const retireError = new Error("Could not replace the previous reply");
+    flight.fail(retireError);
+    try {
+      await markTurnFailed(turnStart.turn.id, userId, retireError);
+    } catch (markErr) {
+      logger.warn({ err: markErr, turnId: turnStart.turn.id }, "Failed to mark replace failure");
+    }
+    if (!res.headersSent) {
+      res.status(503).json({
+        error: "Could not replace the previous reply. Try again.",
+        code: "reply_replace_failed",
+      });
+    }
   };
   if (replyAction) {
     try {
-      discardedReply = {
-        turnId: await resolveReplacedTurnId({
-          userId,
-          sessionId,
-          replacingTurnId: turnStart.turn.id,
-          replyAction,
-          userContent: content,
-          replacedTurnId: replacedTurnIdOf(body.metadata),
-        }),
-        messageIds: replacedMessageIdsOf(body.metadata),
-      };
+      discardedReply = await inspectReplacedReply({
+        userId,
+        sessionId,
+        replacingTurnId: turnStart.turn.id,
+        replyAction,
+        userContent: content,
+        replacedTurnId: replacedTurnIdOf(body.metadata),
+        messageIds: emptyDiscardedReply.messageIds,
+        fromMessageId: emptyDiscardedReply.fromMessageId,
+      });
     } catch (error) {
+      if (wantsReplace) {
+        await failReplacement(error);
+        return;
+      }
       logger.warn({ error, turnId: turnStart.turn.id }, "Could not resolve the reply being replaced");
     }
   }
@@ -2286,7 +2306,7 @@ router.post("/messages", async (req, res) => {
       turnStart.turn.id,
       turnStart.turn.createdAt,
       new Date(),
-      discardedReply.turnId ? [discardedReply.turnId] : [],
+      discardedReply.turnIds,
     )
   ) {
     const busyError = new Error(CONVERSATION_BUSY_MESSAGE);
@@ -2305,7 +2325,12 @@ router.post("/messages", async (req, res) => {
     return;
   }
 
-  if (replyAction && (discardedReply.turnId || discardedReply.messageIds.length > 0)) {
+  if (
+    replyAction &&
+    (discardedReply.turnIds.length > 0 ||
+      discardedReply.messageIds.length > 0 ||
+      discardedReply.fromMessageId)
+  ) {
     try {
       discardedReply = await discardReplacedCompanionReply({
         userId,
@@ -2315,13 +2340,12 @@ router.post("/messages", async (req, res) => {
         userContent: content,
         replacedTurnId: discardedReply.turnId || replacedTurnIdOf(body.metadata),
         messageIds: discardedReply.messageIds,
+        fromMessageId: discardedReply.fromMessageId,
         characterIds,
       });
     } catch (error) {
-      logger.warn(
-        { error, turnId: turnStart.turn.id },
-        "Could not discard the replaced companion reply",
-      );
+      await failReplacement(error);
+      return;
     }
   }
 
@@ -2498,27 +2522,30 @@ router.post("/messages", async (req, res) => {
     ]),
   );
   const worldKnowledge = worldKnowledgeResult.prompt;
-  const promptRecentMessages =
-    discardedReply.turnId || discardedReply.messageIds.length > 0
-      ? recentMessages.filter(
-          (message) => !shouldDiscardStoredMessage(message, discardedReply),
+  const promptDropsReplaced =
+    discardedReply.turnIds.length > 0 ||
+    discardedReply.messageIds.length > 0 ||
+    discardedReply.fromSeq != null;
+  const promptRecentMessages = promptDropsReplaced
+    ? recentMessages.filter((message) => !shouldDiscardStoredMessage(message, discardedReply))
+    : recentMessages;
+  const promptMemories =
+    discardedReply.turnIds.length > 0
+      ? adaptedMemories.map((memory) => ({
+          ...memory,
+          facts: factsWithoutTurns(
+            Array.isArray(memory.facts) ? memory.facts : [],
+            discardedReply.turnIds,
+          ) as CompanionMemoryRecord["facts"],
+        }))
+      : adaptedMemories;
+  const promptSharedMemory =
+    discardedReply.turnIds.length > 0
+      ? factsWithoutTurns(
+          Array.isArray(sessionData.shared_memory) ? sessionData.shared_memory : [],
+          discardedReply.turnIds,
         )
-      : recentMessages;
-  const promptMemories = discardedReply.turnId
-    ? adaptedMemories.map((memory) => ({
-        ...memory,
-        facts: factsWithoutTurn(
-          Array.isArray(memory.facts) ? memory.facts : [],
-          discardedReply.turnId,
-        ) as CompanionMemoryRecord["facts"],
-      }))
-    : adaptedMemories;
-  const promptSharedMemory = discardedReply.turnId
-    ? factsWithoutTurn(
-        Array.isArray(sessionData.shared_memory) ? sessionData.shared_memory : [],
-        discardedReply.turnId,
-      )
-    : sessionData.shared_memory;
+      : sessionData.shared_memory;
   
   const requestedAssistantId = body.assistant_character_id
     ? String(body.assistant_character_id)
@@ -2807,9 +2834,16 @@ router.post("/messages", async (req, res) => {
   usedTier = routed.tier;
 
   let producingTokens = false;
-  const emitDelta = (delta: string) => {
-    if (delta) producingTokens = true;
+  // The local host holds the first ~40 characters for the repeat / role-swap
+  // checks. Flip this on the first upstream chunk, not when that text is
+  // released, so a disconnect in the hold window is still "generating".
+  const noteUpstreamChunk = () => {
+    producingTokens = true;
     telemetry.markFirstToken();
+  };
+  const emitDelta = (delta: string) => {
+    if (delta) noteUpstreamChunk();
+    else telemetry.markFirstToken();
     sse.markStreaming();
     writeSse(res, { content: delta });
   };
@@ -2818,6 +2852,7 @@ router.post("/messages", async (req, res) => {
   const generationBudgetMs = llmChatMessagesOpenTimeoutMs({ freeTierCascade });
   const consumeOpts = {
     onDelta: emitDelta,
+    onActivity: noteUpstreamChunk,
     onReasoning: emitReasoning,
     firstChunkMs: llmChatMessagesFirstChunkMs({ freeTierCascade }),
     totalMs: llmChatMessagesStreamTotalMs({ freeTierCascade }),
@@ -2869,6 +2904,7 @@ router.post("/messages", async (req, res) => {
       replacedController.signal,
     );
     try {
+    let streamInterrupted = false;
     const personaParts = [
       activeChar?.personality,
       activeChar?.backstory,
@@ -2908,7 +2944,7 @@ router.post("/messages", async (req, res) => {
           maxTokens,
           messages: appendFinalUserReminder(messages, reminder),
           temperature: COMPANION_CHAT_TEMPERATURE,
-          signal: combineAbortSignals(retryOpen.signal, abandoned.signal),
+          signal: combineAbortSignals(retryOpen.signal, abandoned.signal, replacedController.signal),
         });
         const retried = await consumeLlmStream(retry.stream, {
           ...consumeOpts,
@@ -2919,6 +2955,7 @@ router.post("/messages", async (req, res) => {
         });
         const retriedText = settleCappedReply(finalizeAssistantReply(retried.content), {
           timedOut: retried.timedOut,
+          interrupted: retried.interrupted,
           finishReason: retried.finishReason,
           stoppedEarly: retried.stoppedEarly,
         });
@@ -3016,14 +3053,16 @@ router.post("/messages", async (req, res) => {
         });
         fullResponse = settleCappedReply(finalizeAssistantReply(streamed.content), {
           timedOut: streamed.timedOut,
+          interrupted: streamed.interrupted,
           finishReason: streamed.finishReason,
           stoppedEarly: streamed.stoppedEarly,
         });
+        streamInterrupted = interruptedStreamKeepsReply(streamed);
       }
       const ensembleStock = !crisisTurn && replyIsStock(fullResponse);
       const ensembleFourth = replyBreaksFourthWall(fullResponse) && fourthWallRetryOpen();
       const ensembleSwap = !crisisTurn && isRoleSwapReply(fullResponse, activeChar?.name);
-      if (ensembleStock || ensembleFourth || ensembleSwap) {
+      if (!streamInterrupted && (ensembleStock || ensembleFourth || ensembleSwap)) {
         const retryBudgetMs = repeatRetryBudgetMs(Date.now() - requestStartedAt);
         let otherWorkQueued = companionTurnsOpenForUser(userId) > 1;
         if (retryBudgetMs > 0 && !generateSignal.aborted && !otherWorkQueued) {
@@ -3133,11 +3172,15 @@ router.post("/messages", async (req, res) => {
         },
         stopWhen: () => cutReason !== null,
       });
-      // A stall, a deadline, or finish_reason "length" stops mid-word.
-      // `done.visible` repaints the bubble, so the saved and shown reply
-      // both end on a finished sentence or a closed action. No extra call.
+      // A stall, a deadline, an upstream drop, or finish_reason "length"
+      // stops mid-word. `done.visible` repaints the bubble, so the saved
+      // and shown reply both end on a finished sentence or a closed action.
+      // An interrupted reply that already has text is a finished turn: trim,
+      // persist, send done, and do not spend the extra regenerate.
+      streamInterrupted = interruptedStreamKeepsReply(streamed);
       fullResponse = settleCappedReply(finalizeAssistantReply(streamed.content), {
         timedOut: streamed.timedOut,
+        interrupted: streamed.interrupted,
         finishReason: streamed.finishReason,
         stoppedEarly: streamed.stoppedEarly,
       });
@@ -3169,7 +3212,8 @@ router.post("/messages", async (req, res) => {
         (repeated || stockLine || fourthWall || swapped) &&
         retryBudgetMs > 0 &&
         !generateSignal.aborted &&
-        !streamed.timedOut;
+        !streamed.timedOut &&
+        !streamInterrupted;
       if (wantsExtra) {
         otherWorkQueued = companionTurnsOpenForUser(userId) > 1;
         if (!otherWorkQueued) {
@@ -3197,7 +3241,7 @@ router.post("/messages", async (req, res) => {
         shouldRegenerateRepeatedReply({
           retryBudgetMs,
           aborted: generateSignal.aborted,
-          timedOut: Boolean(streamed.timedOut),
+          timedOut: Boolean(streamed.timedOut || streamInterrupted),
           repeated,
           otherWorkQueued,
         })
@@ -3220,7 +3264,7 @@ router.post("/messages", async (req, res) => {
               : replyMaxTokens,
             messages: messagesForRepeatRetry(messages, copiedReply || fullResponse),
             temperature: OLLAMA_MAX_TEMPERATURE,
-            signal: combineAbortSignals(retryOpen.signal, abandoned.signal),
+            signal: combineAbortSignals(retryOpen.signal, abandoned.signal, replacedController.signal),
           });
           const retried = await consumeLlmStream(retry.stream, {
             ...consumeOpts,
@@ -3231,6 +3275,7 @@ router.post("/messages", async (req, res) => {
           });
           const retriedText = settleCappedReply(finalizeAssistantReply(retried.content), {
             timedOut: retried.timedOut,
+            interrupted: retried.interrupted,
             finishReason: retried.finishReason,
             stoppedEarly: retried.stoppedEarly,
           });
@@ -3314,6 +3359,7 @@ router.post("/messages", async (req, res) => {
     void releaseLocalSlot();
   }
 
+    telemetry.markReplySettled();
     // An empty completion used to look like a successful turn on the client
     // (thinking/typing cleared, no visible reply). Fail loudly instead.
     // Unclosed / think-only DeepSeek R1 output is recovered by finalizeAssistantReply.
@@ -3454,6 +3500,7 @@ router.post("/messages", async (req, res) => {
       provider: usedProvider,
       model: usedModel,
       stream_timeout: err instanceof LlmStreamTimeoutError,
+      error_class: chatErrorClass(err),
     });
   } finally {
     clearInterval(leaseHeartbeat);

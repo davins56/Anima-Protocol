@@ -237,11 +237,13 @@ import SystemDisclosure from "@/components/chat/SystemDisclosure";
 
 function replacementSendMetadata(messageData) {
   const turnId = String(messageData?.replacedTurnId || "").trim();
+  const fromId = String(messageData?.replacedFromMessageId || "").trim();
   const ids = Array.isArray(messageData?.replacedMessageIds)
     ? messageData.replacedMessageIds.map((id) => String(id || "").trim()).filter(Boolean).slice(0, 40)
     : [];
   return {
     ...(turnId ? { replaced_turn_id: turnId } : {}),
+    ...(fromId ? { replaced_from_message_id: fromId } : {}),
     ...(ids.length > 0 ? { replaced_message_ids: ids } : {}),
   };
 }
@@ -1450,26 +1452,36 @@ export default function Chat() {
       omitMessageIds: supersededMessageIdsRef.current,
     });
 
-  const retryHungCompanionReply = ({ sessionId, userContent, turnId, messageIds }) => {
+  const retryHungCompanionReply = async ({ sessionId, userContent, turnId, messageIds }) => {
     rememberSupersededReply(turnId, messageIds);
-    const session = activeSessionRef.current;
-    const source = session && session.id === sessionId ? session.messages : [];
+    if (activeSessionRef.current?.id !== sessionId) return;
+    let source = activeSessionRef.current.messages || [];
+    try {
+      const fresh = await base44.entities.ChatSession.get(sessionId);
+      if (Array.isArray(fresh?.messages)) source = fresh.messages;
+    } catch {
+      // The open thread is the fallback when the fresh read fails.
+    }
+    if (activeSessionRef.current?.id !== sessionId) return;
     const trimmed = messagesAfterDiscardingReply(source, { turnId, messageIds });
     const last_message = String(trimmed[trimmed.length - 1]?.content || "").slice(0, 60);
-    if (session && session.id === sessionId) {
-      setActiveSession((prev) =>
-        prev && prev.id === sessionId ? { ...prev, messages: trimmed, last_message } : prev,
-      );
-      base44.entities.ChatSession.update(sessionId, {
+    setActiveSession((prev) =>
+      prev && prev.id === sessionId ? { ...prev, messages: trimmed, last_message } : prev,
+    );
+    try {
+      await base44.entities.ChatSession.update(sessionId, {
         messages: trimmed,
         last_message,
-      }).catch(() => {});
+      });
+    } catch {
+      // The send still retires the turn. A failed trim must not start a second write.
     }
+    if (activeSessionRef.current?.id !== sessionId) return;
     void handleSendMessageRef.current?.({
       text: userContent || "",
       replyAction: "retry",
       history: trimmed,
-      priorMessages: trimmed,
+      priorMessages: source,
       replacedTurnId: turnId || "",
       replacedMessageIds: messageIds || [],
     });
