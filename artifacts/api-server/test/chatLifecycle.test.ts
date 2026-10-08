@@ -511,16 +511,23 @@ describe("chat lifecycle", () => {
     const cutTurn = `turn_${prefix}_cutoff`;
     const userText = "My name is Mira. I love you.";
     const half = "I am Aria. I will never leave the city. I'm so sad. and then the";
-    const [before] = await db
-      .select()
-      .from(companionMemories)
-      .where(
-        and(
-          eq(companionMemories.userId, userId),
-          eq(companionMemories.characterId, characterId),
-        ),
-      )
-      .limit(1);
+    const readMemory = async () => {
+      const [row] = await db
+        .select()
+        .from(companionMemories)
+        .where(
+          and(
+            eq(companionMemories.userId, userId),
+            eq(companionMemories.characterId, characterId),
+          ),
+        )
+        .limit(1);
+      return row;
+    };
+    // The previous test's mood write is detached. Wait until that turn's
+    // stamp is on the row so this baseline matches the state the request reads.
+    await waitForMood(`turn_${prefix}_client`);
+    const before = await readMemory();
     const userAffect = evolveCompanionAffectFromUser(
       initCompanionAffect(
         (before?.emotionalState as Record<string, unknown> | null) ?? null,

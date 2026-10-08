@@ -172,6 +172,7 @@ import { classifyDbError, errorCauseBlob } from "../lib/dbErrors";
 import {
   finalizeAssistantReply,
   isCutOffReply,
+  keptPartialNeedsCutOff,
   settleCappedReply,
 } from "../lib/visibleAssistantReply";
 import {
@@ -3099,7 +3100,13 @@ router.post("/messages", async (req, res) => {
           failedOver = retry.failedOver;
           return {
             text: retriedText,
-            interrupted: interruptedStreamKeepsReply(retried),
+            interrupted:
+              interruptedStreamKeepsReply(retried) ||
+              keptPartialNeedsCutOff(
+                finalizeAssistantReply(retried.content),
+                retriedText,
+                retried,
+              ),
           };
         }
         return null;
@@ -3147,6 +3154,8 @@ router.post("/messages", async (req, res) => {
       }
       ensembleMinds = drafts.map((d) => d.label);
 
+      let ensembleSettled = "";
+      let ensemblePartial = false;
       if (drafts.length === 1) {
         // Only one mind produced anything usable — nothing to combine.
         usedModel = drafts[0]!.model;
@@ -3186,6 +3195,14 @@ router.post("/messages", async (req, res) => {
         });
         streamInterrupted = interruptedStreamKeepsReply(streamed);
         replyCutOff = streamInterrupted;
+        ensembleSettled = fullResponse;
+        ensemblePartial =
+          !streamInterrupted &&
+          keptPartialNeedsCutOff(
+            finalizeAssistantReply(streamed.content),
+            ensembleSettled,
+            streamed,
+          );
       }
       const ensembleStock = !crisisTurn && replyIsStock(fullResponse);
       const ensembleFourth = replyBreaksFourthWall(fullResponse) && fourthWallRetryOpen();
@@ -3219,6 +3236,16 @@ router.post("/messages", async (req, res) => {
           fullResponse = stockDeflection();
           if (ensembleStock) noteStockAssistantLine("deflect");
         }
+      }
+      // A stall, or a token cap that shortened the text or never finished
+      // a sentence, is still a partial. Mark it only when the role-swap /
+      // stock guards left that text in place, so those replacements still run.
+      if (
+        !replyCutOff &&
+        ensemblePartial &&
+        fullResponse.trim() === ensembleSettled.trim()
+      ) {
+        replyCutOff = true;
       }
       if (fullResponse.trim()) emitDelta(fullResponse);
     } else {
@@ -3317,6 +3344,14 @@ router.post("/messages", async (req, res) => {
       if (localHost && !flushed && !cutReason && held && !fullResponse) {
         fullResponse = held;
       }
+      const mainSettled = fullResponse;
+      const mainPartial =
+        !streamInterrupted &&
+        keptPartialNeedsCutOff(
+          finalizeAssistantReply(streamed.content) || held,
+          mainSettled,
+          streamed,
+        );
 
       const retryBudgetMs = repeatRetryBudgetMs(Date.now() - requestStartedAt);
       const copiedReply = crisisTurn
@@ -3415,7 +3450,13 @@ router.post("/messages", async (req, res) => {
             !isRoleSwapReply(retriedText, activeChar?.name)
           ) {
             fullResponse = retriedText;
-            replyCutOff = interruptedStreamKeepsReply(retried);
+            replyCutOff =
+              interruptedStreamKeepsReply(retried) ||
+              keptPartialNeedsCutOff(
+                finalizeAssistantReply(retried.content),
+                retriedText,
+                retried,
+              );
             flushed = false;
             repeatResolved = true;
             usedModel = retry.model;
@@ -3474,6 +3515,13 @@ router.post("/messages", async (req, res) => {
           fullResponse = stockDeflection();
           flushed = false;
         }
+      }
+      if (
+        !replyCutOff &&
+        mainPartial &&
+        fullResponse.trim() === mainSettled.trim()
+      ) {
+        replyCutOff = true;
       }
       if (localHost && !flushed && fullResponse.trim()) {
         emitDelta(fullResponse);

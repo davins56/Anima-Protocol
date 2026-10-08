@@ -139,6 +139,11 @@ describe("ChatPipelineTelemetry failure phase", () => {
     expect(chatRoute).toContain("error_class: chatErrorClass(err)");
     expect(chatRoute).toContain("error_code: chatErrorCode(err)");
     expect(chatRoute).toContain("replySurvivesDatabaseTimeout");
+    expect(chatRoute).toContain("keptPartialNeedsCutOff(");
+    const swapAt = chatRoute.lastIndexOf("unresolvedSwap");
+    const markAt = chatRoute.lastIndexOf("mainPartial &&");
+    expect(swapAt).toBeGreaterThan(-1);
+    expect(markAt).toBeGreaterThan(swapAt);
     const telemetrySource = readFileSync(
       join(repoRoot, "artifacts/api-server/src/lib/chatTelemetry.ts"),
       "utf8",

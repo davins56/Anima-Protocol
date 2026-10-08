@@ -48,7 +48,8 @@ export function finalizeAssistantReply(
 
 const SENTENCE_END_RE = /[.!?…]["'”’)\]*_~]*(?=\s|$)/g;
 const COMPLETE_SENTENCE_RE = /[.!?…]["'”’)\]*_~]*$/;
-const HONORIFIC_RE = /\b(?:Mr|Mrs|Ms|Dr|St|Jr|Sr|vs|etc|e\.g|i\.e)$/i;
+const HONORIFIC_RE =
+  /\b(?:Mr|Mrs|Ms|Dr|St|Jr|Sr|vs|etc|e\.g|i\.e|(?:[A-Za-z]\.)+[A-Za-z])$/i;
 
 /** Index just after the last real sentence end, or -1 when there is none. */
 function lastSentenceEnd(value: string): number {
@@ -69,10 +70,28 @@ function lastSentenceEnd(value: string): number {
  */
 export function trimToLastFullSentence(text: string): string {
   const value = String(text ?? "").trimEnd();
-  if (!value || COMPLETE_SENTENCE_RE.test(value)) return value;
+  if (!value) return value;
   const sentenceEnd = lastSentenceEnd(value);
   if (sentenceEnd > 0) return value.slice(0, sentenceEnd).trimEnd();
   return value;
+}
+
+/**
+ * A stall always leaves a partial. A token cap does too when the trim
+ * shortened the text, or when the text never reached a real sentence end.
+ * A reply that already ended on a sentence is left alone.
+ */
+export function keptPartialNeedsCutOff(
+  original: string,
+  settled: string,
+  meta: { timedOut?: boolean; finishReason?: string | null } = {},
+): boolean {
+  const kept = settled.trim();
+  if (!kept) return false;
+  if (meta.timedOut) return true;
+  if (meta.finishReason !== "length") return false;
+  if (kept !== original.trim()) return true;
+  return lastSentenceEnd(kept) !== kept.length;
 }
 
 /** True when a saved turn or message was kept after the model stream dropped. */
@@ -120,7 +139,10 @@ function scanActionMarkers(value: string): { closeAt: number; unclosed: boolean 
  */
 export function trimToLastCompleteSentence(text: string): string {
   const value = String(text ?? "").trimEnd();
-  if (!value || COMPLETE_SENTENCE_RE.test(value)) return value;
+  if (!value) return value;
+  if (lastSentenceEnd(value) === value.length && COMPLETE_SENTENCE_RE.test(value)) {
+    return value;
+  }
   const sentenceEnd = lastSentenceEnd(value);
   const action = scanActionMarkers(value);
   const cut = Math.max(sentenceEnd, action.closeAt);

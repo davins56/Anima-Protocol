@@ -30,16 +30,17 @@ export function visibleAssistantReply(raw, opts = {}) {
 }
 
 const SENTENCE_END_RE = /[.!?…]["'”’)\]*_~]*(?=\s|$)/g;
-const COMPLETE_SENTENCE_RE = /[.!?…]["'”’)\]*_~]*$/;
-const HONORIFIC_RE = /\b(?:Mr|Mrs|Ms|Dr|St|Jr|Sr|vs|etc|e\.g|i\.e)$/i;
+const HONORIFIC_RE =
+  /\b(?:Mr|Mrs|Ms|Dr|St|Jr|Sr|vs|etc|e\.g|i\.e|(?:[A-Za-z]\.)+[A-Za-z])$/i;
 
 /**
  * Cut a dropped stream back to the last finished sentence.
  * A fragment with no sentence end is kept so Retry can still replace it.
+ * Honorifics and initialisms (`Dr.`, `U.S.`) are not sentence ends.
  */
 export function trimToLastFullSentence(text) {
   const value = String(text ?? "").trimEnd();
-  if (!value || COMPLETE_SENTENCE_RE.test(value)) return value;
+  if (!value) return value;
   let sentenceEnd = -1;
   for (const match of value.matchAll(SENTENCE_END_RE)) {
     const index = match.index ?? 0;

@@ -375,6 +375,23 @@ describe("chat page shows Retry before the background check", () => {
   });
 });
 
+describe("cut-off replies skip client mining", () => {
+  const chat = readFileSync(path.join(process.cwd(), "src/pages/Chat.jsx"), "utf8");
+
+  it("does not parse reply image tags or event rows when the server marked the reply cut off", () => {
+    const start = chat.indexOf("const wantsImage = replyCutOff.reply_interrupted");
+    expect(start).toBeGreaterThan(-1);
+    const block = chat.slice(start, start + 5000);
+    expect(block).toContain("userRequestedImage(content)");
+    expect(block).toContain('replyText: replyCutOff.reply_interrupted ? "" : result');
+    expect(block).toContain(
+      "while (!replyCutOff.reply_interrupted && (match = tagScanner.exec(result))",
+    );
+    const moodAt = chat.indexOf("} else if (!replyCutOff.reply_interrupted)", start);
+    expect(moodAt).toBeGreaterThan(start);
+  });
+});
+
 describe("pollLateCompanionReply", () => {
   it("returns the saved reply once assistant text arrives", async () => {
     const fetchTurn = vi
