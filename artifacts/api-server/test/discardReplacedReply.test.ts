@@ -12,9 +12,15 @@ import {
   memoryEmbeddings,
   userEntities,
 } from "@workspace/db";
-import { beginChatTurn, checkpointGeneratedTurn, readChatTurn } from "../src/lib/chatTurnLedger";
+import {
+  beginChatTurn,
+  checkpointGeneratedTurn,
+  markChatTurnReplaced,
+  readChatTurn,
+} from "../src/lib/chatTurnLedger";
 import {
   discardReplacedCompanionReply,
+  forgetReplacedTurnMemory,
   inspectReplacedReply,
 } from "../src/lib/discardReplacedReply";
 import { factIdFor } from "../src/lib/memoryEmbeddings";
@@ -1080,5 +1086,78 @@ describe("reply replacement keeps what he asked to remember", () => {
     expect(facts[0]?.about).toBe("user");
     expect(facts[0]?.turn_id).toBe(newId);
     expect(facts.some((fact) => fact.about === "companion")).toBe(false);
+  });
+
+  it("moves his name to the newest retry when an earlier cleanup runs late", async () => {
+    const seeded = await seed("late", USER_LINE);
+    const mid = `turn_${prefix}_late_mid`;
+    await beginChatTurn({
+      id: mid,
+      sessionId: seeded.session,
+      userId,
+      userContent: USER_LINE,
+      persistenceOwner: "client",
+      metadata: { reply_action: "retry", skip_affect: true },
+    });
+    await beginChatTurn({
+      id: seeded.newId,
+      sessionId: seeded.session,
+      userId,
+      userContent: USER_LINE,
+      persistenceOwner: "client",
+      metadata: { reply_action: "retry", skip_affect: true },
+    });
+    await markChatTurnReplaced(seeded.oldId, userId, mid);
+    await markChatTurnReplaced(mid, userId, seeded.newId);
+
+    await discardReplacedCompanionReply({
+      userId,
+      sessionId: seeded.session,
+      replacingTurnId: mid,
+      replyAction: "retry",
+      userContent: USER_LINE,
+      replacedTurnId: seeded.oldId,
+      characterIds: [seeded.characterId],
+    });
+
+    const [memory] = await db
+      .select()
+      .from(companionMemories)
+      .where(eq(companionMemories.characterId, seeded.characterId));
+    const names = (Array.isArray(memory?.facts) ? memory.facts : []).filter(
+      (item) => isPolicyFact(item) && item.object === "Sam",
+    );
+    expect(names).toHaveLength(1);
+    expect(names[0]?.turn_id).toBe(seeded.newId);
+  });
+
+  it("does not drop his fact when the successor action cannot be read", async () => {
+    const seeded = await seed("unknown", USER_LINE);
+    await beginChatTurn({
+      id: seeded.newId,
+      sessionId: seeded.session,
+      userId,
+      userContent: USER_LINE,
+      persistenceOwner: "client",
+      metadata: { skip_affect: true },
+    });
+    await markChatTurnReplaced(seeded.oldId, userId, seeded.newId);
+    const replaced = await readChatTurn(seeded.oldId, userId);
+    expect(replaced).not.toBeNull();
+
+    await forgetReplacedTurnMemory({
+      id: replaced!.id,
+      userId: replaced!.userId,
+      sessionId: replaced!.sessionId,
+      metadata: replaced!.metadata,
+      userContent: USER_LINE,
+    });
+
+    const [memory] = await db
+      .select()
+      .from(companionMemories)
+      .where(eq(companionMemories.characterId, seeded.characterId));
+    const facts = Array.isArray(memory?.facts) ? memory.facts : [];
+    expect(facts.some((item) => isPolicyFact(item) && item.object === "Sam")).toBe(true);
   });
 });
