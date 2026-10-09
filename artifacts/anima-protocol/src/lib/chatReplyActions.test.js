@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  keepArrivals,
+  restoredThread,
   lastReplyActionIndexes,
+  threadForHungRetry,
   messagesAfterDiscardingReply,
   planEditResend,
   planRetryReply,
+  releaseDiscardedIds,
+  rememberDiscardedIds,
   replyActionsAreLocked,
 } from "./chatReplyActions";
 
@@ -88,11 +93,122 @@ describe("planRetryReply", () => {
     expect(grouped.ok).toBe(true);
     expect(grouped.kept.map((message) => message.content)).toEqual(["older", "talk"]);
     expect(grouped.replacedTurnId).toBe("t1");
+    expect(grouped.replacedTurnIds).toEqual(["t1"]);
+    expect(grouped.replacedFromMessageId).toBe("t1:assistant");
     expect(grouped.replacedMessageIds).toEqual([
       "t1:assistant",
       "t1:event",
       "t1:assistant:1",
     ]);
+  });
+
+  it("lists later user rows and does not adopt a newer turn when the reply has no turn id", () => {
+    const plan = planRetryReply(
+      [
+        { id: "u0", turn_id: "t0", role: "user", content: "first" },
+        { id: "narration", role: "assistant", content: "stage" },
+        { id: "u1", turn_id: "t-new", role: "user", content: "later" },
+        { id: "a1", turn_id: "t-new", role: "assistant", content: "new reply" },
+      ],
+      1,
+    );
+    expect(plan.ok).toBe(true);
+    expect(plan.kept.map((message) => message.id)).toEqual(["u0"]);
+    expect(plan.replacedTurnId).toBe("");
+    expect(plan.replacedTurnIds).toEqual(["t-new"]);
+    expect(plan.replacedFromMessageId).toBe("narration");
+    expect(plan.replacedMessageIds).toEqual(["narration", "u1", "a1"]);
+    expect(plan.replacedMessageIds).not.toContain("u0");
+  });
+});
+
+describe("discarded reply ids", () => {
+  it("releases every suffix id a failed retry had hidden", () => {
+    const turnIds = new Set();
+    const messageIds = new Set();
+    rememberDiscardedIds(turnIds, messageIds, {
+      turnId: "t1",
+      turnIds: ["t2"],
+      messageIds: ["t1:assistant", "t2:user", "t2:assistant"],
+    });
+    expect([...turnIds].sort()).toEqual(["t1", "t2"]);
+    expect(messageIds.has("t2:user")).toBe(true);
+    releaseDiscardedIds(turnIds, messageIds, {
+      turnId: "t1",
+      turnIds: ["t2"],
+      messageIds: ["t1:assistant", "t2:user", "t2:assistant"],
+    });
+    expect(turnIds.size).toBe(0);
+    expect(messageIds.size).toBe(0);
+  });
+
+  it("keeps an id hidden until every retry that claimed it has released it", () => {
+    const turnIds = new Set();
+    const messageIds = new Set();
+    const counts = new Map();
+    const target = { turnId: "t1", messageIds: ["a"] };
+    rememberDiscardedIds(turnIds, messageIds, target, counts);
+    rememberDiscardedIds(turnIds, messageIds, target, counts);
+    releaseDiscardedIds(turnIds, messageIds, target, counts);
+    expect(turnIds.has("t1")).toBe(true);
+    expect(messageIds.has("a")).toBe(true);
+    releaseDiscardedIds(turnIds, messageIds, target, counts);
+    expect(turnIds.size).toBe(0);
+    expect(messageIds.size).toBe(0);
+    expect(counts.size).toBe(0);
+  });
+
+  it("drops later suffix turns before merging a message that arrived after the snapshot", () => {
+    const source = [
+      { id: "u", turn_id: "t1", role: "user", content: "hi" },
+      { id: "a", turn_id: "t1", role: "assistant", content: "old" },
+      { id: "u2", turn_id: "t2", role: "user", content: "later" },
+      { id: "a2", turn_id: "t2", role: "assistant", content: "later reply" },
+    ];
+    const trimmed = threadForHungRetry(source, 1, { turnId: "t1", messageIds: ["a"] });
+    expect(trimmed.map((message) => message.id)).toEqual(["u"]);
+    const latest = [
+      ...source,
+      { id: "fresh", role: "user", content: "from another device" },
+    ];
+    const saved = keepArrivals(trimmed, latest, {
+      messageIds: ["a", "u2", "a2"],
+      turnIds: ["t1", "t2"],
+    });
+    expect(saved.map((message) => message.id)).toEqual(["u", "fresh"]);
+    expect(keepArrivals(trimmed, trimmed, { messageIds: [], turnIds: [] })).toBe(trimmed);
+  });
+
+  it("keeps a message that arrived after the snapshot when a retry is restored", () => {
+    const source = [
+      { id: "u", role: "user", content: "hi" },
+      { id: "a", role: "assistant", content: "old" },
+    ];
+    const latest = [
+      { id: "u", role: "user", content: "hi" },
+      { id: "other", role: "user", content: "from another device" },
+    ];
+    const restored = keepArrivals(source, latest, { messageIds: [], turnIds: [] });
+    expect(restored.map((message) => message.id)).toEqual(["u", "a", "other"]);
+  });
+
+  it("keeps a stored arrival when a failed replace restores the snapshot", () => {
+    const snapshot = [
+      { id: "u", role: "user", content: "hi" },
+      { id: "a", role: "assistant", content: "old" },
+    ];
+    const latest = [
+      { id: "u", role: "user", content: "hi" },
+      { role: "assistant", content: "trimmed copy" },
+      { id: "fresh", role: "user", content: "from another device" },
+    ];
+    expect(restoredThread(snapshot, latest).map((message) => message.id)).toEqual([
+      "u",
+      "a",
+      "fresh",
+    ]);
+    expect(restoredThread(snapshot, null)).toBe(snapshot);
+    expect(restoredThread(snapshot, snapshot)).toBe(snapshot);
   });
 });
 

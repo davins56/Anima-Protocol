@@ -3,6 +3,7 @@ import { getAuth } from "@clerk/express";
 
 
 import {
+  chatTurns,
   db,
   userEntities,
   userProfiles,
@@ -17,6 +18,7 @@ import {
   withTransientDbRetry,
   type MsgData,
 } from "@workspace/db";
+import { messageTurnId, turnMetadataReplaced } from "../lib/replyReplacement";
 import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import type { Request, Response, NextFunction } from "express";
 import { addClient, removeClient, notifyUser } from "../lib/storeEvents";
@@ -980,6 +982,38 @@ router.post("/messages/counts", async (req, res) => {
   res.json(counts);
 });
 
+type StoreTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * A late write must not put back a companion reply the user already replaced.
+ * His existing line stays: it is the prompt this retry is answering, and
+ * dropping it would delete the row because replace only keeps what it writes.
+ * A user line that is not already stored is a later turn from the discarded
+ * suffix, so `blockNewUser` refuses to insert it again.
+ */
+async function nonUserTurnIsReplaced(
+  tx: StoreTx,
+  userId: string,
+  message: MsgData,
+  opts?: { blockNewUser?: boolean; replaced?: Map<string, boolean> },
+): Promise<boolean> {
+  const turnId = messageTurnId(message);
+  if (!turnId) return false;
+  if (message.role === "user" && !opts?.blockNewUser) return false;
+  let replaced = opts?.replaced?.get(turnId);
+  if (replaced == null) {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${turnId}`}))`);
+    const [turn] = await tx
+      .select({ metadata: chatTurns.metadata })
+      .from(chatTurns)
+      .where(and(eq(chatTurns.id, turnId), eq(chatTurns.userId, userId)))
+      .limit(1);
+    replaced = Boolean(turn && turnMetadataReplaced(turn.metadata));
+    opts?.replaced?.set(turnId, replaced);
+  }
+  return replaced;
+}
+
 // POST /messages { session_id, message } — append ONE message. The server
 // assigns the next seq atomically (within a transaction) so an append never has
 // to send or rewrite the existing history. This is the hot path.
@@ -1017,6 +1051,7 @@ router.post("/messages", async (req, res) => {
       created_date: msg.created_date ?? now,
       updated_date: now,
     };
+    if (await nonUserTurnIsReplaced(tx, userId, data)) return null;
     await tx.insert(userEntities).values({
       userId,
       entityName: CHAT_MESSAGE,
@@ -1025,8 +1060,33 @@ router.post("/messages", async (req, res) => {
     });
     return data;
   });
+  if (!created) {
+    res.status(409).json({ error: "Turn was replaced" });
+    return;
+  }
   res.status(201).json(created);
 });
+
+/** Snapshot first, then stored rows whose ids are not in it, in seq order. */
+function messagesKeepingArrivals(snapshot: unknown[], current: Row[]): unknown[] {
+  const base = snapshot.map((raw) => asObject(raw));
+  const ids = new Set(
+    base
+      .map((message) => (message.id != null ? String(message.id) : ""))
+      .filter(Boolean),
+  );
+  const extras = current
+    .map((row) => row.data as MsgData)
+    .filter((message) => message.id != null && !ids.has(String(message.id)))
+    .sort((a, b) => {
+      const aSeq = Number(a.seq);
+      const bSeq = Number(b.seq);
+      const aNum = Number.isFinite(aSeq) ? aSeq : Number.MAX_SAFE_INTEGER;
+      const bNum = Number.isFinite(bSeq) ? bSeq : Number.MAX_SAFE_INTEGER;
+      return aNum - bNum;
+    });
+  return extras.length > 0 ? [...base, ...extras] : snapshot;
+}
 
 // POST /messages/replace { session_id, messages } — reconcile a full message
 // array against the stored rows. Backs the client's ChatSession.update({messages})
@@ -1034,15 +1094,23 @@ router.post("/messages", async (req, res) => {
 // unchanged. It diffs by message id so an edit updates ONE row, a rewind deletes
 // only the trimmed tail, etc. (rather than rewriting every row), and reassigns
 // seq by array position so order always follows the array.
+// `keep_arrivals` unions that array with rows already stored, inside this
+// transaction, after the session lock. An append waits on that lock, so it
+// cannot land between a read and this write and then be deleted.
 router.post("/messages/replace", async (req, res) => {
   const userId = getUserId(req);
-  const body = req.body as { session_id?: string; messages?: unknown };
+  const body = req.body as {
+    session_id?: string;
+    messages?: unknown;
+    keep_arrivals?: unknown;
+  };
   const sessionId = body.session_id;
   if (!sessionId || !Array.isArray(body.messages)) {
     res.status(400).json({ error: "session_id and messages[] are required" });
     return;
   }
-  const incoming = body.messages as unknown[];
+  const requested = body.messages as unknown[];
+  const keepArrivals = body.keep_arrivals === true;
   const out = await db.transaction(async (tx) => {
     await migrateSessionMessages(tx, userId, sessionId);
     const current: Row[] = await tx
@@ -1055,12 +1123,26 @@ router.post("/messages/replace", async (req, res) => {
           sessionIdEq(sessionId),
         ),
       );
+    const incoming = keepArrivals
+      ? messagesKeepingArrivals(requested, current)
+      : requested;
     const currentById = new Map<string, Row>();
     for (const r of current) currentById.set(String((r.data as MsgData).id), r);
+
+    const turnIds: string[] = [];
+    for (const raw of incoming) {
+      const turnId = messageTurnId(asObject(raw));
+      if (turnId && !turnIds.includes(turnId)) turnIds.push(turnId);
+    }
+    turnIds.sort();
+    for (const turnId of turnIds) {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${turnId}`}))`);
+    }
 
     const now = new Date().toISOString();
     const kept = new Set<string>();
     const result: MsgData[] = [];
+    const replacedTurns = new Map<string, boolean>();
     let i = 0;
     for (const raw of incoming) {
       const msg = asObject(raw);
@@ -1080,6 +1162,14 @@ router.post("/messages/replace", async (req, res) => {
         created_date: prev?.created_date ?? msg.created_date ?? now,
         updated_date: now,
       };
+      if (
+        await nonUserTurnIsReplaced(tx, userId, data, {
+          blockNewUser: data.role === "user" && !existingId,
+          replaced: replacedTurns,
+        })
+      ) {
+        continue;
+      }
       await tx
         .insert(userEntities)
         .values({ userId, entityName: CHAT_MESSAGE, entityId: id, data })

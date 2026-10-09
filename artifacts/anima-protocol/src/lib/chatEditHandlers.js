@@ -48,17 +48,21 @@ export async function editMessageFlow(idx, newText, { confirm, activeSession, is
     history: plan.kept,
     priorMessages: messages,
     replacedTurnId: plan.replacedTurnId || "",
+    replacedTurnIds: plan.replacedTurnIds || [],
+    replacedFromSeq: plan.replacedFromSeq,
+    replacedFromMessageId: plan.replacedFromMessageId || "",
     replacedMessageIds: plan.replacedMessageIds || [],
   });
   if (result?.started === false) {
-    const restoredPreview = messages[messages.length - 1]?.content?.slice(0, 60) || "";
-    await base44.entities.ChatSession.update(activeSession.id, {
+    const saved = await base44.entities.ChatSession.update(activeSession.id, {
       messages,
-      last_message: restoredPreview,
+      keep_arrivals: true,
     });
+    const restored = Array.isArray(saved?.messages) ? saved.messages : messages;
+    const restoredPreview = restored[restored.length - 1]?.content?.slice(0, 60) || "";
     setActiveSession((prev) =>
       prev && prev.id === activeSession.id
-        ? { ...prev, messages, last_message: restoredPreview }
+        ? { ...prev, messages: restored, last_message: restoredPreview }
         : prev,
     );
     return { status: "not_started" };

@@ -6,6 +6,7 @@ import {
   capRecentMessagesForLlm,
   composeCompanionChatMessages,
   composePrompt,
+  omitRetriedUserTurn,
   COMPANION_MEMORY_TOP_K,
   CONTINUE_USER_TURN,
   CLIENT_SCENE_CONTEXT_MAX,
@@ -1024,6 +1025,22 @@ describe("composeCompanionChatMessages", () => {
     expect(conversation.some((message) => message.content === "The garden is quiet.")).toBe(false);
     expect(conversation.some((message) => message.content === "The harbor is not.")).toBe(false);
     expect(conversation.some((message) => message.content === "A bell rings.")).toBe(false);
+  });
+
+  it("keeps a proactive check-in that is not part of the retried reply", () => {
+    const kept = omitRetriedUserTurn(
+      [
+        { id: "t1:user", role: "user", content: "hello" },
+        { id: "t1:assistant", role: "assistant", content: "old" },
+        {
+          role: "assistant",
+          content: "I was thinking of you.",
+          metadata: { source: "proactive_push" },
+        },
+      ],
+      "hello",
+    );
+    expect(kept.map((message) => message.content)).toEqual(["I was thinking of you."]);
   });
 
   it("omits inlined history from composePrompt when asked", () => {
