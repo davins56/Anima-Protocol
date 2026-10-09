@@ -37,8 +37,12 @@ import {
   messageTurnId,
   replyActionOf,
   shouldDiscardStoredMessage,
+  turnMetadataReplaced,
   type ReplyAction,
 } from "./replyReplacement";
+
+/** Same cap as the deferred user-fact walk. A longer chain is still replaced. */
+const MAX_REPLACEMENT_HOPS = 8;
 
 type ReplyKind = ReplyAction;
 
@@ -279,6 +283,31 @@ function asMetadata(metadata: unknown): Record<string, unknown> {
   return metadata as Record<string, unknown>;
 }
 
+/**
+ * Newest turn that should receive facts from a Retry.
+ * Starts at the successor this cleanup was given. Follows later retries.
+ * An edit, a broken link, or a chain that is still replaced after the hop
+ * cap returns "" so this pass does not retag onto a dead turn.
+ */
+async function liveRetrySuccessor(startId: string, userId: string): Promise<string> {
+  let current = startId.trim();
+  if (!current) return "";
+  for (let hop = 0; hop < MAX_REPLACEMENT_HOPS; hop += 1) {
+    const turn = await readChatTurn(current, userId);
+    if (!turn || !turnMetadataReplaced(turn.metadata)) return current;
+    const next = String(asMetadata(turn.metadata).superseded_by || "").trim();
+    if (!next || next === current) return "";
+    const successor = await readChatTurn(next, userId);
+    if (!successor || replyActionOf(asMetadata(successor.metadata).reply_action) !== "retry") {
+      return "";
+    }
+    current = next;
+  }
+  const landed = await readChatTurn(current, userId);
+  if (!landed || turnMetadataReplaced(landed.metadata)) return "";
+  return current;
+}
+
 async function rewriteCharacterFacts(
   userId: string,
   characterId: string,
@@ -499,18 +528,24 @@ async function retainReplacedTurnMemory(input: {
       : "";
   if (requestedActive && !characterIds.includes(requestedActive)) characterIds.push(requestedActive);
   if (!input.turnId) return;
+  let replacingTurnId = input.replacingTurnId.trim();
+  if (input.replyAction === "retry" && replacingTurnId) {
+    // A newer retry may already have replaced this successor. Retag to the
+    // live turn, not the one this cleanup was originally handed.
+    replacingTurnId = await liveRetrySuccessor(replacingTurnId, input.userId);
+  }
   const retention: TurnFactRetention = {
     replyAction: input.replyAction,
     userContent: input.userContent,
     companionName: companionNameFromMetadata(input.metadata),
-    replacingTurnId: input.replacingTurnId,
+    replacingTurnId,
   };
   const keptByCharacter =
     characterIds.length > 0
       ? await forgetTurnMemories(input.userId, characterIds, input.turnId, retention)
       : new Map<string, unknown[]>();
   await stripSharedTurnFact(input.userId, input.sessionId, input.turnId, retention);
-  if (input.replyAction !== "retry" || !input.replacingTurnId) return;
+  if (input.replyAction !== "retry" || !replacingTurnId) return;
   const activeId = activeCharacterId(input.metadata, characterIds);
   if (!activeId) return;
   const facts = keptByCharacter.get(activeId) ?? [];
@@ -519,7 +554,7 @@ async function retainReplacedTurnMemory(input: {
     userId: input.userId,
     characterId: activeId,
     sessionId: input.sessionId,
-    turnId: input.replacingTurnId,
+    turnId: replacingTurnId,
     companionName: retention.companionName || "",
     userContent: input.userContent,
   });
@@ -527,15 +562,15 @@ async function retainReplacedTurnMemory(input: {
   try {
     await deferLocalLlmJob(job);
   } catch (error) {
-    logger.warn({ error, turnId: input.replacingTurnId }, "Could not queue user memory after retry");
+    logger.warn({ error, turnId: replacingTurnId }, "Could not queue user memory after retry");
   }
 }
 
 /**
  * Remove what a replaced turn stored, after the reply is already gone.
- * This is the late second pass. The send path already cleaned with the
- * real reply action. Edit is the safe guess when that action cannot be read:
- * a retry has already moved his supported facts onto the new turn.
+ * This is the late second pass. It runs only when the successor's reply
+ * action can be read. A missing row or a failed read skips the pass: guessing
+ * edit would delete his facts on a retry.
  */
 export async function forgetReplacedTurnMemory(turn: {
   id: string;
@@ -547,12 +582,10 @@ export async function forgetReplacedTurnMemory(turn: {
   const metadata = asMetadata(turn.metadata);
   const replacingTurnId =
     typeof metadata.superseded_by === "string" ? metadata.superseded_by.trim() : "";
-  let replyAction: ReplyAction = "edit";
-  if (replacingTurnId) {
-    const next = await readChatTurn(replacingTurnId, turn.userId).catch(() => null);
-    const action = replyActionOf(asMetadata(next?.metadata).reply_action);
-    if (action) replyAction = action;
-  }
+  if (!replacingTurnId) return;
+  const next = await readChatTurn(replacingTurnId, turn.userId);
+  const replyAction = replyActionOf(asMetadata(next?.metadata).reply_action);
+  if (!replyAction) return;
   const stored = turn.userContent ?? (await readChatTurn(turn.id, turn.userId))?.userContent ?? "";
   await retainReplacedTurnMemory({
     userId: turn.userId,
