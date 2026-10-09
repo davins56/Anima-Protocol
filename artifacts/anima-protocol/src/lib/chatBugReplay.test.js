@@ -287,7 +287,8 @@ describe("chat bug replay", () => {
     const retry = arrowBlock(chat, "retryHungCompanionReply");
     expectOrder(retry, [
       "rememberSupersededReply(turnId, knownIds)",
-      "threadForHungRetry(source, start, { turnId, messageIds })",
+      "const trimmed = threadForHungRetry(source, start, { turnId, messageIds })",
+      "let toSave = trimmed",
       "handleSendMessageRef.current?.({",
       'replyAction: "retry"',
       "history: toSave",
