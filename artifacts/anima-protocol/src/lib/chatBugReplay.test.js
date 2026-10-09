@@ -286,12 +286,13 @@ describe("chat bug replay", () => {
 
     const retry = arrowBlock(chat, "retryHungCompanionReply");
     expectOrder(retry, [
-      "rememberSupersededReply(turnId, messageIds)",
-      "messagesAfterDiscardingReply(source, { turnId, messageIds })",
+      "rememberSupersededReply(turnId, knownIds)",
+      "const trimmed = threadForHungRetry(source, start, { turnId, messageIds })",
+      "let toSave = trimmed",
       "handleSendMessageRef.current?.({",
       'replyAction: "retry"',
-      "history: trimmed",
-      'replacedTurnId: turnId || ""',
+      "history: toSave",
+      'replacedTurnId: turnId || suffix?.replacedTurnId || ""',
     ]);
 
     const stitchStart = expectCode(chat, "const stitchThread");
