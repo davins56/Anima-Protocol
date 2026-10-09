@@ -26,7 +26,7 @@ import { DeferredLlmRetryError } from "./deferredLocalLlm";
 import { upsertMemoryEmbeddings } from "./memoryEmbeddings";
 import { CONTINUE_USER_TURN } from "./promptBuilder";
 import { loadRelationshipState } from "./relationshipEngine";
-import { turnMetadataReplaced } from "./replyReplacement";
+import { replyActionOf, turnMetadataReplaced } from "./replyReplacement";
 import { isRoleSwapReply } from "./roleSwapReply";
 
 export const IMPORTANCE_DISCARD_BELOW = 0.3;
@@ -243,20 +243,23 @@ export function memoryPolicySignals(emotionalState: unknown): {
   };
 }
 
+function isMemorableUserText(userContent: string): boolean {
+  const user = userContent.trim();
+  if (!user || user === CONTINUE_USER_TURN) return false;
+  if (GREETING.test(user)) return false;
+  return true;
+}
+
 export function isMeaningfulExchange(
   userContent: string,
   assistantContent: string,
   opts?: { userOnly?: boolean },
 ): boolean {
-  const user = userContent.trim();
-  const assistant = assistantContent.trim();
-  if (!user) return false;
+  if (!isMemorableUserText(userContent)) return false;
   // A cut-off reply still remembers the user's line. The half-reply is not
   // required, and it must not be passed in.
-  if (!opts?.userOnly && !assistant) return false;
-  if (user === CONTINUE_USER_TURN) return false;
-  if (GREETING.test(user)) return false;
-  return true;
+  if (opts?.userOnly) return true;
+  return assistantContent.trim().length > 0;
 }
 
 export function decideMemoryCandidate(input: {
@@ -762,23 +765,119 @@ function isTurnCrumb(item: unknown): boolean {
 }
 
 /**
- * Keep classified facts and forgotten markers when the turn crumb window
- * slides. Turn rows stay capped. Policy rows and tombstones are not evicted
- * by that window. Returns null when this turn was already stored.
+ * How to treat facts that carry the turn id of a reply the user replaced.
+ * Retry keeps user facts his unchanged message still supports. Edit drops
+ * the old message's facts. Tombstones and corrections stay either way.
  */
-/**
- * Drop turn crumbs and policy facts that were extracted from a reply the
- * user replaced. Facts with no turn id stay; they are not that reply.
- */
-export function factsWithoutTurn(facts: unknown[], turnId: string): unknown[] {
-  const id = turnId.trim();
-  if (!id) return Array.isArray(facts) ? facts.slice() : [];
-  return (Array.isArray(facts) ? facts : []).filter((item) => {
-    if (!item || typeof item !== "object") return true;
-    return String((item as { turn_id?: unknown }).turn_id || "") !== id;
-  });
+export type TurnFactRetention = {
+  replyAction?: "retry" | "edit";
+  userContent?: string;
+  companionName?: string;
+  replacingTurnId?: string;
+};
+
+/** Keys the deterministic extractor would store from his message alone. */
+export function userFactKeysFromMessage(userContent: string, companionName = ""): string[] {
+  const keys: string[] = [];
+  for (const hit of extractRaw(userContent, "", companionName)) {
+    if (hit.about !== "user") continue;
+    const key = policyDedupeKey(hit);
+    if (!keys.includes(key)) keys.push(key);
+  }
+  return keys;
 }
 
+function memoryFactKey(item: unknown): string {
+  if (isPolicyFact(item) || isForgottenFact(item)) return policyDedupeKey(item);
+  return "";
+}
+
+/** A forgotten marker or a sentence he corrected on the memory screen. */
+function isLockedMemory(item: unknown): boolean {
+  if (isForgottenFact(item)) return true;
+  if (!item || typeof item !== "object") return false;
+  return (item as { user_edited?: unknown }).user_edited === true;
+}
+
+/**
+ * Drop what a replaced reply stored.
+ *
+ * Tombstones and `user_edited` facts always stay, whatever the action.
+ * Edit drops the rest of that turn: his old message is gone.
+ * Retry drops the turn crumb, her companion facts and core proposals, and
+ * any user fact his message does not still support. User facts the message
+ * supports stay, and their turn id moves to the replacing turn so a later
+ * retry or edit can find them. The same fact key is not kept twice.
+ * Facts with no turn id stay; they are not that reply.
+ */
+export function factsWithoutTurn(
+  facts: unknown[],
+  turnId: string,
+  retention?: TurnFactRetention,
+): unknown[] {
+  const list = Array.isArray(facts) ? facts : [];
+  const id = turnId.trim();
+  if (!id) return list.slice();
+  const retry = retention?.replyAction === "retry";
+  const supported = new Set(
+    retry ? userFactKeysFromMessage(retention?.userContent || "", retention?.companionName || "") : [],
+  );
+  const replacingId = retention?.replacingTurnId?.trim() || "";
+  const reserved = new Set<string>();
+  for (const item of list) {
+    if (!item || typeof item !== "object") continue;
+    const sameTurn = String((item as { turn_id?: unknown }).turn_id || "") === id;
+    if (sameTurn && !isLockedMemory(item)) continue;
+    const key = memoryFactKey(item);
+    if (key) reserved.add(key);
+  }
+  const kept: unknown[] = [];
+  for (const item of list) {
+    if (!item || typeof item !== "object") {
+      kept.push(item);
+      continue;
+    }
+    const sameTurn = String((item as { turn_id?: unknown }).turn_id || "") === id;
+    if (!sameTurn || isLockedMemory(item)) {
+      kept.push(item);
+      continue;
+    }
+    const key = memoryFactKey(item);
+    if (
+      retry &&
+      isPolicyFact(item) &&
+      item.about === "user" &&
+      key &&
+      supported.has(key) &&
+      !reserved.has(key)
+    ) {
+      reserved.add(key);
+      kept.push(replacingId ? { ...item, turn_id: replacingId } : item);
+    }
+  }
+  return kept;
+}
+
+/**
+ * True when his message still has a fact this row has not stored, and a
+ * forgotten key is not waiting to block it. Used after Retry, when the old
+ * deferred job may not have run.
+ */
+export function userTurnNeedsPolicySave(
+  facts: unknown[],
+  userContent: string,
+  companionName = "",
+): boolean {
+  const list = Array.isArray(facts) ? facts : [];
+  for (const key of userFactKeysFromMessage(userContent, companionName)) {
+    if (list.some((item) => isForgottenFact(item) && policyDedupeKey(item) === key)) continue;
+    if (list.some((item) => isPolicyFact(item) && policyDedupeKey(item) === key)) continue;
+    return true;
+  }
+  return false;
+}
+
+/** Drop every listed turn. Locked markers and corrections stay with each one. */
 export function factsWithoutTurns(facts: unknown[], turnIds: readonly string[]): unknown[] {
   return turnIds.reduce<unknown[]>(
     (kept, id) => factsWithoutTurn(kept, id),
@@ -786,6 +885,11 @@ export function factsWithoutTurns(facts: unknown[], turnIds: readonly string[]):
   );
 }
 
+/**
+ * Keep classified facts and forgotten markers when the turn crumb window
+ * slides. Turn rows stay capped. Policy rows and tombstones are not evicted
+ * by that window. Returns null when this turn was already stored.
+ */
 export function appendTurnMemoryFact(
   existing: unknown[],
   turnFact: Record<string, unknown>,
@@ -818,7 +922,7 @@ export function consolidateExchange(input: {
   sessionId?: string;
   turnId?: string;
   now?: string;
-  /** Ignore assistant text. Used when the model stream was cut off. */
+  /** Save facts from his message only. Used for Retry and for a cut-off half-reply. */
   userOnly?: boolean;
 }): ConsolidationResult {
   const existing = Array.isArray(input.existingFacts) ? input.existingFacts.slice() : [];
@@ -880,6 +984,13 @@ export function consolidateExchange(input: {
     // A sentence the person corrected keeps its wording, including an
     // episodic fact that would otherwise be rewritten on the next repeat.
     if (findForgotten(facts, key) || prior?.user_edited === true) {
+      discarded += 1;
+      continue;
+    }
+
+    // Re-saving his message after Retry must not store a second row or
+    // promote an episodic fact he only said once.
+    if (input.userOnly && prior) {
       discarded += 1;
       continue;
     }
@@ -1013,7 +1124,90 @@ export function buildMemoryPolicyJob(input: {
   };
 }
 
+/**
+ * Memory policy for a Retry whose original job never stored his message.
+ * The payload carries his words only, on the replacing turn. Her new reply
+ * is not included, so it cannot become a memory.
+ */
+export function buildUserOnlyMemoryPolicyJob(input: {
+  userId: string;
+  characterId: string;
+  sessionId: string;
+  turnId: string;
+  companionName: string;
+  userContent: string;
+}): {
+  id: string;
+  userId: string;
+  kind: "memory-policy";
+  payload: Record<string, unknown>;
+} | null {
+  const userId = input.userId.trim();
+  const characterId = input.characterId.trim();
+  const turnId = input.turnId.trim();
+  const userContent = input.userContent.trim();
+  if (!userId || !characterId || !turnId) return null;
+  if (!isMemorableUserText(userContent)) return null;
+  return {
+    id: `memory-policy:${userId}:${characterId}:${turnId}`,
+    userId,
+    kind: "memory-policy",
+    payload: {
+      userId,
+      characterId,
+      sessionId: input.sessionId,
+      turnId,
+      companionName: input.companionName.trim(),
+      userContent: userContent.slice(0, 1000),
+      assistantContent: "",
+      userOnly: true,
+    },
+  };
+}
+
 type CompanionMemoryTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+const MAX_REPLACEMENT_HOPS = 8;
+
+async function readTurnMetadata(
+  tx: CompanionMemoryTx,
+  turnId: string,
+  userId: string,
+): Promise<Record<string, unknown> | null> {
+  const [turn] = await tx
+    .select({ metadata: chatTurns.metadata })
+    .from(chatTurns)
+    .where(and(eq(chatTurns.id, turnId), eq(chatTurns.userId, userId)))
+    .limit(1);
+  return turn?.metadata ?? null;
+}
+
+/**
+ * Turn id that should receive facts from his message. Follows a chain of
+ * Retries. An edit along the chain means the old message is gone, so there
+ * is nowhere to put those facts. Reads on the companion transaction so it
+ * does not wait on a second pool connection while that lock is held.
+ */
+async function turnIdForUserFactSave(
+  tx: CompanionMemoryTx,
+  turnId: string,
+  userId: string,
+): Promise<string | null> {
+  let current = turnId.trim();
+  if (!current) return null;
+  for (let hop = 0; hop < MAX_REPLACEMENT_HOPS; hop += 1) {
+    const metadata = await readTurnMetadata(tx, current, userId);
+    if (!metadata || !turnMetadataReplaced(metadata)) return current;
+    const next = String(metadata.superseded_by || "").trim();
+    if (!next || next === current) return null;
+    const successor = await readTurnMetadata(tx, next, userId);
+    if (replyActionOf(successor?.reply_action) !== "retry") return null;
+    current = next;
+  }
+  const landed = await readTurnMetadata(tx, current, userId);
+  if (landed && turnMetadataReplaced(landed)) return null;
+  return current;
+}
 
 /** Same companion-row lock the review route uses, held for one transaction. */
 export async function withCompanionMemoryLock<T>(
@@ -1145,9 +1339,10 @@ export async function runDeferredMemoryPolicy(
   }
   if (!isMeaningfulExchange(userContent, assistantContent, { userOnly })) return;
   await ensureSchemaOnce();
-  if (turnId) {
+  if (!userOnly && turnId) {
     // A missing ledger row is a normal client turn. A read failure stays
     // queued so a replaced reply is not stored as if the row were absent.
+    // A user-only job follows the retry chain below instead of stopping here.
     const turn = await readChatTurn(turnId, userId);
     if (turn && turnMetadataReplaced(turn.metadata)) return;
   }
@@ -1159,13 +1354,10 @@ export async function runDeferredMemoryPolicy(
   const relationship = await loadRelationshipState(characterId, userId);
   const now = new Date();
   const result = await withCompanionMemoryLock(userId, characterId, async (tx) => {
-    if (turnId) {
-      const [fresh] = await tx
-        .select({ metadata: chatTurns.metadata })
-        .from(chatTurns)
-        .where(and(eq(chatTurns.id, turnId), eq(chatTurns.userId, userId)))
-        .limit(1);
-      if (fresh && turnMetadataReplaced(fresh.metadata)) {
+    let saveTurnId = turnId;
+    if (turnId && !userOnly) {
+      const metadata = await readTurnMetadata(tx, turnId, userId);
+      if (metadata && turnMetadataReplaced(metadata)) {
         return {
           facts: [],
           candidates: [],
@@ -1175,6 +1367,11 @@ export async function runDeferredMemoryPolicy(
           coreProposed: 0,
         };
       }
+    }
+    if (userOnly && turnId) {
+      const live = await turnIdForUserFactSave(tx, turnId, userId);
+      if (!live) return null;
+      saveTurnId = live;
     }
     const [existing] = await tx
       .select()
@@ -1188,13 +1385,13 @@ export async function runDeferredMemoryPolicy(
     }
     const consolidated = consolidateExchange({
       userContent,
-      assistantContent,
+      assistantContent: userOnly ? "" : assistantContent,
       companionName,
       existingFacts: Array.isArray(existing?.facts) ? existing.facts : [],
       emotionalIntensity: signals.emotionalIntensity,
       relationshipImportance,
       sessionId,
-      turnId,
+      turnId: saveTurnId,
       userOnly,
     });
     if (consolidated.saved.length === 0 && consolidated.promoted === 0) return consolidated;
@@ -1220,7 +1417,7 @@ export async function runDeferredMemoryPolicy(
     return consolidated;
   });
 
-  if (result.saved.length === 0 && result.promoted === 0) return;
+  if (!result || (result.saved.length === 0 && result.promoted === 0)) return;
 
   // Re-read under the lock. A review delete or correction that landed after
   // consolidation must not be embedded from this job's earlier snapshot.

@@ -23,15 +23,26 @@ import {
   withTransientDbRetry,
 } from "@workspace/db";
 import { markChatTurnReplacedOn, readChatTurn } from "./chatTurnLedger";
+import { deferLocalLlmJob } from "./deferredLocalLlm";
 import { logger } from "./logger";
 import { factIdFor } from "./memoryEmbeddings";
-import { factsWithoutTurn } from "./memoryPolicy";
+import {
+  buildUserOnlyMemoryPolicyJob,
+  factsWithoutTurn,
+  userTurnNeedsPolicySave,
+  type TurnFactRetention,
+} from "./memoryPolicy";
 import {
   messageSeq,
   messageTurnId,
+  replyActionOf,
   shouldDiscardStoredMessage,
+  turnMetadataReplaced,
   type ReplyAction,
 } from "./replyReplacement";
+
+/** Same cap as the deferred user-fact walk. A longer chain is still replaced. */
+const MAX_REPLACEMENT_HOPS = 8;
 
 type ReplyKind = ReplyAction;
 
@@ -234,67 +245,138 @@ export async function resolveReplacedTurnId(input: {
   return plan.turnId;
 }
 
+function embeddingIdOf(item: unknown): string {
+  if (!item || typeof item !== "object") return "";
+  const fact = item as { text?: unknown; fact_id?: unknown; source_text?: unknown };
+  const explicit = fact.fact_id ? String(fact.fact_id).trim() : "";
+  const text = String(fact.text || fact.source_text || "").trim();
+  if (!text && !explicit) return "";
+  return factIdFor(text, explicit || undefined);
+}
+
+function embeddingIdsDropped(before: unknown[], after: unknown[]): string[] {
+  const kept = new Set(after.map(embeddingIdOf).filter(Boolean));
+  const dropped: string[] = [];
+  for (const item of before) {
+    const id = embeddingIdOf(item);
+    if (!id || kept.has(id) || dropped.includes(id)) continue;
+    dropped.push(id);
+  }
+  return dropped;
+}
+
+function companionNameFromMetadata(metadata: Record<string, unknown>): string {
+  return typeof metadata.active_character_name === "string"
+    ? metadata.active_character_name.trim()
+    : "";
+}
+
+function activeCharacterId(metadata: Record<string, unknown>, characterIds: string[]): string {
+  const requested =
+    typeof metadata.active_character_id === "string" ? metadata.active_character_id.trim() : "";
+  if (requested && characterIds.includes(requested)) return requested;
+  return characterIds[0] || requested;
+}
+
+function asMetadata(metadata: unknown): Record<string, unknown> {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return {};
+  return metadata as Record<string, unknown>;
+}
+
+/**
+ * Newest turn that should receive facts from a Retry.
+ * Starts at the successor this cleanup was given. Follows later retries.
+ * An edit, a broken link, or a chain that is still replaced after the hop
+ * cap returns "" so this pass does not retag onto a dead turn.
+ */
+async function liveRetrySuccessor(startId: string, userId: string): Promise<string> {
+  let current = startId.trim();
+  if (!current) return "";
+  for (let hop = 0; hop < MAX_REPLACEMENT_HOPS; hop += 1) {
+    const turn = await readChatTurn(current, userId);
+    if (!turn || !turnMetadataReplaced(turn.metadata)) return current;
+    const next = String(asMetadata(turn.metadata).superseded_by || "").trim();
+    if (!next || next === current) return "";
+    const successor = await readChatTurn(next, userId);
+    if (!successor || replyActionOf(asMetadata(successor.metadata).reply_action) !== "retry") {
+      return "";
+    }
+    current = next;
+  }
+  const landed = await readChatTurn(current, userId);
+  if (!landed || turnMetadataReplaced(landed.metadata)) return "";
+  return current;
+}
+
+async function rewriteCharacterFacts(
+  userId: string,
+  characterId: string,
+  turnId: string,
+  retention: TurnFactRetention,
+): Promise<unknown[]> {
+  let keptFacts: unknown[] = [];
+  await withTransientDbRetry(() =>
+    db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${`${userId}:${characterId}`}))`,
+      );
+      const [existing] = await tx
+        .select()
+        .from(companionMemories)
+        .where(
+          and(
+            eq(companionMemories.userId, userId),
+            eq(companionMemories.characterId, characterId),
+          ),
+        )
+        .limit(1);
+      if (!existing) return;
+      const facts = Array.isArray(existing.facts) ? existing.facts : [];
+      const kept = factsWithoutTurn(facts, turnId, retention) as Record<string, unknown>[];
+      keptFacts = kept;
+      if (JSON.stringify(kept) === JSON.stringify(facts)) return;
+      const factIds = embeddingIdsDropped(facts, kept);
+      await tx
+        .update(companionMemories)
+        .set({ facts: kept, updatedAt: new Date() })
+        .where(eq(companionMemories.id, existing.id));
+      if (factIds.length > 0) {
+        await tx
+          .delete(memoryEmbeddings)
+          .where(
+            and(
+              eq(memoryEmbeddings.userId, userId),
+              eq(memoryEmbeddings.characterId, characterId),
+              inArray(memoryEmbeddings.factId, factIds),
+            ),
+          );
+      }
+    }),
+  );
+  return keptFacts;
+}
+
 async function forgetTurnMemories(
   userId: string,
   characterIds: string[],
   turnId: string,
-): Promise<void> {
+  retention: TurnFactRetention,
+): Promise<Map<string, unknown[]>> {
+  const keptByCharacter = new Map<string, unknown[]>();
   for (const characterId of [...characterIds].sort()) {
-    await withTransientDbRetry(() =>
-      db.transaction(async (tx) => {
-        await tx.execute(
-          sql`SELECT pg_advisory_xact_lock(hashtext(${`${userId}:${characterId}`}))`,
-        );
-        const [existing] = await tx
-          .select()
-          .from(companionMemories)
-          .where(
-            and(
-              eq(companionMemories.userId, userId),
-              eq(companionMemories.characterId, characterId),
-            ),
-          )
-          .limit(1);
-        if (!existing) return;
-        const facts = Array.isArray(existing.facts) ? existing.facts : [];
-        const kept = factsWithoutTurn(facts, turnId) as Record<string, unknown>[];
-        if (kept.length === facts.length) return;
-        const removed = facts.filter((item) => !kept.includes(item));
-        const factKey = (item: unknown) => {
-          if (!item || typeof item !== "object") return "";
-          const fact = item as { text?: unknown; fact_id?: unknown };
-          const text = String(fact.text || "").trim();
-          if (!text && !fact.fact_id) return "";
-          return factIdFor(text, fact.fact_id ? String(fact.fact_id) : undefined);
-        };
-        const keptIds = new Set(kept.map(factKey).filter(Boolean));
-        const factIds = removed
-          .map(factKey)
-          .filter((id) => id && !keptIds.has(id));
-        await tx
-          .update(companionMemories)
-          .set({ facts: kept, updatedAt: new Date() })
-          .where(eq(companionMemories.id, existing.id));
-        if (factIds.length > 0) {
-          await tx
-            .delete(memoryEmbeddings)
-            .where(
-              and(
-                eq(memoryEmbeddings.userId, userId),
-                eq(memoryEmbeddings.characterId, characterId),
-                inArray(memoryEmbeddings.factId, factIds),
-              ),
-            );
-        }
-      }),
+    keptByCharacter.set(
+      characterId,
+      await rewriteCharacterFacts(userId, characterId, turnId, retention),
     );
   }
+  return keptByCharacter;
 }
 
 async function stripSharedTurnFact(
   userId: string,
   sessionId: string,
   turnId: string,
+  retention: TurnFactRetention,
 ): Promise<void> {
   await withTransientDbRetry(() =>
     db.transaction(async (tx) => {
@@ -315,8 +397,9 @@ async function stripSharedTurnFact(
       if (!row) return;
       const data = asObject(row.data);
       const shared = Array.isArray(data.shared_memory) ? data.shared_memory : [];
-      const kept = factsWithoutTurn(shared, turnId);
-      if (kept.length === shared.length) return;
+      const kept = factsWithoutTurn(shared, turnId, retention);
+      // A retry can retag a fact without changing the array length.
+      if (JSON.stringify(kept) === JSON.stringify(shared)) return;
       await tx
         .update(userEntities)
         .set({
@@ -428,21 +511,92 @@ async function deleteReplacedMessages(input: {
   );
 }
 
-/** Remove memories already stored for a turn the user replaced. */
+async function retainReplacedTurnMemory(input: {
+  userId: string;
+  sessionId: string;
+  turnId: string;
+  characterIds: string[];
+  metadata: Record<string, unknown>;
+  replyAction: ReplyAction;
+  userContent: string;
+  replacingTurnId: string;
+}): Promise<void> {
+  const characterIds = [...input.characterIds];
+  const requestedActive =
+    typeof input.metadata.active_character_id === "string"
+      ? input.metadata.active_character_id.trim()
+      : "";
+  if (requestedActive && !characterIds.includes(requestedActive)) characterIds.push(requestedActive);
+  if (!input.turnId) return;
+  let replacingTurnId = input.replacingTurnId.trim();
+  if (input.replyAction === "retry" && replacingTurnId) {
+    // A newer retry may already have replaced this successor. Retag to the
+    // live turn, not the one this cleanup was originally handed.
+    replacingTurnId = await liveRetrySuccessor(replacingTurnId, input.userId);
+  }
+  const retention: TurnFactRetention = {
+    replyAction: input.replyAction,
+    userContent: input.userContent,
+    companionName: companionNameFromMetadata(input.metadata),
+    replacingTurnId,
+  };
+  const keptByCharacter =
+    characterIds.length > 0
+      ? await forgetTurnMemories(input.userId, characterIds, input.turnId, retention)
+      : new Map<string, unknown[]>();
+  await stripSharedTurnFact(input.userId, input.sessionId, input.turnId, retention);
+  if (input.replyAction !== "retry" || !replacingTurnId) return;
+  const activeId = activeCharacterId(input.metadata, characterIds);
+  if (!activeId) return;
+  const facts = keptByCharacter.get(activeId) ?? [];
+  if (!userTurnNeedsPolicySave(facts, input.userContent, retention.companionName || "")) return;
+  const job = buildUserOnlyMemoryPolicyJob({
+    userId: input.userId,
+    characterId: activeId,
+    sessionId: input.sessionId,
+    turnId: replacingTurnId,
+    companionName: retention.companionName || "",
+    userContent: input.userContent,
+  });
+  if (!job) return;
+  try {
+    await deferLocalLlmJob(job);
+  } catch (error) {
+    logger.warn({ error, turnId: replacingTurnId }, "Could not queue user memory after retry");
+  }
+}
+
+/**
+ * Remove what a replaced turn stored, after the reply is already gone.
+ * This is the late second pass. It runs only when the successor's reply
+ * action can be read. A missing row or a failed read skips the pass: guessing
+ * edit would delete his facts on a retry.
+ */
 export async function forgetReplacedTurnMemory(turn: {
   id: string;
   userId: string;
   sessionId: string;
   metadata: unknown;
+  userContent?: string;
 }): Promise<void> {
-  const metadata =
-    turn.metadata && typeof turn.metadata === "object" && !Array.isArray(turn.metadata)
-      ? (turn.metadata as Record<string, unknown>)
-      : {};
-  const characterIds = characterIdsFromMetadata(metadata);
-  if (!turn.id || characterIds.length === 0) return;
-  await forgetTurnMemories(turn.userId, characterIds, turn.id);
-  await stripSharedTurnFact(turn.userId, turn.sessionId, turn.id);
+  const metadata = asMetadata(turn.metadata);
+  const replacingTurnId =
+    typeof metadata.superseded_by === "string" ? metadata.superseded_by.trim() : "";
+  if (!replacingTurnId) return;
+  const next = await readChatTurn(replacingTurnId, turn.userId);
+  const replyAction = replyActionOf(asMetadata(next?.metadata).reply_action);
+  if (!replyAction) return;
+  const stored = turn.userContent ?? (await readChatTurn(turn.id, turn.userId))?.userContent ?? "";
+  await retainReplacedTurnMemory({
+    userId: turn.userId,
+    sessionId: turn.sessionId,
+    turnId: turn.id,
+    characterIds: characterIdsFromMetadata(metadata),
+    metadata,
+    replyAction,
+    userContent: stored,
+    replacingTurnId,
+  });
 }
 
 /**
@@ -498,10 +652,16 @@ export async function discardReplacedCompanionReply(
       if (hooks?.forgetMemory) {
         await hooks.forgetMemory(input.userId, input.sessionId, turn.id);
       } else {
-        if (characterIds.length > 0) {
-          await forgetTurnMemories(input.userId, characterIds, turn.id);
-        }
-        await stripSharedTurnFact(input.userId, input.sessionId, turn.id);
+        await retainReplacedTurnMemory({
+          userId: input.userId,
+          sessionId: input.sessionId,
+          turnId: turn.id,
+          characterIds,
+          metadata: turn.metadata,
+          replyAction: input.replyAction,
+          userContent: input.userContent,
+          replacingTurnId: input.replacingTurnId,
+        });
       }
     } catch (error) {
       logger.warn(
