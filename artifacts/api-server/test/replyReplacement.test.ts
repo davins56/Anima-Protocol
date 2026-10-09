@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  clientTurnMetadata,
   messageTurnId,
   omitPersistedUserRow,
+  replacedFromMessageIdOf,
+  replacedTurnIdOf,
   replacedMessageIdsOf,
+  replacedTurnIdsOf,
   replyActionOf,
   shouldDiscardStoredMessage,
   turnMetadataReplaced,
@@ -37,8 +41,33 @@ describe("reply replacement affect guard", () => {
     expect(turnMetadataReplaced({ replaced: true })).toBe(true);
     expect(turnMetadataReplaced({ replaced: "true" })).toBe(false);
     expect(messageTurnId({ id: "turn_old:assistant:1" })).toBe("turn_old");
+    expect(messageTurnId({ id: "turn_a:b:assistant:1" })).toBe("turn_a:b");
     expect(messageTurnId({ metadata: { turn_id: "turn_meta" } })).toBe("turn_meta");
+    expect(replacedFromMessageIdOf({ replaced_from_message_id: " anchor " })).toBe("anchor");
+    expect(replacedFromMessageIdOf({ replaced_from_message_id: "x".repeat(201) })).toBe("");
+    expect(replacedTurnIdOf({ replaced_turn_id: " turn_ok " })).toBe("turn_ok");
+    expect(replacedTurnIdOf({ replaced_turn_id: "x".repeat(201) })).toBe("");
     expect(replacedMessageIdsOf({ replaced_message_ids: [" a ", "a", ""] })).toEqual(["a"]);
+    expect(replacedMessageIdsOf(null)).toEqual([]);
+    expect(
+      replacedTurnIdsOf({
+        replaced_turn_ids: [" t1 ", 12, "t1", "x".repeat(201), "t2"],
+      }),
+    ).toEqual(["t1", "t2"]);
+    expect(clientTurnMetadata({ replaced: true, superseded_by: "t2", mode: "solo" })).toEqual({
+      mode: "solo",
+    });
+    expect(
+      replacedMessageIdsOf({
+        replaced_message_ids: Array.from({ length: 45 }, (_, index) => `id-${index}`),
+      }),
+    ).toHaveLength(40);
+    const boundary = { fromSeq: 2, messageIds: ["early", "late-user"], turnId: "t1" };
+    expect(shouldDiscardStoredMessage({ id: "early", role: "user", seq: 0 }, boundary)).toBe(false);
+    expect(shouldDiscardStoredMessage({ id: "late-user", role: "user", seq: 4 }, boundary)).toBe(true);
+    expect(
+      shouldDiscardStoredMessage({ id: "keep", role: "assistant", seq: 1, turn_id: "other" }, boundary),
+    ).toBe(false);
     const target = { turnId: "turn_old", messageIds: ["edited-user"] };
     expect(
       shouldDiscardStoredMessage(
@@ -55,5 +84,11 @@ describe("reply replacement affect guard", () => {
     expect(
       shouldDiscardStoredMessage({ id: "turn_other:assistant", role: "assistant" }, target),
     ).toBe(false);
+    expect(
+      shouldDiscardStoredMessage(
+        { id: "listed-late", role: "user", seq: 4, turn_id: "someone-else" },
+        { messageIds: ["listed-late"], turnIds: ["turn_old"] },
+      ),
+    ).toBe(true);
   });
 });

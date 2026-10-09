@@ -16,6 +16,7 @@ import {
   dropAppliedComposerRestore,
   heldDraftStorageKey,
   isConversationBusyError,
+  isReplyReplaceFailed,
   liveTurnStillBlocking,
   mergeDraftIntoComposer,
   omitTurnMessages,
@@ -188,6 +189,18 @@ describe("held chat send", () => {
   it("does not treat a busy refusal as a hard error toast path", () => {
     expect(isConversationBusyError(new Error("No LLM provider has remaining quota."))).toBe(false);
     expect(isConversationBusyError(null)).toBe(false);
+    expect(
+      isReplyReplaceFailed(
+        Object.assign(new Error("Could not replace the previous reply. Try again."), {
+          code: "reply_replace_failed",
+          status: 503,
+        }),
+      ),
+    ).toBe(true);
+    expect(isReplyReplaceFailed(Object.assign(new Error("busy"), { code: "conversation_busy" }))).toBe(
+      false,
+    );
+    expect(isReplyReplaceFailed(null)).toBe(false);
     const removed = omitTurnMessages(
       [
         { turn_id: "keep", role: "user", content: "earlier" },

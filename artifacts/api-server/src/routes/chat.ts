@@ -214,6 +214,7 @@ import { planTurnMessageSeqs, type SeqRow } from "../lib/chatMessageOrder";
 import {
   emotionalStateWithTurnBond,
   emotionalStateWithTurnMood,
+  moodLoopStops,
   moodTurnAlreadyWritten,
   relationshipTurnAlreadyWritten,
   savedMomentsTurnAlreadyWritten,
@@ -221,12 +222,15 @@ import {
 import {
   discardReplacedCompanionReply,
   forgetReplacedTurnMemory,
-  resolveReplacedTurnId,
+  inspectReplacedReply,
 } from "../lib/discardReplacedReply";
 import {
   omitPersistedUserRow,
+  clientTurnMetadata,
+  replacedFromMessageIdOf,
   replacedMessageIdsOf,
   replacedTurnIdOf,
+  replacedTurnIdsOf,
   replyActionOf,
   shouldDiscardStoredMessage,
   turnMetadataReplaced,
@@ -236,7 +240,7 @@ import { deferLocalLlmJob } from "../lib/deferredLocalLlm";
 import {
   buildMemoryPolicyJob,
   buildMemoryReembedJob,
-  factsWithoutTurn,
+  factsWithoutTurns,
   persistCompanionTurnFact,
 } from "../lib/memoryPolicy";
 import {
@@ -775,48 +779,62 @@ async function updateStoreSessionMetadata(
   content: string,
   sharedFact?: Record<string, unknown>,
 ) {
-  const [row] = await db
-    .select()
-    .from(userEntities)
-    .where(
-      and(
-        eq(userEntities.userId, userId),
-        eq(userEntities.entityName, CHAT_SESSION),
-        eq(userEntities.entityId, sessionId),
-      ),
-    )
-    .limit(1);
-  if (!row) return;
-  const data = asObject(row.data);
-  const now = new Date().toISOString();
-  const currentSharedMemory = Array.isArray(data.shared_memory)
-    ? data.shared_memory.slice(-24)
-    : [];
-  if (sharedFact) {
-    const factTurnId = sharedFact.turn_id;
-    const already =
-      factTurnId != null &&
-      currentSharedMemory.some(
-        (item) =>
-          item &&
-          typeof item === "object" &&
-          (item as Record<string, unknown>).turn_id === factTurnId,
-      );
-    if (!already) currentSharedMemory.push(sharedFact);
-  }
-  await db
-    .update(userEntities)
-    .set({
-      data: {
-        ...data,
-        last_message: truncate(content, 80),
-        title: data.title || truncate(content, 40) || "New session",
-        shared_memory: currentSharedMemory,
-        updated_date: now,
-      },
-      updatedAt: new Date(),
-    })
-    .where(eq(userEntities.id, row.id));
+  await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${userId}), hashtext(${sessionId}))`,
+    );
+    const [row] = await tx
+      .select()
+      .from(userEntities)
+      .where(
+        and(
+          eq(userEntities.userId, userId),
+          eq(userEntities.entityName, CHAT_SESSION),
+          eq(userEntities.entityId, sessionId),
+        ),
+      )
+      .limit(1);
+    if (!row) return;
+    let fact = sharedFact;
+    const factTurnId = fact && typeof fact.turn_id === "string" ? fact.turn_id : "";
+    if (factTurnId) {
+      const [turn] = await tx
+        .select({ metadata: chatTurns.metadata })
+        .from(chatTurns)
+        .where(and(eq(chatTurns.id, factTurnId), eq(chatTurns.userId, userId)))
+        .limit(1);
+      if (turn && turnMetadataReplaced(turn.metadata)) fact = undefined;
+    }
+    const data = asObject(row.data);
+    const now = new Date().toISOString();
+    const currentSharedMemory = Array.isArray(data.shared_memory)
+      ? data.shared_memory.slice(-24)
+      : [];
+    if (fact) {
+      const already =
+        factTurnId &&
+        currentSharedMemory.some(
+          (item) =>
+            item &&
+            typeof item === "object" &&
+            (item as Record<string, unknown>).turn_id === factTurnId,
+        );
+      if (!already) currentSharedMemory.push(fact);
+    }
+    await tx
+      .update(userEntities)
+      .set({
+        data: {
+          ...data,
+          last_message: truncate(content, 80),
+          title: data.title || truncate(content, 40) || "New session",
+          shared_memory: currentSharedMemory,
+          updated_date: now,
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(userEntities.id, row.id));
+  });
 }
 
 async function loadMemories(userId: string, characterIds: string[]) {
@@ -965,6 +983,7 @@ async function writeTurnMessagesInOrder(
   messages: { user: MsgData | null; assistant: MsgData },
 ): Promise<boolean> {
   return db.transaction(async (tx) => {
+    await migrateSessionMessages(tx, turn.userId, turn.sessionId);
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${turn.id}`}))`);
     const [locked] = await tx
       .select({ metadata: chatTurns.metadata })
@@ -972,7 +991,6 @@ async function writeTurnMessagesInOrder(
       .where(and(eq(chatTurns.id, turn.id), eq(chatTurns.userId, turn.userId)))
       .limit(1);
     if (locked && turnMetadataReplaced(locked.metadata)) return false;
-    await migrateSessionMessages(tx, turn.userId, turn.sessionId);
     const rows = await tx
       .select({
         id: userEntities.id,
@@ -1198,46 +1216,55 @@ async function writeTurnMoodFromMetadata(turn: ChatTurn): Promise<void> {
   if (characterIds.length === 0) return;
   const now = new Date();
   for (const characterId of characterIds) {
-    const [existing] = await withTransientDbRetry(() =>
-      db
-        .select({
-          summary: companionMemories.summary,
-          facts: companionMemories.facts,
-          emotionalState: companionMemories.emotionalState,
-          resonanceNotes: companionMemories.resonanceNotes,
-        })
-        .from(companionMemories)
-        .where(
-          and(
-            eq(companionMemories.userId, turn.userId),
-            eq(companionMemories.characterId, characterId),
-          ),
-        )
-        .limit(1),
-    );
-    const current = (existing?.emotionalState as Record<string, unknown> | null) ?? {};
-    const next = emotionalStateWithTurnMood(current, turn.id, selfState);
-    if (!next.wrote) continue;
-    await withTransientDbRetry(() =>
-      db
-        .insert(companionMemories)
-        .values({
-          userId: turn.userId,
-          characterId,
-          summary: existing?.summary ?? "",
-          facts: Array.isArray(existing?.facts) ? existing.facts : [],
-          emotionalState: next.state,
-          resonanceNotes: existing?.resonanceNotes ?? "",
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [companionMemories.userId, companionMemories.characterId],
-          set: {
+    const wrote = await withTransientDbRetry(() =>
+      db.transaction(async (tx) => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${turn.id}`}))`);
+        const [latestMoodTurn] = await tx
+          .select({ metadata: chatTurns.metadata })
+          .from(chatTurns)
+          .where(and(eq(chatTurns.id, turn.id), eq(chatTurns.userId, turn.userId)))
+          .limit(1);
+        if (latestMoodTurn && turnMetadataReplaced(latestMoodTurn.metadata)) return "replaced" as const;
+        const [memory] = await tx
+          .select({
+            summary: companionMemories.summary,
+            facts: companionMemories.facts,
+            emotionalState: companionMemories.emotionalState,
+            resonanceNotes: companionMemories.resonanceNotes,
+          })
+          .from(companionMemories)
+          .where(
+            and(
+              eq(companionMemories.userId, turn.userId),
+              eq(companionMemories.characterId, characterId),
+            ),
+          )
+          .limit(1);
+        const current = (memory?.emotionalState as Record<string, unknown> | null) ?? {};
+        const next = emotionalStateWithTurnMood(current, turn.id, selfState);
+        if (!next.wrote) return "skipped" as const;
+        await tx
+          .insert(companionMemories)
+          .values({
+            userId: turn.userId,
+            characterId,
+            summary: memory?.summary ?? "",
+            facts: Array.isArray(memory?.facts) ? memory.facts : [],
             emotionalState: next.state,
+            resonanceNotes: memory?.resonanceNotes ?? "",
             updatedAt: now,
-          },
-        }),
+          })
+          .onConflictDoUpdate({
+            target: [companionMemories.userId, companionMemories.characterId],
+            set: {
+              emotionalState: next.state,
+              updatedAt: now,
+            },
+          });
+        return "written" as const;
+      }),
     );
+    if (moodLoopStops(wrote)) return;
   }
 }
 
@@ -2144,16 +2171,16 @@ router.post("/turns/:turnId/retry", async (req, res) => {
     res.status(404).json({ error: "Turn not found" });
     return;
   }
-  if (turn.status === "committed") {
-    res.json({ turn_id: turn.id, persistence_status: turn.status });
-    return;
-  }
   if (turnMetadataReplaced(turn.metadata)) {
     res.status(409).json({
       error: "Turn was replaced",
       turn_id: turn.id,
       persistence_status: turn.status,
     });
+    return;
+  }
+  if (turn.status === "committed") {
+    res.json({ turn_id: turn.id, persistence_status: turn.status });
     return;
   }
   try {
@@ -2261,7 +2288,7 @@ router.post("/messages", async (req, res) => {
       ? "client"
       : "server";
   const turnMetadata = {
-    ...(body.metadata ?? {}),
+    ...clientTurnMetadata(body.metadata),
     mode,
     character_ids: characterIds,
     ...(replyAction ? { reply_action: replyAction, skip_affect: true } : {}),
@@ -2419,24 +2446,49 @@ router.post("/messages", async (req, res) => {
   // above. This only rejects a newer turn while an older one is pending.
   // The reply this send is replacing does not count: a hung generate must
   // not block the retry that retires it. Slot priority is unchanged.
-  let discardedReply = {
+  const emptyDiscardedReply = {
     turnId: "",
+    turnIds: [] as string[],
     messageIds: replacedMessageIdsOf(body.metadata),
+    fromMessageId: replacedFromMessageIdOf(body.metadata),
+    fromSeq: null as number | null,
+  };
+  let discardedReply = emptyDiscardedReply;
+  const wantsReplace = Boolean(replyAction);
+  const failReplacement = async (error: unknown) => {
+    logger.warn({ error, turnId: turnStart.turn.id }, "Could not discard the replaced companion reply");
+    const retireError = new Error("Could not replace the previous reply");
+    flight.fail(retireError);
+    try {
+      await markTurnFailed(turnStart.turn.id, userId, retireError);
+    } catch (markErr) {
+      logger.warn({ err: markErr, turnId: turnStart.turn.id }, "Failed to mark replace failure");
+    }
+    if (!res.headersSent) {
+      res.status(503).json({
+        error: "Could not replace the previous reply. Try again.",
+        code: "reply_replace_failed",
+      });
+    }
   };
   if (replyAction) {
     try {
-      discardedReply = {
-        turnId: await resolveReplacedTurnId({
-          userId,
-          sessionId,
-          replacingTurnId: turnStart.turn.id,
-          replyAction,
-          userContent: content,
-          replacedTurnId: replacedTurnIdOf(body.metadata),
-        }),
-        messageIds: replacedMessageIdsOf(body.metadata),
-      };
+      discardedReply = await inspectReplacedReply({
+        userId,
+        sessionId,
+        replacingTurnId: turnStart.turn.id,
+        replyAction,
+        userContent: content,
+        replacedTurnId: replacedTurnIdOf(body.metadata),
+        replacedTurnIds: replacedTurnIdsOf(body.metadata),
+        messageIds: emptyDiscardedReply.messageIds,
+        fromMessageId: emptyDiscardedReply.fromMessageId,
+      });
     } catch (error) {
+      if (wantsReplace) {
+        await failReplacement(error);
+        return;
+      }
       logger.warn({ error, turnId: turnStart.turn.id }, "Could not resolve the reply being replaced");
     }
   }
@@ -2448,7 +2500,7 @@ router.post("/messages", async (req, res) => {
       turnStart.turn.id,
       turnStart.turn.createdAt,
       new Date(),
-      discardedReply.turnId ? [discardedReply.turnId] : [],
+      discardedReply.turnIds,
     );
   } catch (err) {
     logger.error({ err }, "Chat message stream failed");
@@ -2498,23 +2550,31 @@ router.post("/messages", async (req, res) => {
     return;
   }
 
-  if (replyAction && (discardedReply.turnId || discardedReply.messageIds.length > 0)) {
+  if (
+    replyAction &&
+    (discardedReply.turnIds.length > 0 ||
+      discardedReply.messageIds.length > 0 ||
+      discardedReply.fromMessageId)
+  ) {
     try {
-      discardedReply = await discardReplacedCompanionReply({
-        userId,
-        sessionId,
-        replacingTurnId: turnStart.turn.id,
-        replyAction,
-        userContent: content,
-        replacedTurnId: discardedReply.turnId || replacedTurnIdOf(body.metadata),
-        messageIds: discardedReply.messageIds,
-        characterIds,
-      });
-    } catch (error) {
-      logger.warn(
-        { error, turnId: turnStart.turn.id },
-        "Could not discard the replaced companion reply",
+      discardedReply = await discardReplacedCompanionReply(
+        {
+          userId,
+          sessionId,
+          replacingTurnId: turnStart.turn.id,
+          replyAction,
+          userContent: content,
+          replacedTurnId: discardedReply.turnId || replacedTurnIdOf(body.metadata),
+          replacedTurnIds: replacedTurnIdsOf(body.metadata),
+          messageIds: discardedReply.messageIds,
+          fromMessageId: discardedReply.fromMessageId,
+          characterIds,
+        },
+        { plan: discardedReply },
       );
+    } catch (error) {
+      await failReplacement(error);
+      return;
     }
   }
 
@@ -2699,27 +2759,30 @@ router.post("/messages", async (req, res) => {
     ]),
   );
   const worldKnowledge = worldKnowledgeResult.prompt;
-  const promptRecentMessages =
-    discardedReply.turnId || discardedReply.messageIds.length > 0
-      ? recentMessages.filter(
-          (message) => !shouldDiscardStoredMessage(message, discardedReply),
+  const promptDropsReplaced =
+    discardedReply.turnIds.length > 0 ||
+    discardedReply.messageIds.length > 0 ||
+    discardedReply.fromSeq != null;
+  const promptRecentMessages = promptDropsReplaced
+    ? recentMessages.filter((message) => !shouldDiscardStoredMessage(message, discardedReply))
+    : recentMessages;
+  const promptMemories =
+    discardedReply.turnIds.length > 0
+      ? adaptedMemories.map((memory) => ({
+          ...memory,
+          facts: factsWithoutTurns(
+            Array.isArray(memory.facts) ? memory.facts : [],
+            discardedReply.turnIds,
+          ) as CompanionMemoryRecord["facts"],
+        }))
+      : adaptedMemories;
+  const promptSharedMemory =
+    discardedReply.turnIds.length > 0
+      ? factsWithoutTurns(
+          Array.isArray(sessionData.shared_memory) ? sessionData.shared_memory : [],
+          discardedReply.turnIds,
         )
-      : recentMessages;
-  const promptMemories = discardedReply.turnId
-    ? adaptedMemories.map((memory) => ({
-        ...memory,
-        facts: factsWithoutTurn(
-          Array.isArray(memory.facts) ? memory.facts : [],
-          discardedReply.turnId,
-        ) as CompanionMemoryRecord["facts"],
-      }))
-    : adaptedMemories;
-  const promptSharedMemory = discardedReply.turnId
-    ? factsWithoutTurn(
-        Array.isArray(sessionData.shared_memory) ? sessionData.shared_memory : [],
-        discardedReply.turnId,
-      )
-    : sessionData.shared_memory;
+      : sessionData.shared_memory;
   
   const requestedAssistantId = body.assistant_character_id
     ? String(body.assistant_character_id)
@@ -3118,7 +3181,7 @@ router.post("/messages", async (req, res) => {
           maxTokens,
           messages: appendFinalUserReminder(messages, reminder),
           temperature: COMPANION_CHAT_TEMPERATURE,
-          signal: combineAbortSignals(retryOpen.signal, abandoned.signal),
+          signal: combineAbortSignals(retryOpen.signal, abandoned.signal, replacedController.signal),
         });
         const retried = await consumeLlmStream(retry.stream, {
           ...consumeOpts,
@@ -3478,7 +3541,7 @@ router.post("/messages", async (req, res) => {
               : replyMaxTokens,
             messages: messagesForRepeatRetry(messages, copiedReply || fullResponse),
             temperature: OLLAMA_MAX_TEMPERATURE,
-            signal: combineAbortSignals(retryOpen.signal, abandoned.signal),
+            signal: combineAbortSignals(retryOpen.signal, abandoned.signal, replacedController.signal),
           });
           const retried = await consumeLlmStream(retry.stream, {
             ...consumeOpts,
@@ -3615,7 +3678,7 @@ router.post("/messages", async (req, res) => {
       ? serializeCompanionAffect(evolvedCompanion)
       : null;
     const generatedMetadata = {
-      ...(body.metadata ?? {}),
+      ...clientTurnMetadata(body.metadata),
       mode,
       session_title: String(sessionData.title || "New session"),
       character_ids: characterIds,

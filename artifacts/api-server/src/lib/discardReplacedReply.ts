@@ -7,7 +7,7 @@
  * row and deletes the stored reply before the new generate reads history.
  */
 
-import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import {
   CHAT_MESSAGE,
   CHAT_SESSION,
@@ -17,14 +17,21 @@ import {
   companionMemories,
   db,
   memoryEmbeddings,
+  migrateSessionMessages,
   sessionIdEq,
   userEntities,
   withTransientDbRetry,
 } from "@workspace/db";
-import { markChatTurnReplaced, readChatTurn } from "./chatTurnLedger";
+import { markChatTurnReplacedOn, readChatTurn } from "./chatTurnLedger";
+import { logger } from "./logger";
 import { factIdFor } from "./memoryEmbeddings";
 import { factsWithoutTurn } from "./memoryPolicy";
-import { shouldDiscardStoredMessage, type ReplyAction } from "./replyReplacement";
+import {
+  messageSeq,
+  messageTurnId,
+  shouldDiscardStoredMessage,
+  type ReplyAction,
+} from "./replyReplacement";
 
 type ReplyKind = ReplyAction;
 
@@ -42,6 +49,176 @@ function characterIdsFromMetadata(metadata: Record<string, unknown> | null | und
   return [...ids];
 }
 
+export type ReplacedReplyPlan = {
+  turnId: string;
+  turnIds: string[];
+  messageIds: string[];
+  fromMessageId: string;
+  fromSeq: number | null;
+};
+
+type SessionChatRow = {
+  id: number;
+  entityId: string;
+  data: unknown;
+};
+
+function storedChatMessage(row: SessionChatRow): Record<string, unknown> {
+  const data = asObject(row.data);
+  return { ...data, id: data.id || row.entityId };
+}
+
+async function loadSessionChatRows(userId: string, sessionId: string): Promise<SessionChatRow[]> {
+  return withTransientDbRetry(() =>
+    db
+      .select({
+        id: userEntities.id,
+        entityId: userEntities.entityId,
+        data: userEntities.data,
+      })
+      .from(userEntities)
+      .where(
+        and(
+          eq(userEntities.userId, userId),
+          eq(userEntities.entityName, CHAT_MESSAGE),
+          sessionIdEq(sessionId),
+        ),
+      ),
+  );
+}
+
+function addTurn(ids: string[], turnId: string, replacingTurnId: string) {
+  const value = turnId.trim();
+  if (!value || value === replacingTurnId || ids.includes(value)) return;
+  ids.push(value);
+}
+
+/**
+ * Which reply this retry or edit is retiring.
+ *
+ * An explicit turn id wins when it belongs to this session. Otherwise the
+ * anchor message's own turn id, or a single turn shared by the listed ids.
+ * Identical user text selects a turn only when exactly one non-replaced
+ * turn has it. Several matches stay untouched.
+ */
+export async function inspectReplacedReply(input: {
+  userId: string;
+  sessionId: string;
+  replacingTurnId: string;
+  replyAction: ReplyKind;
+  userContent: string;
+  replacedTurnId?: string | null;
+  replacedTurnIds?: string[];
+  messageIds?: string[];
+  fromMessageId?: string | null;
+}): Promise<ReplacedReplyPlan> {
+  const messageIds = [
+    ...new Set((input.messageIds || []).map((id) => String(id || "").trim()).filter(Boolean)),
+  ];
+  const fromMessageId = String(input.fromMessageId || "").trim();
+  const requested = String(input.replacedTurnId || "").trim();
+  // Legacy sessions still keep the thread on the ChatSession blob. Migrate
+  // it first so the anchor seq and the suffix are rows this delete can see.
+  // A later history read must not copy the old reply back after we remove it.
+  await withTransientDbRetry(() =>
+    db.transaction(async (tx) => {
+      await migrateSessionMessages(tx, input.userId, input.sessionId);
+    }),
+  );
+  const rows = await loadSessionChatRows(input.userId, input.sessionId);
+  const stored = rows.map((row) => ({ row, message: storedChatMessage(row) }));
+  const anchor = fromMessageId
+    ? stored.find((item) => String(item.message.id || "") === fromMessageId)
+    : undefined;
+  const fromSeq = anchor ? messageSeq(anchor.message) : null;
+  const anchorTurn = anchor ? messageTurnId(anchor.message) : "";
+  const turnIds: string[] = [];
+  const replacedIds = [
+    ...new Set(
+      (input.replacedTurnIds || [])
+        .map((id) => String(id || "").trim())
+        .filter((id) => id && id !== input.replacingTurnId),
+    ),
+  ];
+  if (replacedIds.length > 0) {
+    const turns = await withTransientDbRetry(() =>
+      db
+        .select({ id: chatTurns.id })
+        .from(chatTurns)
+        .where(
+          and(
+            eq(chatTurns.userId, input.userId),
+            eq(chatTurns.sessionId, input.sessionId),
+            inArray(chatTurns.id, replacedIds),
+          ),
+        ),
+    );
+    const found = new Set(turns.map((turn) => turn.id));
+    for (const id of replacedIds) {
+      if (found.has(id)) addTurn(turnIds, id, input.replacingTurnId);
+    }
+  }
+
+  if (fromSeq != null) {
+    for (const item of stored) {
+      const seq = messageSeq(item.message);
+      if (seq == null || seq < fromSeq) continue;
+      addTurn(turnIds, messageTurnId(item.message), input.replacingTurnId);
+    }
+  } else if (anchorTurn) {
+    addTurn(turnIds, anchorTurn, input.replacingTurnId);
+  }
+
+  let turnId = "";
+  if (requested && requested !== input.replacingTurnId) {
+    const turn = await readChatTurn(requested, input.userId);
+    if (turn && turn.sessionId === input.sessionId) turnId = turn.id;
+  }
+  if (!turnId && anchorTurn && anchorTurn !== input.replacingTurnId) {
+    const turn = await readChatTurn(anchorTurn, input.userId);
+    if (!turn || turn.sessionId === input.sessionId) turnId = anchorTurn;
+  }
+  if (!turnId) {
+    const listedTurns = new Set<string>();
+    for (const id of messageIds) {
+      const hit = stored.find((item) => String(item.message.id || "") === id);
+      if (!hit) continue;
+      const idTurn = messageTurnId(hit.message);
+      if (idTurn && idTurn !== input.replacingTurnId) listedTurns.add(idTurn);
+    }
+    if (listedTurns.size === 1) turnId = [...listedTurns][0] || "";
+  }
+  if (!turnId && input.replyAction === "retry") {
+    const needle = input.userContent.trim();
+    if (needle) {
+      const matches = await withTransientDbRetry(() =>
+        db
+          .select({ id: chatTurns.id })
+          .from(chatTurns)
+          .where(
+            and(
+              eq(chatTurns.userId, input.userId),
+              eq(chatTurns.sessionId, input.sessionId),
+              eq(chatTurns.userContent, needle),
+              ne(chatTurns.id, input.replacingTurnId),
+              sql`coalesce(${chatTurns.metadata}->>'replaced', '') <> 'true'`,
+            ),
+          )
+          .limit(2),
+      );
+      if (matches.length === 1) turnId = matches[0]?.id ?? "";
+    }
+  }
+  addTurn(turnIds, turnId, input.replacingTurnId);
+  return {
+    turnId,
+    turnIds,
+    messageIds,
+    fromMessageId,
+    fromSeq,
+  };
+}
+
 export async function resolveReplacedTurnId(input: {
   userId: string;
   sessionId: string;
@@ -49,32 +226,12 @@ export async function resolveReplacedTurnId(input: {
   replyAction: ReplyKind;
   userContent: string;
   replacedTurnId?: string | null;
+  replacedTurnIds?: string[];
+  messageIds?: string[];
+  fromMessageId?: string | null;
 }): Promise<string> {
-  const requested = String(input.replacedTurnId || "").trim();
-  if (requested && requested !== input.replacingTurnId) {
-    const turn = await readChatTurn(requested, input.userId);
-    if (turn && turn.sessionId === input.sessionId) return turn.id;
-  }
-  if (input.replyAction !== "retry") return "";
-  const needle = input.userContent.trim();
-  if (!needle) return "";
-  const [prior] = await withTransientDbRetry(() =>
-    db
-      .select({ id: chatTurns.id })
-      .from(chatTurns)
-      .where(
-        and(
-          eq(chatTurns.userId, input.userId),
-          eq(chatTurns.sessionId, input.sessionId),
-          eq(chatTurns.userContent, needle),
-          ne(chatTurns.id, input.replacingTurnId),
-          sql`coalesce(${chatTurns.metadata}->>'replaced', '') <> 'true'`,
-        ),
-      )
-      .orderBy(desc(chatTurns.createdAt))
-      .limit(1),
-  );
-  return prior?.id ?? "";
+  const plan = await inspectReplacedReply(input);
+  return plan.turnId;
 }
 
 async function forgetTurnMemories(
@@ -103,15 +260,17 @@ async function forgetTurnMemories(
         const kept = factsWithoutTurn(facts, turnId) as Record<string, unknown>[];
         if (kept.length === facts.length) return;
         const removed = facts.filter((item) => !kept.includes(item));
+        const factKey = (item: unknown) => {
+          if (!item || typeof item !== "object") return "";
+          const fact = item as { text?: unknown; fact_id?: unknown };
+          const text = String(fact.text || "").trim();
+          if (!text && !fact.fact_id) return "";
+          return factIdFor(text, fact.fact_id ? String(fact.fact_id) : undefined);
+        };
+        const keptIds = new Set(kept.map(factKey).filter(Boolean));
         const factIds = removed
-          .map((item) => {
-            if (!item || typeof item !== "object") return "";
-            const fact = item as { text?: unknown; fact_id?: unknown };
-            const text = String(fact.text || "").trim();
-            if (!text && !fact.fact_id) return "";
-            return factIdFor(text, fact.fact_id ? String(fact.fact_id) : undefined);
-          })
-          .filter(Boolean);
+          .map(factKey)
+          .filter((id) => id && !keptIds.has(id));
         await tx
           .update(companionMemories)
           .set({ facts: kept, updatedAt: new Date() })
@@ -139,6 +298,9 @@ async function stripSharedTurnFact(
 ): Promise<void> {
   await withTransientDbRetry(() =>
     db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${userId}), hashtext(${sessionId}))`,
+      );
       const [row] = await tx
         .select()
         .from(userEntities)
@@ -169,18 +331,37 @@ async function stripSharedTurnFact(
 async function deleteReplacedMessages(input: {
   userId: string;
   sessionId: string;
-  turnId: string;
+  replacingTurnId: string;
+  turnIds: string[];
   messageIds: string[];
-}): Promise<void> {
-  const target = { turnId: input.turnId, messageIds: input.messageIds };
-  if (!input.turnId && input.messageIds.length === 0) return;
-  await withTransientDbRetry(() =>
+  fromSeq: number | null;
+  beforeDelete?: () => Promise<void>;
+}): Promise<Array<{ id: string; metadata: Record<string, unknown> }>> {
+  const target = {
+    turnId: input.turnIds[0] || "",
+    turnIds: input.turnIds,
+    messageIds: input.messageIds,
+    fromSeq: input.fromSeq,
+  };
+  if (input.turnIds.length === 0 && input.messageIds.length === 0 && input.fromSeq == null) {
+    return [];
+  }
+  return withTransientDbRetry(() =>
     db.transaction(async (tx) => {
-      if (input.turnId) {
-        await tx.execute(
-          sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${input.turnId}`}))`,
+      // Session lock first, then turn locks. The same order as append and
+      // replace, so this delete cannot deadlock with a message write.
+      await migrateSessionMessages(tx, input.userId, input.sessionId);
+      const retired: Array<{ id: string; metadata: Record<string, unknown> }> = [];
+      for (const turnId of [...input.turnIds].sort()) {
+        const replaced = await markChatTurnReplacedOn(
+          tx,
+          turnId,
+          input.userId,
+          input.replacingTurnId,
         );
+        retired.push({ id: turnId, metadata: replaced?.metadata ?? {} });
       }
+      if (input.beforeDelete) await input.beforeDelete();
       const rows = await tx
         .select({
           id: userEntities.id,
@@ -207,8 +388,7 @@ async function deleteReplacedMessages(input: {
       if (dropRowIds.length > 0) {
         await tx.delete(userEntities).where(inArray(userEntities.id, dropRowIds));
       }
-      const typedIds = [...new Set([...dropEntityIds, ...input.messageIds])];
-      if (input.turnId) {
+      for (const turnId of input.turnIds) {
         await tx
           .delete(chatMessages)
           .where(
@@ -218,14 +398,20 @@ async function deleteReplacedMessages(input: {
               sql`(
                 ${chatMessages.role} <> 'user'
                 AND (
-                  ${chatMessages.metadata}->>'turn_id' = ${input.turnId}
-                  OR ${chatMessages.id} like ${`${input.turnId}:%`}
+                  ${chatMessages.metadata}->>'turn_id' = ${turnId}
+                  OR strpos(${chatMessages.id}, ${`${turnId}:`}) = 1
                 )
-                AND ${chatMessages.id} not like ${`${input.turnId}:user%`}
+                AND strpos(${chatMessages.id}, ${`${turnId}:user`}) <> 1
               )`,
             ),
           );
       }
+      const typedIds = [
+        ...new Set([
+          ...dropEntityIds,
+          ...(input.fromSeq == null ? input.messageIds : []),
+        ]),
+      ];
       if (typedIds.length > 0) {
         await tx
           .delete(chatMessages)
@@ -237,6 +423,7 @@ async function deleteReplacedMessages(input: {
             ),
           );
       }
+      return retired;
     }),
   );
 }
@@ -258,58 +445,70 @@ export async function forgetReplacedTurnMemory(turn: {
   await stripSharedTurnFact(turn.userId, turn.sessionId, turn.id);
 }
 
-export type DiscardedReply = {
-  turnId: string;
-  messageIds: string[];
-};
-
 /**
  * Retire the previous reply. Safe to call once the new turn id is known
- * and this send is going to generate. Returns the turn that was retired
- * so the prompt can drop it even if a row delete is still catching up.
+ * and this send is going to generate. Returns every turn the suffix
+ * retired. The mark and the row delete commit together, so a failed delete
+ * leaves the old reply usable.
  */
-export async function discardReplacedCompanionReply(input: {
-  userId: string;
-  sessionId: string;
-  replacingTurnId: string;
-  replyAction: ReplyKind;
-  userContent: string;
-  replacedTurnId?: string | null;
-  messageIds?: string[];
-  characterIds?: string[];
-}): Promise<DiscardedReply> {
-  const messageIds = (input.messageIds || []).map((id) => String(id || "").trim()).filter(Boolean);
-  const turnId = await resolveReplacedTurnId({
+export async function discardReplacedCompanionReply(
+  input: {
+    userId: string;
+    sessionId: string;
+    replacingTurnId: string;
+    replyAction: ReplyKind;
+    userContent: string;
+    replacedTurnId?: string | null;
+    replacedTurnIds?: string[];
+    messageIds?: string[];
+    fromMessageId?: string | null;
+    characterIds?: string[];
+  },
+  hooks?: {
+    forgetMemory?: (userId: string, sessionId: string, turnId: string) => Promise<void>;
+    plan?: ReplacedReplyPlan;
+    beforeDelete?: () => Promise<void>;
+  },
+): Promise<ReplacedReplyPlan> {
+  const plan = hooks?.plan ?? (await inspectReplacedReply(input));
+  if (plan.turnIds.length === 0 && plan.messageIds.length === 0 && plan.fromSeq == null) {
+    return plan;
+  }
+  const retired = await deleteReplacedMessages({
     userId: input.userId,
     sessionId: input.sessionId,
     replacingTurnId: input.replacingTurnId,
-    replyAction: input.replyAction,
-    userContent: input.userContent,
-    replacedTurnId: input.replacedTurnId,
+    turnIds: plan.turnIds,
+    messageIds: plan.messageIds,
+    fromSeq: plan.fromSeq,
+    beforeDelete: hooks?.beforeDelete,
   });
-  if (!turnId && messageIds.length === 0) {
-    return { turnId: "", messageIds };
+  // Mark and delete committed together. A later memory failure must not
+  // reject the send: the old reply is gone, and a 503 would leave the
+  // conversation with neither that reply nor the new one.
+  // The replaced flag still blocks a deferred memory job from writing it back.
+  const fallbackCharacters = (input.characterIds || [])
+    .map((id) => String(id || "").trim())
+    .filter(Boolean);
+  for (const turn of retired) {
+    const characterIds = [
+      ...new Set([...characterIdsFromMetadata(turn.metadata), ...fallbackCharacters]),
+    ];
+    try {
+      if (hooks?.forgetMemory) {
+        await hooks.forgetMemory(input.userId, input.sessionId, turn.id);
+      } else {
+        if (characterIds.length > 0) {
+          await forgetTurnMemories(input.userId, characterIds, turn.id);
+        }
+        await stripSharedTurnFact(input.userId, input.sessionId, turn.id);
+      }
+    } catch (error) {
+      logger.warn(
+        { error, turnId: turn.id, replacingTurnId: input.replacingTurnId },
+        "Could not forget memory for a replaced reply; the reply is already removed",
+      );
+    }
   }
-  let metadata: Record<string, unknown> = {};
-  if (turnId) {
-    const replaced = await markChatTurnReplaced(turnId, input.userId, input.replacingTurnId);
-    metadata = replaced?.metadata ?? {};
-  }
-  await deleteReplacedMessages({
-    userId: input.userId,
-    sessionId: input.sessionId,
-    turnId,
-    messageIds,
-  });
-  const characterIds = [
-    ...new Set([
-      ...characterIdsFromMetadata(metadata),
-      ...(input.characterIds || []).map((id) => String(id || "").trim()).filter(Boolean),
-    ]),
-  ];
-  if (turnId && characterIds.length > 0) {
-    await forgetTurnMemories(input.userId, characterIds, turnId);
-    await stripSharedTurnFact(input.userId, input.sessionId, turnId);
-  }
-  return { turnId, messageIds };
+  return plan;
 }

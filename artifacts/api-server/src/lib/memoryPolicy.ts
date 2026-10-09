@@ -13,6 +13,7 @@
 import { createHash } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
+  chatTurns,
   companionMemories,
   db,
   ensureSchemaOnce,
@@ -778,6 +779,13 @@ export function factsWithoutTurn(facts: unknown[], turnId: string): unknown[] {
   });
 }
 
+export function factsWithoutTurns(facts: unknown[], turnIds: readonly string[]): unknown[] {
+  return turnIds.reduce<unknown[]>(
+    (kept, id) => factsWithoutTurn(kept, id),
+    Array.isArray(facts) ? facts.slice() : [],
+  );
+}
+
 export function appendTurnMemoryFact(
   existing: unknown[],
   turnFact: Record<string, unknown>,
@@ -1136,14 +1144,14 @@ export async function runDeferredMemoryPolicy(
     return;
   }
   if (!isMeaningfulExchange(userContent, assistantContent, { userOnly })) return;
+  await ensureSchemaOnce();
   if (turnId) {
-    const turn = await readChatTurn(turnId, userId).catch(() => null);
-    // A missing ledger row is a normal client turn. Only a turn the user
-    // already replaced must not become a memory.
+    // A missing ledger row is a normal client turn. A read failure stays
+    // queued so a replaced reply is not stored as if the row were absent.
+    const turn = await readChatTurn(turnId, userId);
     if (turn && turnMetadataReplaced(turn.metadata)) return;
   }
 
-  await ensureSchemaOnce();
   if (ctx.signal.aborted) {
     throw new DeferredLlmRetryError("memory policy waited for chat");
   }
@@ -1151,6 +1159,23 @@ export async function runDeferredMemoryPolicy(
   const relationship = await loadRelationshipState(characterId, userId);
   const now = new Date();
   const result = await withCompanionMemoryLock(userId, characterId, async (tx) => {
+    if (turnId) {
+      const [fresh] = await tx
+        .select({ metadata: chatTurns.metadata })
+        .from(chatTurns)
+        .where(and(eq(chatTurns.id, turnId), eq(chatTurns.userId, userId)))
+        .limit(1);
+      if (fresh && turnMetadataReplaced(fresh.metadata)) {
+        return {
+          facts: [],
+          candidates: [],
+          saved: [],
+          discarded: 0,
+          promoted: 0,
+          coreProposed: 0,
+        };
+      }
+    }
     const [existing] = await tx
       .select()
       .from(companionMemories)
