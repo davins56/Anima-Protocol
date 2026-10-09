@@ -23,12 +23,15 @@ vi.mock("@clerk/express", () => ({
 
 import storeRouter from "../src/routes/store";
 import {
+  chatTurns,
   db,
   userEntities,
   userProfiles,
   backfillChatMessages,
+  CHAT_MESSAGE,
 } from "@workspace/db";
 import { like } from "drizzle-orm";
+import { beginChatTurn, markChatTurnReplaced } from "../src/lib/chatTurnLedger";
 
 // All test users share a unique-per-run prefix so cleanup can target only this
 // run's rows and concurrent runs never collide.
@@ -51,6 +54,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   // Remove only the rows this run created.
+  await db.delete(chatTurns).where(like(chatTurns.userId, `${PREFIX}%`));
   await db.delete(userEntities).where(like(userEntities.userId, `${PREFIX}%`));
   await db.delete(userProfiles).where(like(userProfiles.userId, `${PREFIX}%`));
   await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -1027,6 +1031,118 @@ describe("chat messages stored as individual rows", () => {
     expect(after.find((m) => m.id === m1.id)).toBeUndefined();
   });
 
+  it("keeps a stored arrival when a replace restores the snapshot", async () => {
+    const U = user("msg_keep_arrivals");
+    const sid = "sess_keep_arrivals";
+    const userRow = (
+      await call(U, "POST", "/messages", {
+        session_id: sid,
+        message: { role: "user", content: "hi" },
+      })
+    ).json;
+    const reply = (
+      await call(U, "POST", "/messages", {
+        session_id: sid,
+        message: { role: "assistant", content: "old" },
+      })
+    ).json;
+    await call(U, "POST", "/messages/replace", {
+      session_id: sid,
+      messages: [userRow],
+    });
+    const fresh = (
+      await call(U, "POST", "/messages", {
+        session_id: sid,
+        message: { role: "user", content: "from another device" },
+      })
+    ).json;
+    const restored = (
+      await call(U, "POST", "/messages/replace", {
+        session_id: sid,
+        messages: [userRow, reply],
+        keep_arrivals: true,
+      })
+    ).json as Json[];
+    expect(restored.map((message) => message.id)).toEqual([
+      userRow.id,
+      reply.id,
+      fresh.id,
+    ]);
+    expect(restored.map((message) => message.content)).toEqual([
+      "hi",
+      "old",
+      "from another device",
+    ]);
+  });
+
+  it("keeps the prompt of a replaced turn and does not reinsert a later user line", async () => {
+    const U = user("msg_replaced_user");
+    const sid = "sess_replaced_user";
+    const promptTurn = `${PREFIX}prompt`;
+    const laterTurn = `${PREFIX}later`;
+    await beginChatTurn({
+      id: promptTurn,
+      sessionId: sid,
+      userId: U,
+      userContent: "prompt",
+      persistenceOwner: "client",
+    });
+    await beginChatTurn({
+      id: laterTurn,
+      sessionId: sid,
+      userId: U,
+      userContent: "later",
+      persistenceOwner: "client",
+    });
+    const prompt = (
+      await call(U, "POST", "/messages", {
+        session_id: sid,
+        message: { id: `${promptTurn}:user`, role: "user", content: "prompt", turn_id: promptTurn },
+      })
+    ).json;
+    await call(U, "POST", "/messages", {
+      session_id: sid,
+      message: {
+        id: `${promptTurn}:assistant`,
+        role: "assistant",
+        content: "old reply",
+        turn_id: promptTurn,
+      },
+    });
+    await call(U, "POST", "/messages", {
+      session_id: sid,
+      message: { id: `${laterTurn}:user`, role: "user", content: "later question", turn_id: laterTurn },
+    });
+    await markChatTurnReplaced(promptTurn, U, "new-turn");
+    await markChatTurnReplaced(laterTurn, U, "new-turn");
+    await call(U, "POST", "/messages/replace", {
+      session_id: sid,
+      messages: [prompt],
+    });
+    const stale = await call(U, "POST", "/messages/replace", {
+      session_id: sid,
+      messages: [
+        prompt,
+        {
+          id: `${promptTurn}:assistant`,
+          role: "assistant",
+          content: "old reply",
+          turn_id: promptTurn,
+        },
+        {
+          id: `${laterTurn}:user`,
+          role: "user",
+          content: "later question",
+          turn_id: laterTurn,
+        },
+        { id: "fresh-user", role: "user", content: "a new line" },
+      ],
+    });
+    expect(stale.status).toBe(200);
+    const list = (await call(U, "GET", `/messages?session_id=${sid}`)).json as Json[];
+    expect(list.map((message) => message.content)).toEqual(["prompt", "a new line"]);
+  });
+
   it("append after replace continues the seq from the surviving rows", async () => {
     const U = user("msg_replace_then_append");
     const sid = "sess_rta";
@@ -1089,6 +1205,48 @@ describe("chat messages stored as individual rows", () => {
       })
     ).json;
     expect(appended.seq).toBe(2);
+  });
+
+  it("merges blob messages that are not already rows instead of dropping them", async () => {
+    const U = user("msg_partial_migrate");
+    const session = (
+      await call(U, "POST", "/ChatSession", {
+        title: "Partial",
+        messages: [
+          { id: "blob_only", role: "user", content: "from the blob" },
+          { id: "already_row", role: "assistant", content: "already stored" },
+        ],
+      })
+    ).json;
+    // Insert the row directly. POST /messages would migrate the blob first and
+    // hide a migration that treats any existing row as a finished copy.
+    await db.insert(userEntities).values({
+      userId: U,
+      entityName: CHAT_MESSAGE,
+      entityId: "already_row",
+      data: {
+        id: "already_row",
+        session_id: session.id,
+        role: "assistant",
+        content: "already stored",
+        seq: 4,
+      },
+    });
+
+    const list = (
+      await call(U, "GET", `/messages?session_id=${session.id}`)
+    ).json as Json[];
+    expect(list.map((m) => m.content)).toEqual(["already stored", "from the blob"]);
+    expect(list.map((m) => m.seq)).toEqual([4, 5]);
+
+    const reread = (await call(U, "GET", `/ChatSession/${session.id}`)).json;
+    expect(reread.messages).toEqual([]);
+    expect(reread.messages_migrated).toBe(true);
+
+    const again = (
+      await call(U, "GET", `/messages?session_id=${session.id}`)
+    ).json as Json[];
+    expect(again.map((m) => m.id)).toEqual(list.map((m) => m.id));
   });
 
   it("concurrent appends to one session get unique, gapless seq", async () => {

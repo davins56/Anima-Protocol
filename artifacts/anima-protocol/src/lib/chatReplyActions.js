@@ -12,7 +12,9 @@ function listOf(messages) {
   return Array.isArray(messages) ? messages : [];
 }
 
-/** Turn id on a row, or the prefix of `turn_x:assistant:1`. */
+const MESSAGE_ROLE_SUFFIX = /:(?:user|assistant|event)(?::\d+)?$/;
+
+/** Turn id on a row, or the id with a `:user` / `:assistant` / `:event` suffix removed. */
 export function messageTurnId(message) {
   if (!message || typeof message !== "object") return "";
   if (message.turn_id) return String(message.turn_id);
@@ -22,8 +24,8 @@ export function messageTurnId(message) {
     return String(metadata.turn_id);
   }
   const id = message.id ? String(message.id) : "";
-  const marker = id.indexOf(":");
-  return marker > 0 ? id.slice(0, marker) : "";
+  const suffix = MESSAGE_ROLE_SUFFIX.exec(id);
+  return suffix && suffix.index > 0 ? id.slice(0, suffix.index) : "";
 }
 
 function isRetryDroppable(message) {
@@ -53,18 +55,149 @@ function replyRunStart(list, index) {
   return start;
 }
 
-function discardedReplyIds(list, start) {
-  const messageIds = [];
-  let turnId = "";
-  for (const message of list.slice(start)) {
-    if (!message || message.role === "user") continue;
-    if (message.id) messageIds.push(String(message.id));
-    if (!turnId) {
-      const id = messageTurnId(message);
-      if (id) turnId = id;
-    }
+function messageSeq(message) {
+  const seq = message?.seq;
+  if (typeof seq === "number" && Number.isFinite(seq)) return seq;
+  if (typeof seq === "string" && seq.trim() !== "" && Number.isFinite(Number(seq))) {
+    return Number(seq);
   }
-  return { replacedTurnId: turnId, replacedMessageIds: messageIds };
+  return null;
+}
+
+/** Ids, turn ids, and sequence of the suffix a retry or edit is dropping. */
+export function suffixReplacement(list, start) {
+  const messageIds = [];
+  const turnIds = [];
+  let fromMessageId = "";
+  let fromSeq = null;
+  const targetTurn = messageTurnId(list[start]);
+  for (const message of list.slice(start)) {
+    if (fromSeq == null) {
+      const seq = messageSeq(message);
+      if (seq != null) fromSeq = seq;
+    }
+    const turn = messageTurnId(message);
+    if (turn && !turnIds.includes(turn)) turnIds.push(turn);
+    if (!message?.id) continue;
+    const id = String(message.id);
+    messageIds.push(id);
+    if (!fromMessageId) fromMessageId = id;
+  }
+  return {
+    replacedTurnId: targetTurn,
+    replacedTurnIds: turnIds,
+    replacedFromSeq: fromSeq,
+    replacedFromMessageId: fromMessageId,
+    replacedMessageIds: messageIds,
+  };
+}
+
+function claimDiscardedId(set, counts, kind, id) {
+  const value = String(id || "");
+  if (!value) return;
+  set.add(value);
+  if (!counts) return;
+  const key = `${kind}:${value}`;
+  counts.set(key, (counts.get(key) || 0) + 1);
+}
+
+function releaseClaimedId(set, counts, kind, id) {
+  const value = String(id || "");
+  if (!value) return;
+  if (counts) {
+    const key = `${kind}:${value}`;
+    const next = (counts.get(key) || 0) - 1;
+    if (next > 0) {
+      counts.set(key, next);
+      return;
+    }
+    counts.delete(key);
+  }
+  set.delete(value);
+}
+
+/**
+ * Hide a reply the user is replacing, including every later turn in the suffix.
+ * `counts` keeps an id hidden until every owner has released it.
+ *
+ * @param {Set<string>} turnIds
+ * @param {Set<string>} messageIds
+ * @param {{ turnId?: string, turnIds?: string[], messageIds?: string[] }} [target]
+ * @param {Map<string, number>} [counts]
+ */
+export function rememberDiscardedIds(turnIds, messageIds, target = {}, counts) {
+  if (target.turnId) claimDiscardedId(turnIds, counts, "turn", target.turnId);
+  for (const id of target.turnIds || []) claimDiscardedId(turnIds, counts, "turn", id);
+  for (const id of target.messageIds || []) claimDiscardedId(messageIds, counts, "message", id);
+}
+
+/**
+ * Put those ids back when the replacement never starts, so the restored
+ * reply is visible again. Suffix ids have to be released too. An id another
+ * retry still owns stays hidden.
+ *
+ * @param {Set<string>} turnIds
+ * @param {Set<string>} messageIds
+ * @param {{ turnId?: string, turnIds?: string[], messageIds?: string[] }} [target]
+ * @param {Map<string, number>} [counts]
+ */
+export function releaseDiscardedIds(turnIds, messageIds, target = {}, counts) {
+  if (target.turnId) releaseClaimedId(turnIds, counts, "turn", target.turnId);
+  for (const id of target.turnIds || []) releaseClaimedId(turnIds, counts, "turn", id);
+  for (const id of target.messageIds || []) releaseClaimedId(messageIds, counts, "message", id);
+}
+
+/**
+ * Thread a hung retry keeps. The suffix starts at `start`, so later turns
+ * are not already "kept" when new arrivals are merged back in.
+ *
+ * @param {Array<Record<string, unknown>> | null | undefined} source
+ * @param {number} start
+ * @param {{ turnId?: string, messageIds?: string[] }} [target]
+ */
+export function threadForHungRetry(source, start, target = {}) {
+  const list = listOf(source);
+  if (start >= 0) return list.slice(0, start);
+  return messagesAfterDiscardingReply(list, target);
+}
+
+/**
+ * Messages that landed after the trim was planned. They stay unless they
+ * belong to the suffix being replaced. The same array comes back when
+ * nothing new arrived.
+ */
+export function keepArrivals(kept, latest, discarded) {
+  const base = listOf(kept);
+  const keptIds = new Set(
+    base.map((message) => (message?.id ? String(message.id) : "")).filter(Boolean),
+  );
+  const dropIds = new Set((discarded?.messageIds || []).map(String));
+  const dropTurns = new Set((discarded?.turnIds || []).map(String).filter(Boolean));
+  const extra = [];
+  for (const message of listOf(latest)) {
+    const id = message?.id ? String(message.id) : "";
+    if (id && (keptIds.has(id) || dropIds.has(id))) continue;
+    const turn = messageTurnId(message);
+    if (turn && dropTurns.has(turn)) continue;
+    extra.push(message);
+  }
+  if (extra.length === 0) return base;
+  return [...base, ...extra];
+}
+
+/**
+ * Thread written back when a replace fails. The pre-trim snapshot returns,
+ * plus any stored message that arrived after it. Rows with no id are not
+ * arrivals — they are the snapshot the trim already copied.
+ *
+ * @param {Array<Record<string, unknown>> | null | undefined} snapshot
+ * @param {Array<Record<string, unknown>> | null | undefined} latest
+ */
+export function restoredThread(snapshot, latest) {
+  const base = listOf(snapshot);
+  if (!Array.isArray(latest)) return base;
+  const identified = latest.filter((message) => message?.id);
+  return keepArrivals(base, identified, { messageIds: [], turnIds: [] });
 }
 
 function isPlaceholder(message) {
@@ -123,6 +256,9 @@ export function planRetryReply(messages, index) {
       userContent,
       discardedCount: 0,
       replacedTurnId: "",
+      replacedTurnIds: [],
+      replacedFromSeq: null,
+      replacedFromMessageId: "",
       replacedMessageIds: [],
     };
   }
@@ -139,7 +275,7 @@ export function planRetryReply(messages, index) {
     kept,
     userContent,
     discardedCount: list.length - start,
-    ...discardedReplyIds(list, start),
+    ...suffixReplacement(list, start),
   };
 }
 
@@ -177,23 +313,13 @@ export function planEditResend(messages, index, newText) {
   if (!content) return { ok: false, reason: "empty" };
   const target = list[index];
   if (!target || target.role !== "user") return { ok: false, reason: "not_user" };
-  const discarded = list.slice(index);
-  const replacedMessageIds = [];
-  let replacedTurnId = "";
-  for (const message of discarded) {
-    if (!message) continue;
-    if (message.id) replacedMessageIds.push(String(message.id));
-    if (!replacedTurnId) {
-      const id = messageTurnId(message);
-      if (id) replacedTurnId = id;
-    }
-  }
+  const suffix = suffixReplacement(list, index);
   return {
     ok: true,
     kept: list.slice(0, index),
     content,
     discardedCount: list.length - index,
-    replacedTurnId,
-    replacedMessageIds,
+    ...suffix,
+    replacedTurnId: messageTurnId(target),
   };
 }

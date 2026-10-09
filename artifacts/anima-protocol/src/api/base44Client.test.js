@@ -81,6 +81,47 @@ describe("ChatSession store wrapper", () => {
     });
   });
 
+  it("asks replace to keep arrivals and previews the saved tail", async () => {
+    const writes = [];
+    const savedMessages = [
+      { id: "u", role: "user", content: "hi" },
+      { id: "a", role: "assistant", content: "old" },
+      { id: "fresh", role: "user", content: "from another device" },
+    ];
+    global.fetch = vi.fn(async (url, options = {}) => {
+      const { pathname } = new URL(String(url), "http://localhost");
+      const body = options.body ? JSON.parse(String(options.body)) : {};
+      if (pathname === "/api/store/messages/replace") {
+        writes.push(body);
+        return Response.json(savedMessages);
+      }
+      if (pathname === "/api/store/ChatSession/sess-1") {
+        writes.push(body);
+        return Response.json({ id: "sess-1", ...body });
+      }
+      return Response.json({});
+    });
+
+    const saved = await base44.entities.ChatSession.update("sess-1", {
+      messages: [
+        { id: "u", role: "user", content: "hi" },
+        { id: "a", role: "assistant", content: "old" },
+      ],
+      keep_arrivals: true,
+    });
+
+    expect(writes[0]).toEqual({
+      session_id: "sess-1",
+      keep_arrivals: true,
+      messages: [
+        { id: "u", role: "user", content: "hi" },
+        { id: "a", role: "assistant", content: "old" },
+      ],
+    });
+    expect(writes[1]).toEqual({ last_message: "from another device" });
+    expect(saved.messages.map((message) => message.id)).toEqual(["u", "a", "fresh"]);
+  });
+
   it("fails fast when the store fetch timeout signal aborts", async () => {
     clearStoreCache();
     const abortErr = Object.assign(new Error("The operation was aborted"), {

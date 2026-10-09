@@ -766,7 +766,7 @@ describe("memory policy persistence", () => {
       id: turnId,
       sessionId: `${PREFIX}sess`,
       userId,
-      userContent: "I trust you with this completely.",
+      userContent: "My name is Sam.",
       persistenceOwner: "client",
       metadata: { character_ids: [characterId] },
     });
@@ -786,12 +786,11 @@ describe("memory policy persistence", () => {
         sessionId: `${PREFIX}sess`,
         turnId,
         companionName: "Aria",
-        userContent: "I trust you with this completely.",
-        assistantContent: "I am here with you.",
+        userContent: "My name is Sam.",
+        assistantContent: "I hear you.",
       },
       { signal: new AbortController().signal },
     );
-
     const [memory] = await db
       .select()
       .from(companionMemories)

@@ -23,7 +23,21 @@ vi.mock("@/api/base44Client", () => {
     },
     async update(id, data) {
       const existing = store(name).get(id) || { id };
-      const rec = { ...existing, ...data, id };
+      const next = { ...data };
+      if (next.keep_arrivals && Array.isArray(next.messages)) {
+        const ids = new Set(
+          next.messages
+            .map((message) => (message?.id ? String(message.id) : ""))
+            .filter(Boolean),
+        );
+        const extras = (Array.isArray(existing.messages) ? existing.messages : []).filter(
+          (message) => message?.id && !ids.has(String(message.id)),
+        );
+        if (extras.length > 0) next.messages = [...next.messages, ...extras];
+        next.last_message = String(next.messages[next.messages.length - 1]?.content || "").slice(0, 60);
+        delete next.keep_arrivals;
+      }
+      const rec = { ...existing, ...next, id };
       store(name).set(id, rec);
       return { ...rec };
     },
@@ -186,5 +200,36 @@ describe("editMessageFlow (rewrite his message and request a new reply)", () => 
     expect(sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ text: "HELLO", replyAction: "edit", history: [] }),
     );
+  });
+
+  it("keeps a message that arrived after the snapshot when the send cannot start", async () => {
+    const session = await makeSession([
+      { id: "u1", role: "user", content: "hello" },
+      { id: "a1", role: "assistant", content: "hi there" },
+    ]);
+    const setActiveSession = vi.fn();
+    const sendMessage = vi.fn().mockImplementation(async () => {
+      const current = await base44.entities.ChatSession.get(session.id);
+      await base44.entities.ChatSession.update(session.id, {
+        messages: [
+          ...(current.messages || []),
+          { id: "fresh", role: "user", content: "from another device" },
+        ],
+      });
+      return { started: false };
+    });
+
+    const result = await editMessageFlow(0, "HELLO", {
+      confirm: vi.fn().mockResolvedValue(true),
+      activeSession: session,
+      isLoading: false,
+      setActiveSession,
+      sendMessage,
+    });
+
+    expect(result.status).toBe("not_started");
+    const stored = await base44.entities.ChatSession.get(session.id);
+    expect(stored.messages.map((message) => message.id)).toEqual(["u1", "a1", "fresh"]);
+    expect(stored.last_message).toBe("from another device");
   });
 });
