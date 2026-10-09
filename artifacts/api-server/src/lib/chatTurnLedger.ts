@@ -205,40 +205,50 @@ export async function checkpointGeneratedTurn(input: {
  * The user asked for a new reply. Clear this turn so a late checkpoint or
  * persist cannot put the old text back on the thread or into memory.
  */
+type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Mark one turn replaced on the caller's transaction, which already holds its lock. */
+export async function markChatTurnReplacedOn(
+  tx: DbTransaction,
+  id: string,
+  userId: string,
+  supersededBy: string,
+): Promise<ChatTurn | null> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${id}`}))`);
+  const [row] = await tx
+    .select()
+    .from(chatTurns)
+    .where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId)))
+    .limit(1);
+  if (!row) return null;
+  const metadata = {
+    ...(row.metadata ?? {}),
+    replaced: true,
+    superseded_by: supersededBy,
+  };
+  const [updated] = await tx
+    .update(chatTurns)
+    .set({
+      metadata,
+      assistantContent: "",
+      status: row.status === "committed" ? row.status : "failed",
+      lastError: "Replaced by a new reply",
+      leaseExpiresAt: null,
+      waitingUntil: null,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId)))
+    .returning();
+  return updated ?? null;
+}
+
 export async function markChatTurnReplaced(
   id: string,
   userId: string,
   supersededBy: string,
 ): Promise<ChatTurn | null> {
   return withTransientDbRetry(() =>
-    db.transaction(async (tx) => {
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${id}`}))`);
-      const [row] = await tx
-        .select()
-        .from(chatTurns)
-        .where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId)))
-        .limit(1);
-      if (!row) return null;
-      const metadata = {
-        ...(row.metadata ?? {}),
-        replaced: true,
-        superseded_by: supersededBy,
-      };
-      const [updated] = await tx
-        .update(chatTurns)
-        .set({
-          metadata,
-          assistantContent: "",
-          status: row.status === "committed" ? row.status : "failed",
-          lastError: "Replaced by a new reply",
-          leaseExpiresAt: null,
-          waitingUntil: null,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId)))
-        .returning();
-      return updated ?? null;
-    }),
+    db.transaction((tx) => markChatTurnReplacedOn(tx, id, userId, supersededBy)),
   );
 }
 
@@ -260,7 +270,13 @@ export async function markTurnCommitted(
         committedAt: now,
         updatedAt: now,
       })
-      .where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId))),
+      .where(
+        and(
+          eq(chatTurns.id, id),
+          eq(chatTurns.userId, userId),
+          sql`coalesce(${chatTurns.metadata}->>'replaced', '') <> 'true'`,
+        ),
+      ),
   );
 }
 

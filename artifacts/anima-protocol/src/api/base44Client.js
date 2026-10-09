@@ -1205,13 +1205,15 @@ async function appendMessage(sessionId, message) {
 
 // Reconcile a full message array against the stored rows (diff by id). Backs the
 // ChatSession.update({messages}) shim so edit/delete/rewind keep working.
-async function replaceMessages(sessionId, messages) {
+async function replaceMessages(sessionId, messages, opts) {
+  const body = {
+    session_id: sessionId,
+    messages: Array.isArray(messages) ? messages : [],
+  };
+  if (opts?.keepArrivals) body.keep_arrivals = true;
   const res = await storeFetch('/messages/replace', {
     method: 'POST',
-    body: JSON.stringify({
-      session_id: sessionId,
-      messages: Array.isArray(messages) ? messages : [],
-    }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) await throwErr(res);
   bumpVersion('ChatMessage');
@@ -1480,8 +1482,13 @@ function entityStore(entityName) {
       },
       async update(id, data) {
         if (data && Object.prototype.hasOwnProperty.call(data, 'messages')) {
-          const { messages, ...rest } = data;
-          const savedMessages = await replaceMessages(id, messages);
+          const { messages, keep_arrivals: keepArrivals, ...rest } = data;
+          const savedMessages = await replaceMessages(id, messages, {
+            keepArrivals: Boolean(keepArrivals),
+          });
+          if (keepArrivals) {
+            rest.last_message = String(savedMessages[savedMessages.length - 1]?.content || '').slice(0, 60);
+          }
           const session =
             Object.keys(rest).length > 0
               ? await base.update(id, rest)

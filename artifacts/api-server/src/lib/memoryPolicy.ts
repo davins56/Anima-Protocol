@@ -877,6 +877,14 @@ export function userTurnNeedsPolicySave(
   return false;
 }
 
+/** Drop every listed turn. Locked markers and corrections stay with each one. */
+export function factsWithoutTurns(facts: unknown[], turnIds: readonly string[]): unknown[] {
+  return turnIds.reduce<unknown[]>(
+    (kept, id) => factsWithoutTurn(kept, id),
+    Array.isArray(facts) ? facts.slice() : [],
+  );
+}
+
 /**
  * Keep classified facts and forgotten markers when the turn crumb window
  * slides. Turn rows stay capped. Policy rows and tombstones are not evicted
@@ -1330,15 +1338,15 @@ export async function runDeferredMemoryPolicy(
     return;
   }
   if (!isMeaningfulExchange(userContent, assistantContent, { userOnly })) return;
+  await ensureSchemaOnce();
   if (!userOnly && turnId) {
-    const turn = await readChatTurn(turnId, userId).catch(() => null);
-    // A missing ledger row is a normal client turn. A full pass over a turn
-    // he already replaced must not store that reply. His own facts, if the
-    // job had not run yet, are saved by the user-only job on the new turn.
+    // A missing ledger row is a normal client turn. A read failure stays
+    // queued so a replaced reply is not stored as if the row were absent.
+    // A user-only job follows the retry chain below instead of stopping here.
+    const turn = await readChatTurn(turnId, userId);
     if (turn && turnMetadataReplaced(turn.metadata)) return;
   }
 
-  await ensureSchemaOnce();
   if (ctx.signal.aborted) {
     throw new DeferredLlmRetryError("memory policy waited for chat");
   }
@@ -1346,11 +1354,20 @@ export async function runDeferredMemoryPolicy(
   const relationship = await loadRelationshipState(characterId, userId);
   const now = new Date();
   const result = await withCompanionMemoryLock(userId, characterId, async (tx) => {
-    if (!userOnly && turnId) {
-      const metadata = await readTurnMetadata(tx, turnId, userId);
-      if (metadata && turnMetadataReplaced(metadata)) return null;
-    }
     let saveTurnId = turnId;
+    if (turnId && !userOnly) {
+      const metadata = await readTurnMetadata(tx, turnId, userId);
+      if (metadata && turnMetadataReplaced(metadata)) {
+        return {
+          facts: [],
+          candidates: [],
+          saved: [],
+          discarded: 0,
+          promoted: 0,
+          coreProposed: 0,
+        };
+      }
+    }
     if (userOnly && turnId) {
       const live = await turnIdForUserFactSave(tx, turnId, userId);
       if (!live) return null;

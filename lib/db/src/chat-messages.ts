@@ -79,6 +79,8 @@ export async function migrateSessionsMessages(
   const existingRows = await tx
     .select({
       sid: sql<string>`(${userEntities.data} ->> 'session_id')`,
+      entityId: userEntities.entityId,
+      seq: sql<string | null>`(${userEntities.data} ->> 'seq')`,
     })
     .from(userEntities)
     .where(
@@ -89,9 +91,24 @@ export async function migrateSessionsMessages(
       ),
     );
 
-  const sessionsWithExistingMessages = new Set(
-    existingRows.map((r) => String(r.sid)),
-  );
+  // One existing row is not a complete migration. Blob messages whose ids are
+  // not already rows are appended after the highest stored seq. A session with
+  // no rows still starts at seq 0.
+  const existingBySession = new Map<string, { ids: Set<string>; maxSeq: number | null }>();
+  for (const row of existingRows) {
+    const sid = String(row.sid);
+    let bucket = existingBySession.get(sid);
+    if (!bucket) {
+      bucket = { ids: new Set(), maxSeq: null };
+      existingBySession.set(sid, bucket);
+    }
+    bucket.ids.add(String(row.entityId));
+    const seqText = row.seq == null ? "" : String(row.seq);
+    const seq = Number(seqText);
+    if (seqText !== "" && Number.isFinite(seq)) {
+      bucket.maxSeq = bucket.maxSeq == null ? seq : Math.max(bucket.maxSeq, seq);
+    }
+  }
 
   const now = new Date().toISOString();
   const toInsert: Array<{
@@ -103,30 +120,33 @@ export async function migrateSessionsMessages(
 
   for (const session of unmigratedSessions) {
     const sid = session.entityId;
-    if (sessionsWithExistingMessages.has(sid)) continue;
-
     const data = session.data as MsgData;
     const blob = Array.isArray(data.messages) ? (data.messages as unknown[]) : [];
-    if (blob.length > 0) {
-      let i = 0;
-      for (const raw of blob) {
-        const msg = asObject(raw);
-        const id = String(msg.id ?? makeId());
-        toInsert.push({
-          userId,
-          entityName: CHAT_MESSAGE,
-          entityId: id,
-          data: {
-            ...msg,
-            id,
-            session_id: sid,
-            seq: i,
-            created_date: msg.created_date ?? msg.timestamp ?? now,
-            updated_date: now,
-          },
-        });
-        i += 1;
-      }
+    if (blob.length === 0) continue;
+
+    const existing = existingBySession.get(sid);
+    const seen = new Set(existing?.ids ?? []);
+    let nextSeq =
+      existing?.maxSeq == null ? (seen.size > 0 ? seen.size : 0) : existing.maxSeq + 1;
+    for (const raw of blob) {
+      const msg = asObject(raw);
+      const id = String(msg.id ?? makeId());
+      if (seen.has(id)) continue;
+      seen.add(id);
+      toInsert.push({
+        userId,
+        entityName: CHAT_MESSAGE,
+        entityId: id,
+        data: {
+          ...msg,
+          id,
+          session_id: sid,
+          seq: nextSeq,
+          created_date: msg.created_date ?? msg.timestamp ?? now,
+          updated_date: now,
+        },
+      });
+      nextSeq += 1;
     }
   }
 

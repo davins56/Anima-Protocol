@@ -172,12 +172,21 @@ import {
   dropAppliedComposerRestore,
   heldDraftStorageKey,
   isConversationBusyError,
+  isReplyReplaceFailed,
   liveTurnStillBlocking,
   omitTurnMessages,
   sessionControlsLocked,
   writeHeldDraft,
 } from "@/lib/heldChatSend";
-import { messagesAfterDiscardingReply, replyActionsAreLocked } from "@/lib/chatReplyActions";
+import {
+  keepArrivals,
+  messageTurnId,
+  releaseDiscardedIds,
+  rememberDiscardedIds,
+  replyActionsAreLocked,
+  threadForHungRetry,
+  suffixReplacement,
+} from "@/lib/chatReplyActions";
 import HeldOutgoingBubble from "@/components/chat/HeldOutgoingBubble";
 import {
   CONNECTION_DROPPED_STATUS,
@@ -239,11 +248,20 @@ import SystemDisclosure from "@/components/chat/SystemDisclosure";
 
 function replacementSendMetadata(messageData) {
   const turnId = String(messageData?.replacedTurnId || "").trim();
+  const fromId = String(messageData?.replacedFromMessageId || "").trim();
   const ids = Array.isArray(messageData?.replacedMessageIds)
     ? messageData.replacedMessageIds.map((id) => String(id || "").trim()).filter(Boolean).slice(0, 40)
     : [];
+  const turnIds = Array.isArray(messageData?.replacedTurnIds)
+    ? messageData.replacedTurnIds.map((id) => String(id || "").trim()).filter(Boolean).slice(0, 80)
+    : [];
+  const fromSeq = messageData?.replacedFromSeq;
+  const seq = typeof fromSeq === "number" && Number.isFinite(fromSeq) ? fromSeq : null;
   return {
     ...(turnId ? { replaced_turn_id: turnId } : {}),
+    ...(turnIds.length > 0 ? { replaced_turn_ids: turnIds } : {}),
+    ...(seq != null ? { replaced_from_seq: seq } : {}),
+    ...(fromId ? { replaced_from_message_id: fromId } : {}),
     ...(ids.length > 0 ? { replaced_message_ids: ids } : {}),
   };
 }
@@ -347,6 +365,8 @@ export default function Chat() {
   const lateReplyWatchRef = useRef(null);
   const supersededTurnIdsRef = useRef(new Set());
   const supersededMessageIdsRef = useRef(new Set());
+  const supersededCountsRef = useRef(new Map());
+  const hungRetryInFlightRef = useRef(false);
   /** Last LLM provider that served a reply: "openai" | "xai" | "gemini" | "kimi" | "gateway" */
   const [llmProvider, setLlmProvider] = useState(null);
   /** "anima" when the custom multi-model stack selected the backend */
@@ -1440,10 +1460,12 @@ export default function Chat() {
   };
 
   const rememberSupersededReply = (turnId, messageIds) => {
-    if (turnId) supersededTurnIdsRef.current.add(String(turnId));
-    for (const id of messageIds || []) {
-      if (id) supersededMessageIdsRef.current.add(String(id));
-    }
+    rememberDiscardedIds(
+      supersededTurnIdsRef.current,
+      supersededMessageIdsRef.current,
+      { turnId, messageIds },
+      supersededCountsRef.current,
+    );
   };
 
   const stitchThread = (live, snapshot, activeTurnId) =>
@@ -1452,29 +1474,130 @@ export default function Chat() {
       omitMessageIds: supersededMessageIdsRef.current,
     });
 
-  const retryHungCompanionReply = ({ sessionId, userContent, turnId, messageIds }) => {
-    rememberSupersededReply(turnId, messageIds);
-    const session = activeSessionRef.current;
-    const source = session && session.id === sessionId ? session.messages : [];
-    const trimmed = messagesAfterDiscardingReply(source, { turnId, messageIds });
-    const last_message = String(trimmed[trimmed.length - 1]?.content || "").slice(0, 60);
-    if (session && session.id === sessionId) {
-      setActiveSession((prev) =>
-        prev && prev.id === sessionId ? { ...prev, messages: trimmed, last_message } : prev,
+  const retryHungCompanionReply = async ({ sessionId, userContent, turnId, messageIds }) => {
+    if (replyActionsDisabledRef.current) return;
+    if (activeSessionRef.current?.id !== sessionId) return;
+    if (hungRetryInFlightRef.current) return;
+    hungRetryInFlightRef.current = true;
+    try {
+    const knownIds = (messageIds || []).map((id) => (id ? String(id) : "")).filter(Boolean);
+    // Hide the reply before the fresh read. The late-reply watcher can paint
+    // it while ChatSession.get is still pending.
+    rememberSupersededReply(turnId, knownIds);
+    const releaseKnown = () => {
+      releaseDiscardedIds(
+        supersededTurnIdsRef.current,
+        supersededMessageIdsRef.current,
+        { turnId, messageIds: knownIds },
+        supersededCountsRef.current,
       );
-      base44.entities.ChatSession.update(sessionId, {
-        messages: trimmed,
-        last_message,
-      }).catch(() => {});
+    };
+    let source = activeSessionRef.current.messages || [];
+    try {
+      const fresh = await base44.entities.ChatSession.get(sessionId);
+      if (Array.isArray(fresh?.messages)) source = fresh.messages;
+    } catch {
+      // The open thread is the fallback when the fresh read fails.
     }
-    void handleSendMessageRef.current?.({
+    if (replyActionsDisabledRef.current || activeSessionRef.current?.id !== sessionId) {
+      releaseKnown();
+      return;
+    }
+    const listedIds = knownIds;
+    const start = source.findIndex((message) => {
+      const id = message?.id ? String(message.id) : "";
+      if (id && listedIds.includes(id)) return true;
+      return Boolean(turnId && message?.role !== "user" && messageTurnId(message) === turnId);
+    });
+    const suffix = start >= 0 ? suffixReplacement(source, start) : null;
+    const trimmed = threadForHungRetry(source, start, { turnId, messageIds });
+    const last_message = String(trimmed[trimmed.length - 1]?.content || "").slice(0, 60);
+    const restore = async () => {
+      releaseDiscardedIds(
+        supersededTurnIdsRef.current,
+        supersededMessageIdsRef.current,
+        {
+          turnId,
+          turnIds: suffix?.replacedTurnIds || [],
+          messageIds: [...knownIds, ...(suffix?.replacedMessageIds || [])],
+        },
+        supersededCountsRef.current,
+      );
+      let restored = source;
+      try {
+        const saved = await base44.entities.ChatSession.update(sessionId, {
+          messages: source,
+          keep_arrivals: true,
+        });
+        if (Array.isArray(saved?.messages)) restored = saved.messages;
+      } catch {
+        // The pre-send snapshot is the fallback when the replace fails.
+      }
+      const preview = String(restored[restored.length - 1]?.content || "").slice(0, 60);
+      if (activeSessionRef.current?.id === sessionId) {
+        setActiveSession((prev) =>
+          prev && prev.id === sessionId ? { ...prev, messages: restored, last_message: preview } : prev,
+        );
+      }
+    };
+    rememberDiscardedIds(
+      supersededTurnIdsRef.current,
+      supersededMessageIdsRef.current,
+      {
+        turnIds: suffix?.replacedTurnIds || [],
+        messageIds: suffix?.replacedMessageIds || [],
+      },
+      supersededCountsRef.current,
+    );
+    setActiveSession((prev) =>
+      prev && prev.id === sessionId ? { ...prev, messages: trimmed, last_message } : prev,
+    );
+    let toSave = trimmed;
+    try {
+      const again = await base44.entities.ChatSession.get(sessionId);
+      if (Array.isArray(again?.messages)) {
+        toSave = keepArrivals(trimmed, again.messages, {
+          messageIds: suffix?.replacedMessageIds || listedIds,
+          turnIds: suffix?.replacedTurnIds || (turnId ? [turnId] : []),
+        });
+      }
+    } catch {
+      // The planned trim is still safe when the second read fails.
+    }
+    const savedPreview = String(toSave[toSave.length - 1]?.content || "").slice(0, 60);
+    if (toSave !== trimmed) {
+      setActiveSession((prev) =>
+        prev && prev.id === sessionId ? { ...prev, messages: toSave, last_message: savedPreview } : prev,
+      );
+    }
+    try {
+      await base44.entities.ChatSession.update(sessionId, {
+        messages: toSave,
+        last_message: savedPreview,
+      });
+    } catch {
+      await restore();
+      return;
+    }
+    if (activeSessionRef.current?.id !== sessionId) {
+      await restore();
+      return;
+    }
+    const result = await handleSendMessageRef.current?.({
       text: userContent || "",
       replyAction: "retry",
-      history: trimmed,
-      priorMessages: trimmed,
-      replacedTurnId: turnId || "",
-      replacedMessageIds: messageIds || [],
+      history: toSave,
+      priorMessages: source,
+      replacedTurnId: turnId || suffix?.replacedTurnId || "",
+      replacedTurnIds: suffix?.replacedTurnIds || (turnId ? [turnId] : []),
+      replacedFromSeq: suffix?.replacedFromSeq,
+      replacedFromMessageId: suffix?.replacedFromMessageId || "",
+      replacedMessageIds: suffix?.replacedMessageIds || messageIds || [],
     });
+    if (result?.started === false) await restore();
+    } finally {
+      hungRetryInFlightRef.current = false;
+    }
   };
 
   useEffect(() => {
@@ -1727,12 +1850,15 @@ export default function Chat() {
   };
 
   const handleSendMessage = async (message) => {
-    if (!activeSession?.id) return;
     const messageData = typeof message === "string" ? { text: message, attachments: undefined } : (message || {});
     const replyAction =
       messageData.replyAction === "retry" || messageData.replyAction === "edit"
         ? messageData.replyAction
         : null;
+    if (!activeSession?.id) {
+      if (replyAction) return { started: false };
+      return;
+    }
     const skipAffect = replyAction != null;
     const historyBase = Array.isArray(messageData.history) ? messageData.history : null;
     const decision = gateRef.current.accept(activeSession.id, message);
@@ -1772,6 +1898,7 @@ export default function Chat() {
       releaseChatSendLock(sendingRef, sendLock);
       gateRef.current.release("reply_finished", ownerToken);
       syncGate();
+      if (replyAction) return { started: false };
       return;
     }
     const sendSessionId = activeSession.id;
@@ -3175,6 +3302,21 @@ Return JSON:
       }
       }
     } catch (err) {
+      const restorePriorMessages = async () => {
+        if (!Array.isArray(messageData.priorMessages)) return;
+        let restored = messageData.priorMessages;
+        try {
+          const saved = await base44.entities.ChatSession.update(sendSessionId, {
+            messages: messageData.priorMessages,
+            keep_arrivals: true,
+          });
+          if (Array.isArray(saved?.messages)) restored = saved.messages;
+        } catch {
+          // The pre-trim snapshot is the fallback when the replace fails.
+        }
+        const restoredPreview = String(restored[restored.length - 1]?.content || "").slice(0, 60);
+        applyIfSendSession((prev) => ({ ...prev, messages: restored, last_message: restoredPreview }));
+      };
       if (settled) {
         console.error(err);
       } else if (isConversationBusyError(err)) {
@@ -3184,13 +3326,7 @@ Return JSON:
         terminalReason = "error";
         pendingRemoteSyncRef.current = false;
         if (replyAction && Array.isArray(messageData.priorMessages)) {
-          const prior = messageData.priorMessages;
-          const restoredPreview = String(prior[prior.length - 1]?.content || "").slice(0, 60);
-          applyIfSendSession((prev) => ({ ...prev, messages: prior, last_message: restoredPreview }));
-          base44.entities.ChatSession.update(sendSessionId, {
-            messages: prior,
-            last_message: restoredPreview,
-          }).catch(() => {});
+          await restorePriorMessages();
           gateRef.current.release("error", ownerToken);
           syncGate();
         } else {
@@ -3202,6 +3338,25 @@ Return JSON:
           syncGate();
           armConversationBusyRetry(sendSessionId);
         }
+      } else if (replyAction && isReplyReplaceFailed(err)) {
+        releaseDiscardedIds(
+          supersededTurnIdsRef.current,
+          supersededMessageIdsRef.current,
+          {
+            turnId: messageData.replacedTurnId,
+            turnIds: messageData.replacedTurnIds,
+            messageIds: messageData.replacedMessageIds,
+          },
+          supersededCountsRef.current,
+        );
+        lateTurnRef.current = null;
+        skipHeldFlush = true;
+        terminalReason = "error";
+        pendingRemoteSyncRef.current = false;
+        await restorePriorMessages();
+        gateRef.current.release("error", ownerToken);
+        syncGate();
+        return { started: false };
       } else {
       console.error(err);
       terminalReason = composerTerminalReason(err);
