@@ -1460,7 +1460,7 @@ export function answerLastMessageInstruction(
   const user = sanitizePromptName(userName) || "the user";
   const companion = sanitizePromptName(companionName);
   const voice = companion ? `in ${companion}'s own voice` : "in your own voice";
-  return `Answer ${user}'s last message first, directly, ${voice}. Stay on what they said. Bring in memories or lore only when they help answer it.`;
+  return `Answer ${user}'s last message first, directly, ${voice}. Stay on what they said. Continue that scene in your own first person. Do not introduce yourself or retell your past unless they asked. Bring in memories or lore only when they help answer it.`;
 }
 
 function userNameForAnswerInstruction(params: PromptBuilderParams): string {
@@ -1583,7 +1583,7 @@ function cutHistoryToMinExchanges(history: LlmChatMessage[]): LlmChatMessage[] {
 
 /** True for the one-line reminder placed immediately before the latest user turn. */
 export function isAnswerLastInstruction(content: string): boolean {
-  return /^Answer .+ last message first, directly, in .+ voice\. Stay on what they said\. Bring in memories or lore only when they help answer it\.$/.test(
+  return /^Answer .+ last message first, directly, in .+ voice\. Stay on what they said\. Continue that scene in your own first person\. Do not introduce yourself or retell your past unless they asked\. Bring in memories or lore only when they help answer it\.$/.test(
     content.trim(),
   );
 }
@@ -2011,12 +2011,13 @@ function buildCharacterDefinition(
   const parts: string[] = [];
   const name = String(character.name || "").trim();
 
-  // First person, and never "You are <name>". A 0.5B model copies that line
-  // onto the human and retells this backstory as theirs.
+  // Never "I am <name>" or "You are <name>". qwen2.5:0.5b reads either line
+  // aloud: the first becomes a card recitation, the second hands her name
+  // and past to the human.
   parts.push(
     name
-      ? `CHARACTER IDENTITY LOCK: I am ${name}. I speak in first person. The human is not me. Never call them by my name or give them my past.`
-      : `CHARACTER IDENTITY LOCK: I speak in first person as myself. The human is not me. Never give them my past.`,
+      ? `CHARACTER IDENTITY LOCK: Speak in first person as ${name}. The human is not me. Never call them by my name or give them my past. Do not introduce yourself or recite this card unless they ask.`
+      : `CHARACTER IDENTITY LOCK: Speak in first person as myself. The human is not me. Never give them my past. Do not introduce yourself or recite this card unless they ask.`,
   );
 
   if (character._isAnima && character.archetype) {
@@ -2051,8 +2052,10 @@ function buildCharacterDefinition(
     );
   }
   if (character.backstory) {
+    // A speakable label ("My own past:") is the line the 0.5B model paraphrases
+    // back as its reply. Keep the facts, and mark them as notes.
     parts.push(
-      `My own past: ${truncate(stripOutOfWorldLabels(character.backstory), Math.min(CHARACTER_BACKSTORY_MAX, maxChars / 3))}`,
+      `Private past (do not recite): ${truncate(stripOutOfWorldLabels(character.backstory), Math.min(CHARACTER_BACKSTORY_MAX, maxChars / 3))}`,
     );
   }
   if (character.speaking_style) {

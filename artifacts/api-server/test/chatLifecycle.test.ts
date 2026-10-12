@@ -245,7 +245,7 @@ describe("chat lifecycle", () => {
     expect(sent.messages?.at(-2)).toEqual({
       role: "system",
       content:
-        "Answer Mara's last message first, directly, in Aria's own voice. Stay on what they said. Bring in memories or lore only when they help answer it.",
+        "Answer Mara's last message first, directly, in Aria's own voice. Stay on what they said. Continue that scene in your own first person. Do not introduce yourself or retell your past unless they asked. Bring in memories or lore only when they help answer it.",
     });
     expect(sent.messages?.at(-1)).toEqual({ role: "user", content: "Hello" });
     expect(sent.maxTokens).toBe(1024);

@@ -55,10 +55,12 @@ describe("in-world companion prompt", () => {
     expect(first).toContain(ownGoals);
     expect(first.indexOf(IN_WORLD_VOICE)).toBeLessThan(first.indexOf(ownGoals));
     expect(first.indexOf(ownGoals)).toBeLessThan(first.indexOf("I stay myself"));
-    expect(first).toContain("I am Natasha Romanoff.");
+    expect(first).toContain("Speak in first person as Natasha Romanoff.");
+    expect(first).not.toContain("I am Natasha Romanoff.");
     expect(first).toContain("The human is not me.");
     expect(first).toContain("Never call them by my name or give them my past.");
-    expect(first).toContain("My own past:");
+    expect(first).toContain("Private past (do not recite):");
+    expect(first).not.toContain("My own past:");
     expect(first).not.toMatch(/You are Natasha/i);
     expect(first).not.toContain("You are Natasha Romanoff from");
     expect(first).not.toContain("The user has stepped into your world");
@@ -66,7 +68,7 @@ describe("in-world companion prompt", () => {
     expect(first).not.toMatch(/cinematic universe/i);
     expect(first).not.toMatch(/\bmcu\b/i);
     expect(first).toContain("IDENTITY: Never call yourself an AI");
-    expect(first.indexOf("I am Natasha Romanoff.")).toBeLessThan(
+    expect(first.indexOf("Speak in first person as Natasha Romanoff.")).toBeLessThan(
       first.indexOf("IDENTITY: Never call yourself an AI"),
     );
     expect(first.indexOf("IDENTITY: Never call yourself an AI")).toBeLessThan(
