@@ -1448,6 +1448,28 @@ function sanitizePromptName(value: unknown): string {
   return text.length > 80 ? text.slice(0, 80).trimEnd() : text;
 }
 
+/** Ordinary roleplay: stay in the scene. */
+const ANSWER_LAST_SCENE_STANCE = "Continue that scene in your own first person.";
+/** Crisis and direct-risk therapy: do not keep playing the scene. */
+const ANSWER_LAST_CARE_STANCE =
+  "Respond directly in your own first person. Do not play out a scene.";
+const ANSWER_LAST_TAIL =
+  "Do not introduce yourself or retell your past unless they asked. Bring in memories or lore only when they help answer it.";
+
+function escapeForAnswerLast(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Built from the same stance strings the instruction uses, so a wording
+ * edit cannot drop the line out of the Ollama closing-note fold.
+ */
+const ANSWER_LAST_INSTRUCTION_RE = new RegExp(
+  "^Answer .+ last message first, directly, in .+ voice\\. Stay on what they said\\. (?:" +
+    `${escapeForAnswerLast(ANSWER_LAST_SCENE_STANCE)}|${escapeForAnswerLast(ANSWER_LAST_CARE_STANCE)}` +
+    `) ${escapeForAnswerLast(ANSWER_LAST_TAIL)}$`,
+);
+
 /**
  * Static reminder placed after history, as its own system turn, immediately
  * before the latest user message. Names come from this turn; missing user
@@ -1463,10 +1485,8 @@ export function answerLastMessageInstruction(
   const user = sanitizePromptName(userName) || "the user";
   const companion = sanitizePromptName(companionName);
   const voice = companion ? `in ${companion}'s own voice` : "in your own voice";
-  const stance = careTurn
-    ? "Respond directly in your own first person. Do not play out a scene."
-    : "Continue that scene in your own first person.";
-  return `Answer ${user}'s last message first, directly, ${voice}. Stay on what they said. ${stance} Do not introduce yourself or retell your past unless they asked. Bring in memories or lore only when they help answer it.`;
+  const stance = careTurn ? ANSWER_LAST_CARE_STANCE : ANSWER_LAST_SCENE_STANCE;
+  return `Answer ${user}'s last message first, directly, ${voice}. Stay on what they said. ${stance} ${ANSWER_LAST_TAIL}`;
 }
 
 function userNameForAnswerInstruction(params: PromptBuilderParams): string {
@@ -1589,9 +1609,7 @@ function cutHistoryToMinExchanges(history: LlmChatMessage[]): LlmChatMessage[] {
 
 /** True for the one-line reminder placed immediately before the latest user turn. */
 export function isAnswerLastInstruction(content: string): boolean {
-  return /^Answer .+ last message first, directly, in .+ voice\. Stay on what they said\. (?:Continue that scene in your own first person|Respond directly in your own first person\. Do not play out a scene)\. Do not introduce yourself or retell your past unless they asked\. Bring in memories or lore only when they help answer it\.$/.test(
-    content.trim(),
-  );
+  return ANSWER_LAST_INSTRUCTION_RE.test(content.trim());
 }
 
 function isLocalClosingInstruction(content: string): boolean {
