@@ -899,7 +899,7 @@ describe("composeCompanionChatMessages", () => {
       {
         role: "system",
         content:
-          "Answer the user's last message first, directly, in Serenity's own voice. Stay on what they said. Bring in memories or lore only when they help answer it.",
+          "Answer the user's last message first, directly, in Serenity's own voice. Stay on what they said. Continue that scene in your own first person. Do not introduce yourself or retell your past unless they asked. Bring in memories or lore only when they help answer it.",
       },
       { role: "user", content: "Take me back there." },
     ]);

@@ -83,7 +83,9 @@ describe("slim companion persona", () => {
     const line = (prefix: string) =>
       prompt.split("\n").find((row) => row.startsWith(prefix)) ?? "";
     const personality = line("Personality: ").slice("Personality: ".length);
-    const backstory = line("My own past: ").slice("My own past: ".length);
+    const backstory = line("Private past (do not recite): ").slice(
+      "Private past (do not recite): ".length,
+    );
     const voice = line("Voice: ").slice("Voice: ".length);
     expect(personality.length).toBeLessThanOrEqual(500);
     expect(backstory.length).toBeLessThanOrEqual(500);
