@@ -379,8 +379,11 @@ describe("companion prompt prefill budget", () => {
 
     // Personality is capped, so a longer card does not grow the prompt.
     // Pad the user turn until only the last synchro sentence has to yield.
+    // The answer-last line sits in the same budget. A longer line moves the
+    // pad where only the last synchro sentence yields, so the search starts
+    // at an empty user turn.
     let packed = "";
-    for (let pad = 300; pad <= 520; pad += 20) {
+    for (let pad = 0; pad <= 800; pad += 20) {
       const text = build(pad)
         .map((message) => message.content)
         .join("\n");
@@ -510,7 +513,7 @@ describe("companion prompt prefill budget", () => {
 
   it("answers the last message by name, after mood and directly before the user turn", () => {
     const instruction =
-      "Answer Mara's last message first, directly, in Natasha Romanoff's own voice. Stay on what they said. Bring in memories or lore only when they help answer it.";
+      "Answer Mara's last message first, directly, in Natasha Romanoff's own voice. Stay on what they said. Continue that scene in your own first person. Do not introduce yourself or retell your past unless they asked. Bring in memories or lore only when they help answer it.";
     const input = {
       characters: [natasha],
       activeCharacter: natasha,
@@ -563,7 +566,7 @@ describe("companion prompt prefill budget", () => {
 
   it("keeps the answer-last instruction when the prompt is heavily over budget", () => {
     const instruction =
-      "Answer Mara's last message first, directly, in Natasha Romanoff's own voice. Stay on what they said. Bring in memories or lore only when they help answer it.";
+      "Answer Mara's last message first, directly, in Natasha Romanoff's own voice. Stay on what they said. Continue that scene in your own first person. Do not introduce yourself or retell your past unless they asked. Bring in memories or lore only when they help answer it.";
     const persona = "PERSONA_FULL_MARK the identity lock stays intact";
     const latest = "LATEST_WORST_MARK the newest line";
     const character = { ...natasha, personality: persona };
@@ -621,7 +624,7 @@ describe("companion prompt prefill budget", () => {
     expect(unnamed.at(-2)).toEqual({
       role: "system",
       content:
-        "Answer the user's last message first, directly, in your own voice. Stay on what they said. Bring in memories or lore only when they help answer it.",
+        "Answer the user's last message first, directly, in your own voice. Stay on what they said. Continue that scene in your own first person. Do not introduce yourself or retell your past unless they asked. Bring in memories or lore only when they help answer it.",
     });
 
     const operatorModel = emptyOperatorModel();
@@ -1265,7 +1268,8 @@ describe("companion prompt prefill budget", () => {
     expect(Buffer.compare(Buffer.from(stable), Buffer.from(String(iso[0]?.content)))).toBe(0);
     expect(stable).toBe(stable.trim());
     expect(stable).not.toMatch(/[ \t]$/m);
-    expect(stable).toContain("I am Natasha Romanoff.");
+    expect(stable).toContain("Speak in first person as Natasha Romanoff.");
+    expect(stable).not.toContain("I am Natasha Romanoff.");
     expect(stable).toContain("The human is not me.");
     expect(stable).toContain("City: Lyon");
     expect(stable).toContain("Bastille Day (2026-07-14)");

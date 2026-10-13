@@ -121,7 +121,7 @@ describe("ollamaChat adapter", () => {
   it("folds the answer-last line into the final user turn and leaves the user text last", () => {
     const userText = "What do you see?";
     const instruction =
-      "Answer Mara's last message first, directly, in Natasha's own voice. Stay on what they said. Bring in memories or lore only when they help answer it.";
+      "Answer Mara's last message first, directly, in Natasha's own voice. Stay on what they said. Continue that scene in your own first person. Do not introduce yourself or retell your past unless they asked. Bring in memories or lore only when they help answer it.";
     const avoid =
       "Your last draft repeated an earlier reply word for word. Write a new reply to the latest message. Do not reuse earlier wording.";
     const mapped = toOllamaMessages([
