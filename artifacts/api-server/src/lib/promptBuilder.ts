@@ -1452,15 +1452,21 @@ function sanitizePromptName(value: unknown): string {
  * Static reminder placed after history, as its own system turn, immediately
  * before the latest user message. Names come from this turn; missing user
  * name becomes "the user", and a missing companion name drops out of the line.
+ * A direct-risk therapy turn or a companion crisis turn must not be told to
+ * continue a scene; those turns already require a direct care reply.
  */
 export function answerLastMessageInstruction(
   userName: string | null | undefined,
   companionName: string | null | undefined,
+  careTurn = false,
 ): string {
   const user = sanitizePromptName(userName) || "the user";
   const companion = sanitizePromptName(companionName);
   const voice = companion ? `in ${companion}'s own voice` : "in your own voice";
-  return `Answer ${user}'s last message first, directly, ${voice}. Stay on what they said. Continue that scene in your own first person. Do not introduce yourself or retell your past unless they asked. Bring in memories or lore only when they help answer it.`;
+  const stance = careTurn
+    ? "Respond directly in your own first person. Do not play out a scene."
+    : "Continue that scene in your own first person.";
+  return `Answer ${user}'s last message first, directly, ${voice}. Stay on what they said. ${stance} Do not introduce yourself or retell your past unless they asked. Bring in memories or lore only when they help answer it.`;
 }
 
 function userNameForAnswerInstruction(params: PromptBuilderParams): string {
@@ -1583,7 +1589,7 @@ function cutHistoryToMinExchanges(history: LlmChatMessage[]): LlmChatMessage[] {
 
 /** True for the one-line reminder placed immediately before the latest user turn. */
 export function isAnswerLastInstruction(content: string): boolean {
-  return /^Answer .+ last message first, directly, in .+ voice\. Stay on what they said\. Continue that scene in your own first person\. Do not introduce yourself or retell your past unless they asked\. Bring in memories or lore only when they help answer it\.$/.test(
+  return /^Answer .+ last message first, directly, in .+ voice\. Stay on what they said\. (?:Continue that scene in your own first person|Respond directly in your own first person\. Do not play out a scene)\. Do not introduce yourself or retell your past unless they asked\. Bring in memories or lore only when they help answer it\.$/.test(
     content.trim(),
   );
 }
@@ -1745,9 +1751,15 @@ export function composeCompanionChatMessages(
   let history = keepStableHistoryBlock(
     normalizeRecentMessages(omitRetriedUserTurn(params.recentMessages, userTurn)),
   );
+  const careTurn =
+    Boolean(params.companionCrisis) ||
+    (params.modePolicy?.name === "therapy" || params.mode === "therapy"
+      ? Boolean(params.therapyAssessment?.requiresDirectSafetyResponse)
+      : false);
   const answerLast = answerLastMessageInstruction(
     userNameForAnswerInstruction(params),
     sections.companionName,
+    careTurn,
   );
   let moodText = sections.moodText;
   const budget = localPromptTokenBudget();
