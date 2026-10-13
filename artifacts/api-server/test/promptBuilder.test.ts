@@ -6,6 +6,8 @@ import {
   capRecentMessagesForLlm,
   composeCompanionChatMessages,
   composePrompt,
+  answerLastMessageInstruction,
+  isAnswerLastInstruction,
   omitRetriedUserTurn,
   COMPANION_MEMORY_TOP_K,
   CONTINUE_USER_TURN,
@@ -1464,5 +1466,14 @@ describe("operator model prompt injection", () => {
     });
     expect(prompt).toContain("CHARACTER IDENTITY LOCK");
     expect(prompt).not.toContain("OPERATOR MODEL");
+  });
+
+  it("recognizes both answer-last stances from the same wording", () => {
+    expect(isAnswerLastInstruction(answerLastMessageInstruction("Mara", "Natasha"))).toBe(true);
+    expect(isAnswerLastInstruction(answerLastMessageInstruction("Mara", "Natasha", true))).toBe(
+      true,
+    );
+    expect(isAnswerLastInstruction(answerLastMessageInstruction(null, null, true))).toBe(true);
+    expect(isAnswerLastInstruction("Continue that scene in your own first person.")).toBe(false);
   });
 });
