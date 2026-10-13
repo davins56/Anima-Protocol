@@ -379,8 +379,11 @@ describe("companion prompt prefill budget", () => {
 
     // Personality is capped, so a longer card does not grow the prompt.
     // Pad the user turn until only the last synchro sentence has to yield.
+    // The answer-last line sits in the same budget. A longer line moves the
+    // pad where only the last synchro sentence yields, so the search starts
+    // at an empty user turn.
     let packed = "";
-    for (let pad = 300; pad <= 520; pad += 20) {
+    for (let pad = 0; pad <= 800; pad += 20) {
       const text = build(pad)
         .map((message) => message.content)
         .join("\n");
