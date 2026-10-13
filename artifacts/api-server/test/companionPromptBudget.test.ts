@@ -1415,5 +1415,10 @@ describe("companion prompt prefill budget", () => {
     expect(crisisUser.indexOf("CRISIS RESPONSE POLICY")).toBeLessThan(
       crisisUser.indexOf("I am going to hurt myself tonight"),
     );
+    expect(crisisUser).toContain(
+      "Respond directly in your own first person. Do not play out a scene.",
+    );
+    expect(crisisUser).not.toContain("Continue that scene");
+    expect(String(calm.at(-1)?.content)).toContain("Continue that scene");
   });
 });
