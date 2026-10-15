@@ -55,7 +55,11 @@ export interface SelectNextSpeakerParams {
   forceCharacterId?: string | null;
   /** Limit the pool (e.g. intimacy-eligible ids from the client). */
   eligibleCharacterIds?: string[] | null;
-  /** Chance (0–1) to pick an out-of-turn interrupter. Default 0.35. */
+  /**
+   * Chance (0–1) to pick an out-of-turn interrupter. Default 0 — companions
+   * should answer what the user just said, not randomly cut in. Pass an
+   * explicit value (e.g. 0.35) to re-enable out-of-turn reactions.
+   */
   interruptChance?: number;
   /** Inject RNG for tests. */
   random?: () => number;
@@ -78,7 +82,7 @@ function normalizeName(value: unknown): string {
 }
 
 function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return value.replace(/[.*+?^${}()|[]\\]/g, "\\$&");
 }
 
 /** True when the user message clearly addresses this character. */
@@ -248,7 +252,7 @@ function pickInterrupter(
 ): SceneMindCharacter | null {
   const interruptPool = pool.filter(
     (c) => normalizeId(c.id) !== normalizeId(preferred.id),
-  );
+ );
   if (interruptPool.length === 0) return null;
 
   const recentMentioned = recentMessages
@@ -290,7 +294,7 @@ export async function selectNextSpeaker(
   const interruptChance =
     typeof params.interruptChance === "number"
       ? Math.min(1, Math.max(0, params.interruptChance))
-      : 0.35;
+      : 0;
 
   const speakers = recentAssistantSpeakers(recentMessages, characters);
   const last = speakers[speakers.length - 1] || null;
@@ -370,11 +374,9 @@ export async function selectNextSpeaker(
     reason = "least_recent";
   }
 
-  // 5) Interrupt / out-of-turn reaction
-  const allowInterrupt =
-    !params.isContinue &&
-    pool.length >= 2 &&
-    random() < interruptChance;
+  // 5) Interrupt / out-of-turn reaction — off by default so the companion
+  // answers the user's actual message instead of a random side character cutting in.
+  const allowInterrupt = !params.isContinue && pool.length >= 2 && random() < interruptChance;
 
   if (allowInterrupt) {
     const interrupter = pickInterrupter(
