@@ -17,6 +17,59 @@ export const UPLOADS_PATH_PREFIX = "/objects/uploads/";
 /** Hyperdrive + postgres.js drops large parameterized INSERTs; keep JPEGs small. */
 export const MAX_UPLOAD_BYTES = 1 * 1024 * 1024;
 export const MAX_UPLOAD_ERROR = "Image is too large (max 1 MB after compression)";
+export const IMAGE_TYPE_ERROR = "Use a JPEG, PNG, WebP, or HEIC photo.";
+export const IMAGE_MAGIC_ERROR =
+  "That file doesn't look like a JPEG, PNG, WebP, or HEIC photo.";
+
+const HEIC_BRANDS = new Set([
+  "heic",
+  "heix",
+  "hevc",
+  "hevx",
+  "heim",
+  "heis",
+  "heif",
+  "mif1",
+  "msf1",
+]);
+
+/** jpeg/png/webp/heic only. image/jpg is stored as image/jpeg. */
+export function canonicalImageType(contentType: string): string | null {
+  const type = contentType.toLowerCase().split(";")[0].trim();
+  if (type === "image/jpg" || type === "image/pjpeg" || type === "image/jpeg") {
+    return "image/jpeg";
+  }
+  if (type === "image/png" || type === "image/webp") return type;
+  if (type === "image/heic" || type === "image/heic-sequence") return "image/heic";
+  if (type === "image/heif" || type === "image/heif-sequence") return "image/heif";
+  return null;
+}
+
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] as const;
+
+export function imageBytesMatchType(contentType: string, bytes: Uint8Array): boolean {
+  if (contentType === "image/png") {
+    return (
+      bytes.length >= PNG_SIGNATURE.length &&
+      PNG_SIGNATURE.every((byte, index) => bytes[index] === byte)
+    );
+  }
+  if (contentType === "image/jpeg") {
+    return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  }
+  if (contentType === "image/webp") {
+    if (bytes.length < 12) return false;
+    const head = Buffer.from(bytes.subarray(0, 12)).toString("ascii");
+    return head.startsWith("RIFF") && head.slice(8, 12) === "WEBP";
+  }
+  if (contentType === "image/heic" || contentType === "image/heif") {
+    if (bytes.length < 12) return false;
+    const brandBox = Buffer.from(bytes.subarray(4, 12)).toString("ascii");
+    if (!brandBox.startsWith("ftyp")) return false;
+    return HEIC_BRANDS.has(brandBox.slice(4, 8).toLowerCase());
+  }
+  return false;
+}
 
 export type StoredImage = {
   id: string;
@@ -58,34 +111,35 @@ export function parseImagePayload(
     if (!match) {
       throw new Error("Invalid data URL. Expected data:<type>;base64,...");
     }
-    const contentType = match[1].toLowerCase();
-    const dataBase64 = match[2].replace(/\s+/g, "");
-    if (!contentType.startsWith("image/")) {
-      throw new Error("Only image uploads are supported");
-    }
-    const byteSize = Buffer.byteLength(dataBase64, "base64");
-    if (byteSize <= 0) throw new Error("Empty image payload");
-    if (byteSize > MAX_UPLOAD_BYTES) {
-      throw new Error(MAX_UPLOAD_ERROR);
-    }
-    return { contentType, dataBase64, byteSize };
+    return finishImagePayload(match[1], match[2].replace(/\s+/g, ""));
   }
 
-  const contentType = String(input.contentType || "")
-    .trim()
-    .toLowerCase();
-  const dataBase64 = String(input.dataBase64 || "")
-    .replace(/\s+/g, "")
-    .trim();
-  if (!contentType.startsWith("image/")) {
+  return finishImagePayload(
+    String(input.contentType || ""),
+    String(input.dataBase64 || "").replace(/\s+/g, "").trim(),
+  );
+}
+
+function finishImagePayload(
+  rawType: string,
+  dataBase64: string,
+): { contentType: string; dataBase64: string; byteSize: number } {
+  const declared = rawType.trim().toLowerCase();
+  if (!declared.startsWith("image/")) {
     throw new Error("Only image uploads are supported");
   }
   if (!dataBase64) throw new Error("Missing image data");
-  const byteSize = Buffer.byteLength(dataBase64, "base64");
+  const contentType = canonicalImageType(declared);
+  if (!contentType) throw new Error(IMAGE_TYPE_ERROR);
+  // Reject on the encoded length first so an oversized body is not decoded
+  // into a second buffer before the 1 MB cap.
+  const maxBase64Chars = Math.ceil(MAX_UPLOAD_BYTES / 3) * 4;
+  if (dataBase64.length > maxBase64Chars) throw new Error(MAX_UPLOAD_ERROR);
+  const bytes = Buffer.from(dataBase64, "base64");
+  const byteSize = bytes.byteLength;
   if (byteSize <= 0) throw new Error("Empty image payload");
-  if (byteSize > MAX_UPLOAD_BYTES) {
-    throw new Error(MAX_UPLOAD_ERROR);
-  }
+  if (byteSize > MAX_UPLOAD_BYTES) throw new Error(MAX_UPLOAD_ERROR);
+  if (!imageBytesMatchType(contentType, bytes)) throw new Error(IMAGE_MAGIC_ERROR);
   return { contentType, dataBase64, byteSize };
 }
 
@@ -97,7 +151,10 @@ export function httpStatusForUploadError(error: unknown): number {
     message.includes("Only image") ||
     message.includes("Invalid") ||
     message.includes("Missing") ||
-    message.includes("Empty")
+    message.includes("Empty") ||
+    message.includes("JPEG") ||
+    message.includes("doesn't look") ||
+    message.includes("does not look")
   ) {
     return 400;
   }
@@ -188,6 +245,18 @@ export async function storeUploadedImage(
     contentType: parsed.contentType,
     byteSize: parsed.byteSize,
   };
+}
+
+/** Owner-only. False when the row is missing or belongs to someone else. */
+export async function deleteUploadedImage(userId: string, id: string): Promise<boolean> {
+  const owner = String(userId || "").trim();
+  const imageId = String(id || "").trim();
+  if (!owner || !imageId) return false;
+  const result = await getPool().query(
+    `DELETE FROM uploaded_images WHERE id = $1 AND user_id = $2 RETURNING id`,
+    [imageId, owner],
+  );
+  return result.rows.length > 0;
 }
 
 export async function getUploadedImage(

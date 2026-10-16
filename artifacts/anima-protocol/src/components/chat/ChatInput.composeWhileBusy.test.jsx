@@ -8,16 +8,20 @@ import {
   readHeldDraft,
   writeHeldDraft,
 } from "@/lib/heldChatSend";
+import { toast } from "sonner";
+import { base44 } from "@/api/base44Client";
 import ChatInput from "./ChatInput";
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 vi.mock("@/api/base44Client", () => ({
   base44: { integrations: { Core: { UploadFile: vi.fn() } } },
+  deleteUploadedFile: vi.fn(),
 }));
 vi.mock("@/api/pdfDocuments", () => ({
   pdfProgressLabel: () => "",
   uploadPdfDocument: vi.fn(),
   deletePdfDocument: vi.fn(),
+  openPdfDocument: vi.fn(),
 }));
 vi.mock("@/components/pdf/PdfFileChip", () => ({ default: () => null }));
 
@@ -249,6 +253,32 @@ describe("ChatInput while a reply is in flight", () => {
     );
     expect(box.value).toBe("already typing\n\nyou there?");
     expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("accepts a jpeg photo and refuses a gif", async () => {
+    toast.error.mockClear();
+    base44.integrations.Core.UploadFile.mockClear();
+    base44.integrations.Core.UploadFile.mockResolvedValue({
+      file_url: "/api/storage/objects/uploads/pic",
+    });
+    render(<ChatInput onSend={vi.fn()} />);
+    const photo = screen.getByLabelText("Attach a photo");
+    expect(photo.getAttribute("accept")).toContain("image/*");
+    expect(photo.getAttribute("accept")).toContain(".heic");
+    expect(photo.hasAttribute("capture")).toBe(false);
+    expect(screen.getByLabelText("Attach a PDF").getAttribute("accept")).toContain("pdf");
+
+    const gif = new File([new Uint8Array([1, 2, 3])], "anim.gif", { type: "image/gif" });
+    Object.defineProperty(photo, "files", { configurable: true, value: [gif] });
+    fireEvent.change(photo);
+    expect(toast.error).toHaveBeenCalled();
+    expect(base44.integrations.Core.UploadFile).not.toHaveBeenCalled();
+
+    const jpeg = new File([new Uint8Array([1, 2, 3])], "shot.jpg", { type: "image/jpeg" });
+    Object.defineProperty(photo, "files", { configurable: true, value: [jpeg] });
+    fireEvent.change(photo);
+    expect(await screen.findByAltText("preview")).toBeTruthy();
+    expect(base44.integrations.Core.UploadFile).toHaveBeenCalledWith({ file: jpeg });
   });
 
   it("stays locked when a reply is in flight and composeWhileBusy is off", () => {

@@ -20,6 +20,7 @@ import {
 import { PdfUploadError } from "./errors";
 import { decodePdfBase64, extractPdfPages } from "./extract";
 import {
+  PDF_FILE_PART_BYTES,
   PDF_MAX_FILES_PER_CHAT,
   PDF_MAX_FILES_PER_LORE,
 } from "./limits";
@@ -34,9 +35,11 @@ export type PdfDocumentRecord = {
   characterId: string | null;
   byteSize: number;
   pageCount: number;
-  chunkCount: number;
-  createdAt: string;
-};
+    chunkCount: number;
+    /** True when the original bytes are in pdf_file_parts. */
+    hasFile: boolean;
+    createdAt: string;
+  };
 
 type DocumentRow = {
   id: string;
@@ -48,6 +51,7 @@ type DocumentRow = {
   page_count: number | string;
   chunk_count: number | string;
   created_at: Date | string;
+  has_file?: boolean | string | number | null;
 };
 
 function isMissingPdfTable(error: unknown): boolean {
@@ -58,7 +62,7 @@ function isMissingPdfTable(error: unknown): boolean {
       : "";
   return (
     code === "42P01" ||
-    /relation ["']?(pdf_documents|pdf_chunks)["']? does not exist/i.test(message)
+    /relation ["']?(pdf_documents|pdf_chunks|pdf_file_parts)["']? does not exist/i.test(message)
   );
 }
 
@@ -95,6 +99,7 @@ function mapDocument(row: DocumentRow): PdfDocumentRecord {
     byteSize: Number(row.byte_size) || 0,
     pageCount: Number(row.page_count) || 0,
     chunkCount: Number(row.chunk_count) || 0,
+    hasFile: row.has_file === true || row.has_file === "t" || row.has_file === 1,
     createdAt:
       row.created_at instanceof Date
         ? row.created_at.toISOString()
@@ -121,6 +126,61 @@ async function userOwnsCompanion(userId: string, characterId: string): Promise<b
     [userId, characterId],
   );
   return rows.length > 0;
+}
+
+async function savePdfFileParts(
+  userId: string,
+  documentId: string,
+  bytes: Uint8Array,
+): Promise<void> {
+  let index = 0;
+  for (let offset = 0; offset < bytes.byteLength; offset += PDF_FILE_PART_BYTES) {
+    const slice = bytes.subarray(offset, offset + PDF_FILE_PART_BYTES);
+    await queryRows(
+      `INSERT INTO pdf_file_parts (document_id, user_id, part_index, data)
+       VALUES ($1, $2, $3, decode($4, 'base64'))`,
+      [documentId, userId, index, Buffer.from(slice).toString("base64")],
+    );
+    index += 1;
+  }
+}
+
+export type StoredPdfFile = {
+  filename: string;
+  /** Null when this row was saved before original bytes were kept. */
+  bytes: Buffer | null;
+};
+
+/** Owner-only. Null when the document is not theirs. */
+export async function readPdfFile(
+  userId: string,
+  documentId: unknown,
+): Promise<StoredPdfFile | null> {
+  const owner = safeEntityId(userId);
+  const id = safeEntityId(documentId);
+  if (!owner || !id) return null;
+  return withPdfTable(async () => {
+    const docs = await queryRows<{ filename: string }>(
+      `SELECT filename FROM pdf_documents WHERE id = $1 AND user_id = $2 LIMIT 1`,
+      [id, owner],
+    );
+    const doc = docs[0];
+    if (!doc) return null;
+    const parts = await queryRows<{ data_base64: string }>(
+      `SELECT replace(encode(data, 'base64'), chr(10), '') AS data_base64
+       FROM pdf_file_parts
+       WHERE document_id = $1 AND user_id = $2
+       ORDER BY part_index ASC`,
+      [id, owner],
+    );
+    if (!parts.length) return { filename: doc.filename, bytes: null };
+    return {
+      filename: doc.filename,
+      bytes: Buffer.concat(
+        parts.map((part) => Buffer.from(String(part.data_base64 || ""), "base64")),
+      ),
+    };
+  });
 }
 
 async function countScoped(
@@ -264,7 +324,16 @@ export async function createPdfDocument(input: {
          ) VALUES ${rows.join(", ")}`,
         values,
       );
+      await savePdfFileParts(userId, id, bytes);
     } catch (error) {
+      await queryRows(
+        `DELETE FROM pdf_file_parts WHERE document_id = $1 AND user_id = $2`,
+        [id, userId],
+      ).catch(() => {});
+      await queryRows(
+        `DELETE FROM pdf_chunks WHERE document_id = $1 AND user_id = $2`,
+        [id, userId],
+      ).catch(() => {});
       await queryRows(
         `DELETE FROM pdf_documents WHERE id = $1 AND user_id = $2`,
         [id, userId],
@@ -281,6 +350,7 @@ export async function createPdfDocument(input: {
       byteSize,
       pageCount: extracted.pageCount,
       chunkCount: chunks.length,
+      hasFile: true,
       createdAt: new Date().toISOString(),
     };
   });
@@ -298,13 +368,18 @@ export async function listPdfDocuments(input: {
   const ownerId =
     scope === "chat" ? safeEntityId(input.sessionId) : safeEntityId(input.characterId);
   if (!ownerId) return [];
+  const columns = `id, filename, scope, session_id, character_id, byte_size, page_count, chunk_count, created_at,
+         EXISTS (
+           SELECT 1 FROM pdf_file_parts p
+           WHERE p.document_id = pdf_documents.id AND p.user_id = pdf_documents.user_id
+         ) AS has_file`;
   const sql =
     scope === "chat"
-      ? `SELECT id, filename, scope, session_id, character_id, byte_size, page_count, chunk_count, created_at
+      ? `SELECT ${columns}
          FROM pdf_documents
          WHERE user_id = $1 AND scope = 'chat' AND session_id = $2
          ORDER BY created_at ASC`
-      : `SELECT id, filename, scope, session_id, character_id, byte_size, page_count, chunk_count, created_at
+      : `SELECT ${columns}
          FROM pdf_documents
          WHERE user_id = $1 AND scope = 'lore' AND character_id = $2
          ORDER BY created_at ASC`;
@@ -326,7 +401,11 @@ export async function renamePdfDocument(input: {
       `UPDATE pdf_documents
        SET filename = $3, updated_at = now()
        WHERE id = $1 AND user_id = $2
-       RETURNING id, filename, scope, session_id, character_id, byte_size, page_count, chunk_count, created_at`,
+       RETURNING id, filename, scope, session_id, character_id, byte_size, page_count, chunk_count, created_at,
+         EXISTS (
+           SELECT 1 FROM pdf_file_parts p
+           WHERE p.document_id = pdf_documents.id AND p.user_id = pdf_documents.user_id
+         ) AS has_file`,
       [documentId, userId, filename],
     );
     if (!updated[0]) return null;
@@ -349,6 +428,10 @@ export async function deletePdfDocument(input: {
   if (!userId || !documentId) return false;
   return withPdfTable(async () => {
     await queryRows(
+      `DELETE FROM pdf_file_parts WHERE document_id = $1 AND user_id = $2`,
+      [documentId, userId],
+    );
+    await queryRows(
       `DELETE FROM pdf_chunks WHERE document_id = $1 AND user_id = $2`,
       [documentId, userId],
     );
@@ -368,6 +451,14 @@ export async function deleteLorePdfsForCharacter(
   const character = safeEntityId(characterId);
   if (!owner || !character) return;
   await withPdfTable(async () => {
+    await queryRows(
+      `DELETE FROM pdf_file_parts
+       WHERE user_id = $1 AND document_id IN (
+         SELECT id FROM pdf_documents
+         WHERE user_id = $1 AND scope = 'lore' AND character_id = $2
+       )`,
+      [owner, character],
+    );
     await queryRows(
       `DELETE FROM pdf_chunks
        WHERE user_id = $1 AND document_id IN (
@@ -393,6 +484,14 @@ export async function deleteChatPdfsForSession(
   if (!owner || !session) return;
   await withPdfTable(async () => {
     await queryRows(
+      `DELETE FROM pdf_file_parts
+       WHERE user_id = $1 AND document_id IN (
+         SELECT id FROM pdf_documents
+         WHERE user_id = $1 AND scope = 'chat' AND session_id = $2
+       )`,
+      [owner, session],
+    );
+    await queryRows(
       `DELETE FROM pdf_chunks
        WHERE user_id = $1 AND document_id IN (
          SELECT id FROM pdf_documents
@@ -412,6 +511,7 @@ export async function deleteAllPdfDocumentsForUser(userId: string): Promise<void
   const owner = safeEntityId(userId);
   if (!owner) return;
   await withPdfTable(async () => {
+    await queryRows(`DELETE FROM pdf_file_parts WHERE user_id = $1`, [owner]);
     await queryRows(`DELETE FROM pdf_chunks WHERE user_id = $1`, [owner]);
     await queryRows(`DELETE FROM pdf_documents WHERE user_id = $1`, [owner]);
   });

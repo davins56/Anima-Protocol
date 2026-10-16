@@ -14,8 +14,8 @@ import pdfRouter from "../src/routes/pdf";
 import storeRouter from "../src/routes/store";
 import { retrievePdfContext } from "../src/lib/pdf/store";
 import { pdfWordCount } from "../src/lib/pdf/context";
-import { PDF_CONTEXT_WORD_BUDGET } from "../src/lib/pdf/limits";
-import { pdfBase64 } from "./pdfFixture";
+import { PDF_CONTEXT_WORD_BUDGET, PDF_FILE_PART_BYTES } from "../src/lib/pdf/limits";
+import { buildTextPdf, pdfBase64 } from "./pdfFixture";
 
 const PREFIX = `pdf_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_`;
 const user = (name: string) => `${PREFIX}${name}`;
@@ -35,6 +35,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await getPool()
+    .query(`DELETE FROM pdf_file_parts WHERE user_id LIKE $1`, [`${PREFIX}%`])
+    .catch(() => {});
   await getPool()
     .query(`DELETE FROM pdf_chunks WHERE user_id LIKE $1`, [`${PREFIX}%`])
     .catch(() => {});
@@ -150,6 +153,11 @@ describe("PDF documents", () => {
 
     const removed = await call(owner, "DELETE", `/pdfs/${created.json.file.id}`);
     expect(removed.status).toBe(204);
+    const parts = await getPool().query(
+      `SELECT count(*)::int AS n FROM pdf_file_parts WHERE user_id = $1 AND document_id = $2`,
+      [owner, created.json.file.id],
+    );
+    expect(Number(parts.rows[0]?.n)).toBe(0);
     const chunks = await getPool().query(
       `SELECT count(*)::int AS n FROM pdf_chunks WHERE user_id = $1 AND document_id = $2`,
       [owner, created.json.file.id],
@@ -206,6 +214,73 @@ describe("PDF documents", () => {
     expect(created.status).toBe(422);
     expect(created.json.code).toBe("pdf_no_text");
     expect(String(created.json.error)).toMatch(/no extractable text/i);
+  });
+
+  it("serves the original PDF to the owner only", async () => {
+    const owner = user("reader");
+    const other = user("reader-other");
+    const sessionId = `${PREFIX}readsess`;
+    await seedEntity(owner, "ChatSession", sessionId);
+    const pages = ["The harbor bell rings at dawn."];
+    const original = Buffer.from(pdfBase64(pages), "base64");
+    const created = await call(owner, "POST", "/pdfs", {
+      filename: "notes.pdf",
+      scope: "chat",
+      session_id: sessionId,
+      dataBase64: original.toString("base64"),
+    });
+    expect(created.status).toBe(201);
+    const id = created.json.file.id as string;
+
+    const anon = await fetch(`${baseUrl}/pdfs/${id}/file`);
+    expect(anon.status).toBe(401);
+
+    const stolen = await fetch(`${baseUrl}/pdfs/${id}/file`, {
+      headers: { "x-test-user": other },
+    });
+    expect(stolen.status).toBe(404);
+
+    const opened = await fetch(`${baseUrl}/pdfs/${id}/file`, {
+      headers: { "x-test-user": owner },
+    });
+    expect(opened.status).toBe(200);
+    expect(opened.headers.get("content-type")).toMatch(/application\/pdf/);
+    expect(opened.headers.get("content-disposition")).toContain("notes.pdf");
+    const body = Buffer.from(await opened.arrayBuffer());
+    expect(body.equals(original)).toBe(true);
+    expect(created.json.file.hasFile).toBe(true);
+  });
+
+  it("reassembles a PDF that spans more than one stored part", async () => {
+    const owner = user("parts");
+    const sessionId = `${PREFIX}partsess`;
+    await seedEntity(owner, "ChatSession", sessionId);
+    const original = Buffer.from(
+      buildTextPdf(["The harbor bell rings at dawn."], {
+        padBytes: PDF_FILE_PART_BYTES + 64,
+      }),
+    );
+    expect(original.byteLength).toBeGreaterThan(PDF_FILE_PART_BYTES);
+    const created = await call(owner, "POST", "/pdfs", {
+      filename: "long.pdf",
+      scope: "chat",
+      session_id: sessionId,
+      dataBase64: original.toString("base64"),
+    });
+    expect(created.status).toBe(201);
+    const id = created.json.file.id as string;
+    const parts = await getPool().query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM pdf_file_parts WHERE user_id = $1 AND document_id = $2`,
+      [owner, id],
+    );
+    expect(Number(parts.rows[0]?.n)).toBeGreaterThan(1);
+
+    const opened = await fetch(`${baseUrl}/pdfs/${id}/file`, {
+      headers: { "x-test-user": owner },
+    });
+    expect(opened.status).toBe(200);
+    const body = Buffer.from(await opened.arrayBuffer());
+    expect(body.equals(original)).toBe(true);
   });
 
   it("rejects an anonymous upload", async () => {

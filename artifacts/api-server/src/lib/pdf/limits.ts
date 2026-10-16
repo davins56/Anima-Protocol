@@ -20,6 +20,13 @@
 export const PDF_MAX_BYTES = 4 * 1024 * 1024;
 
 /**
+ * Original PDF bytes are stored in Postgres so a chat chip can open the file.
+ * One 4 MB parameterized INSERT is dropped by Hyperdrive, so the file is
+ * split into 512 KiB parts (the same size as own-model weight chunks).
+ */
+export const PDF_FILE_PART_BYTES = 512 * 1024;
+
+/**
  * Page cap. 80 pages of text near the extracted-character cap finishes in
  * well under a second, inside the Worker CPU budget, so the page count stays.
  */
