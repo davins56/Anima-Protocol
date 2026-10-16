@@ -430,8 +430,9 @@ const tsvector = customType<{ data: string }>({
 
 /**
  * PDF text the user shared in a chat or attached to a companion's lore.
- * The original file bytes are not stored. `pdf_chunks.search_vector` is
- * filled at insert time for Postgres full-text retrieval.
+ * Original bytes are in `pdf_file_parts` (512 KiB each) so the chat chip
+ * can open the file. `pdf_chunks.search_vector` is filled at insert time
+ * for Postgres full-text retrieval.
  */
 export const pdfDocuments = pgTable(
   "pdf_documents",
@@ -499,6 +500,29 @@ const bytea = customType<{ data: Buffer }>({
     return "bytea";
   },
 });
+
+/**
+ * Original PDF bytes, 512 KiB per row. Hyperdrive drops a single multi-megabyte
+ * INSERT, so the file is split the same way as own-model weights.
+ */
+export const pdfFileParts = pgTable(
+  "pdf_file_parts",
+  {
+    documentId: text("document_id").notNull(),
+    userId: text("user_id").notNull(),
+    partIndex: integer("part_index").notNull(),
+    data: bytea("data").notNull(),
+  },
+  (t) => ({
+    pdfFilePartsPk: primaryKey({
+      name: "pdf_file_parts_pk",
+      columns: [t.documentId, t.partIndex],
+    }),
+    pdfFilePartsUserIdx: index("pdf_file_parts_user_idx").on(t.userId, t.documentId),
+  }),
+);
+
+export type PdfFilePart = typeof pdfFileParts.$inferSelect;
 
 /**
  * Own-model weights: one 512 KiB chunk per row. Must match BLOBS_DDL in

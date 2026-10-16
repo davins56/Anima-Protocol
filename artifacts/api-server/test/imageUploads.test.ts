@@ -27,13 +27,46 @@ describe("imageUploads helpers", () => {
     expect(parsed.byteSize).toBeGreaterThan(0);
   });
 
-  it("parses raw base64 + contentType", () => {
+  it("parses jpeg, webp, and heic, and rejects a type that does not match the bytes", () => {
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
     const parsed = parseImagePayload({
-      contentType: "image/jpeg",
-      dataBase64: Buffer.from("hello").toString("base64"),
+      contentType: "image/jpg",
+      dataBase64: jpeg.toString("base64"),
     });
     expect(parsed.contentType).toBe("image/jpeg");
-    expect(parsed.byteSize).toBe(5);
+    expect(parsed.byteSize).toBe(jpeg.length);
+
+    const webp = Buffer.concat([
+      Buffer.from("RIFF"),
+      Buffer.from([16, 0, 0, 0]),
+      Buffer.from("WEBP"),
+    ]);
+    expect(
+      parseImagePayload({ contentType: "image/webp", dataBase64: webp.toString("base64") })
+        .contentType,
+    ).toBe("image/webp");
+
+    const heic = Buffer.alloc(16);
+    heic.writeUInt32BE(16, 0);
+    heic.write("ftyp", 4, "ascii");
+    heic.write("heic", 8, "ascii");
+    expect(
+      parseImagePayload({ contentType: "image/heic", dataBase64: heic.toString("base64") })
+        .contentType,
+    ).toBe("image/heic");
+
+    expect(() =>
+      parseImagePayload({
+        contentType: "image/jpeg",
+        dataBase64: Buffer.from("hello").toString("base64"),
+      }),
+    ).toThrow(/doesn't look like/i);
+    expect(() =>
+      parseImagePayload({
+        contentType: "image/gif",
+        dataBase64: Buffer.from("GIF89a").toString("base64"),
+      }),
+    ).toThrow(/JPEG, PNG, WebP, or HEIC/i);
   });
 
   it("rejects non-images and empty payloads", () => {

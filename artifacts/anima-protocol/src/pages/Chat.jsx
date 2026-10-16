@@ -1882,12 +1882,26 @@ export default function Chat() {
 
     const attachments = messageData.attachments || [];
     const pdfAttachments = attachments.filter((item) => item?.type === "pdf");
+    const imageAttachments = attachments.filter((item) => item?.type === "image");
     let content = messageData.text || "";
-    if (!content.trim() && pdfAttachments.length) {
+    if (!content.trim() && pdfAttachments.length && !imageAttachments.length) {
       content =
         pdfAttachments.length === 1
           ? `I shared a PDF: ${pdfAttachments[0].name || "document.pdf"}.`
           : `I shared PDFs: ${pdfAttachments.map((item) => item.name || "document.pdf").join(", ")}.`;
+    } else if (!content.trim() && imageAttachments.length && !pdfAttachments.length) {
+      content =
+        imageAttachments.length === 1
+          ? "I shared a photo."
+          : `I shared ${imageAttachments.length} photos.`;
+    } else if (!content.trim() && imageAttachments.length && pdfAttachments.length) {
+      const photoBit =
+        imageAttachments.length === 1 ? "a photo" : `${imageAttachments.length} photos`;
+      const pdfBit =
+        pdfAttachments.length === 1
+          ? `a PDF: ${pdfAttachments[0].name || "document.pdf"}`
+          : `PDFs: ${pdfAttachments.map((item) => item.name || "document.pdf").join(", ")}`;
+      content = `I shared ${photoBit} and ${pdfBit}.`;
     }
 
     // Empty content = "continue" — keep the scene moving without a new user line.
@@ -2558,6 +2572,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             region: regionHints,
             metadata: {
               has_attachment: attachments.length > 0,
+              photo_count: imageAttachments.length,
               is_continue: isContinue,
               source: "chat_page",
               scene_mind_speaker_id: activeChar?.id || null,

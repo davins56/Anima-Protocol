@@ -198,6 +198,12 @@ export interface PromptBuilderParams {
   pdfContext?: string | null;
 
   /**
+   * Short note that this turn includes a photo. The text model cannot see
+   * the image. Empty when the user did not attach one.
+   */
+  photoNote?: string | null;
+
+  /**
    * Characters already reserved outside this string (replayed history and
    * the user turn). They count against PROMPT_CONTEXT_CHAR_BUDGET so PDF
    * text cannot push that history out.
@@ -1766,6 +1772,8 @@ export function composeCompanionChatMessages(
   let pdfText = sections.pdfText;
   let memoryText = sections.memoryText;
   const userTurn = String(params.content ?? "").trim() || CONTINUE_USER_TURN;
+  const photoNote = String(params.photoNote || "").trim();
+  const modelUserTurn = photoNote ? `${userTurn}\n\n${photoNote}` : userTurn;
   let history = keepStableHistoryBlock(
     normalizeRecentMessages(omitRetriedUserTurn(params.recentMessages, userTurn)),
   );
@@ -1826,7 +1834,7 @@ export function composeCompanionChatMessages(
       history[history.length - 1]?.content === userTurn;
     messages.push(...(historyEndsWithTurn ? history.slice(0, -1) : history));
     messages.push({ role: "system", content: answerLast });
-    messages.push({ role: "user", content: userTurn });
+    messages.push({ role: "user", content: modelUserTurn });
     rememberCompanionLocalLayout(messages, {
       staticText: sections.staticText,
       regionStableText: sections.regionStableText,
@@ -2301,6 +2309,7 @@ export function composePrompt(
     operatorModel,
     repositoryKnowledge,
     pdfContext,
+    photoNote,
     omitConversationHistory,
     contextReservedChars,
   } = params;
@@ -2557,6 +2566,12 @@ ${sceneExcerpt}
   // PDF is inserted after that base, only in leftover room, and before the
   // loyalty guardrail.
   const maxChars = options?.maxChars ?? COMPANION_SYSTEM_PROMPT_MAX_CHARS;
+  const photoLine = String(photoNote || "").trim();
+  const latestUserText = content
+    ? photoLine
+      ? `${content}\n\n${photoLine}`
+      : content
+    : photoLine;
   const base = fitCompanionSystemPrompt(
     [
       { rank: 100, text: corePrompt },
@@ -2592,8 +2607,8 @@ ${sceneExcerpt}
         rank: 90,
         text: omitConversationHistory
           ? ""
-          : content
-            ? `LATEST USER MESSAGE:\n${content}`
+          : latestUserText
+            ? `LATEST USER MESSAGE:\n${latestUserText}`
             : CONTINUE_USER_TURN,
       },
       {
