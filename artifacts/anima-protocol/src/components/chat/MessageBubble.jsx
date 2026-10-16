@@ -10,6 +10,8 @@ import MediaLightbox from "./MediaLightbox";
 import AudioPlayer from "./AudioPlayer";
 import DeviceScanCard from "./DeviceScanCard";
 import PdfFileChip from "@/components/pdf/PdfFileChip";
+import { openPdfDocument } from "@/api/pdfDocuments";
+import { toast } from "sonner";
 import { renderItalicText } from "./renderItalicText";
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
@@ -186,6 +188,14 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
                   key={file.id || idx}
                   name={file.name || file.filename || "PDF"}
                   pageCount={file.page_count || file.pageCount}
+                  onOpen={
+                    file.id
+                      ? () =>
+                          openPdfDocument(file.id).catch((err) => {
+                            toast.error(err?.message || "Could not open that PDF.");
+                          })
+                      : undefined
+                  }
                 />
               ))}
             </div>

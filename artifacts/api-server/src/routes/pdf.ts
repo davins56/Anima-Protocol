@@ -3,10 +3,12 @@ import { getAuth } from "@clerk/express";
 import { classifyDbError } from "../lib/dbErrors";
 import { isPdfUploadError } from "../lib/pdf/errors";
 import { createRateLimit } from "../lib/rateLimit";
+import { sanitizePdfFilename } from "../lib/pdf/context";
 import {
   createPdfDocument,
   deletePdfDocument,
   listPdfDocuments,
+  readPdfFile,
   renamePdfDocument,
 } from "../lib/pdf/store";
 
@@ -84,6 +86,39 @@ router.get("/pdfs", async (req: Request, res: Response) => {
       characterId: req.query.character_id,
     });
     res.json({ files });
+  } catch (error) {
+    sendPdfError(res, error);
+  }
+});
+
+/** GET /api/pdfs/:id/file — original PDF for the owner. Auth required. */
+router.get("/pdfs/:id/file", async (req: Request, res: Response) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  try {
+    const file = await readPdfFile(userId, req.params.id);
+    if (!file) {
+      res.status(404).json({
+        error: "That file wasn't found.",
+        code: "pdf_not_found",
+      });
+      return;
+    }
+    if (!file.bytes || file.bytes.byteLength === 0) {
+      res.status(404).json({
+        error: "The original file isn't stored for this PDF.",
+        code: "pdf_file_missing",
+      });
+      return;
+    }
+    const filename = sanitizePdfFilename(file.filename).replace(/["\r\n]/g, "");
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Length", String(file.bytes.byteLength));
+    res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Cache-Control", "private, no-store");
+    res.status(200);
+    res.end(file.bytes);
   } catch (error) {
     sendPdfError(res, error);
   }

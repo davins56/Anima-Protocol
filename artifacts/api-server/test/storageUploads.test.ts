@@ -102,6 +102,39 @@ describe("POST /storage/uploads + GET /storage/objects/uploads/:id", () => {
     expect(json.error).toMatch(/only image/i);
   });
 
+  it("rejects a gif and a jpeg whose bytes are not a jpeg", async () => {
+    const gif = await postUpload(user("owner"), {
+      contentType: "image/gif",
+      dataBase64: Buffer.from("GIF89a").toString("base64"),
+    });
+    expect(gif.status).toBe(400);
+    expect(gif.json.error).toMatch(/JPEG, PNG, WebP, or HEIC/i);
+
+    const mismatch = await postUpload(user("owner"), {
+      contentType: "image/jpeg",
+      dataBase64: TINY_PNG,
+    });
+    expect(mismatch.status).toBe(400);
+    expect(mismatch.json.error).toMatch(/doesn't look like/i);
+  });
+
+  it("stores a heic photo when the file header matches", async () => {
+    const heic = Buffer.alloc(16);
+    heic.writeUInt32BE(16, 0);
+    heic.write("ftyp", 4, "ascii");
+    heic.write("heic", 8, "ascii");
+    const { status, json } = await postUpload(user("owner"), {
+      contentType: "image/heic",
+      dataBase64: heic.toString("base64"),
+    });
+    expect(status).toBe(201);
+    expect(json.contentType).toBe("image/heic");
+    const id = String(json.objectPath).split("/").pop();
+    const getRes = await fetch(`${baseUrl}/storage/objects/uploads/${id}`);
+    expect(getRes.status).toBe(200);
+    expect(getRes.headers.get("content-type")).toMatch(/image\/heic/);
+  });
+
   it("returns 413 for an oversized image payload", async () => {
     const tooBig = "A".repeat(Math.ceil((4 * 1024 * 1024 * 4) / 3) + 16);
     const { status, json } = await postUpload(user("owner"), {

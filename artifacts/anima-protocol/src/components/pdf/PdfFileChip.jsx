@@ -9,26 +9,42 @@ export default function PdfFileChip({
   statusLabel,
   onRemove,
   removeLabel,
+  onOpen,
 }) {
+  const label = name || "PDF";
+  const body = (
+    <>
+      <p className="font-mono text-sm text-primary/95 leading-snug break-words">
+        {label}
+      </p>
+      <p className="font-mono text-[11px] text-primary/50 leading-tight" role="status">
+        {statusLabel ||
+          (pageCount === 1
+            ? "1 page"
+            : pageCount
+              ? `${pageCount} pages`
+              : "PDF")}
+      </p>
+    </>
+  );
   return (
     <div
       data-testid="pdf-file-chip"
       className="flex items-center gap-2 min-h-11 max-w-full border border-primary/35 bg-black/75 px-3 py-1.5"
     >
       <FileText className="w-4 h-4 shrink-0 text-primary/80" aria-hidden="true" />
-      <div className="min-w-0 flex-1">
-        <p className="font-mono text-sm text-primary/95 leading-snug break-words">
-          {name || "PDF"}
-        </p>
-        <p className="font-mono text-[11px] text-primary/50 leading-tight" role="status">
-          {statusLabel ||
-            (pageCount === 1
-              ? "1 page"
-              : pageCount
-                ? `${pageCount} pages`
-                : "PDF")}
-        </p>
-      </div>
+      {onOpen ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          className="min-w-0 flex-1 text-left"
+          aria-label={`Open ${label}`}
+        >
+          {body}
+        </button>
+      ) : (
+        <div className="min-w-0 flex-1">{body}</div>
+      )}
       {onRemove ? (
         <button
           type="button"

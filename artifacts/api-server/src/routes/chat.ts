@@ -85,6 +85,11 @@ import {
   type CharacterData,
 } from "../lib/promptBuilder";
 import { beginCompanionLlmTurn, companionTurnsOpenForUser } from "../lib/sidecarLlm";
+import {
+  describeSharedPhotos,
+  photoCountFromMetadata,
+  sharedPhotoPromptNote,
+} from "../lib/sharedPhoto";
 import { acquireLocalLlmBackground, localLlmSlotEnabled, waitForLocalChatSlot } from "../lib/localLlmSlot";
 import {
   FOURTH_WALL_RETRY_MAX_TOKENS,
@@ -2968,11 +2973,19 @@ router.post("/messages", async (req, res) => {
     worldKnowledgeResult.profile,
   );
 
+  const photoCount = photoCountFromMetadata(body.metadata);
+  const photoNote = sharedPhotoPromptNote({
+    count: photoCount,
+    visionSummary: photoCount
+      ? await describeSharedPhotos({ count: photoCount })
+      : null,
+  });
   const messages = telemetry.measureSync("prompt_build_ms", () =>
     composeCompanionChatMessages({
       clientContext: body.system_prompt,
       repositoryKnowledge,
       pdfContext,
+      photoNote,
       characters: adaptedChars,
       activeCharacter: activeChar,
       memories: promptMemories,

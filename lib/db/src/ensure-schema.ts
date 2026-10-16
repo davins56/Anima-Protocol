@@ -22,6 +22,7 @@ export const REQUIRED_TABLES = [
   "uploaded_images",
   "pdf_documents",
   "pdf_chunks",
+  "pdf_file_parts",
   // Companion state used on every /api/chat/messages turn. Missing these
   // previously 500'd the whole reply before the LLM was even called.
   "anima_evolution",
@@ -33,7 +34,7 @@ export const REQUIRED_TABLES = [
 export type RequiredTable = (typeof REQUIRED_TABLES)[number];
 
 /** Created on demand. A missing pair must not replay the rest of the schema. */
-const PDF_SCHEMA_TABLES = ["pdf_documents", "pdf_chunks"] as const satisfies readonly RequiredTable[];
+const PDF_SCHEMA_TABLES = ["pdf_documents", "pdf_chunks", "pdf_file_parts"] as const satisfies readonly RequiredTable[];
 
 function isPdfSchemaTable(
   table: string,
@@ -182,9 +183,9 @@ export async function ensureSchema(
 async function ensurePdfSchema(
   run: (sql: string, label: string) => Promise<void>,
 ): Promise<void> {
-  // Companion / chat PDFs. Original bytes are not kept — text is extracted
-  // at upload and stored as chunks. search_vector is Postgres full-text
-  // (no extra model call on the chat droplet).
+  // Companion / chat PDFs. Text is extracted into pdf_chunks for the prompt.
+  // Original bytes live in pdf_file_parts (512 KiB each) so a chip can open
+  // the file. search_vector is Postgres full-text (no extra model call).
   await run(
     `CREATE TABLE IF NOT EXISTS "pdf_documents" (
       "id" text PRIMARY KEY NOT NULL,
@@ -247,6 +248,21 @@ async function ensurePdfSchema(
        WHEN undefined_table THEN NULL;
      END $$`,
     "fk:pdf_chunks_document_id",
+  );
+  await run(
+    `CREATE TABLE IF NOT EXISTS "pdf_file_parts" (
+      "document_id" text NOT NULL,
+      "user_id" text NOT NULL,
+      "part_index" integer NOT NULL,
+      "data" bytea NOT NULL,
+      CONSTRAINT "pdf_file_parts_pk" PRIMARY KEY ("document_id", "part_index")
+    )`,
+    "table:pdf_file_parts",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "pdf_file_parts_user_idx"
+       ON "pdf_file_parts" USING btree ("user_id", "document_id")`,
+    "index:pdf_file_parts_user_idx",
   );
 }
 
