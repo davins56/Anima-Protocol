@@ -572,6 +572,21 @@ export async function uploadDataUrl(dataUrl, { maxSize = 800, quality = 0.72 } =
   return uploadBlob(dataUrlToBlob(small));
 }
 
+/** Drop a photo the user removed before sending. Missing rows are fine. */
+export async function deleteUploadedFile(fileUrl) {
+  const match = /\/objects\/uploads\/([A-Za-z0-9_-]+)/.exec(String(fileUrl || ""));
+  const id = match?.[1];
+  if (!id) return;
+  const headers = await authHeaders();
+  const res = await fetch(apiUrl(`/storage/uploads/${encodeURIComponent(id)}`), {
+    method: "DELETE",
+    headers,
+    credentials: "same-origin",
+  });
+  if (res.status === 204 || res.status === 404) return;
+  if (!res.ok) throw new Error("Couldn't remove that photo.");
+}
+
 // Fetch an image URL (e.g. a stored "/api/storage/objects/..." path) and read
 // it back as a data URL. Needed because the AI image-edit endpoint only accepts
 // data: URLs, so a stored avatar must be inlined before it can be re-edited.

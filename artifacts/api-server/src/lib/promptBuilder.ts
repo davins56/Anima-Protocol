@@ -20,6 +20,7 @@ import {
   buildMemorySummaryBlock,
 } from "./memoryRetrieval";
 import { messageTurnId } from "./replyReplacement";
+import { sharedPhotoPromptNote } from "./sharedPhoto";
 import {
   initResonanceState,
   detectResonanceShift,
@@ -196,6 +197,12 @@ export interface PromptBuilderParams {
    * PROMPT_CONTEXT_CHAR_BUDGET.
    */
   pdfContext?: string | null;
+
+  /**
+   * Short note that this turn includes a photo. The text model cannot see
+   * the image. Empty when the user did not attach one.
+   */
+  photoNote?: string | null;
 
   /**
    * Characters already reserved outside this string (replayed history and
@@ -828,12 +835,26 @@ type SeqHistoryMessage = LlmChatMessage & { seq?: number };
  * window stays put across turns. `seq` is kept when the store sent one
  * so a loaded tail of 24 messages can still align to the same block.
  */
+function unseenPhotoHistoryNote(msg: MsgData): string {
+  if (msg.role !== "user" || !Array.isArray(msg.attachments)) return "";
+  let count = 0;
+  for (const item of msg.attachments) {
+    if (item && typeof item === "object" && (item as { type?: unknown }).type === "image") {
+      count += 1;
+    }
+  }
+  return sharedPhotoPromptNote({ count });
+}
+
 function normalizeRecentMessages(recentMessages: MsgData[] = []): SeqHistoryMessage[] {
   const out: SeqHistoryMessage[] = [];
   for (const msg of recentMessages) {
     if (isLlmExcludedDisclosure(msg)) continue;
     const text = String(msg.content ?? "").trim();
     if (!text) continue;
+    const photoNote = unseenPhotoHistoryNote(msg);
+    const withPhoto =
+      photoNote && !text.includes("cannot see the image") ? `${text}\n\n${photoNote}` : text;
     const name = String(msg.character_name || msg.characterName || "");
     if (name === "__thinking__" || name === "__typing__") continue;
     const role =
@@ -843,9 +864,9 @@ function normalizeRecentMessages(recentMessages: MsgData[] = []): SeqHistoryMess
     out.push({
       role,
       content:
-        text.length > LLM_CHAT_HISTORY_MAX_CHARS
-          ? `${text.slice(0, LLM_CHAT_HISTORY_MAX_CHARS - 1)}…`
-          : text,
+        withPhoto.length > LLM_CHAT_HISTORY_MAX_CHARS
+          ? `${withPhoto.slice(0, LLM_CHAT_HISTORY_MAX_CHARS - 1)}…`
+          : withPhoto,
       ...(Number.isFinite(seq) && seq >= 0 ? { seq } : {}),
     });
   }
@@ -1766,6 +1787,8 @@ export function composeCompanionChatMessages(
   let pdfText = sections.pdfText;
   let memoryText = sections.memoryText;
   const userTurn = String(params.content ?? "").trim() || CONTINUE_USER_TURN;
+  const photoNote = String(params.photoNote || "").trim();
+  const modelUserTurn = photoNote ? `${userTurn}\n\n${photoNote}` : userTurn;
   let history = keepStableHistoryBlock(
     normalizeRecentMessages(omitRetriedUserTurn(params.recentMessages, userTurn)),
   );
@@ -1826,7 +1849,7 @@ export function composeCompanionChatMessages(
       history[history.length - 1]?.content === userTurn;
     messages.push(...(historyEndsWithTurn ? history.slice(0, -1) : history));
     messages.push({ role: "system", content: answerLast });
-    messages.push({ role: "user", content: userTurn });
+    messages.push({ role: "user", content: modelUserTurn });
     rememberCompanionLocalLayout(messages, {
       staticText: sections.staticText,
       regionStableText: sections.regionStableText,
@@ -2301,6 +2324,7 @@ export function composePrompt(
     operatorModel,
     repositoryKnowledge,
     pdfContext,
+    photoNote,
     omitConversationHistory,
     contextReservedChars,
   } = params;
@@ -2557,6 +2581,12 @@ ${sceneExcerpt}
   // PDF is inserted after that base, only in leftover room, and before the
   // loyalty guardrail.
   const maxChars = options?.maxChars ?? COMPANION_SYSTEM_PROMPT_MAX_CHARS;
+  const photoLine = String(photoNote || "").trim();
+  const latestUserText = content
+    ? photoLine
+      ? `${content}\n\n${photoLine}`
+      : content
+    : photoLine;
   const base = fitCompanionSystemPrompt(
     [
       { rank: 100, text: corePrompt },
@@ -2592,8 +2622,8 @@ ${sceneExcerpt}
         rank: 90,
         text: omitConversationHistory
           ? ""
-          : content
-            ? `LATEST USER MESSAGE:\n${content}`
+          : latestUserText
+            ? `LATEST USER MESSAGE:\n${latestUserText}`
             : CONTINUE_USER_TURN,
       },
       {

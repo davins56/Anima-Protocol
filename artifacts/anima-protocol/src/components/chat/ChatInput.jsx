@@ -2,9 +2,11 @@ import { useState, useRef, useLayoutEffect, useEffect } from "react";
 import { mergeDraftIntoComposer } from "@/lib/heldChatSend";
 import { Send, Zap, Paperclip, Loader, FileText } from "lucide-react";
 import { toast } from "sonner";
-import { base44 } from "@/api/base44Client";
-import { pdfProgressLabel, uploadPdfDocument, deletePdfDocument } from "@/api/pdfDocuments";
+import { base44, deleteUploadedFile } from "@/api/base44Client";
+import { pdfProgressLabel, uploadPdfDocument, deletePdfDocument, openPdfDocument } from "@/api/pdfDocuments";
 import PdfFileChip from "@/components/pdf/PdfFileChip";
+import { formatImageUploadError } from "@/lib/characterAvatarUpload";
+import { CHAT_PHOTO_ACCEPT, CHAT_PHOTO_MAX_COUNT, chatPhotoRejection } from "@/lib/chatPhoto";
 
 // Max height the input grows to before it starts scrolling internally (px).
 const MAX_INPUT_HEIGHT = 200;
@@ -113,7 +115,7 @@ export default function ChatInput({
     if (blockComposer) return;
     const readyPdfs = pdfs.filter((pdf) => pdf.status === "ready");
     if (!value.trim() && !attachments.length && !readyPdfs.length && !allowEmpty) return;
-    if (pdfBusy) return;
+    if (pdfBusy || uploadingMedia) return;
     
     // Create message with attachments if present
     const message = {
@@ -125,6 +127,7 @@ export default function ChatInput({
           id: pdf.id,
           name: pdf.name,
           page_count: pdf.pageCount,
+          has_file: true,
         })),
       ].filter(Boolean),
     };
@@ -202,20 +205,28 @@ export default function ChatInput({
 
   const handleMediaUpload = async (e) => {
     const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
+    e.target.value = "";
+    const file = files[0];
+    if (!file) return;
+    const rejection = chatPhotoRejection(file);
+    if (rejection) {
+      toast.error(rejection);
+      return;
+    }
+    if (attachmentsRef.current.length >= CHAT_PHOTO_MAX_COUNT) {
+      toast.error(`You can attach up to ${CHAT_PHOTO_MAX_COUNT} photos on one message.`);
+      return;
+    }
 
     setUploadingMedia(true);
     try {
-      for (const file of files) {
-        const { file_url } = await base44.integrations.Core.UploadFile({ file });
-        const isAudio = file.type.startsWith("audio/");
-        setAttachments((prev) => [
-          ...prev,
-          { url: file_url, type: isAudio ? "audio" : "image", name: file.name }
-        ]);
-      }
+      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      setAttachments((prev) => [
+        ...prev,
+        { url: file_url, type: "image", name: file.name },
+      ]);
     } catch (err) {
-      console.error("Media upload error:", err);
+      toast.error(formatImageUploadError(err, { noun: "photo" }));
     } finally {
       setUploadingMedia(false);
     }
@@ -255,6 +266,14 @@ export default function ChatInput({
               name={pdf.name}
               pageCount={pdf.pageCount}
               statusLabel={pdf.status === "ready" ? null : pdfProgressLabel(pdf.progress)}
+              onOpen={
+                pdf.id
+                  ? () =>
+                      openPdfDocument(pdf.id).catch((err) => {
+                        toast.error(err?.message || "Could not open that PDF.");
+                      })
+                  : undefined
+              }
               onRemove={() => removePdf(pdf)}
             />
           ))}
@@ -283,8 +302,14 @@ export default function ChatInput({
               <button
                 type="button"
                 onClick={() => {
+                  const removed = attachments[idx];
                   emptySettleAfterCommitRef.current = true;
                   setAttachments((prev) => prev.filter((_, i) => i !== idx));
+                  if (removed?.type === "image" && removed.url) {
+                    void deleteUploadedFile(removed.url).catch((err) => {
+                      console.error("Photo delete error:", err);
+                    });
+                  }
                 }}
                 className="absolute -top-1 -right-1 w-4 h-4 bg-destructive text-white text-[8px] flex items-center justify-center rounded-full"
               >
@@ -316,15 +341,18 @@ export default function ChatInput({
             <FileText className="w-3.5 sm:w-4 h-3.5 sm:h-4" />
           )}
         </label>
-        <label className="flex-shrink-0 w-10 sm:w-12 h-10 sm:h-12 btn-sacred text-primary disabled:opacity-30 flex items-center justify-center hud-corner cursor-pointer">
+        <label
+          className="flex-shrink-0 w-10 sm:w-12 h-10 sm:h-12 btn-sacred text-primary disabled:opacity-30 flex items-center justify-center hud-corner cursor-pointer"
+          title="Attach a photo"
+        >
           <input
+            data-testid="chat-photo-upload"
             type="file"
-            multiple
-            accept="image/*,audio/*"
+            accept={CHAT_PHOTO_ACCEPT}
             onChange={handleMediaUpload}
             disabled={uploadingMedia || blockComposer}
             className="hidden"
-            aria-label="Attach an image or audio clip"
+            aria-label="Attach a photo"
           />
           {uploadingMedia ? (
             <Loader className="w-3.5 sm:w-4 h-3.5 sm:h-4 animate-spin" />

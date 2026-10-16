@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import {
   deletePdfDocument,
   listPdfDocuments,
+  openPdfDocument,
   pdfProgressLabel,
   renamePdfDocument,
   uploadPdfDocument,
@@ -126,6 +127,14 @@ export default function CompanionLoreFiles({ characterId, characterName }) {
                 <PdfFileChip
                   name={file.filename}
                   pageCount={file.pageCount}
+                  onOpen={
+                    file.hasFile
+                      ? () =>
+                          openPdfDocument(file.id).catch((err) => {
+                            toast.error(err?.message || "Could not open that PDF.");
+                          })
+                      : undefined
+                  }
                 />
                 {renamingId === file.id ? (
                   <div className="flex flex-col sm:flex-row gap-2">
