@@ -264,6 +264,19 @@ async function ensurePdfSchema(
        ON "pdf_file_parts" USING btree ("user_id", "document_id")`,
     "index:pdf_file_parts_user_idx",
   );
+  await run(
+    `DO $$ BEGIN
+       ALTER TABLE "pdf_file_parts"
+         ADD CONSTRAINT "pdf_file_parts_document_id_fk"
+         FOREIGN KEY ("document_id")
+         REFERENCES "pdf_documents"("id")
+         ON DELETE CASCADE;
+     EXCEPTION
+       WHEN duplicate_object THEN NULL;
+       WHEN undefined_table THEN NULL;
+     END $$`,
+    "fk:pdf_file_parts_document_id",
+  );
 }
 
 function tablesCreatedByRun(

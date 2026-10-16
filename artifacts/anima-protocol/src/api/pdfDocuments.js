@@ -127,7 +127,10 @@ export async function deletePdfDocument(id) {
 
 /** Open the stored PDF in a new tab. The request carries the signed-in session. */
 export function openPdfDocument(id) {
-  const popup = window.open("", "_blank");
+  const popup = typeof window !== "undefined" ? window.open("", "_blank") : null;
+  if (!popup) {
+    return Promise.reject(new Error("Allow pop-ups to open this PDF."));
+  }
   return (async () => {
     try {
       const headers = await authHeaders();
@@ -151,19 +154,11 @@ export function openPdfDocument(id) {
           ? blob
           : new Blob([blob], { type: "application/pdf" });
       const url = URL.createObjectURL(pdf);
-      if (popup) {
-        popup.location.href = url;
-        try {
-          popup.opener = null;
-        } catch {
-          // The new tab can already be detached from this page.
-        }
-      } else {
-        const link = document.createElement("a");
-        link.href = url;
-        link.target = "_blank";
-        link.rel = "noopener";
-        link.click();
+      popup.location.href = url;
+      try {
+        popup.opener = null;
+      } catch {
+        // The new tab can already be detached from this page.
       }
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (error) {

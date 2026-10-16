@@ -61,6 +61,28 @@ describe("imageUploads helpers", () => {
         dataBase64: Buffer.from("hello").toString("base64"),
       }),
     ).toThrow(/doesn't look like/i);
+
+    const wave = Buffer.concat([
+      Buffer.from("RIFF"),
+      Buffer.from([16, 0, 0, 0]),
+      Buffer.from("WAVE"),
+    ]);
+    expect(() =>
+      parseImagePayload({ contentType: "image/webp", dataBase64: wave.toString("base64") }),
+    ).toThrow(/doesn't look like/i);
+
+    const mp4 = Buffer.alloc(16);
+    mp4.writeUInt32BE(16, 0);
+    mp4.write("ftyp", 4, "ascii");
+    mp4.write("mp42", 8, "ascii");
+    expect(() =>
+      parseImagePayload({ contentType: "image/heic", dataBase64: mp4.toString("base64") }),
+    ).toThrow(/doesn't look like/i);
+
+    const shortPng = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x00, 0x00, 0x00]);
+    expect(() =>
+      parseImagePayload({ contentType: "image/png", dataBase64: shortPng.toString("base64") }),
+    ).toThrow(/doesn't look like/i);
     expect(() =>
       parseImagePayload({
         contentType: "image/gif",

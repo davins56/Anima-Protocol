@@ -508,7 +508,9 @@ const bytea = customType<{ data: Buffer }>({
 export const pdfFileParts = pgTable(
   "pdf_file_parts",
   {
-    documentId: text("document_id").notNull(),
+    documentId: text("document_id")
+      .notNull()
+      .references(() => pdfDocuments.id, { onDelete: "cascade" }),
     userId: text("user_id").notNull(),
     partIndex: integer("part_index").notNull(),
     data: bytea("data").notNull(),

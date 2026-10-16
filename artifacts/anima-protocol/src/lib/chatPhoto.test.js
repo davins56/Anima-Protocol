@@ -17,11 +17,13 @@ describe("chat photo checks", () => {
     expect(chatPhotoRejection(file("shot.webp", "image/webp"))).toBeNull();
     expect(chatPhotoRejection(file("shot.HEIC", "image/heic"))).toBeNull();
     expect(chatPhotoRejection(file("IMG_2201.HEIC", ""))).toBeNull();
+    expect(chatPhotoRejection(file("shot.jpg", "application/octet-stream"))).toBeNull();
     expect(CHAT_PHOTO_ACCEPT).toContain("image/*");
     expect(CHAT_PHOTO_ACCEPT).toContain(".heic");
   });
 
   it("rejects other types, empty files, and photos over the phone-file cap", () => {
+    expect(chatPhotoRejection(file("notes.txt", ""))).toMatch(/jpeg, png, webp, or heic/i);
     expect(chatPhotoRejection(file("clip.mp3", "audio/mpeg"))).toMatch(/jpeg, png, webp, or heic/i);
     expect(chatPhotoRejection(file("notes.pdf", "application/pdf"))).toMatch(/jpeg, png, webp, or heic/i);
     expect(chatPhotoRejection(file("anim.gif", "image/gif"))).toMatch(/jpeg, png, webp, or heic/i);

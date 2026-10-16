@@ -135,6 +135,19 @@ describe("POST /storage/uploads + GET /storage/objects/uploads/:id", () => {
     expect(getRes.headers.get("content-type")).toMatch(/image\/heic/);
   });
 
+  it("rejects an heic label whose brand is avif", async () => {
+    const avif = Buffer.alloc(16);
+    avif.writeUInt32BE(16, 0);
+    avif.write("ftyp", 4, "ascii");
+    avif.write("avif", 8, "ascii");
+    const { status, json } = await postUpload(user("owner"), {
+      contentType: "image/heic",
+      dataBase64: avif.toString("base64"),
+    });
+    expect(status).toBe(400);
+    expect(json.error).toMatch(/doesn't look like/i);
+  });
+
   it("returns 413 for an oversized image payload", async () => {
     const tooBig = "A".repeat(Math.ceil((4 * 1024 * 1024 * 4) / 3) + 16);
     const { status, json } = await postUpload(user("owner"), {

@@ -2573,6 +2573,10 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             metadata: {
               has_attachment: attachments.length > 0,
               photo_count: imageAttachments.length,
+              photo_urls: imageAttachments
+                .map((item) => item?.url)
+                .filter(Boolean)
+                .slice(0, 4),
               is_continue: isContinue,
               source: "chat_page",
               scene_mind_speaker_id: activeChar?.id || null,
