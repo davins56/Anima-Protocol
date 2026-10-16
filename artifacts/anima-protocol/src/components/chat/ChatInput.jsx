@@ -2,7 +2,7 @@ import { useState, useRef, useLayoutEffect, useEffect } from "react";
 import { mergeDraftIntoComposer } from "@/lib/heldChatSend";
 import { Send, Zap, Paperclip, Loader, FileText } from "lucide-react";
 import { toast } from "sonner";
-import { base44 } from "@/api/base44Client";
+import { base44, deleteUploadedFile } from "@/api/base44Client";
 import { pdfProgressLabel, uploadPdfDocument, deletePdfDocument, openPdfDocument } from "@/api/pdfDocuments";
 import PdfFileChip from "@/components/pdf/PdfFileChip";
 import { formatImageUploadError } from "@/lib/characterAvatarUpload";
@@ -302,8 +302,14 @@ export default function ChatInput({
               <button
                 type="button"
                 onClick={() => {
+                  const removed = attachments[idx];
                   emptySettleAfterCommitRef.current = true;
                   setAttachments((prev) => prev.filter((_, i) => i !== idx));
+                  if (removed?.type === "image" && removed.url) {
+                    void deleteUploadedFile(removed.url).catch((err) => {
+                      console.error("Photo delete error:", err);
+                    });
+                  }
                 }}
                 className="absolute -top-1 -right-1 w-4 h-4 bg-destructive text-white text-[8px] flex items-center justify-center rounded-full"
               >

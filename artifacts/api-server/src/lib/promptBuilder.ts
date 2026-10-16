@@ -20,6 +20,7 @@ import {
   buildMemorySummaryBlock,
 } from "./memoryRetrieval";
 import { messageTurnId } from "./replyReplacement";
+import { sharedPhotoPromptNote } from "./sharedPhoto";
 import {
   initResonanceState,
   detectResonanceShift,
@@ -834,12 +835,26 @@ type SeqHistoryMessage = LlmChatMessage & { seq?: number };
  * window stays put across turns. `seq` is kept when the store sent one
  * so a loaded tail of 24 messages can still align to the same block.
  */
+function unseenPhotoHistoryNote(msg: MsgData): string {
+  if (msg.role !== "user" || !Array.isArray(msg.attachments)) return "";
+  let count = 0;
+  for (const item of msg.attachments) {
+    if (item && typeof item === "object" && (item as { type?: unknown }).type === "image") {
+      count += 1;
+    }
+  }
+  return sharedPhotoPromptNote({ count });
+}
+
 function normalizeRecentMessages(recentMessages: MsgData[] = []): SeqHistoryMessage[] {
   const out: SeqHistoryMessage[] = [];
   for (const msg of recentMessages) {
     if (isLlmExcludedDisclosure(msg)) continue;
     const text = String(msg.content ?? "").trim();
     if (!text) continue;
+    const photoNote = unseenPhotoHistoryNote(msg);
+    const withPhoto =
+      photoNote && !text.includes("cannot see the image") ? `${text}\n\n${photoNote}` : text;
     const name = String(msg.character_name || msg.characterName || "");
     if (name === "__thinking__" || name === "__typing__") continue;
     const role =
@@ -849,9 +864,9 @@ function normalizeRecentMessages(recentMessages: MsgData[] = []): SeqHistoryMess
     out.push({
       role,
       content:
-        text.length > LLM_CHAT_HISTORY_MAX_CHARS
-          ? `${text.slice(0, LLM_CHAT_HISTORY_MAX_CHARS - 1)}…`
-          : text,
+        withPhoto.length > LLM_CHAT_HISTORY_MAX_CHARS
+          ? `${withPhoto.slice(0, LLM_CHAT_HISTORY_MAX_CHARS - 1)}…`
+          : withPhoto,
       ...(Number.isFinite(seq) && seq >= 0 ? { seq } : {}),
     });
   }

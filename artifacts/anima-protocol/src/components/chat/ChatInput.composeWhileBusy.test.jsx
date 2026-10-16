@@ -15,6 +15,7 @@ import ChatInput from "./ChatInput";
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 vi.mock("@/api/base44Client", () => ({
   base44: { integrations: { Core: { UploadFile: vi.fn() } } },
+  deleteUploadedFile: vi.fn(),
 }));
 vi.mock("@/api/pdfDocuments", () => ({
   pdfProgressLabel: () => "",

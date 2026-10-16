@@ -131,6 +131,10 @@ function finishImagePayload(
   if (!dataBase64) throw new Error("Missing image data");
   const contentType = canonicalImageType(declared);
   if (!contentType) throw new Error(IMAGE_TYPE_ERROR);
+  // Reject on the encoded length first so an oversized body is not decoded
+  // into a second buffer before the 1 MB cap.
+  const maxBase64Chars = Math.ceil(MAX_UPLOAD_BYTES / 3) * 4;
+  if (dataBase64.length > maxBase64Chars) throw new Error(MAX_UPLOAD_ERROR);
   const bytes = Buffer.from(dataBase64, "base64");
   const byteSize = bytes.byteLength;
   if (byteSize <= 0) throw new Error("Empty image payload");
@@ -241,6 +245,18 @@ export async function storeUploadedImage(
     contentType: parsed.contentType,
     byteSize: parsed.byteSize,
   };
+}
+
+/** Owner-only. False when the row is missing or belongs to someone else. */
+export async function deleteUploadedImage(userId: string, id: string): Promise<boolean> {
+  const owner = String(userId || "").trim();
+  const imageId = String(id || "").trim();
+  if (!owner || !imageId) return false;
+  const result = await getPool().query(
+    `DELETE FROM uploaded_images WHERE id = $1 AND user_id = $2 RETURNING id`,
+    [imageId, owner],
+  );
+  return result.rows.length > 0;
 }
 
 export async function getUploadedImage(

@@ -148,6 +148,32 @@ describe("POST /storage/uploads + GET /storage/objects/uploads/:id", () => {
     expect(json.error).toMatch(/doesn't look like/i);
   });
 
+  it("deletes an upload for the owner and hides it from everyone else", async () => {
+    const owner = user("owner");
+    const other = user("other");
+    const { status, json } = await postUpload(owner, {
+      contentType: "image/png",
+      dataBase64: TINY_PNG,
+    });
+    expect(status).toBe(201);
+    const id = String(json.objectPath).split("/").pop();
+    const stolen = await fetch(`${baseUrl}/storage/uploads/${id}`, {
+      method: "DELETE",
+      headers: { "x-test-user": other },
+    });
+    expect(stolen.status).toBe(404);
+    const stillThere = await fetch(`${baseUrl}/storage/objects/uploads/${id}`);
+    expect(stillThere.status).toBe(200);
+
+    const removed = await fetch(`${baseUrl}/storage/uploads/${id}`, {
+      method: "DELETE",
+      headers: { "x-test-user": owner },
+    });
+    expect(removed.status).toBe(204);
+    const gone = await fetch(`${baseUrl}/storage/objects/uploads/${id}`);
+    expect(gone.status).toBe(404);
+  });
+
   it("returns 413 for an oversized image payload", async () => {
     const tooBig = "A".repeat(Math.ceil((4 * 1024 * 1024 * 4) / 3) + 16);
     const { status, json } = await postUpload(user("owner"), {

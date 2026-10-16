@@ -91,6 +91,29 @@ describe("shared photo note", () => {
     expect(prompt.indexOf("cannot see the image")).toBeLessThan(prompt.indexOf("HIGHEST-PRIORITY RULE"));
   });
 
+  it("repeats the cannot-see note on a later turn that still has the photo in history", () => {
+    const messages = composeCompanionChatMessages({
+      characters: [character],
+      activeCharacter: character,
+      memories: [],
+      recentMessages: [
+        {
+          role: "user",
+          content: "I shared a photo.",
+          attachments: [{ type: "image", url: "/api/storage/objects/uploads/abc" }],
+        },
+        { role: "assistant", content: "I'm here." },
+      ],
+      content: "What did you think?",
+      mode: "solo",
+    });
+    const prior = messages.filter((message) => message.role === "user").slice(0, -1);
+    expect(prior.some((message) => /cannot see the image/i.test(message.content || ""))).toBe(true);
+    const latest = messages.filter((message) => message.role === "user").at(-1)?.content || "";
+    expect(latest.startsWith("What did you think?")).toBe(true);
+    expect(latest).not.toMatch(/cannot see the image/i);
+  });
+
   it("keeps a supplied local vision note inside the photo line", () => {
     const note = sharedPhotoPromptNote({
       count: 2,
