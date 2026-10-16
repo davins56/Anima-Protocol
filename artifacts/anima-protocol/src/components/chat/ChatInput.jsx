@@ -29,6 +29,7 @@ export default function ChatInput({
   restoreDraft = null,
   onRestoreDraftApplied,
   onRestoredDraftSettled,
+  onRestoredDraftRevised,
 }) {
   // A reply can still be in flight. The follow-up is held by the page
   // instead of locking the box, so typing and Send stay available.
@@ -50,6 +51,8 @@ export default function ChatInput({
   onRestoreDraftAppliedRef.current = onRestoreDraftApplied;
   const onRestoredDraftSettledRef = useRef(onRestoredDraftSettled);
   onRestoredDraftSettledRef.current = onRestoredDraftSettled;
+  const onRestoredDraftRevisedRef = useRef(onRestoredDraftRevised);
+  onRestoredDraftRevisedRef.current = onRestoredDraftRevised;
   const pdfsRef = useRef(pdfs);
   pdfsRef.current = pdfs;
   // Removal settles only after the new list commits. Doing it inside the
@@ -303,11 +306,19 @@ export default function ChatInput({
                 type="button"
                 onClick={() => {
                   const removed = attachments[idx];
+                  const nextAttachments = attachments.filter((_, i) => i !== idx);
                   emptySettleAfterCommitRef.current = true;
-                  setAttachments((prev) => prev.filter((_, i) => i !== idx));
+                  setAttachments(nextAttachments);
+                  const draft = restoredDraftRef.current;
+                  if (draft) {
+                    onRestoredDraftRevisedRef.current?.(draft, {
+                      text: valueRef.current,
+                      attachments: nextAttachments,
+                    });
+                  }
                   if (removed?.type === "image" && removed.url) {
                     void deleteUploadedFile(removed.url).catch((err) => {
-                      console.error("Photo delete error:", err);
+                      toast.error(err?.message || "Couldn't remove that photo.");
                     });
                   }
                 }}

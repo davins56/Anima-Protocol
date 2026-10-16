@@ -583,7 +583,7 @@ export async function deleteUploadedFile(fileUrl) {
     headers,
     credentials: "same-origin",
   });
-  if (res.status === 204 || res.status === 404) return;
+  if (res.status === 204 || res.status === 404 || res.status === 409) return;
   if (!res.ok) throw new Error("Couldn't remove that photo.");
 }
 

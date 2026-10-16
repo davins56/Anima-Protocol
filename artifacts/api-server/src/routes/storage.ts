@@ -26,35 +26,6 @@ router.use("/storage/uploads", rateLimit);
  * body: { dataUrl } | { contentType, dataBase64 }
  * → { objectPath, uploadURL? }
  */
-router.delete("/storage/uploads/:id", async (req: Request, res: Response) => {
-  const { userId } = getAuth(req);
-  if (!userId) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
-  try {
-    const removed = await deleteUploadedImage(userId, String(req.params.id || ""));
-    if (!removed) {
-      res.status(404).json({ error: "Object not found" });
-      return;
-    }
-    res.status(204).send();
-  } catch (error) {
-    const dbInfo = classifyDbError(error);
-    if (dbInfo.isDbError) {
-      console.error("Error deleting uploaded image:", error);
-      res.status(503).json({
-        error: dbInfo.safeMessage,
-        reason: dbInfo.reason,
-        code: dbInfo.code ?? "database_unavailable",
-      });
-      return;
-    }
-    console.error("Error deleting uploaded image:", error);
-    res.status(500).json({ error: "Failed to delete object" });
-  }
-});
-
 router.post("/storage/uploads", async (req: Request, res: Response) => {
   const { userId } = getAuth(req);
   if (!userId) {
@@ -88,6 +59,40 @@ router.post("/storage/uploads", async (req: Request, res: Response) => {
       console.error("Error storing uploaded image:", error);
     }
     res.status(status).json({ error: message });
+  }
+});
+
+/** DELETE /storage/uploads/:id — drop an unsent photo. Referenced files stay. */
+router.delete("/storage/uploads/:id", async (req: Request, res: Response) => {
+  const { userId } = getAuth(req);
+  if (!userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  try {
+    const removed = await deleteUploadedImage(userId, String(req.params.id || ""));
+    if (removed === "referenced") {
+      res.status(409).json({ error: "That photo is still used." });
+      return;
+    }
+    if (removed !== "deleted") {
+      res.status(404).json({ error: "Object not found" });
+      return;
+    }
+    res.status(204).send();
+  } catch (error) {
+    const dbInfo = classifyDbError(error);
+    if (dbInfo.isDbError) {
+      console.error("Error deleting uploaded image:", error);
+      res.status(503).json({
+        error: dbInfo.safeMessage,
+        reason: dbInfo.reason,
+        code: dbInfo.code ?? "database_unavailable",
+      });
+      return;
+    }
+    console.error("Error deleting uploaded image:", error);
+    res.status(500).json({ error: "Failed to delete object" });
   }
 });
 

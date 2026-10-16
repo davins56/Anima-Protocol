@@ -55,6 +55,21 @@ describe("shared photo note", () => {
       { url: "/objects/uploads/photo-1" },
     ]);
     expect(photosFromMetadata({ photo_urls: "nope" })).toEqual([]);
+    expect(
+      photosFromMetadata({
+        photo_urls: [0, 1, 2, 3, 4].map((index) => `/objects/uploads/photo-${index}`),
+      }),
+    ).toEqual([
+      { url: "/objects/uploads/photo-0" },
+      { url: "/objects/uploads/photo-1" },
+      { url: "/objects/uploads/photo-2" },
+      { url: "/objects/uploads/photo-3" },
+    ]);
+    expect(
+      photosFromMetadata({
+        photo_urls: [`/objects/uploads/${"a".repeat(500)}`],
+      }),
+    ).toEqual([]);
   });
 
   it("puts a cannot-see note beside the caption and keeps the PDF excerpt", async () => {
@@ -112,6 +127,36 @@ describe("shared photo note", () => {
     const latest = messages.filter((message) => message.role === "user").at(-1)?.content || "";
     expect(latest.startsWith("What did you think?")).toBe(true);
     expect(latest).not.toMatch(/cannot see the image/i);
+  });
+
+  it("keeps the cannot-see note when the caption says the same words or is very long", () => {
+    const longCaption = "Look closely. ".repeat(40);
+    const messages = composeCompanionChatMessages({
+      characters: [character],
+      activeCharacter: character,
+      memories: [],
+      recentMessages: [
+        {
+          role: "user",
+          content: "I cannot see the image either",
+          attachments: [{ type: "image", url: "/objects/uploads/abc" }],
+        },
+        {
+          role: "user",
+          content: longCaption,
+          attachments: [{ type: "image", url: "/objects/uploads/def" }],
+        },
+      ],
+      content: "And now?",
+      mode: "solo",
+    });
+    const prior = messages.filter((message) => message.role === "user").slice(0, -1);
+    const phrase = prior[0]?.content || "";
+    expect(phrase.startsWith("I cannot see the image either")).toBe(true);
+    expect(phrase).toMatch(/You cannot see the image/);
+    const clipped = prior[1]?.content || "";
+    expect(clipped.endsWith("You cannot see the image. Do not describe it or pretend you looked. Respond to their words.")).toBe(true);
+    expect(clipped.length).toBeLessThanOrEqual(400);
   });
 
   it("keeps a supplied local vision note inside the photo line", () => {

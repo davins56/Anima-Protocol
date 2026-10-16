@@ -17,7 +17,7 @@ vi.mock("@clerk/express", () => ({
 }));
 
 import storageRouter from "../src/routes/storage";
-import { db, uploadedImages } from "@workspace/db";
+import { db, uploadedImages, userEntities } from "@workspace/db";
 import { like } from "drizzle-orm";
 
 const PREFIX = `itest_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_`;
@@ -172,6 +172,30 @@ describe("POST /storage/uploads + GET /storage/objects/uploads/:id", () => {
     expect(removed.status).toBe(204);
     const gone = await fetch(`${baseUrl}/storage/objects/uploads/${id}`);
     expect(gone.status).toBe(404);
+  });
+
+  it("keeps a photo that a saved message still uses", async () => {
+    const owner = user("owner");
+    const { status, json } = await postUpload(owner, {
+      contentType: "image/png",
+      dataBase64: TINY_PNG,
+    });
+    expect(status).toBe(201);
+    const id = String(json.objectPath).split("/").pop();
+    await db.insert(userEntities).values({
+      userId: owner,
+      entityName: "ChatMessage",
+      entityId: `${owner}-msg`,
+      data: { attachments: [{ type: "image", url: `/api/storage/objects/uploads/${id}` }] },
+    });
+    const blocked = await fetch(`${baseUrl}/storage/uploads/${id}`, {
+      method: "DELETE",
+      headers: { "x-test-user": owner },
+    });
+    expect(blocked.status).toBe(409);
+    const stillThere = await fetch(`${baseUrl}/storage/objects/uploads/${id}`);
+    expect(stillThere.status).toBe(200);
+    await db.delete(userEntities).where(like(userEntities.userId, `${PREFIX}%`));
   });
 
   it("returns 413 for an oversized image payload", async () => {

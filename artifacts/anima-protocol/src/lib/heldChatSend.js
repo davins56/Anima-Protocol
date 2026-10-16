@@ -656,6 +656,41 @@ function draftBodyKey(record) {
  * @param {unknown} savedAt
  * @returns {{ ok: boolean, reason?: string }}
  */
+/**
+ * Replace a restored hold in place, keeping its savedAt, so a removed photo
+ * does not come back on reload. A newer stamp from another tab is left alone.
+ *
+ * @param {HeldDraftStorage | null | undefined} storage
+ * @param {unknown} userId
+ * @param {unknown} sessionId
+ * @param {unknown} savedAt
+ * @param {unknown} message
+ * @returns {{ ok: boolean, reason?: string, cleared?: boolean }}
+ */
+export function reviseHeldDraft(storage, userId, sessionId, savedAt, message) {
+  const key = heldDraftStorageKey(userId, sessionId);
+  if (!key || !storage) return { ok: false, reason: "unavailable" };
+  const stamp = Number(savedAt);
+  if (!Number.isFinite(stamp)) return { ok: false, reason: "missing_stamp" };
+  let priorSavedAt = NaN;
+  try {
+    const raw = storage.getItem(key);
+    if (!raw) return { ok: false, reason: "missing" };
+    priorSavedAt = Number(JSON.parse(raw)?.savedAt);
+  } catch {
+    return { ok: false, reason: "unreadable" };
+  }
+  if (priorSavedAt !== stamp) return { ok: false, reason: "changed" };
+  const draft = draftFromOutgoing(message, stamp);
+  try {
+    if (!draft) storage.removeItem(key);
+    else storage.setItem(key, JSON.stringify({ ...draft, savedAt: stamp }));
+  } catch {
+    return { ok: false, reason: "storage_failed" };
+  }
+  return { ok: true, cleared: !draft };
+}
+
 export function clearHeldDraftIfUnchanged(storage, userId, sessionId, savedAt) {
   const key = heldDraftStorageKey(userId, sessionId);
   if (!key) return { ok: false, reason: "missing_key" };

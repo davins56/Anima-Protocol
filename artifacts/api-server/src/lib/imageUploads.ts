@@ -247,16 +247,45 @@ export async function storeUploadedImage(
   };
 }
 
-/** Owner-only. False when the row is missing or belongs to someone else. */
-export async function deleteUploadedImage(userId: string, id: string): Promise<boolean> {
+export type UploadedImageDeleteResult = "deleted" | "missing" | "referenced";
+
+function likeLiteral(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
+/**
+ * Owner-only. A photo already saved on a message, avatar, or profile stays
+ * put so this cannot leave a dangling reference.
+ */
+export async function deleteUploadedImage(
+  userId: string,
+  id: string,
+): Promise<UploadedImageDeleteResult> {
   const owner = String(userId || "").trim();
   const imageId = String(id || "").trim();
-  if (!owner || !imageId) return false;
-  const result = await getPool().query(
-    `DELETE FROM uploaded_images WHERE id = $1 AND user_id = $2 RETURNING id`,
-    [imageId, owner],
-  );
-  return result.rows.length > 0;
+  if (!owner || !imageId) return "missing";
+  return withTransientDbRetry(async () => {
+    const needle = `%/objects/uploads/${likeLiteral(imageId)}%`;
+    const referenced = await getPool().query(
+      `SELECT 1 AS hit FROM user_entities
+       WHERE user_id = $1 AND data::text LIKE $2 ESCAPE '\\'
+       LIMIT 1`,
+      [owner, needle],
+    );
+    if (referenced.rows.length) return "referenced";
+    const profile = await getPool().query(
+      `SELECT 1 AS hit FROM user_profiles
+       WHERE user_id = $1 AND data::text LIKE $2 ESCAPE '\\'
+       LIMIT 1`,
+      [owner, needle],
+    );
+    if (profile.rows.length) return "referenced";
+    const result = await getPool().query(
+      `DELETE FROM uploaded_images WHERE id = $1 AND user_id = $2 RETURNING id`,
+      [imageId, owner],
+    );
+    return result.rows.length > 0 ? "deleted" : "missing";
+  });
 }
 
 export async function getUploadedImage(

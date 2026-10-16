@@ -21,6 +21,7 @@ import {
   mergeDraftIntoComposer,
   omitTurnMessages,
   readHeldDraft,
+  reviseHeldDraft,
   sessionControlsLocked,
   writeHeldDraft,
 } from "./heldChatSend";
@@ -402,6 +403,28 @@ describe("held chat send", () => {
   });
 
   it("keeps chatting when storage is missing or throws", () => {
+    const storage = memoryStorage();
+    writeHeldDraft(
+      storage,
+      "user_a",
+      "sess",
+      {
+        text: "look",
+        attachments: [{ url: "/api/storage/objects/uploads/pic", type: "image", name: "pic.png" }],
+      },
+      1_000,
+    );
+    const before = readHeldDraft(storage, "user_a", "sess", 1_000);
+    const revised = reviseHeldDraft(storage, "user_a", "sess", before.savedAt, {
+      text: "look",
+      attachments: [],
+    });
+    expect(revised.ok).toBe(true);
+    const after = readHeldDraft(storage, "user_a", "sess", 1_000);
+    expect(after.savedAt).toBe(before.savedAt);
+    expect(after.text).toBe("look");
+    expect(after.attachments).toEqual([]);
+
     expect(writeHeldDraft(null, "user_a", "sess", "hi").ok).toBe(false);
     expect(readHeldDraft(null, "user_a", "sess")).toBeNull();
     expect(clearHeldDraft(null, "user_a", "sess").ok).toBe(false);
