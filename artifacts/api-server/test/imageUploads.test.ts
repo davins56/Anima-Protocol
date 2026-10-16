@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   httpStatusForUploadError,
   isDbUploadObjectPath,
+  MAX_UPLOAD_BYTES,
   MAX_UPLOAD_ERROR,
   objectPathForUploadId,
   parseImagePayload,
@@ -89,6 +90,13 @@ describe("imageUploads helpers", () => {
         dataBase64: Buffer.from("GIF89a").toString("base64"),
       }),
     ).toThrow(/JPEG, PNG, WebP, or HEIC/i);
+  });
+
+  it("rejects an oversized payload from its encoded length", () => {
+    const tooLong = "A".repeat(Math.ceil(MAX_UPLOAD_BYTES / 3) * 4 + 4);
+    expect(() =>
+      parseImagePayload({ contentType: "image/jpeg", dataBase64: tooLong }),
+    ).toThrow(/too large/i);
   });
 
   it("rejects non-images and empty payloads", () => {
