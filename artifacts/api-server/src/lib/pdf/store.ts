@@ -160,8 +160,8 @@ export async function readPdfFile(
   const id = safeEntityId(documentId);
   if (!owner || !id) return null;
   return withPdfTable(async () => {
-    const docs = await queryRows<{ filename: string }>(
-      `SELECT filename FROM pdf_documents WHERE id = $1 AND user_id = $2 LIMIT 1`,
+    const docs = await queryRows<{ filename: string; byte_size: number | string }>(
+      `SELECT filename, byte_size FROM pdf_documents WHERE id = $1 AND user_id = $2 LIMIT 1`,
       [id, owner],
     );
     const doc = docs[0];
@@ -174,12 +174,13 @@ export async function readPdfFile(
       [id, owner],
     );
     if (!parts.length) return { filename: doc.filename, bytes: null };
-    return {
-      filename: doc.filename,
-      bytes: Buffer.concat(
-        parts.map((part) => Buffer.from(String(part.data_base64 || ""), "base64")),
-      ),
-    };
+    const bytes = Buffer.concat(
+      parts.map((part) => Buffer.from(String(part.data_base64 || ""), "base64")),
+    );
+    if (bytes.byteLength !== Number(doc.byte_size)) {
+      return { filename: doc.filename, bytes: null };
+    }
+    return { filename: doc.filename, bytes };
   });
 }
 
@@ -369,9 +370,13 @@ export async function listPdfDocuments(input: {
     scope === "chat" ? safeEntityId(input.sessionId) : safeEntityId(input.characterId);
   if (!ownerId) return [];
   const columns = `id, filename, scope, session_id, character_id, byte_size, page_count, chunk_count, created_at,
-         EXISTS (
-           SELECT 1 FROM pdf_file_parts p
-           WHERE p.document_id = pdf_documents.id AND p.user_id = pdf_documents.user_id
+         (
+           pdf_documents.byte_size > 0
+           AND (
+             SELECT COALESCE(SUM(octet_length(p.data)), 0)
+             FROM pdf_file_parts p
+             WHERE p.document_id = pdf_documents.id AND p.user_id = pdf_documents.user_id
+           ) = pdf_documents.byte_size
          ) AS has_file`;
   const sql =
     scope === "chat"
@@ -402,9 +407,13 @@ export async function renamePdfDocument(input: {
        SET filename = $3, updated_at = now()
        WHERE id = $1 AND user_id = $2
        RETURNING id, filename, scope, session_id, character_id, byte_size, page_count, chunk_count, created_at,
-         EXISTS (
-           SELECT 1 FROM pdf_file_parts p
-           WHERE p.document_id = pdf_documents.id AND p.user_id = pdf_documents.user_id
+         (
+           pdf_documents.byte_size > 0
+           AND (
+             SELECT COALESCE(SUM(octet_length(p.data)), 0)
+             FROM pdf_file_parts p
+             WHERE p.document_id = pdf_documents.id AND p.user_id = pdf_documents.user_id
+           ) = pdf_documents.byte_size
          ) AS has_file`,
       [documentId, userId, filename],
     );

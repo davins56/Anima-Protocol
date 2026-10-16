@@ -175,6 +175,7 @@ import {
   isReplyReplaceFailed,
   liveTurnStillBlocking,
   omitTurnMessages,
+  reviseHeldDraft,
   sessionControlsLocked,
   writeHeldDraft,
 } from "@/lib/heldChatSend";
@@ -323,6 +324,11 @@ export default function Chat() {
     if (!userId || !draft?.sessionId) return;
     clearHeldDraftIfUnchanged(browserLocalStorage(), userId, draft.sessionId, draft.savedAt);
     setComposerRestore((prev) => dropAppliedComposerRestore(prev, draft));
+  }, []);
+  const handleRestoredDraftRevised = useCallback((draft, next) => {
+    const userId = heldDraftUserIdRef.current;
+    if (!userId || !draft?.sessionId) return;
+    reviseHeldDraft(browserLocalStorage(), userId, draft.sessionId, draft.savedAt, next);
   }, []);
   const gateRef = useRef(null);
   if (gateRef.current == null) {
@@ -4031,6 +4037,7 @@ Return JSON:
                   }
                   onRestoreDraftApplied={handleHeldDraftRestored}
                   onRestoredDraftSettled={handleRestoredDraftSettled}
+                  onRestoredDraftRevised={handleRestoredDraftRevised}
                 />
               </div>
             </div>
