@@ -115,7 +115,7 @@ export default function ChatInput({
     if (blockComposer) return;
     const readyPdfs = pdfs.filter((pdf) => pdf.status === "ready");
     if (!value.trim() && !attachments.length && !readyPdfs.length && !allowEmpty) return;
-    if (pdfBusy) return;
+    if (pdfBusy || uploadingMedia) return;
     
     // Create message with attachments if present
     const message = {
@@ -127,6 +127,7 @@ export default function ChatInput({
           id: pdf.id,
           name: pdf.name,
           page_count: pdf.pageCount,
+          has_file: true,
         })),
       ].filter(Boolean),
     };

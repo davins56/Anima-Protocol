@@ -14,17 +14,17 @@ export default function PdfFileChip({
   const label = name || "PDF";
   const body = (
     <>
-      <p className="font-mono text-sm text-primary/95 leading-snug break-words">
+      <span className="block font-mono text-sm text-primary/95 leading-snug break-words">
         {label}
-      </p>
-      <p className="font-mono text-[11px] text-primary/50 leading-tight" role="status">
+      </span>
+      <span className="block font-mono text-[11px] text-primary/50 leading-tight" role="status">
         {statusLabel ||
           (pageCount === 1
             ? "1 page"
             : pageCount
               ? `${pageCount} pages`
               : "PDF")}
-      </p>
+      </span>
     </>
   );
   return (

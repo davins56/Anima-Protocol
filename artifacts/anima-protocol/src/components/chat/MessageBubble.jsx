@@ -189,7 +189,7 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
                   name={file.name || file.filename || "PDF"}
                   pageCount={file.page_count || file.pageCount}
                   onOpen={
-                    file.id
+                    file.id && (file.has_file === true || file.hasFile === true)
                       ? () =>
                           openPdfDocument(file.id).catch((err) => {
                             toast.error(err?.message || "Could not open that PDF.");

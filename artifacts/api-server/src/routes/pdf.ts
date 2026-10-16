@@ -14,6 +14,7 @@ import {
 
 const router: IRouter = Router();
 const uploadLimit = createRateLimit({ name: "pdf-upload", max: 20 });
+const fileLimit = createRateLimit({ name: "pdf-file", max: 60 });
 
 function requireUser(req: Request, res: Response): string | null {
   const { userId } = getAuth(req);
@@ -92,7 +93,7 @@ router.get("/pdfs", async (req: Request, res: Response) => {
 });
 
 /** GET /api/pdfs/:id/file — original PDF for the owner. Auth required. */
-router.get("/pdfs/:id/file", async (req: Request, res: Response) => {
+router.get("/pdfs/:id/file", fileLimit, async (req: Request, res: Response) => {
   const userId = requireUser(req, res);
   if (!userId) return;
   try {

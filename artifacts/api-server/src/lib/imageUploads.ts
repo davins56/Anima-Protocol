@@ -45,14 +45,13 @@ export function canonicalImageType(contentType: string): string | null {
   return null;
 }
 
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] as const;
+
 export function imageBytesMatchType(contentType: string, bytes: Uint8Array): boolean {
   if (contentType === "image/png") {
     return (
-      bytes.length >= 8 &&
-      bytes[0] === 0x89 &&
-      bytes[1] === 0x50 &&
-      bytes[2] === 0x4e &&
-      bytes[3] === 0x47
+      bytes.length >= PNG_SIGNATURE.length &&
+      PNG_SIGNATURE.every((byte, index) => bytes[index] === byte)
     );
   }
   if (contentType === "image/jpeg") {

@@ -7,6 +7,7 @@ import {
 import {
   describeSharedPhotos,
   photoCountFromMetadata,
+  photosFromMetadata,
   sharedPhotoPromptNote,
 } from "../src/lib/sharedPhoto";
 
@@ -27,7 +28,7 @@ describe("shared photo note", () => {
     expect(source).not.toMatch(/\bfetch\s*\(/);
     expect(source).not.toMatch(/from ["']/);
     expect(source).toMatch(/return null;/);
-    expect(await describeSharedPhotos({ count: 1 })).toBeNull();
+    expect(await describeSharedPhotos({ count: 1, photos: [] })).toBeNull();
   });
 
   it("clamps the photo count from chat metadata", () => {
@@ -39,10 +40,27 @@ describe("shared photo note", () => {
     expect(photoCountFromMetadata(null)).toBe(0);
   });
 
+  it("keeps only stored upload paths for a future vision read", () => {
+    expect(
+      photosFromMetadata({
+        photo_urls: [
+          "/api/storage/objects/uploads/abc_123",
+          "https://example.com/secret.jpg",
+          "/objects/uploads/photo-1/extra",
+          "/objects/uploads/photo-1",
+        ],
+      }),
+    ).toEqual([
+      { url: "/api/storage/objects/uploads/abc_123" },
+      { url: "/objects/uploads/photo-1" },
+    ]);
+    expect(photosFromMetadata({ photo_urls: "nope" })).toEqual([]);
+  });
+
   it("puts a cannot-see note beside the caption and keeps the PDF excerpt", async () => {
     const note = sharedPhotoPromptNote({
       count: 1,
-      visionSummary: await describeSharedPhotos({ count: 1 }),
+      visionSummary: await describeSharedPhotos({ count: 1, photos: [] }),
     });
     expect(note).toMatch(/cannot see the image/i);
     expect(note).not.toMatch(/the photo shows|I can see/i);

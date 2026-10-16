@@ -4,13 +4,23 @@
  * The droplet model cannot see images, and chat stays fail-closed: this
  * module must not call OpenRouter, OpenAI, Workers AI, or any other host.
  * A future on-box vision model replaces `describeSharedPhotos` only.
+ * The photos array is the image data that function is allowed to read.
  */
 
 export const SHARED_PHOTO_MAX = 4;
 const VISION_NOTE_MAX_CHARS = 400;
+const PHOTO_URL_MAX_LEN = 500;
+
+/** Same-origin upload path. A vision model reads these; nothing else is accepted. */
+const PHOTO_URL_RE = /^\/(?:api\/storage\/)?objects\/uploads\/[A-Za-z0-9_-]+$/;
+
+export type SharedPhotoRef = {
+  url: string;
+};
 
 export type SharedPhotoVisionInput = {
   count: number;
+  photos: SharedPhotoRef[];
 };
 
 /**
@@ -21,6 +31,21 @@ export async function describeSharedPhotos(
   _input: SharedPhotoVisionInput,
 ): Promise<string | null> {
   return null;
+}
+
+/** Upload paths the client attached on this turn. Other URLs are dropped. */
+export function photosFromMetadata(metadata: unknown): SharedPhotoRef[] {
+  if (!metadata || typeof metadata !== "object") return [];
+  const raw = (metadata as { photo_urls?: unknown }).photo_urls;
+  if (!Array.isArray(raw)) return [];
+  const photos: SharedPhotoRef[] = [];
+  for (const item of raw) {
+    const url = typeof item === "string" ? item.trim() : "";
+    if (!url || url.length > PHOTO_URL_MAX_LEN || !PHOTO_URL_RE.test(url)) continue;
+    photos.push({ url });
+    if (photos.length >= SHARED_PHOTO_MAX) break;
+  }
+  return photos;
 }
 
 export function photoCountFromMetadata(metadata: unknown): number {

@@ -35,9 +35,11 @@ export type PdfDocumentRecord = {
   characterId: string | null;
   byteSize: number;
   pageCount: number;
-  chunkCount: number;
-  createdAt: string;
-};
+    chunkCount: number;
+    /** True when the original bytes are in pdf_file_parts. */
+    hasFile: boolean;
+    createdAt: string;
+  };
 
 type DocumentRow = {
   id: string;
@@ -49,6 +51,7 @@ type DocumentRow = {
   page_count: number | string;
   chunk_count: number | string;
   created_at: Date | string;
+  has_file?: boolean | string | number | null;
 };
 
 function isMissingPdfTable(error: unknown): boolean {
@@ -96,6 +99,7 @@ function mapDocument(row: DocumentRow): PdfDocumentRecord {
     byteSize: Number(row.byte_size) || 0,
     pageCount: Number(row.page_count) || 0,
     chunkCount: Number(row.chunk_count) || 0,
+    hasFile: row.has_file === true || row.has_file === "t" || row.has_file === 1,
     createdAt:
       row.created_at instanceof Date
         ? row.created_at.toISOString()
@@ -346,6 +350,7 @@ export async function createPdfDocument(input: {
       byteSize,
       pageCount: extracted.pageCount,
       chunkCount: chunks.length,
+      hasFile: true,
       createdAt: new Date().toISOString(),
     };
   });
@@ -363,13 +368,18 @@ export async function listPdfDocuments(input: {
   const ownerId =
     scope === "chat" ? safeEntityId(input.sessionId) : safeEntityId(input.characterId);
   if (!ownerId) return [];
+  const columns = `id, filename, scope, session_id, character_id, byte_size, page_count, chunk_count, created_at,
+         EXISTS (
+           SELECT 1 FROM pdf_file_parts p
+           WHERE p.document_id = pdf_documents.id AND p.user_id = pdf_documents.user_id
+         ) AS has_file`;
   const sql =
     scope === "chat"
-      ? `SELECT id, filename, scope, session_id, character_id, byte_size, page_count, chunk_count, created_at
+      ? `SELECT ${columns}
          FROM pdf_documents
          WHERE user_id = $1 AND scope = 'chat' AND session_id = $2
          ORDER BY created_at ASC`
-      : `SELECT id, filename, scope, session_id, character_id, byte_size, page_count, chunk_count, created_at
+      : `SELECT ${columns}
          FROM pdf_documents
          WHERE user_id = $1 AND scope = 'lore' AND character_id = $2
          ORDER BY created_at ASC`;
@@ -391,7 +401,11 @@ export async function renamePdfDocument(input: {
       `UPDATE pdf_documents
        SET filename = $3, updated_at = now()
        WHERE id = $1 AND user_id = $2
-       RETURNING id, filename, scope, session_id, character_id, byte_size, page_count, chunk_count, created_at`,
+       RETURNING id, filename, scope, session_id, character_id, byte_size, page_count, chunk_count, created_at,
+         EXISTS (
+           SELECT 1 FROM pdf_file_parts p
+           WHERE p.document_id = pdf_documents.id AND p.user_id = pdf_documents.user_id
+         ) AS has_file`,
       [documentId, userId, filename],
     );
     if (!updated[0]) return null;
