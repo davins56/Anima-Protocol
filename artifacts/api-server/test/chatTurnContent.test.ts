@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CONTINUE_USER_TURN } from "../src/lib/promptBuilder";
+import { replyActionOf } from "../src/lib/replyReplacement";
 import {
   chatTurnContent,
   EMPTY_CHAT_CONTENT_ERROR,
@@ -46,14 +47,29 @@ describe("POST /chat/messages client request shape", () => {
     expect(whitespaceFlag.content).toBe("");
   });
 
-  it("accepts retry and edit, which resend his line and leave is_continue false", () => {
-    const decision = gate({
-      content: NATASHA_LINE,
-      is_continue: false,
-    });
-    expect(decision.error).toBeNull();
-    expect(decision.content).toBe(NATASHA_LINE);
-    expect(decision.isContinue).toBe(false);
+  it("accepts retry and edit bodies, which put reply_action on metadata", () => {
+    for (const reply_action of ["retry", "edit"] as const) {
+      const body = {
+        content: NATASHA_LINE,
+        is_continue: false,
+        metadata: {
+          reply_action,
+          skip_affect: true,
+          is_continue: false,
+          replaced_turn_id: "turn_previous",
+        },
+      };
+      const decision = gate(body);
+      expect(decision.error).toBeNull();
+      expect(decision.content).toBe(NATASHA_LINE);
+      expect(decision.isContinue).toBe(false);
+      // Chat.jsx does not send a top-level reply_action. The route reads
+      // body.reply_action ?? body.metadata.reply_action, so a missing metadata
+      // field would drop the replacement.
+      expect("reply_action" in body).toBe(false);
+      expect(replyActionOf(body.metadata.reply_action)).toBe(reply_action);
+      expect(replyActionOf(undefined ?? body.metadata.reply_action)).toBe(reply_action);
+    }
   });
 
   it("rejects an empty send that forgot is_continue before any model call", () => {
