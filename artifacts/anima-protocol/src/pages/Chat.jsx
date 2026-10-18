@@ -2670,7 +2670,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       const wantsImage = replyCutOff.reply_interrupted
         ? userRequestedImage(content)
         : parseImagePrompts(result).length > 0 || userRequestedImage(content);
-      let imageAttachments = [];
+      let replyImageAttachments = [];
       if (wantsImage) {
         const imageProgressText = stripImageTags(result.replace(eventTagRegex, "")).trim() || result;
         applyIfSendSession((prev) => ({
@@ -2688,8 +2688,8 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             generateImage: (args) => base44.integrations.Core.GenerateImage(args),
             persistUrl: (dataUrl) => uploadDataUrl(dataUrl),
           });
-          imageAttachments = resolved.attachments;
-          if (resolved.source && imageAttachments.length) {
+          replyImageAttachments = resolved.attachments;
+          if (resolved.source && replyImageAttachments.length) {
             track("image_generated", {
               source: resolved.source,
               is_anima: Boolean(activeChar?._isAnima),
@@ -2763,12 +2763,12 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         newAiMessages = newAiMessages.map((m) => ({ ...m, ...replyCutOff }));
       }
 
-      if (imageAttachments.length && newAiMessages[0]) {
+      if (replyImageAttachments.length && newAiMessages[0]) {
         newAiMessages[0] = {
           ...newAiMessages[0],
           attachments: [
             ...(newAiMessages[0].attachments || []),
-            ...imageAttachments,
+            ...replyImageAttachments,
           ],
         };
       }

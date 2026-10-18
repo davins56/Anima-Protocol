@@ -84,6 +84,7 @@ import {
   type CompanionMemoryRecord,
   type CharacterData,
 } from "../lib/promptBuilder";
+import { chatTurnContent } from "../lib/chatTurnContent";
 import { beginCompanionLlmTurn, companionTurnsOpenForUser } from "../lib/sidecarLlm";
 import {
   describeSharedPhotos,
@@ -2284,13 +2285,12 @@ router.post("/messages", async (req, res) => {
     ...new Set((requestedIds.length ? requestedIds : sessionCharacterIds).filter(Boolean)),
   ];
   const mode = body.mode || String(sessionData.mode || "solo");
-  const content = String(body.content ?? "").trim();
-  if (!content && body.is_continue !== true) {
-    res.status(400).json({
-      error: "empty message content requires is_continue=true",
-    });
+  const turnContent = chatTurnContent(body);
+  if (turnContent.error) {
+    res.status(400).json({ error: turnContent.error });
     return;
   }
+  const content = turnContent.content;
   const replyAction = replyActionOf(body.reply_action ?? body.metadata?.reply_action);
   const skipAffect =
     replyAction != null || body.skip_affect === true || body.metadata?.skip_affect === true;
