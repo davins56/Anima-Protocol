@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -31,6 +33,10 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Lint
         run: pnpm lint
+      - name: Migration safety (no destructive SQL on memory tables)
+        run: pnpm run check:migrations
+        env:
+          MIGRATION_BASE_REF: ${{ github.event.pull_request.base.sha || 'HEAD~1' }}
 
   typecheck:
     runs-on: ubuntu-latest

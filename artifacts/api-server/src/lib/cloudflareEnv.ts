@@ -55,6 +55,9 @@ export const CLOUDFLARE_RUNTIME_ENV_NAMES = [
   "ANIMA_OPENROUTER_FALLBACK",
   "ANIMA_OPENROUTER_FREE",
   "ANIMA_CODESPACE_TERMINAL",
+  "ANIMA_MEMORY_CORE",
+  "ANIMA_MEMORY_EMBED_MODEL",
+  "ANIMA_MEMORY_EMBED_PROVIDER",
   // Forward Kernel roadmap kill switches. Unset is off. See kernelFeatures.ts.
   // Classic Worker secrets (`wrangler secret put`), not wrangler.jsonc vars.
   "ANIMA_KERNEL_AGENCY",
