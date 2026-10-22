@@ -1,20 +1,46 @@
 /**
- * The 4th axis made visible. Each frequency layer is a full 6×3 arena placed
- * along a "W direction" in world space (receding in depth and rising), tinted
- * by its band. Units stand on their layer's plane; during a phase-shift they
- * (and the camera) slide along W between planes while dissolving.
+ * The 4th axis made visible. The five frequency layers are full 6×3 arenas
+ * set side by side around a convex ring — the frequency dial laid out in
+ * space, red (low W) on the left to violet (high W) on the right. Neighbouring
+ * layers recede in depth and turn away; units stand on their layer's arena,
+ * and during a phase-shift they (and the camera) slide sideways along the
+ * ring between arenas while dissolving.
  *
  * Interpolation: render time is prev.tick + alpha, so positions are lerped
  * between the two most recent sim states and phase progress is continuous.
  */
-import { BAND_BY_KEY, BANDS, clampW, LAYER_W, layerAt, type SimState, type Unit } from "@workspace/sim-core";
+import { BAND_BY_KEY, BANDS, clampW, LAYER_COUNT, LAYER_W, layerAt, type SimState, type Unit } from "@workspace/sim-core";
 
-/** World-space offset per unit of W (depth into the screen + slight rise). */
-export const W_WORLD = { y: 0.075, z: -0.3 } as const;
+/** Ring layout: radius (world units) and angle between adjacent layers (radians). */
+export const W_RING = { radius: 12, step: 0.7 } as const;
 
-export function wOffset(w: number): [number, number, number] {
-  const c = clampW(w);
-  return [0, c * W_WORLD.y, c * W_WORLD.z];
+/**
+ * Continuous layer "slot" for a W: exactly i at LAYER_W[i], piecewise-linear
+ * between centres (so uneven band widths still give evenly spaced arenas).
+ */
+export function wSlot(w: number): number {
+  const f = clampW(w);
+  if (f <= LAYER_W[0]) return 0;
+  for (let i = 1; i < LAYER_COUNT; i++)
+    if (f <= LAYER_W[i]) return i - 1 + (f - LAYER_W[i - 1]) / (LAYER_W[i] - LAYER_W[i - 1]);
+  return LAYER_COUNT - 1;
+}
+
+export type WFrame = { origin: [number, number, number]; yaw: number };
+
+/** World origin + yaw of the arena plane at W (layer centres sit on the ring). */
+export function wFrame(w: number): WFrame {
+  const theta = (wSlot(w) - (LAYER_COUNT - 1) / 2) * W_RING.step;
+  const r = W_RING.radius;
+  return { origin: [r * Math.sin(theta), 0, -r * (1 - Math.cos(theta))], yaw: theta };
+}
+
+/** Map a point in arena-local coordinates to world space for the arena at W. */
+export function wToWorld(local: [number, number, number], w: number): [number, number, number] {
+  const { origin, yaw } = wFrame(w);
+  const c = Math.cos(yaw);
+  const s = Math.sin(yaw);
+  return [origin[0] + local[0] * c + local[2] * s, origin[1] + local[1], origin[2] - local[0] * s + local[2] * c];
 }
 
 /** W of the arena plane a unit at `w` stands on. */
