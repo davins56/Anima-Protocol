@@ -85,7 +85,7 @@ describe("POST /llm/warm", () => {
     });
     expect(response.status).toBe(200);
     const payload = (await response.json()) as Record<string, unknown>;
-    expect(payload).toEqual({ ok: true, warmed: true });
+    expect(payload).toEqual({ ok: true, warmed: true, resting: false });
     expect(JSON.stringify(payload)).not.toContain("llm.anima-protocol.com");
     expect(JSON.stringify(payload)).not.toContain("proxy-token");
     expect(JSON.stringify(payload)).not.toContain("anima-chat");
@@ -111,6 +111,7 @@ describe("POST /llm/warm", () => {
       ok: true,
       warmed: false,
       skipped: "recent",
+      resting: false,
     });
     expect(ollamaFetch).toHaveBeenCalledTimes(1);
   });
