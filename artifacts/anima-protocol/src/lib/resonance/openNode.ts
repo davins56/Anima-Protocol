@@ -6,6 +6,7 @@
  */
 import { base44 } from "@/api/base44Client";
 import { createCompanionRecord } from "@/lib/createCompanion";
+import { ensureBuiltInCompanion } from "@/lib/companions/builtInCompanions";
 import { startSoloCompanionChatSession, isUsableSessionId } from "@/lib/createInitSession";
 import { rememberCreatedSession } from "@/lib/chatSessionLoad";
 import { appendAmbientMessage } from "@/lib/appendAmbientMessage";
@@ -26,6 +27,10 @@ export async function resolveNodeCharacter(node: ResonanceNode, companions: Comp
   if (node.character_id) return companions.find((c) => c.id === node.character_id) || { id: node.character_id, name: node.label };
   if (node.is_signature || node.spawn_rules?.persona_hint === "serenity") {
     return companions.find((c) => /serenity/i.test(c.name)) || companions[0] || null;
+  }
+  if (node.spawn_rules?.persona_hint === "scarlet") {
+    // Placeholder node: resolves to the user's Scarlet, creating her from the built-in template on first open.
+    return (await ensureBuiltInCompanion("scarlet", companions, createCompanionRecord)) as Companion | null;
   }
   const persona = node.spawn_rules?.persona;
   if (!persona?.name) return null;

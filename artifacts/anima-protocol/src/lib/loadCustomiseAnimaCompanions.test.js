@@ -79,7 +79,7 @@ describe("loadCustomiseAnimaCompanions", () => {
 
     const result = await loadCustomiseAnimaCompanions();
     expect(result.rows.map((row) => row.name)).toEqual(
-      expect.arrayContaining(["Serenity", "Aelynd"]),
+      expect.arrayContaining(["Serenity", "Aeland"]),
     );
   });
 });
