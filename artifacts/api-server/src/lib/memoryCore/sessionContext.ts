@@ -3,6 +3,7 @@
  * Called from routes/chat.ts through optionalChatContext with a hard timeout,
  * so a slow or missing memory core never blocks a reply.
  */
+import { obscuredMemory } from "@workspace/sim-core";
 import { ensureIdentitySnapshot, recallMemories, type IdentityCore, type RecalledMemory } from "./memoryCore";
 
 export const MEMORY_CORE_TIMEOUT_MS = 1500;
@@ -31,7 +32,11 @@ export function formatMemoryCoreBlock(identity: IdentityCore | null, memories: R
   if (memories.length) {
     lines.push("Long-term memories you hold (oldest truths still matter):");
     for (const m of memories) {
-      const line = `- (${ago(m.occurred_at, now)}${m.emotional_weight >= 0.8 ? ", deeply felt" : ""}) ${m.content.replace(/\s+/g, " ").trim()}`;
+      const text = m.content.replace(/\s+/g, " ").trim();
+      const corrupted = (m.payload as { corrupted?: { severity?: number } } | null)?.corrupted;
+      // Corrupted (net-battle) memories surface only as an obscured fragment until purified.
+      const shown = corrupted ? obscuredMemory(text, Number(corrupted.severity) || 0.5, m.id) : text;
+      const line = `- (${ago(m.occurred_at, now)}${m.emotional_weight >= 0.8 ? ", deeply felt" : ""}) ${shown}`;
       if (lines.join("\n").length + line.length > BLOCK_CHAR_BUDGET) break;
       lines.push(line);
     }
