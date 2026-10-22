@@ -2,12 +2,16 @@ import { awaitCompanionStoreAuth, base44 } from "@/api/base44Client";
 
 export { awaitCompanionStoreAuth };
 import {
+  AELAND_NAME,
+  canonicalizeCompanionRow,
   isKnownPersonalAnimaName,
   isPersonalAnimaRecord,
   PERSONAL_ANIMA_NAME_ALIASES,
 } from "@/lib/personalAnimaRecord";
 
 export {
+  AELAND_NAME,
+  canonicalizeCompanionRow,
   isKnownPersonalAnimaName,
   isPersonalAnimaRecord,
   PERSONAL_ANIMA_NAME_ALIASES,
@@ -49,10 +53,15 @@ export async function loadCompanionRecord(id, preferredEntity) {
   return null;
 }
 
-/** Strip picker-only flags so they are not written back to the store. */
+/**
+ * Strip picker-only flags so they are not written back to the store. A row
+ * displayed as "Aeland" but stored under a legacy spelling keeps its stored
+ * name unless the user actually renamed her.
+ */
 export function companionPersistPatch(form) {
   if (!form || typeof form !== "object") return {};
-  const { _storeEntity, _isAnima, _bundled, ...rest } = form;
+  const { _storeEntity, _isAnima, _bundled, legacy_name, ...rest } = form;
+  if (legacy_name && rest.name === AELAND_NAME) rest.name = legacy_name;
   return rest;
 }
 
@@ -65,7 +74,7 @@ function createdMs(row) {
 function tagCompanionRow(row, storeEntity) {
   if (!row || typeof row !== "object") return row;
   return {
-    ...row,
+    ...canonicalizeCompanionRow(row),
     _storeEntity: storeEntity,
     _isAnima: storeEntity === "Anima" ? true : row._isAnima === true,
   };
@@ -107,7 +116,7 @@ async function listByNameSearch(entity, name, limit) {
  * Load personal companions from Anima + Character.
  *
  * Character.list(limit) is newest-first. A second Anima stored as an older
- * Character (Aelynd without `ai_prompt`) can fall past a 100-row roster cap.
+ * Character (Aeland, stored as legacy "Aelynd", without `ai_prompt`) can fall past a 100-row roster cap.
  * Also query `creation_method` and known name aliases across the whole store.
  */
 export async function listPersonalAnimas(limit = 500) {

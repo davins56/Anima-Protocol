@@ -1,5 +1,5 @@
 /** Customization panel (touch-friendly, iPad-first). Pure controlled component. */
-import { ACCESSORIES, AURAS, BODY_TYPES, BOTTOMS, HAIR_STYLES, TOPS, VESSEL_PRESETS, parseVesselConfig, type VesselConfig } from "@/lib/vessel/vesselConfig";
+import { ACCESSORIES, AURAS, BODY_TYPES, BOTTOMS, HAIR_STYLES, TOPS, VESSEL_BASES, VESSEL_PRESETS, parseVesselConfig, type VesselConfig } from "@/lib/vessel/vesselConfig";
 
 type Props = { value: VesselConfig; onChange: (v: VesselConfig) => void };
 
@@ -44,7 +44,7 @@ export default function VesselCustomizer({ value: v, onChange }: Props) {
   return (
     <div className="space-y-5">
       <Section title="Preset">
-        <Chips options={["serenity", "linda", "aelindra", "custom"] as const} value={v.base} onPick={(b) => set(b === "custom" ? { base: "custom" } : { ...VESSEL_PRESETS[b] })} />
+        <Chips options={VESSEL_BASES} value={v.base} onPick={(b) => set(b === "custom" ? { base: "custom" } : { ...VESSEL_PRESETS[b] })} />
       </Section>
       <Section title="Body">
         <Chips options={BODY_TYPES} value={v.bodyType} onPick={(bodyType) => set({ bodyType })} />

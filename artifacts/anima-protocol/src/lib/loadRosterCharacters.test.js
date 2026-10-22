@@ -204,7 +204,7 @@ describe("loadRosterCharacters", () => {
 
     expect(result.usingBundledSeed).toBe(false);
     expect(result.characters.map((c) => c.name)).toEqual(
-      expect.arrayContaining(["Aelynd", "Korra"]),
+      expect.arrayContaining(["Aeland", "Korra"]),
     );
   });
 

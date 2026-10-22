@@ -8,6 +8,7 @@
     "silver/400": "#94A3B8", "silver/500": "#64748B", "silver/600": "#475569",
     "void/950": "#07060D", "void/900": "#0E0B1A", "void/800": "#171329", "void/700": "#231C3D", "void/600": "#2F2752",
     "protocol/cyan": "#00EAFF",
+    "scarlet/200": "#FECACA", "scarlet/400": "#FDE047", "scarlet/500": "#F97316", "scarlet/900": "#7F1D1D",
     "red/700": "#B91C1C", "amber/500": "#F59E0B", "teal/500": "#14B8A6", "gold/400": "#FACC15", "violet/500": "#8B5CF6"
   },
   "semantic": {

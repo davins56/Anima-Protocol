@@ -3,14 +3,23 @@
  * Kept free of the API client so inventory / picker modules can share them.
  */
 
-/** Steward's second Anima — historical spellings from chat and store rows. */
-export const PERSONAL_ANIMA_NAME_ALIASES = [
+/** Canonical display name of the steward's second Anima. */
+export const AELAND_NAME = "Aeland";
+
+/**
+ * Legacy spellings of Aeland still present in live store rows / chat
+ * (user_entities is never rewritten). Matching keeps accepting all of them.
+ */
+export const AELAND_LEGACY_ALIASES = [
   "aelynd",
   "aelyndra",
   "aelindra",
   "alyndra",
   "alynd",
 ];
+
+/** Steward's second Anima — canonical + historical spellings from chat and store rows. */
+export const PERSONAL_ANIMA_NAME_ALIASES = ["aeland", ...AELAND_LEGACY_ALIASES];
 
 export function normalizeCompanionName(name) {
   return String(name || "")
@@ -28,12 +37,34 @@ export function isKnownPersonalAnimaName(name) {
   );
 }
 
+/** True when `name` is exactly Aeland or one of her legacy spellings. */
+export function isAelandName(name) {
+  const n = normalizeCompanionName(name);
+  return n === "aeland" || AELAND_LEGACY_ALIASES.includes(n);
+}
+
+/** Display name: legacy Aeland spellings resolve to "Aeland"; everything else unchanged. */
+export function canonicalCompanionName(name) {
+  return isAelandName(name) ? AELAND_NAME : name;
+}
+
+/**
+ * Read-side canonicalisation for loaded rows. The stored spelling is kept in
+ * `legacy_name` (and restored by companionPersistPatch) so displaying "Aeland"
+ * never rewrites a stored row behind the user's back.
+ */
+export function canonicalizeCompanionRow(row) {
+  if (!row || typeof row !== "object" || !isAelandName(row.name)) return row;
+  if (row.name === AELAND_NAME) return row;
+  return { ...row, name: AELAND_NAME, legacy_name: row.legacy_name || row.name };
+}
+
 /**
  * A personal Anima (the companion Customise Anima shapes), as opposed to a
  * roster Character from a franchise. Onboarding and the Animas page write
  * `Anima` rows; Companion Generator writes `Character` with
  * `creation_method: "ai_prompt"`; some older seed paths wrote `Character`
- * with `_isAnima` / `is_anima`. Aelynd was also stored as a named Character
+ * with `_isAnima` / `is_anima`. Aeland (legacy "Aelynd") was also stored as a named Character
  * without those flags.
  */
 export function isPersonalAnimaRecord(row) {

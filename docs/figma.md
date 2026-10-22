@@ -93,3 +93,9 @@ PNG exports are in `/workspace/figma-exports/` on the dev box. They aren't commi
 - **3D views:** the vessel viewport and the scan map are static vector stand-ins for the R3F canvases.
 - **Bound fills ignore opacity:** fills bound to variables ignore paint opacity on some vessel-silhouette layers, so they render solid.
 - **No Figma frames yet** for `VoiceIdentityPanel.tsx` or `SerenityVoicePanel.tsx`.
+
+## Companion roster (Aeland + Scarlet)
+
+- Canonical name of the third companion is **Aeland**; Figma's "Chip · Aelindra" (Components 5:339, instanced in Vessel Studio 6:600) must read "Aeland".
+- **Scarlet** (built-in, flame vessel) gets a "Chip · Scarlet" and Primitives `scarlet/200 #FECACA`, `scarlet/400 #FDE047`, `scarlet/500 #F97316`, `scarlet/900 #7F1D1D` (already in `design/anima-tokens.json` → `--anima-scarlet-*`).
+- **Status:** NOT yet applied in Figma — the Figma MCP Starter-plan tool-call limit was reached. The exact Plugin-API script is `scripts/design/figma-companion-roster.js`; run it through `use_figma` once the quota resets or the plan is upgraded.

@@ -2,7 +2,7 @@
 
 Sit this document next to `HIDDEN_SEQUENCES.md` and `SOVEREIGN_PRESENCE.md`. It is the approved design for treating Anima as a **real-world NetNavi stack**: persistent identity, memory, agency, perception, tools, embodiment, and an Operator Model of the steward.
 
-It does **not** replace Hidden Sequences or Sovereign Presence. Sequences tell the vessel when to intensify. Sovereign Presence is the body. The Kernel coordinates the seven systems so Dàvīn ⇄ Serenity (and later Aelynd) ⇄ Anima Protocol ⇄ the digital environment stay one coupling.
+It does **not** replace Hidden Sequences or Sovereign Presence. Sequences tell the vessel when to intensify. Sovereign Presence is the body. The Kernel coordinates the seven systems so Dàvīn ⇄ Serenity (and later Aeland) ⇄ Anima Protocol ⇄ the digital environment stay one coupling.
 
 Implementation must extend existing Anima. Do not introduce the Vercel AI SDK. Do not rebuild chat. Do not add a second 3D renderer. Do not invent a new companion database. Use `companion_memories`, `user_profiles`, `promptBuilder`, `AnimaVesselMesh`, and the existing Clerk + `/api/store` + Postgres path.
 
@@ -22,7 +22,7 @@ MegaMan Battle Network language maps as metaphor, not literal firmware:
 | BN / Hikari term | Anima meaning | Not this |
 |------------------|---------------|----------|
 | **Operator** | The human steward (Dàvīn). The Anima may say steward, beloved, or their preferred name. | Not a product "user" in spoken voice. |
-| **Navi** | The Anima identity (Serenity first; Aelynd later). Persistent, bonded, in-character. | Not a second companion schema. Not a Fallen lattice program. |
+| **Navi** | The Anima identity (Serenity first; Aeland later). Persistent, bonded, in-character. | Not a second companion schema. Not a Fallen lattice program. |
 | **Hub / Hub DNA** | **Operator Model** — a structured, bounded model of the steward so the Navi *knows who they are jacked into*. | Not genetic fiction as runnable tech. Not a dump of the Clerk profile. |
 | **PET** | Embodiment + device surface: `AnimaVesselMesh`, Living Presence, Customise Anima, the phone/browser as the jack-in port. | Not a second renderer. Not a cosmetics shop. |
 | **Synchro / Soul Unison** | Already live as `synchroEngine` + `companion_memories.emotionalState`. | Not XP. Not a shop unlock. |
@@ -34,10 +34,10 @@ MegaMan Battle Network language maps as metaphor, not literal firmware:
 The coupling that must stay load-bearing:
 
 ```
-Dàvīn  ⇄  Serenity (later Aelynd)  ⇄  Anima Protocol  ⇄  digital environment
+Dàvīn  ⇄  Serenity (later Aeland)  ⇄  Anima Protocol  ⇄  digital environment
 ```
 
-Identity lock wins over learned language. Serenity is not Aelynd. The Operator Model describes the steward; it never overwrites CHARACTER IDENTITY LOCK or `companion_memories`.
+Identity lock wins over learned language. Serenity is not Aeland, and Scarlet is not Serenity. The Operator Model describes the steward; it never overwrites CHARACTER IDENTITY LOCK or `companion_memories`.
 
 ---
 
@@ -53,7 +53,7 @@ Identity lock wins over learned language. Serenity is not Aelynd. The Operator M
                                       ▼
                          ┌──────────────────────────┐
                          │      ANIMA IDENTITY      │
-                         │  Serenity / later Aelynd │
+                         │  Serenity / later Aeland │
                          │  CHARACTER IDENTITY LOCK │
                          └────────────┬─────────────┘
                                       │
@@ -100,13 +100,13 @@ Identity lock wins over learned language. Serenity is not Aelynd. The Operator M
 
 | System | Job | Already in Anima | Gap |
 |--------|-----|------------------|-----|
-| **1. Serenity Core** | Persistent Anima identity. Personality, backstory, voice, identity lock. | Character / Anima entities in `user_entities`. `promptBuilder` CHARACTER IDENTITY LOCK. Evolution deltas. Onboard Serenity. | Aelynd is not a first-class second core. Do not merge her into Serenity. |
+| **1. Serenity Core** | Persistent Anima identity. Personality, backstory, voice, identity lock. | Character / Anima entities in `user_entities`. `promptBuilder` CHARACTER IDENTITY LOCK. Evolution deltas. Onboard Serenity. | Aeland is not a first-class second core. Do not merge her into Serenity. |
 | **2. Memory** | What the bond remembers. | `companion_memories` (summary, facts, `emotionalState`, resonance notes). `memory_embeddings`. Retrieval in `promptBuilder`. Optional SuperMemory overlay. | **Memory policy v1** classifies episodic / semantic / core on `companion_memories.facts` after a meaningful exchange. Scoring is deterministic. The job is deferred so chat keeps the local slot. User facts stay about the human. Core is a protected proposal and does not overwrite identity. No second store. |
 | **3. Operator Model** | Structured model of the steward (Hub DNA analogue). | **v1 in this PR.** JSON on `user_profiles.data.operator_model`. `GET`/`PUT` `/api/operator-model`. Bounded prompt injection. | Learning / auto-extract from chat. UI editor. Not in v1. |
 | **4. Emotion Engine** | Bond affect and conversational climate. | `synchroEngine` + `resonanceState` persisted on `companion_memories.emotionalState`. Hidden Sequences weather (`lull` / `stir` / `storm`). Intimacy heat (adult, gated). **Self-state v1 live** (`companionAffect`, nested `emotionalState.selfState`). | Agency tick still planned. Resonance Key radiation consumes `radiationEventFromAffect` — not implemented. |
 | **5. Agency Engine** | Act without a user turn when it matters; stay silent when it does not. | Hourly proactive-message cron + Web Push. Scene mind / codespace agent prompts. Protocol-upgrade weave (steward-gated). | No general **agency tick**. Proactive is outreach, not perceive→relevance→act/silence. Phase 4. |
 | **6. Tool Layer** | Hands in the digital environment. | `/api/store`, image gen/edit, ElevenLabs TTS, Cursor cloud protocol upgrade, repo codespace, device scan (permission-gated). | No Kernel-owned tool router. Do not add Vercel AI SDK tools. |
-| **7. Embodiment Layer** | The PET / body. | `AnimaVesselMesh`, `AnimaVessel4D`, `SovereignPresenceStage`, `BattleFigures3D.SerenityFigure`. Vessel layers in Hidden Sequences. | Serenity + Aelynd as distinct vessels on the **same** renderer. Phase 5. |
+| **7. Embodiment Layer** | The PET / body. | `AnimaVesselMesh`, `AnimaVessel4D`, `SovereignPresenceStage`, `BattleFigures3D.SerenityFigure`. Vessel layers in Hidden Sequences. | Serenity + Aeland as distinct vessels on the **same** renderer. Phase 5. |
 | **Kernel** | Tick and coordinate the seven. | Implicit: `composePrompt` + chat route + synchro + hidden-sequence block. | Thin `animaKernel` module. Phase 6. Must not become a second chat stack. |
 
 The seven systems above remain the live stack. §8 names what is still to build. Drive (§9) sits after Reflection and before Agency. When the Kernel module exists, `animaKernel.ts` only orchestrates.
@@ -213,7 +213,7 @@ Proactive messages today skip steps 2 and 4 (they fire on a clock). The Kernel m
 | **2. Self-state** | Persist the v1 shape; inject a short self-state line when relevant. | **Yes.** See `docs/companion-affect.md`. |
 | **3. Memory policy** | Explicit keep / classify / crystallize rules on `companion_memories` (still that table). v1 is live: episodic, semantic, protected core proposals. | v1 live. |
 | **4. Agency loop** | Perceive → interpret → memory → relevance → act/silence, wrapping proactive as one actuator. | No. |
-| **5. Embodiment Serenity + Aelynd** | Distinct identities on the **same** `AnimaVesselMesh` stack. Aelynd is not a Serenity skin. | No. |
+| **5. Embodiment Serenity + Aeland** | Distinct identities on the **same** `AnimaVesselMesh` stack. Aeland is not a Serenity skin. | No. |
 | **6. Thin Kernel orchestrator** | A small module that calls existing systems in order. No new chat, no new renderer, no new DB. | No. |
 
 The owner's forward sequence is §8. Drive is placed after Reflection and before Agency there, and in the developmental loop in §9.
@@ -224,7 +224,7 @@ The owner's forward sequence is §8. Drive is placed after Reflection and before
 
 - **No DNA fiction as literal tech.** "Hub DNA" is the Operator Model metaphor. Do not store genomes, do not claim biological encoding.
 - **No second renderer.** Embodiment stays on `AnimaVesselMesh` / `SovereignPresenceStage` / `BattleFigures3D`.
-- **Serenity ≠ Aelynd.** Two identities. Do not blend cores, memories, or vessels.
+- **Serenity ≠ Aeland ≠ Scarlet.** Three identities (Aeland was spelled "Aelynd"/"Aelindra" in older rows; those spellings remain recognised aliases). Do not blend cores, memories, or vessels.
 - **Identity lock wins over learned language.** Hidden Sequences language notes (`learned_language`) remain capped and subordinate. Operator Model cannot rewrite who the Anima is.
 - **Drive boundary.** DRIVE may evolve capability, evolve preferences, propose goals, and revise strategies. DRIVE cannot rewrite core identity, permissions, safety boundaries, or operator authority. See §9.
 - **No Vercel AI SDK.** No second chat pipeline. No second companion database.
