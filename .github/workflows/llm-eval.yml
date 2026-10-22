@@ -1,0 +1,73 @@
+name: LLM eval
+
+# Identity / seeded-recall / boundary evals (scripts/llm/eval/eval-cases.json).
+# - Every PR touching eval cases, prompts or identity code: validate the case
+#   file and run the drift test (no model needed).
+# - Manual or nightly: run the full eval against the configured model host.
+on:
+  pull_request:
+    paths:
+      - "scripts/llm/eval/**"
+      - "artifacts/api-server/src/lib/companions/**"
+      - "artifacts/api-server/src/lib/promptBuilder.ts"
+      - ".github/workflows/llm-eval.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.25.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Validate eval cases
+        run: pnpm llm:eval:validate
+      - name: Identity-lock drift test
+        working-directory: artifacts/api-server
+        run: pnpm exec vitest run test/identityEvals.test.ts
+
+  eval:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ANIMA_LOCAL_LLM_BASE_URL: ${{ secrets.ANIMA_LOCAL_LLM_BASE_URL }}
+      ANIMA_LOCAL_LLM_API_KEY: ${{ secrets.ANIMA_LOCAL_LLM_API_KEY }}
+      ANIMA_LOCAL_LLM_BACKEND: ${{ vars.ANIMA_LOCAL_LLM_BACKEND }}
+      ANIMA_OLLAMA_MODEL_STANDARD: ${{ vars.ANIMA_OLLAMA_MODEL_STANDARD }}
+      ANIMA_VLLM_MODEL_STANDARD: ${{ vars.ANIMA_VLLM_MODEL_STANDARD }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.25.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Skip when no model host is configured
+        id: host
+        run: |
+          if [ -z "$ANIMA_LOCAL_LLM_BASE_URL" ]; then echo "configured=false" >> "$GITHUB_OUTPUT"; else echo "configured=true" >> "$GITHUB_OUTPUT"; fi
+      - name: Run evals
+        if: steps.host.outputs.configured == 'true'
+        run: pnpm llm:eval
+      - name: Upload report
+        if: always() && steps.host.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-eval-report
+          path: scripts/llm/output/eval-report.*
