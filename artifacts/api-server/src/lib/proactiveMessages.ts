@@ -1,6 +1,8 @@
 import webpush, { type PushSubscription as WebPushSubscription } from "web-push";
 import { dueThread, extractOpenThreads, threadFollowUpInstruction } from "./agencyThreads";
 import { isKernelFeatureEnabled } from "./kernelFeatures";
+import { dreamConfig, dreamOpenerInstruction, shouldSurfaceDream } from "./dreams/dreamCore";
+import { pickDreamFragment, recordDreamSurfacing } from "./dreams/dreamLayer";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   CHAT_MESSAGE,
@@ -283,6 +285,30 @@ async function loadCandidate(
   return null;
 }
 
+/** Hours since the newest message in the candidate session. */
+export function gapHoursSince(recent: MsgData[], now = Date.now()): number {
+  const last = recent[recent.length - 1]?.timestamp;
+  const t = last ? Date.parse(String(last)) : NaN;
+  return Number.isFinite(t) ? Math.max(0, (now - t) / 3_600_000) : 0;
+}
+
+async function maybeDreamOpener(userId: string, candidate: Candidate): Promise<{ id: string; fragment: string } | null> {
+  try {
+    const cfg = dreamConfig();
+    const gapHours = gapHoursSince(candidate.recentMessages);
+    if (!shouldSurfaceDream({ gapHours, config: cfg, roll: Math.random(), hasDream: true })) return null;
+    const characterId = String(candidate.character.id);
+    const dream = await pickDreamFragment(userId, characterId);
+    if (!dream) return null;
+    await recordDreamSurfacing({ dreamId: dream.id, userId, characterId, surface: "proactive", sessionId: candidate.sessionId });
+    logger.info({ gapHours: Math.round(gapHours) }, "proactive: dream opener");
+    return dream;
+  } catch (err) {
+    logger.info({ err: (err as Error)?.message }, "proactive: dream opener skipped");
+    return null;
+  }
+}
+
 async function generateMessage(
   userId: string,
   candidate: Candidate,
@@ -316,9 +342,13 @@ async function generateMessage(
     ? dueThread(extractOpenThreads(candidate.recentMessages))
     : null;
   if (thread) logger.info({ eventWord: thread.eventWord }, "proactive: thread follow-up");
+  // Dream layer: after a long gap, occasionally open with a dream fragment.
+  const dream = thread ? null : await maybeDreamOpener(userId, candidate);
   const instruction = thread
     ? threadFollowUpInstruction(thread)
-    : "Send one warm, natural check-in as this character after some time apart. " +
+    : dream
+      ? dreamOpenerInstruction(dream.fragment)
+      : "Send one warm, natural check-in as this character after some time apart. " +
     "Continue the relationship or conversation without claiming the user said something new. " +
     "Do not mention apps, notifications, inactivity, schedules, or being an AI. " +
     "Do not guilt, pressure, alarm, sexualize, or manipulate the user. " +
