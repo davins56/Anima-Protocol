@@ -41,7 +41,7 @@ type ClaimedPreference = {
   lastSessionId: string | null;
 };
 
-type Candidate = {
+export type Candidate = {
   sessionId: string;
   character: CharacterData;
   recentMessages: MsgData[];
@@ -392,6 +392,21 @@ async function persistMessage(
   candidate: Candidate,
   content: string,
 ): Promise<void> {
+  await persistCompanionMessage(userId, candidate, content, { source: "proactive_push" }, { proactive: true });
+}
+
+/**
+ * Append an assistant message to a session in both the store (user_entities)
+ * and chat_messages, bump the session, and notify the user. Shared by the
+ * proactive check-in and resting-mode delivery.
+ */
+export async function persistCompanionMessage(
+  userId: string,
+  candidate: Candidate,
+  content: string,
+  metadata: Record<string, unknown>,
+  extra: Record<string, unknown> = {},
+): Promise<void> {
   const now = new Date();
   const message = {
     role: "assistant",
@@ -399,8 +414,8 @@ async function persistMessage(
     character_id: candidate.character.id,
     character_name: candidate.character.name,
     timestamp: now.toISOString(),
-    proactive: true,
-    metadata: { source: "proactive_push" },
+    ...extra,
+    metadata,
   };
   await appendStoreMessage(userId, candidate.sessionId, message);
   await Promise.all([
@@ -413,7 +428,7 @@ async function persistMessage(
       characterId: String(candidate.character.id),
       characterName: candidate.character.name,
       isCrossover: false,
-      metadata: { source: "proactive_push" },
+      metadata,
       createdAt: now,
     }),
     db
@@ -618,6 +633,16 @@ export async function runProactiveMessageBatch(): Promise<ProactiveRunResult[]> 
   await drainDeferredLocalLlmJobs().catch((error) => {
     logger.warn({ error }, "Deferred local LLM drain failed");
   });
+  // Resting mode: answer messages queued while the model was down. Runs even
+  // when web push is not configured.
+  const { deliverRestingQueue } = await import("./restingMode");
+  await deliverRestingQueue()
+    .then((summary) => {
+      if (summary.attempted) logger.info({ summary }, "Resting queue drained");
+    })
+    .catch((error) => {
+      logger.warn({ error }, "Resting queue drain failed");
+    });
   if (!proactivePushConfigured()) {
     throw new Error("VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY are required");
   }

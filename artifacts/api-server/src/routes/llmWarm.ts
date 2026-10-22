@@ -33,8 +33,15 @@ router.post("/warm", async (req: Request, res: Response) => {
   } catch {
     result = SILENT_MISS;
   }
+  if (result.warmed) {
+    // She is awake again: answer anything queued while she was resting.
+    void import("../lib/restingMode")
+      .then(({ deliverRestingQueue }) => deliverRestingQueue())
+      .catch(() => {});
+  }
   res.setHeader("Cache-Control", "no-store");
-  res.status(200).json(result);
+  // `resting` lets the app show the in-character resting state on open.
+  res.status(200).json({ ...result, resting: result.ok === false && !result.skipped });
 });
 
 export default router;

@@ -30,7 +30,13 @@ export default function MessageList({ messages, session, characters, characterMe
             key={`disclosure-${i}`}
             tone={msg.type === "crisis_resource" ? "crisis" : "info"}
             text={msg.content}
-            testId={msg.type === "crisis_resource" ? "crisis-resource-card" : "ai-companion-notice"}
+            testId={
+              msg.type === "crisis_resource"
+                ? "crisis-resource-card"
+                : msg.type === "resting_notice"
+                  ? "resting-notice"
+                  : "ai-companion-notice"
+            }
           />
         ),
       });

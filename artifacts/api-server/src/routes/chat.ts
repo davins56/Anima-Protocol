@@ -257,6 +257,7 @@ import {
   groupCompanionMemories,
 } from "../lib/companionMemoryReview";
 import { applyIdentityProposal, seedStarterMemories } from "../lib/starterMemories";
+import { isModelResting, queueRestingMessage, restingLine } from "../lib/restingMode";
 import { scheduleWorkerBackground } from "../lib/workerBackground";
 import { logger } from "../lib/logger";
 import {
@@ -2689,6 +2690,7 @@ router.post("/messages", async (req, res) => {
   let synchroState: SynchroState | null = null;
   let companionAffect: CompanionAffect | null = null;
   let activeCharacterId: string | null = null;
+  let restingCharacterName: string | null = null;
   let isCrossover = false;
   let preStreamPersist: Promise<void> = Promise.resolve();
   let crisisResourceCard: CrisisResourceCard | null = null;
@@ -2942,6 +2944,7 @@ router.post("/messages", async (req, res) => {
       requestedAssistantName || sceneMindDecision?.characterName || "",
     loadedName: activeChar?.name ?? null,
   });
+  restingCharacterName = activeCharacterName || null;
   const [activeEvolutionRow, activeRelationshipState, activeArcState] =
     activeCharacterId && hintedCharId && activeCharacterId === hintedCharId
       ? hintedState
@@ -3908,6 +3911,32 @@ router.post("/messages", async (req, res) => {
         persistence_status: "checkpoint_failed",
         database_timeout: true,
       });
+    } else if (!crisisResourceCard && activeCharacterId && isModelResting(err, kept.length)) {
+      // Resting mode: the model / tunnel is down before any token. Queue the
+      // turn (append-only) and answer it from the cron once she is back.
+      logger.warn({ err, turnId }, "Model resting; queueing the user's message");
+      flight.fail(err);
+      const queuedId = await queueRestingMessage({
+        userId,
+        sessionId,
+        characterId: activeCharacterId,
+        turnId,
+        content: String(content || ""),
+      }).catch(() => null);
+      writeSse(res, {
+        error: restingLine(restingCharacterName),
+        resting: true,
+        queued: Boolean(queuedId),
+        ...(queuedId ? { resting_queue_id: queuedId } : {}),
+      });
+      closePipeline("failed", {
+        provider: usedProvider,
+        model: usedModel,
+        resting: true,
+        error_class: chatErrorClass(err),
+        error_code: chatErrorCode(err),
+      });
+      void markTurnFailed(turnId, userId, err).catch(() => {});
     } else {
       logger.error({ err }, "Chat message stream failed");
       flight.fail(err);
