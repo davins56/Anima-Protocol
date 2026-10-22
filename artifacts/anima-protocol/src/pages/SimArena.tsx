@@ -13,6 +13,9 @@ import { createSimSession, localSimConfig } from "@/lib/sim/simApi";
 import { vesselToBattleModel } from "@/lib/sim/vesselModel";
 import { signalReadout, type SimConfig } from "@/lib/sim/engine";
 import { RESONANCE_STOPS } from "@/styles/anima-tokens";
+import { simToEmotion } from "@/lib/vessel/emotionState";
+import { traitsFor } from "@/lib/vessel/vesselTraits";
+import { useVesselEmotion } from "@/hooks/useVesselEmotion";
 
 const SimArena3D = lazy(() => import("@/components/sim/SimArena3D"));
 
@@ -45,6 +48,10 @@ export default function SimArena() {
   }, [characterId, nodeId, startW, params]);
 
   const { state, fx, dispatch, sync, lastReject } = useSimBattle(config, sessionId);
+  // Emotional vessel-shift: battle state (HP, threat, W clarity, corruption, outcome) → the companion's traits row.
+  const traits = useMemo(() => traitsFor({ id: characterId, name }), [characterId, name]);
+  const emotionTarget = state ? simToEmotion(state) : null;
+  const { shift } = useVesselEmotion(traits, emotionTarget);
 
   const phase = useCallback(() => {
     if (previewW === null) return;
@@ -82,7 +89,7 @@ export default function SimArena() {
     <div className="relative flex-1 min-h-0 flex flex-col bg-black text-foreground">
       <div className="relative flex-1 min-h-[52vh]">
         <Suspense fallback={<div className="absolute inset-0 grid place-items-center font-mono text-xs text-cyan-300/60">Compiling arena…</div>}>
-          <SimArena3D state={state} fx={fx} model={model} previewW={previewW} />
+          <SimArena3D state={state} fx={fx} model={model} previewW={previewW} shift={shift} />
         </Suspense>
         {/* visual noise = 1 − clarity */}
         <div
@@ -141,7 +148,7 @@ export default function SimArena() {
           </button>
         )}
       </div>
-      <SovereignPresenceStage open={presence} onClose={() => setPresence(false)} model={model} title={name} expression={sig.clarity} />
+      <SovereignPresenceStage open={presence} onClose={() => setPresence(false)} model={model} title={name} expression={sig.clarity} shift={shift} />
     </div>
   );
 }

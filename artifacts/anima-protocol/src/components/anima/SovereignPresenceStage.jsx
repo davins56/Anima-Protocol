@@ -21,6 +21,7 @@ export default function SovereignPresenceStage({
   title,
   layers,
   sequences,
+  shift = null,
 }) {
   if (!open) return null;
 
@@ -61,6 +62,7 @@ export default function SovereignPresenceStage({
           className="w-full h-full"
           layers={layers}
           sequences={sequences}
+          shift={shift}
         />
       </div>
 

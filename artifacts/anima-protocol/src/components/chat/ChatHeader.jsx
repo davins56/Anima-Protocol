@@ -114,6 +114,7 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
         >
           <VesselPortrait
             characterId={primaryChar.id}
+            name={primaryChar.name}
             mood={primaryEmotion?.emotion}
             intensity={primaryEmotion?.intensity}
             fallback={
