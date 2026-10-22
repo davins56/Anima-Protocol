@@ -496,6 +496,14 @@ export const animaApi = {
       }).then((r) => r.json()),
   },
   /** Thumbs up/down + optional better version per reply (append-only on the server). */
+  safety: {
+    status: () => request("/safety/status").then((r) => r.json()),
+    /** Server checks the DOB and stores only an attestation (birth year + age + timestamp). */
+    attestAge: (dob) =>
+      request("/safety/age-attestation", { method: "POST", body: JSON.stringify({ dob, confirm: true }) }).then((r) => r.json()),
+    revokeAge: () => request("/safety/age-attestation/revoke", { method: "POST" }).then((r) => r.json()),
+  },
+
   billing: {
     status: () => request("/billing/status").then((r) => r.json()),
     /** Server picks the price; we only send the offer id. */

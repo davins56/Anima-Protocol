@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from "express";
+import { requireSteward } from "../lib/safety/stewardGate";
 import { getAuth } from "@clerk/express";
 import * as fs from "fs/promises";
 import * as fsSync from "fs";
@@ -29,6 +30,18 @@ function requireUser(req: Request, res: Response, next: () => void) {
 }
 
 router.use(requireUser);
+
+// Steward-only (audit P1-6): the repo workspace reads and writes source, so
+// every route except /status and /terminal (which keeps its own ordered
+// checks: worker → opt-in → steward) is gated here, not in the client.
+const stewardOnly = requireSteward({
+  code: "codespace_forbidden",
+  message: "Repo Workspace is restricted to Protocol stewards.",
+});
+router.use((req: Request, res: Response, next: () => void) => {
+  if ((req.method === "GET" && req.path === "/status") || req.path === "/terminal") return next();
+  return stewardOnly(req, res, next);
+});
 
 function getRepoRoot(): string {
   const fromEnv = process.env.REPO_ROOT?.trim();

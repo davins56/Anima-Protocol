@@ -32,6 +32,8 @@ let baseUrl = "";
 let tempRepoDir = "";
 
 beforeAll(async () => {
+  // Workspace routes are steward-only; "test-user" is the steward here.
+  process.env.PROTOCOL_UPGRADE_ADMIN_USER_IDS = "test-user";
   // Create a temporary directory acting as REPO_ROOT
   tempRepoDir = await fs.mkdtemp(path.join(os.tmpdir(), "repo-codespace-test-"));
   process.env.REPO_ROOT = tempRepoDir;
@@ -154,6 +156,27 @@ describe("repoCodespace security and path resolution", () => {
       const json = await res.json();
       expect(json.available).toBe(true);
       expect(json.files.some((f: { path: string }) => f.path === "src/index.ts")).toBe(true);
+    });
+
+    it("rejects a signed-in non-steward on every workspace route but /status", async () => {
+      const headers = { "x-test-user": "not-the-steward" };
+      for (const [method, url, body] of [
+        ["GET", "/repo-codespace/files", undefined],
+        ["POST", "/repo-codespace/read-file", { path: "src/index.ts" }],
+        ["POST", "/repo-codespace/write-file", { path: "src/index.ts", content: "pwned" }],
+        ["POST", "/repo-codespace/delete-file", { path: "src/index.ts" }],
+      ] as const) {
+        const res = await fetch(`${baseUrl}${url}`, {
+          method,
+          headers: { "content-type": "application/json", ...headers },
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        expect(res.status).toBe(403);
+        await expect(res.json()).resolves.toMatchObject({ code: "codespace_forbidden" });
+      }
+      const status = await fetch(`${baseUrl}/repo-codespace/status`, { headers });
+      expect(status.status).toBe(200);
+      expect(fsSync.readFileSync(path.join(tempRepoDir, "src", "index.ts"), "utf8")).toContain("hello");
     });
 
     it("allows reading valid source files", async () => {

@@ -28,6 +28,7 @@ import voiceRouter from "./voice";
 import simRouter from "./sim";
 import replyRatingsRouter from "./replyRatings";
 import billingRouter from "./billing";
+import safetyRouter from "./safety";
 
 const router: IRouter = Router();
 
@@ -57,6 +58,7 @@ router.use("/voice", voiceRouter);
 router.use("/sim", simRouter);
 router.use("/ratings", replyRatingsRouter);
 router.use("/billing", billingRouter);
+router.use("/safety", safetyRouter);
 router.use("/store", storeRouter);
 router.use(photoRouter);
 router.use(storageRouter);
