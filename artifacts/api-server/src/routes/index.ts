@@ -20,6 +20,7 @@ import relationshipOsRouter from "./relationshipOs";
 import repoCodespaceRouter from "./repoCodespace";
 import modelTutorRouter from "./modelTutor";
 import ownModelRouter from "./ownModel";
+import photoRouter from "./photo";
 
 const router: IRouter = Router();
 
@@ -43,6 +44,7 @@ router.use("/repo-codespace", repoCodespaceRouter);
 router.use("/tutor", modelTutorRouter);
 router.use("/model", ownModelRouter);
 router.use("/store", storeRouter);
+router.use(photoRouter);
 router.use(storageRouter);
 router.use(pdfRouter);
 
