@@ -26,6 +26,7 @@ import vesselRouter from "./vessel";
 import resonanceRouter from "./resonance";
 import voiceRouter from "./voice";
 import simRouter from "./sim";
+import replyRatingsRouter from "./replyRatings";
 
 const router: IRouter = Router();
 
@@ -53,6 +54,7 @@ router.use("/vessel", vesselRouter);
 router.use("/resonance", resonanceRouter);
 router.use("/voice", voiceRouter);
 router.use("/sim", simRouter);
+router.use("/ratings", replyRatingsRouter);
 router.use("/store", storeRouter);
 router.use(photoRouter);
 router.use(storageRouter);
