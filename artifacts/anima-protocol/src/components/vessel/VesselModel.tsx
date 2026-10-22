@@ -9,6 +9,8 @@ import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import type { VesselConfig } from "@/lib/vessel/vesselConfig";
 import type { Expression } from "@/lib/vessel/emotion";
+import type { VesselShift } from "@/lib/vessel/emotionShift";
+import VesselAura from "./VesselAura";
 
 type Props = {
   config: VesselConfig;
@@ -19,6 +21,8 @@ type Props = {
   track?: boolean;
   /** Called every animated frame (used by demand-frameloop hosts to request more frames). */
   onFrame?: () => void;
+  /** Emotion vessel-shift; overrides the face weights and adds the companion aura. */
+  shift?: VesselShift | null;
 };
 
 const BODY: Record<string, { w: number; hip: number; h: number }> = {
@@ -162,7 +166,8 @@ function Aura({ config, hologram }: { config: VesselConfig; hologram: boolean })
   );
 }
 
-function ProceduralVessel({ config, expression, hd = false, hologram = false, track = true, onFrame }: Props) {
+function ProceduralVessel({ config, expression: exprProp, hd = false, hologram = false, track = true, onFrame, shift = null }: Props) {
+  const expression = shift ? shift.face : exprProp;
   const seg = hd ? 20 : 8;
   const b = BODY[config.bodyType] || BODY.slender;
   const torso = useRef<THREE.Group>(null);
@@ -311,6 +316,7 @@ function ProceduralVessel({ config, expression, hd = false, hologram = false, tr
           ))}
       </group>
       <Aura config={config} hologram={hologram} />
+      {shift && !hologram && <VesselAura shift={shift} budget={hd ? 72 : track ? 40 : 0} />}
     </group>
   );
 }
