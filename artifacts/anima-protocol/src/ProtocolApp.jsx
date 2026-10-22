@@ -996,6 +996,12 @@ const AuthenticatedApp = () => {
                 }
               />
               <Route
+                path="/resonance"
+                element={
+                    <ExtraPage name="Resonance" />
+                }
+              />
+              <Route
                 path="/vessel"
                 element={
                     <ExtraPage name="VesselStudio" />
