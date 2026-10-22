@@ -102,7 +102,7 @@ describe("Customization hub Animas picker", () => {
 
     renderPage("?tab=animas");
 
-    expect(await screen.findByRole("button", { name: "Select Aelindra" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Select Aeland" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Select Serenity" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Select Naruto" })).toBeNull();
     expect(screen.getByText(/Animas \(2\)/i)).toBeTruthy();
@@ -126,14 +126,14 @@ describe("Customization hub Animas picker", () => {
     ]);
 
     renderPage("?tab=animas");
-    fireEvent.click(await screen.findByRole("button", { name: "Select Aelindra" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Select Aeland" }));
 
     await waitFor(() => {
       expect(screen.getByText("Customizer char-aelindra anima Character")).toBeTruthy();
     });
   });
 
-  it("lists Aelynd on the Animas tab even without ai_prompt flags", async () => {
+  it("lists Aeland (stored as Aelynd) on the Animas tab even without ai_prompt flags", async () => {
     mocks.listAnima.mockResolvedValue([
       {
         id: "anima-serenity",
@@ -158,7 +158,7 @@ describe("Customization hub Animas picker", () => {
 
     renderPage("?tab=animas");
 
-    expect(await screen.findByRole("button", { name: "Select Aelynd" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Select Aeland" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Select Serenity" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Select Naruto" })).toBeNull();
     expect(screen.getByText(/Animas \(2\)/i)).toBeTruthy();
@@ -182,6 +182,6 @@ describe("Customization hub Animas picker", () => {
     renderPage("?tab=characters");
 
     expect(await screen.findByRole("button", { name: "Select Naruto" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Select Aelindra" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Select Aeland" })).toBeNull();
   });
 });

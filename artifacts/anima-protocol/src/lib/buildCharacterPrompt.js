@@ -5,6 +5,7 @@ import {
   turnTakingClause,
 } from "./companionGuardrail";
 import { imageGenerationTagInstruction } from "./chatImageGeneration";
+import { builtInIdentityLock } from "./companions/builtInCompanions";
 
 export function buildCharacterPrompt({
   character,
@@ -40,7 +41,7 @@ CHARACTER IDENTITY LOCK:
 - Every reply must reflect their specific traits, mannerisms, values, and speech patterns.
 - If details conflict with a generic helpful tone, the character identity wins.
 - ${IDENTITY_CONCEAL_GUIDANCE}
-
+${builtInIdentityLock(character)}
 ${animaNote}${identityBlock ? `${identityBlock}\n` : `Stay vividly in character as ${character.name}; invent no contradictory personality.\n`}${relationshipContext}${emotionalMemoryContext}${loreContext}${locationContext ? `\n${locationContext}\n` : ""}
 CRITICAL AUTONOMY RULES:
 - You have your own goals, desires, and boundaries. Push back, hesitate, or ask for something in return when your character would, but always answer what the user just said.

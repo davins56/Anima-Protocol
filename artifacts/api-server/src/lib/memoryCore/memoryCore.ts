@@ -2,6 +2,7 @@
  * Persistent memory core: identity versions, append-only events, recall.
  * SQL: supabase/migrations/20261022160000..160200_memory_*.sql
  */
+import { AELAND_NAME, canonicalCompanionName, isLegacyAelandName } from "../companions/builtIn";
 import { getPool } from "@workspace/db";
 import { embedMemoryTexts, toVectorLiteral } from "./embedder";
 
@@ -226,7 +227,25 @@ export async function ensureIdentitySnapshot(
   const characterId = character?.id != null ? String(character.id) : "";
   if (!characterId) return null;
   const existing = await currentIdentity(userId, characterId);
-  if (existing) return existing;
+  if (existing) {
+    // Append-only canonical rename: a core snapshotted as "Aelynd"/"Aelindra"
+    // gets a new version named "Aeland"; older versions stay untouched.
+    if (isLegacyAelandName(existing.name)) {
+      return appendIdentityVersion({
+        userId,
+        characterId,
+        name: AELAND_NAME,
+        personalityMatrix: existing.personality_matrix,
+        voice: existing.voice,
+        coreTraits: existing.core_traits,
+        relationships: existing.relationships,
+        backstory: existing.backstory,
+        source: "system",
+        changeNote: `canonical name Aeland (was ${existing.name})`,
+      }).catch(() => existing);
+    }
+    return existing;
+  }
   const c = character as Record<string, unknown>;
   const pick = (...keys: string[]) => {
     const out: Record<string, unknown> = {};
@@ -236,7 +255,7 @@ export async function ensureIdentitySnapshot(
   return appendIdentityVersion({
     userId,
     characterId,
-    name: String(c.name || "Companion"),
+    name: canonicalCompanionName(String(c.name || "Companion")),
     personalityMatrix: pick("personality", "personality_matrix", "lover_matrix", "traits", "temperament", "archetype", "selected_mode"),
     voice: pick("voice", "voice_id", "speech_style", "speaking_style", "voice_anchors"),
     coreTraits: Array.isArray(c.core_traits) ? (c.core_traits as unknown[]) : Array.isArray(c.tags) ? (c.tags as unknown[]) : [],
