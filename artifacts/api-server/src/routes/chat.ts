@@ -256,6 +256,7 @@ import {
   applyCompanionMemoryChange,
   groupCompanionMemories,
 } from "../lib/companionMemoryReview";
+import { applyIdentityProposal, seedStarterMemories } from "../lib/starterMemories";
 import { scheduleWorkerBackground } from "../lib/workerBackground";
 import { logger } from "../lib/logger";
 import {
@@ -1905,6 +1906,52 @@ router.patch("/memories/:characterId/facts/:factId", async (req, res) => {
 
 router.delete("/memories/:characterId/facts/:factId", async (req, res) => {
   await changeCompanionMemory(req, res, "delete");
+});
+
+/**
+ * Seed a newly created companion's starter memories (backstory + first facts)
+ * into companion_memories and one memory_events milestone. Idempotent.
+ */
+router.post("/memories/:characterId/seed", async (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const characterId = String(req.params.characterId || "").trim();
+  const body = (req.body || {}) as { character?: Record<string, unknown> };
+  const character = body.character && typeof body.character === "object" ? body.character : {};
+  if (!characterId || characterId.length > 200) {
+    res.status(400).json({ error: "characterId is required", code: "character_required" });
+    return;
+  }
+  try {
+    const { added } = await seedStarterMemories({ userId, character: { ...character, id: characterId } });
+    res.json({ added });
+  } catch (err) {
+    res.status(503).json({ error: "Starter memories could not be saved yet.", code: "starter_seed_failed" });
+  }
+});
+
+/** Accept / reject / edit a protected identity proposal (accept + edit append an identity core version). */
+router.post("/memories/:characterId/proposals/:factId", async (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const body = (req.body || {}) as { action?: unknown; text?: unknown };
+  const action = body.action;
+  if (action !== "accept" && action !== "reject" && action !== "edit") {
+    res.status(400).json({ error: "action must be accept, reject or edit", code: "proposal_action_invalid" });
+    return;
+  }
+  const result = await applyIdentityProposal({
+    userId,
+    characterId: String(req.params.characterId || ""),
+    factId: String(req.params.factId || ""),
+    action,
+    text: body.text,
+  });
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error, code: result.code });
+    return;
+  }
+  res.json({ review: result.review, changed: result.changed, identity_version: result.identity_version ?? null });
 });
 
 function toSceneMindCharacters(characters: MsgData[]): SceneMindCharacter[] {

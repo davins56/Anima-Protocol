@@ -40,6 +40,8 @@ export type CompanionMemoryReviewItem = {
   memory_class: MemoryClass;
   protected: boolean;
   editable: boolean;
+  /** True while the identity proposal awaits accept / reject / edit. */
+  proposal: boolean;
   created_at: string | null;
 };
 
@@ -84,7 +86,7 @@ function importanceHint(importance: number): string {
 }
 
 function kindLabel(fact: PolicyFact, section: MemoryReviewSection): string {
-  if (section === "core") return "Identity proposal";
+  if (section === "core") return fact.proposal === true ? "Identity proposal" : "Who she is";
   if (fact.about === "user") {
     return fact.memory_class === "episodic" ? "A moment with you" : "Something about you";
   }
@@ -106,6 +108,7 @@ function toReviewItem(fact: PolicyFact): CompanionMemoryReviewItem {
     editable:
       !locked &&
       (fact.memory_class === "episodic" || fact.memory_class === "semantic"),
+    proposal: fact.proposal === true,
     created_at: fact.created_at || null,
   };
 }

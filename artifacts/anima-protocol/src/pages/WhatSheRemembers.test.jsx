@@ -8,6 +8,7 @@ vi.mock("@/api/animaApi", () => ({
       companionMemory: vi.fn(),
       updateCompanionMemory: vi.fn(),
       forgetCompanionMemory: vi.fn(),
+      resolveIdentityProposal: vi.fn(),
     },
   },
 }));
@@ -233,5 +234,65 @@ describe("What she remembers", () => {
       expect(document.body.textContent).not.toContain("The human's name is Samuel.");
     });
     expect(document.body.textContent).not.toContain("The human's name is Sam.");
+  });
+});
+
+describe("WhatSheRemembers identity proposals", () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+  const pending = {
+    fact_id: "p1",
+    text: "She is afraid of the dark.",
+    section: "core",
+    kind_label: "Identity proposal",
+    about: "companion",
+    memory_class: "core",
+    protected: true,
+    editable: false,
+    proposal: true,
+  };
+  const renderPage = () =>
+    render(
+      <MemoryRouter initialEntries={["/memories/c1?name=Aeland"]}>
+        <Routes>
+          <Route path="/memories/:characterId" element={<WhatSheRemembers />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+  it("accepts a pending proposal", async () => {
+    animaApi.chat.companionMemory.mockResolvedValue({ review: { about_you: [], companion: [], core: [pending] } });
+    animaApi.chat.resolveIdentityProposal.mockResolvedValue({
+      review: { about_you: [], companion: [], core: [{ ...pending, proposal: false, kind_label: "Who she is" }] },
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Accept" }));
+    await waitFor(() => expect(animaApi.chat.resolveIdentityProposal).toHaveBeenCalledWith("c1", "p1", "accept", undefined));
+    expect(await screen.findByText("Who she is")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
+  });
+
+  it("edits then accepts, and rejects", async () => {
+    animaApi.chat.companionMemory.mockResolvedValue({ review: { about_you: [], companion: [], core: [pending] } });
+    animaApi.chat.resolveIdentityProposal.mockResolvedValue({ review: { about_you: [], companion: [], core: [pending] } });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "She is wary of  the dark." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save and accept" }));
+    await waitFor(() =>
+      expect(animaApi.chat.resolveIdentityProposal).toHaveBeenCalledWith("c1", "p1", "edit", "She is wary of the dark."),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Reject" }));
+    await waitFor(() => expect(animaApi.chat.resolveIdentityProposal).toHaveBeenCalledWith("c1", "p1", "reject", undefined));
+  });
+
+  it("legacy proposals without the flag stay read-only", async () => {
+    const { proposal: _p, ...legacy } = pending;
+    animaApi.chat.companionMemory.mockResolvedValue({ review: { about_you: [], companion: [], core: [legacy] } });
+    renderPage();
+    expect(await screen.findByText("She is afraid of the dark.")).toBeTruthy();
+    expect(screen.queryByTestId("proposal-actions")).toBeNull();
   });
 });
