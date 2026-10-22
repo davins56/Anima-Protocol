@@ -1,6 +1,6 @@
 # Persistent memory architecture
 
-Goal: Serenity, Linda, Aelindra and user-created companions should never lose
+Goal: Serenity, Linda, Aeland, Scarlet and user-created companions should never lose
 identity or history across redeploys, schema pushes or client bugs.
 
 ## Layers (`supabase/migrations/`)

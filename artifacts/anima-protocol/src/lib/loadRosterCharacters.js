@@ -6,6 +6,7 @@
 import { awaitCompanionStoreAuth } from "@/lib/listPersonalAnimas";
 import {
   PERSONAL_ANIMA_NAME_ALIASES,
+  canonicalizeCompanionRow,
 } from "@/lib/personalAnimaRecord";
 import {
   base44,
@@ -52,7 +53,7 @@ function rosterListTimeoutError() {
 
 function asAnimaChars(animas) {
   return (animas || []).map((a) => ({
-    ...a,
+    ...canonicalizeCompanionRow(a),
     _isAnima: true,
     category: a.archetype || "guardian",
     universe: "Anima",
@@ -219,7 +220,7 @@ export async function loadRosterCharacters({
   }
 
   // Independent clocks, like Sacred Space. A hung Character.list must not
-  // starve Anima.list (Serenity) or name recovery (Aelynd). Skip the second
+  // starve Anima.list (Serenity) or name recovery (Aeland / legacy Aelynd). Skip the second
   // ensureBootstrapComplete inside queryEntity — caller already waited or
   // chose waitBootstrap:false so Select Character is not gated again.
   const [charResult, animaResult, recovered] = await Promise.all([
@@ -305,6 +306,8 @@ export async function loadRosterCharacters({
   }
 
   const fallbackKind = usingBundledSeed ? classifyRosterFallback(storeError) : null;
+  // Display canonical names (legacy Aelynd spellings → "Aeland"); stored rows are untouched.
+  rawCharacters = rawCharacters.map(canonicalizeCompanionRow);
   return {
     characters: [...animaAsChars, ...rawCharacters],
     rawCharacters,

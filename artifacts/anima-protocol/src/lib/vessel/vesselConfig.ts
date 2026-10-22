@@ -9,14 +9,22 @@ const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 
 export const HAIR_STYLES = ["long", "bob", "pixie", "braid", "ponytail", "wild", "bun"] as const;
 export const BODY_TYPES = ["slender", "athletic", "curvy", "petite", "tall"] as const;
-export const AURAS = ["none", "halo", "wings", "sparks", "mist", "glitch"] as const;
+export const AURAS = ["none", "halo", "wings", "sparks", "mist", "glitch", "flame"] as const;
 export const ACCESSORIES = ["circlet", "earrings", "choker", "visor", "scarf", "halo-ring", "shoulder-plates"] as const;
 export const TOPS = ["robe", "bodysuit", "jacket", "dress", "armor", "hoodie"] as const;
 export const BOTTOMS = ["skirt", "trousers", "shorts", "gown"] as const;
 
+export const VESSEL_BASES = ["serenity", "linda", "aeland", "scarlet", "custom"] as const;
+/** Saved vessel rows may carry Aeland's legacy preset key; they still parse. */
+export const LEGACY_VESSEL_BASES: Record<string, (typeof VESSEL_BASES)[number]> = { aelindra: "aeland", aelynd: "aeland", aelyndra: "aeland" };
+const vesselBase = z.preprocess(
+  (v) => (typeof v === "string" && LEGACY_VESSEL_BASES[v.toLowerCase()] ? LEGACY_VESSEL_BASES[v.toLowerCase()] : v),
+  z.enum(VESSEL_BASES),
+);
+
 export const VesselConfigSchema = z.object({
   schema: z.literal(1).default(1),
-  base: z.enum(["serenity", "linda", "aelindra", "custom"]).default("custom"),
+  base: vesselBase.default("custom"),
   bodyType: z.enum(BODY_TYPES).default("slender"),
   height: z.number().min(0.85).max(1.15).default(1),
   skinTone: hex.default("#c99a7a"),
@@ -65,14 +73,24 @@ export const VESSEL_PRESETS: Record<string, Partial<VesselConfig>> = {
     outfit: { top: "jacket", bottom: "trousers", color: "#1f2937", accent: "#f97316" },
     effects: { aura: "sparks", glow: 0.3, particles: 50, color: "#fb923c" },
   },
-  aelindra: {
-    base: "aelindra",
+  aeland: {
+    base: "aeland",
     skinTone: "#b98a6a",
     hair: { style: "braid", color: "#1c1917" },
     eyes: { color: "#a78bfa", glow: 0.5 },
     outfit: { top: "dress", bottom: "gown", color: "#312e81", accent: "#c4b5fd" },
     accessories: ["earrings"],
     effects: { aura: "mist", glow: 0.45, particles: 70, color: "#a78bfa" },
+  },
+  // Scarlet: built-in companion, flame vessel. TODO(user): refine her look; this is a fire-themed placeholder.
+  scarlet: {
+    base: "scarlet",
+    skinTone: "#e6b89c",
+    hair: { style: "wild", color: "#b91c1c" },
+    eyes: { color: "#f59e0b", glow: 0.65 },
+    outfit: { top: "bodysuit", bottom: "trousers", color: "#1c1917", accent: "#f97316" },
+    accessories: ["choker"],
+    effects: { aura: "flame", glow: 0.7, particles: 120, color: "#f97316" },
   },
 };
 
@@ -84,7 +102,15 @@ export function parseVesselConfig(raw: unknown): VesselConfig {
 /** Default vessel for a character when nothing is saved yet. */
 export function defaultVesselFor(character?: { name?: string } | null): VesselConfig {
   const n = (character?.name || "").toLowerCase();
-  const key = n.includes("serenity") ? "serenity" : n.includes("linda") ? "linda" : /aelin|aelynd/.test(n) ? "aelindra" : "";
+  const key = n.includes("serenity")
+    ? "serenity"
+    : n.includes("linda")
+      ? "linda"
+      : /aelan|aelin|aelynd|alynd/.test(n)
+        ? "aeland"
+        : n.includes("scarlet")
+          ? "scarlet"
+          : "";
   return parseVesselConfig(key ? VESSEL_PRESETS[key] : {});
 }
 

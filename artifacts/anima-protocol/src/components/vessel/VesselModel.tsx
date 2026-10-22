@@ -9,8 +9,20 @@ import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import type { VesselConfig } from "@/lib/vessel/vesselConfig";
 import type { Expression } from "@/lib/vessel/emotion";
-import type { VesselShift } from "@/lib/vessel/emotionShift";
+import { computeVesselShift, type VesselShift } from "@/lib/vessel/emotionShift";
+import { NEUTRAL_EMOTION } from "@/lib/vessel/emotionState";
+import { traitsFor } from "@/lib/vessel/vesselTraits";
 import VesselAura from "./VesselAura";
+
+/** Calm flame shift for a saved `effects.aura: "flame"` vessel when no live emotion drives it. */
+function useStaticFlameShift(config: VesselConfig, active: boolean): VesselShift | null {
+  const { aura, color, glow } = config.effects;
+  return useMemo(() => {
+    if (!active || aura !== "flame") return null;
+    const s = computeVesselShift(NEUTRAL_EMOTION, traitsFor("scarlet"));
+    return { ...s, aura: "flame", color, auraIntensity: Math.max(0.3, glow) };
+  }, [active, aura, color, glow]);
+}
 
 type Props = {
   config: VesselConfig;
@@ -168,6 +180,7 @@ function Aura({ config, hologram }: { config: VesselConfig; hologram: boolean })
 
 function ProceduralVessel({ config, expression: exprProp, hd = false, hologram = false, track = true, onFrame, shift = null }: Props) {
   const expression = shift ? shift.face : exprProp;
+  const flameShift = useStaticFlameShift(config, !shift && !hologram);
   const seg = hd ? 20 : 8;
   const b = BODY[config.bodyType] || BODY.slender;
   const torso = useRef<THREE.Group>(null);
@@ -316,7 +329,7 @@ function ProceduralVessel({ config, expression: exprProp, hd = false, hologram =
           ))}
       </group>
       <Aura config={config} hologram={hologram} />
-      {shift && !hologram && <VesselAura shift={shift} budget={hd ? 72 : track ? 40 : 0} />}
+      {(shift || flameShift) && !hologram && <VesselAura shift={(shift || flameShift)!} budget={hd ? 72 : track ? 40 : 0} />}
     </group>
   );
 }

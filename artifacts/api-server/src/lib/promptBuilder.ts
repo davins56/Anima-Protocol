@@ -13,6 +13,7 @@
  * and "real". All other prompt assembly paths should flow through here.
  */
 
+import { builtInIdentityLock, canonicalCompanionName } from "./companions/builtIn";
 import {
   type CompanionMemoryRecord,
   retrieveRelevantMemories,
@@ -2069,7 +2070,7 @@ function buildCharacterDefinition(
   maxChars: number,
 ): string {
   const parts: string[] = [];
-  const name = String(character.name || "").trim();
+  const name = canonicalCompanionName(String(character.name || "").trim());
 
   // Never "I am <name>" or "You are <name>". qwen2.5:0.5b reads either line
   // aloud: the first becomes a card recitation, the second hands her name
@@ -2079,6 +2080,8 @@ function buildCharacterDefinition(
       ? `CHARACTER IDENTITY LOCK: Speak in first person as ${name}. The human is not me. Never call them by my name or give them my past. Do not introduce yourself or recite this card unless they ask.`
       : `CHARACTER IDENTITY LOCK: Speak in first person as myself. The human is not me. Never give them my past. Do not introduce yourself or recite this card unless they ask.`,
   );
+  const builtInLock = builtInIdentityLock(name);
+  if (builtInLock) parts.push(builtInLock);
 
   if (character._isAnima && character.archetype) {
     parts.push(`Archetype: ${character.archetype}${character.tagline ? ` — ${character.tagline}` : ""}`);

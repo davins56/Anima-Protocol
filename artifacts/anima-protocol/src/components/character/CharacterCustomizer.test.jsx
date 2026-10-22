@@ -86,7 +86,7 @@ describe("CharacterCustomizer companion store", () => {
       storeEntity: "Character",
     });
 
-    expect(await screen.findByDisplayValue("Aelindra")).toBeTruthy();
+    expect(await screen.findByDisplayValue("Aeland")).toBeTruthy();
     expect(screen.getByDisplayValue("https://example.com/aelindra.png")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /Look \/ photo/i }));
@@ -100,6 +100,7 @@ describe("CharacterCustomizer companion store", () => {
     });
     expect(mocks.updateAnima).not.toHaveBeenCalled();
     const [, patch] = mocks.updateCharacter.mock.calls[0];
+    // Saving without renaming keeps the stored legacy spelling (no silent row rewrite).
     expect(patch.name).toBe("Aelindra");
     expect(patch._storeEntity).toBeUndefined();
   });

@@ -21,10 +21,10 @@ export type VesselRow = {
 
 const HEX = /^#[0-9a-f]{6}$/i;
 const ENUMS: Record<string, string[]> = {
-  base: ["serenity", "linda", "aelindra", "custom"],
+  base: ["serenity", "linda", "aeland", "scarlet", "custom"],
   bodyType: ["slender", "athletic", "curvy", "petite", "tall"],
   "hair.style": ["long", "bob", "pixie", "braid", "ponytail", "wild", "bun"],
-  "effects.aura": ["none", "halo", "wings", "sparks", "mist", "glitch"],
+  "effects.aura": ["none", "halo", "wings", "sparks", "mist", "glitch", "flame"],
   "model.kind": ["procedural", "gltf", "vrm"],
 };
 
@@ -37,7 +37,11 @@ function color(v: unknown): string | undefined {
 function num(v: unknown, min: number, max: number): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : undefined;
 }
+/** Aeland's legacy preset keys in already-saved vessel rows (read side only; rows are never rewritten). */
+export const LEGACY_VESSEL_BASES: Record<string, string> = { aelindra: "aeland", aelynd: "aeland", aelyndra: "aeland" };
+
 function oneOf(key: string, v: unknown): string | undefined {
+  if (key === "base" && typeof v === "string" && LEGACY_VESSEL_BASES[v.toLowerCase()]) return LEGACY_VESSEL_BASES[v.toLowerCase()];
   return typeof v === "string" && ENUMS[key].includes(v) ? v : undefined;
 }
 
