@@ -18,6 +18,8 @@ import {
   rollFlavorChance,
 } from "@/lib/homeWake";
 import HomeDock from "@/components/home/HomeDock";
+import MemoryResurfacing from "@/components/home/MemoryResurfacing";
+import { resurfacingAllowed } from "@/features/belonging/belonging";
 import HomeFloorSheets from "@/components/home/HomeFloorSheets";
 import { RECENT_CHATS_LIMIT, sortRecentSessions } from "@/lib/recentChats";
 
@@ -33,6 +35,7 @@ export default function MainHome() {
   const longPressFired = useRef(false);
 
   const [anima, setAnima] = useState(null);
+  const [homeSettings, setHomeSettings] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [lastCheckIn, setLastCheckIn] = useState(null);
   const [selectedMode, setSelectedMode] = useState("serenity");
@@ -105,6 +108,7 @@ export default function MainHome() {
         base44.entities.CheckIn.list(),
       ]);
       setSelectedMode(me?.selected_mode || "serenity");
+      setHomeSettings(me?.settings || null);
 
       setSessions(sortRecentSessions(sessionList, RECENT_CHATS_LIMIT));
 
@@ -344,11 +348,17 @@ export default function MainHome() {
       </div>
 
       <div className="relative z-20 flex-shrink-0 px-4 sm:px-6 pb-[max(12px,env(safe-area-inset-bottom))] pt-1 max-w-2xl mx-auto w-full">
+        <MemoryResurfacing
+          animaId={anima?.id}
+          allowed={resurfacingAllowed(homeSettings)}
+          onOpenJournal={() => navigate("/journals")}
+        />
         <HomeDock
           onTalk={handleTalk}
           onPeople={() => setPanel("people")}
           onWorld={() => setPanel("world")}
           onYou={() => setPanel("you")}
+          onMoments={anima?.id ? () => navigate(`/moments/${encodeURIComponent(anima.id)}`) : undefined}
         />
       </div>
 
