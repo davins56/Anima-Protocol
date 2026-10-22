@@ -1,0 +1,17 @@
+{
+  "name": "@workspace/sim-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Deterministic 4D net-battle rules engine shared by the client (optimistic play) and api-server (replay validation).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.2"
+  }
+}

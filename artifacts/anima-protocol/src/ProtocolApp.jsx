@@ -1002,6 +1002,12 @@ const AuthenticatedApp = () => {
                 }
               />
               <Route
+                path="/resonance/arena"
+                element={
+                    <ExtraPage name="SimArena" />
+                }
+              />
+              <Route
                 path="/vessel"
                 element={
                     <ExtraPage name="VesselStudio" />
