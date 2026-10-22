@@ -27,4 +27,6 @@ export const PROTECTED_SQL_TABLES = [
   "billing_stripe_events",
   "entitlement_ledger",
   "entitlement_balances",
+  "age_attestations",
+  "age_attestation_latest",
 ] as const;

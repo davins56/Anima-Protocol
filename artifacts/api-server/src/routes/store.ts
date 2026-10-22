@@ -1,4 +1,7 @@
 import { Router } from "express";
+import { profileWriteNeedsStewardCheck, sanitizeProfileWrite } from "../lib/safety/stewardGate";
+import { userIsAdultAttested } from "../lib/safety/ageGate";
+import { callerIsStewardCached } from "../lib/ownModel";
 import { getAuth } from "@clerk/express";
 
 
@@ -739,7 +742,18 @@ router.get("/profile", async (req, res) => {
 
 router.put("/profile", async (req, res) => {
   const userId = getUserId(req);
-  const data = (req.body ?? {}) as Record<string, unknown>;
+  const raw = (req.body ?? {}) as Record<string, unknown>;
+  // Server-side safety gates (P1-6 + adult age gate): the profile is
+  // owner-writable JSON, so steward grant flags and adult mode are
+  // re-checked here rather than trusted from the client.
+  const rawSettings = (raw.settings ?? {}) as Record<string, unknown>;
+  const isSteward = profileWriteNeedsStewardCheck(raw)
+    ? await callerIsStewardCached({ userId, sessionClaims: getAuth(req).sessionClaims }).catch(() => false)
+    : false;
+  const adultAttested =
+    rawSettings.adult_content_enabled === true ? await userIsAdultAttested(userId) : false;
+  const { data, stripped } = sanitizeProfileWrite(raw, { isSteward, adultAttested });
+  if (stripped.length) logger.info({ stripped }, "profile write: server-gated fields reset");
   const [row] = await db
     .insert(userProfiles)
     .values({ userId, data })
