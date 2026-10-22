@@ -5,6 +5,8 @@
  */
 import { obscuredMemory } from "@workspace/sim-core";
 import { documentRecallLabel } from "../pdf/documentMemory";
+import { continuityPromptBlock } from "../continuity/continuityCore";
+import { loadCompanionState } from "../continuity/continuityStore";
 import { ensureIdentitySnapshot, recallMemories, type IdentityCore, type RecalledMemory } from "./memoryCore";
 
 export const MEMORY_CORE_TIMEOUT_MS = 1500;
@@ -65,7 +67,7 @@ export async function buildMemoryCoreContext(args: {
   if (!isMemoryCoreEnabled() || !args.character?.id) return "";
   return withTimeout(
     (async () => {
-      const [identity, memories] = await Promise.all([
+      const [identity, memories, continuity] = await Promise.all([
         ensureIdentitySnapshot(args.userId, args.character),
         recallMemories({
           userId: args.userId,
@@ -74,8 +76,12 @@ export async function buildMemoryCoreContext(args: {
           limit: args.limit ?? 8,
           sessionId: args.sessionId,
         }),
+        // Continuity (tone, dreams, cross-surface echo); never blocks recall.
+        loadCompanionState(args.userId, String(args.character!.id)).catch(() => null),
       ]);
-      return formatMemoryCoreBlock(identity, memories);
+      const block = formatMemoryCoreBlock(identity, memories);
+      const cont = continuity ? continuityPromptBlock(continuity) : "";
+      return [block, cont].filter(Boolean).join("\n\n");
     })(),
     MEMORY_CORE_TIMEOUT_MS,
   );

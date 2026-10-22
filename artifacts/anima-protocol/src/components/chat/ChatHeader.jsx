@@ -5,6 +5,7 @@ import { base44 } from "@/api/base44Client";
 import MoodIndicator from "@/components/chat/MoodIndicator";
 import VesselPortrait from "@/components/vessel/VesselPortrait";
 import MemoryHealth from "@/components/memory/MemoryHealth";
+import PresenceIndicator from "@/components/continuity/PresenceIndicator";
 import {
   llmDisplayBadgeClass,
   llmDisplayLabel,
@@ -135,6 +136,9 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
         <h2 className="font-mono text-[9px] sm:text-xs text-primary tracking-[0.2em] uppercase truncate">
           {session?.title || (isGroup ? "Group" : primaryChar?.name || "Session")}
         </h2>
+        {!isGroup && primaryChar?.id && (
+          <PresenceIndicator characterId={primaryChar.id} name={primaryChar.name} surface="chat" showGreeting />
+        )}
         <div className="flex items-center gap-1.5 sm:gap-3 mt-0.5 flex-wrap">
           <div className="flex items-center gap-1">
             <div className="w-1 sm:w-1.5 h-1 sm:h-1.5 bg-primary rounded-full animate-pulse" />

@@ -32,4 +32,5 @@ export const PROTECTED_SQL_TABLES = [
   "dreams",
   "dream_surfacings",
   "dream_recent",
+  "companion_state_snapshots",
 ] as const;

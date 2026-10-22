@@ -16,6 +16,7 @@ import {
 import IdentityLockPanel from "./IdentityLockPanel";
 import { useCharacterVessel } from "@/hooks/useCharacterVessel";
 import { vesselToDescriptorPhrases } from "@/lib/vessel/vesselConfig";
+import PresenceIndicator from "@/components/continuity/PresenceIndicator";
 
 type Companion = { id: string; name?: string; avatar_url?: string; _isAnima?: boolean };
 
@@ -116,6 +117,7 @@ export default function InlinePhotoComposer({
           <span className="font-mono text-[10px] tracking-[0.2em] uppercase text-primary truncate">
             Photo · {character.name || "Companion"}
           </span>
+          {character.id ? <PresenceIndicator characterId={String(character.id)} name={character.name || ""} surface="photo" /> : null}
           <button
             type="button"
             onClick={() => setShowIdentity((v) => !v)}

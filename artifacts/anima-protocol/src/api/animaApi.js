@@ -495,6 +495,14 @@ export const animaApi = {
         body: JSON.stringify({ turn_id: turnId, context }),
       }).then((r) => r.json()),
   },
+  /** Session-start companion state (tone, dreams, presence, greeting) for any surface. */
+  continuity: {
+    load: (characterId, { surface = "chat", name = "" } = {}) => {
+      const q = new URLSearchParams({ surface, tz_offset: String(new Date().getTimezoneOffset()) });
+      if (name) q.set("name", name);
+      return request(`/continuity/${encodeURIComponent(characterId)}?${q}`).then((r) => r.json());
+    },
+  },
   /** Thumbs up/down + optional better version per reply (append-only on the server). */
   safety: {
     status: () => request("/safety/status").then((r) => r.json()),
