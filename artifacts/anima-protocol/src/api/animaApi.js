@@ -496,6 +496,13 @@ export const animaApi = {
       }).then((r) => r.json()),
   },
   /** Thumbs up/down + optional better version per reply (append-only on the server). */
+  billing: {
+    status: () => request("/billing/status").then((r) => r.json()),
+    /** Server picks the price; we only send the offer id. */
+    checkout: (offer) =>
+      request("/billing/checkout", { method: "POST", body: JSON.stringify({ offer }) }).then((r) => r.json()),
+  },
+
   ratings: {
     rate: (payload) =>
       request(`/ratings`, { method: "POST", body: JSON.stringify(payload) }).then((r) => r.json()),

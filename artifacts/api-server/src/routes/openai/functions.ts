@@ -1523,8 +1523,9 @@ router.post("/invoke/:fnName", async (req, res) => {
       }
 
       case "createCheckoutSession": {
-        // Payments are not live yet; the app shows a waitlist instead.
-        result = { url: null, error: "Payments are coming soon.", code: "payments_coming_soon" };
+        // Retired: checkout lives at POST /api/billing/checkout (server-priced,
+        // webhook-fulfilled). This legacy entry point never creates a session.
+        result = { url: null, error: "Use /api/billing/checkout.", code: "moved" };
         break;
       }
 

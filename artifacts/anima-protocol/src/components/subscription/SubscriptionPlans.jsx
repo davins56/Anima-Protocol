@@ -1,7 +1,7 @@
 // @ts-check
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
-import ComingSoonWaitlist from "./ComingSoonWaitlist";
+import AddOnPlans from "./AddOnPlans";
 
 const PLANS = [
   {
@@ -47,8 +47,8 @@ export default function SubscriptionPlans() {
     base44.auth.me().then(setUser).catch(() => {});
   }, []);
 
-  // Checkout is not live yet: show the honest waitlist (no charge, no stub error).
-  return <ComingSoonWaitlist fromTier={user?.subscription_tier || "free"} />;
+  // Stripe Checkout add-ons (server-priced, webhook-fulfilled).
+  return <AddOnPlans fromTier={user?.subscription_tier || "free"} />;
 }
 
 /** Feature matrix kept for the plans copy once payments open. */

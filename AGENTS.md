@@ -266,7 +266,7 @@ All new events must follow these conventions.
 | `crossover_session_started` | User starts a multi-universe group session | `character_count`, `universe_count` | `src/pages/Chat.jsx` |
 | `onboarding_completed` | Onboarding Anima is saved (fires after the server write succeeds) | `voice_tone`, `has_aesthetic`, `is_saved` | `src/pages/OnboardingFlow.jsx`, `src/lib/funnelEvents.js` |
 | `first_reply_received` | First companion reply this device receives (once, after the reply is in hand) | `session_mode`, `is_anima`, `first_word_ms` | `src/pages/Chat.jsx`, `src/lib/funnelEvents.js` |
-| `subscription_upgrade_started` | User starts a premium upgrade (intent, not completion). While payments are not live, `purchase_type: "waitlist"` = joined the coming-soon waitlist | `tier`, `purchase_type`, `from_tier` | `src/components/subscription/ComingSoonWaitlist.jsx` |
+| `subscription_upgrade_started` | User taps Buy on an add-on (fires before the Stripe Checkout redirect; intent, not completion — fulfilment is the webhook). `purchase_type: "one_time"`; `"waitlist"` when that offer is not configured yet | `tier` (`photo_credits` / `voice_minutes` / `deep_mode`), `purchase_type`, `from_tier` | `src/components/subscription/AddOnPlans.jsx` |
 | `net_battle_started` | User jacks into a NetBattle match | `control_mode`, `primary_expression`, `is_blend` | `src/pages/NetBattle.jsx` |
 | `net_battle_completed` | A NetBattle match ends (win or loss) | `result`, `control_mode`, `primary_expression`, `is_blend`, `chips_used`, `echo_keys_used` | `src/pages/NetBattle.jsx` |
 | `echo_folder_saved` | User saves their Echo Key Folder to the profile | `folder_size`, `star_count`, `mega_count` | `src/hooks/useEchoLibrary.js` |
