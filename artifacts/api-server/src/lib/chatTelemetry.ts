@@ -6,7 +6,18 @@ type ChatTelemetryFields = {
   turnId: string;
   sessionId: string;
   mode: string;
+  /**
+   * Wall-clock ms (Date.now()) when the HTTP request arrived. First-word
+   * timing is measured from here, so auth, session load and context build
+   * count — that is what the person waiting actually feels.
+   */
+  requestStartedAtMs?: number;
 };
+
+/** True once a visible chunk contains a letter or digit (not just whitespace/punctuation/markup). */
+export function chunkHasWord(delta: string): boolean {
+  return /[\p{L}\p{N}]/u.test(String(delta || "").replace(/\[(?:EMOTION|LOCATION)[^\]]*\]/gi, ""));
+}
 
 /**
  * Where a failed turn died.
@@ -64,6 +75,8 @@ export class ChatPipelineTelemetry {
   private readonly startedAt = performance.now();
   private generationStartedAt: number | null = null;
   private firstTokenAt: number | null = null;
+  private firstWordAtWallMs: number | null = null;
+  private readonly constructedAtWallMs = Date.now();
   private readonly measurements: Record<string, number> = {};
   private phase: ChatFailurePhase = "queue";
 
@@ -90,6 +103,18 @@ export class ChatPipelineTelemetry {
   startGeneration(): void {
     this.generationStartedAt = performance.now();
     if (this.phase === "queue") this.phase = "prefill";
+  }
+
+  /** First visible word sent to the client (wall clock, compared to request start). */
+  markVisibleDelta(delta: string): void {
+    if (this.firstWordAtWallMs == null && chunkHasWord(delta)) this.firstWordAtWallMs = Date.now();
+  }
+
+  /** ms from request start to the first visible word, or null. */
+  firstWordMs(): number | null {
+    if (this.firstWordAtWallMs == null) return null;
+    const start = this.fields.requestStartedAtMs ?? this.constructedAtWallMs;
+    return Math.max(0, this.firstWordAtWallMs - start);
   }
 
   markFirstToken(): void {
@@ -132,6 +157,12 @@ export class ChatPipelineTelemetry {
           ? null
           : Math.round(this.firstTokenAt - generationStart),
       generation_ms: Math.round(endedAt - generationStart),
+      // From HTTP request arrival to the first visible word on the wire.
+      first_word_ms: this.firstWordMs(),
+      request_to_pipeline_ms:
+        this.fields.requestStartedAtMs != null
+          ? Math.max(0, this.constructedAtWallMs - this.fields.requestStartedAtMs)
+          : null,
       ...this.measurements,
       ...details,
       ...(outcome === "failed"

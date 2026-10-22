@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { trackOnboardingCompleted } from "@/lib/funnelEvents";
 import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { ChevronRight, Check, Sparkles, Loader, ArrowLeft, ArrowRight } from 'lucide-react';
@@ -292,6 +293,7 @@ Return JSON:
             first_words: '',
           },
         });
+        trackOnboardingCompleted({ voiceTone, hasAesthetic: Boolean(aesthetic), isSaved: true });
       } catch (err) {
         console.warn('Server Anima creation failed; continuing ceremony anyway:', err);
         const detail =

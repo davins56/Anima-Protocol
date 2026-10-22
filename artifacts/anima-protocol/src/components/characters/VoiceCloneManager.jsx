@@ -1,10 +1,12 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Upload, Trash2, Play, Loader, Check, Mic } from "lucide-react";
 import { base44 } from "@/api/base44Client";
 import { motion } from "framer-motion";
 import VoiceRecorder from "@/components/voice/VoiceRecorder";
 
 import { useConfirm } from "@/lib/ConfirmDialog";
+import { isCloudTtsConfigured } from "@/hooks/useSacredSpaceVoice";
+import { synthesizeCloneTest } from "@/lib/voiceCloneTts";
 
 export default function VoiceCloneManager({ character, onUpdate }) {
   const confirm = useConfirm();
@@ -14,6 +16,15 @@ export default function VoiceCloneManager({ character, onUpdate }) {
   const [newCloneName, setNewCloneName] = useState("");
   const [recordingMode, setRecordingMode] = useState(false);
   const fileInputRef = useRef(null);
+  // ElevenLabs clone playback is disabled unless the server has a key.
+  const [cloudTts, setCloudTts] = useState(false);
+  useEffect(() => {
+    let live = true;
+    isCloudTtsConfigured().then((ok) => live && setCloudTts(ok));
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const handleUploadVoice = async (e) => {
     const file = e.target.files?.[0];
@@ -46,23 +57,10 @@ export default function VoiceCloneManager({ character, onUpdate }) {
     setTesting(clone.id);
     try {
       if (clone.elevenlabs_id) {
-        // Test with ElevenLabs API
-        const elevenLabsRes = await fetch(
-          `https://api.elevenlabs.io/v1/text-to-speech/${clone.elevenlabs_id}`,
-          {
-            method: "POST",
-            headers: {
-              "xi-api-key": "YOUR_ELEVENLABS_API_KEY",
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              text: "This is a test of the voice clone.",
-              model_id: "eleven_monolingual_v1",
-            }),
-          }
-        );
-        const audioData = await elevenLabsRes.arrayBuffer();
-        const audio = new Audio(URL.createObjectURL(new Blob([audioData])));
+        // Server-side proxy: the ElevenLabs key is server env only.
+        if (!cloudTts) return;
+        const audioData = await synthesizeCloneTest(clone.elevenlabs_id);
+        const audio = new Audio(URL.createObjectURL(audioData));
         audio.play();
       } else if (clone.sample_url) {
         // Play uploaded sample
@@ -195,6 +193,12 @@ export default function VoiceCloneManager({ character, onUpdate }) {
         )}
       </div>
 
+      {!cloudTts && voiceClones.some((c) => c.elevenlabs_id) && (
+        <p data-testid="voice-clone-disabled" className="font-mono text-[9px] text-primary/40">
+          ElevenLabs playback is off until the server is configured.
+        </p>
+      )}
+
       {/* Voice Clones List */}
       {voiceClones.length > 0 && (
         <div className="space-y-2">
@@ -220,7 +224,7 @@ export default function VoiceCloneManager({ character, onUpdate }) {
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
                   <button
                     onClick={() => handleTestVoice(clone)}
-                    disabled={testing === clone.id}
+                    disabled={testing === clone.id || (Boolean(clone.elevenlabs_id) && !cloudTts)}
                     className="w-6 h-6 border border-primary/20 text-primary/40 hover:text-primary/70 disabled:opacity-30 flex items-center justify-center transition-colors"
                     title="Test voice"
                   >

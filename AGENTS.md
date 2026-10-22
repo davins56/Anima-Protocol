@@ -264,7 +264,9 @@ All new events must follow these conventions.
 | `message_sent` | User sends a message in a chat session (**value moment** — `is_crossover` flags multi-universe scenes) | `session_mode`, `character_count`, `is_crossover`, `is_continue`, `has_attachment`, `is_therapy` | `src/pages/Chat.jsx` |
 | `character_created` | A new companion is created from an AI prompt | `creation_method`, `universe`, `category` | `src/pages/CompanionGenerator.jsx` |
 | `crossover_session_started` | User starts a multi-universe group session | `character_count`, `universe_count` | `src/pages/Chat.jsx` |
-| `subscription_upgrade_started` | User starts a premium checkout (intent, not completion) | `tier`, `purchase_type`, `from_tier` | `src/pages/PremiumPlans.jsx` |
+| `onboarding_completed` | Onboarding Anima is saved (fires after the server write succeeds) | `voice_tone`, `has_aesthetic`, `is_saved` | `src/pages/OnboardingFlow.jsx`, `src/lib/funnelEvents.js` |
+| `first_reply_received` | First companion reply this device receives (once, after the reply is in hand) | `session_mode`, `is_anima`, `first_word_ms` | `src/pages/Chat.jsx`, `src/lib/funnelEvents.js` |
+| `subscription_upgrade_started` | User starts a premium upgrade (intent, not completion). While payments are not live, `purchase_type: "waitlist"` = joined the coming-soon waitlist | `tier`, `purchase_type`, `from_tier` | `src/components/subscription/ComingSoonWaitlist.jsx` |
 | `net_battle_started` | User jacks into a NetBattle match | `control_mode`, `primary_expression`, `is_blend` | `src/pages/NetBattle.jsx` |
 | `net_battle_completed` | A NetBattle match ends (win or loss) | `result`, `control_mode`, `primary_expression`, `is_blend`, `chips_used`, `echo_keys_used` | `src/pages/NetBattle.jsx` |
 | `echo_folder_saved` | User saves their Echo Key Folder to the profile | `folder_size`, `star_count`, `mega_count` | `src/hooks/useEchoLibrary.js` |
@@ -275,6 +277,8 @@ All new events must follow these conventions.
 | `device_scan_completed` | Anima finishes a permission-gated scan of this device for leftover / junk data | `flag_count`, `has_folder_grant`, `is_anima` | `src/lib/animaDeviceScan.js`, `src/components/anima/DeviceScanPanel.jsx` |
 | `echo_key_discovered` | Operator finds, synthesises, or evolves an Echo Key in story mode | `source` (`virtual` / `field` / `synthesis` / `evolution`), `site`, `tier`, `is_outdoor` | `src/components/echoKeys/EchoStoryMode.jsx`, `src/pages/NetBattle.jsx` |
 | `model_lesson_taught` | Steward saves a correction for their own model from a chat reply (fires after the lesson is saved) | `has_note`, `is_drafted`, `is_own_model_reply`, `is_trainer_started` | `src/components/tutor/TeachDialog.jsx` |
+
+> **Activation funnel:** `sign_up_completed` → `onboarding_completed` → `message_sent` → `first_reply_received` → `subscription_upgrade_started`. See `docs/analytics-funnel.md`.
 
 > **Value moment:** the core action is a *crossover interaction* — engaging multiple characters from different universes in one session. `message_sent` with `is_crossover: true` captures it.
 

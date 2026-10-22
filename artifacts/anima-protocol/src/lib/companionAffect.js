@@ -127,3 +127,57 @@ export function radiationEventFromAffect(snapshot) {
     mood: snapshot.mood,
   };
 }
+
+const INTENT_PHRASES = {
+  comfort: "comfort you",
+  play: "play along with you",
+  "draw-close": "be close to you",
+  answer: "answer what you asked",
+  attend: "pay close attention to you",
+  reassure: "reassure you",
+  "hold-boundary": "hold a boundary",
+  withdraw: "keep a little distance",
+};
+
+function levelWord(value, low, high) {
+  if (value < low) return "low";
+  if (value > high) return "high";
+  return "steady";
+}
+
+/**
+ * "Why she feels this" — plain-language reasons from the same server
+ * snapshot the mood chip shows (no second mood source, no model call).
+ *
+ * @param {ReturnType<typeof parseCompanionAffectSnapshot>} snapshot
+ * @param {string} [name]
+ * @param {number} [now]
+ * @returns {string[]}
+ */
+export function explainCompanionAffect(snapshot, name = "", now = Date.now()) {
+  if (!snapshot) return [];
+  const who = String(name || "").trim() || "She";
+  const strength = snapshot.intensity >= 70 ? "strongly" : snapshot.intensity >= 40 ? "clearly" : "faintly";
+  const lines = [
+    snapshot.mood && snapshot.mood !== snapshot.primary
+      ? `${who} feels ${strength} ${snapshot.primary} — "${snapshot.mood}".`
+      : `${who} feels ${strength} ${snapshot.primary}.`,
+  ];
+  const intent = INTENT_PHRASES[snapshot.intent] || (snapshot.intent ? snapshot.intent.replace(/-/g, " ") : "");
+  if (intent) lines.push(`Right now she wants to ${intent}.`);
+  lines.push(
+    snapshot.focus === "steward" || !snapshot.focus
+      ? "Her attention is on you and what you just said."
+      : `Her attention is on ${snapshot.focus}.`,
+  );
+  lines.push(`Her energy is ${levelWord(snapshot.energy, 34, 66)} (${snapshot.energy}/100).`);
+  if (snapshot.synchro_strength != null) {
+    lines.push(`Your bond signal is at ${snapshot.synchro_strength}% — it colours how openly she shows it.`);
+  }
+  const at = Date.parse(snapshot.updated_at || "");
+  if (Number.isFinite(at)) {
+    const mins = Math.max(0, Math.round((now - at) / 60000));
+    lines.push(mins < 1 ? "This shifted with her last reply." : mins < 60 ? `This shifted ${mins} min ago.` : `This shifted ${Math.round(mins / 60)} h ago.`);
+  }
+  return lines;
+}

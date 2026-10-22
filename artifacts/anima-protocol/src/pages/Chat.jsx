@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
+import { trackFirstReplyReceived } from "@/lib/funnelEvents";
+import MoodWhyPanel from "@/components/chat/MoodWhyPanel";
 import { buildRatingPayload } from "@/lib/replyRatings";
 import { isRestingError, restingNotice, withRestingNotice } from "@/lib/restingMode";
 import { useQueryClient } from "@tanstack/react-query";
@@ -2728,6 +2730,14 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         });
       }
 
+      if (String(result || "").trim()) {
+        trackFirstReplyReceived({
+          sessionMode: activeSession?.mode || "solo",
+          isAnima: Boolean(activeChar?._isAnima),
+          firstWordMs: Number(resultPayload?.first_word_ms),
+        });
+      }
+
       // Felt state from the server is authoritative; keyword detectMood is fallback.
       // Retry and edit already counted this turn. Do not shift mood again.
       if (!skipAffect) {
@@ -3864,9 +3874,11 @@ Return JSON:
                       <span className="font-mono text-[11px] text-primary/75">
                         Resonance: {Math.round(resonance.value)}%
                       </span>
-                      <span className="font-mono text-[11px] text-primary/50">
-                        Mood: {companionAffect?.mood || currentMood}
-                      </span>
+                      <MoodWhyPanel
+                        affect={companionAffect}
+                        fallbackMood={currentMood}
+                        name={characters.find((c) => c.id === activeSession?.character_id)?.name}
+                      />
                     </div>
                   </div>
                 )}
