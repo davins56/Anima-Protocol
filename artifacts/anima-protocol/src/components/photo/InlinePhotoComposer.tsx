@@ -14,6 +14,8 @@ import {
   type SceneSpec,
 } from "@/lib/photo/photoApi";
 import IdentityLockPanel from "./IdentityLockPanel";
+import { useCharacterVessel } from "@/hooks/useCharacterVessel";
+import { vesselToDescriptorPhrases } from "@/lib/vessel/vesselConfig";
 
 type Companion = { id: string; name?: string; avatar_url?: string; _isAnima?: boolean };
 
@@ -56,17 +58,20 @@ export default function InlinePhotoComposer({
   const [showIdentity, setShowIdentity] = useState(false);
   const [shared, setShared] = useState(false);
   const busy = state.phase === "queued" || state.phase === "running";
+  const { vessel } = useCharacterVessel(character.id);
+  const [matchVessel, setMatchVessel] = useState(true);
 
-  const base = useMemo(
-    () => ({
+  const base = useMemo(() => {
+    const useVessel = Boolean(vessel && matchVessel);
+    return {
       characterId: character.id,
       characterName: character.name,
       sessionId: sessionId || null,
-      extraDescriptor,
+      extraDescriptor: useVessel ? [...(extraDescriptor || []), ...vesselToDescriptorPhrases(vessel!.config)] : extraDescriptor,
       extraReferenceUrl,
-    }),
-    [character.id, character.name, sessionId, extraDescriptor, extraReferenceUrl],
-  );
+      useVesselReference: useVessel && Boolean(vessel?.snapshot_path),
+    };
+  }, [character.id, character.name, sessionId, extraDescriptor, extraReferenceUrl, vessel, matchVessel]);
 
   const generate = (op: RefinementOp = "new", value?: string, parentImageId?: string) => {
     setShared(false);
@@ -119,6 +124,20 @@ export default function InlinePhotoComposer({
           >
             <Lock className="w-3 h-3" /> Identity
           </button>
+          {vessel && (
+            <button
+              type="button"
+              onClick={() => setMatchVessel((v) => !v)}
+              className={`ml-1 font-mono text-[9px] uppercase tracking-widest ${matchVessel ? "text-primary" : "text-primary/40"}`}
+              title="Match the saved 3D vessel look"
+              aria-pressed={matchVessel}
+            >
+              Vessel v{vessel.version}
+            </button>
+          )}
+          <a href={`/vessel?character=${encodeURIComponent(character.id)}&name=${encodeURIComponent(character.name || "")}`} className="ml-1 font-mono text-[9px] uppercase tracking-widest text-primary/50 hover:text-primary">
+            3D
+          </a>
         </div>
         <button type="button" onClick={onClose} className="text-primary/40 hover:text-primary p-1" aria-label="Close photo studio">
           <X className="w-4 h-4" />

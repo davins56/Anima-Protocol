@@ -73,6 +73,8 @@ export type GeneratePhotoInput = {
   imageSize?: "portrait_4_3" | "portrait_16_9" | "square_hd" | "landscape_4_3" | "landscape_16_9";
   extraReferenceUrl?: string;
   extraDescriptor?: string[];
+  /** Server resolves the latest saved 3D vessel snapshot as the extra reference. */
+  useVesselReference?: boolean;
 };
 
 async function json<T>(res: Response): Promise<T> {
