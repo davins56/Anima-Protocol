@@ -194,6 +194,25 @@ export default function Resonance() {
                 {target.node.is_signature ? " · signature" : ""}
               </p>
             </div>
+            {(target.node.signal_type === "hostile" || target.node.signal_type === "noise") && (
+              <button
+                type="button"
+                disabled={targetStrength < LOCK_THRESHOLD}
+                onClick={() => {
+                  const navi = companions.find((c) => /serenity/i.test(c.name)) || companions[0];
+                  const q = new URLSearchParams({
+                    node: target.node.id,
+                    w: String(tuned),
+                    nodeW: String(target.node.frequency),
+                    ...(navi ? { character: navi.id, name: navi.name } : {}),
+                  });
+                  navigate(`/resonance/arena?${q}`);
+                }}
+                className="min-h-[44px] px-4 border border-red-400 text-red-300 font-mono text-xs uppercase tracking-widest disabled:opacity-40"
+              >
+                Jack in
+              </button>
+            )}
             <button
               type="button"
               disabled={opening || targetStrength < LOCK_THRESHOLD || target.node.signal_type === "noise"}
