@@ -82,7 +82,7 @@ export function presentMemoryReview(review) {
     // with her memories. Only a core section, or a core memory class, is a
     // locked identity proposal.
     if (item.section === "core" || item.memory_class === "core") {
-      core.push({ ...item, editable: false, protected: true });
+      core.push({ ...item, editable: false, protected: true, proposal: item.proposal === true });
       continue;
     }
     companion.push(item);

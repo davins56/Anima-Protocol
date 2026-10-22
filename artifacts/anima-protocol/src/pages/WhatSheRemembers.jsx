@@ -25,7 +25,7 @@ const SECTIONS = [
   {
     key: "core",
     title: "Protected proposals",
-    blurb: "Ideas about who she is. They stay locked, unused in chat, and cannot be changed here.",
+    blurb: "Ideas about who she is. A proposal stays locked and unused in chat until you accept it; accepted ones become part of who she is.",
     testId: "memory-section-core",
   },
 ];
@@ -125,6 +125,24 @@ export default function WhatSheRemembers() {
     }
   };
 
+  const resolveProposal = async (factId, action, text) => {
+    if (busyId) return;
+    const ticket = requestTicket.current;
+    const targetId = characterId;
+    setBusyId(factId);
+    setError("");
+    try {
+      const payload = await animaApi.chat.resolveIdentityProposal(targetId, factId, action, text);
+      if (ticket !== requestTicket.current) return;
+      applyReview(payload);
+    } catch (err) {
+      if (ticket !== requestTicket.current) return;
+      setError(err?.message || "That proposal could not be saved.");
+    } finally {
+      if (ticket === requestTicket.current) setBusyId(null);
+    }
+  };
+
   return (
     <div
       data-testid="what-she-remembers"
@@ -178,6 +196,7 @@ export default function WhatSheRemembers() {
                       const confirming = confirmId === item.fact_id;
                       const busy = busyId === item.fact_id;
                       const canChange = item.editable === true && item.protected !== true && section.key !== "core";
+                      const pending = section.key === "core" && item.proposal === true;
                       return (
                         <li
                           key={item.fact_id}
@@ -254,6 +273,63 @@ export default function WhatSheRemembers() {
                                     className="min-h-11 px-4 rounded-lg border border-rose-300/40 text-base text-rose-100 touch-manipulation"
                                   >
                                     Forget
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          )}
+                          {pending && (
+                            <div className="flex flex-wrap gap-2" data-testid="proposal-actions">
+                              {editing ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    disabled={busy || !draft.trim()}
+                                    onClick={() => resolveProposal(item.fact_id, "edit", draft.replace(/\s+/g, " ").trim())}
+                                    className="min-h-11 px-4 rounded-lg bg-amber-200 text-base text-slate-950 touch-manipulation disabled:opacity-50"
+                                  >
+                                    {busy ? "Saving…" : "Save and accept"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => {
+                                      setEditingId(null);
+                                      setDraft("");
+                                    }}
+                                    className="min-h-11 px-4 rounded-lg border border-cyan-300/30 text-base text-cyan-50 touch-manipulation"
+                                  >
+                                    Cancel
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => resolveProposal(item.fact_id, "accept")}
+                                    className="min-h-11 px-4 rounded-lg bg-amber-200 text-base text-slate-950 touch-manipulation disabled:opacity-50"
+                                  >
+                                    Accept
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => {
+                                      setEditingId(item.fact_id);
+                                      setDraft(item.text || "");
+                                    }}
+                                    className="min-h-11 px-4 rounded-lg border border-amber-200/40 text-base text-amber-50 touch-manipulation"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => resolveProposal(item.fact_id, "reject")}
+                                    className="min-h-11 px-4 rounded-lg border border-rose-300/40 text-base text-rose-100 touch-manipulation disabled:opacity-50"
+                                  >
+                                    Reject
                                   </button>
                                 </>
                               )}
