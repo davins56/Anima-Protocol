@@ -55,6 +55,9 @@ export const CLOUDFLARE_RUNTIME_ENV_NAMES = [
   "ANIMA_OPENROUTER_FALLBACK",
   "ANIMA_OPENROUTER_FREE",
   "ANIMA_CODESPACE_TERMINAL",
+  "ANIMA_MEMORY_CORE",
+  "ANIMA_MEMORY_EMBED_MODEL",
+  "ANIMA_MEMORY_EMBED_PROVIDER",
   // Forward Kernel roadmap kill switches. Unset is off. See kernelFeatures.ts.
   // Classic Worker secrets (`wrangler secret put`), not wrangler.jsonc vars.
   "ANIMA_KERNEL_AGENCY",
@@ -112,6 +115,10 @@ export const CLOUDFLARE_RUNTIME_ENV_NAMES = [
   "VAPID_SUBJECT",
   "VENICE_INFERENCE_KEY_",
   "XAI_API_KEY",
+  "ANIMA_VOICE_AGENT",
+  "ANIMA_VOICE_MODEL",
+  "ANIMA_VOICE_SHARE_MEMORY",
+  "ANIMA_VOICE_TOKEN_TTL_S",
 ] as const;
 
 const mirroredRuntimeEnv: Record<string, string> = {};

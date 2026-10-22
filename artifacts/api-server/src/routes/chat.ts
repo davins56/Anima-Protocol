@@ -175,6 +175,8 @@ import {
 } from "../lib/chatTelemetry";
 import { streamErrorMessage } from "../lib/chatStreamError";
 import { optionalChatContext } from "../lib/optionalChatContext";
+import { buildMemoryCoreContext, isMemoryCoreEnabled } from "../lib/memoryCore/sessionContext";
+import { appendMemoryEvent } from "../lib/memoryCore/memoryCore";
 import { classifyDbError, errorCauseBlob } from "../lib/dbErrors";
 import {
   finalizeAssistantReply,
@@ -2735,6 +2737,24 @@ router.post("/messages", async (req, res) => {
         [undefined, null, null] as const,
       )
     : Promise.resolve([undefined, null, null] as const);
+  // Persistent memory core (identity anchor + ranked long-term memories).
+  // Best-effort with its own 1.5s ceiling; never blocks the reply.
+  const memoryCorePromise =
+    hintedCharId && isMemoryCoreEnabled()
+      ? optionalChatContext(
+          "memory_core",
+          async () => {
+            const [character] = await loadCharacters(userId, [hintedCharId]);
+            return buildMemoryCoreContext({
+              userId,
+              character: character || { id: hintedCharId },
+              query: content,
+              sessionId,
+            });
+          },
+          "",
+        )
+      : Promise.resolve("");
   // Already parallel. Wall time is the slowest branch. On the Worker a
   // required read (characters or recent messages) that hits the 5s query
   // cap is tried twice, so one stuck query is about 10s — not the sum of
@@ -2748,6 +2768,7 @@ router.post("/messages", async (req, res) => {
     worldKnowledgeResult,
     repositoryKnowledge,
     pdfContext,
+    memoryCoreContext,
   ] = await telemetry.measure(
     "context_load_ms",
     Promise.all([
@@ -2768,6 +2789,7 @@ router.post("/messages", async (req, res) => {
       worldKnowledgePromise,
       repositoryKnowledgePromise,
       pdfContextPromise,
+      memoryCorePromise,
     ]),
   );
   const worldKnowledge = worldKnowledgeResult.prompt;
@@ -2987,6 +3009,7 @@ router.post("/messages", async (req, res) => {
       clientContext: body.system_prompt,
       repositoryKnowledge,
       pdfContext,
+      memoryCoreContext,
       photoNote,
       characters: adaptedChars,
       activeCharacter: activeChar,
@@ -3956,6 +3979,21 @@ router.post("/messages", async (req, res) => {
     // committed first; failures here are observable and can be rebuilt without
     // risking duplicate visible chat rows.
     if (skipAffect) return;
+    // Append-only memory stream: one `turn` event per committed turn
+    // (dedupe on turnId so persist retries never double-log).
+    if (activeCharacterId && isMemoryCoreEnabled() && !replyCutOff) {
+      void appendMemoryEvent({
+        userId,
+        characterId: activeCharacterId,
+        eventType: "turn",
+        content: `User: ${String(content || "").slice(0, 600)}\nMe: ${String(fullResponse || "").slice(0, 900)}`,
+        payload: { turn_id: turnId, mode, is_crossover: isCrossover },
+        emotionalWeight: Math.min(1, Math.max(0, Number(companionAffect?.intensity ?? 0.5) || 0.5)),
+        conversationId: sessionId,
+        dedupeKey: `turn:${turnId}`,
+        source: "chat",
+      }).catch((e) => logger.warn({ error: e, turnId }, "memory_events turn append failed"));
+    }
     try {
       const hiddenLife = body.metadata?.hidden_sequences as
         | { learned_life?: unknown[] }
