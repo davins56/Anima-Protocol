@@ -90,9 +90,9 @@ overrides:
   '@tailwindcss/oxide>@tailwindcss/oxide-win32-arm64-msvc': '-'
   '@tailwindcss/oxide>@tailwindcss/oxide-win32-x64-msvc': '-'
   'body-parser@2': 2.3.0
-  'brace-expansion@2': 2.1.4
-  'brace-expansion@5': 5.0.9
-  dompurify: 3.4.13
+  'brace-expansion@2': 2.1.7
+  'brace-expansion@5': 5.0.12
+  dompurify: 3.4.16
   esbuild: 0.28.1
   esbuild>@esbuild/aix-ppc64: '-'
   esbuild>@esbuild/android-arm: '-'
@@ -119,11 +119,12 @@ overrides:
   esbuild>@esbuild/win32-arm64: '-'
   esbuild>@esbuild/win32-ia32: '-'
   esbuild>@esbuild/win32-x64: '-'
-  'fast-uri@3': 3.1.5
+  'fast-copy@4': 4.1.0
+  'fast-uri@3': 3.1.8
   'form-data@2': 2.5.6
   'form-data@4': 4.0.6
   glob: '^11.0.0'
-  'js-yaml@4': 4.3.1
+  'js-yaml@4': 4.3.2
   lightningcss>lightningcss-android-arm64: '-'
   lightningcss>lightningcss-darwin-arm64: '-'
   lightningcss>lightningcss-darwin-x64: '-'
@@ -139,7 +140,7 @@ overrides:
   'nanoid@3': 3.3.18
   pg: 8.23.0
   postcss: '^8.5.23'
-  'qs@6.15.1': 6.15.2
+  'qs@6': 6.16.1
   react-router: '^7.18.2'
   rollup>@rollup/rollup-android-arm-eabi: '-'
   rollup>@rollup/rollup-android-arm64: '-'
@@ -165,5 +166,6 @@ overrides:
   rollup>@rollup/rollup-win32-ia32-msvc: '-'
   rollup>@rollup/rollup-win32-x64-gnu: '-'
   rollup>@rollup/rollup-win32-x64-msvc: '-'
-  undici: 7.29.0
+  'source-map-js@1': 1.2.2
+  undici: 7.29.1
   uuid: '^11.1.1'
