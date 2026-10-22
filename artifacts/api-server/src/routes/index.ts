@@ -24,6 +24,7 @@ import photoRouter from "./photo";
 import memoryCoreRouter from "./memoryCore";
 import vesselRouter from "./vessel";
 import resonanceRouter from "./resonance";
+import voiceRouter from "./voice";
 
 const router: IRouter = Router();
 
@@ -49,6 +50,7 @@ router.use("/model", ownModelRouter);
 router.use("/memory-core", memoryCoreRouter);
 router.use("/vessel", vesselRouter);
 router.use("/resonance", resonanceRouter);
+router.use("/voice", voiceRouter);
 router.use("/store", storeRouter);
 router.use(photoRouter);
 router.use(storageRouter);
