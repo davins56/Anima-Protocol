@@ -52,7 +52,7 @@
     "tsx": "catalog:",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.71.2",
-    "wrangler": "4.151.1"
+    "wrangler": "4.141.0"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
