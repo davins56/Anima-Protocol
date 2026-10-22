@@ -204,7 +204,8 @@ const VIRUS_BODIES = {
   aegis: AegisVirus,
 };
 
-export function VirusFigure({ model, col = 4, row = 1, flinch = 0, hpRatio = 1 }) {
+/** `anchored` renders at the parent's origin (caller positions it, e.g. the sim loop's interpolated pose). */
+export function VirusFigure({ model, col = 4, row = 1, flinch = 0, hpRatio = 1, anchored = false }) {
   const group = useSmoothPanel(col, row);
   const inner = useRef(null);
   const color = model?.color || "#f87171";
@@ -221,7 +222,7 @@ export function VirusFigure({ model, col = 4, row = 1, flinch = 0, hpRatio = 1 }
   });
 
   return (
-    <group ref={group}>
+    <group ref={anchored ? undefined : group}>
       <group ref={inner} scale={dim}>
         <pointLight color={color} intensity={0.9} distance={2.8} />
         <TesseractLattice
