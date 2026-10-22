@@ -1,4 +1,6 @@
 import webpush, { type PushSubscription as WebPushSubscription } from "web-push";
+import { dueThread, extractOpenThreads, threadFollowUpInstruction } from "./agencyThreads";
+import { isKernelFeatureEnabled } from "./kernelFeatures";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   CHAT_MESSAGE,
@@ -309,8 +311,14 @@ async function generateMessage(
         },
       ]
     : [];
-  const instruction =
-    "Send one warm, natural check-in as this character after some time apart. " +
+  // Agency Engine (ANIMA_KERNEL_AGENCY): follow up on an open thread when one is due.
+  const thread = isKernelFeatureEnabled("agency")
+    ? dueThread(extractOpenThreads(candidate.recentMessages))
+    : null;
+  if (thread) logger.info({ eventWord: thread.eventWord }, "proactive: thread follow-up");
+  const instruction = thread
+    ? threadFollowUpInstruction(thread)
+    : "Send one warm, natural check-in as this character after some time apart. " +
     "Continue the relationship or conversation without claiming the user said something new. " +
     "Do not mention apps, notifications, inactivity, schedules, or being an AI. " +
     "Do not guilt, pressure, alarm, sexualize, or manipulate the user. " +
