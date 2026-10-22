@@ -7,6 +7,7 @@ import MemoryCallout from "./MemoryCallout";
 import EmotionalVoiceSynthesis from "./EmotionalVoiceSynthesis";
 import LoreKeywordHighlighter from "@/components/lore/LoreKeywordHighlighter";
 import MediaLightbox from "./MediaLightbox";
+import PhotoAttachmentActions from "@/components/photo/PhotoAttachmentActions";
 import AudioPlayer from "./AudioPlayer";
 import DeviceScanCard from "./DeviceScanCard";
 import PdfFileChip from "@/components/pdf/PdfFileChip";
@@ -34,6 +35,8 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
   const images = (message.attachments || []).filter((a) => a.type === "image").map((a) => a.url);
   const audioClips = (message.attachments || []).filter((a) => a.type === "audio");
   const pdfFiles = (message.attachments || []).filter((a) => a.type === "pdf");
+  // Identity-locked studio photos carry photo_id so they can be refined inline.
+  const studioPhotos = (message.attachments || []).filter((a) => a.type === "image" && a.photo_id);
 
   const handleEditSave = () => {
     const next = editText.trim();
@@ -228,6 +231,10 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
                 </button>
               ))}
             </div>
+           )}
+
+           {studioPhotos.length > 0 && (
+            <PhotoAttachmentActions imageId={studioPhotos[0].photo_id} characterId={studioPhotos[0].character_id} />
            )}
 
            {/* Rewind button */}

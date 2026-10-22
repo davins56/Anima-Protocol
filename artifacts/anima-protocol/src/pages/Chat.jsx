@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { base44, uploadDataUrl } from "@/api/base44Client";
@@ -123,6 +123,9 @@ import JackInOfferChip from "@/components/chat/JackInOfferChip";
 import VoiceChatMode from "@/components/chat/VoiceChatMode";
 import VoiceInputPanel from "@/components/chat/VoiceInputPanel";
 import ImageGenerationModal from "@/components/chat/ImageGenerationModal";
+// Identity-locked photo studio — lazy so the chat bundle stays lean on iPad.
+const InlinePhotoComposer = lazy(() => import("@/components/photo/InlinePhotoComposer"));
+const PHOTO_STUDIO_ENABLED = String(import.meta.env.VITE_PHOTO_STUDIO ?? "on").toLowerCase() !== "off";
 import CreateBranchModal from "@/components/world/CreateBranchModal";
 import LocationDialogueHints from "@/components/chat/LocationDialogueHints";
 import ChoiceGenerator from "@/components/chat/ChoiceGenerator";
@@ -409,6 +412,7 @@ export default function Chat() {
   const [worldElements, setWorldElements] = useState([]);
   const [eventSuggestions, setEventSuggestions] = useState([]);
   const [showImageGen, setShowImageGen] = useState(false);
+  const [showPhotoStudio, setShowPhotoStudio] = useState(false);
   const [analyzingNarrative, setAnalyzingNarrative] = useState(false);
   const [characterEvolutions, setCharacterEvolutions] = useState({});
   const [characterEmotions, setCharacterEmotions] = useState({}); // keyed by character_id: {emotion, intensity, trigger}
@@ -3707,7 +3711,11 @@ Return JSON:
               onToggleMentalLine={() => setShowMentalLine(!showMentalLine)}
               onReadStory={handleReadStory}
               onStopReadingStory={handleStopReadingStory}
-              onShowImageGen={() => setShowImageGen(true)}
+              onShowImageGen={() =>
+                PHOTO_STUDIO_ENABLED && activeSession?.mode === "solo" && activeSession?.character_id
+                  ? setShowPhotoStudio(true)
+                  : setShowImageGen(true)
+              }
               onShowEditModal={() => setShowEditModal(true)}
               onToggleDeepMode={handleToggleDeepMode}
               onOpenRecap={() => openRecap(activeSession.id)}
@@ -4017,6 +4025,38 @@ Return JSON:
               </div>
               <div className="flex-shrink-0" data-testid="chat-input-slot">
                 <ChatPdfBar sessionId={activeSession.id} revision={pdfRevision} />
+                {showPhotoStudio && activeSession.mode === "solo" && activeSession.character_id && (() => {
+                  const photoChar = characters.find((c) => c.id === activeSession.character_id);
+                  if (!photoChar) return null;
+                  return (
+                    <Suspense fallback={null}>
+                      <InlinePhotoComposer
+                        character={photoChar}
+                        sessionId={activeSession.id}
+                        onClose={() => setShowPhotoStudio(false)}
+                        onShare={async ({ url, imageId, prompt, characterId }) => {
+                          await appendAmbientMessage({
+                            appendMessage: base44.messages.append,
+                            sessionId: activeSession.id,
+                            message: {
+                              role: "assistant",
+                              content: prompt ? `*shares a photo: ${String(prompt).slice(0, 180)}*` : "*shares a photo*",
+                              character_name: photoChar.name || "Companion",
+                              attachments: [{ type: "image", url, name: "Photo", photo_id: imageId, character_id: characterId }],
+                              timestamp: new Date().toISOString(),
+                            },
+                            setActiveSession,
+                          });
+                          track("image_generated", {
+                            source: "photo_studio",
+                            is_anima: Boolean(photoChar._isAnima),
+                            session_mode: activeSession.mode || "solo",
+                          });
+                        }}
+                      />
+                    </Suspense>
+                  );
+                })()}
                 <ChatInput
                   key={activeSession.id}
                   onSend={handleSendMessage}
