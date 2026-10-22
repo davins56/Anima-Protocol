@@ -24,4 +24,7 @@ export const PROTECTED_SQL_TABLES = [
   "chat_resting_pending",
   "reply_ratings",
   "reply_ratings_latest",
+  "billing_stripe_events",
+  "entitlement_ledger",
+  "entitlement_balances",
 ] as const;

@@ -32,6 +32,7 @@ import {
 } from "./middlewares/clerkProxyMiddleware";
 import { safeClerkMiddleware } from "./middlewares/clerkAuthFallback";
 import clerkWebhookRouter from "./webhooks/clerk";
+import stripeWebhookRouter from "./webhooks/stripe";
 import healthRouter from "./routes/health";
 import router from "./routes";
 import { logger } from "./lib/logger";
@@ -103,6 +104,8 @@ app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 // Webhook route needs the raw request body for svix signature verification, so
 // it must be mounted before the JSON body parser.
 app.use("/api/webhooks", clerkWebhookRouter);
+// Stripe webhook: raw body for signature verification (see webhooks/stripe.ts).
+app.use("/api/webhooks", stripeWebhookRouter);
 
 app.use(corsMiddleware);
 // Limit raised to accommodate base64 image data URLs (e.g. avatar AI edit,

@@ -8,7 +8,7 @@ All events go through `track()` in `src/lib/analytics.js` (consent-gated, no PII
 | 2 | `onboarding_completed` | The onboarding Anima is saved on the server |
 | 3 | `message_sent` | The user sends a chat message |
 | 4 | `first_reply_received` | The first companion reply arrives (once per device; carries `first_word_ms`) |
-| 5 | `subscription_upgrade_started` | Upgrade intent. While payments are not live, `purchase_type: "waitlist"` |
+| 5 | `subscription_upgrade_started` | Buy tapped on an add-on (`purchase_type: "one_time"`), or waitlist joined for an unconfigured offer (`"waitlist"`) |
 
 ## Building it in Mixpanel
 
