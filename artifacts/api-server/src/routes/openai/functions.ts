@@ -1523,7 +1523,8 @@ router.post("/invoke/:fnName", async (req, res) => {
       }
 
       case "createCheckoutSession": {
-        result = { url: null, error: "Payments not configured in Replit environment." };
+        // Payments are not live yet; the app shows a waitlist instead.
+        result = { url: null, error: "Payments are coming soon.", code: "payments_coming_soon" };
         break;
       }
 
