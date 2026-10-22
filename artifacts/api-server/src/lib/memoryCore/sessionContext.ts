@@ -4,6 +4,7 @@
  * so a slow or missing memory core never blocks a reply.
  */
 import { obscuredMemory } from "@workspace/sim-core";
+import { documentRecallLabel } from "../pdf/documentMemory";
 import { ensureIdentitySnapshot, recallMemories, type IdentityCore, type RecalledMemory } from "./memoryCore";
 
 export const MEMORY_CORE_TIMEOUT_MS = 1500;
@@ -36,7 +37,10 @@ export function formatMemoryCoreBlock(identity: IdentityCore | null, memories: R
       const corrupted = (m.payload as { corrupted?: { severity?: number } } | null)?.corrupted;
       // Corrupted (net-battle) memories surface only as an obscured fragment until purified.
       const shown = corrupted ? obscuredMemory(text, Number(corrupted.severity) || 0.5, m.id) : text;
-      const line = `- (${ago(m.occurred_at, now)}${m.emotional_weight >= 0.8 ? ", deeply felt" : ""}) ${shown}`;
+      const doc = m.event_type === "document_chunk" ? documentRecallLabel(m.payload) : null;
+      const line = doc
+        ? `- (${doc}, shared ${ago(m.occurred_at, now)}) ${shown.slice(0, 360)}`
+        : `- (${ago(m.occurred_at, now)}${m.emotional_weight >= 0.8 ? ", deeply felt" : ""}) ${shown}`;
       if (lines.join("\n").length + line.length > BLOCK_CHAR_BUDGET) break;
       lines.push(line);
     }
