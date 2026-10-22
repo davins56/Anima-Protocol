@@ -21,6 +21,7 @@ import repoCodespaceRouter from "./repoCodespace";
 import modelTutorRouter from "./modelTutor";
 import ownModelRouter from "./ownModel";
 import photoRouter from "./photo";
+import memoryCoreRouter from "./memoryCore";
 
 const router: IRouter = Router();
 
@@ -43,6 +44,7 @@ router.use("/relationship-os", relationshipOsRouter);
 router.use("/repo-codespace", repoCodespaceRouter);
 router.use("/tutor", modelTutorRouter);
 router.use("/model", ownModelRouter);
+router.use("/memory-core", memoryCoreRouter);
 router.use("/store", storeRouter);
 router.use(photoRouter);
 router.use(storageRouter);
