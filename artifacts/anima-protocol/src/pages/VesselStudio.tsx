@@ -16,6 +16,7 @@ import { useVesselEmotion } from "@/hooks/useVesselEmotion";
 import { MOODS } from "@/lib/moodDetector";
 import { fetchVessel, saveVessel, uploadVesselSnapshot } from "@/lib/vessel/vesselApi";
 import { loadCustomiseAnimaCompanions } from "@/lib/loadCustomiseAnimaCompanions";
+import PresenceIndicator from "@/components/continuity/PresenceIndicator";
 
 const VesselCanvas = lazy(() => import("@/components/vessel/VesselCanvas"));
 
@@ -81,6 +82,11 @@ export default function VesselStudio() {
         <Suspense fallback={<div className="absolute inset-0 grid place-items-center font-mono text-xs text-primary/60">Loading vessel…</div>}>
           <VesselCanvas ref={canvas} config={config} expression={expression} shift={shift} mode="full" hd={hd} className="absolute inset-0" />
         </Suspense>
+        {characterId && (
+          <div className="absolute bottom-2 left-2 pointer-events-none">
+            <PresenceIndicator characterId={characterId} name={name} surface="vessel" />
+          </div>
+        )}
         <div className="absolute top-2 left-2 right-2 flex flex-wrap gap-1.5">
           <select
             value={characterId}
