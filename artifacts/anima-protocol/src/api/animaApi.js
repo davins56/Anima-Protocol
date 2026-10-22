@@ -495,6 +495,12 @@ export const animaApi = {
         body: JSON.stringify({ turn_id: turnId, context }),
       }).then((r) => r.json()),
   },
+  /** Thumbs up/down + optional better version per reply (append-only on the server). */
+  ratings: {
+    rate: (payload) =>
+      request(`/ratings`, { method: "POST", body: JSON.stringify(payload) }).then((r) => r.json()),
+  },
+
   tutor: {
     status: () => request("/tutor/status").then((r) => r.json()),
     setOwnModelChat: (enabled) =>
