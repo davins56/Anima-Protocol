@@ -6,6 +6,7 @@ import { lazy, Suspense } from "react";
 import { PageLoader } from "./PageLoader";
 
 const PAGES = {
+  VesselStudio: lazy(() => import("../pages/VesselStudio")),
   AIBehaviorSettings: lazy(() => import("../pages/AIBehaviorSettings")),
   BookOfEchoes: lazy(() => import("../pages/BookOfEchoes")),
   CalendarView: lazy(() => import("../pages/CalendarView")),

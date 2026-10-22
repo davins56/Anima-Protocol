@@ -3,6 +3,7 @@ import { ChevronLeft, Zap, BookText, Check, Loader, BookOpen, Sparkles, Palette 
 import { useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import MoodIndicator from "@/components/chat/MoodIndicator";
+import VesselPortrait from "@/components/vessel/VesselPortrait";
 import MemoryHealth from "@/components/memory/MemoryHealth";
 import {
   llmDisplayBadgeClass,
@@ -111,13 +112,20 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
           title={`View ${primaryChar.name} bio sheet`}
           className="w-6 sm:w-8 h-6 sm:h-8 border border-primary/40 overflow-hidden flex-shrink-0 hover:border-primary/70 hover:ring-1 hover:ring-primary/40 transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
         >
-          {primaryChar.avatar_url ? (
-            <img src={primaryChar.avatar_url} alt={primaryChar.name} className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full bg-primary/10 flex items-center justify-center font-mono text-primary text-sm">
-              {primaryChar.name[0]}
-            </div>
-          )}
+          <VesselPortrait
+            characterId={primaryChar.id}
+            mood={primaryEmotion?.emotion}
+            intensity={primaryEmotion?.intensity}
+            fallback={
+              primaryChar.avatar_url ? (
+                <img src={primaryChar.avatar_url} alt={primaryChar.name} className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full bg-primary/10 flex items-center justify-center font-mono text-primary text-sm">
+                  {primaryChar.name[0]}
+                </div>
+              )
+            }
+          />
         </button>
       ) : null}
 
