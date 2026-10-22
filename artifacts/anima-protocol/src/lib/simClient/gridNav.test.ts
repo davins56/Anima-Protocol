@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createSim, type SimState } from "@workspace/sim-core";
 import { actionsForPanelTap, pathTo, standable } from "./gridNav";
-import { dissolveFor, unitPose } from "./wSpace";
+import { LAYER_W } from "@workspace/sim-core";
+import { dissolveFor, unitPose, wFrame, wSlot, wToWorld } from "./wSpace";
 
 const sim = (): SimState => createSim({ seed: 3, companionId: "serenity", startW: 60, enemies: [{ kind: "mettaur", band: "data" }], memoryPool: [] });
 
@@ -45,5 +46,24 @@ describe("W-space interpolation", () => {
     expect(dissolveFor(0)).toBe(0);
     expect(dissolveFor(1)).toBe(0);
     expect(dissolveFor(null)).toBe(0);
+  });
+});
+
+describe("W ring layout", () => {
+  it("puts layer centres on integer slots, evenly spaced, increasing left→right", () => {
+    LAYER_W.forEach((w, i) => expect(wSlot(w)).toBeCloseTo(i));
+    for (let w = 0; w < 100; w += 0.5) expect(wSlot(w + 0.5)).toBeGreaterThanOrEqual(wSlot(w));
+    const xs = LAYER_W.map((w) => wFrame(w).origin[0]);
+    expect([...xs].sort((a, b) => a - b)).toEqual(xs);
+    expect(wFrame(LAYER_W[2]).origin).toEqual([0, 0, -0]);
+  });
+  it("neighbouring layers recede in depth and turn away", () => {
+    const mid = wFrame(LAYER_W[2]);
+    const right = wFrame(LAYER_W[3]);
+    expect(right.origin[2]).toBeLessThan(mid.origin[2] + 1e-9);
+    expect(right.yaw).toBeGreaterThan(0);
+    // arena-local +x maps along the ring tangent
+    const [x] = wToWorld([1, 0, 0], LAYER_W[3]);
+    expect(x).toBeGreaterThan(right.origin[0]);
   });
 });
