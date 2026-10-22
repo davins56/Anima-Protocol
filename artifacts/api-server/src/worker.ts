@@ -39,7 +39,7 @@ app.listen(WORKER_API_PORT);
 const expressHandler = httpServerHandler({ port: WORKER_API_PORT });
 
 /** wrangler.jsonc triggers.crons entry that runs the dream layer. */
-const DREAM_CRON = "*/15 * * * *";
+const DREAM_CRON = "0,15,30,45 * * * *";
 
 export default {
   async fetch(

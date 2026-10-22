@@ -10,7 +10,7 @@ This is backend only: no UI and no user toggle.
 
 ## Flow
 1. **Scheduler.** Two triggers run the cycle:
-   - The Cloudflare cron `*/15 * * * *` (`worker.ts` `DREAM_CRON`, `wrangler.jsonc`). The existing `15 * * * *` drain is unchanged.
+   - The Cloudflare cron `0,15,30,45 * * * *` (`worker.ts` `DREAM_CRON`, `wrangler.jsonc`). The existing `15 * * * *` drain is unchanged.
    - `GET /api/notifications/dreams/run` with `Authorization: Bearer $CRON_SECRET`, for Node/Vercel hosts. It isn't added to `vercel.json`.
 2. **Candidates** (`findDreamCandidates`). A companion qualifies when:
    - its last memory is older than `ANIMA_DREAM_INACTIVITY_MINUTES` (default 30) and newer than the lookback (72 h);
