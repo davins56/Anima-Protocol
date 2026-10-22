@@ -125,6 +125,7 @@ import VoiceInputPanel from "@/components/chat/VoiceInputPanel";
 import ImageGenerationModal from "@/components/chat/ImageGenerationModal";
 // Identity-locked photo studio — lazy so the chat bundle stays lean on iPad.
 const InlinePhotoComposer = lazy(() => import("@/components/photo/InlinePhotoComposer"));
+const VoiceLauncher = lazy(() => import("@/components/voice/VoiceLauncher"));
 const PHOTO_STUDIO_ENABLED = String(import.meta.env.VITE_PHOTO_STUDIO ?? "on").toLowerCase() !== "off";
 import CreateBranchModal from "@/components/world/CreateBranchModal";
 import LocationDialogueHints from "@/components/chat/LocationDialogueHints";
@@ -4052,6 +4053,33 @@ Return JSON:
                             is_anima: Boolean(photoChar._isAnima),
                             session_mode: activeSession.mode || "solo",
                           });
+                        }}
+                      />
+                    </Suspense>
+                  );
+                })()}
+                {activeSession.mode === "solo" && activeSession.character_id && (() => {
+                  const voiceChar = characters.find((c) => c.id === activeSession.character_id);
+                  if (!voiceChar) return null;
+                  return (
+                    <Suspense fallback={null}>
+                      <VoiceLauncher
+                        character={voiceChar}
+                        sessionId={activeSession.id}
+                        onPhoto={async ({ url, imageId, prompt, characterId }) => {
+                          await appendAmbientMessage({
+                            appendMessage: base44.messages.append,
+                            sessionId: activeSession.id,
+                            message: {
+                              role: "assistant",
+                              content: prompt ? `*shares a photo: ${String(prompt).slice(0, 180)}*` : "*shares a photo*",
+                              character_name: voiceChar.name || "Companion",
+                              attachments: [{ type: "image", url, name: "Photo", photo_id: imageId, character_id: characterId }],
+                              timestamp: new Date().toISOString(),
+                            },
+                            setActiveSession,
+                          }).catch(() => {});
+                          track("image_generated", { source: "voice_tool", is_anima: Boolean(voiceChar._isAnima), session_mode: "solo" });
                         }}
                       />
                     </Suspense>

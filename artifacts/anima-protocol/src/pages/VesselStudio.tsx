@@ -6,6 +6,7 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import VesselCustomizer from "@/components/vessel/VesselCustomizer";
+import VoiceIdentityPanel from "@/components/voice/VoiceIdentityPanel";
 import type { VesselCanvasHandle } from "@/components/vessel/VesselCanvas";
 import { defaultVesselFor, type VesselConfig } from "@/lib/vessel/vesselConfig";
 import { expressionFor } from "@/lib/vessel/emotion";
@@ -113,6 +114,9 @@ export default function VesselStudio() {
           Save new version
         </button>
         {status && <p className="font-mono text-[11px] text-muted-foreground">{status}</p>}
+        <div className="border-t border-border pt-4">
+          <VoiceIdentityPanel characterId={characterId} />
+        </div>
       </aside>
     </div>
   );
