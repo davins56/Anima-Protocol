@@ -97,6 +97,29 @@ export async function persistCompanionAvatarUrl(url, persist) {
  * Retries once on timeout or 503 reset. If the write landed after abort,
  * returns the recovered row instead of the generic timeout toast.
  */
+const STARTER_FIELDS = ["name", "archetype", "tagline", "personality", "backstory", "speaking_style", "universe", "category"];
+
+/**
+ * Fire-and-forget: write her backstory + first facts into companion_memories
+ * (and one memory_events seed) so the first chat knows her. Never blocks or
+ * fails the create; the server call is idempotent.
+ */
+export function seedStarterMemory(row, payload, seed) {
+  const id = row && typeof row === "object" ? row.id : null;
+  if (!id) return Promise.resolve(null);
+  const character = {};
+  for (const key of STARTER_FIELDS) {
+    const v = row[key] ?? payload?.[key];
+    if (typeof v === "string" && v.trim()) character[key] = v;
+  }
+  const run =
+    seed ||
+    ((cid, ch) => import("@/api/animaApi").then(({ animaApi }) => animaApi.chat.seedCompanionMemory(cid, ch)));
+  return Promise.resolve()
+    .then(() => run(String(id), character))
+    .catch(() => null);
+}
+
 export async function createCompanionRecord(
   entityName,
   data,
@@ -104,6 +127,7 @@ export async function createCompanionRecord(
     create,
     list,
     persistAvatar,
+    seedMemory,
     timeoutMs = STORE_COMPANION_CREATE_TIMEOUT_MS,
     retryLimit = STORE_COMPANION_CREATE_RETRY_LIMIT,
   } = {},
@@ -123,15 +147,19 @@ export async function createCompanionRecord(
   );
 
   const attempts = Math.max(0, retryLimit) + 1;
+  const seeded = (row) => {
+    if (seedMemory !== false) void seedStarterMemory(row, payload, typeof seedMemory === "function" ? seedMemory : undefined);
+    return row;
+  };
   let lastErr;
   for (let i = 0; i < attempts; i += 1) {
     try {
-      return await createFn(payload, { timeoutMs });
+      return seeded(await createFn(payload, { timeoutMs }));
     } catch (err) {
       lastErr = err;
       if (isRetryableStoreWriteError(err)) {
         const recovered = await recoverCreatedCompanion(payload.name, listFn);
-        if (recovered) return recovered;
+        if (recovered) return seeded(recovered);
         if (i < attempts - 1) continue;
       }
       if (isCompanionCreateTimeoutError(err)) {
@@ -144,7 +172,7 @@ export async function createCompanionRecord(
     }
   }
   const recovered = await recoverCreatedCompanion(payload.name, listFn);
-  if (recovered) return recovered;
+  if (recovered) return seeded(recovered);
   if (isCompanionCreateTimeoutError(lastErr)) {
     const timeoutErr = new Error(COMPANION_CREATE_TIMEOUT_MESSAGE);
     timeoutErr.code = "timeout";

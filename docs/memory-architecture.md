@@ -78,3 +78,9 @@ Each file is idempotent.
 
 GDPR erasure of a user (the only legitimate delete) takes a superuser session:
 `ALTER TABLE ... DISABLE TRIGGER ...` inside a reviewed one-off transaction. It is deliberately not scripted.
+
+## Starter memories + identity proposals (feature/starter-memories-and-proposals)
+
+- **Starter memories.** `createCompanionRecord` (client) fires `POST /api/chat/memories/:characterId/seed` after a successful create. The server (`lib/starterMemories.ts`) writes up to 6 policy facts (`about: companion`, `source: starter`; name + archetype are accepted core facts, tagline/personality/backstory sentences are semantic) into `companion_memories.facts`, then `ensureIdentitySnapshot` (identity v1) and one `milestone` memory_event with dedupe key `starter:<characterId>`. Idempotent by fact_id; TODO placeholders (e.g. Scarlet's template) are skipped.
+- **Proposals.** Consolidation still writes core identity ideas as `protected + proposal` facts (never used in chat). What She Remembers now offers **Accept / Edit / Reject** (`POST /api/chat/memories/:characterId/proposals/:factId {action, text?}`). Accept/edit turns the fact into an accepted core fact (`proposal:false, accepted_at`) and appends a new identity core version via `append_identity_version` (core_traits + change note). Reject replaces it with a forgotten marker so it is never proposed again.
+- **Prompt.** `promptBuilder.buildCharacterDefinition` adds "Accepted about myself (identity lock, steward-approved): …" from `acceptedIdentityLines(facts)` (max 5, newest first) for the speaking companion only.

@@ -353,6 +353,23 @@ export const animaApi = {
         `/chat/memories/${encodeURIComponent(characterId)}/facts/${encodeURIComponent(factId)}`,
         { method: "DELETE" },
       ).then((r) => r.json()),
+
+    /** Seed a new companion's backstory + first facts (idempotent on the server). */
+    seedCompanionMemory: (characterId, character) =>
+      request(`/chat/memories/${encodeURIComponent(characterId)}/seed`, {
+        method: "POST",
+        body: JSON.stringify({ character }),
+      }).then((r) => r.json()),
+
+    /**
+     * Accept / reject / edit a protected identity proposal. Accept and edit
+     * append a new identity core version on the server.
+     */
+    resolveIdentityProposal: (characterId, factId, action, text) =>
+      request(
+        `/chat/memories/${encodeURIComponent(characterId)}/proposals/${encodeURIComponent(factId)}`,
+        { method: "POST", body: JSON.stringify(text != null ? { action, text } : { action }) },
+      ).then((r) => r.json()),
   },
 
   /**
