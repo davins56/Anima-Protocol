@@ -411,7 +411,7 @@ importers:
         version: 8.6.0(react@19.3.1)
       framer-motion:
         specifier: ^14.0.0
-        version: 14.5.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        version: 14.4.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       input-otp:
         specifier: ^1.5.0
         version: 1.5.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -458,8 +458,8 @@ importers:
         specifier: ^8.3.4
         version: 8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0)
       vite-plugin-pwa:
-        specifier: ^1.3.0
-        version: 1.3.0(supports-color@10.2.2)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))(workbox-window@7.4.1)
+        specifier: ^2.0.0
+        version: 2.0.0(supports-color@10.2.2)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))(workbox-window@7.4.1)
       vitest:
         specifier: ^5.0.5
         version: 5.0.5(@types/node@26.6.5)(jsdom@30.1.3)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
@@ -3959,10 +3959,6 @@ packages:
   es-module-lexer@2.3.2:
     resolution: {integrity: sha512-poHGpORABojJJucnV9KbOavETW8lBVnphkW77ER5/BQ5Fz7oXSoCNek7IH3vR5nRjdsEz926ibFYX8KtLQmdyw==}
 
-  es-object-atoms@1.1.1:
-    resolution: {integrity: sha512-FGgH2h8zKNim9ljj7dankFPcICIK9Cp5bm+c2gQSYePhpaG5+esrLODihIorn+Pe6FGJzWhXQotPv73jTaldXA==}
-    engines: {node: '>= 0.4'}
-
   es-object-atoms@1.1.2:
     resolution: {integrity: sha512-HWcBoN6NileqtSydK2FqHbS/LoDd2pqrnQHLyJzBj4kOp/ky2MWMN694xOfkK8/SnUsW2DH7EfyVlydKCsm1Zw==}
     engines: {node: '>= 0.4'}
@@ -4193,8 +4189,8 @@ packages:
     resolution: {integrity: sha512-buRG0fpBtRHSTCOASe6hD258tEubFoRLb4ZNA6NxMVHNw2gOcwHo9wyablzMzOA5z9xA9L1KNjk/Nt6MT9aYow==}
     engines: {node: '>= 0.6'}
 
-  framer-motion@14.5.0:
-    resolution: {integrity: sha512-pXIj1m9JX//3XExUgQIpS0f5iWcjenO14ekdg9S++Rr0VzfnAaveoNzonigRarD/+AM3umTGS3K/RANGQJitCQ==}
+  framer-motion@14.4.0:
+    resolution: {integrity: sha512-HtO1fxord2rnXYRyr1laG4uY7+OtgwDc9Szcg1wlMq/LF7BO3/S7a+KEo691U7pSi+i0ueRuRqaD1UaLEmZHuQ==}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
@@ -4343,10 +4339,6 @@ packages:
   hashery@1.5.1:
     resolution: {integrity: sha512-iZyKG96/JwPz1N55vj2Ie2vXbhu440zfUfJvSwEqEbeLluk7NnapfGqa7LH0mOsnDxTF85Mx8/dyR6HfqcbmbQ==}
     engines: {node: '>=20'}
-
-  hasown@2.0.3:
-    resolution: {integrity: sha512-ej4AhfhfL2Q2zpMmLo7U1Uv9+PyhIZpgQLGT1F9miIGmiCJIoCgSmczFdrc97mWT4kVY72KA+WnnhJ5pghSvSg==}
-    engines: {node: '>= 0.4'}
 
   hasown@2.0.4:
     resolution: {integrity: sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A==}
@@ -4973,8 +4965,8 @@ packages:
   moment@2.31.0:
     resolution: {integrity: sha512-0acOTfMiWOheYS4eoWb80yYMb/JLvVv9SHbs2PehaDzfUG0Bw855SKyk0IKTnPGa5+U2bmi3W68l1+sGLX/pvw==}
 
-  motion-dom@14.5.0:
-    resolution: {integrity: sha512-GAdnk1AgdtyrD3I09ZxEpV+Nt5QgwUsxN55qQV8mfk082dFQpcoT07wXkQAHRZjvZWUEBYhBVNeoXvtkYdL8jA==}
+  motion-dom@14.4.0:
+    resolution: {integrity: sha512-1q8RyHSdr5COpzrv3JgJ9XRjOO88ZN9CwflpkGgyO/SR/SNRP/dD6EU8SEo092kcKY34IzHC5diJPKrQRMA8lQ==}
 
   motion-utils@14.1.1:
     resolution: {integrity: sha512-3VvN5Uvf8B6qG+OfOui6Nht5EWp+vLuU3IqcAj7ItZGKqtmTjCebl5sGZF7/08gEHRnEl1AP/fIwbcEyVrcQGQ==}
@@ -5926,10 +5918,6 @@ packages:
     resolution: {integrity: sha512-GCvB3aoys96IuDFBMcTB46JOR6mdMtAToqwiW8JlWhsoh1mhHi/xn9ss/Dg7N555GiJyEt2qzoG/NHCwM6h1EA==}
     engines: {node: '>=18'}
 
-  tinyglobby@0.2.16:
-    resolution: {integrity: sha512-pn99VhoACYR8nFHhxqix+uvsbXineAasWm5ojXoN8xEwK5Kd3/TrhNn1wByuD52UxWRLy8pu+kRMniEi6Eq9Zg==}
-    engines: {node: '>=12.0.0'}
-
   tinyglobby@0.2.17:
     resolution: {integrity: sha512-wXR/dYpcqKmfWpEdZjiKJOwCNFndD0DMnrW/cYjVGttEkBfVgcLFHoNrlj47mjOVic9yyNu65alsgF4NQyTa2g==}
     engines: {node: '>=12.0.0'}
@@ -6187,11 +6175,11 @@ packages:
   victory-vendor@37.3.6:
     resolution: {integrity: sha512-SbPDPdDBYp+5MJHhBCAyI7wKM3d5ivekigc2Dk2s7pgbZ9wIgIBYGVw4zGHBml/qTFbexrofXW6Gu4noGxrOwQ==}
 
-  vite-plugin-pwa@1.3.0:
-    resolution: {integrity: sha512-c5kMgN+ITrOtHXp8PAtk2uOIEea6XjP/unCGxOWWBzQ6qa65qj/awHg0wf+QF9E/2u9vh86LqxPwzEPNbM2r5A==}
-    engines: {node: '>=16.0.0'}
+  vite-plugin-pwa@2.0.0:
+    resolution: {integrity: sha512-6G9dsPKT9QKYpeTuTLJM28zZL3HsXUTUM/QUZBEgQk2jbfrPJDq2i8gTewAKqi1c9Mt6MiidrL4SFI+HthiQMg==}
+    engines: {node: '>=20.19.0'}
     peerDependencies:
-      '@vite-pwa/assets-generator': ^1.0.0
+      '@vite-pwa/assets-generator': ^1.0.0 || ^2.0.0
       vite: ^3.1.0 || ^4.0.0 || ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0
       workbox-window: ^7.4.1
     peerDependenciesMeta:
@@ -9669,7 +9657,7 @@ snapshots:
       data-view-byte-offset: 1.0.1
       es-define-property: 1.0.1
       es-errors: 1.3.0
-      es-object-atoms: 1.1.1
+      es-object-atoms: 1.1.2
       es-set-tostringtag: 2.1.0
       es-to-primitive: 1.3.4
       function.prototype.name: 1.2.0
@@ -9681,7 +9669,7 @@ snapshots:
       has-property-descriptors: 1.0.2
       has-proto: 1.2.0
       has-symbols: 1.1.0
-      hasown: 2.0.3
+      hasown: 2.0.4
       internal-slot: 1.1.0
       is-array-buffer: 3.0.5
       is-callable: 1.2.7
@@ -9720,10 +9708,6 @@ snapshots:
 
   es-module-lexer@2.3.2: {}
 
-  es-object-atoms@1.1.1:
-    dependencies:
-      es-errors: 1.3.0
-
   es-object-atoms@1.1.2:
     dependencies:
       es-errors: 1.3.0
@@ -9733,7 +9717,7 @@ snapshots:
       es-errors: 1.3.0
       get-intrinsic: 1.3.0
       has-tostringtag: 1.0.2
-      hasown: 2.0.3
+      hasown: 2.0.4
 
   es-to-primitive@1.3.4:
     dependencies:
@@ -10015,9 +9999,9 @@ snapshots:
 
   forwarded@0.2.0: {}
 
-  framer-motion@14.5.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
+  framer-motion@14.4.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
     dependencies:
-      motion-dom: 14.5.0
+      motion-dom: 14.4.0
       motion-utils: 14.1.1
       tslib: 2.8.1
     optionalDependencies:
@@ -10087,12 +10071,12 @@ snapshots:
       call-bind-apply-helpers: 1.0.2
       es-define-property: 1.0.1
       es-errors: 1.3.0
-      es-object-atoms: 1.1.1
+      es-object-atoms: 1.1.2
       function-bind: 1.1.2
       get-proto: 1.0.1
       gopd: 1.2.0
       has-symbols: 1.1.0
-      hasown: 2.0.3
+      hasown: 2.0.4
       math-intrinsics: 1.1.0
 
   get-nonce@1.0.1: {}
@@ -10102,7 +10086,7 @@ snapshots:
   get-proto@1.0.1:
     dependencies:
       dunder-proto: 1.0.1
-      es-object-atoms: 1.1.1
+      es-object-atoms: 1.1.2
 
   get-stream@9.0.1:
     dependencies:
@@ -10183,10 +10167,6 @@ snapshots:
   hashery@1.5.1:
     dependencies:
       hookified: 1.15.1
-
-  hasown@2.0.3:
-    dependencies:
-      function-bind: 1.1.2
 
   hasown@2.0.4:
     dependencies:
@@ -10315,7 +10295,7 @@ snapshots:
   internal-slot@1.1.0:
     dependencies:
       es-errors: 1.3.0
-      hasown: 2.0.3
+      hasown: 2.0.4
       side-channel: 1.1.1
 
   internmap@2.0.3: {}
@@ -10358,7 +10338,7 @@ snapshots:
 
   is-core-module@2.16.2:
     dependencies:
-      hasown: 2.0.3
+      hasown: 2.0.4
 
   is-data-view@1.0.2:
     dependencies:
@@ -10941,7 +10921,7 @@ snapshots:
 
   moment@2.31.0: {}
 
-  motion-dom@14.5.0:
+  motion-dom@14.4.0:
     dependencies:
       motion-utils: 14.1.1
 
@@ -10993,7 +10973,7 @@ snapshots:
       call-bind: 1.0.9
       call-bound: 1.0.4
       define-properties: 1.2.1
-      es-object-atoms: 1.1.1
+      es-object-atoms: 1.1.2
       has-symbols: 1.1.0
       object-keys: 1.1.1
 
@@ -11486,7 +11466,7 @@ snapshots:
       define-properties: 1.2.1
       es-abstract: 1.24.2
       es-errors: 1.3.0
-      es-object-atoms: 1.1.1
+      es-object-atoms: 1.1.2
       get-intrinsic: 1.3.0
       get-proto: 1.0.1
       which-builtin-type: 1.2.1
@@ -11694,7 +11674,7 @@ snapshots:
     dependencies:
       dunder-proto: 1.0.1
       es-errors: 1.3.0
-      es-object-atoms: 1.1.1
+      es-object-atoms: 1.1.2
 
   setprototypeof@1.2.0: {}
 
@@ -11840,7 +11820,7 @@ snapshots:
       define-properties: 1.2.1
       es-abstract: 1.24.2
       es-errors: 1.3.0
-      es-object-atoms: 1.1.1
+      es-object-atoms: 1.1.2
       get-intrinsic: 1.3.0
       gopd: 1.2.0
       has-symbols: 1.1.0
@@ -11871,7 +11851,7 @@ snapshots:
     dependencies:
       call-bind: 1.0.9
       define-properties: 1.2.1
-      es-object-atoms: 1.1.1
+      es-object-atoms: 1.1.2
 
   string_decoder@1.3.0:
     dependencies:
@@ -11989,11 +11969,6 @@ snapshots:
   tinybench@6.2.2: {}
 
   tinyexec@1.3.1: {}
-
-  tinyglobby@0.2.16:
-    dependencies:
-      fdir: 6.5.0(picomatch@4.0.7)
-      picomatch: 4.0.7
 
   tinyglobby@0.2.17:
     dependencies:
@@ -12278,11 +12253,11 @@ snapshots:
       d3-time: 3.1.0
       d3-timer: 3.0.1
 
-  vite-plugin-pwa@1.3.0(supports-color@10.2.2)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))(workbox-window@7.4.1):
+  vite-plugin-pwa@2.0.0(supports-color@10.2.2)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))(workbox-window@7.4.1):
     dependencies:
       debug: 4.4.3(supports-color@10.2.2)
       pretty-bytes: 6.1.1
-      tinyglobby: 0.2.16
+      tinyglobby: 0.2.17
       vite: 8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0)
       workbox-build: 7.4.1(supports-color@10.2.2)
       workbox-window: 7.4.1
