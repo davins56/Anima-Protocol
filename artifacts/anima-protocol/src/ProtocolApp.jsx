@@ -85,6 +85,7 @@ import Landing from "./pages/Landing";
 // their mapDeps are not part of this Clerk shell or the HTML entry.
 const Chat = lazy(() => import("./pages/Chat"));
 const NetBattle = lazy(() => import("./pages/NetBattle"));
+const SimGame = lazy(() => import("./pages/SimGame"));
 const MainHome = lazy(() => import("./pages/MainHome"));
 const Characters = lazy(() => import("./pages/Characters"));
 const Settings = lazy(() => import("./pages/Settings"));
@@ -1017,6 +1018,12 @@ const AuthenticatedApp = () => {
                 path="/net-battle"
                 element={
                     <NetBattle />
+                }
+              />
+              <Route
+                path="/sim"
+                element={
+                    <SimGame />
                 }
               />
 
