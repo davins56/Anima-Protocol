@@ -18,6 +18,7 @@
     "@react-three/drei": "^10.7.9",
     "@react-three/fiber": "^9.8.2",
     "@react-three/postprocessing": "^3.2.0",
+    "@workspace/sim-core": "workspace:*",
     "canvas-confetti": "^1.9.4",
     "cytoscape": "^3.34.4",
     "dompurify": "^3.4.17",

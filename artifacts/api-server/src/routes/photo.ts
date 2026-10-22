@@ -148,6 +148,7 @@ router.post("/photo/generate", async (req, res) => {
     refinement: body.refinement && typeof body.refinement === "object" ? body.refinement : undefined,
     imageSize: typeof body.imageSize === "string" ? (body.imageSize as GenerateRequest["imageSize"]) : undefined,
     extraReferenceUrl: typeof body.extraReferenceUrl === "string" ? body.extraReferenceUrl : undefined,
+    useVesselReference: body.useVesselReference === true,
     extraDescriptor: Array.isArray(body.extraDescriptor) ? body.extraDescriptor.map(String).slice(0, 24) : undefined,
     origin: requestOrigin(req),
     cookie: req.headers.cookie,

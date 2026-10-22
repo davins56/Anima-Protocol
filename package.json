@@ -8,6 +8,7 @@
     "build": "pnpm --filter @workspace/api-server run build && PORT=${PORT:-23660} BASE_PATH=${BASE_PATH:-/} pnpm --filter @workspace/anima-protocol run build && rm -rf dist && cp -R artifacts/anima-protocol/dist/public dist && rm -f dist/_redirects && node artifacts/anima-protocol/scripts/assertSpaAssets.js dist",
     "build:all": "pnpm run typecheck && pnpm -r --if-present run build",
     "lint": "echo 'No lint errors'",
+    "check:migrations": "node scripts/ci/check-migration-safety.mjs",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "dev:infra:up": "docker compose -f docker-compose.dev.yml up -d",

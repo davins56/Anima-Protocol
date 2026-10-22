@@ -199,6 +199,12 @@ export interface PromptBuilderParams {
   pdfContext?: string | null;
 
   /**
+   * Persistent memory core block (identity anchor + ranked long-term memories
+   * from memory_events). Joined into the memory section; trimmed with it.
+   */
+  memoryCoreContext?: string | null;
+
+  /**
    * Short note that this turn includes a photo. The text model cannot see
    * the image. Empty when the user did not attach one.
    */
@@ -1391,6 +1397,7 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
       characterNames,
     ),
     isCrossover ? buildSharedMemoryBlock(sharedMemory) : "",
+    String(params.memoryCoreContext || "").trim(),
   ]);
   const memoryText = memoryBody
     ? joinPromptParts([
