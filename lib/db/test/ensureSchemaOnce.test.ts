@@ -25,6 +25,11 @@ function presentQueryable(
       if (/pg_extension/i.test(text)) {
         return { rows: [{ exists: true }] };
       }
+      // Read-only column probes (chat_turns lease, PDF pipeline columns). An
+      // empty answer means "nothing to add", so any DDL after this is a bug.
+      if (/information_schema\.columns/i.test(text) && !/^\s*(ALTER|CREATE|DO)\b/i.test(text)) {
+        return { rows: [] };
+      }
       onUnexpected?.(text);
       throw new Error(`unexpected SQL: ${text.slice(0, 120)}`);
     },
@@ -175,5 +180,51 @@ describe("ensureSchemaOnce request isolation on Workers", () => {
     expect(result.ok).toBe(true);
     expect(result.createdTables).toEqual([]);
     void first;
+  });
+});
+
+describe("ensureSchema adds PDF pipeline columns to pre-pipeline databases", () => {
+  function queryable(columns: Record<string, string[]>, statements: string[]): SqlQueryable {
+    return {
+      async query(text: string) {
+        statements.push(text);
+        if (/information_schema\.columns/i.test(text)) {
+          return {
+            rows: Object.entries(columns).flatMap(([table_name, names]) =>
+              names.map((column_name) => ({ table_name, column_name })),
+            ),
+          };
+        }
+        if (/information_schema\.tables/i.test(text)) {
+          return { rows: REQUIRED_TABLES.map((table_name) => ({ table_name })) };
+        }
+        if (/pg_extension/i.test(text)) return { rows: [{ exists: true }] };
+        return { rows: [] };
+      },
+    };
+  }
+
+  it("adds status, storage and embedding columns plus the status check", async () => {
+    const statements: string[] = [];
+    const result = await ensureSchema(
+      queryable({ pdf_documents: ["id", "user_id", "title"], pdf_chunks: ["id", "content"] }, statements),
+    );
+    expect(result.ok).toBe(true);
+    const alter = statements.find((sql) => /ALTER TABLE "pdf_documents"/.test(sql)) || "";
+    for (const col of ["status", "error_code", "content_sha256", "storage_path", "embedded_chunk_count"]) {
+      expect(alter).toContain(`"${col}"`);
+    }
+    expect(statements.some((sql) => /pdf_documents_status_check/.test(sql))).toBe(true);
+    expect(statements.some((sql) => /ALTER TABLE "pdf_chunks".*"token_count"/s.test(sql))).toBe(true);
+  });
+
+  it("emits no PDF DDL once the pipeline columns exist", async () => {
+    const statements: string[] = [];
+    const docCols = [
+      "id", "status", "error", "error_code", "attempts", "content_sha256", "storage_bucket",
+      "storage_path", "embedded_chunk_count", "embedding_model", "processing_started_at", "completed_at",
+    ];
+    await ensureSchema(queryable({ pdf_documents: docCols, pdf_chunks: ["id", "token_count"] }, statements));
+    expect(statements.some((sql) => /ALTER TABLE "pdf_/.test(sql))).toBe(false);
   });
 });

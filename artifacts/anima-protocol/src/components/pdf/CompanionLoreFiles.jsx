@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { FileText, Loader } from "lucide-react";
 import { toast } from "sonner";
 import {
   deletePdfDocument,
-  listPdfDocuments,
   openPdfDocument,
   pdfProgressLabel,
   renamePdfDocument,
   uploadPdfDocument,
 } from "@/api/pdfDocuments";
+import { pdfStatusLabel } from "@/api/pdfPipeline";
+import { usePdfDocuments } from "@/hooks/usePdfDocuments";
 import PdfFileChip from "./PdfFileChip";
 
 /**
@@ -17,36 +18,18 @@ import PdfFileChip from "./PdfFileChip";
  * another user's files.
  */
 export default function CompanionLoreFiles({ characterId, characterName }) {
-  const [files, setFiles] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const { files, loading, error: loadError, reload: load, retry } = usePdfDocuments({
+    scope: "lore",
+    characterId,
+  });
   const [busyName, setBusyName] = useState("");
   const [progress, setProgress] = useState(null);
-  const [error, setError] = useState("");
+  const [uploadError, setError] = useState("");
+  const error = uploadError || loadError;
   const [renamingId, setRenamingId] = useState(null);
   const [renameValue, setRenameValue] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const inputRef = useRef(null);
-
-  const load = useCallback(async () => {
-    if (!characterId) {
-      setFiles([]);
-      return;
-    }
-    setLoading(true);
-    try {
-      const rows = await listPdfDocuments({ scope: "lore", characterId });
-      setFiles(rows);
-      setError("");
-    } catch (err) {
-      setError(err?.message || "Couldn't load lore files.");
-    } finally {
-      setLoading(false);
-    }
-  }, [characterId]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const onPick = async (event) => {
     const picked = Array.from(event.target.files || []);
@@ -127,6 +110,7 @@ export default function CompanionLoreFiles({ characterId, characterName }) {
                 <PdfFileChip
                   name={file.filename}
                   pageCount={file.pageCount}
+                  statusLabel={pdfStatusLabel(file)}
                   onOpen={
                     file.hasFile
                       ? () =>
@@ -161,6 +145,17 @@ export default function CompanionLoreFiles({ characterId, characterName }) {
                   </div>
                 ) : (
                   <div className="flex gap-2">
+                    {file.status === "failed" ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          retry(file.id).catch((err) => toast.error(err?.message || "Couldn't retry that PDF."))
+                        }
+                        className="min-h-11 px-3 border border-primary/40 text-primary font-mono text-[11px] tracking-widest uppercase"
+                      >
+                        Retry
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => {

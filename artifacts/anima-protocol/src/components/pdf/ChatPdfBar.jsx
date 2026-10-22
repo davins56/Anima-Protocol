@@ -1,32 +1,18 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
-import { deletePdfDocument, listPdfDocuments, openPdfDocument } from "@/api/pdfDocuments";
+import { deletePdfDocument, openPdfDocument } from "@/api/pdfDocuments";
+import { pdfStatusLabel } from "@/api/pdfPipeline";
+import { usePdfDocuments } from "@/hooks/usePdfDocuments";
 import PdfFileChip from "./PdfFileChip";
 
 /**
  * PDFs already shared in this conversation. Deleting one removes its stored
  * text so later replies stop using it. The composer can still attach a new file.
+ * Each chip shows the upload pipeline status until the file is ready.
  */
 export default function ChatPdfBar({ sessionId, revision = 0 }) {
-  const [files, setFiles] = useState([]);
+  const { files, reload: load, retry } = usePdfDocuments({ scope: "chat", sessionId, revision });
   const [confirmId, setConfirmId] = useState(null);
-
-  const load = useCallback(async () => {
-    if (!sessionId) {
-      setFiles([]);
-      return;
-    }
-    try {
-      const rows = await listPdfDocuments({ scope: "chat", sessionId });
-      setFiles(rows);
-    } catch {
-      setFiles([]);
-    }
-  }, [sessionId]);
-
-  useEffect(() => {
-    load();
-  }, [load, revision]);
 
   if (!files.length) return null;
 
@@ -40,6 +26,7 @@ export default function ChatPdfBar({ sessionId, revision = 0 }) {
           <PdfFileChip
             name={file.filename}
             pageCount={file.pageCount}
+            statusLabel={pdfStatusLabel(file)}
             onOpen={
               file.hasFile
                 ? () =>
@@ -75,13 +62,26 @@ export default function ChatPdfBar({ sessionId, revision = 0 }) {
               </button>
             </div>
           ) : (
-            <button
-              type="button"
-              className="min-h-11 px-3 border border-primary/20 text-primary/55 font-mono text-[11px] tracking-widest uppercase"
-              onClick={() => setConfirmId(file.id)}
-            >
-              Remove
-            </button>
+            <div className="flex gap-2">
+              {file.status === "failed" ? (
+                <button
+                  type="button"
+                  className="min-h-11 px-3 border border-primary/40 text-primary font-mono text-[11px] tracking-widest uppercase"
+                  onClick={() =>
+                    retry(file.id).catch((err) => toast.error(err?.message || "Couldn't retry that PDF."))
+                  }
+                >
+                  Retry
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="min-h-11 px-3 border border-primary/20 text-primary/55 font-mono text-[11px] tracking-widest uppercase"
+                onClick={() => setConfirmId(file.id)}
+              >
+                Remove
+              </button>
+            </div>
           )}
         </div>
       ))}

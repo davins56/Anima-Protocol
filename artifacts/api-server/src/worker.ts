@@ -114,6 +114,14 @@ export default {
         } catch (err) {
           console.error("Memory embedding backfill failed", err);
         }
+        try {
+          // PDF pipeline: reclaim abandoned uploads and fill chunk vectors that
+          // were deferred while the embedder was unreachable.
+          const { backfillPdfPipelines } = await import("./lib/pdf/store");
+          await backfillPdfPipelines({ maxDocuments: 8 });
+        } catch (err) {
+          console.error("PDF pipeline backfill failed", err);
+        }
       })(),
     );
   },

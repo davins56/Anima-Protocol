@@ -54,6 +54,8 @@ Switch: `ANIMA_MEMORY_EMBED_PROVIDER=auto|local|workersai|off`.
 * `routes/memoryCore.ts`: `GET /api/memory-core/:id/health`, `POST .../bootstrap|events|identity|retract`.
   There is deliberately no DELETE or PUT.
 * Kill switch: `ANIMA_MEMORY_CORE=off`.
+* PDFs: chunk vectors live in `pdf_chunk_embeddings` (same 768-d HNSW), recalled alongside memories through
+  `match_pdf_chunks`; a shared file is linked to memory by one `document_shared` event. See `docs/pdf-pipeline.md`.
 
 ## Deploy safety (audit, 2026-10-22)
 | Finding | Action |

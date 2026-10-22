@@ -16,4 +16,5 @@ export const PROTECTED_SQL_TABLES = [
   "resonance_nodes",
   "resonance_encounters",
   "character_voice",
+  "pdf_chunk_embeddings",
 ] as const;

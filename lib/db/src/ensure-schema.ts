@@ -180,6 +180,87 @@ export async function ensureSchema(
   return withTransientDbRetry(() => runEnsureSchema(getPool()));
 }
 
+/**
+ * PDF upload pipeline columns (supabase/migrations/20261022210000_pdf_pipeline.sql).
+ * Must match pdfDocuments in schema/index.ts so drizzle-kit push keeps them.
+ * Existing rows were processed synchronously, so status defaults to 'ready'.
+ */
+const PDF_DOCUMENT_PIPELINE_COLUMNS: ReadonlyArray<readonly [string, string]> = [
+  ["status", "text DEFAULT 'ready' NOT NULL"],
+  ["error", "text"],
+  ["error_code", "text"],
+  ["attempts", "integer DEFAULT 0 NOT NULL"],
+  ["content_sha256", "text"],
+  ["storage_bucket", "text"],
+  ["storage_path", "text"],
+  ["embedded_chunk_count", "integer DEFAULT 0 NOT NULL"],
+  ["embedding_model", "text"],
+  ["processing_started_at", "timestamp"],
+  ["completed_at", "timestamp"],
+];
+
+const PDF_STATUS_CHECK_SQL = `"status" IN ('uploaded','extracting','chunking','embedding','ready','failed')`;
+
+/**
+ * Databases created before the PDF pipeline already have pdf_documents, so the
+ * fast path skips ensurePdfSchema. Add the missing pipeline columns once per
+ * isolate (one information_schema read when nothing is missing).
+ */
+async function ensurePdfPipelineColumns(db: Queryable): Promise<void> {
+  let docCols = new Set<string>();
+  let chunkCols = new Set<string>();
+  try {
+    const found = await db.query(
+      `SELECT table_name, column_name
+         FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name IN ('pdf_documents', 'pdf_chunks')`,
+    );
+    for (const row of (found.rows ?? []) as { table_name?: string; column_name?: string }[]) {
+      const name = String(row.column_name || "");
+      if (row.table_name === "pdf_documents") docCols.add(name);
+      else if (row.table_name === "pdf_chunks") chunkCols.add(name);
+    }
+  } catch {
+    return;
+  }
+  const statements: string[] = [];
+  if (docCols.has("id")) {
+    const missing = PDF_DOCUMENT_PIPELINE_COLUMNS.filter(([name]) => !docCols.has(name));
+    if (missing.length) {
+      statements.push(
+        `ALTER TABLE "pdf_documents" ${missing
+          .map(([name, type]) => `ADD COLUMN IF NOT EXISTS "${name}" ${type}`)
+          .join(", ")}`,
+      );
+      if (missing.some(([name]) => name === "status")) {
+        statements.push(
+          `DO $$ BEGIN
+             ALTER TABLE "pdf_documents" ADD CONSTRAINT "pdf_documents_status_check" CHECK (${PDF_STATUS_CHECK_SQL});
+           EXCEPTION WHEN duplicate_object THEN NULL;
+           END $$`,
+          `CREATE INDEX IF NOT EXISTS "pdf_documents_user_status_idx"
+             ON "pdf_documents" USING btree ("user_id", "status")`,
+          `CREATE INDEX IF NOT EXISTS "pdf_documents_user_sha_idx"
+             ON "pdf_documents" USING btree ("user_id", "content_sha256")`,
+        );
+      }
+    }
+  }
+  if (chunkCols.has("id") && !chunkCols.has("token_count")) {
+    statements.push(
+      `ALTER TABLE "pdf_chunks" ADD COLUMN IF NOT EXISTS "token_count" integer DEFAULT 0 NOT NULL`,
+    );
+  }
+  for (const statement of statements) {
+    try {
+      await db.query(statement);
+    } catch {
+      // Fresh databases get these columns from the CREATE TABLE path.
+    }
+  }
+}
+
 async function ensurePdfSchema(
   run: (sql: string, label: string) => Promise<void>,
 ): Promise<void> {
@@ -198,9 +279,21 @@ async function ensurePdfSchema(
       "page_count" integer DEFAULT 0 NOT NULL,
       "chunk_count" integer DEFAULT 0 NOT NULL,
       "created_at" timestamp DEFAULT now() NOT NULL,
-      "updated_at" timestamp DEFAULT now() NOT NULL
+      "updated_at" timestamp DEFAULT now() NOT NULL,
+      ${PDF_DOCUMENT_PIPELINE_COLUMNS.map(([name, type]) => `"${name}" ${type}`).join(",\n      ")},
+      CONSTRAINT "pdf_documents_status_check" CHECK (${PDF_STATUS_CHECK_SQL})
     )`,
     "table:pdf_documents",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "pdf_documents_user_status_idx"
+       ON "pdf_documents" USING btree ("user_id", "status")`,
+    "index:pdf_documents_user_status_idx",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "pdf_documents_user_sha_idx"
+       ON "pdf_documents" USING btree ("user_id", "content_sha256")`,
+    "index:pdf_documents_user_sha_idx",
   );
   await run(
     `CREATE INDEX IF NOT EXISTS "pdf_documents_user_session_idx"
@@ -222,6 +315,7 @@ async function ensurePdfSchema(
       "page_end" integer DEFAULT 1 NOT NULL,
       "content" text NOT NULL,
       "search_vector" tsvector NOT NULL,
+      "token_count" integer DEFAULT 0 NOT NULL,
       "created_at" timestamp DEFAULT now() NOT NULL
     )`,
     "table:pdf_chunks",
@@ -333,6 +427,7 @@ async function ensureChatTurnLeaseColumns(db: Queryable): Promise<void> {
 
 async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
   await ensureChatTurnLeaseColumns(db);
+  await ensurePdfPipelineColumns(db);
   // Inspect must not gate DDL when it throws (Hyperdrive/postgres.js array-bind
   // used to skip every CREATE IF NOT EXISTS). When inspect succeeds and every
   // required table is already present, skip the ~50 sequential CREATE

@@ -58,6 +58,9 @@ export const CLOUDFLARE_RUNTIME_ENV_NAMES = [
   "ANIMA_MEMORY_CORE",
   "ANIMA_MEMORY_EMBED_MODEL",
   "ANIMA_MEMORY_EMBED_PROVIDER",
+  // PDF upload pipeline (lib/pdf/*). Unset = local-only embeddings, 20 MB cap.
+  "ANIMA_PDF_EMBED_PROVIDER",
+  "ANIMA_PDF_MAX_BYTES",
   // Forward Kernel roadmap kill switches. Unset is off. See kernelFeatures.ts.
   // Classic Worker secrets (`wrangler secret put`), not wrangler.jsonc vars.
   "ANIMA_KERNEL_AGENCY",
@@ -107,6 +110,7 @@ export const CLOUDFLARE_RUNTIME_ENV_NAMES = [
   "PUBLIC_OBJECT_SEARCH_PATHS",
   "SESSION_SECRET",
   "SUPABASE_ANON_KEY",
+  "SUPABASE_PDF_BUCKET",
   "SUPABASE_PHOTO_BUCKET",
   "SUPABASE_SERVICE_ROLE_KEY",
   "SUPABASE_URL",

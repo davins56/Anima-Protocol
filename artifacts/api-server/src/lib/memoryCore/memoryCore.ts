@@ -3,7 +3,7 @@
  * SQL: supabase/migrations/20261022160000..160200_memory_*.sql
  */
 import { getPool } from "@workspace/db";
-import { embedMemoryTexts, toVectorLiteral } from "./embedder";
+import { embedMemoryTexts, embedQueryCached, toVectorLiteral } from "./embedder";
 
 export const MEMORY_EVENT_TYPES = [
   "turn",
@@ -15,6 +15,7 @@ export const MEMORY_EVENT_TYPES = [
   "milestone",
   "note",
   "retraction",
+  "document_shared",
 ] as const;
 export type MemoryEventType = (typeof MEMORY_EVENT_TYPES)[number] | (string & {});
 
@@ -144,7 +145,8 @@ export async function recallMemories(args: {
   sessionId?: string | null;
   log?: boolean;
 }): Promise<RecalledMemory[]> {
-  const emb = args.query ? (await embedMemoryTexts([args.query]))?.[0] || null : null;
+  // Shared with PDF chunk recall for the same turn (one embed call per message).
+  const emb = args.query ? await embedQueryCached(args.query) : null;
   const { rows } = await getPool().query<RecalledMemory>(
     `SELECT * FROM recall_memories($1, $2, $3::vector, $4, $5, 30, 0.6, 0.25, 0.15, $6)`,
     [

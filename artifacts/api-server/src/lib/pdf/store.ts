@@ -5,7 +5,9 @@ import {
   getPool,
   withTransientDbRetry,
 } from "@workspace/db";
-import { chunkPdfPages } from "./chunk";
+import { appendMemoryEvent, retractMemory } from "../memoryCore/memoryCore";
+import { embedQueryCached, toVectorLiteral } from "../memoryCore/embedder";
+import { isMemoryCoreEnabled } from "../memoryCore/sessionContext";
 import {
   buildPdfRetrievalSql,
   packPdfContext,
@@ -18,12 +20,32 @@ import {
   type PdfHit,
 } from "./context";
 import { PdfUploadError } from "./errors";
-import { decodePdfBase64, extractPdfPages } from "./extract";
+import { decodePdfBase64, sha256Hex, validatePdfUpload } from "./extract";
 import {
-  PDF_FILE_PART_BYTES,
+  PDF_CONTEXT_MAX_HITS,
+  PDF_MAX_BASE64_BYTES,
   PDF_MAX_FILES_PER_CHAT,
   PDF_MAX_FILES_PER_LORE,
+  PDF_QUERY_EMBED_TIMEOUT_MS,
+  PDF_STALE_PROCESSING_MS,
+  PDF_VECTOR_MIN_SIMILARITY,
+  pdfMaxBytes,
 } from "./limits";
+import { defaultPdfBlobStore, storeFor, type PdfBlobStore } from "./pdfStorage";
+import {
+  asPdfStatus,
+  embedPdfTexts,
+  embedPendingChunks,
+  isMissingRelation,
+  pdfEmbedderAvailable,
+  pdfEmbedProvider,
+  runPdfPipeline,
+  type PdfPipelineDeps,
+  type PdfPipelineDoc,
+  type PdfStatus,
+  type PipelineResult,
+} from "./pipeline";
+import { PDF_DOC_COLUMNS, sqlPdfPipelineRepo, type PdfDocRow } from "./pipelineRepo";
 
 export type PdfScope = "chat" | "lore";
 
@@ -35,23 +57,19 @@ export type PdfDocumentRecord = {
   characterId: string | null;
   byteSize: number;
   pageCount: number;
-    chunkCount: number;
-    /** True when the original bytes are in pdf_file_parts. */
-    hasFile: boolean;
-    createdAt: string;
-  };
-
-type DocumentRow = {
-  id: string;
-  filename: string;
-  scope: string;
-  session_id: string | null;
-  character_id: string | null;
-  byte_size: number | string;
-  page_count: number | string;
-  chunk_count: number | string;
-  created_at: Date | string;
-  has_file?: boolean | string | number | null;
+  chunkCount: number;
+  /** True when the original bytes are stored (Supabase Storage or pdf_file_parts). */
+  hasFile: boolean;
+  createdAt: string;
+  /** uploaded → extracting → chunking → embedding → ready | failed */
+  status: PdfStatus;
+  /** User-facing reason when status is failed. */
+  error: string | null;
+  errorCode: string | null;
+  embeddedChunkCount: number;
+  /** Ready for full-text recall, vectors still being filled in by the backfill. */
+  vectorsPending: boolean;
+  updatedAt: string | null;
 };
 
 function isMissingPdfTable(error: unknown): boolean {
@@ -62,7 +80,9 @@ function isMissingPdfTable(error: unknown): boolean {
       : "";
   return (
     code === "42P01" ||
-    /relation ["']?(pdf_documents|pdf_chunks|pdf_file_parts)["']? does not exist/i.test(message)
+    /relation ["']?(pdf_documents|pdf_chunks|pdf_file_parts)["']? does not exist/i.test(message) ||
+    // A database from before the pipeline columns: ensure-schema adds them.
+    (code === "42703" && /column .* does not exist/i.test(message))
   );
 }
 
@@ -88,8 +108,16 @@ function asScope(value: unknown): PdfScope | null {
   return value === "chat" || value === "lore" ? value : null;
 }
 
-function mapDocument(row: DocumentRow): PdfDocumentRecord {
+function iso(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  return value instanceof Date ? value.toISOString() : String(value);
+}
+
+function mapDocument(row: PdfDocRow): PdfDocumentRecord {
   const scope = asScope(row.scope) ?? "chat";
+  const status = asPdfStatus(row.status);
+  const chunkCount = Number(row.chunk_count) || 0;
+  const embeddedChunkCount = Number(row.embedded_chunk_count) || 0;
   return {
     id: row.id,
     filename: row.filename,
@@ -98,14 +126,27 @@ function mapDocument(row: DocumentRow): PdfDocumentRecord {
     characterId: row.character_id,
     byteSize: Number(row.byte_size) || 0,
     pageCount: Number(row.page_count) || 0,
-    chunkCount: Number(row.chunk_count) || 0,
-    hasFile: row.has_file === true || row.has_file === "t" || row.has_file === 1,
-    createdAt:
-      row.created_at instanceof Date
-        ? row.created_at.toISOString()
-        : String(row.created_at || ""),
+    chunkCount,
+    hasFile:
+      Boolean(row.storage_bucket && row.storage_path) ||
+      row.has_file === true ||
+      row.has_file === "t" ||
+      row.has_file === 1,
+    createdAt: iso(row.created_at) || "",
+    status,
+    error: status === "failed" ? row.error ?? null : null,
+    errorCode: status === "failed" ? row.error_code ?? null : null,
+    embeddedChunkCount,
+    vectorsPending: status === "ready" && embeddedChunkCount < chunkCount,
+    updatedAt: iso(row.updated_at),
   };
 }
+
+const LIST_COLUMNS = `${PDF_DOC_COLUMNS},
+  EXISTS (
+    SELECT 1 FROM pdf_file_parts p
+    WHERE p.document_id = pdf_documents.id AND p.user_id = pdf_documents.user_id
+  ) AS has_file`;
 
 async function userOwnsChatSession(userId: string, sessionId: string): Promise<boolean> {
   const rows = await queryRows<{ ok: number }>(
@@ -128,59 +169,118 @@ async function userOwnsCompanion(userId: string, characterId: string): Promise<b
   return rows.length > 0;
 }
 
-async function savePdfFileParts(
-  userId: string,
-  documentId: string,
-  bytes: Uint8Array,
-): Promise<void> {
-  let index = 0;
-  for (let offset = 0; offset < bytes.byteLength; offset += PDF_FILE_PART_BYTES) {
-    const slice = bytes.subarray(offset, offset + PDF_FILE_PART_BYTES);
-    await queryRows(
-      `INSERT INTO pdf_file_parts (document_id, user_id, part_index, data)
-       VALUES ($1, $2, $3, decode($4, 'base64'))`,
-      [documentId, userId, index, Buffer.from(slice).toString("base64")],
-    );
-    index += 1;
+// ── Pipeline wiring ───────────────────────────────────────────────────────
+
+/** Companions that should remember a shared PDF: lore owner, or the chat's cast. */
+async function documentCharacters(doc: PdfPipelineDoc): Promise<string[]> {
+  if (doc.scope === "lore") return doc.characterId ? [doc.characterId] : [];
+  if (!doc.sessionId) return [];
+  const rows = await queryRows<{ data: Record<string, unknown> | null }>(
+    `SELECT data FROM user_entities
+     WHERE user_id = $1 AND entity_name = $2 AND entity_id = $3 LIMIT 1`,
+    [doc.userId, CHAT_SESSION, doc.sessionId],
+  );
+  const data = rows[0]?.data || {};
+  const group = Array.isArray(data.group_character_ids) ? data.group_character_ids : [];
+  return safeEntityIds([data.character_id, ...group], 4);
+}
+
+/**
+ * Memory core link: one `document_shared` event per companion, idempotent on
+ * dedupe_key `pdf:<document>:<character>`. The PDF text itself is not copied
+ * into memory_events (append-only, and a deleted PDF must stop being recalled).
+ */
+async function linkDocumentToMemory(doc: PdfPipelineDoc): Promise<void> {
+  if (!isMemoryCoreEnabled()) return;
+  const characters = await documentCharacters(doc);
+  for (const characterId of characters) {
+    await appendMemoryEvent(
+      {
+        userId: doc.userId,
+        characterId,
+        eventType: "document_shared",
+        content: `${doc.scope === "lore" ? "Added a lore PDF" : "Shared a PDF in chat"}: "${doc.filename}" (${doc.pageCount} ${doc.pageCount === 1 ? "page" : "pages"})`,
+        payload: { document_id: doc.id, scope: doc.scope, filename: doc.filename, page_count: doc.pageCount },
+        emotionalWeight: 0.35,
+        conversationId: doc.sessionId,
+        dedupeKey: `pdf:${doc.id}:${characterId}`,
+        source: "pdf",
+      },
+      { embed: false },
+    ).catch((err) => {
+      if (!isMissingRelation(err)) throw err;
+    });
   }
 }
 
-export type StoredPdfFile = {
-  filename: string;
-  /** Null when this row was saved before original bytes were kept. */
-  bytes: Buffer | null;
+/** Retract the `document_shared` events of deleted PDFs (append-only forgetting). */
+async function retractDocumentMemories(userId: string, documentIds: string[]): Promise<void> {
+  if (!documentIds.length || !isMemoryCoreEnabled()) return;
+  try {
+    const keys = documentIds.map((id) => `pdf:${id}:%`);
+    const rows = await queryRows<{ id: string; character_id: string }>(
+      `SELECT id, character_id FROM memory_events
+       WHERE user_id = $1 AND event_type = 'document_shared' AND dedupe_key LIKE ANY ($2::text[])`,
+      [userId, keys],
+    );
+    for (const row of rows) {
+      await retractMemory(userId, row.character_id, row.id, "PDF deleted").catch(() => {});
+    }
+  } catch {
+    // Memory core not migrated, or offline: nothing was linked.
+  }
+}
+
+export function pdfPipelineDeps(overrides: Partial<PdfPipelineDeps> = {}): PdfPipelineDeps {
+  return {
+    repo: sqlPdfPipelineRepo,
+    blobs: (ref) => storeFor(ref),
+    embed: embedPdfTexts,
+    embedderAvailable: () => pdfEmbedderAvailable(),
+    onReady: linkDocumentToMemory,
+    log: (msg, extra) => console.warn(msg, extra || {}),
+    ...overrides,
+  };
+}
+
+/** Background hook: Worker ctx.waitUntil via scheduleWorkerBackground, or plain Node. */
+export type PdfBackground = (promise: Promise<unknown>) => void;
+const runDetached: PdfBackground = (promise) => {
+  promise.catch((err) => console.warn("pdf background step failed", String(err)));
 };
 
-/** Owner-only. Null when the document is not theirs. */
-export async function readPdfFile(
+async function loadDocument(userId: string, documentId: string): Promise<PdfDocumentRecord | null> {
+  const rows = await queryRows<PdfDocRow>(
+    `SELECT ${LIST_COLUMNS} FROM pdf_documents WHERE id = $1 AND user_id = $2 LIMIT 1`,
+    [documentId, userId],
+  );
+  return rows[0] ? mapDocument(rows[0]) : null;
+}
+
+async function removeDocumentRows(userId: string, documentId: string): Promise<boolean> {
+  await queryRows(`DELETE FROM pdf_file_parts WHERE document_id = $1 AND user_id = $2`, [documentId, userId]);
+  // pdf_chunk_embeddings rows cascade from pdf_chunks / pdf_documents.
+  await queryRows(`DELETE FROM pdf_chunks WHERE document_id = $1 AND user_id = $2`, [documentId, userId]);
+  const removed = await queryRows<{ id: string }>(
+    `DELETE FROM pdf_documents WHERE id = $1 AND user_id = $2 RETURNING id`,
+    [documentId, userId],
+  );
+  return removed.length > 0;
+}
+
+async function removeStoredObjects(
   userId: string,
-  documentId: unknown,
-): Promise<StoredPdfFile | null> {
-  const owner = safeEntityId(userId);
-  const id = safeEntityId(documentId);
-  if (!owner || !id) return null;
-  return withPdfTable(async () => {
-    const docs = await queryRows<{ filename: string }>(
-      `SELECT filename FROM pdf_documents WHERE id = $1 AND user_id = $2 LIMIT 1`,
-      [id, owner],
-    );
-    const doc = docs[0];
-    if (!doc) return null;
-    const parts = await queryRows<{ data_base64: string }>(
-      `SELECT replace(encode(data, 'base64'), chr(10), '') AS data_base64
-       FROM pdf_file_parts
-       WHERE document_id = $1 AND user_id = $2
-       ORDER BY part_index ASC`,
-      [id, owner],
-    );
-    if (!parts.length) return { filename: doc.filename, bytes: null };
-    return {
-      filename: doc.filename,
-      bytes: Buffer.concat(
-        parts.map((part) => Buffer.from(String(part.data_base64 || ""), "base64")),
+  refs: { id: string; storage_bucket: string | null; storage_path: string | null }[],
+): Promise<void> {
+  await Promise.all(
+    refs
+      .filter((ref) => ref.storage_bucket && ref.storage_path)
+      .map((ref) =>
+        storeFor({ bucket: ref.storage_bucket })
+          .remove({ userId, documentId: ref.id, bucket: ref.storage_bucket, path: ref.storage_path })
+          .catch((err) => console.warn("pdf storage delete failed", String(err))),
       ),
-    };
-  });
+  );
 }
 
 async function countScoped(
@@ -198,13 +298,49 @@ async function countScoped(
   return Number(rows[0]?.n) || 0;
 }
 
+export type StoredPdfFile = {
+  filename: string;
+  /** Null when this row was saved before original bytes were kept. */
+  bytes: Buffer | null;
+};
+
+/** Owner-only. Null when the document is not theirs. */
+export async function readPdfFile(
+  userId: string,
+  documentId: unknown,
+): Promise<StoredPdfFile | null> {
+  const owner = safeEntityId(userId);
+  const id = safeEntityId(documentId);
+  if (!owner || !id) return null;
+  return withPdfTable(async () => {
+    const docs = await queryRows<{ filename: string; storage_bucket: string | null; storage_path: string | null }>(
+      `SELECT filename, storage_bucket, storage_path FROM pdf_documents WHERE id = $1 AND user_id = $2 LIMIT 1`,
+      [id, owner],
+    );
+    const doc = docs[0];
+    if (!doc) return null;
+    const ref = { bucket: doc.storage_bucket, path: doc.storage_path };
+    const bytes = await storeFor(ref).get({ userId: owner, documentId: id, ...ref });
+    return { filename: doc.filename, bytes: bytes ? Buffer.from(bytes) : null };
+  });
+}
+
 export async function createPdfDocument(input: {
   userId: string;
   scope: unknown;
   sessionId?: unknown;
   characterId?: unknown;
   filename?: unknown;
+  /** Legacy JSON upload (≤ PDF_MAX_BASE64_BYTES decoded). */
   dataBase64?: unknown;
+  /** Raw `application/pdf` body (≤ pdfMaxBytes()). */
+  bytes?: Uint8Array;
+  contentType?: unknown;
+  /** Where to run embedding after the response (Worker waitUntil). */
+  background?: PdfBackground;
+  /** Test seams. */
+  blobStore?: PdfBlobStore;
+  deps?: Partial<PdfPipelineDeps>;
 }): Promise<PdfDocumentRecord> {
   const userId = safeEntityId(input.userId);
   if (!userId) {
@@ -232,7 +368,7 @@ export async function createPdfDocument(input: {
   }
 
   const filename = sanitizePdfFilename(input.filename);
-  const id = randomUUID();
+  const deps = pdfPipelineDeps(input.deps);
 
   return withPdfTable(async () => {
     if (scope === "chat" && sessionId) {
@@ -242,14 +378,6 @@ export async function createPdfDocument(input: {
           "That conversation wasn't found.",
           "pdf_not_found",
           404,
-        );
-      }
-      const count = await countScoped(userId, "chat", sessionId);
-      if (count >= PDF_MAX_FILES_PER_CHAT) {
-        throw new PdfUploadError(
-          `This chat already has ${PDF_MAX_FILES_PER_CHAT} PDFs. Remove one before adding another.`,
-          "pdf_too_many_files",
-          409,
         );
       }
     }
@@ -262,97 +390,159 @@ export async function createPdfDocument(input: {
           404,
         );
       }
-      const count = await countScoped(userId, "lore", characterId);
-      if (count >= PDF_MAX_FILES_PER_LORE) {
-        throw new PdfUploadError(
-          `This companion already has ${PDF_MAX_FILES_PER_LORE} lore PDFs. Remove one before adding another.`,
-          "pdf_too_many_files",
-          409,
-        );
-      }
     }
 
-    const bytes = decodePdfBase64(String(input.dataBase64 || ""));
+    // Validate before anything is stored: MIME, size, %PDF- magic bytes.
+    const raw = input.bytes instanceof Uint8Array;
+    const bytes = raw ? (input.bytes as Uint8Array) : decodePdfBase64(String(input.dataBase64 || ""));
+    validatePdfUpload({
+      bytes,
+      contentType: input.contentType,
+      maxBytes: raw ? pdfMaxBytes() : PDF_MAX_BASE64_BYTES,
+    });
     const byteSize = bytes.byteLength;
-    const extracted = await extractPdfPages(bytes);
-    const chunks = chunkPdfPages(extracted.pages);
-    if (!chunks.length) {
+    const sha = sha256Hex(bytes);
+    const ownerId = (scope === "chat" ? sessionId : characterId) as string;
+
+    // Idempotent re-upload: the same bytes into the same chat / companion
+    // return the existing document (and re-run it if it had failed).
+    const existing = await queryRows<PdfDocRow>(
+      `SELECT ${LIST_COLUMNS} FROM pdf_documents
+       WHERE user_id = $1 AND content_sha256 = $2 AND scope = $3
+         AND (CASE WHEN scope = 'chat' THEN session_id ELSE character_id END) = $4
+       ORDER BY created_at DESC LIMIT 1`,
+      [userId, sha, scope, ownerId],
+    );
+    if (existing[0]) {
+      const record = mapDocument(existing[0]);
+      if (record.status !== "failed") return record;
+      return (await retryPdfDocument({ userId, documentId: record.id, background: input.background, deps: input.deps })) ?? record;
+    }
+
+    const count = await countScoped(userId, scope, ownerId);
+    const cap = scope === "chat" ? PDF_MAX_FILES_PER_CHAT : PDF_MAX_FILES_PER_LORE;
+    if (count >= cap) {
       throw new PdfUploadError(
-        "This PDF has no extractable text. It looks like a scan or pictures only, so I can't read it. Export a text-based PDF and try again.",
-        "pdf_no_text",
-        422,
+        scope === "chat"
+          ? `This chat already has ${PDF_MAX_FILES_PER_CHAT} PDFs. Remove one before adding another.`
+          : `This companion already has ${PDF_MAX_FILES_PER_LORE} lore PDFs. Remove one before adding another.`,
+        "pdf_too_many_files",
+        409,
       );
     }
 
+    // 1. uploaded: row first (pdf_file_parts references it), then the original.
+    const id = randomUUID();
     await queryRows(
       `INSERT INTO pdf_documents (
-         id, user_id, scope, session_id, character_id, filename,
-         byte_size, page_count, chunk_count
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [
-        id,
-        userId,
-        scope,
-        sessionId,
-        characterId,
-        filename,
-        byteSize,
-        extracted.pageCount,
-        chunks.length,
-      ],
+         id, user_id, scope, session_id, character_id, filename, byte_size,
+         status, content_sha256
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'uploaded', $8)`,
+      [id, userId, scope, sessionId, characterId, filename, byteSize, sha],
     );
-
-    const values: unknown[] = [filename, userId, id];
-    const rows: string[] = [];
-    for (const chunk of chunks) {
-      const base = values.length;
-      values.push(
-        randomUUID(),
-        chunk.chunkIndex,
-        chunk.pageStart,
-        chunk.pageEnd,
-        chunk.content,
-      );
-      rows.push(
-        `($${base + 1}::text, $3::text, $2::text, $${base + 2}::int, $${base + 3}::int, $${base + 4}::int, $${base + 5}::text, to_tsvector('english', $1::text || ' ' || $${base + 5}::text))`,
-      );
-    }
+    const blobs = input.blobStore ?? defaultPdfBlobStore();
     try {
+      const ref = await blobs.put({ userId, documentId: id, bytes });
       await queryRows(
-        `INSERT INTO pdf_chunks (
-           id, document_id, user_id, chunk_index, page_start, page_end, content, search_vector
-         ) VALUES ${rows.join(", ")}`,
-        values,
+        `UPDATE pdf_documents SET storage_bucket = $3, storage_path = $4, updated_at = now()
+         WHERE id = $1 AND user_id = $2`,
+        [id, userId, ref.bucket, ref.path],
       );
-      await savePdfFileParts(userId, id, bytes);
     } catch (error) {
-      await queryRows(
-        `DELETE FROM pdf_file_parts WHERE document_id = $1 AND user_id = $2`,
-        [id, userId],
-      ).catch(() => {});
-      await queryRows(
-        `DELETE FROM pdf_chunks WHERE document_id = $1 AND user_id = $2`,
-        [id, userId],
-      ).catch(() => {});
-      await queryRows(
-        `DELETE FROM pdf_documents WHERE id = $1 AND user_id = $2`,
-        [id, userId],
-      ).catch(() => {});
+      await removeDocumentRows(userId, id).catch(() => {});
       throw error;
     }
 
-    return {
-      id,
-      filename,
-      scope,
-      sessionId,
-      characterId,
-      byteSize,
-      pageCount: extracted.pageCount,
-      chunkCount: chunks.length,
-      hasFile: true,
-      createdAt: new Date().toISOString(),
-    };
+    // 2–4. extract → chunk inline (fast, and a bad file is reported right
+    // away); embedding continues after the response.
+    const pipelineDeps: PdfPipelineDeps = input.blobStore ? { ...deps, blobs: () => input.blobStore! } : deps;
+    const result = await runPdfPipeline(pipelineDeps, {
+      documentId: id,
+      userId,
+      bytes,
+      embed: "defer",
+    });
+    if (result.error && result.permanent) {
+      // The file itself is unusable: keep nothing, tell the user why.
+      const ref = await queryRows<{ id: string; storage_bucket: string | null; storage_path: string | null }>(
+        `SELECT id, storage_bucket, storage_path FROM pdf_documents WHERE id = $1 AND user_id = $2`,
+        [id, userId],
+      );
+      await removeDocumentRows(userId, id).catch(() => {});
+      await removeStoredObjects(userId, ref);
+      throw result.error;
+    }
+    scheduleEmbedding(pipelineDeps, result, input.background);
+    const record = await loadDocument(userId, id);
+    if (!record) throw new PdfUploadError("That file wasn't found.", "pdf_not_found", 404);
+    return record;
+  });
+}
+
+function scheduleEmbedding(deps: PdfPipelineDeps, result: PipelineResult, background?: PdfBackground) {
+  if (result.doc?.status !== "embedding") return;
+  const doc = result.doc;
+  (background ?? runDetached)(embedPendingChunks(deps, { documentId: doc.id, userId: doc.userId }));
+}
+
+/** One document with its pipeline status (owner only). */
+export async function getPdfDocument(input: {
+  userId: string;
+  documentId: unknown;
+}): Promise<PdfDocumentRecord | null> {
+  const userId = safeEntityId(input.userId);
+  const documentId = safeEntityId(input.documentId);
+  if (!userId || !documentId) return null;
+  return withPdfTable(() => loadDocument(userId, documentId));
+}
+
+/**
+ * Nudge a document forward without blocking the caller: resume embedding, or
+ * reclaim a processing run whose isolate died. Called from the status route
+ * so a client poll keeps the pipeline moving between cron ticks.
+ */
+export function advancePdfDocument(
+  doc: PdfDocumentRecord,
+  userId: string,
+  background?: PdfBackground,
+  overrides?: Partial<PdfPipelineDeps>,
+): void {
+  const deps = pdfPipelineDeps(overrides);
+  const updatedAt = doc.updatedAt ? Date.parse(doc.updatedAt) : 0;
+  const stale = !updatedAt || Date.now() - updatedAt > PDF_STALE_PROCESSING_MS;
+  const run = background ?? runDetached;
+  if (doc.status === "embedding" && stale) {
+    run(embedPendingChunks(deps, { documentId: doc.id, userId }));
+  } else if (doc.vectorsPending && deps.embedderAvailable() && stale) {
+    run(embedPendingChunks(deps, { documentId: doc.id, userId, maxBatches: 2 }));
+  } else if ((doc.status === "uploaded" || doc.status === "extracting" || doc.status === "chunking") && stale) {
+    run(runPdfPipeline(deps, { documentId: doc.id, userId, embed: "inline" }));
+  }
+}
+
+/** Re-run a failed (or abandoned) document from its stored original. */
+export async function retryPdfDocument(input: {
+  userId: string;
+  documentId: unknown;
+  background?: PdfBackground;
+  deps?: Partial<PdfPipelineDeps>;
+}): Promise<PdfDocumentRecord | null> {
+  const userId = safeEntityId(input.userId);
+  const documentId = safeEntityId(input.documentId);
+  if (!userId || !documentId) return null;
+  return withPdfTable(async () => {
+    const current = await loadDocument(userId, documentId);
+    if (!current) return null;
+    const deps = pdfPipelineDeps(input.deps);
+    if (current.status === "ready" || current.status === "embedding") {
+      if (current.status === "embedding" || current.vectorsPending) {
+        (input.background ?? runDetached)(embedPendingChunks(deps, { documentId, userId }));
+      }
+      return current;
+    }
+    const result = await runPdfPipeline(deps, { documentId, userId, embed: "defer" });
+    scheduleEmbedding(deps, result, input.background);
+    return loadDocument(userId, documentId);
   });
 }
 
@@ -368,22 +558,17 @@ export async function listPdfDocuments(input: {
   const ownerId =
     scope === "chat" ? safeEntityId(input.sessionId) : safeEntityId(input.characterId);
   if (!ownerId) return [];
-  const columns = `id, filename, scope, session_id, character_id, byte_size, page_count, chunk_count, created_at,
-         EXISTS (
-           SELECT 1 FROM pdf_file_parts p
-           WHERE p.document_id = pdf_documents.id AND p.user_id = pdf_documents.user_id
-         ) AS has_file`;
   const sql =
     scope === "chat"
-      ? `SELECT ${columns}
+      ? `SELECT ${LIST_COLUMNS}
          FROM pdf_documents
          WHERE user_id = $1 AND scope = 'chat' AND session_id = $2
          ORDER BY created_at ASC`
-      : `SELECT ${columns}
+      : `SELECT ${LIST_COLUMNS}
          FROM pdf_documents
          WHERE user_id = $1 AND scope = 'lore' AND character_id = $2
          ORDER BY created_at ASC`;
-  const rows = await withPdfTable(() => queryRows<DocumentRow>(sql, [userId, ownerId]));
+  const rows = await withPdfTable(() => queryRows<PdfDocRow>(sql, [userId, ownerId]));
   return rows.map(mapDocument);
 }
 
@@ -397,15 +582,11 @@ export async function renamePdfDocument(input: {
   if (!userId || !documentId) return null;
   const filename = sanitizePdfFilename(input.filename);
   return withPdfTable(async () => {
-    const updated = await queryRows<DocumentRow>(
+    const updated = await queryRows<PdfDocRow>(
       `UPDATE pdf_documents
        SET filename = $3, updated_at = now()
        WHERE id = $1 AND user_id = $2
-       RETURNING id, filename, scope, session_id, character_id, byte_size, page_count, chunk_count, created_at,
-         EXISTS (
-           SELECT 1 FROM pdf_file_parts p
-           WHERE p.document_id = pdf_documents.id AND p.user_id = pdf_documents.user_id
-         ) AS has_file`,
+       RETURNING ${LIST_COLUMNS}`,
       [documentId, userId, filename],
     );
     if (!updated[0]) return null;
@@ -427,19 +608,48 @@ export async function deletePdfDocument(input: {
   const documentId = safeEntityId(input.documentId);
   if (!userId || !documentId) return false;
   return withPdfTable(async () => {
-    await queryRows(
-      `DELETE FROM pdf_file_parts WHERE document_id = $1 AND user_id = $2`,
+    const refs = await queryRows<{ id: string; storage_bucket: string | null; storage_path: string | null }>(
+      `SELECT id, storage_bucket, storage_path FROM pdf_documents WHERE id = $1 AND user_id = $2`,
       [documentId, userId],
+    );
+    const removed = await removeDocumentRows(userId, documentId);
+    if (removed) {
+      await removeStoredObjects(userId, refs);
+      await retractDocumentMemories(userId, [documentId]);
+    }
+    return removed;
+  });
+}
+
+type StoredRef = { id: string; storage_bucket: string | null; storage_path: string | null };
+
+/** Delete every document matching `where` ($1 = user), plus objects and memory links. */
+async function deleteDocumentsWhere(owner: string, where: string, values: unknown[]): Promise<void> {
+  await withPdfTable(async () => {
+    const refs = await queryRows<StoredRef>(
+      `SELECT id, storage_bucket, storage_path FROM pdf_documents WHERE user_id = $1 AND ${where}`,
+      [owner, ...values],
     );
     await queryRows(
-      `DELETE FROM pdf_chunks WHERE document_id = $1 AND user_id = $2`,
-      [documentId, userId],
+      `DELETE FROM pdf_file_parts
+       WHERE user_id = $1 AND document_id IN (
+         SELECT id FROM pdf_documents WHERE user_id = $1 AND ${where}
+       )`,
+      [owner, ...values],
     );
-    const removed = await queryRows<{ id: string }>(
-      `DELETE FROM pdf_documents WHERE id = $1 AND user_id = $2 RETURNING id`,
-      [documentId, userId],
+    await queryRows(
+      `DELETE FROM pdf_chunks
+       WHERE user_id = $1 AND document_id IN (
+         SELECT id FROM pdf_documents WHERE user_id = $1 AND ${where}
+       )`,
+      [owner, ...values],
     );
-    return removed.length > 0;
+    await queryRows(`DELETE FROM pdf_documents WHERE user_id = $1 AND ${where}`, [owner, ...values]);
+    await removeStoredObjects(owner, refs);
+    await retractDocumentMemories(
+      owner,
+      refs.map((ref) => ref.id),
+    );
   });
 }
 
@@ -450,29 +660,7 @@ export async function deleteLorePdfsForCharacter(
   const owner = safeEntityId(userId);
   const character = safeEntityId(characterId);
   if (!owner || !character) return;
-  await withPdfTable(async () => {
-    await queryRows(
-      `DELETE FROM pdf_file_parts
-       WHERE user_id = $1 AND document_id IN (
-         SELECT id FROM pdf_documents
-         WHERE user_id = $1 AND scope = 'lore' AND character_id = $2
-       )`,
-      [owner, character],
-    );
-    await queryRows(
-      `DELETE FROM pdf_chunks
-       WHERE user_id = $1 AND document_id IN (
-         SELECT id FROM pdf_documents
-         WHERE user_id = $1 AND scope = 'lore' AND character_id = $2
-       )`,
-      [owner, character],
-    );
-    await queryRows(
-      `DELETE FROM pdf_documents
-       WHERE user_id = $1 AND scope = 'lore' AND character_id = $2`,
-      [owner, character],
-    );
-  });
+  await deleteDocumentsWhere(owner, `scope = 'lore' AND character_id = $2`, [character]);
 }
 
 export async function deleteChatPdfsForSession(
@@ -482,42 +670,26 @@ export async function deleteChatPdfsForSession(
   const owner = safeEntityId(userId);
   const session = safeEntityId(sessionId);
   if (!owner || !session) return;
-  await withPdfTable(async () => {
-    await queryRows(
-      `DELETE FROM pdf_file_parts
-       WHERE user_id = $1 AND document_id IN (
-         SELECT id FROM pdf_documents
-         WHERE user_id = $1 AND scope = 'chat' AND session_id = $2
-       )`,
-      [owner, session],
-    );
-    await queryRows(
-      `DELETE FROM pdf_chunks
-       WHERE user_id = $1 AND document_id IN (
-         SELECT id FROM pdf_documents
-         WHERE user_id = $1 AND scope = 'chat' AND session_id = $2
-       )`,
-      [owner, session],
-    );
-    await queryRows(
-      `DELETE FROM pdf_documents
-       WHERE user_id = $1 AND scope = 'chat' AND session_id = $2`,
-      [owner, session],
-    );
-  });
+  await deleteDocumentsWhere(owner, `scope = 'chat' AND session_id = $2`, [session]);
 }
 
 export async function deleteAllPdfDocumentsForUser(userId: string): Promise<void> {
   const owner = safeEntityId(userId);
   if (!owner) return;
   await withPdfTable(async () => {
+    const refs = await queryRows<StoredRef>(
+      `SELECT id, storage_bucket, storage_path FROM pdf_documents WHERE user_id = $1`,
+      [owner],
+    );
     await queryRows(`DELETE FROM pdf_file_parts WHERE user_id = $1`, [owner]);
     await queryRows(`DELETE FROM pdf_chunks WHERE user_id = $1`, [owner]);
     await queryRows(`DELETE FROM pdf_documents WHERE user_id = $1`, [owner]);
+    await removeStoredObjects(owner, refs);
   });
 }
 
 type HitRow = {
+  chunk_id?: string | null;
   content: string;
   page_start: number | string;
   page_end: number | string;
@@ -535,13 +707,86 @@ function mapHit(row: HitRow): PdfHit {
     pageEnd: Number(row.page_end) || 1,
     content: String(row.content || ""),
     rank: Number(row.rank) || 0,
+    ...(row.chunk_id ? { chunkId: String(row.chunk_id) } : {}),
   };
 }
 
+/** Reciprocal-rank fusion constant (Cormack et al.); 60 is the usual default. */
+const RRF_K = 60;
+
 /**
- * One Postgres full-text lookup (plus a file list) for this turn.
- * Chat attachments and lore share PDF_CONTEXT_WORD_BUDGET.
- * Never calls a model, embeddings, Workers AI, or Vectorize.
+ * Merge keyword and vector hit lists. Each list contributes 1 / (k + rank);
+ * a chunk found by both rises to the top. Ties keep keyword order.
+ */
+export function fusePdfHits(keyword: PdfHit[], vector: PdfHit[], max = PDF_CONTEXT_MAX_HITS): PdfHit[] {
+  const scored = new Map<string, { hit: PdfHit; score: number; order: number }>();
+  let order = 0;
+  const add = (list: PdfHit[]) => {
+    list.forEach((hit, index) => {
+      const key = hit.chunkId || `${hit.filename}|${hit.pageStart}|${hit.content.slice(0, 64)}`;
+      const entry = scored.get(key);
+      const gain = 1 / (RRF_K + index + 1);
+      if (entry) entry.score += gain;
+      else scored.set(key, { hit, score: gain, order: order++ });
+    });
+  };
+  add(keyword);
+  add(vector);
+  return [...scored.values()]
+    .sort((a, b) => b.score - a.score || a.order - b.order)
+    .slice(0, max)
+    .map((entry) => ({ ...entry.hit, rank: Number(entry.score.toFixed(6)) }));
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([promise, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))]);
+}
+
+/**
+ * pgvector recall through match_pdf_chunks (20261022210000_pdf_pipeline.sql).
+ * The query embedding is shared with memory-core recall for the same message
+ * (embedQueryCached). Any failure — no embedder, no vector table, slow host —
+ * returns [] and the turn falls back to full-text hits.
+ */
+async function vectorPdfHits(input: {
+  userId: string;
+  sessionId: string | null;
+  characterIds: string[];
+  query: string;
+}): Promise<PdfHit[]> {
+  if (!pdfEmbedderAvailable() || !String(input.query || "").trim()) return [];
+  const emb = await withTimeout(
+    embedQueryCached(input.query, { provider: pdfEmbedProvider(), timeoutMs: PDF_QUERY_EMBED_TIMEOUT_MS }),
+    PDF_QUERY_EMBED_TIMEOUT_MS,
+    null,
+  );
+  if (!emb) return [];
+  try {
+    const rows = await queryRows<HitRow>(
+      `SELECT chunk_id, content, page_start, page_end, filename, scope, similarity AS rank
+       FROM match_pdf_chunks($1, $2::vector, $3, $4::text[], $5, $6, $7)`,
+      [
+        input.userId,
+        toVectorLiteral(emb.vector),
+        input.sessionId,
+        input.characterIds,
+        PDF_CONTEXT_MAX_HITS,
+        PDF_VECTOR_MIN_SIMILARITY,
+        emb.model,
+      ],
+    );
+    return rows.map(mapHit);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Hybrid lookup for this turn: Postgres full-text + pgvector similarity,
+ * fused by reciprocal rank, then packed into PDF_CONTEXT_WORD_BUDGET.
+ * Chat attachments and lore share that budget. Only documents that reached
+ * `embedding` or `ready` (i.e. have chunks) are visible. The caller only runs
+ * this when the turn stays on the self-hosted model (routes/chat.ts).
  */
 export async function retrievePdfContext(input: {
   userId: string;
@@ -573,7 +818,7 @@ export async function retrievePdfContext(input: {
         tsQuery,
         mode: "search",
       });
-    const [fileRows, hitRows] = await Promise.all([
+    const [fileRows, hitRows, vectorHits] = await Promise.all([
       filesSql
         ? queryRows<{ filename: string; scope: string; page_count: number | string }>(
             filesSql.text,
@@ -583,6 +828,7 @@ export async function retrievePdfContext(input: {
       searchSql
         ? queryRows<HitRow>(searchSql.text, searchSql.values).catch(() => [] as HitRow[])
         : Promise.resolve([] as HitRow[]),
+      vectorPdfHits({ userId, sessionId, characterIds, query: input.query }),
     ]);
     const files: PdfFileSummary[] = fileRows.map((row) => ({
       filename: row.filename,
@@ -591,8 +837,9 @@ export async function retrievePdfContext(input: {
     }));
     if (!files.length) return "";
 
+    const hits = fusePdfHits(hitRows.map(mapHit), vectorHits);
     let fallback: PdfHit | null = null;
-    if (!hitRows.length && sessionId) {
+    if (!hits.length && sessionId) {
       const fallbackSql = buildPdfRetrievalSql({
         userId,
         sessionId,
@@ -607,8 +854,46 @@ export async function retrievePdfContext(input: {
     }
     return packPdfContext({
       files,
-      hits: hitRows.map(mapHit),
+      hits,
       fallback,
     });
   });
+}
+
+// ── Cron ──────────────────────────────────────────────────────────────────
+
+/**
+ * Hourly (worker.ts → scheduled): reclaim abandoned uploads and fill vectors
+ * that were deferred because the embedder was down. Bounded per tick.
+ */
+export async function backfillPdfPipelines(
+  options: { maxDocuments?: number; overrides?: Partial<PdfPipelineDeps> } = {},
+): Promise<{ resumed: number; embedded: number }> {
+  const deps = pdfPipelineDeps(options.overrides);
+  const limit = Math.min(Math.max(options.maxDocuments ?? 8, 1), 32);
+  let resumed = 0;
+  let embedded = 0;
+  const stale = await queryRows<{ id: string; user_id: string }>(
+    `SELECT id, user_id FROM pdf_documents
+     WHERE status IN ('uploaded', 'extracting', 'chunking')
+       AND COALESCE(processing_started_at, updated_at) < now() - ($1::int * interval '1 millisecond')
+     ORDER BY updated_at ASC LIMIT $2`,
+    [PDF_STALE_PROCESSING_MS, limit],
+  );
+  for (const row of stale) {
+    await runPdfPipeline(deps, { documentId: row.id, userId: row.user_id, embed: "inline" }).catch(() => null);
+    resumed += 1;
+  }
+  if (!deps.embedderAvailable()) return { resumed, embedded };
+  const pending = await queryRows<{ id: string; user_id: string }>(
+    `SELECT id, user_id FROM pdf_documents
+     WHERE status IN ('embedding', 'ready') AND embedded_chunk_count < chunk_count
+     ORDER BY updated_at ASC LIMIT $1`,
+    [limit],
+  );
+  for (const row of pending) {
+    const result = await embedPendingChunks(deps, { documentId: row.id, userId: row.user_id }).catch(() => null);
+    if (result?.doc) embedded += 1;
+  }
+  return { resumed, embedded };
 }

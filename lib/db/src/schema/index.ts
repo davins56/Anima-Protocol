@@ -10,6 +10,7 @@ import {
   index,
   customType,
   primaryKey,
+  check,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
@@ -449,8 +450,29 @@ export const pdfDocuments = pgTable(
     chunkCount: integer("chunk_count").notNull().default(0),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    // Upload pipeline (supabase/migrations/20261022210000_pdf_pipeline.sql).
+    /** uploaded → extracting → chunking → embedding → ready | failed */
+    status: text("status").notNull().default("ready"),
+    error: text("error"),
+    errorCode: text("error_code"),
+    attempts: integer("attempts").notNull().default(0),
+    contentSha256: text("content_sha256"),
+    /** NULL bucket = original bytes are in pdf_file_parts. */
+    storageBucket: text("storage_bucket"),
+    storagePath: text("storage_path"),
+    /** Vectors live in SQL-owned pdf_chunk_embeddings (pgvector, protected). */
+    embeddedChunkCount: integer("embedded_chunk_count").notNull().default(0),
+    embeddingModel: text("embedding_model"),
+    processingStartedAt: timestamp("processing_started_at"),
+    completedAt: timestamp("completed_at"),
   },
   (t) => ({
+    pdfDocumentsStatusCheck: check(
+      "pdf_documents_status_check",
+      sql`"status" IN ('uploaded','extracting','chunking','embedding','ready','failed')`,
+    ),
+    pdfDocumentsUserStatusIdx: index("pdf_documents_user_status_idx").on(t.userId, t.status),
+    pdfDocumentsUserShaIdx: index("pdf_documents_user_sha_idx").on(t.userId, t.contentSha256),
     pdfDocumentsUserSessionIdx: index("pdf_documents_user_session_idx").on(
       t.userId,
       t.scope,
@@ -477,6 +499,8 @@ export const pdfChunks = pgTable(
     pageEnd: integer("page_end").notNull().default(1),
     content: text("content").notNull(),
     searchVector: tsvector("search_vector").notNull(),
+    /** Estimated tokens (chars / 4) — chunk sizing and embed batching. */
+    tokenCount: integer("token_count").notNull().default(0),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => ({

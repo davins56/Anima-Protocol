@@ -11,7 +11,7 @@ import {
   sanitizePdfFilename,
 } from "../src/lib/pdf/context";
 import { extractPdfPages } from "../src/lib/pdf/extract";
-import { PDF_CONTEXT_WORD_BUDGET, PDF_MAX_BYTES, PDF_MAX_PAGES } from "../src/lib/pdf/limits";
+import { PDF_CONTEXT_WORD_BUDGET, PDF_MAX_PAGES, pdfMaxBytes } from "../src/lib/pdf/limits";
 import {
   composeCompanionChatMessages,
   composePrompt,
@@ -70,12 +70,12 @@ describe("PDF extraction", () => {
   });
 
   it("rejects a PDF over the byte cap with the size the user is told", async () => {
-    const bytes = new Uint8Array(PDF_MAX_BYTES + 1);
+    const bytes = new Uint8Array(pdfMaxBytes() + 1);
     bytes.set(new TextEncoder().encode("%PDF-1.4"), 0);
     await expect(extractPdfPages(bytes)).rejects.toMatchObject({
       code: "pdf_too_large",
       status: 413,
-      message: "That PDF is too large. The limit is 4 MB.",
+      message: "That PDF is too large. The limit is 20 MB.",
     });
   });
 });
