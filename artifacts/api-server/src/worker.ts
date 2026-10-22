@@ -38,6 +38,9 @@ app.listen(WORKER_API_PORT);
 
 const expressHandler = httpServerHandler({ port: WORKER_API_PORT });
 
+/** wrangler.jsonc triggers.crons entry that runs the dream layer. */
+const DREAM_CRON = "*/15 * * * *";
+
 export default {
   async fetch(
     request: Request,
@@ -90,10 +93,27 @@ export default {
    * Does not send proactive pushes — that stays on `/api/notifications/proactive/run`.
    */
   async scheduled(
-    _controller: { cron: string },
+    controller: { cron: string },
     env: Env,
     ctx: ExecutionContext,
   ): Promise<void> {
+    if (controller?.cron === DREAM_CRON) {
+      // Dream layer: quarter-hourly so the 30-minute inactivity window is honoured.
+      ctx.waitUntil(
+        (async () => {
+          try {
+            await applyCloudflareRequestEnv(env);
+            setAiBinding(env.AI);
+            const { runDreamCycle } = await import("./lib/dreams/dreamLayer");
+            const { logger } = await import("./lib/logger");
+            logger.info(await runDreamCycle(), "Dream layer cycle");
+          } catch (err) {
+            console.error("Dream layer cycle failed", err);
+          }
+        })(),
+      );
+      return;
+    }
     ctx.waitUntil(
       (async () => {
         try {

@@ -198,6 +198,26 @@ router.delete("/subscriptions", async (req, res) => {
   res.json({ subscribed: false });
 });
 
+/** Dream layer tick for non-Worker hosts (Vercel/Node cron). Same CRON_SECRET guard. */
+router.get("/dreams/run", async (req, res) => {
+  const cronSecret = process.env.CRON_SECRET?.trim();
+  if (!cronSecret) {
+    res.status(503).json({ error: "CRON_SECRET is not configured" });
+    return;
+  }
+  if (req.headers.authorization !== `Bearer ${cronSecret}`) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const { runDreamCycle } = await import("../lib/dreams/dreamLayer");
+  try {
+    res.json(await runDreamCycle());
+  } catch (err) {
+    logger.warn({ err: (err as Error)?.message }, "Dream layer cycle failed");
+    res.status(500).json({ error: "Dream cycle failed" });
+  }
+});
+
 router.get("/proactive/run", async (req, res) => {
   const cronSecret = process.env.CRON_SECRET?.trim();
   if (!cronSecret) {
