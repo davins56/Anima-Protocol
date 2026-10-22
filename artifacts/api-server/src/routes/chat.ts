@@ -178,6 +178,7 @@ import {
 import { streamErrorMessage } from "../lib/chatStreamError";
 import { optionalChatContext } from "../lib/optionalChatContext";
 import { buildMemoryCoreContext, isMemoryCoreEnabled } from "../lib/memoryCore/sessionContext";
+import { searchContextForTurn } from "../lib/search/searchService";
 import { appendMemoryEvent } from "../lib/memoryCore/memoryCore";
 import { classifyDbError, errorCauseBlob } from "../lib/dbErrors";
 import {
@@ -2807,6 +2808,15 @@ router.post("/messages", async (req, res) => {
           "",
         )
       : Promise.resolve("");
+  // Web search (feature/web-search): transient tool context for this turn only,
+  // rebuilt from the server's own filtered audit row (metadata.web_search_audit_id).
+  const webSearchPromise = body.metadata?.web_search_audit_id
+    ? optionalChatContext(
+        "web_search",
+        () => searchContextForTurn(userId, hintedCharId, body.metadata?.web_search_audit_id),
+        "",
+      )
+    : Promise.resolve("");
   // Already parallel. Wall time is the slowest branch. On the Worker a
   // required read (characters or recent messages) that hits the 5s query
   // cap is tried twice, so one stuck query is about 10s — not the sum of
@@ -2845,6 +2855,7 @@ router.post("/messages", async (req, res) => {
     ]),
   );
   const worldKnowledge = worldKnowledgeResult.prompt;
+  const webSearchContext = await webSearchPromise;
   const promptDropsReplaced =
     discardedReply.turnIds.length > 0 ||
     discardedReply.messageIds.length > 0 ||
@@ -3070,7 +3081,7 @@ router.post("/messages", async (req, res) => {
     composeCompanionChatMessages({
       clientContext: body.system_prompt,
       repositoryKnowledge,
-      pdfContext,
+      pdfContext: [pdfContext, webSearchContext].filter(Boolean).join("\n\n") || pdfContext,
       memoryCoreContext,
       photoNote,
       characters: adaptedChars,
