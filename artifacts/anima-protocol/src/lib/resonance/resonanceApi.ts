@@ -29,11 +29,11 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-export const fetchResonance = () => call<{ nodes: ResonanceNode[] }>("/api/resonance/nodes");
+export const fetchResonance = () => call<{ nodes: ResonanceNode[] }>("/resonance/nodes");
 export const syncCompanionNodes = (companions: Array<{ id: string; name: string }>) =>
-  call<{ created: number }>("/api/resonance/nodes/sync", { method: "POST", body: JSON.stringify({ companions }) });
+  call<{ created: number }>("/resonance/nodes/sync", { method: "POST", body: JSON.stringify({ companions }) });
 export const createResonanceNode = (node: Partial<ResonanceNode>) =>
-  call<{ node: ResonanceNode }>("/api/resonance/nodes", { method: "POST", body: JSON.stringify(node) });
+  call<{ node: ResonanceNode }>("/resonance/nodes", { method: "POST", body: JSON.stringify(node) });
 export const logResonanceEncounter = (e: {
   node_id: string;
   character_id?: string | null;
@@ -43,9 +43,9 @@ export const logResonanceEncounter = (e: {
   mode: "map" | "ar" | "pan";
   geo_lat?: number;
   geo_lng?: number;
-}) => call<{ memory_event_id: string | null; character_id: string | null }>("/api/resonance/encounters", { method: "POST", body: JSON.stringify(e) });
+}) => call<{ memory_event_id: string | null; character_id: string | null }>("/resonance/encounters", { method: "POST", body: JSON.stringify(e) });
 export const bootstrapMemory = (characterId: string, sessionId?: string) =>
-  call<unknown>(`/api/memory-core/${encodeURIComponent(characterId)}/bootstrap`, {
+  call<unknown>(`/memory-core/${encodeURIComponent(characterId)}/bootstrap`, {
     method: "POST",
     body: JSON.stringify({ sessionId: sessionId || null, limit: 6 }),
   });

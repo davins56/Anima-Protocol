@@ -1,11 +1,11 @@
 /** /resonance — scan view + frequency tuner. Lazy route (ExtraPage). */
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import FrequencyTuner from "@/components/resonance/FrequencyTuner";
 import type { SceneNode } from "@/components/resonance/ResonanceScene";
 import { fetchResonance, syncCompanionNodes, type ResonanceNode } from "@/lib/resonance/resonanceApi";
-import { isSpawned, metersBetween, signalStrength, LOCK_THRESHOLD } from "@/lib/resonance/tuning";
+import { BANDS, isSpawned, metersBetween, signalStrength, LOCK_THRESHOLD } from "@/lib/resonance/tuning";
 import { openResonanceNode } from "@/lib/resonance/openNode";
 import { ToneEngine } from "@/lib/resonance/toneEngine";
 import { useDeviceOrientation } from "@/hooks/useDeviceOrientation";
@@ -18,10 +18,17 @@ const TUNER_WIDTH = 2.5;
 
 export default function Resonance() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const [nodes, setNodes] = useState<ResonanceNode[]>([]);
   const [companions, setCompanions] = useState<Companion[]>([]);
   const [vessels, setVessels] = useState<Record<string, SceneNode["vessel"]>>({});
-  const [tuned, setTuned] = useState(42);
+  // Deep links (voice tool open_resonance_node): ?tune=96.3 | ?band=omega | ?signal=Serenity
+  const [tuned, setTuned] = useState(() => {
+    const t = Number(params.get("tune"));
+    if (Number.isFinite(t) && t >= 0 && t <= 100 && params.get("tune")) return t;
+    const b = BANDS.find((x) => x.band === params.get("band"));
+    return b ? (b.min + b.max) / 2 : 42;
+  });
   const [selected, setSelected] = useState<{ node: SceneNode; strength: number } | null>(null);
   const [mode, setMode] = useState<"map" | "ar">("map");
   const [audioOn, setAudioOn] = useState(false);
@@ -73,6 +80,17 @@ export default function Resonance() {
         };
       });
   }, [nodes, companions, vessels, geo]);
+
+  const wantedSignal = params.get("signal");
+  const tunedToSignal = useRef(false);
+  useEffect(() => {
+    if (!wantedSignal || tunedToSignal.current || !sceneNodes.length) return;
+    const hit = sceneNodes.find((n) => n.displayName.toLowerCase().includes(wantedSignal.toLowerCase()));
+    if (hit) {
+      tunedToSignal.current = true;
+      setTuned(hit.frequency);
+    }
+  }, [wantedSignal, sceneNodes]);
 
   const strongest = useMemo(() => {
     let best: { node: SceneNode; strength: number } | null = null;
