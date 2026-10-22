@@ -69,6 +69,7 @@ const PAGES = {
   Onboarding: lazy(() => import("../pages/Onboarding")),
   OnboardingFlow: lazy(() => import("../pages/OnboardingFlow")),
   PhotoMoments: lazy(() => import("../pages/PhotoMoments")),
+  CompanionCard: lazy(() => import("../pages/CompanionCard")),
   PremiumPlans: lazy(() => import("../pages/PremiumPlans")),
   PrivacyPolicy: lazy(() => import("../pages/PrivacyPolicy")),
   ProgressDashboard: lazy(() => import("../pages/ProgressDashboard")),
