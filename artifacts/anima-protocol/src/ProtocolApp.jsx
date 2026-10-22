@@ -1611,6 +1611,12 @@ const AuthenticatedApp = () => {
                 }
               />
               <Route
+                path="/companions/:characterId/card"
+                element={
+                    <ExtraPage name="CompanionCard" />
+                }
+              />
+              <Route
                 path="/moments/:characterId"
                 element={
                     <ExtraPage name="PhotoMoments" />
