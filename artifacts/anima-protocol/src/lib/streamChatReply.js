@@ -114,6 +114,10 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus 
         const err = new Error(event.error);
         if (content) err.partialContent = content;
         if (crisisResource) err.crisisResource = crisisResource;
+        if (event.resting === true) {
+          err.resting = true;
+          err.queued = event.queued === true;
+        }
         throw err;
       }
       if (event?.status) {

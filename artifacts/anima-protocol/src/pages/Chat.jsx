@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
+import { isRestingError, restingNotice, withRestingNotice } from "@/lib/restingMode";
 import { useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { base44, uploadDataUrl } from "@/api/base44Client";
@@ -3477,7 +3478,19 @@ Return JSON:
 
       const connectionDropped = isConnectionDroppedError(err);
       const recovery = lateReplyRecoveryPlan(err);
-      if (!retained && shouldCheckBackForCompanionReply(err)) {
+      if (!retained && isRestingError(err)) {
+        // She's resting (model/tunnel down). The server queued this message;
+        // show the in-character state, not an error, and keep the user's turn.
+        lateTurnRef.current = null;
+        pendingRemoteSyncRef.current = false;
+        applyIfSendSession((prev) => ({
+          ...prev,
+          messages: withRestingNotice(
+            prev.messages,
+            restingNotice({ name: replySpeakerName, turnId, queued: err.queued, message: err.message }),
+          ),
+        }));
+      } else if (!retained && shouldCheckBackForCompanionReply(err)) {
         // The browser abort already waited out the fetch. Show Retry now and
         // keep a short background check so a reply saved a moment later still
         // lands. A dropped socket or a turn that is still generating keeps

@@ -19,4 +19,7 @@ export const PROTECTED_SQL_TABLES = [
   "sim_sessions",
   "sim_actions",
   "sim_arena_snapshots",
+  "chat_resting_queue",
+  "chat_resting_deliveries",
+  "chat_resting_pending",
 ] as const;
