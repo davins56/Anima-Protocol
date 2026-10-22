@@ -166,8 +166,11 @@ pnpm --filter @workspace/anima-protocol test -- src/lib/simClient src/components
 
 ## Known gaps
 
-* `lib/sim-core` is a snapshot of the uncommitted `feature/immersive-sim` WIP
-  (first commit on this branch); drop it when rebasing onto the real commits.
+* Overlaps with `feature/immersive-sim`'s own `/resonance/arena`
+  (`pages/SimArena.tsx`, `components/sim/*`, `lib/sim/useSimBattle.ts`, which
+  steps sim-core from a `setInterval`). This layer lives in separate folders
+  (`components/simGame/`, `lib/simClient/`) so both coexist; converging them
+  (e.g. driving `/resonance/arena` from `FixedStepLoop`) is a follow-up.
 * Remote mode assumes the `/api/sim` contract in that WIP (`from_idx`,
   `claimed`); no resume of a half-flushed session after reload.
 * Afterimages use a simplified vessel silhouette, not a clone of the full mesh.
