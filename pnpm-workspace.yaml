@@ -27,13 +27,8 @@ catalog:
   class-variance-authority: ^0.7.1
   clsx: ^2.1.1
   drizzle-orm: 0.45.2
-<<<<<<< HEAD
-  framer-motion: ^13.4.4
-  lucide-react: ^1.58.0
-=======
   framer-motion: ^14.0.0
-  lucide-react: ^1.48.0
->>>>>>> origin/main
+  lucide-react: ^1.58.0
   react: 19.2.8
   react-dom: 19.2.8
   tailwind-merge: ^3.7.0
