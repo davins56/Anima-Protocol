@@ -141,6 +141,26 @@ export async function backfillMemoryEmbeddings(limit = 32): Promise<number> {
   return n;
 }
 
+/**
+ * Recall blend: relevance (cosine) + recency decay + emotional weight. The SQL
+ * (v3, 20261022280000_continuity.sql) floors recency at 0.12 so nothing is
+ * ever forgotten, only quieter. Tunable without a migration:
+ * ANIMA_RECALL_HALF_LIFE_DAYS (30), ANIMA_RECALL_W_SIMILARITY (0.6),
+ * ANIMA_RECALL_W_RECENCY (0.25), ANIMA_RECALL_W_EMOTION (0.15).
+ */
+export function recallWeights(env: NodeJS.ProcessEnv = process.env): [number, number, number, number] {
+  const n = (v: string | undefined, d: number, lo: number, hi: number) => {
+    const x = Number(v);
+    return Number.isFinite(x) && v !== undefined && v !== "" ? Math.min(hi, Math.max(lo, x)) : d;
+  };
+  return [
+    n(env.ANIMA_RECALL_HALF_LIFE_DAYS, 30, 1, 3650),
+    n(env.ANIMA_RECALL_W_SIMILARITY, 0.6, 0, 1),
+    n(env.ANIMA_RECALL_W_RECENCY, 0.25, 0, 1),
+    n(env.ANIMA_RECALL_W_EMOTION, 0.15, 0, 1),
+  ];
+}
+
 export async function recallMemories(args: {
   userId: string;
   characterId: string;
@@ -151,7 +171,7 @@ export async function recallMemories(args: {
 }): Promise<RecalledMemory[]> {
   const emb = args.query ? (await embedMemoryTexts([args.query]))?.[0] || null : null;
   const { rows } = await getPool().query<RecalledMemory>(
-    `SELECT * FROM recall_memories($1, $2, $3::vector, $4, $5, 30, 0.6, 0.25, 0.15, $6)`,
+    `SELECT * FROM recall_memories($1, $2, $3::vector, $4, $5, $7, $8, $9, $10, $6)`,
     [
       args.characterId,
       args.userId,
@@ -159,6 +179,7 @@ export async function recallMemories(args: {
       args.limit ?? 12,
       args.sessionId ?? null,
       args.log !== false,
+      ...recallWeights(),
     ],
   );
   return rows;

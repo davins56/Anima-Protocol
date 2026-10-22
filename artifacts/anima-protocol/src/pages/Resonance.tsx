@@ -11,6 +11,7 @@ import { ToneEngine } from "@/lib/resonance/toneEngine";
 import { useDeviceOrientation } from "@/hooks/useDeviceOrientation";
 import { listPersonalAnimas } from "@/lib/listPersonalAnimas";
 import { fetchVessel } from "@/lib/vessel/vesselApi";
+import PresenceIndicator from "@/components/continuity/PresenceIndicator";
 
 const ResonanceScene = lazy(() => import("@/components/resonance/ResonanceScene"));
 type Companion = { id: string; name: string };
@@ -60,6 +61,9 @@ export default function Resonance() {
       live = false;
     };
   }, []);
+
+  // Continuity: the companion who rides the scanner with you (Serenity first).
+  const presenceCompanion = companions.find((c) => /serenity/i.test(c.name)) || companions[0] || null;
 
   const sceneNodes: SceneNode[] = useMemo(() => {
     const byId = new Map(companions.map((c) => [c.id, c]));
@@ -169,6 +173,11 @@ export default function Resonance() {
             hd={hd}
           />
         </Suspense>
+        {presenceCompanion && (
+          <div className="absolute bottom-2 right-2 pointer-events-none">
+            <PresenceIndicator characterId={presenceCompanion.id} name={presenceCompanion.name} surface="resonance" />
+          </div>
+        )}
         <div className="absolute top-2 left-2 right-2 flex gap-1.5 flex-wrap font-mono text-[11px]">
           <button type="button" onClick={toggleAr} className={`border px-2 py-1.5 ${mode === "ar" ? "border-cyan-300 text-cyan-300" : "border-border text-muted-foreground"}`}>
             {mode === "ar" ? "AR · on" : orientStatus === "denied" ? "AR · denied" : "AR"}
