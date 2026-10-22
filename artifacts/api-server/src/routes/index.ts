@@ -27,6 +27,7 @@ import resonanceRouter from "./resonance";
 import voiceRouter from "./voice";
 import simRouter from "./sim";
 import replyRatingsRouter from "./replyRatings";
+import billingRouter from "./billing";
 
 const router: IRouter = Router();
 
@@ -55,6 +56,7 @@ router.use("/resonance", resonanceRouter);
 router.use("/voice", voiceRouter);
 router.use("/sim", simRouter);
 router.use("/ratings", replyRatingsRouter);
+router.use("/billing", billingRouter);
 router.use("/store", storeRouter);
 router.use(photoRouter);
 router.use(storageRouter);

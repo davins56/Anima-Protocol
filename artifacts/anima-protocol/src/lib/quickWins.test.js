@@ -7,7 +7,7 @@ import { track } from "@/lib/analytics";
 import { explainCompanionAffect } from "@/lib/companionAffect";
 import { exploreModules, PRIMARY_TABS } from "@/lib/mobileNav";
 import { trackFirstReplyReceived, trackOnboardingCompleted } from "@/lib/funnelEvents";
-import { PAID_OFFERS, joinWaitlist, waitlistedOffers } from "@/lib/plans";
+import { PAID_OFFERS, checkoutReturnState, joinWaitlist, offersWithStatus, waitlistedOffers } from "@/lib/plans";
 import { synthesizeCloneTest } from "@/lib/voiceCloneTts";
 
 function memStore() {
@@ -79,6 +79,14 @@ describe("plans waitlist", () => {
     joinWaitlist("deep_mode", store);
     joinWaitlist("deep_mode", store);
     expect(waitlistedOffers(store)).toEqual(["deep_mode"]);
+  });
+  it("marks offers purchasable only when the server says so", () => {
+    const merged = offersWithStatus({ enabled: true, offers: [{ id: "photo_credits", units: 20, unit_label: "credits", available: true }] });
+    expect(merged.find((o) => o.id === "photo_credits")).toMatchObject({ purchasable: true, units: 20 });
+    expect(merged.find((o) => o.id === "deep_mode").purchasable).toBe(false);
+    expect(offersWithStatus(null).every((o) => !o.purchasable)).toBe(true);
+    expect(checkoutReturnState("?checkout=success&session_id=cs_1")).toBe("success");
+    expect(checkoutReturnState("?checkout=evil")).toBeNull();
   });
 });
 

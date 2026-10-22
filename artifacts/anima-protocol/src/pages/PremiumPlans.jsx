@@ -1,10 +1,10 @@
-import ComingSoonWaitlist from "@/components/subscription/ComingSoonWaitlist";
+import AddOnPlans from "@/components/subscription/AddOnPlans";
 
-/** Payments are not live: an honest waitlist instead of a broken checkout. */
+/** Paid add-ons (Stripe Checkout, test mode); text chat stays free. */
 export default function PremiumPlans() {
   return (
     <div className="flex-1 min-h-0 overflow-y-auto bg-background">
-      <ComingSoonWaitlist />
+      <AddOnPlans />
     </div>
   );
 }
