@@ -126,6 +126,8 @@ export type PdfHit = {
   pageEnd: number;
   content: string;
   rank: number;
+  /** pdf_chunks.id — lets keyword and vector hits be fused without duplicates. */
+  chunkId?: string;
 };
 
 export type PdfFileSummary = {
@@ -276,13 +278,16 @@ export function buildPdfRetrievalSql(params: {
   }
   if (!scopeParts.length) return null;
   const scopeSql = scopeParts.join(" OR ");
-  const ownerSql = `c.user_id = $1 AND d.user_id = $1 AND (${scopeSql})`;
+  // Only documents whose chunks are in place: the pipeline is past chunking
+  // (vectors may still be filling in) and did not fail.
+  const readySql = `d.status NOT IN ('uploaded', 'extracting', 'chunking', 'failed')`;
+  const ownerSql = `c.user_id = $1 AND d.user_id = $1 AND ${readySql} AND (${scopeSql})`;
 
   if (params.mode === "files") {
     return {
       text: `SELECT d.filename, d.scope, d.page_count
              FROM pdf_documents d
-             WHERE d.user_id = $1 AND (${scopeSql})
+             WHERE d.user_id = $1 AND ${readySql} AND (${scopeSql})
              ORDER BY d.created_at ASC
              LIMIT 12`,
       values,
@@ -292,7 +297,7 @@ export function buildPdfRetrievalSql(params: {
   if (params.mode === "fallback") {
     if (!sessionId) return null;
     return {
-      text: `SELECT c.content, c.page_start, c.page_end, d.filename, d.scope, 0 AS rank
+      text: `SELECT c.id AS chunk_id, c.content, c.page_start, c.page_end, d.filename, d.scope, 0 AS rank
              FROM pdf_chunks c
              JOIN pdf_documents d ON d.id = c.document_id AND d.user_id = c.user_id
              WHERE ${ownerSql} AND c.chunk_index = 0
@@ -307,7 +312,7 @@ export function buildPdfRetrievalSql(params: {
   values.push(tsQuery);
   const queryParam = `$${values.length}`;
   return {
-    text: `SELECT c.content, c.page_start, c.page_end, d.filename, d.scope,
+    text: `SELECT c.id AS chunk_id, c.content, c.page_start, c.page_end, d.filename, d.scope,
                   ts_rank_cd(c.search_vector, to_tsquery('english', ${queryParam})) AS rank
            FROM pdf_chunks c
            JOIN pdf_documents d ON d.id = c.document_id AND d.user_id = c.user_id

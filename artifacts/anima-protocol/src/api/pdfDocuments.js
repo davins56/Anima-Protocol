@@ -2,32 +2,19 @@ import { apiUrl } from "@/lib/apiOrigin";
 import { authHeaders } from "./authBridge";
 import { pdfFileRejection } from "@/lib/pdfLimits";
 
-function fileToBase64(file, onProgress) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onprogress = (event) => {
-      if (onProgress && event.lengthComputable && event.total > 0) {
-        onProgress(event.loaded / event.total);
-      }
-    };
-    reader.onload = () => {
-      const raw = String(reader.result || "");
-      const comma = raw.indexOf(",");
-      resolve(comma >= 0 ? raw.slice(comma + 1) : raw);
-    };
-    reader.onerror = () => reject(new Error("Could not read that file on this device."));
-    reader.readAsDataURL(file);
-  });
-}
-
-function postJson(url, headers, body, onProgress) {
+/**
+ * Send the file as raw `application/pdf` bytes. No base64 round-trip, so the
+ * browser and the Worker each hold the file once (up to 20 MB).
+ */
+function postPdf(url, headers, file, onProgress) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", url);
     xhr.withCredentials = true;
     for (const [key, value] of Object.entries(headers || {})) {
-      if (value != null) xhr.setRequestHeader(key, String(value));
+      if (value != null && key.toLowerCase() !== "content-type") xhr.setRequestHeader(key, String(value));
     }
+    xhr.setRequestHeader("Content-Type", "application/pdf");
     xhr.upload.onprogress = (event) => {
       if (onProgress && event.lengthComputable && event.total > 0) {
         onProgress({ phase: "uploading", ratio: event.loaded / event.total });
@@ -47,13 +34,15 @@ function postJson(url, headers, body, onProgress) {
         resolve(data);
         return;
       }
-      const error = new Error(data.error || "Could not upload that PDF.");
+      const error = new Error(
+        data.error || (xhr.status === 413 ? "That PDF is too large." : "Could not upload that PDF."),
+      );
       error.code = data.code;
       error.status = xhr.status;
       reject(error);
     };
     xhr.onerror = () => reject(new Error("Could not upload that PDF. Check your connection and try again."));
-    xhr.send(body);
+    xhr.send(file);
   });
 }
 
@@ -84,23 +73,11 @@ export async function uploadPdfDocument({
 }) {
   const rejection = pdfFileRejection(file);
   if (rejection) throw new Error(rejection);
-  onProgress?.({ phase: "reading_file", ratio: 0 });
-  const dataBase64 = await fileToBase64(file, (ratio) => {
-    onProgress?.({ phase: "reading_file", ratio });
-  });
+  const params = new URLSearchParams({ scope, filename: file.name || "document.pdf" });
+  if (sessionId) params.set("session_id", sessionId);
+  if (characterId) params.set("character_id", characterId);
   const headers = await authHeaders();
-  const payload = await postJson(
-    apiUrl("/pdfs"),
-    headers,
-    JSON.stringify({
-      filename: file.name,
-      dataBase64,
-      scope,
-      session_id: sessionId || undefined,
-      character_id: characterId || undefined,
-    }),
-    onProgress,
-  );
+  const payload = await postPdf(apiUrl(`/pdfs?${params.toString()}`), headers, file, onProgress);
   onProgress?.({ phase: "ready", ratio: 1 });
   return payload.file;
 }

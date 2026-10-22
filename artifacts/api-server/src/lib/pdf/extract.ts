@@ -1,8 +1,9 @@
+import { createHash } from "crypto";
 import { PdfUploadError } from "./errors";
 import {
-  PDF_MAX_BYTES,
   PDF_MAX_EXTRACTED_CHARS,
   PDF_MAX_PAGES,
+  pdfMaxBytes,
 } from "./limits";
 
 /** PDF header can sit after a short preamble; the spec allows the first 1024 bytes. */
@@ -12,13 +13,18 @@ export function isPdfBytes(bytes: Uint8Array): boolean {
   return text.includes("%PDF-");
 }
 
-export function assertPdfBytes(bytes: Uint8Array): void {
+function megabytes(bytes: number): string {
+  const mb = bytes / (1024 * 1024);
+  return Number.isInteger(mb) ? String(mb) : mb.toFixed(1);
+}
+
+export function assertPdfBytes(bytes: Uint8Array, maxBytes = pdfMaxBytes()): void {
   if (!bytes.byteLength) {
     throw new PdfUploadError("That PDF is empty.", "pdf_empty", 400);
   }
-  if (bytes.byteLength > PDF_MAX_BYTES) {
+  if (bytes.byteLength > maxBytes) {
     throw new PdfUploadError(
-      "That PDF is too large. The limit is 4 MB.",
+      `That PDF is too large. The limit is ${megabytes(maxBytes)} MB.`,
       "pdf_too_large",
       413,
     );
@@ -30,6 +36,45 @@ export function assertPdfBytes(bytes: Uint8Array): void {
       400,
     );
   }
+}
+
+/** MIME types a browser or client may send for a real PDF. */
+const PDF_MIME_TYPES = new Set([
+  "application/pdf",
+  "application/x-pdf",
+  "application/acrobat",
+  // Some Android pickers and curl default to this; the magic bytes still decide.
+  "application/octet-stream",
+]);
+
+export function isAcceptedPdfMime(contentType: unknown): boolean {
+  const type = String(contentType || "").split(";")[0]!.trim().toLowerCase();
+  return !type || PDF_MIME_TYPES.has(type);
+}
+
+/**
+ * Upload gate, before anything is stored: declared MIME (when given), size,
+ * then the `%PDF-` magic bytes. The page cap needs a parse and is enforced by
+ * extractPdfPages in the pipeline.
+ */
+export function validatePdfUpload(input: {
+  bytes: Uint8Array;
+  contentType?: unknown;
+  maxBytes?: number;
+}): void {
+  if (!isAcceptedPdfMime(input.contentType)) {
+    throw new PdfUploadError(
+      "That file isn't a PDF. Choose a .pdf file.",
+      "pdf_not_pdf",
+      415,
+    );
+  }
+  assertPdfBytes(input.bytes, input.maxBytes ?? pdfMaxBytes());
+}
+
+/** Content hash: idempotent re-uploads of the same file into the same scope. */
+export function sha256Hex(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
 }
 
 /**
@@ -91,13 +136,17 @@ function loadUnpdf(): Promise<UnpdfApi> {
  * Scanned / image-only PDFs have no text operators, so extraction returns
  * empty strings and we say so instead of storing a blank document.
  */
-export async function extractPdfPages(bytes: Uint8Array): Promise<ExtractedPdf> {
-  assertPdfBytes(bytes);
+export async function extractPdfPages(
+  bytes: Uint8Array,
+  options: { maxBytes?: number; copy?: boolean } = {},
+): Promise<ExtractedPdf> {
+  assertPdfBytes(bytes, options.maxBytes ?? pdfMaxBytes());
   const { extractText, getDocumentProxy } = await loadUnpdf();
   // pdf.js transfers the buffer into its worker and detaches the original.
-  // Copy first so the caller can still read byteLength, and so a retry of
-  // the same bytes is not an empty buffer.
-  const copy = bytes.slice();
+  // Copy by default so the caller can still read byteLength, and so a retry of
+  // the same bytes is not an empty buffer. The pipeline passes copy: false once
+  // the original is already in storage, so a 20 MB file is held only once.
+  const copy = options.copy === false ? bytes : bytes.slice();
   let pdf: Awaited<ReturnType<typeof getDocumentProxy>> | null = null;
   try {
     pdf = await getDocumentProxy(copy);
