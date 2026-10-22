@@ -1,4 +1,6 @@
 import { Router, type Request, type Response } from "express";
+import { adultGate } from "../lib/safety/adultGate";
+import { userIsAdultAttested } from "../lib/safety/ageGate";
 import { getAuth } from "@clerk/express";
 import { and, desc, eq, or, sql } from "drizzle-orm";
 import {
@@ -2996,10 +2998,19 @@ router.post("/messages", async (req, res) => {
     sessionData.companion_mode === "therapy" ||
     body.metadata?.therapy_mode === true ||
     mode === "therapy";
-  const adultActive =
-    !therapyActive &&
-    (profileSettings.adult_content_enabled === true ||
-      body.metadata?.adult_mode === true);
+  // Server-enforced adult gate: needs a stored age attestation, and is
+  // always off in therapy and crossover scenes (P1-11). The client's
+  // adult_mode flag is only a hint. See lib/safety/adultGate.ts.
+  const adultRequested =
+    profileSettings.adult_content_enabled === true || body.metadata?.adult_mode === true;
+  const adultDecision = adultGate({
+    therapy: therapyActive,
+    crossover: isCrossover || body.metadata?.is_crossover === true,
+    ageAttested: adultRequested && !therapyActive ? await userIsAdultAttested(userId) : false,
+    settingEnabled: profileSettings.adult_content_enabled === true,
+    requested: body.metadata?.adult_mode === true,
+  });
+  const adultActive = adultDecision.adult;
   const modePolicy = resolveChatModePolicy({
     requestedMode: mode,
     therapy: therapyActive,
