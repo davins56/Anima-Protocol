@@ -118,7 +118,7 @@ describe("migration + wiring", () => {
   it("worker has a quarter-hourly dream cron", () => {
     const w = readFileSync(new URL("../src/worker.ts", import.meta.url), "utf8");
     const wr = readFileSync(new URL("../../../wrangler.jsonc", import.meta.url), "utf8");
-    expect(w).toContain('const DREAM_CRON = "*/15 * * * *"');
-    expect(wr).toContain('"*/15 * * * *"');
+    expect(w).toContain('const DREAM_CRON = "0,15,30,45 * * * *"');
+    expect(wr).toContain('"0,15,30,45 * * * *"');
   });
 });

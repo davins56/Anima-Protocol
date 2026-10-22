@@ -1,5 +1,5 @@
 /**
- * Dream layer, DB + model half. Scheduler: Cloudflare cron "*\/15 * * * *"
+ * Dream layer, DB + model half. Scheduler: Cloudflare cron "0,15,30,45 * * * *"
  * (worker.ts) or GET /api/notifications/dreams/run with CRON_SECRET.
  *
  * For each companion whose last memory is older than the inactivity window
