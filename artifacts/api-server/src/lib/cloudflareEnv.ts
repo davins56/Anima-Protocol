@@ -115,6 +115,10 @@ export const CLOUDFLARE_RUNTIME_ENV_NAMES = [
   "VAPID_SUBJECT",
   "VENICE_INFERENCE_KEY_",
   "XAI_API_KEY",
+  "ANIMA_VOICE_AGENT",
+  "ANIMA_VOICE_MODEL",
+  "ANIMA_VOICE_SHARE_MEMORY",
+  "ANIMA_VOICE_TOKEN_TTL_S",
 ] as const;
 
 const mirroredRuntimeEnv: Record<string, string> = {};
