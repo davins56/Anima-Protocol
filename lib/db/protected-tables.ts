@@ -6,4 +6,9 @@
 export const PROTECTED_SQL_TABLES = [
   "character_visual_identity",
   "generated_images",
+  "character_identity_core",
+  "memory_events",
+  "memory_event_types",
+  "memory_recalls",
+  "character_identity_current",
 ] as const;

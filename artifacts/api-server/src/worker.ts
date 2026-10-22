@@ -105,6 +105,15 @@ export default {
         } catch (err) {
           console.error("Deferred local LLM cron drain failed", err);
         }
+        try {
+          // Memory core: embed events logged without a vector (DB triggers,
+          // offline embedder). Append-only rows only gain their embedding once.
+          setAiBinding(env.AI);
+          const { backfillMemoryEmbeddings } = await import("./lib/memoryCore/memoryCore");
+          await backfillMemoryEmbeddings(64);
+        } catch (err) {
+          console.error("Memory embedding backfill failed", err);
+        }
       })(),
     );
   },

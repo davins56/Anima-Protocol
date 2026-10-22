@@ -3,6 +3,7 @@ import { ChevronLeft, Zap, BookText, Check, Loader, BookOpen, Sparkles, Palette 
 import { useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import MoodIndicator from "@/components/chat/MoodIndicator";
+import MemoryHealth from "@/components/memory/MemoryHealth";
 import {
   llmDisplayBadgeClass,
   llmDisplayLabel,
@@ -161,6 +162,13 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
             </div>
           )}
           {!isGroup && mood && <MoodIndicator mood={mood} intensity={moodIntensity} />}
+          {!isGroup && primaryChar?.id && (
+            <MemoryHealth
+              characterId={primaryChar.id}
+              characterName={primaryChar.name}
+              refreshKey={Math.floor((session?.messages?.length || 0) / 4)}
+            />
+          )}
           {session?.therapy_mode && (
             <span
               title={session.therapy_topic || "Therapy mode"}
