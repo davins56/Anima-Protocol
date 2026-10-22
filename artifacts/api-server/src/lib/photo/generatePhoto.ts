@@ -2,6 +2,7 @@
  * Orchestrates one identity-locked generation and reports progress through
  * `emit` (the route turns these into SSE events).
  */
+import { currentVessel } from "../vessel/vesselStore";
 import { editImageWithGemini, generateImageWithGemini, hasGeminiImageKey } from "../geminiImage";
 import { falResult, falStatusStream, falSubmit, firstImage, hasFalKey } from "./falClient";
 import { composePhotoPrompt, negativePrompt, type Refinement, type SceneSpec } from "./promptComposer";
@@ -36,6 +37,8 @@ export type GenerateRequest = {
   extraReferenceUrl?: string;
   /** Extra descriptor anchors (e.g. serialized vessel attributes). */
   extraDescriptor?: string[];
+  /** Use the character's latest saved 3D vessel snapshot as the extra reference (resolved server-side). */
+  useVesselReference?: boolean;
   origin: string;
   cookie?: string;
   signal?: AbortSignal;
@@ -52,6 +55,19 @@ async function primaryReference(identity: VisualIdentity | null, origin: string)
     return signedUrlFor(primary.storage_bucket, primary.storage_path, origin);
   }
   return primary.url || null;
+}
+
+async function extraReference(req: GenerateRequest): Promise<string | null> {
+  if (req.useVesselReference) {
+    try {
+      const v = await currentVessel(req.userId, req.characterId);
+      if (v?.snapshot_path) return signedUrlFor(v.snapshot_bucket, v.snapshot_path, req.origin);
+    } catch {
+      /* vessel schema not migrated — ignore */
+    }
+  }
+  // Only absolute https URLs from the client; never internal hosts via toProviderImageUrl.
+  return req.extraReferenceUrl && /^https:\/\//i.test(req.extraReferenceUrl) ? req.extraReferenceUrl : null;
 }
 
 function dataUrlToBytes(dataUrl: string): { bytes: Uint8Array; contentType: string } {
@@ -81,7 +97,8 @@ export async function generatePhoto(req: GenerateRequest, emit: (e: PhotoEvent) 
   });
   const negative = negativePrompt(identity?.negative_traits);
 
-  const referenceUrl = (await primaryReference(identity, req.origin)) || req.extraReferenceUrl || null;
+  const referenceUrl =
+    (await primaryReference(identity, req.origin)) || (await extraReference(req)) || null;
   const parentUrl = parent?.storage_path ? await signedUrlFor(parent.storage_bucket, parent.storage_path, req.origin) : null;
   const strategy = pickStrategy({
     hasFal: hasFalKey(),

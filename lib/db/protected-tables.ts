@@ -11,4 +11,5 @@ export const PROTECTED_SQL_TABLES = [
   "memory_event_types",
   "memory_recalls",
   "character_identity_current",
+  "character_vessel",
 ] as const;

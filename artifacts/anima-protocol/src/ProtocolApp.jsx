@@ -996,6 +996,12 @@ const AuthenticatedApp = () => {
                 }
               />
               <Route
+                path="/vessel"
+                element={
+                    <ExtraPage name="VesselStudio" />
+                }
+              />
+              <Route
                 path="/net-battle"
                 element={
                     <NetBattle />
