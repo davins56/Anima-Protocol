@@ -495,6 +495,16 @@ export const animaApi = {
         body: JSON.stringify({ turn_id: turnId, context }),
       }).then((r) => r.json()),
   },
+  /** Companion web search: server-side provider, filtered + audited, rate-limited per day. */
+  search: {
+    status: (characterId) =>
+      request(`/search/status?character_id=${encodeURIComponent(characterId)}`).then((r) => r.json()),
+    run: ({ characterId, query, saveAsMemory = false }) =>
+      request("/search", {
+        method: "POST",
+        body: JSON.stringify({ character_id: characterId, query, save_as_memory: saveAsMemory }),
+      }).then((r) => r.json()),
+  },
   /** Session-start companion state (tone, dreams, presence, greeting) for any surface. */
   continuity: {
     load: (characterId, { surface = "chat", name = "" } = {}) => {

@@ -56,6 +56,8 @@ import WelcomeScreen from "@/components/chat/WelcomeScreen";
 import MessageBubble from "@/components/chat/MessageBubble";
 import ChatInput from "@/components/chat/ChatInput";
 import ChatPdfBar from "@/components/pdf/ChatPdfBar";
+import WebSearchToggle from "@/components/chat/WebSearchToggle";
+import { parseSearchCommand, prepareSearchTurn } from "@/lib/webSearch";
 import NewSessionModal from "@/components/chat/NewSessionModal";
 import { Menu, X } from "lucide-react";
 import ChatBackground, { BACKGROUND_THEMES } from "@/components/chat/ChatBackground.jsx";
@@ -1858,6 +1860,51 @@ export default function Chat() {
     })();
   };
 
+  // Web search (server flag per identity core): `/search …` or the composer icon.
+  const searchCharacterId = activeSession?.mode === "solo" ? activeSession?.character_id || null : null;
+  const [searchStatus, setSearchStatus] = useState(null);
+  const [searchSaveAsMemory, setSearchSaveAsMemory] = useState(false);
+  const [searchBusy, setSearchBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    setSearchStatus(null);
+    if (!searchCharacterId || !animaApi.search?.status) return undefined;
+    animaApi.search
+      .status(searchCharacterId)
+      .then((st) => alive && setSearchStatus(st))
+      .catch(() => alive && setSearchStatus(null));
+    return () => {
+      alive = false;
+    };
+  }, [searchCharacterId]);
+
+  const runSearchTurn = async (text, extra = {}) => {
+    setSearchBusy(true);
+    try {
+      const prepared = await prepareSearchTurn({
+        text: `/search ${text}`,
+        characterId: searchCharacterId,
+        saveAsMemory: searchSaveAsMemory,
+        api: animaApi,
+        notify: (m) => toast(m),
+      });
+      if (!prepared) return;
+      if (typeof prepared.remaining === "number") {
+        setSearchStatus((st) => (st ? { ...st, remaining: prepared.remaining } : st));
+      }
+      return handleSendMessage({ ...extra, text: prepared.text, webSearchAuditId: prepared.webSearchAuditId });
+    } finally {
+      setSearchBusy(false);
+    }
+  };
+
+  const handleComposerSend = (message) => {
+    const data = typeof message === "string" ? { text: message } : message || {};
+    const query = searchStatus?.enabled ? parseSearchCommand(data.text) : null;
+    if (query && !data.replyAction) return runSearchTurn(query, data);
+    return handleSendMessage(message);
+  };
+
   const handleSendMessage = async (message) => {
     const messageData = typeof message === "string" ? { text: message, attachments: undefined } : (message || {});
     const replyAction =
@@ -2595,6 +2642,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
               hidden_sequences: hiddenThread.hidden,
               conversational_weather: hiddenThread.weather,
               ...(replyAction ? { reply_action: replyAction, skip_affect: true, ...replacementSendMetadata(messageData) } : {}),
+              ...(messageData.webSearchAuditId ? { web_search_audit_id: messageData.webSearchAuditId } : {}),
             },
             ...(ownModelTurn
               ? { ownModelReply: ownModelTurn.reply, ownModelVersion: ownModelTurn.version }
@@ -4122,9 +4170,16 @@ Return JSON:
                     </Suspense>
                   );
                 })()}
+                <WebSearchToggle
+                  status={searchStatus}
+                  busy={searchBusy || composerBusy}
+                  onSearch={(q) => runSearchTurn(q)}
+                  saveAsMemory={searchSaveAsMemory}
+                  onSaveChange={setSearchSaveAsMemory}
+                />
                 <ChatInput
                   key={activeSession.id}
-                  onSend={handleSendMessage}
+                  onSend={handleComposerSend}
                   isLoading={composerBusy}
                   composeWhileBusy
                   disabled={false}
