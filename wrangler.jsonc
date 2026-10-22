@@ -219,6 +219,7 @@
   // jobs (evolution, distilled memory) after the chat quiet window. The
   // handler does not send proactive pushes.
   "triggers": {
-    "crons": ["15 * * * *"]
+    // "*/15": dream layer (worker.ts DREAM_CRON), inactivity default 30 min.
+    "crons": ["15 * * * *", "*/15 * * * *"]
   }
 }
