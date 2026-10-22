@@ -2360,6 +2360,7 @@ router.post("/messages", async (req, res) => {
     turnId,
     sessionId,
     mode,
+    requestStartedAtMs: requestStartedAt,
   });
   let pipelineClosed = false;
   const closePipeline = (
@@ -3176,6 +3177,7 @@ router.post("/messages", async (req, res) => {
     if (delta) noteUpstreamChunk();
     else telemetry.markFirstToken();
     sse.markStreaming();
+    telemetry.markVisibleDelta(delta);
     writeSse(res, { content: delta });
   };
   const emitReasoning = () => writeSse(res, { status: "thinking" });
@@ -3815,6 +3817,8 @@ router.post("/messages", async (req, res) => {
       done: true,
       visible: fullResponse,
       ...(crisisResourceCard ? { crisis_resource: crisisResourceCard } : {}),
+      // Request arrival → first visible word (server side of chatTelemetry).
+      first_word_ms: telemetry.firstWordMs(),
       model: usedModel,
       tier: usedTier,
       provider: usedProvider,

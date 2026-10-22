@@ -1,9 +1,7 @@
 // @ts-check
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
-import { motion } from "framer-motion";
-import { toast } from "sonner";
-import SubscriptionCard from "./SubscriptionCard";
+import ComingSoonWaitlist from "./ComingSoonWaitlist";
 
 const PLANS = [
   {
@@ -44,90 +42,14 @@ const PLANS = [
 
 export default function SubscriptionPlans() {
   const [user, setUser] = useState(/** @type {any} */ (null));
-  const [loading, setLoading] = useState(true);
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
 
   useEffect(() => {
-    base44.auth.me().then(setUser).catch(() => {}).finally(() => setLoading(false));
+    base44.auth.me().then(setUser).catch(() => {});
   }, []);
 
-  const handleSubscribe = async () => {
-    if (!user) {
-      /** @type {any} */ (base44.auth).redirectToLogin(window.location.href);
-      return;
-    }
-
-    setCheckoutLoading(true);
-    try {
-      const response = await base44.functions.invoke("createCheckoutSession", {
-        price_id: "price_1TUWuWEQeUkUPyATblCcxCtn", // $19.99/month premium subscription
-        user_email: user.email,
-        success_url: `${window.location.origin}/`,
-        cancel_url: window.location.href,
-      });
-
-      if (response?.data?.checkout_url) {
-        window.location.href = response.data.checkout_url;
-      }
-    } catch (err) {
-      console.error("Checkout error:", err);
-      toast.error("Failed to start checkout. Please try again.");
-    } finally {
-      setCheckoutLoading(false);
-    }
-  };
-
-  const currentPlan = user?.subscription_tier || "free";
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="max-w-5xl mx-auto space-y-8"
-    >
-      {/* Header */}
-      <div className="text-center space-y-3 mb-12">
-        <h1 className="font-mono text-3xl text-primary glow-text tracking-[0.15em] uppercase">
-          Choose Your Plan
-        </h1>
-        <p className="font-mono text-[9px] text-primary/40 tracking-widest uppercase">
-          Unlock full access to Anima Protocol features
-        </p>
-      </div>
-
-      {/* Plans Grid */}
-      <div className="grid md:grid-cols-2 gap-6">
-        {PLANS.map((plan) => (
-          <SubscriptionCard
-            key={plan.id}
-            plan={plan.name}
-            price={plan.price}
-            period={plan.period}
-            features={plan.features}
-            cta={plan.cta}
-            isCurrentPlan={currentPlan === plan.id}
-            loading={checkoutLoading}
-            onSelect={() => {
-              if (plan.id === "premium") {
-                handleSubscribe();
-              }
-            }}
-          />
-        ))}
-      </div>
-
-      {/* Footer */}
-      <div className="text-center space-y-4 p-6 border border-primary/10 bg-black/30 rounded">
-        <p className="font-mono text-[9px] text-primary/40 tracking-widest uppercase">
-          Payment Processing
-        </p>
-        <p className="font-mono text-[10px] text-primary/60 max-w-2xl mx-auto leading-relaxed">
-          Secure payments powered by Stripe. Cancel anytime with no penalties.
-          Your subscription renews automatically on the same date each month.
-        </p>
-      </div>
-
-
-    </motion.div>
-  );
+  // Checkout is not live yet: show the honest waitlist (no charge, no stub error).
+  return <ComingSoonWaitlist fromTier={user?.subscription_tier || "free"} />;
 }
+
+/** Feature matrix kept for the plans copy once payments open. */
+export { PLANS };
