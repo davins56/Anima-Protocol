@@ -19,6 +19,8 @@ import {
 } from "./context";
 import { PdfUploadError } from "./errors";
 import { decodePdfBase64, extractPdfPages } from "./extract";
+import { queueDocumentMemory, retractDocumentFromMemory } from "./documentMemory";
+import { mirrorPdfToStorage, removePdfFromStorage } from "./documentStorage";
 import {
   PDF_FILE_PART_BYTES,
   PDF_MAX_FILES_PER_CHAT,
@@ -341,6 +343,12 @@ export async function createPdfDocument(input: {
       throw error;
     }
 
+    // Best-effort, after the upload is committed: PDF text joins the recall
+    // layer as append-only document_chunk memories; bytes mirror to the
+    // private bucket when Supabase storage is configured.
+    queueDocumentMemory({ userId, documentId: id, filename, scope, sessionId, characterId, chunks });
+    void mirrorPdfToStorage(userId, id, bytes).catch(() => false);
+
     return {
       id,
       filename,
@@ -439,6 +447,11 @@ export async function deletePdfDocument(input: {
       `DELETE FROM pdf_documents WHERE id = $1 AND user_id = $2 RETURNING id`,
       [documentId, userId],
     );
+    if (removed.length > 0) {
+      // Memory is append-only: retract the chunk memories instead of deleting them.
+      await retractDocumentFromMemory(userId, documentId).catch(() => 0);
+      void removePdfFromStorage(userId, documentId).catch(() => false);
+    }
     return removed.length > 0;
   });
 }
