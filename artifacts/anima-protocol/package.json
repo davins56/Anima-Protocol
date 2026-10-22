@@ -87,7 +87,7 @@
     "date-fns": "^4.1.0",
     "drizzle-kit": "0.31.11",
     "embla-carousel-react": "^8.6.0",
-    "framer-motion": "^13.4.4",
+    "framer-motion": "^14.0.0",
     "input-otp": "^1.5.0",
     "jsdom": "^30.1.1",
     "lucide-react": "^1.48.0",
