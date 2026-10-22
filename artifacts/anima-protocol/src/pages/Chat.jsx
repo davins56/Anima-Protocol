@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
+import { buildRatingPayload } from "@/lib/replyRatings";
 import { isRestingError, restingNotice, withRestingNotice } from "@/lib/restingMode";
 import { useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
@@ -3916,6 +3917,17 @@ Return JSON:
                 onRegenerateMessage={handleRegenerateMessage}
                 actionsDisabled={replyActionsDisabled}
                 onAvatarClick={setBioCharacter}
+                onRateMessage={async (index, rating, betterReply) => {
+                  const payload = buildRatingPayload({
+                    session: activeSession,
+                    messages: activeSession.messages,
+                    index,
+                    rating,
+                    betterReply,
+                  });
+                  if (!payload) return;
+                  await animaApi.ratings.rate(payload);
+                }}
                 onTeachMessage={
                   modelTutor.isSteward
                     ? (index, subMessage, part) =>

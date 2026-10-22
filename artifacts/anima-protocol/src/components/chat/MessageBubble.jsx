@@ -19,10 +19,11 @@ import { base44 } from "@/api/base44Client";
 import { useMemoryHighlight } from "@/hooks/useMemoryHighlight";
 import { useLoreDetection } from "@/hooks/useLoreDetection";
 import { isOwnModelReply } from "@/lib/modelTutor";
+import ReplyRating from "./ReplyRating";
 
 const renderMessageWithActions = (content) => renderItalicText(content);
 
-export default function MessageBubble({ message, onRewind, canRewind, onSpeak, character, characterMemories = [], characterEmotion = 'neutral', characterEmotionIntensity = 5, sessionId = null, onEditMessage, onDeleteMessage, onRegenerateMessage, messageLoreLinks = [], onAvatarClick, onTeach, showEdit = false, showRetry = false, actionsDisabled = false }) {
+export default function MessageBubble({ message, onRewind, canRewind, onSpeak, character, characterMemories = [], characterEmotion = 'neutral', characterEmotionIntensity = 5, sessionId = null, onEditMessage, onDeleteMessage, onRegenerateMessage, messageLoreLinks = [], onAvatarClick, onTeach, onRate, showEdit = false, showRetry = false, actionsDisabled = false }) {
   const [loreEntries, setLoreEntries] = useState([]);
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(message.content || "");
@@ -339,6 +340,10 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
               </button>
             )}
           </div>
+        )}
+
+        {onRate && !isUser && !isTyping && !isThinking && !isStreaming && !isEditing && message.content && (
+          <ReplyRating onRate={onRate} initial={Number(message.my_rating) || 0} disabled={actionsDisabled} />
         )}
 
         {/* Steward only: teach the own model a better reply. Visible without
