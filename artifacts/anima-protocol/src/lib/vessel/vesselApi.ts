@@ -35,7 +35,7 @@ export async function fetchVessel(characterId: string, force = false): Promise<V
   if (pending) return pending;
   const p = (async () => {
     try {
-      const res = await fetch(apiUrl(`/api/vessel/${encodeURIComponent(characterId)}`), {
+      const res = await fetch(apiUrl(`/vessel/${encodeURIComponent(characterId)}`), {
         headers: await authHeaders(),
         credentials: "include",
       });
@@ -58,7 +58,7 @@ export async function fetchVessel(characterId: string, force = false): Promise<V
 }
 
 export async function uploadVesselSnapshot(characterId: string, dataUrl: string) {
-  const res = await fetch(apiUrl(`/api/vessel/${encodeURIComponent(characterId)}/snapshot`), {
+  const res = await fetch(apiUrl(`/vessel/${encodeURIComponent(characterId)}/snapshot`), {
     method: "POST",
     headers: { ...(await authHeaders()), "Content-Type": "application/json" },
     credentials: "include",
@@ -74,7 +74,7 @@ export async function saveVessel(args: {
   changeNote?: string;
   snapshot?: { snapshot_bucket: string | null; snapshot_path: string } | null;
 }): Promise<{ vessel: VesselRecord; identity_version: number }> {
-  const res = await fetch(apiUrl(`/api/vessel/${encodeURIComponent(args.characterId)}`), {
+  const res = await fetch(apiUrl(`/vessel/${encodeURIComponent(args.characterId)}`), {
     method: "PUT",
     headers: { ...(await authHeaders()), "Content-Type": "application/json" },
     credentials: "include",
@@ -93,5 +93,5 @@ export async function saveVessel(args: {
 
 /** Same-origin URL that 302s to the latest snapshot; usable as an extra photo reference. */
 export function vesselSnapshotUrl(characterId: string): string {
-  return apiUrl(`/api/vessel/${encodeURIComponent(characterId)}/snapshot`);
+  return apiUrl(`/vessel/${encodeURIComponent(characterId)}/snapshot`);
 }
