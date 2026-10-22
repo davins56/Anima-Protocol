@@ -41,6 +41,7 @@ import ProactiveMessageSettings from "@/components/settings/ProactiveMessageSett
 
 import { CONFIGURED_LLM_PROVIDERS } from "@/lib/llmProviderLabel";
 import { toast } from "sonner";
+import AgeGateDialog from "@/components/settings/AgeGateDialog";
 import {
   formatChatBackgroundUploadError,
   persistChatBackgroundSettings,
@@ -1322,41 +1323,15 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* 18+ Age Gate */}
+      {/* 18+ Age Gate — server-stored attestation (POST /api/safety/age-attestation) */}
       {showAdultGate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm bg-background border border-rose-500/40 hud-corner p-6 space-y-4">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="w-5 h-5 text-rose-400 flex-shrink-0" />
-              <h2 className="font-mono text-rose-400 tracking-[0.2em] uppercase text-sm">Age Verification</h2>
-            </div>
-            <div className="border border-rose-500/20 bg-rose-950/30 px-4 py-3">
-              <p className="font-mono text-[10px] text-rose-300/80 tracking-wider leading-relaxed">
-                This feature enables explicit adult content including sexual and lewd roleplay. It is intended for adults only.
-              </p>
-            </div>
-            <p className="font-mono text-xs text-primary/60 leading-relaxed">
-              By continuing, you confirm that you are <span className="text-rose-400 font-bold">18 years of age or older</span> and consent to viewing adult content.
-            </p>
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={() => setShowAdultGate(false)}
-                className="flex-1 px-4 py-2 border border-primary/20 text-primary/50 hover:text-primary hover:border-primary/40 font-mono text-xs tracking-widest uppercase transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setPref("adult_content_enabled", true);
-                  setShowAdultGate(false);
-                }}
-                className="flex-1 px-4 py-2 bg-rose-900/30 border border-rose-500/60 text-rose-400 hover:bg-rose-900/50 font-mono text-xs tracking-widest uppercase transition-all"
-              >
-                I Am 18+ — Enable
-              </button>
-            </div>
-          </div>
-        </div>
+        <AgeGateDialog
+          onCancel={() => setShowAdultGate(false)}
+          onAttested={() => {
+            setPref("adult_content_enabled", true);
+            setShowAdultGate(false);
+          }}
+        />
       )}
 
       {/* Restore From Backup Dialog */}
