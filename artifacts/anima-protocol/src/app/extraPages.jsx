@@ -68,6 +68,7 @@ const PAGES = {
   Network: lazy(() => import("../pages/Network")),
   Onboarding: lazy(() => import("../pages/Onboarding")),
   OnboardingFlow: lazy(() => import("../pages/OnboardingFlow")),
+  PhotoMoments: lazy(() => import("../pages/PhotoMoments")),
   PremiumPlans: lazy(() => import("../pages/PremiumPlans")),
   PrivacyPolicy: lazy(() => import("../pages/PrivacyPolicy")),
   ProgressDashboard: lazy(() => import("../pages/ProgressDashboard")),
