@@ -14,6 +14,7 @@
  */
 
 import { builtInIdentityLock, canonicalCompanionName } from "./companions/builtIn";
+import { acceptedIdentityLines } from "./identityProposals";
 import {
   type CompanionMemoryRecord,
   retrieveRelevantMemories,
@@ -1214,7 +1215,7 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
   );
 
   const charDef = mainChar
-    ? buildCharacterDefinition(mainChar, BUDGET.characterDef)
+    ? buildCharacterDefinition(withAcceptedIdentity(mainChar, memories), BUDGET.characterDef)
     : mode === "group"
       ? ""
       : characters.length > 0
@@ -2062,6 +2063,14 @@ const CHARACTER_PERSONALITY_MAX = 500;
 const CHARACTER_BACKSTORY_MAX = 500;
 const CHARACTER_VOICE_MAX = 200;
 
+/** Attach steward-accepted identity proposals (companion_memories core facts) to the speaker. */
+function withAcceptedIdentity(character: CharacterData, memories: CompanionMemoryRecord[] | undefined): CharacterData {
+  if (!character || character.id == null || !Array.isArray(memories)) return character;
+  const own = memories.find((m) => String(m.characterId) === String(character.id));
+  const lines = acceptedIdentityLines(own?.facts);
+  return lines.length ? ({ ...character, accepted_identity: lines } as CharacterData) : character;
+}
+
 /**
  * Build the character definition block with smart field selection.
  */
@@ -2082,6 +2091,12 @@ function buildCharacterDefinition(
   );
   const builtInLock = builtInIdentityLock(name);
   if (builtInLock) parts.push(builtInLock);
+  const accepted = Array.isArray(character.accepted_identity)
+    ? (character.accepted_identity as unknown[]).map((v) => String(v || "").trim()).filter(Boolean)
+    : [];
+  if (accepted.length) {
+    parts.push(`Accepted about myself (identity lock, steward-approved): ${truncate(accepted.join(" "), 400)}`);
+  }
 
   if (character._isAnima && character.archetype) {
     parts.push(`Archetype: ${character.archetype}${character.tagline ? ` — ${character.tagline}` : ""}`);
@@ -2418,7 +2433,7 @@ ${sceneExcerpt}
   // system prompt — dumping every character under CHARACTER: implies a blended
   // identity and fights the "ONLY {speaker}" lock.
   const charDef = mainChar
-    ? buildCharacterDefinition(mainChar, BUDGET.characterDef)
+    ? buildCharacterDefinition(withAcceptedIdentity(mainChar, memories), BUDGET.characterDef)
     : mode === "group" && suppliedContext
       ? ""
       : characters.length > 0
