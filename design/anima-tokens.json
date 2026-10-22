@@ -1,0 +1,54 @@
+{
+  "$schema": "anima-tokens/1",
+  "$description": "Source of truth for Anima Protocol design tokens. Mirrored 1:1 into Figma variables (file VkJdHFwuUvVrNUiXwSgo82) and into artifacts/anima-protocol/src/styles/anima-tokens.{css,ts} by scripts/design/sync-tokens.mjs.",
+  "primitives": {
+    "amethyst/200": "#DDD6FE", "amethyst/300": "#C4B5FD", "amethyst/400": "#A78BFA", "amethyst/500": "#8B5CF6",
+    "amethyst/600": "#7C3AED", "amethyst/700": "#6D28D9", "amethyst/900": "#2E1065",
+    "silver/50": "#F8FAFC", "silver/100": "#F1F5F9", "silver/200": "#E2E8F0", "silver/300": "#CBD5E1",
+    "silver/400": "#94A3B8", "silver/500": "#64748B", "silver/600": "#475569",
+    "void/950": "#07060D", "void/900": "#0E0B1A", "void/800": "#171329", "void/700": "#231C3D", "void/600": "#2F2752",
+    "protocol/cyan": "#00EAFF",
+    "red/700": "#B91C1C", "amber/500": "#F59E0B", "teal/500": "#14B8A6", "gold/400": "#FACC15", "violet/500": "#8B5CF6"
+  },
+  "semantic": {
+    "color/bg/canvas": "void/950",
+    "color/bg/surface": "void/900",
+    "color/bg/elevated": "void/800",
+    "color/bg/inset": "void/700",
+    "color/text/primary": "silver/100",
+    "color/text/secondary": "silver/400",
+    "color/text/accent": "amethyst/300",
+    "color/text/on-accent": "void/950",
+    "color/border/default": "void/600",
+    "color/border/accent": "amethyst/500",
+    "color/border/silver": "silver/500",
+    "color/accent/primary": "amethyst/500",
+    "color/accent/strong": "amethyst/600",
+    "color/accent/soft": "amethyst/900",
+    "color/accent/silver": "silver/300",
+    "color/accent/protocol": "protocol/cyan",
+    "color/status/destructive": "red/700"
+  },
+  "resonance": {
+    "noise":    { "color": "red/700",    "min": 0,  "max": 20,  "label": "Noise",    "glyph": "jagged glitch shard" },
+    "ambient":  { "color": "amber/500",  "min": 20, "max": 45,  "label": "Ambient",  "glyph": "soft diffuse ring" },
+    "data":     { "color": "teal/500",   "min": 45, "max": 75,  "label": "Data",     "glyph": "hexagon lattice" },
+    "rare":     { "color": "gold/400",   "min": 75, "max": 88,  "label": "Rare",     "glyph": "four-point star with halo" },
+    "serenity": { "color": "violet/500", "min": 88, "max": 100, "label": "Serenity", "glyph": "concentric rings with winged sigil" }
+  },
+  "space": { "space/1": 4, "space/2": 8, "space/3": 12, "space/4": 16, "space/5": 24, "space/6": 32, "space/7": 48 },
+  "radius": { "radius/sm": 2, "radius/md": 4, "radius/lg": 12, "radius/xl": 20, "radius/pill": 999 },
+  "type": {
+    "Sacred/Display": { "family": "Cinzel", "style": "Regular", "size": 32, "lineHeight": 40, "letterSpacing": 2 },
+    "Sacred/Title":   { "family": "Cinzel", "style": "Regular", "size": 20, "lineHeight": 28, "letterSpacing": 1 },
+    "UI/Heading":     { "family": "Rajdhani", "style": "SemiBold", "size": 18, "lineHeight": 24, "letterSpacing": 0.5 },
+    "UI/Body":        { "family": "Rajdhani", "style": "Medium", "size": 16, "lineHeight": 22, "letterSpacing": 0 },
+    "UI/Label":       { "family": "Rajdhani", "style": "SemiBold", "size": 13, "lineHeight": 16, "letterSpacing": 1 },
+    "Data/Mono":      { "family": "Share Tech Mono", "style": "Regular", "size": 12, "lineHeight": 16, "letterSpacing": 1 },
+    "Data/Readout":   { "family": "Share Tech Mono", "style": "Regular", "size": 28, "lineHeight": 32, "letterSpacing": 0 }
+  },
+  "effects": {
+    "Glow/Amethyst": { "color": "#8B5CF6", "opacity": 0.55, "radius": 24 },
+    "Glow/Silver":   { "color": "#CBD5E1", "opacity": 0.35, "radius": 16 }
+  }
+}

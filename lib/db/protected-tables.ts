@@ -16,4 +16,7 @@ export const PROTECTED_SQL_TABLES = [
   "resonance_nodes",
   "resonance_encounters",
   "character_voice",
+  "sim_sessions",
+  "sim_actions",
+  "sim_arena_snapshots",
 ] as const;
