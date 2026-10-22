@@ -58,6 +58,18 @@ export const CLOUDFLARE_RUNTIME_ENV_NAMES = [
   "ANIMA_MEMORY_CORE",
   "ANIMA_MEMORY_EMBED_MODEL",
   "ANIMA_MEMORY_EMBED_PROVIDER",
+  "ANIMA_LEAN_GROUP_PROMPT",
+  "ANIMA_AGE_PROVIDER",
+  // Stripe Checkout (test mode only; see docs/stripe-checkout.md).
+  "STRIPE_SECRET_KEY",
+  "STRIPE_WEBHOOK_SECRET",
+  "STRIPE_PRICE_PHOTO_CREDITS",
+  "STRIPE_PRICE_VOICE_MINUTES",
+  "STRIPE_PRICE_DEEP_MODE",
+  "STRIPE_PHOTO_CREDITS_PER_PACK",
+  "STRIPE_VOICE_MINUTES_PER_PACK",
+  "STRIPE_DEEP_MODE_DAYS",
+  "BILLING_APP_ORIGIN",
   // Forward Kernel roadmap kill switches. Unset is off. See kernelFeatures.ts.
   // Classic Worker secrets (`wrangler secret put`), not wrangler.jsonc vars.
   "ANIMA_KERNEL_AGENCY",
