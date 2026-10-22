@@ -7,6 +7,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, PerformanceMonitor } from "@react-three/drei";
 import type { WebGLRenderer } from "three";
+import type { VesselShift } from "@/lib/vessel/emotionShift";
 import VesselModel from "./VesselModel";
 import type { VesselConfig } from "@/lib/vessel/vesselConfig";
 import type { Expression } from "@/lib/vessel/emotion";
@@ -19,6 +20,7 @@ type Props = {
   mode?: "portrait" | "full";
   hd?: boolean;
   className?: string;
+  shift?: VesselShift | null;
 };
 
 function useVisible(ref: React.RefObject<HTMLElement | null>) {
@@ -59,7 +61,7 @@ function GlGrabber({ onGl }: { onGl: (gl: WebGLRenderer, render: () => void) => 
 }
 
 const VesselCanvas = forwardRef<VesselCanvasHandle, Props>(function VesselCanvas(
-  { config, expression, mode = "full", hd = false, className },
+  { config, expression, mode = "full", hd = false, className, shift = null },
   ref,
 ) {
   const host = useRef<HTMLDivElement>(null);
@@ -89,7 +91,7 @@ const VesselCanvas = forwardRef<VesselCanvasHandle, Props>(function VesselCanvas
         <ambientLight intensity={0.6} />
         <directionalLight position={[1.5, 3, 2]} intensity={1.1} />
         <pointLight position={[-1.5, 1.6, 1]} intensity={0.6} color={config.effects.color} />
-        <VesselModel config={config} expression={expression} hd={hd && !portrait} track={!portrait} />
+        <VesselModel config={config} expression={expression} hd={hd && !portrait} track={!portrait} shift={shift} />
         {portrait ? (
           <Ticker fps={12} active={visible} />
         ) : (

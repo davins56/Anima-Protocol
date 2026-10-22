@@ -10,6 +10,9 @@ import VoiceIdentityPanel from "@/components/voice/VoiceIdentityPanel";
 import type { VesselCanvasHandle } from "@/components/vessel/VesselCanvas";
 import { defaultVesselFor, type VesselConfig } from "@/lib/vessel/vesselConfig";
 import { expressionFor } from "@/lib/vessel/emotion";
+import { moodToEmotion } from "@/lib/vessel/emotionState";
+import { traitsFor } from "@/lib/vessel/vesselTraits";
+import { useVesselEmotion } from "@/hooks/useVesselEmotion";
 import { MOODS } from "@/lib/moodDetector";
 import { fetchVessel, saveVessel, uploadVesselSnapshot } from "@/lib/vessel/vesselApi";
 import { loadCustomiseAnimaCompanions } from "@/lib/loadCustomiseAnimaCompanions";
@@ -51,6 +54,10 @@ export default function VesselStudio() {
   }, [characterId]);
 
   const expression = useMemo(() => expressionFor(mood, 70), [mood]);
+  // Emotion vessel-shift: the companion's own traits row reacts to the previewed mood.
+  const traits = useMemo(() => traitsFor({ id: characterId, name }), [characterId, name]);
+  const emotionTarget = useMemo(() => moodToEmotion(mood, 70), [mood]);
+  const { shift } = useVesselEmotion(traits, emotionTarget);
 
   const save = async () => {
     if (!characterId) return;
@@ -72,7 +79,7 @@ export default function VesselStudio() {
     <div className="flex-1 min-h-0 flex flex-col md:flex-row">
       <div className="relative flex-1 min-h-[50vh] md:min-h-0 bg-black/40">
         <Suspense fallback={<div className="absolute inset-0 grid place-items-center font-mono text-xs text-primary/60">Loading vessel…</div>}>
-          <VesselCanvas ref={canvas} config={config} expression={expression} mode="full" hd={hd} className="absolute inset-0" />
+          <VesselCanvas ref={canvas} config={config} expression={expression} shift={shift} mode="full" hd={hd} className="absolute inset-0" />
         </Suspense>
         <div className="absolute top-2 left-2 right-2 flex flex-wrap gap-1.5">
           <select

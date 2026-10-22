@@ -37,6 +37,7 @@ import {
 import BandGlyph from "./BandGlyph";
 import { BandFlash, DissolveColumn } from "./PhaseShiftFx";
 import type { BattleVesselModel } from "@/lib/sim/vesselModel";
+import type { VesselShift } from "@/lib/vessel/emotionShift";
 
 export const LAYER_GAP = 2.6;
 
@@ -137,7 +138,7 @@ function PhaseFx({ unit, tick, color }: { unit: Unit; tick: number; color: strin
   );
 }
 
-function Scene({ state, fx, model, previewW, quality }: Props & { quality: ReturnType<typeof useRendererQuality>["quality"] }) {
+function Scene({ state, fx, model, previewW, shift = null, quality }: Props & { quality: ReturnType<typeof useRendererQuality>["quality"] }) {
   const navi = state.units[0];
   const sig = signalReadout(state);
   const naviW = unitW(navi, state.tick);
@@ -161,7 +162,7 @@ function Scene({ state, fx, model, previewW, quality }: Props & { quality: Retur
       {/* navi: the companion's vessel, on the shared AnimaVesselMesh renderer */}
       {(!navi.phase || Math.abs((state.tick - navi.phase.startTick) / Math.max(1, navi.phase.landTick - navi.phase.startTick) - 0.5) > 0.2) && (
         <group position={[0, layerY(naviW), 0]}>
-          <SerenityFigure model={model} col={navi.col} row={navi.row} hpRatio={navi.hp / navi.maxHp} facing={1} quality={quality} expression={sig.clarity} />
+          <SerenityFigure model={model} col={navi.col} row={navi.row} hpRatio={navi.hp / navi.maxHp} facing={1} quality={quality} expression={sig.clarity} shift={shift} />
         </group>
       )}
       {navi.phase && <PhaseFx unit={navi} tick={state.tick} color={sig.band.color} />}
@@ -222,7 +223,7 @@ function Scene({ state, fx, model, previewW, quality }: Props & { quality: Retur
   );
 }
 
-type Props = { state: SimState; fx: EmittedEvent[]; model: BattleVesselModel; previewW: number | null };
+type Props = { state: SimState; fx: EmittedEvent[]; model: BattleVesselModel; previewW: number | null; shift?: VesselShift | null };
 
 export default function SimArena3D(props: Props) {
   const { quality, handleDecline, handleIncline } = useRendererQuality();
