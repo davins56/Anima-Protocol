@@ -33,9 +33,13 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Validate eval cases
         run: pnpm llm:eval:validate
+      # The drift test is pure (eval-cases.json vs builtInIdentityLock), so it
+      # runs under the no-database unit config. The default vitest.config.ts
+      # loads test/setup-db.ts, which throws without DATABASE_URL, and this
+      # workflow has no Postgres service — that made every nightly run fail.
       - name: Identity-lock drift test
         working-directory: artifacts/api-server
-        run: pnpm exec vitest run test/identityEvals.test.ts
+        run: pnpm exec vitest run --config vitest.unit.config.ts test/identityEvals.test.ts
 
   eval:
     if: github.event_name != 'pull_request'
@@ -61,7 +65,12 @@ jobs:
       - name: Skip when no model host is configured
         id: host
         run: |
-          if [ -z "$ANIMA_LOCAL_LLM_BASE_URL" ]; then echo "configured=false" >> "$GITHUB_OUTPUT"; else echo "configured=true" >> "$GITHUB_OUTPUT"; fi
+          if [ -z "$ANIMA_LOCAL_LLM_BASE_URL" ]; then
+            echo "::notice title=LLM eval skipped::ANIMA_LOCAL_LLM_BASE_URL secret is not set; skipping the live model eval."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Run evals
         if: steps.host.outputs.configured == 'true'
         run: pnpm llm:eval

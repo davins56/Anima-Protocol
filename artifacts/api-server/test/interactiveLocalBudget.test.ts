@@ -24,7 +24,17 @@ import { resetLocalLlmSlotForTests } from "../src/lib/localLlmSlot";
 let server: Server;
 let baseUrl = "";
 
+// /repo-codespace is steward-only (audit P1-6). These tests exercise the local
+// LLM budget behind that gate, so the caller is configured as a steward by
+// user id; the non-steward case below proves the gate still holds.
+const STEWARD_USER = "codespace-user";
+const savedStewardIds = process.env.PROTOCOL_UPGRADE_ADMIN_USER_IDS;
+const savedClerkSecret = process.env.CLERK_SECRET_KEY;
+
 beforeAll(async () => {
+  process.env.PROTOCOL_UPGRADE_ADMIN_USER_IDS = STEWARD_USER;
+  // No Clerk lookups in tests: steward status comes from the user id only.
+  delete process.env.CLERK_SECRET_KEY;
   const app: Express = express();
   app.use(express.json());
   app.use("/repo-codespace", repoCodespaceRouter);
@@ -36,6 +46,10 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
+  if (savedStewardIds === undefined) delete process.env.PROTOCOL_UPGRADE_ADMIN_USER_IDS;
+  else process.env.PROTOCOL_UPGRADE_ADMIN_USER_IDS = savedStewardIds;
+  if (savedClerkSecret === undefined) delete process.env.CLERK_SECRET_KEY;
+  else process.env.CLERK_SECRET_KEY = savedClerkSecret;
 });
 
 afterEach(() => {
@@ -44,10 +58,10 @@ afterEach(() => {
   resetLocalLlmSlotForTests();
 });
 
-async function agentStep(): Promise<{ status: number; json: any }> {
+async function agentStep(user = STEWARD_USER): Promise<{ status: number; json: any }> {
   const res = await fetch(`${baseUrl}/repo-codespace/agent-step`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-test-user": "codespace-user" },
+    headers: { "Content-Type": "application/json", "x-test-user": user },
     body: JSON.stringify({
       messages: [{ role: "user", content: "Add a comment to the top of the file." }],
       character: { name: "Serenity" },
@@ -92,6 +106,14 @@ describe("user-waited local jobs keep their own budget", () => {
     const res = await agentStep();
     expect(res.status).toBe(429);
     expect(res.json.code).toBe("llm_busy");
+    expect(completion).not.toHaveBeenCalled();
+  });
+
+  it("still refuses non-stewards before any model work", async () => {
+    setLocalChatActivityProbeForTests(async () => false);
+    const res = await agentStep("not-a-steward");
+    expect(res.status).toBe(403);
+    expect(res.json.code).toBe("codespace_forbidden");
     expect(completion).not.toHaveBeenCalled();
   });
 });
