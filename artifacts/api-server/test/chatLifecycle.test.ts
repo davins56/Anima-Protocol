@@ -1593,6 +1593,25 @@ describe("chat lifecycle", () => {
 
   it("keeps the original reply when the fourth-wall retry fails", async () => {
     const failedTurn = `turn_${prefix}_fourth_wall_failed`;
+    // Own session: the previous test persists this exact encyclopedia reply
+    // in the shared session after its response ends. If that write lands
+    // before this turn reads history, the repeat guard (which deliberately
+    // wins over the fourth-wall retry, capped at the local 80-token budget)
+    // fires instead, so the shared session made this test timing-dependent.
+    const failedSessionId = `${prefix}_fourth_wall_failed_session`;
+    await db.insert(userEntities).values({
+      userId,
+      entityName: CHAT_SESSION,
+      entityId: failedSessionId,
+      data: {
+        id: failedSessionId,
+        title: "Fourth wall retry fails",
+        mode: "solo",
+        character_id: characterId,
+        messages: [],
+        messages_migrated: true,
+      },
+    });
     let generated = 0;
     llmMocks.createChatStreamWithFailover.mockImplementation(async () => {
       generated += 1;
@@ -1605,7 +1624,7 @@ describe("chat lifecycle", () => {
         method: "POST",
         body: JSON.stringify({
           turn_id: failedTurn,
-          session_id: sessionId,
+          session_id: failedSessionId,
           content: "Tell me about Vormir",
           character_id: characterId,
           character_ids: [characterId],

@@ -25,6 +25,9 @@ export default defineConfig({
       "test/repoCodespace.test.ts",
       "test/githubArchive.test.ts",
       "test/supermemory.test.ts",
+      // Pure eval-case drift check; run by .github/workflows/llm-eval.yml,
+      // which has no Postgres (the default config's setup-db needs one).
+      "test/identityEvals.test.ts",
     ],
     environment: "node",
     fileParallelism: false,
