@@ -52,7 +52,11 @@ import {
 import { appendPdfAfterContext, capPdfPromptBlock, fitPdfToRoom } from "./pdf/context";
 import { OLLAMA_NUM_PREDICT_CAP } from "./ollamaChat";
 
-import { buildMicroVoiceFingerprint, buildVoiceFingerprint } from "./voiceFingerprint";
+import {
+  buildMicroVoiceFingerprint,
+  buildVoiceFingerprint,
+  defaultSpeakingStyleFor,
+} from "./voiceFingerprint";
 import {
   type CharacterData,
   extractVoiceAnchors,
@@ -2143,9 +2147,16 @@ function buildCharacterDefinition(
       `Private past (do not recite): ${truncate(stripOutOfWorldLabels(character.backstory), Math.min(CHARACTER_BACKSTORY_MAX, maxChars / 3))}`,
     );
   }
-  if (character.speaking_style) {
+  // A stored "TODO" placeholder is not a voice: named companions fall back to
+  // their default signature so the micro fingerprint's Sentences/Tics have a
+  // Voice line to sit under; anyone else gets no Voice line.
+  const rawVoice = String(character.speaking_style || "");
+  const voiceText = /^\s*TODO\b/i.test(rawVoice)
+    ? defaultSpeakingStyleFor(character as Parameters<typeof defaultSpeakingStyleFor>[0])
+    : rawVoice;
+  if (voiceText) {
     parts.push(
-      `Voice: ${truncate(stripOutOfWorldLabels(character.speaking_style), Math.min(CHARACTER_VOICE_MAX, maxChars / 4))}`,
+      `Voice: ${truncate(stripOutOfWorldLabels(voiceText), Math.min(CHARACTER_VOICE_MAX, maxChars / 4))}`,
     );
   }
   const storedBrief = storedCompanionBrief(character);
@@ -2634,7 +2645,9 @@ ${sceneExcerpt}
       { rank: 8, text: firsthandLore },
       { rank: 10, text: repositorySection },
       { rank: 92, text: charDef ? `CHARACTER:\n${charDef}` : "" },
-      { rank: 91, text: voiceFingerprintBlock },
+      // Above CHARACTER (92) so a long character sheet trims first and the
+      // fingerprint's trailing anti-generic rule survives.
+      { rank: 93, text: voiceFingerprintBlock },
       { rank: 20, text: operatorModelBlock },
       { rank: 78, text: worldKnowledgeAlreadyInCore ? "" : worldKnowledgeBlock },
       { rank: 86, text: resonanceBlock },

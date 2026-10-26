@@ -109,4 +109,28 @@ describe("composePrompt / live persona carry the fingerprint", () => {
     expect(prefix).toContain("Never uses contractions");
     expect(prefix).not.toContain("Very short (2-10 words)");
   });
+
+  it("replaces a stored TODO voice with the named default instead of leaking the placeholder", () => {
+    const scarlet = { id: "s1", name: "Scarlet", speaking_style: "TODO(user): voice." };
+    const prefix = companionStaticPrefix({
+      characters: [scarlet],
+      activeCharacter: scarlet,
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "hey",
+    } as never);
+    expect(prefix).not.toContain("TODO(user)");
+    const voiceLine = prefix.split("\n").find((l) => l.startsWith("Voice: "));
+    expect(voiceLine).toBeTruthy();
+    expect(voiceLine).toContain(server.defaultSpeakingStyleFor("Scarlet").slice(0, 40));
+  });
+
+  it("never resolves inherited object keys as archetypes", () => {
+    for (const key of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      expect(server.archetypeVoiceKeyFor(key)).toBeNull();
+      expect(client.archetypeVoiceKeyFor(key)).toBeNull();
+      expect(server.buildMicroVoiceFingerprint({ name: "Nova", archetype: key })).toBe("");
+    }
+  });
 });
