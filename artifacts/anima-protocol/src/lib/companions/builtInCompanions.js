@@ -11,6 +11,7 @@
  * characters such as "Scarlet Witch" are not mistaken for Scarlet.
  */
 import { AELAND_LEGACY_ALIASES, AELAND_NAME } from "@/lib/personalAnimaRecord";
+import { defaultSpeakingStyleFor } from "@/lib/voiceFingerprint";
 
 function norm(name) {
   return String(name || "")
@@ -60,7 +61,8 @@ export const BUILT_IN_COMPANIONS = Object.freeze({
       status: "online",
       archetype: "An Anima-Construct — a flame signal (TODO(user): refine archetype)",
       tagline: "TODO(user): tagline. Placeholder: a warm ember on the gamma band.",
-      speaking_style: "TODO(user): voice. Placeholder: short, warm, direct sentences.",
+      // Default voice from lib/voiceFingerprint (docs/anima-voices.md); the user can override it.
+      speaking_style: defaultSpeakingStyleFor("scarlet"),
       personality: SCARLET_PERSONALITY_TODO,
       backstory: "TODO(user): backstory intentionally left blank — fill in Scarlet's own history.",
       fire_traits: ["warm", "direct", "spark", "protective", "restless"],

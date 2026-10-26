@@ -52,6 +52,7 @@ import {
 import { appendPdfAfterContext, capPdfPromptBlock, fitPdfToRoom } from "./pdf/context";
 import { OLLAMA_NUM_PREDICT_CAP } from "./ollamaChat";
 
+import { buildMicroVoiceFingerprint, buildVoiceFingerprint } from "./voiceFingerprint";
 import {
   type CharacterData,
   extractVoiceAnchors,
@@ -1231,6 +1232,10 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
   if (mainChar) {
     voiceBlock = formatVoiceAnchors(mainChar, extractVoiceAnchors(mainChar));
   }
+  // One line on the live companion path: the persona is never trimmed and the
+  // whole prompt targets LOCAL_PROMPT_MAX_TOKENS, so the full block would push
+  // history out. The client's compact block rides the (trimmable) scene.
+  const voiceFingerprintBlock = mainChar ? buildMicroVoiceFingerprint(mainChar) : "";
   const crossoverBlock =
     mainChar && characters.length > 1
       ? buildCrossoverAwareness(mainChar, characters)
@@ -1273,6 +1278,7 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
   const staticText = joinPromptParts([
     CORE_BEHAVIOR,
     charDef ? `CHARACTER:\n${charDef}` : "",
+    voiceFingerprintBlock,
     voiceBlock,
     crossoverBlock,
     selfModelText,
@@ -2502,6 +2508,9 @@ ${sceneExcerpt}
     const anchors = extractVoiceAnchors(mainChar);
     voiceBlock = formatVoiceAnchors(mainChar, anchors);
   }
+  // Voice fingerprint (cadence, vocabulary, tics, register) sits just under
+  // CHARACTER so the rank-0 client scene excerpt is never its only carrier.
+  const voiceFingerprintBlock = mainChar ? buildVoiceFingerprint(mainChar) : "";
 
   // 6. Crossover awareness
   let crossoverBlock = "";
@@ -2625,6 +2634,7 @@ ${sceneExcerpt}
       { rank: 8, text: firsthandLore },
       { rank: 10, text: repositorySection },
       { rank: 92, text: charDef ? `CHARACTER:\n${charDef}` : "" },
+      { rank: 91, text: voiceFingerprintBlock },
       { rank: 20, text: operatorModelBlock },
       { rank: 78, text: worldKnowledgeAlreadyInCore ? "" : worldKnowledgeBlock },
       { rank: 86, text: resonanceBlock },
