@@ -6,7 +6,7 @@
  * The live chat path (composeCompanionChatMessages -> localCompanionSections)
  * puts the one-line micro block right after CHARACTER in the stable persona
  * prefix (the 1,240-token local budget has no room for more);
- * composePrompt puts the full block at rank 91, just under CHARACTER (92). The
+ * composePrompt puts the full block at rank 93, just above CHARACTER (92), so it trims last. The
  * client copy rides the low-rank, untrusted scene excerpt, so the server copy
  * is the one that actually binds.
  *
@@ -240,7 +240,7 @@ export function namedVoiceKeyFor(characterOrName: VoiceCharacter | string | null
 export function archetypeVoiceKeyFor(archetype: unknown): string | null {
   const a = norm(archetype);
   if (!a) return null;
-  if (ARCHETYPE_VOICES[a]) return a;
+  if (Object.prototype.hasOwnProperty.call(ARCHETYPE_VOICES, a)) return a;
   for (const key of Object.keys(ARCHETYPE_VOICES)) {
     if (new RegExp(`\\b${key}\\b`).test(a)) return key;
   }

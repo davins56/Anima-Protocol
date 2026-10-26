@@ -46,7 +46,7 @@ The block comes in three sizes, picked by how much room each path has:
 
 | Variant | Where | Contents |
 |---|---|---|
-| full | group prompt (speaker only), Serenity ambient, `buildCharacterPrompt`, server `composePrompt` (rank 91, just under CHARACTER) | everything above |
+| full | group prompt (speaker only), Serenity ambient, `buildCharacterPrompt`, server `composePrompt` (rank 93, just above CHARACTER so it trims last) | everything above |
 | compact | lean solo client context (2,000-char cap; placed first) | header, custom/signature, sentence shape, tics, never, anti-generic rule |
 | micro (one line) | server live persona (`localCompanionSections`, never trimmed, 1,240-token local target) | sentence shape + tics + "Never a generic warm-assistant voice." Only for named companions or archetypes. Custom-only voices already have the `Voice:` line in CHARACTER |
 

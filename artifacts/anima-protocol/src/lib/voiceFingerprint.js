@@ -206,7 +206,7 @@ export function namedVoiceKeyFor(characterOrName) {
 export function archetypeVoiceKeyFor(archetype) {
   const a = norm(archetype);
   if (!a) return null;
-  if (ARCHETYPE_VOICES[a]) return a;
+  if (Object.prototype.hasOwnProperty.call(ARCHETYPE_VOICES, a)) return a;
   for (const key of Object.keys(ARCHETYPE_VOICES)) {
     if (new RegExp(`\\b${key}\\b`).test(a)) return key;
   }
