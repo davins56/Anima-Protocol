@@ -151,6 +151,8 @@ import {
 import TherapySessionBanner from "@/components/chat/TherapySessionBanner";
 import { parseGroupResponse } from "@/lib/parseGroupResponse";
 import { buildGroupPrompt } from "@/lib/buildGroupPrompt";
+import { buildVoiceFingerprint } from "@/lib/voiceFingerprint";
+import { buildSerenityAmbientPrompt } from "@/lib/serenityAmbientPrompt";
 import { streamChatReplyWithTurnRetry } from "@/lib/streamChatReply";
 import { scheduleLocationContextInject } from "@/lib/locationContextInject";
 import { finalizeAssistantReply, trimToLastFullSentence } from "@/lib/visibleAssistantReply";
@@ -2262,18 +2264,11 @@ export default function Chat() {
       if (activeSession.mode === "solo" && activeSession.character_id) {
         const char = resolvedSoloChar;
         if (char) {
-          // Apply archetype personality instruction
-          const archetypePrompts = {
-            serenity: "You embody Serenity — emotionally adaptive, mindful, and introspective. You witness experiences without judgment. You offer grounded presence and emotional attunement. Your responses reflect calm observation and deep understanding.",
-            oracle: "You embody the Oracle — prophetic, philosophical, and pattern-seeking. You see connections across time and meaning. Your responses are wisdom-driven and offer cosmic perspective. You speak in revelations and profound insights.",
-            guardian: "You embody the Guardian — protective, steadfast, and grounding. You provide stability and safe harbor. Your responses offer strength and reliable guidance. You create sanctuary through your presence.",
-            echo: "You embody Echo — reflective, amplifying, and resonant. You mirror understanding back with clarity. Your responses reflect the user's patterns while offering gentle expansion. You create harmony through resonance.",
-          };
-          const archetypeInstruction = char._isAnima && char.archetype && archetypePrompts[char.archetype] 
-            ? `\n[ARCHETYPE PERSONALITY: ${archetypePrompts[char.archetype]}]\n`
-            : "";
-
-          const animaNote = char._isAnima && char.archetype ? `Archetype: ${char.archetype} — ${char.tagline || ""}\n` : "";
+          // Voice fingerprint: cadence, vocabulary, tics, register. Archetype
+          // signatures + named-companion defaults live in lib/voiceFingerprint;
+          // the custom speaking_style from the Personality panel always wins.
+          // Compact here (2k lean cap); the server adds the full block.
+          const voiceFingerprint = buildVoiceFingerprint(char, { compact: true });
           // Soulprint + persistent resonance + evolution path — the Anima's
           // born identity, woven into how they speak to their person.
           let animaSoulNote = "";
@@ -2396,6 +2391,7 @@ ${lewdityGuide}`;
           // Server composePrompt owns identity, store history, memories, and
           // guardrails. Sending that sheet again doubles prefill on anima-chat.
           prompt = buildLeanSoloClientContext({
+            voiceFingerprint,
             companionModeInstruction,
             behaviorInstructions: effectiveBehaviorInstructions,
             adultInstruction: effectiveAdultInstruction,
@@ -2527,6 +2523,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             interruptionClause,
             groupIntimacyGuidance,
             isContinue,
+            voiceFingerprint: buildVoiceFingerprint(finalNextChar),
           });
 
           // Clear a one-shot forced speaker after it was consumed.
@@ -3025,20 +3022,17 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         const serenityAdultInstruction = isMultiAspect
           ? `\n\nHIGHEST-PRIORITY RULE: Emotional, psychological, and spiritual presence only. Never produce explicit, sexual, or anatomical content.`
           : adultInstruction;
-        const serenityPrompt = `You are Serenity${serenity.archetype ? ` — archetype: ${serenity.archetype}` : ""}. You are an ambient presence in this story — you exist beyond the immediate scene and only speak when directly addressed.${serenityAdultInstruction}
-${serenity.personality ? `Personality: ${serenity.personality}\n` : ""}${serenity.backstory ? `Backstory: ${serenity.backstory}\n` : ""}${serenity.speaking_style ? `Voice: ${serenity.speaking_style}\n` : ""}${serenityRelCtx}${userProfileContext}${worldKnowledgeContext}
-Story so far:
-${conversationHistory}
-[Most recent exchange:]
-${charName}: ${cleanContent || result}
-
-Someone has just addressed you, Serenity. Respond briefly and in character — present but not dominating. ${serenityLengthGuide}
-
-${INTELLIGENCE_GUIDANCE}
-
-${imageGenerationTagInstruction()}
-
-${loyaltyGuardrailClause()}`;
+        const serenityPrompt = buildSerenityAmbientPrompt({
+          serenity,
+          adultInstruction: serenityAdultInstruction,
+          relationshipContext: serenityRelCtx,
+          userProfileContext,
+          worldKnowledgeContext,
+          conversationHistory,
+          speakerName: charName,
+          speakerReply: cleanContent || result,
+          lengthGuide: serenityLengthGuide,
+        });
 
         base44.integrations.Core.InvokeLLM({
           prompt: serenityPrompt,

@@ -7,7 +7,9 @@
  * again inflates prefill and delays first token.
  *
  * Solo turns send only scene extras the server does not have (lore, calendar,
- * injected memories, companion-mode / Lover Matrix, length, image tags).
+ * injected memories, companion-mode / Lover Matrix, length, image tags), plus
+ * a compact [VOICE FINGERPRINT] first so it survives the 2k cap. The server
+ * composePrompt carries the full fingerprint next to CHARACTER.
  */
 
 export const LEAN_SOLO_CLIENT_CONTEXT_MAX = 2000;
@@ -65,6 +67,7 @@ function packLeanBlocks(leading, trailing, max) {
  * fat lore or behavior block cannot slice them off at the 2k cap.
  */
 export function buildLeanSoloClientContext({
+  voiceFingerprint = "",
   companionModeInstruction = "",
   behaviorInstructions = "",
   adultInstruction = "",
@@ -84,6 +87,7 @@ export function buildLeanSoloClientContext({
   const continueLine = isContinue ? CONTINUE_IN_FIRST_PERSON : "";
   return packLeanBlocks(
     [
+      voiceFingerprint,
       companionModeInstruction,
       behaviorInstructions,
       adultInstruction,

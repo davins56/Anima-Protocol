@@ -53,6 +53,11 @@ import { appendPdfAfterContext, capPdfPromptBlock, fitPdfToRoom } from "./pdf/co
 import { OLLAMA_NUM_PREDICT_CAP } from "./ollamaChat";
 
 import {
+  buildMicroVoiceFingerprint,
+  buildVoiceFingerprint,
+  defaultSpeakingStyleFor,
+} from "./voiceFingerprint";
+import {
   type CharacterData,
   extractVoiceAnchors,
   formatVoiceAnchors,
@@ -1231,6 +1236,10 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
   if (mainChar) {
     voiceBlock = formatVoiceAnchors(mainChar, extractVoiceAnchors(mainChar));
   }
+  // One line on the live companion path: the persona is never trimmed and the
+  // whole prompt targets LOCAL_PROMPT_MAX_TOKENS, so the full block would push
+  // history out. The client's compact block rides the (trimmable) scene.
+  const voiceFingerprintBlock = mainChar ? buildMicroVoiceFingerprint(mainChar) : "";
   const crossoverBlock =
     mainChar && characters.length > 1
       ? buildCrossoverAwareness(mainChar, characters)
@@ -1273,6 +1282,7 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
   const staticText = joinPromptParts([
     CORE_BEHAVIOR,
     charDef ? `CHARACTER:\n${charDef}` : "",
+    voiceFingerprintBlock,
     voiceBlock,
     crossoverBlock,
     selfModelText,
@@ -2137,9 +2147,16 @@ function buildCharacterDefinition(
       `Private past (do not recite): ${truncate(stripOutOfWorldLabels(character.backstory), Math.min(CHARACTER_BACKSTORY_MAX, maxChars / 3))}`,
     );
   }
-  if (character.speaking_style) {
+  // A stored "TODO" placeholder is not a voice: named companions fall back to
+  // their default signature so the micro fingerprint's Sentences/Tics have a
+  // Voice line to sit under; anyone else gets no Voice line.
+  const rawVoice = String(character.speaking_style || "");
+  const voiceText = /^\s*TODO\b/i.test(rawVoice)
+    ? defaultSpeakingStyleFor(character as Parameters<typeof defaultSpeakingStyleFor>[0])
+    : rawVoice;
+  if (voiceText) {
     parts.push(
-      `Voice: ${truncate(stripOutOfWorldLabels(character.speaking_style), Math.min(CHARACTER_VOICE_MAX, maxChars / 4))}`,
+      `Voice: ${truncate(stripOutOfWorldLabels(voiceText), Math.min(CHARACTER_VOICE_MAX, maxChars / 4))}`,
     );
   }
   const storedBrief = storedCompanionBrief(character);
@@ -2502,6 +2519,9 @@ ${sceneExcerpt}
     const anchors = extractVoiceAnchors(mainChar);
     voiceBlock = formatVoiceAnchors(mainChar, anchors);
   }
+  // Voice fingerprint (cadence, vocabulary, tics, register) sits just under
+  // CHARACTER so the rank-0 client scene excerpt is never its only carrier.
+  const voiceFingerprintBlock = mainChar ? buildVoiceFingerprint(mainChar) : "";
 
   // 6. Crossover awareness
   let crossoverBlock = "";
@@ -2625,6 +2645,9 @@ ${sceneExcerpt}
       { rank: 8, text: firsthandLore },
       { rank: 10, text: repositorySection },
       { rank: 92, text: charDef ? `CHARACTER:\n${charDef}` : "" },
+      // Above CHARACTER (92) so a long character sheet trims first and the
+      // fingerprint's trailing anti-generic rule survives.
+      { rank: 93, text: voiceFingerprintBlock },
       { rank: 20, text: operatorModelBlock },
       { rank: 78, text: worldKnowledgeAlreadyInCore ? "" : worldKnowledgeBlock },
       { rank: 86, text: resonanceBlock },

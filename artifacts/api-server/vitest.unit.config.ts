@@ -28,6 +28,8 @@ export default defineConfig({
       // Pure eval-case drift check; run by .github/workflows/llm-eval.yml,
       // which has no Postgres (the default config's setup-db needs one).
       "test/identityEvals.test.ts",
+      // Pure prompt helper + client/server parity; no Postgres needed.
+      "test/voiceFingerprint.test.ts",
     ],
     environment: "node",
     fileParallelism: false,
