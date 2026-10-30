@@ -58,7 +58,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
     "@types/node": "catalog:",
-    "dotenv": "^18.0.8",
+    "dotenv": "^18.0.9",
     "drizzle-orm": "catalog:",
     "postgres": "^3.4.9",
     "ripgrep": "^0.3.1"
