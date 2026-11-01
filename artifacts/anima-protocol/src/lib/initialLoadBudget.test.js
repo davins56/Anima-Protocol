@@ -122,12 +122,11 @@ describe("initial module graph budget", () => {
 });
 
 describe("hashed asset cache budget", () => {
-  it("documents immutable Cache-Control for /assets on Cloudflare and Vercel", () => {
+  it("documents immutable Cache-Control for /assets on Cloudflare", () => {
     const fallback = readFileSync(
       join(repoRoot, "artifacts/api-server/src/lib/spaAssetFallback.ts"),
       "utf8",
     );
-    const vercel = readFileSync(join(repoRoot, "vercel.json"), "utf8");
     const headers = readFileSync(
       join(srcRoot, "..", "public/_headers"),
       "utf8",
@@ -135,8 +134,6 @@ describe("hashed asset cache budget", () => {
     expect(fallback).toContain("HASHED_ASSET_CACHE_CONTROL");
     expect(fallback).toContain("public, max-age=31536000, immutable");
     expect(fallback).toContain("cdn-cache-control");
-    expect(vercel).toContain('"/assets/(.*)"');
-    expect(vercel).toContain("max-age=31536000, immutable");
     expect(headers).toContain("/assets/*");
     expect(headers).toContain("max-age=31536000, immutable");
   });

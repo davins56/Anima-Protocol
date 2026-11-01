@@ -70,8 +70,8 @@ flowchart LR
 Clone and install:
 
 ```bash
-git clone https://github.com/davins56/Anima-Protocol.git
-cd Anima-Protocol
+git clone https://github.com/davins56/anima-protocol.git
+cd anima-protocol
 pnpm install --frozen-lockfile
 ```
 

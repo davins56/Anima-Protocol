@@ -130,10 +130,8 @@ vendor/airi/
 external/airi/
 anima-work/
 
-# Vercel deploy-scan requires a committed api/index.mjs (see vercel.json
-# functions). Never gitignore the api/ directory — that is what broke
-# production deploys after the Cloudflare worker experiment. Source maps
-# are generated next to the bundle and are not needed in git.
-api/*.map
+# Old Vercel function bundle. Production is the Cloudflare Worker
+# (wrangler.jsonc); nothing should write here any more.
+/api/
 /data/sft/
 /data/prefs/

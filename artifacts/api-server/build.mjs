@@ -3,14 +3,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
-import { copyFile, mkdir, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
 
 const artifactDir = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(artifactDir, "../..");
-const apiDir = path.resolve(repoRoot, "api");
 
 const nativeExternals = [
     "*.node",
@@ -144,22 +142,6 @@ async function buildAll() {
     },
   });
 
-  // Vercel only deploys files under api/ as Serverless Functions. Copy the
-  // self-contained bundle directly to api/index.mjs (do not use api/server.mjs
-  // — listing it in vercel.json functions causes deploy errors).
-  //
-  // vercel.json `functions["api/index.mjs"]` is validated against the git
-  // tree BEFORE buildCommand runs. Keep api/index.mjs committed so production
-  // deploys do not fail with "doesn't match any Serverless Functions".
-  await mkdir(apiDir, { recursive: true });
-  await copyFile(
-    path.resolve(distDir, "vercel.mjs"),
-    path.resolve(apiDir, "index.mjs"),
-  );
-  await copyFile(
-    path.resolve(distDir, "vercel.mjs.map"),
-    path.resolve(apiDir, "vercel.mjs.map"),
-  );
 }
 
 buildAll().catch((err) => {
