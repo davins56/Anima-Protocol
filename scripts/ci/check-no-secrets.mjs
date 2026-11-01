@@ -14,11 +14,11 @@ const PATTERNS = [
   { name: "GitHub token", re: /\b(?:ghp|gho|ghs|ghu|github_pat)_[A-Za-z0-9_]{30,}/ },
   { name: "OpenAI key", re: /\bsk-(?:proj-)?[A-Za-z0-9_-]{40,}/ },
   { name: "Slack token", re: /\bxox[abprs]-[A-Za-z0-9-]{20,}/ },
-  {
-    name: "Private key block",
-    re: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----\s*\n[A-Za-z0-9+/=]{40,}/,
-  },
 ];
+
+// Multi-line: a PEM header followed by a real base64 body on the next line.
+const PRIVATE_KEY_BLOCK =
+  /-----BEGIN (?:RSA |EC |OPENSSH |DSA |ENCRYPTED )?PRIVATE KEY-----[ \t]*\r?\n[A-Za-z0-9+/=]{40,}/g;
 
 // Test fixtures use obviously fake bodies; a real key never contains a run
 // of sequential digits or the alphabet.
@@ -26,7 +26,6 @@ const FAKE_BODY = /0123456789|abcdefghij|xxxxxxxxxx|your[_-]?key|placeholder|exa
 
 // Generated output and lockfiles are not hand-edited and carry no secrets.
 const SKIP = [/\.map$/, /(^|\/)pnpm-lock\.yaml$/, /package-lock\.json$/, /\.(png|jpe?g|gif|webp|ico|mp3|wav|ogg|mp4|woff2?|ttf|pdf|gguf|bin)$/i];
-const MAX_BYTES = 2_000_000;
 
 const files = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" })
   .split("\0")
@@ -35,13 +34,22 @@ const files = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" })
 
 const hits = [];
 for (const file of files) {
-  let text;
+  let buf;
   try {
-    if (statSync(file).size > MAX_BYTES) continue;
-    text = readFileSync(file, "utf8");
+    if (!statSync(file).isFile()) continue;
+    buf = readFileSync(file);
   } catch {
     continue;
   }
+  // Binary files (NUL bytes) cannot hold a pasted key as text.
+  if (buf.includes(0)) continue;
+  const text = buf.toString("utf8");
+
+  for (const match of text.matchAll(PRIVATE_KEY_BLOCK)) {
+    const line = text.slice(0, match.index).split("\n").length;
+    hits.push(`${file}:${line}  Private key block`);
+  }
+
   const lines = text.split("\n");
   lines.forEach((line, i) => {
     for (const { name, re } of PATTERNS) {
