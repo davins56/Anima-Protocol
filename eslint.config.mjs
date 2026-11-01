@@ -47,6 +47,9 @@ export default tseslint.config(
       "artifacts/mockup-sandbox/**",
       "artifacts/anima-protocol/.agents/**",
       ".agents/**",
+      // Figma plugin snippets run inside Figma's function wrapper (top-level
+      // await/return), so they are not standalone modules.
+      "scripts/design/figma-*.js",
     ],
   },
 
