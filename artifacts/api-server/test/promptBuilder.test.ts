@@ -8,6 +8,7 @@ import {
   composePrompt,
   answerLastMessageInstruction,
   isAnswerLastInstruction,
+  isQuestionTurn,
   omitRetriedUserTurn,
   COMPANION_MEMORY_TOP_K,
   CONTINUE_USER_TURN,
@@ -1475,5 +1476,25 @@ describe("operator model prompt injection", () => {
     );
     expect(isAnswerLastInstruction(answerLastMessageInstruction(null, null, true))).toBe(true);
     expect(isAnswerLastInstruction("Continue that scene in your own first person.")).toBe(false);
+  });
+
+  it("uses the question stance for questions, and care still wins", () => {
+    const question = answerLastMessageInstruction("Mara", "Serenity", false, true);
+    expect(question).toContain("Answer the question plainly and specifically first");
+    expect(question).not.toContain("Continue that scene");
+    expect(isAnswerLastInstruction(question)).toBe(true);
+
+    const care = answerLastMessageInstruction("Mara", "Serenity", true, true);
+    expect(care).toContain("Do not play out a scene.");
+    expect(care).not.toContain("Answer the question plainly");
+  });
+
+  it("detects question turns", () => {
+    expect(isQuestionTurn("what should I name my cat?")).toBe(true);
+    expect(isQuestionTurn("He asked \u201chow?\u201d")).toBe(true);
+    expect(isQuestionTurn("really?!")).toBe(true);
+    expect(isQuestionTurn("I miss the garden")).toBe(false);
+    expect(isQuestionTurn("Stay with me.")).toBe(false);
+    expect(isQuestionTurn("")).toBe(false);
   });
 });
