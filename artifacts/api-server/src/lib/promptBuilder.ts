@@ -360,22 +360,56 @@ export function memoryBackgroundLine(userText: string | null | undefined): strin
  */
 export const COMPANION_MEMORY_TOP_K = 4;
 
+function envPositiveInt(
+  env: NodeJS.ProcessEnv,
+  name: string,
+  fallback: number,
+  min = 1,
+): number {
+  const raw = Number(env[name]);
+  return Number.isFinite(raw) && raw >= min ? Math.floor(raw) : fallback;
+}
+
+/**
+ * Context window the prompt is budgeted against. Reads the same
+ * `ANIMA_OLLAMA_NUM_CTX` that `ollamaNumCtx()` sends to Ollama, so raising the
+ * window on a bigger droplet also raises the budget instead of trimming as if
+ * it were still 8K.
+ */
+export function localPromptContextWindow(env: NodeJS.ProcessEnv = process.env): number {
+  return envPositiveInt(env, "ANIMA_OLLAMA_NUM_CTX", OLLAMA_N_CTX, 512);
+}
+
+/**
+ * Working prompt target. Defaults to `LOCAL_PROMPT_MAX_TOKENS` (sized for
+ * one-vCPU prefill); set `ANIMA_LOCAL_PROMPT_MAX_TOKENS` after resizing the
+ * droplet so companions keep more persona, memory, and history.
+ */
+export function localPromptWorkingMaxTokens(env: NodeJS.ProcessEnv = process.env): number {
+  return envPositiveInt(env, "ANIMA_LOCAL_PROMPT_MAX_TOKENS", LOCAL_PROMPT_MAX_TOKENS, 256);
+}
+
 /** Prompt tokens that still leave room for a full local decode inside n_ctx. */
 export function localPromptHardMaxTokens(
   numPredict = OLLAMA_NUM_PREDICT_CAP,
+  env: NodeJS.ProcessEnv = process.env,
 ): number {
   const predict =
     Number.isFinite(numPredict) && numPredict > 0
       ? Math.floor(numPredict)
       : OLLAMA_NUM_PREDICT_CAP;
-  return Math.max(0, OLLAMA_N_CTX - predict - LOCAL_PROMPT_SAFETY_MARGIN_TOKENS);
+  return Math.max(
+    0,
+    localPromptContextWindow(env) - predict - LOCAL_PROMPT_SAFETY_MARGIN_TOKENS,
+  );
 }
 
 /** Working cap: about 1.5–2k tokens, and always inside the hard window. */
 export function localPromptTokenBudget(
   numPredict = OLLAMA_NUM_PREDICT_CAP,
+  env: NodeJS.ProcessEnv = process.env,
 ): number {
-  return Math.min(LOCAL_PROMPT_MAX_TOKENS, localPromptHardMaxTokens(numPredict));
+  return Math.min(localPromptWorkingMaxTokens(env), localPromptHardMaxTokens(numPredict, env));
 }
 
 export function estimateLocalPromptTokens(text: string): number {
@@ -665,6 +699,16 @@ export const LLM_CHAT_HISTORY_MAX_MESSAGES = 8;
 /** Per-message cap for replayed history. */
 export const LLM_CHAT_HISTORY_MAX_CHARS = 400;
 
+/** `ANIMA_CHAT_HISTORY_MAX_MESSAGES` override; raise it with the prompt budget. */
+export function llmChatHistoryMaxMessages(env: NodeJS.ProcessEnv = process.env): number {
+  return envPositiveInt(env, "ANIMA_CHAT_HISTORY_MAX_MESSAGES", LLM_CHAT_HISTORY_MAX_MESSAGES, 2);
+}
+
+/** `ANIMA_CHAT_HISTORY_MAX_CHARS` override for each replayed message. */
+export function llmChatHistoryMaxChars(env: NodeJS.ProcessEnv = process.env): number {
+  return envPositiveInt(env, "ANIMA_CHAT_HISTORY_MAX_CHARS", LLM_CHAT_HISTORY_MAX_CHARS, 100);
+}
+
 export type LlmChatMessage = {
   role: "system" | "user" | "assistant";
   content: string;
@@ -862,6 +906,7 @@ function unseenPhotoHistoryNote(msg: MsgData): string {
 
 function normalizeRecentMessages(recentMessages: MsgData[] = []): SeqHistoryMessage[] {
   const out: SeqHistoryMessage[] = [];
+  const maxChars = llmChatHistoryMaxChars();
   for (const msg of recentMessages) {
     if (isLlmExcludedDisclosure(msg)) continue;
     const text = String(msg.content ?? "").trim();
@@ -878,8 +923,8 @@ function normalizeRecentMessages(recentMessages: MsgData[] = []): SeqHistoryMess
     out.push({
       role,
       content:
-        withPhoto.length > LLM_CHAT_HISTORY_MAX_CHARS
-          ? `${withPhoto.slice(0, LLM_CHAT_HISTORY_MAX_CHARS - 1)}…`
+        withPhoto.length > maxChars
+          ? `${withPhoto.slice(0, maxChars - 1)}…`
           : withPhoto,
       ...(Number.isFinite(seq) && seq >= 0 ? { seq } : {}),
     });
@@ -900,9 +945,8 @@ export function capRecentMessagesForLlm(
     role,
     content,
   }));
-  return deduped.length > LLM_CHAT_HISTORY_MAX_MESSAGES
-    ? deduped.slice(-LLM_CHAT_HISTORY_MAX_MESSAGES)
-    : deduped;
+  const maxMessages = llmChatHistoryMaxMessages();
+  return deduped.length > maxMessages ? deduped.slice(-maxMessages) : deduped;
 }
 
 /**
@@ -1494,6 +1538,20 @@ const ANSWER_LAST_SCENE_STANCE = "Continue that scene in your own first person."
 /** Crisis and direct-risk therapy: do not keep playing the scene. */
 const ANSWER_LAST_CARE_STANCE =
   "Respond directly in your own first person. Do not play out a scene.";
+/**
+ * The user asked something. Small local models given the scene stance tend to
+ * narrate around a plain question ("what's a good name for my cat?") instead
+ * of answering it, so lead with the answer and keep the character second.
+ */
+const ANSWER_LAST_QUESTION_STANCE =
+  "Answer the question plainly and specifically first, then react in your own first person.";
+
+/** True when the latest user line is a question (ends with "?", allowing trailing quotes or brackets). */
+export function isQuestionTurn(text: string | null | undefined): boolean {
+  const value = String(text ?? "").trim();
+  if (!value) return false;
+  return /\?[\s"'\u201d\u2019)\]*_~!]*$/.test(value);
+}
 const ANSWER_LAST_TAIL =
   "Do not introduce yourself or retell your past unless they asked. Bring in memories or lore only when they help answer it.";
 
@@ -1507,7 +1565,7 @@ function escapeForAnswerLast(value: string): string {
  */
 const ANSWER_LAST_INSTRUCTION_RE = new RegExp(
   "^Answer .+ last message first, directly, in .+ voice\\. Stay on what they said\\. (?:" +
-    `${escapeForAnswerLast(ANSWER_LAST_SCENE_STANCE)}|${escapeForAnswerLast(ANSWER_LAST_CARE_STANCE)}` +
+    `${escapeForAnswerLast(ANSWER_LAST_SCENE_STANCE)}|${escapeForAnswerLast(ANSWER_LAST_CARE_STANCE)}|${escapeForAnswerLast(ANSWER_LAST_QUESTION_STANCE)}` +
     `) ${escapeForAnswerLast(ANSWER_LAST_TAIL)}$`,
 );
 
@@ -1522,11 +1580,17 @@ export function answerLastMessageInstruction(
   userName: string | null | undefined,
   companionName: string | null | undefined,
   careTurn = false,
+  questionTurn = false,
 ): string {
   const user = sanitizePromptName(userName) || "the user";
   const companion = sanitizePromptName(companionName);
   const voice = companion ? `in ${companion}'s own voice` : "in your own voice";
-  const stance = careTurn ? ANSWER_LAST_CARE_STANCE : ANSWER_LAST_SCENE_STANCE;
+  // Care always wins: a crisis turn that ends in "?" still gets a direct care reply.
+  const stance = careTurn
+    ? ANSWER_LAST_CARE_STANCE
+    : questionTurn
+      ? ANSWER_LAST_QUESTION_STANCE
+      : ANSWER_LAST_SCENE_STANCE;
   return `Answer ${user}'s last message first, directly, ${voice}. Stay on what they said. ${stance} ${ANSWER_LAST_TAIL}`;
 }
 
@@ -1821,6 +1885,7 @@ export function composeCompanionChatMessages(
     userNameForAnswerInstruction(params),
     sections.companionName,
     careTurn,
+    isQuestionTurn(params.content),
   );
   let moodText = sections.moodText;
   const budget = localPromptTokenBudget();
