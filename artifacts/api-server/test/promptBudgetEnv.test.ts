@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   LLM_CHAT_HISTORY_MAX_CHARS,
   LLM_CHAT_HISTORY_MAX_MESSAGES,
+  LOCAL_HISTORY_MAX_EXCHANGES,
   LOCAL_PROMPT_MAX_TOKENS,
   OLLAMA_N_CTX,
   llmChatHistoryMaxChars,
@@ -10,6 +11,8 @@ import {
   localPromptHardMaxTokens,
   localPromptTokenBudget,
   localPromptWorkingMaxTokens,
+  localHistoryMaxExchanges,
+  stableHistoryExchangeCount,
 } from "../src/lib/promptBuilder";
 
 describe("prompt budget env overrides", () => {
@@ -43,6 +46,19 @@ describe("prompt budget env overrides", () => {
     expect(llmChatHistoryMaxChars({ ANIMA_CHAT_HISTORY_MAX_CHARS: "10" })).toBe(
       LLM_CHAT_HISTORY_MAX_CHARS,
     );
-    expect(llmChatHistoryMaxMessages({ ANIMA_CHAT_HISTORY_MAX_MESSAGES: "16" })).toBe(16);
+    expect(localHistoryMaxExchanges({ ANIMA_CHAT_HISTORY_MAX_EXCHANGES: "1" })).toBe(
+      LOCAL_HISTORY_MAX_EXCHANGES,
+    );
+  });
+
+  it("ANIMA_CHAT_HISTORY_MAX_EXCHANGES widens the companion window and the plain cap", () => {
+    const env = { ANIMA_CHAT_HISTORY_MAX_EXCHANGES: "10" };
+    expect(localHistoryMaxExchanges({})).toBe(LOCAL_HISTORY_MAX_EXCHANGES);
+    expect(stableHistoryExchangeCount(9, {})).toBeLessThan(9);
+    expect(stableHistoryExchangeCount(9, env)).toBe(9);
+    expect(stableHistoryExchangeCount(10, env)).toBe(10);
+    // Past the ceiling it still cuts back in a block, not a slide.
+    expect(stableHistoryExchangeCount(11, env)).toBe(2);
+    expect(llmChatHistoryMaxMessages(env)).toBe(20);
   });
 });
