@@ -35,6 +35,8 @@ export default tseslint.config(
       "**/dist/**",
       "**/build/**",
       "**/coverage/**",
+      // Generated Vercel function bundle (built by artifacts/api-server/build.mjs).
+      "api/**",
       "**/*.min.js",
       "**/playwright-report/**",
       "**/test-results/**",
