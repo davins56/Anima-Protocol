@@ -699,9 +699,14 @@ export const LLM_CHAT_HISTORY_MAX_MESSAGES = 8;
 /** Per-message cap for replayed history. */
 export const LLM_CHAT_HISTORY_MAX_CHARS = 400;
 
-/** `ANIMA_CHAT_HISTORY_MAX_MESSAGES` override; raise it with the prompt budget. */
+/**
+ * Replayed-history message cap for the plain chat path. Follows
+ * `ANIMA_CHAT_HISTORY_MAX_EXCHANGES` (two messages per exchange) when set,
+ * otherwise `LLM_CHAT_HISTORY_MAX_MESSAGES`.
+ */
 export function llmChatHistoryMaxMessages(env: NodeJS.ProcessEnv = process.env): number {
-  return envPositiveInt(env, "ANIMA_CHAT_HISTORY_MAX_MESSAGES", LLM_CHAT_HISTORY_MAX_MESSAGES, 2);
+  const exchanges = envPositiveInt(env, "ANIMA_CHAT_HISTORY_MAX_EXCHANGES", 0, 1);
+  return exchanges > 0 ? exchanges * 2 : LLM_CHAT_HISTORY_MAX_MESSAGES;
 }
 
 /** `ANIMA_CHAT_HISTORY_MAX_CHARS` override for each replayed message. */
@@ -1628,8 +1633,25 @@ export const LOCAL_HISTORY_MIN_EXCHANGES = 2;
  * 1..6 stay whole. 7 keeps the last 2, then the window grows 3, 4, 5, 6
  * and cuts back to 2 again. The cut is a block, not a one-exchange slide.
  */
-export function stableHistoryExchangeCount(exchangeCount: number): number {
-  const max = LOCAL_HISTORY_MAX_EXCHANGES;
+/**
+ * Companion history window ceiling. `ANIMA_CHAT_HISTORY_MAX_EXCHANGES` raises
+ * it on a bigger model; it never drops below `LOCAL_HISTORY_MIN_EXCHANGES + 1`
+ * so the grow-then-cut cycle (and Ollama's prompt cache) keeps working.
+ */
+export function localHistoryMaxExchanges(env: NodeJS.ProcessEnv = process.env): number {
+  return envPositiveInt(
+    env,
+    "ANIMA_CHAT_HISTORY_MAX_EXCHANGES",
+    LOCAL_HISTORY_MAX_EXCHANGES,
+    LOCAL_HISTORY_MIN_EXCHANGES + 1,
+  );
+}
+
+export function stableHistoryExchangeCount(
+  exchangeCount: number,
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const max = localHistoryMaxExchanges(env);
   const min = LOCAL_HISTORY_MIN_EXCHANGES;
   if (!Number.isFinite(exchangeCount) || exchangeCount <= 0) return 0;
   if (exchangeCount <= max) return Math.floor(exchangeCount);
