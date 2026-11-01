@@ -37,12 +37,22 @@ export function stripIpPort(ip: string): string {
 }
 
 /**
- * Best-effort client IP. On Cloudflare Workers `CF-Connecting-IP` is set by
- * the edge and cannot be spoofed by the caller, so it wins; elsewhere fall back
- * to Express `req.ip` (trust proxy), then the forwarding headers.
+ * True on the Cloudflare Worker (`ANIMA_RUNTIME=worker` in wrangler.jsonc).
+ * Only there is `CF-Connecting-IP` written by Cloudflare's edge; on Node or
+ * Cloud Run a caller can send that header themselves.
  */
-export function clientIp(req: Request): string {
-  const cfIp = String(req.headers?.["cf-connecting-ip"] || "").trim();
+export function trustsCloudflareIpHeader(env: NodeJS.ProcessEnv = process.env): boolean {
+  return (env.ANIMA_RUNTIME || "").trim().toLowerCase() === "worker";
+}
+
+/**
+ * Best-effort client IP. On the Worker, `CF-Connecting-IP` wins; elsewhere it
+ * is ignored and Express `req.ip` (trust proxy) is used, then forwarding headers.
+ */
+export function clientIp(req: Request, env: NodeJS.ProcessEnv = process.env): string {
+  const cfIp = trustsCloudflareIpHeader(env)
+    ? String(req.headers?.["cf-connecting-ip"] || "").trim()
+    : "";
   const forwarded = String(req.headers?.["x-forwarded-for"] || "")
     .split(",")[0]
     ?.trim();

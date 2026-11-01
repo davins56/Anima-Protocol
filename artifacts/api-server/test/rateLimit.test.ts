@@ -120,12 +120,15 @@ describe("createRateLimit", () => {
     openai(req, mockRes(), next);
     expect(next).toHaveBeenCalledTimes(2);
   });
-  it("prefers the Cloudflare edge IP over req.ip and forwarded headers", () => {
+  it("uses the Cloudflare edge IP only on the Worker runtime", () => {
     const req = mockReq({
       ip: "10.0.0.1",
       headers: { "cf-connecting-ip": "198.51.100.7", "x-forwarded-for": "1.2.3.4" },
     } as Partial<Request>);
-    expect(clientIp(req)).toBe("198.51.100.7");
+    expect(clientIp(req, { ANIMA_RUNTIME: "worker" })).toBe("198.51.100.7");
+    // On Node / Cloud Run a caller could forge the header, so it is ignored.
+    expect(clientIp(req, { ANIMA_RUNTIME: "cloudrun" })).toBe("10.0.0.1");
+    expect(clientIp(req, {})).toBe("10.0.0.1");
   });
 
   it("sweeps expired buckets once the map grows", () => {
