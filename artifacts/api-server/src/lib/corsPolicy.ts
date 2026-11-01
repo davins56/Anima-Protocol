@@ -52,11 +52,14 @@ export function isAllowedCorsOrigin(
   if (LOOPBACK_RE.test(normalized)) return true;
   if (extraAllowedOrigins(env).has(normalized)) return true;
 
-  // Same-origin: the browser still sends Origin on same-host POSTs.
+  // Same-origin: the browser still sends Origin on same-host POSTs. HTTPS
+  // only, so a plain-HTTP page on the same host cannot read API responses.
+  // (Loopback HTTP is already allowed above for local dev.)
   const host = String(requestHost || "").trim().toLowerCase();
   if (host) {
     try {
-      if (new URL(normalized).host === host) return true;
+      const url = new URL(normalized);
+      if (url.protocol === "https:" && url.host === host) return true;
     } catch {
       return false;
     }

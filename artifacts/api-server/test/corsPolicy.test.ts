@@ -21,6 +21,12 @@ describe("isAllowedCorsOrigin", () => {
         "pr-12.anima-protocol.workers.dev",
       ),
     ).toBe(true);
+    expect(
+      isAllowedCorsOrigin(
+        "http://pr-12.anima-protocol.workers.dev",
+        "pr-12.anima-protocol.workers.dev",
+      ),
+    ).toBe(false);
   });
 
   it("rejects other sites, look-alikes and the null origin", () => {
