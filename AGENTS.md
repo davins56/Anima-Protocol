@@ -6,7 +6,7 @@
 
 **Anima Protocol** is a pnpm monorepo: React/Vite frontend (`artifacts/anima-protocol`), Express API (`artifacts/api-server`), shared Drizzle DB package (`lib/db`), and optional **Mockup Sandbox** (`artifacts/mockup-sandbox`) for isolated UI previews at `/__mockup`. Kernel / Operator Model design: `artifacts/anima-protocol/docs/ANIMA_KERNEL.md`.
 
-The frontend calls `/api/*` via `src/lib/apiOrigin.js` (see `animaApi.js`, `base44Client.js`). Default is same-origin; set `VITE_API_ORIGIN` at build time to point at an external API host. The Vite dev server proxies `/api` to `http://localhost:8080` by default (`API_PROXY_TARGET` overrides it). **Production:** the Cloudflare Worker in root `wrangler.jsonc` runs the Express api-server and serves the SPA from `./dist` (see the Cloudflare paragraph below). The old Vercel bundle (`api/index.mjs`, `vercel.json`), Netlify and Replit configs were removed; do not recreate them.
+The frontend calls `/api/*` via `src/lib/apiOrigin.js` (see `animaApi.js`, `base44Client.js`). Default is same-origin; set `VITE_API_ORIGIN` at build time to point at an external API host. The Vite dev server proxies `/api` to `http://localhost:8080` by default (`API_PROXY_TARGET` overrides it). **Production:** the Cloudflare Worker in root `wrangler.jsonc` runs the Express api-server and serves the SPA from `./dist` (see the Cloudflare paragraph below). Vercel is kept only for the hourly proactive-message cron (`vercel.json` → `/api/notifications/proactive/run`; the Worker `scheduled()` handler does not send proactive pushes), which is why `api/index.mjs` stays committed and `api/` must not be gitignored. Netlify and Replit configs were removed; do not recreate them.
 
 ### Node.js
 

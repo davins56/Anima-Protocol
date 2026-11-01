@@ -82,4 +82,22 @@ describe("www → apex path preservation", () => {
       ),
     ).not.toBe("https://anima-protocol.com/");
   });
+
+  it("vercel.json www rule keeps :path* (Vercel only — not production apex/www)", () => {
+    const vercel = JSON.parse(
+      readFileSync(path.join(repoRoot, "vercel.json"), "utf8"),
+    ) as {
+      redirects?: Array<{
+        source?: string;
+        destination?: string;
+        has?: Array<{ value?: string }>;
+      }>;
+    };
+    const www = vercel.redirects?.find((row) =>
+      row.has?.some((h) => h.value === "www.anima-protocol.com"),
+    );
+    expect(www?.destination).toBe("https://anima-protocol.com/:path*");
+    expect(www?.destination).not.toBe("https://anima-protocol.com/");
+    expect(www?.source).toMatch(/path/);
+  });
 });
