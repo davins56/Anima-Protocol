@@ -16,6 +16,7 @@ import { combineAbortSignals, llmAiChatOpenTimeoutMs, openStreamAbort } from "./
 import { tryBeginCompanionLlmTurn } from "./lib/sidecarLlm";
 import { acquireLocalLlmBackground } from "./lib/localLlmSlot";
 import { createRateLimit } from "./lib/rateLimit";
+import { isAllowedCorsOrigin } from "./lib/corsPolicy";
 import {
   AI_CHAT_RATE_LIMIT_MAX,
   AI_CHAT_RATE_LIMIT_WINDOW_MS,
@@ -51,9 +52,9 @@ const corsMiddleware = (
   next: NextFunction,
 ) => {
   const origin = req.headers.origin;
-  if (typeof origin === "string") {
+  res.setHeader("Vary", "Origin");
+  if (typeof origin === "string" && isAllowedCorsOrigin(origin, req.headers.host)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Credentials", "true");
   }
   res.setHeader(

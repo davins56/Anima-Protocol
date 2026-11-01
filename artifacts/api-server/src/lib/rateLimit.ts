@@ -36,14 +36,19 @@ export function stripIpPort(ip: string): string {
   return value;
 }
 
-/** Best-effort client IP. The first X-Forwarded-For hop is the caller. */
+/**
+ * Best-effort client IP. On Cloudflare Workers `CF-Connecting-IP` is set by
+ * the edge and cannot be spoofed by the caller, so it wins; elsewhere fall back
+ * to Express `req.ip` (trust proxy), then the forwarding headers.
+ */
 export function clientIp(req: Request): string {
-  const forwarded = String(req.headers["x-forwarded-for"] || "")
+  const cfIp = String(req.headers?.["cf-connecting-ip"] || "").trim();
+  const forwarded = String(req.headers?.["x-forwarded-for"] || "")
     .split(",")[0]
     ?.trim();
-  const realIp = String(req.headers["x-real-ip"] || "").trim();
+  const realIp = String(req.headers?.["x-real-ip"] || "").trim();
   const ip = stripIpPort(
-    req.ip || realIp || forwarded || req.socket?.remoteAddress || "unknown",
+    cfIp || req.ip || realIp || forwarded || req.socket?.remoteAddress || "unknown",
   );
   return ip || "unknown";
 }
@@ -51,6 +56,29 @@ export function clientIp(req: Request): string {
 /** Test helper — clears in-memory counters between cases. */
 export function resetRateLimitStateForTests(): void {
   counts.clear();
+  lastSweepAt = 0;
+}
+
+/**
+ * Drop expired buckets so a long-lived isolate does not keep one entry per
+ * visitor forever. Runs at most once per sweep interval and only when the map
+ * has grown, so the hot path stays O(1).
+ */
+const SWEEP_INTERVAL_MS = 60_000;
+const SWEEP_MIN_ENTRIES = 1_000;
+let lastSweepAt = 0;
+
+export function sweepExpiredRateLimits(now = Date.now()): void {
+  if (counts.size < SWEEP_MIN_ENTRIES || now - lastSweepAt < SWEEP_INTERVAL_MS) return;
+  lastSweepAt = now;
+  for (const [key, entry] of counts) {
+    if (now > entry.resetAt) counts.delete(key);
+  }
+}
+
+/** Test helper — current number of tracked buckets. */
+export function rateLimitBucketCountForTests(): number {
+  return counts.size;
 }
 
 /**
@@ -84,6 +112,7 @@ export function createRateLimit(options: RateLimitOptions = {}) {
   return function rateLimit(req: Request, res: Response, next: NextFunction) {
     const key = rateLimitKey(req, name, identity);
     const now = Date.now();
+    sweepExpiredRateLimits(now);
     const entry = counts.get(key);
 
     if (!entry || now > entry.resetAt) {
