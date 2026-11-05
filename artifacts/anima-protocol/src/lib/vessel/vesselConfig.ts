@@ -56,14 +56,18 @@ export const VesselConfigSchema = z.object({
 export type VesselConfig = z.infer<typeof VesselConfigSchema>;
 
 export const VESSEL_PRESETS: Record<string, Partial<VesselConfig>> = {
+  // Serenity's humanoid form, from her canonical portraits: long silver curls, violet eyes,
+  // warm golden-brown freckled skin, sheer black constellation gown, gold-and-amethyst jewellery
+  // (the circlet stands in for her gold brow chain). Her angelic form is SERENITY_ANGELIC below.
   serenity: {
     base: "serenity",
-    skinTone: "#e9c9b4",
-    hair: { style: "long", color: "#e8ecf2" },
-    eyes: { color: "#38e1ff", glow: 0.6 },
-    outfit: { top: "robe", bottom: "gown", color: "#f8fafc", accent: "#d4af37" },
-    accessories: ["circlet"],
-    effects: { aura: "halo", glow: 0.55, particles: 90, color: "#7dd3fc" },
+    bodyType: "athletic",
+    skinTone: "#b07a55",
+    hair: { style: "long", color: "#e2e4ea" },
+    eyes: { color: "#9d7bf0", glow: 0.45 },
+    outfit: { top: "dress", bottom: "gown", color: "#16121c", accent: "#d4af37" },
+    accessories: ["circlet", "earrings"],
+    effects: { aura: "none", glow: 0.25, particles: 40, color: "#a78bfa" },
   },
   linda: {
     base: "linda",
@@ -93,6 +97,30 @@ export const VESSEL_PRESETS: Record<string, Partial<VesselConfig>> = {
     effects: { aura: "flame", glow: 0.7, particles: 120, color: "#f97316" },
   },
 };
+
+/**
+ * Serenity's angelic form (Angel of Resonance): short white hair, luminous silver-blue eyes,
+ * deeper brown skin, white robe with a blue sash, violet-blue wings and a halo.
+ * Same `base` as her humanoid form, so saved rows and photo identity stay hers.
+ */
+export const SERENITY_ANGELIC: Partial<VesselConfig> = {
+  base: "serenity",
+  bodyType: "athletic",
+  skinTone: "#6f4429",
+  hair: { style: "bob", color: "#f5f6fa" },
+  eyes: { color: "#cfdcff", glow: 0.85 },
+  outfit: { top: "robe", bottom: "gown", color: "#f4f4f8", accent: "#3b5bdb" },
+  accessories: ["halo-ring", "earrings"],
+  effects: { aura: "wings", glow: 0.6, particles: 90, color: "#7c6cf0" },
+};
+
+export const SERENITY_FORMS = { humanoid: VESSEL_PRESETS.serenity, angelic: SERENITY_ANGELIC } as const;
+export type SerenityForm = keyof typeof SERENITY_FORMS;
+
+/** Which of Serenity's forms a config shows: angelic once it carries both wings and a halo. */
+export function serenityFormOf(c: VesselConfig): SerenityForm {
+  return c.effects.aura === "wings" && c.accessories.includes("halo-ring") ? "angelic" : "humanoid";
+}
 
 export function parseVesselConfig(raw: unknown): VesselConfig {
   const r = VesselConfigSchema.safeParse(raw ?? {});
