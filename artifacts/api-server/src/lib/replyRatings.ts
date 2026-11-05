@@ -15,6 +15,7 @@ import { lessonsToDpoJsonl, type LessonTurn, type ModelLesson } from "./modelTut
 export const RATING_CONTEXT_MAX = 12;
 export const RATING_REPLY_MAX = 8000;
 export const RATING_BETTER_MAX = 4000;
+export const RATING_NOTE_MAX = 600;
 
 export class RatingInputError extends Error {}
 
@@ -28,6 +29,8 @@ export type RatingInput = {
   reply: string;
   better_reply: string | null;
   context: LessonTurn[];
+  /** Steward's "what was wrong" (thumbs down only). Needs migration 20261105010000. */
+  note?: string | null;
 };
 
 export type RatingRow = RatingInput & { id: string; user_id: string; created_at: string };
@@ -46,6 +49,7 @@ export function parseRatingInput(body: unknown): RatingInput {
   if (!session_id || !message_id) throw new RatingInputError("session_id and message_id are required");
   if (!reply) throw new RatingInputError("reply is required");
   const better = str(b.better_reply, RATING_BETTER_MAX);
+  const note = rating === -1 ? str(b.note, RATING_NOTE_MAX) : "";
   const context = (Array.isArray(b.context) ? b.context : [])
     .slice(-RATING_CONTEXT_MAX)
     .map((t) => (t && typeof t === "object" ? (t as Record<string, unknown>) : {}))
@@ -62,10 +66,30 @@ export function parseRatingInput(body: unknown): RatingInput {
     // A better version only makes sense with a thumbs down and must differ.
     better_reply: rating === -1 && better && better !== reply ? better : null,
     context,
+    note: note || null,
   };
 }
 
+function isMissingNoteColumn(err: unknown): boolean {
+  const e = err as { code?: string; message?: string };
+  return e?.code === "42703" || /column "?note"? .*does not exist/i.test(String(e?.message || ""));
+}
+
 export async function appendRating(userId: string, input: RatingInput): Promise<RatingRow> {
+  if (input.note) {
+    try {
+      const { rows } = await getPool().query<RatingRow>(
+        `INSERT INTO reply_ratings (user_id, session_id, message_id, turn_id, character_id, character_name, rating, reply, better_reply, context, note)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)
+         RETURNING id, user_id, session_id, message_id, turn_id, character_id, character_name, rating, reply, better_reply, context, note, created_at`,
+        [userId, input.session_id, input.message_id, input.turn_id, input.character_id, input.character_name, input.rating, input.reply, input.better_reply, JSON.stringify(input.context), input.note],
+      );
+      return rows[0]!;
+    } catch (err) {
+      // Before the migration is applied the note is dropped, never the rating.
+      if (!isMissingNoteColumn(err)) throw err;
+    }
+  }
   const { rows } = await getPool().query<RatingRow>(
     `INSERT INTO reply_ratings (user_id, session_id, message_id, turn_id, character_id, character_name, rating, reply, better_reply, context)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)

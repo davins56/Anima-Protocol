@@ -113,7 +113,7 @@ export default function MessageList({ messages, session, characters, characterMe
           actionsDisabled={actionsDisabled}
           onAvatarClick={onAvatarClick}
           onTeach={msg.role === 'assistant' && onTeachMessage ? () => onTeachMessage(i) : undefined}
-          onRate={msg.role === 'assistant' && onRateMessage ? (rating, better) => onRateMessage(i, rating, better) : undefined}
+          onRate={msg.role === 'assistant' && onRateMessage ? (rating, better, extra) => onRateMessage(i, rating, better, extra) : undefined}
         />
       ),
     });

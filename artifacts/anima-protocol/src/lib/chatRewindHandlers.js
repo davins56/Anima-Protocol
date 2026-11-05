@@ -59,10 +59,18 @@ function replacementBlocked(isLoading) {
 //                      flight or a message is waiting to send
 //   setActiveSession — state setter used to reflect the change in the page view
 //   sendMessage      — page's send fn; called with { text, replyAction, history }
-export async function regenerateMessageFlow(idx, { confirm, activeSession, isLoading, setActiveSession, sendMessage }) {
+/**
+ * Retry one reply. With `correction` ({ original, better, note }) the new reply
+ * is a re-render guided by the steward's correction; `skipConfirm` is for that
+ * path, where the steward already chose "Correct her".
+ */
+export async function regenerateMessageFlow(
+  idx,
+  { confirm, activeSession, isLoading, setActiveSession, sendMessage, correction = null, skipConfirm = false },
+) {
   if (!activeSession || replacementBlocked(isLoading)) return;
   const askingAgain = idx >= (activeSession.messages || []).length;
-  const ok = await confirm({
+  const ok = skipConfirm || await confirm({
     heading: "Retry",
     title: askingAgain ? "Ask her again?" : "Retry her reply?",
     message: askingAgain
@@ -92,6 +100,7 @@ export async function regenerateMessageFlow(idx, { confirm, activeSession, isLoa
     replacedFromSeq: plan.replacedFromSeq,
     replacedFromMessageId: plan.replacedFromMessageId || "",
     replacedMessageIds: plan.replacedMessageIds || [],
+    ...(correction ? { correction } : {}),
   });
   if (result?.started === false) {
     const saved = await base44.entities.ChatSession.update(activeSession.id, {
