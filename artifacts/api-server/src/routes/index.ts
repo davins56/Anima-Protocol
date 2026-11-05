@@ -32,6 +32,7 @@ import safetyRouter from "./safety";
 import continuityRouter from "./continuity";
 import searchRouter from "./search";
 import sensesRouter from "./senses";
+import mediaRouter from "./media";
 
 const router: IRouter = Router();
 
@@ -65,6 +66,7 @@ router.use("/safety", safetyRouter);
 router.use("/continuity", continuityRouter);
 router.use("/search", searchRouter);
 router.use("/senses", sensesRouter);
+router.use("/media", mediaRouter);
 router.use("/store", storeRouter);
 router.use(photoRouter);
 router.use(storageRouter);

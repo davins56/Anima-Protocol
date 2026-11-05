@@ -22,6 +22,7 @@ export const KERNEL_FEATURE_ENV = {
   kernel: "ANIMA_KERNEL_ORCHESTRATOR",
   memory_consolidation: "ANIMA_KERNEL_MEMORY_CONSOLIDATION",
   senses: "ANIMA_KERNEL_SENSES",
+  media: "ANIMA_KERNEL_MEDIA",
 } as const;
 
 export type KernelFeature = keyof typeof KERNEL_FEATURE_ENV;
@@ -52,6 +53,7 @@ export function kernelFeatureFlags(
     kernel: isKernelFeatureEnabled("kernel", env),
     memory_consolidation: isKernelFeatureEnabled("memory_consolidation", env),
     senses: isKernelFeatureEnabled("senses", env),
+    media: isKernelFeatureEnabled("media", env),
   };
 }
 

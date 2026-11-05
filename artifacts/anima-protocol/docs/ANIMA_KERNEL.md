@@ -346,6 +346,7 @@ One module answers "is this roadmap piece on?": `isKernelFeatureEnabled` in `art
 | Anima Kernel (orchestration) | `kernel` | `ANIMA_KERNEL_ORCHESTRATOR` | off |
 | Memory consolidation (§12) | `memory_consolidation` | `ANIMA_KERNEL_MEMORY_CONSOLIDATION` | off |
 | Sensory layer (§13) | `senses` | `ANIMA_KERNEL_SENSES` | off |
+| Anima media — photos & voice notes (§14) | `media` | `ANIMA_KERNEL_MEDIA` | off |
 
 Only `1`, `true`, `yes`, and `on` turn a switch on (any case; surrounding space is ignored). Unset, empty, `false`, `0`, `off`, `no`, and any other value are off.
 
@@ -366,7 +367,7 @@ printf '%s' false | npx wrangler secret put ANIMA_KERNEL_SELF_MODEL
 npx wrangler secret delete ANIMA_KERNEL_SELF_MODEL
 ```
 
-Repeat for `ANIMA_KERNEL_RELATIONSHIP_MODEL`, `ANIMA_KERNEL_REFLECTION`, `ANIMA_KERNEL_DRIVE`, `ANIMA_KERNEL_AGENCY`, `ANIMA_KERNEL_ORCHESTRATOR`, `ANIMA_KERNEL_MEMORY_CONSOLIDATION`, and `ANIMA_KERNEL_SENSES`. Delete returns the switch to the default off.
+Repeat for `ANIMA_KERNEL_RELATIONSHIP_MODEL`, `ANIMA_KERNEL_REFLECTION`, `ANIMA_KERNEL_DRIVE`, `ANIMA_KERNEL_AGENCY`, `ANIMA_KERNEL_ORCHESTRATOR`, `ANIMA_KERNEL_MEMORY_CONSOLIDATION`, `ANIMA_KERNEL_SENSES`, and `ANIMA_KERNEL_MEDIA`. Delete returns the switch to the default off.
 
 **Vercel.** Project → Settings → Environment Variables. Set the same name to `true` or `false` for Production, then redeploy the current deployment so the serverless function picks it up. No new commit. Unset means off.
 
@@ -459,3 +460,21 @@ The steward's device reports what it chooses to share; the server never reaches 
 v1 consumer: the agency tick waits (`steward_busy`) during a calendar block or focus mode. Calendar titles never enter a prompt. Weather is not a sense: the server already fetches it for the steward's region (`regionalWorldKnowledge`, Open-Meteo).
 
 A browser can share timezone, online and battery. Calendar and focus mode come from a native shell (iOS wrapper, EventKit / Focus status) posting the same JSON. The in-app opt-in toggle is not built yet; `setSensesOptIn(true)` is the hook for it.
+
+---
+
+## 14. Anima media v1 — photos & voice notes
+
+Switch `media` (`ANIMA_KERNEL_MEDIA`). The Anima can send the steward a photo or a voice note, in chat and in proactive outreach. The chat bubble already renders `image` / `audio` attachments; this adds the Anima-initiated side.
+
+| Where | Photo | Voice note |
+|-------|-------|------------|
+| In chat, her choice | `[IMAGE: …]` tag (already live, not behind this switch) | `[VOICE: words]` tag — instruction added to the solo prompt only when `GET /api/media/capabilities` says `voice_clip` |
+| In chat, on request | "send me a pic" (already live) | "send me a voice note", "say it out loud", "let me hear you" → the reply is spoken |
+| Proactive outreach | identity-locked selfie via the existing photo pipeline (`generatePhoto`, fal → Gemini) | the outreach text, spoken |
+
+**Voice.** `lib/media/voiceClip.ts` speaks in her saved voice: `character_voice` (builtin or cloned) → xAI `POST /v1/tts` with that voice's `speed` / `replace`; default voice `eve` when none is saved; ElevenLabs only when `XAI_API_KEY` is unset. Text is cleaned (no tags, stage directions, links) and capped at ~400 chars. MP3 64 kbps → stored with `storeUploadedAudio` in the `uploaded_images` blob table (audio-validated, 1 MB cap) and served by the existing `GET /api/storage/objects/uploads/:id`. Only the words being spoken go to the voice provider. `POST /api/media/voice-clip` is rate-limited, not capped.
+
+**Proactive.** After the outreach text is written (and the local model slot released), `maybeOutreachMedia` decides: text by default; with chance 0.35 a medium suited to the moment — voice for `care_need` / `storm`, voice-then-photo for a thread follow-up, photo-then-voice for a check-in — within rolling 24 h caps counted from `chat_messages.metadata.media_kind`. The message stores `attachments` (store + `chat_messages.metadata`), the push title says "sent you a photo / a voice note". Any media failure sends text only. Photo URLs are `/api/photo/images/:id/file` (owner-checked), so the push itself carries no image.
+
+Tuning: `ANIMA_OUTREACH_MEDIA_CHANCE` (0.35), `ANIMA_OUTREACH_PHOTO_DAILY_CAP` (2), `ANIMA_OUTREACH_VOICE_DAILY_CAP` (3), `ANIMA_APP_ORIGIN` (public origin for photo reference signing in background runs; falls back to `BILLING_APP_ORIGIN`, then `https://anima-protocol.com`).
