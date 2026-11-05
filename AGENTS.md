@@ -6,11 +6,11 @@
 
 **Anima Protocol** is a pnpm monorepo: React/Vite frontend (`artifacts/anima-protocol`), Express API (`artifacts/api-server`), shared Drizzle DB package (`lib/db`), and optional **Mockup Sandbox** (`artifacts/mockup-sandbox`) for isolated UI previews at `/__mockup`. Kernel / Operator Model design: `artifacts/anima-protocol/docs/ANIMA_KERNEL.md`.
 
-The frontend calls `/api/*` via `src/lib/apiOrigin.js` (see `animaApi.js`, `base44Client.js`). Default is same-origin; set `VITE_API_ORIGIN` at build time to point at an external API host. The Vite dev server proxies `/api` to `http://localhost:8080` by default (`API_PROXY_TARGET` overrides it). **Production:** Vercel runs the Express api-server as a single self-contained `api/index.mjs` bundle (copied from `dist/vercel.mjs` by the `api-server` build; rewrites `/api/*`) on the same deployment as the frontend — **no Replit republish required**. `api/index.mjs` must stay committed: Vercel validates `vercel.json` `functions` against the repo **before** `buildCommand` runs, and a missing file fails the deploy with `functions.api/index.mjs does not match any file`. Do not add `api/server.mjs` to `vercel.json` `functions` — only `api/index.mjs` is a valid Serverless Function entry. Do not gitignore `api/`. Copy `DATABASE_URL`, `CLERK_SECRET_KEY`, `OPENAI_API_KEY`, etc. from Replit Secrets into Vercel env vars (see `docs/vercel-api-migration.md`). Replit can stay delinquent as long as the Postgres instance accepts external connections.
+The frontend calls `/api/*` via `src/lib/apiOrigin.js` (see `animaApi.js`, `base44Client.js`). Default is same-origin; set `VITE_API_ORIGIN` at build time to point at an external API host. The Vite dev server proxies `/api` to `http://localhost:8080` by default (`API_PROXY_TARGET` overrides it). **Production:** the Cloudflare Worker in root `wrangler.jsonc` runs the Express api-server and serves the SPA from `./dist` (see the Cloudflare paragraph below). Vercel is kept only for the hourly proactive-message cron (`vercel.json` → `/api/notifications/proactive/run`; the Worker `scheduled()` handler does not send proactive pushes), which is why `api/index.mjs` stays committed and `api/` must not be gitignored. Netlify and Replit configs were removed; do not recreate them.
 
 ### Node.js
 
-Replit targets **Node 24** (`.replit` → `nodejs-24`). Cloud VMs may ship `/exec-daemon/node` (v22) ahead of nvm on `PATH`. **Always prepend** nvm Node 24 before `pnpm`/`node`:
+The repo targets **Node 24** (`.nvmrc`). Cloud VMs may ship `/exec-daemon/node` (v22) ahead of nvm on `PATH`. **Always prepend** nvm Node 24 before `pnpm`/`node`:
 
 ```bash
 export NVM_DIR="$HOME/.nvm"
@@ -111,7 +111,7 @@ User-driven alternative: sign in as source → Settings → Export → sign in a
 
 ### Lint / test / build
 
-No ESLint script at repo root. Validation workflows from `.replit`:
+`pnpm lint` runs ESLint from root `eslint.config.mjs` (most rules are warnings for now; parse errors and `react-hooks/rules-of-hooks` fail). `pnpm check:secrets` fails on live-looking keys in tracked files. Other validation:
 
 | Task | Command |
 |------|---------|
