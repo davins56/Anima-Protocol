@@ -20,8 +20,20 @@ describe("ReplyRating", () => {
     fireEvent.click(screen.getByRole("button", { name: "Not quite right" }));
     await waitFor(() => expect(onRate).toHaveBeenCalledWith(-1, undefined));
     fireEvent.change(screen.getByLabelText("A better version (optional)"), { target: { value: "Tell me more." } });
-    fireEvent.click(screen.getByRole("button", { name: "Save better version" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save only" }));
     await waitFor(() => expect(onRate).toHaveBeenLastCalledWith(-1, "Tell me more."));
+  });
+  it("Correct her sends the better version, the note, and asks for a re-render", async () => {
+    const onRate = vi.fn().mockResolvedValue({});
+    render(<ReplyRating onRate={onRate} />);
+    fireEvent.click(screen.getByRole("button", { name: "Not quite right" }));
+    await waitFor(() => expect(onRate).toHaveBeenCalledWith(-1, undefined));
+    expect(screen.getByRole("button", { name: "Correct her" }).hasAttribute("disabled")).toBe(true);
+    fireEvent.change(screen.getByLabelText("What was wrong (optional)"), { target: { value: "You dodged my question." } });
+    fireEvent.click(screen.getByRole("button", { name: "Correct her" }));
+    await waitFor(() =>
+      expect(onRate).toHaveBeenLastCalledWith(-1, undefined, { note: "You dodged my question.", rerender: true }),
+    );
   });
   it("reverts the pressed state when saving fails", async () => {
     const onRate = vi.fn().mockRejectedValue(new Error("offline"));
@@ -43,5 +55,9 @@ describe("buildRatingPayload", () => {
     expect(p.context).toEqual([{ role: "user", content: "hi" }]);
     expect(buildRatingPayload({ session: { id: "s1" }, messages, index: 2, rating: 1, betterReply: "x" }).better_reply).toBeUndefined();
     expect(buildRatingPayload({ session: { id: "s1" }, messages, index: 0, rating: 1 })).toBeNull();
+  });
+  it("carries a correction note on thumbs down only", () => {
+    expect(buildRatingPayload({ session: { id: "s1" }, messages, index: 2, rating: -1, note: " Too vague. " }).note).toBe("Too vague.");
+    expect(buildRatingPayload({ session: { id: "s1" }, messages, index: 2, rating: 1, note: "x" }).note).toBeUndefined();
   });
 });
