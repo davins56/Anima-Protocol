@@ -478,3 +478,17 @@ Switch `media` (`ANIMA_KERNEL_MEDIA`). The Anima can send the steward a photo or
 **Proactive.** After the outreach text is written (and the local model slot released), `maybeOutreachMedia` decides: text by default; with chance 0.35 a medium suited to the moment — voice for `care_need` / `storm`, voice-then-photo for a thread follow-up, photo-then-voice for a check-in — within rolling 24 h caps counted from `chat_messages.metadata.media_kind`. The message stores `attachments` (store + `chat_messages.metadata`), the push title says "sent you a photo / a voice note". Any media failure sends text only. Photo URLs are `/api/photo/images/:id/file` (owner-checked), so the push itself carries no image.
 
 Tuning: `ANIMA_OUTREACH_MEDIA_CHANCE` (0.35), `ANIMA_OUTREACH_PHOTO_DAILY_CAP` (2), `ANIMA_OUTREACH_VOICE_DAILY_CAP` (3), `ANIMA_APP_ORIGIN` (public origin for photo reference signing in background runs; falls back to `BILLING_APP_ORIGIN`, then `https://anima-protocol.com`).
+
+---
+
+## 15. Steward corrections
+
+Not behind a Kernel switch; kill switch `ANIMA_STEWARD_CORRECTIONS=off` (default on). Pure: `artifacts/api-server/src/lib/corrections/correctionsCore.ts`. Runtime: `lib/corrections/corrections.ts`. UI: the 👎 panel under a reply (`ReplyRating.jsx`).
+
+**Correct her.** After 👎 the steward can write how she should have said it and/or what was wrong (`reply_ratings.note`, migration `20261105010000_reply_rating_notes.sql`). **Correct her** saves the rating and re-renders that reply through the normal retry path (`regenerateMessageFlow`, `skipConfirm`), sending `metadata.correction = { original, better, note }`. The server turns it into a one-turn instruction: rewrite the reply in her own voice, fixing what was pointed out, following the substance of the better version without parroting it. The new reply carries `corrected: true` (a small "Corrected" marker). **Save only** stores the correction without re-rendering. Retry already skips mood / memory / relationship writes, so a correction never double-counts the turn.
+
+**Every turn after.** `buildCorrectionsContext` loads this companion's thumbs-down corrections (newest 60, `reply_ratings_latest`), picks up to three: the ones whose context overlaps what the steward just said, then the most recent general notes. It joins the memory section as a `STEWARD CORRECTIONS` block (≤ 1 200 chars) telling her to apply the lesson without quoting it. Lexical retrieval, so no embedding call on the chat path. Best-effort via `optionalChatContext`.
+
+**Retraining.** Unchanged: corrections still export as preference pairs (Settings → Model Tutor → Download for retraining / `ratingsToPairs`), so they can be folded into the next fine-tune.
+
+Before the migration is applied, notes are dropped (never the rating) and lessons use better versions only.

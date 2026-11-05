@@ -13,7 +13,7 @@ export function messageRatingId(message, sessionId, index) {
   return String(message?.id || (message?.turn_id ? `${message.turn_id}:assistant` : `${sessionId}:${index}`));
 }
 
-export function buildRatingPayload({ session, messages, index, rating, betterReply }) {
+export function buildRatingPayload({ session, messages, index, rating, betterReply, note }) {
   const list = Array.isArray(messages) ? messages : [];
   const message = list[index];
   if (!message || message.role !== "assistant") return null;
@@ -25,6 +25,7 @@ export function buildRatingPayload({ session, messages, index, rating, betterRep
     .slice(-RATING_CONTEXT_TURNS)
     .map((m) => ({ role: m.role, content: String(m.content || "").slice(0, 2000) }));
   const better = rating === -1 ? String(betterReply || "").trim() : "";
+  const why = rating === -1 ? String(note || "").trim().slice(0, 600) : "";
   return {
     session_id: String(session?.id || ""),
     message_id: messageRatingId(message, session?.id, index),
@@ -34,6 +35,7 @@ export function buildRatingPayload({ session, messages, index, rating, betterRep
     rating,
     reply,
     ...(better && better !== reply ? { better_reply: better } : {}),
+    ...(why ? { note: why } : {}),
     context,
   };
 }

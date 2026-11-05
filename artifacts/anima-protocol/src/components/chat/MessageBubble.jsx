@@ -342,6 +342,15 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
           </div>
         )}
 
+        {!isUser && message.corrected && !isStreaming && (
+          <span
+            className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.2em] text-rose-200/60"
+            title="Re-rendered after your correction"
+            data-testid="corrected-badge"
+          >
+            Corrected
+          </span>
+        )}
         {onRate && !isUser && !isTyping && !isThinking && !isStreaming && !isEditing && message.content && (
           <ReplyRating onRate={onRate} initial={Number(message.my_rating) || 0} disabled={actionsDisabled} />
         )}
