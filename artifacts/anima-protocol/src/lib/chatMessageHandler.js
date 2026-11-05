@@ -3,6 +3,7 @@ import { CONTINUE_IN_FIRST_PERSON } from './leanCompanionChat';
 import { buildCharacterPrompt } from './buildCharacterPrompt';
 import { parseGroupResponse } from './parseGroupResponse';
 import { stripImageTags } from './chatImageGeneration';
+import { stripVoiceTags } from './chatVoiceClips';
 import { isTherapySession, buildTherapyInstruction } from './therapyManuals';
 import { reportChatClientFailure } from './chatClientFailure';
 import { createChatTurnId } from '../hooks/useChatPersistence';
@@ -121,7 +122,7 @@ export async function sendChatMessage({
       }
     }
 
-    const strippedResult = stripImageTags(fullResponse.replace(/\[(EMOTION|LOCATION):([^\]]+)\]/gi, "")).trim();
+    const strippedResult = stripVoiceTags(stripImageTags(fullResponse.replace(/\[(EMOTION|LOCATION):([^\]]+)\]/gi, ""))).trim();
 
     let newAiMessages;
     if (activeSession.mode === "group") {
