@@ -54,6 +54,8 @@ Switch: `ANIMA_MEMORY_EMBED_PROVIDER=auto|local|workersai|off`.
 * `routes/memoryCore.ts`: `GET /api/memory-core/:id/health`, `POST .../bootstrap|events|identity|retract`.
   There is deliberately no DELETE or PUT.
 * Kill switch: `ANIMA_MEMORY_CORE=off`.
+* `lib/memoryCore/consolidation.ts`: episodic → semantic `note` events (`payload.kind = "consolidation"`), behind
+  `ANIMA_KERNEL_MEMORY_CONSOLIDATION`. Append-only; see ANIMA_KERNEL.md §12.
 
 ## Deploy safety (audit, 2026-10-22)
 | Finding | Action |

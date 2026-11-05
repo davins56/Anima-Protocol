@@ -20,6 +20,8 @@ export const KERNEL_FEATURE_ENV = {
   drive: "ANIMA_KERNEL_DRIVE",
   agency: "ANIMA_KERNEL_AGENCY",
   kernel: "ANIMA_KERNEL_ORCHESTRATOR",
+  memory_consolidation: "ANIMA_KERNEL_MEMORY_CONSOLIDATION",
+  senses: "ANIMA_KERNEL_SENSES",
 } as const;
 
 export type KernelFeature = keyof typeof KERNEL_FEATURE_ENV;
@@ -48,6 +50,8 @@ export function kernelFeatureFlags(
     drive: isKernelFeatureEnabled("drive", env),
     agency: isKernelFeatureEnabled("agency", env),
     kernel: isKernelFeatureEnabled("kernel", env),
+    memory_consolidation: isKernelFeatureEnabled("memory_consolidation", env),
+    senses: isKernelFeatureEnabled("senses", env),
   };
 }
 
