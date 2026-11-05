@@ -21,6 +21,7 @@ import {
   MEMORY_RECALL_LINE,
   memoryBackgroundLine,
   splitClientTranscript,
+  THOUGHT_EXPERIMENTS,
 } from "../src/lib/promptBuilder";
 import { toOllamaMessages } from "../src/lib/ollamaChat";
 import { CHAT_MODE_REGISTRY } from "../src/lib/chatModeRegistry";
@@ -85,6 +86,24 @@ describe("buildCompanionPrompt", () => {
     expect(prompt).toContain("TURN TAKING");
     expect(prompt).toMatch(/stop at a natural pause/i);
     expect(prompt).toContain("I think I'm ready to talk about my mother again");
+  });
+
+  it("tells the companion to engage with thought experiments instead of refusing", () => {
+    const prompt = buildCompanionPrompt({
+      characters: [baseCharacter],
+      activeCharacter: baseCharacter,
+      memories: [],
+      recentMessages: [],
+      sharedMemory: undefined,
+      mode: "solo",
+      content:
+        "Thought experiment: a synthetic placenta and engineered gametes that give a being telepathy. How would that work?",
+      relationshipTier: "close",
+    });
+    expect(prompt).toContain(THOUGHT_EXPERIMENTS);
+    expect(THOUGHT_EXPERIMENTS).toMatch(/accept the premise/i);
+    expect(THOUGHT_EXPERIMENTS).toMatch(/don't refuse, lecture, or moralize/i);
+    expect(THOUGHT_EXPERIMENTS).toMatch(/step-by-step instructions for causing harm/i);
   });
 
   it("puts the conceal instruction after the persona, not inside the character definition", () => {
