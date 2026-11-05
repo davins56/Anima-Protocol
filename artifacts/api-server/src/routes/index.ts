@@ -31,6 +31,7 @@ import billingRouter from "./billing";
 import safetyRouter from "./safety";
 import continuityRouter from "./continuity";
 import searchRouter from "./search";
+import sensesRouter from "./senses";
 
 const router: IRouter = Router();
 
@@ -63,6 +64,7 @@ router.use("/billing", billingRouter);
 router.use("/safety", safetyRouter);
 router.use("/continuity", continuityRouter);
 router.use("/search", searchRouter);
+router.use("/senses", sensesRouter);
 router.use("/store", storeRouter);
 router.use(photoRouter);
 router.use(storageRouter);

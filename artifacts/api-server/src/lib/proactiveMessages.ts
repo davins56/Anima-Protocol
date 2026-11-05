@@ -1,6 +1,7 @@
 import webpush, { type PushSubscription as WebPushSubscription } from "web-push";
 import { dueThread, extractOpenThreads, threadFollowUpInstruction } from "./agencyThreads";
 import { isKernelFeatureEnabled } from "./kernelFeatures";
+import { recordAgencyOutcome, runAgencyTick } from "./kernel/agencyRuntime";
 import { dreamConfig, dreamOpenerInstruction, shouldSurfaceDream } from "./dreams/dreamCore";
 import { pickDreamFragment, recordDreamSurfacing } from "./dreams/dreamLayer";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
@@ -609,6 +610,27 @@ async function runClaim(claim: ClaimedPreference): Promise<ProactiveRunResult> {
         reason: "No eligible inactive chat",
       };
     }
+    // Agency Engine tick (ANIMA_KERNEL_AGENCY): perceive → relevance → act or
+    // stay silent. The clock only says she *may* reach out; the tick decides
+    // whether she *should*. A tick failure falls back to today's behaviour.
+    const characterId = String(candidate.character.id);
+    const decision = isKernelFeatureEnabled("agency")
+      ? await runAgencyTick({
+          userId: claim.userId,
+          characterId,
+          recentMessages: candidate.recentMessages,
+          frequencyHours: claim.frequencyHours,
+        })
+      : null;
+    if (decision && !decision.act) {
+      await deferPreference(claim.userId, decision.retryAfterHours);
+      await recordAgencyOutcome(claim.userId, characterId, decision).catch(() => {});
+      return {
+        status: "skipped",
+        userId: claim.userId,
+        reason: `Agency silence: ${decision.silenceReason}`,
+      };
+    }
     if (await localChatActivityActive()) {
       return {
         status: "skipped",
@@ -641,6 +663,9 @@ async function runClaim(claim: ClaimedPreference): Promise<ProactiveRunResult> {
       await persistMessage(claim.userId, candidate, content);
       delivered = await deliverPush(claim.userId, candidate, content);
       await completePreference(claim.userId, candidate.sessionId);
+      if (decision?.act) {
+        await recordAgencyOutcome(claim.userId, characterId, decision).catch(() => {});
+      }
     } finally {
       await background.release();
     }
