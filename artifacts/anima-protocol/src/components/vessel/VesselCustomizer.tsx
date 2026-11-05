@@ -1,5 +1,21 @@
 /** Customization panel (touch-friendly, iPad-first). Pure controlled component. */
-import { ACCESSORIES, AURAS, BODY_TYPES, BOTTOMS, HAIR_STYLES, TOPS, VESSEL_BASES, VESSEL_PRESETS, parseVesselConfig, type VesselConfig } from "@/lib/vessel/vesselConfig";
+import {
+  ACCESSORIES,
+  AURAS,
+  BODY_TYPES,
+  BOTTOMS,
+  HAIR_STYLES,
+  SERENITY_FORMS,
+  TOPS,
+  VESSEL_BASES,
+  VESSEL_PRESETS,
+  parseVesselConfig,
+  serenityFormOf,
+  type SerenityForm,
+  type VesselConfig,
+} from "@/lib/vessel/vesselConfig";
+
+const FORM_KEYS = Object.keys(SERENITY_FORMS) as SerenityForm[];
 
 type Props = { value: VesselConfig; onChange: (v: VesselConfig) => void };
 
@@ -46,6 +62,11 @@ export default function VesselCustomizer({ value: v, onChange }: Props) {
       <Section title="Preset">
         <Chips options={VESSEL_BASES} value={v.base} onPick={(b) => set(b === "custom" ? { base: "custom" } : { ...VESSEL_PRESETS[b] })} />
       </Section>
+      {v.base === "serenity" && (
+        <Section title="Form">
+          <Chips options={FORM_KEYS} value={serenityFormOf(v)} onPick={(form) => set({ ...SERENITY_FORMS[form] })} />
+        </Section>
+      )}
       <Section title="Body">
         <Chips options={BODY_TYPES} value={v.bodyType} onPick={(bodyType) => set({ bodyType })} />
         <input type="range" min={0.85} max={1.15} step={0.01} value={v.height} onChange={(e) => set({ height: Number(e.target.value) })} className="w-full" aria-label="Height" />
