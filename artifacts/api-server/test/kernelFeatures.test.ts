@@ -41,6 +41,8 @@ describe("kernel feature switches", () => {
       drive: false,
       agency: false,
       kernel: false,
+      memory_consolidation: false,
+      senses: false,
     });
     for (const feature of FEATURES) {
       expect(isKernelFeatureEnabled(feature)).toBe(false);
@@ -101,6 +103,8 @@ describe("kernel feature switches", () => {
       drive: false,
       agency: false,
       kernel: false,
+      memory_consolidation: false,
+      senses: false,
     });
   });
 

@@ -218,6 +218,25 @@ router.get("/dreams/run", async (req, res) => {
   }
 });
 
+router.get("/memory/consolidate/run", async (req, res) => {
+  const cronSecret = process.env.CRON_SECRET?.trim();
+  if (!cronSecret) {
+    res.status(503).json({ error: "CRON_SECRET is not configured" });
+    return;
+  }
+  if (req.headers.authorization !== `Bearer ${cronSecret}`) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const { runConsolidationCycle } = await import("../lib/memoryCore/consolidation");
+  try {
+    res.json(await runConsolidationCycle());
+  } catch (err) {
+    logger.warn({ err: (err as Error)?.message }, "Memory consolidation cycle failed");
+    res.status(500).json({ error: "Consolidation cycle failed" });
+  }
+});
+
 router.get("/proactive/run", async (req, res) => {
   const cronSecret = process.env.CRON_SECRET?.trim();
   if (!cronSecret) {
