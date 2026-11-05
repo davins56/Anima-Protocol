@@ -36,6 +36,14 @@ import {
   messagesWithImageProgress,
 } from "@/lib/chatImageGeneration";
 import {
+  fetchMediaCapabilities,
+  replyTextAfterVoice,
+  requestVoiceClip,
+  resolveChatVoiceAttachments,
+  stripVoiceTags,
+  voiceClipTagInstruction,
+} from "@/lib/chatVoiceClips";
+import {
   beginOpenSession,
   loadOpenChatSession,
   mergeOpenedSession,
@@ -2388,6 +2396,8 @@ ${lewdityGuide}`;
                 adultMode,
               });
 
+          // Anima voice notes ([VOICE: …]) only when the server can speak them.
+          const soloMediaCaps = await fetchMediaCapabilities();
           // Server composePrompt owns identity, store history, memories, and
           // guardrails. Sending that sheet again doubles prefill on anima-chat.
           prompt = buildLeanSoloClientContext({
@@ -2404,7 +2414,12 @@ ${lewdityGuide}`;
             fragmentContext: fragmentCtx,
             vesselContext,
             lengthGuide,
-            imageInstruction: imageGenerationTagInstruction(),
+            imageInstruction: [
+              imageGenerationTagInstruction(),
+              soloMediaCaps.voice_clip ? voiceClipTagInstruction() : "",
+            ]
+              .filter(Boolean)
+              .join("\n\n"),
             isContinue,
             characterName: char.name,
           });
@@ -2726,7 +2741,8 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         : parseImagePrompts(result).length > 0 || userRequestedImage(content);
       let replyImageAttachments = [];
       if (wantsImage) {
-        const imageProgressText = stripImageTags(result.replace(eventTagRegex, "")).trim() || result;
+        const imageProgressText =
+          stripVoiceTags(stripImageTags(result.replace(eventTagRegex, ""))).trim() || result;
         applyIfSendSession((prev) => ({
           ...prev,
           messages: messagesWithImageProgress(prev?.messages || updatedMessages, {
@@ -2758,7 +2774,30 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         }
       }
 
-      const strippedResult = stripImageTags(result.replace(eventTagRegex, "")).trim();
+      // Voice note: [VOICE: …] or "send me a voice note" → a clip in her saved voice.
+      let replyVoiceAttachments = [];
+      let replySpokenText = null;
+      if (activeSession.mode === "solo" && !replyCutOff.reply_interrupted) {
+        const mediaCaps = await fetchMediaCapabilities();
+        if (mediaCaps.voice_clip) {
+          const voiced = await resolveChatVoiceAttachments({
+            replyText: result,
+            userText: content,
+            characterId: activeChar?.id,
+            synthesize: (args) => requestVoiceClip(args),
+          });
+          replyVoiceAttachments = voiced.attachments;
+          replySpokenText = voiced.spoken;
+          if (voiced.spoken && !voiced.attachments.length) {
+            toast.error("Couldn't send the voice note this turn.");
+          }
+        }
+      }
+
+      const strippedResult = replyTextAfterVoice(
+        stripVoiceTags(stripImageTags(result.replace(eventTagRegex, ""))).trim(),
+        replyVoiceAttachments.length ? replySpokenText : null,
+      );
       const eventMessages = [];
       let match;
       const tagScanner = new RegExp(eventTagRegex.source, "gi");
@@ -2825,12 +2864,13 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         newAiMessages = newAiMessages.map((m) => ({ ...m, ...replyCutOff }));
       }
 
-      if (replyImageAttachments.length && newAiMessages[0]) {
+      if ((replyImageAttachments.length || replyVoiceAttachments.length) && newAiMessages[0]) {
         newAiMessages[0] = {
           ...newAiMessages[0],
           attachments: [
             ...(newAiMessages[0].attachments || []),
             ...replyImageAttachments,
+            ...replyVoiceAttachments,
           ],
         };
       }

@@ -88,10 +88,13 @@ export const CLOUDFLARE_RUNTIME_ENV_NAMES = [
   "STRIPE_VOICE_MINUTES_PER_PACK",
   "STRIPE_DEEP_MODE_DAYS",
   "BILLING_APP_ORIGIN",
+  // Public app origin for background jobs (Anima media photo signing).
+  "ANIMA_APP_ORIGIN",
   // Forward Kernel roadmap kill switches. Unset is off. See kernelFeatures.ts.
   // Classic Worker secrets (`wrangler secret put`), not wrangler.jsonc vars.
   "ANIMA_KERNEL_AGENCY",
   "ANIMA_KERNEL_DRIVE",
+  "ANIMA_KERNEL_MEDIA",
   "ANIMA_KERNEL_MEMORY_CONSOLIDATION",
   "ANIMA_KERNEL_ORCHESTRATOR",
   "ANIMA_KERNEL_REFLECTION",
