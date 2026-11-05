@@ -178,6 +178,7 @@ import {
 import { streamErrorMessage } from "../lib/chatStreamError";
 import { optionalChatContext } from "../lib/optionalChatContext";
 import { buildMemoryCoreContext, isMemoryCoreEnabled } from "../lib/memoryCore/sessionContext";
+import { buildCorrectionsContext } from "../lib/corrections/corrections";
 import { searchContextForTurn } from "../lib/search/searchService";
 import { appendMemoryEvent } from "../lib/memoryCore/memoryCore";
 import { classifyDbError, errorCauseBlob } from "../lib/dbErrors";
@@ -2808,6 +2809,21 @@ router.post("/messages", async (req, res) => {
           "",
         )
       : Promise.resolve("");
+  // Steward corrections: relevant past thumbs-down lessons for this companion,
+  // plus the re-render instruction when this retry carries a fresh correction.
+  const correctionsPromise = hintedCharId
+    ? optionalChatContext(
+        "steward_corrections",
+        () =>
+          buildCorrectionsContext({
+            userId,
+            characterId: hintedCharId,
+            query: content,
+            current: body.metadata?.reply_action === "retry" ? body.metadata?.correction : null,
+          }),
+        "",
+      )
+    : Promise.resolve("");
   // Web search (feature/web-search): transient tool context for this turn only,
   // rebuilt from the server's own filtered audit row (metadata.web_search_audit_id).
   const webSearchPromise = body.metadata?.web_search_audit_id
@@ -3082,7 +3098,7 @@ router.post("/messages", async (req, res) => {
       clientContext: body.system_prompt,
       repositoryKnowledge,
       pdfContext: [pdfContext, webSearchContext].filter(Boolean).join("\n\n") || pdfContext,
-      memoryCoreContext,
+      memoryCoreContext: [memoryCoreContext, await correctionsPromise].filter(Boolean).join("\n\n"),
       photoNote,
       characters: adaptedChars,
       activeCharacter: activeChar,

@@ -277,7 +277,9 @@ function replacementSendMetadata(messageData) {
     : [];
   const fromSeq = messageData?.replacedFromSeq;
   const seq = typeof fromSeq === "number" && Number.isFinite(fromSeq) ? fromSeq : null;
+  const correction = messageData?.correction;
   return {
+    ...(correction?.original ? { correction } : {}),
     ...(turnId ? { replaced_turn_id: turnId } : {}),
     ...(turnIds.length > 0 ? { replaced_turn_ids: turnIds } : {}),
     ...(seq != null ? { replaced_from_seq: seq } : {}),
@@ -2864,6 +2866,10 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         newAiMessages = newAiMessages.map((m) => ({ ...m, ...replyCutOff }));
       }
 
+      if (messageData.correction?.original && newAiMessages[0]) {
+        newAiMessages[0] = { ...newAiMessages[0], corrected: true };
+      }
+
       if ((replyImageAttachments.length || replyVoiceAttachments.length) && newAiMessages[0]) {
         newAiMessages[0] = {
           ...newAiMessages[0],
@@ -4011,16 +4017,33 @@ Return JSON:
                 onRegenerateMessage={handleRegenerateMessage}
                 actionsDisabled={replyActionsDisabled}
                 onAvatarClick={setBioCharacter}
-                onRateMessage={async (index, rating, betterReply) => {
+                onRateMessage={async (index, rating, betterReply, extra) => {
                   const payload = buildRatingPayload({
                     session: activeSession,
                     messages: activeSession.messages,
                     index,
                     rating,
                     betterReply,
+                    note: extra?.note,
                   });
                   if (!payload) return;
                   await animaApi.ratings.rate(payload);
+                  // "Correct her": re-render this reply in her voice, guided by the correction.
+                  if (extra?.rerender && rating === -1 && (payload.better_reply || payload.note)) {
+                    await regenerateMessageFlow(index, {
+                      confirm,
+                      activeSession,
+                      isLoading: () => replyActionsDisabledRef.current,
+                      setActiveSession,
+                      sendMessage: handleSendMessage,
+                      skipConfirm: true,
+                      correction: {
+                        original: payload.reply,
+                        better: payload.better_reply || null,
+                        note: payload.note || null,
+                      },
+                    });
+                  }
                 }}
                 onTeachMessage={
                   modelTutor.isSteward

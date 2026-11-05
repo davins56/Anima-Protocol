@@ -2,24 +2,27 @@ import { useState } from "react";
 import { ThumbsDown, ThumbsUp } from "lucide-react";
 
 /**
- * Thumbs up / down on one companion reply, with an optional "better version"
- * after a thumbs down. `onRate(rating, betterReply?)` returns a promise.
+ * Thumbs up / down on one companion reply. After a thumbs down the steward can
+ * correct her: an optional better version and/or what was wrong, then either
+ * "Correct her" (save and re-render the reply with the correction) or "Save only".
+ * `onRate(rating, betterReply?, { note, rerender }?)` returns a promise.
  */
 export default function ReplyRating({ onRate, initial = 0, disabled = false }) {
   const [rating, setRating] = useState(initial);
   const [askBetter, setAskBetter] = useState(false);
   const [better, setBetter] = useState("");
+  const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const send = async (next, betterReply) => {
+  const send = async (next, betterReply, extra) => {
     if (saving || disabled) return;
     const prev = rating;
     setRating(next);
     setSaving(true);
     try {
-      await onRate(next, betterReply);
-      setSaved(Boolean(betterReply));
+      await (extra ? onRate(next, betterReply, extra) : onRate(next, betterReply));
+      setSaved(Boolean(betterReply || extra?.note));
     } catch {
       setRating(prev);
     } finally {
@@ -77,17 +80,39 @@ export default function ReplyRating({ onRate, initial = 0, disabled = false }) {
             className="w-full rounded border border-primary/30 bg-black/50 p-2 text-sm text-cyan-50"
             style={{ fontSize: "16px" }}
           />
-          <div className="flex gap-1">
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={2}
+            maxLength={600}
+            aria-label="What was wrong (optional)"
+            placeholder="Optional: what was wrong? She learns from this."
+            className="w-full rounded border border-primary/30 bg-black/50 p-2 text-sm text-cyan-50"
+            style={{ fontSize: "16px" }}
+          />
+          <div className="flex flex-wrap gap-1">
             <button
               type="button"
-              disabled={saving || !better.trim()}
+              disabled={saving || (!better.trim() && !note.trim())}
               onClick={async () => {
-                await send(-1, better.trim());
+                await send(-1, better.trim() || undefined, { note: note.trim() || undefined, rerender: true });
+                setAskBetter(false);
+              }}
+              className={`${btn} px-3 border-rose-300/50 text-rose-100`}
+            >
+              Correct her
+            </button>
+            <button
+              type="button"
+              disabled={saving || (!better.trim() && !note.trim())}
+              onClick={async () => {
+                const trimmedNote = note.trim();
+                await send(-1, better.trim() || undefined, trimmedNote ? { note: trimmedNote, rerender: false } : undefined);
                 setAskBetter(false);
               }}
               className={`${btn} px-3 border-primary/40 text-primary/80`}
             >
-              Save better version
+              Save only
             </button>
             <button type="button" onClick={() => setAskBetter(false)} className={`${btn} px-3 border-transparent text-primary/50`}>
               Skip
