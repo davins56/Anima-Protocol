@@ -110,6 +110,18 @@ export default {
           } catch (err) {
             console.error("Dream layer cycle failed", err);
           }
+          try {
+            // Memory consolidation (ANIMA_KERNEL_MEMORY_CONSOLIDATION, default off):
+            // old episodic events → literal semantic notes. No-op when the switch is off.
+            const { runConsolidationCycle } = await import("./lib/memoryCore/consolidation");
+            const summary = await runConsolidationCycle();
+            if (summary.enabled) {
+              const { logger } = await import("./lib/logger");
+              logger.info(summary, "Memory consolidation cycle");
+            }
+          } catch (err) {
+            console.error("Memory consolidation cycle failed", err);
+          }
         })(),
       );
       return;

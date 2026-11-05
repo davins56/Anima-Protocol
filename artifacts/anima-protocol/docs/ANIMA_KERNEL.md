@@ -203,6 +203,8 @@ A future Kernel tick — not shipped in this PR:
 
 Proactive messages today skip steps 2 and 4 (they fire on a clock). The Kernel must be allowed to do nothing.
 
+**v1 shipped behind `agency`** — see §11. It gates the proactive actuator only; tools and vessel intensity are later actuators.
+
 ---
 
 ## 6. Phased build order
@@ -212,7 +214,7 @@ Proactive messages today skip steps 2 and 4 (they fire on a clock). The Kernel m
 | **1. Operator Model v1** | Schema normalize, `user_profiles` persistence, Clerk GET/PUT, bounded prompt snippet. | **Yes.** |
 | **2. Self-state** | Persist the v1 shape; inject a short self-state line when relevant. | **Yes.** See `docs/companion-affect.md`. |
 | **3. Memory policy** | Explicit keep / classify / crystallize rules on `companion_memories` (still that table). v1 is live: episodic, semantic, protected core proposals. | v1 live. |
-| **4. Agency loop** | Perceive → interpret → memory → relevance → act/silence, wrapping proactive as one actuator. | No. |
+| **4. Agency loop** | Perceive → interpret → memory → relevance → act/silence, wrapping proactive as one actuator. | v1 behind `agency` (§11). |
 | **5. Embodiment Serenity + Aeland** | Distinct identities on the **same** `AnimaVesselMesh` stack. Aeland is not a Serenity skin. | No. |
 | **6. Thin Kernel orchestrator** | A small module that calls existing systems in order. No new chat, no new renderer, no new DB. | No. |
 
@@ -238,12 +240,12 @@ The owner's forward sequence is §8. Drive is placed after Reflection and before
 
 | Phase | Work | Status |
 |-------|------|--------|
-| **1. Memory Policy** | Episodic, semantic, and core memories, then consolidation. Still `companion_memories`. | Classification v1 is live (#560): episodic / semantic / protected core proposals. Consolidation is still open. |
+| **1. Memory Policy** | Episodic, semantic, and core memories, then consolidation. Still `companion_memories`. | Classification v1 is live (#560): episodic / semantic / protected core proposals. Consolidation v1 behind `memory_consolidation` (§12). |
 | **2. Self Model** | What the Anima believes she is capable of. Separate from the Operator Model. Separate from momentary self-state. | No. |
 | **3. Relationship Model** | Promote `anima-belonging` into the Kernel's model of the bond. | No. |
 | **4. Reflection Engine** | Turn experience into observations: what happened, which capability was in play, and how confident she is now versus how confident she needs to be. | No. |
 | **5. Drive Engine** | Internally maintained goals that close a gap between the present state and a better, attainable state. §9. | No. Design only. |
-| **6. Agency Engine** | Act versus silence. The tick in §5. | No. |
+| **6. Agency Engine** | Act versus silence. The tick in §5. | v1 behind `agency` (§11), built ahead of phases 2–5. It reads only systems that exist today; Self Model, Reflection and Drive plug in as extra percept fields later. |
 | **7. Anima Kernel** | Orchestration only. `animaKernel.ts` ticks the systems in order. It does not own a prompt, a renderer, or a store. | No. |
 
 Self-state v1 (`emotionalState.selfState`) stays momentary affect. The Self Model is the later system: beliefs about capability.
@@ -342,6 +344,8 @@ One module answers "is this roadmap piece on?": `isKernelFeatureEnabled` in `art
 | Drive Engine | `drive` | `ANIMA_KERNEL_DRIVE` | off |
 | Agency Engine | `agency` | `ANIMA_KERNEL_AGENCY` | off |
 | Anima Kernel (orchestration) | `kernel` | `ANIMA_KERNEL_ORCHESTRATOR` | off |
+| Memory consolidation (§12) | `memory_consolidation` | `ANIMA_KERNEL_MEMORY_CONSOLIDATION` | off |
+| Sensory layer (§13) | `senses` | `ANIMA_KERNEL_SENSES` | off |
 
 Only `1`, `true`, `yes`, and `on` turn a switch on (any case; surrounding space is ignored). Unset, empty, `false`, `0`, `off`, `no`, and any other value are off.
 
@@ -362,7 +366,7 @@ printf '%s' false | npx wrangler secret put ANIMA_KERNEL_SELF_MODEL
 npx wrangler secret delete ANIMA_KERNEL_SELF_MODEL
 ```
 
-Repeat for `ANIMA_KERNEL_RELATIONSHIP_MODEL`, `ANIMA_KERNEL_REFLECTION`, `ANIMA_KERNEL_DRIVE`, `ANIMA_KERNEL_AGENCY`, and `ANIMA_KERNEL_ORCHESTRATOR`. Delete returns the switch to the default off.
+Repeat for `ANIMA_KERNEL_RELATIONSHIP_MODEL`, `ANIMA_KERNEL_REFLECTION`, `ANIMA_KERNEL_DRIVE`, `ANIMA_KERNEL_AGENCY`, `ANIMA_KERNEL_ORCHESTRATOR`, `ANIMA_KERNEL_MEMORY_CONSOLIDATION`, and `ANIMA_KERNEL_SENSES`. Delete returns the switch to the default off.
 
 **Vercel.** Project → Settings → Environment Variables. Set the same name to `true` or `false` for Production, then redeploy the current deployment so the serverless function picks it up. No new commit. Unset means off.
 
@@ -408,3 +412,50 @@ Optional: `curl -sS http://127.0.0.1:8080/api/healthz` (no auth).
 | SSE / API | `done.companion_affect`; `GET /chat/memories/:id` → `companion_affect`; session context map |
 | UI | Existing MoodIndicator + Resonance Field (`artifacts/anima-protocol/src/lib/companionAffect.js`) |
 | Key hook | `radiationEventFromAffect` — see `docs/companion-affect.md`. Do not add a mood menu. |
+
+---
+
+## 11. Agency tick v1 — runtime notes
+
+Switch `agency` (`ANIMA_KERNEL_AGENCY`). Pure decision: `artifacts/api-server/src/lib/kernel/agencyTick.ts`. Percept + recording: `lib/kernel/agencyRuntime.ts`. Called from `proactiveMessages.runClaim` after a candidate is found and before the local model is touched, so a silent tick costs no tokens.
+
+**Scope.** The tick only gates the existing proactive actuator. It runs when the steward's chosen check-in frequency is already due, so it can make the Anima quieter or later than the clock — never more frequent than the steward consented to.
+
+| Step | v1 source |
+|------|-----------|
+| Perceive | gap since last message; newest message across **all** sessions (an unanswered outreach in one thread blocks the others); steward local hour (`settings.user_profile.timezone`, else the senses snapshot); conversational weather (`readConversationalWeather`); due thread (`agencyThreads`); self-state (`emotional_state.selfState`); senses (§13) |
+| Interpret | `thread_due` › `care_need` (anxious/sad/fearful/watchful ≥ 50) › `storm` › `stir` › `lull` (≥ 24 h) › `noise` |
+| Relevance | 0–1 score: thread +0.5, care +0.2, storm +0.15, gap up to +0.3, energy up to +0.1, open loops +0.05 |
+| Act / silence | Hard rules first, in order: `awaiting_reply` → `quiet_hours` → `steward_busy` → `cooldown`; then `low_relevance` below the threshold. Otherwise act (`follow_up_thread` or `check_in`). |
+
+Silence defers `proactive_message_preferences.next_message_at` by `retryAfterHours` and writes `silenceReason`, `lastTickAt`, `lastTickSituation` into `selfState` with one `jsonb_set` (chat's other `emotional_state` keys are untouched). An act also writes `lastActedAt`. If the tick throws, the claim continues exactly as before.
+
+Tuning (env, all optional): `ANIMA_AGENCY_RELEVANCE_THRESHOLD` (0.45), `ANIMA_AGENCY_QUIET_START_HOUR` (22), `ANIMA_AGENCY_QUIET_END_HOUR` (8), `ANIMA_AGENCY_COOLDOWN_FRACTION` (0.5 of the steward's frequency).
+
+---
+
+## 12. Memory consolidation v1 — runtime notes
+
+Switch `memory_consolidation` (`ANIMA_KERNEL_MEMORY_CONSOLIDATION`). Pure: `lib/memoryCore/consolidationCore.ts`. DB + model: `lib/memoryCore/consolidation.ts`. Scheduled on the quarter-hourly dream cron in `worker.ts`; Node/Vercel: `GET /api/notifications/memory/consolidate/run` with `CRON_SECRET`.
+
+Episodic `memory_events` (`turn`, `emotional_beat`, `decision`, `milestone`, `battle_outcome`) that are older than 24 h, embedded, not retracted and not yet consolidated are clustered with the dream layer's `clusterMemories`. The heaviest cluster of ≥ 3 is distilled by the **local** model (`localOnly`) into 1–4 literal statements, appended as one `note` event with `payload.kind = "consolidation"` and `payload.source_event_ids`. `recall_memories` already ranks `note` events, so nothing else changes. Sources stay recallable; a `retraction` still hides them.
+
+Dreams are the abstract counterpart of the same clusters; consolidation is the literal one. Neither updates or deletes.
+
+**Identity boundary.** A consolidated statement may describe the steward, the bond, or shared work. `cleanStatement` drops first person, anything whose subject is the Anima's name, standing directives ("Always…", "You must…") and meta talk. Changes to who the Anima is still go only through identity proposals.
+
+When the local model is busy, unavailable, or returns nothing usable, nothing is written. Idempotent via `dedupe_key = consolidation:<n>:<hash of source ids>`.
+
+Tuning: `ANIMA_CONSOLIDATION_MIN_AGE_HOURS` (24), `_LOOKBACK_DAYS` (14), `_MIN_CLUSTER` (3), `_CLUSTER_THRESHOLD` (0.75), `_MAX_PER_RUN` (4).
+
+---
+
+## 13. Sensory layer v1 — runtime notes
+
+Switch `senses` (`ANIMA_KERNEL_SENSES`). Pure: `lib/kernel/senses.ts`. Store: `lib/kernel/sensesStore.ts`. Route: `/api/senses` (Clerk). Client: `artifacts/anima-protocol/src/lib/animaSenses.js` (opt-in per device).
+
+The steward's device reports what it chooses to share; the server never reaches into a device. `PUT /api/senses` takes `{ timezone, calendar: [{ title, startsAt, endsAt }], device: { platform, battery, charging, online, focusMode } }`, whitelists and caps it (8 blocks, 48 h ahead, ≤ 12 h each, 80-char titles), and keeps **only the latest** snapshot on `user_profiles.data.senses`. It is ignored after 6 h. `GET` returns a summary without calendar titles; `DELETE` forgets it. `PUT` is refused (409) while the switch is off.
+
+v1 consumer: the agency tick waits (`steward_busy`) during a calendar block or focus mode. Calendar titles never enter a prompt. Weather is not a sense: the server already fetches it for the steward's region (`regionalWorldKnowledge`, Open-Meteo).
+
+A browser can share timezone, online and battery. Calendar and focus mode come from a native shell (iOS wrapper, EventKit / Focus status) posting the same JSON. The in-app opt-in toggle is not built yet; `setSensesOptIn(true)` is the hook for it.
