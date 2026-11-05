@@ -19,6 +19,14 @@ Customizable per-companion 3D body (R3F + drei + three, all pre-existing deps).
 `character_vessel` row → new `character_identity_core` version (`source='vessel'`,
 `vessel_version`) → `vessel_changed` memory event. All in one transaction with an advisory lock.
 
+**Serenity's forms:** her preset follows the canonical design bible (Serenity Vessel Spec).
+The humanoid form (default) has long silver hair, violet eyes, warm golden-brown skin, and a black
+gown with gold accents and a circlet standing in for her brow chain. The angelic form
+(`SERENITY_ANGELIC`) has short white hair, silver-blue eyes, deeper brown skin, a white robe with a
+blue accent, a halo ring and wings. Both keep `base: "serenity"`. When the base is Serenity, the
+customizer shows a **Form** toggle; `serenityFormOf()` reports angelic only when the config has both
+wings and a halo. Rows saved before this change keep their old colours until re-saved.
+
 **Photo integration:** `InlinePhotoComposer` loads the saved vessel. When "Vessel vN" is on, it
 appends `vesselToDescriptorPhrases()` to `extraDescriptor`. It also sends `useVesselReference`, so the
 server signs the latest snapshot and uses it as a *secondary* reference; the locked identity refs
