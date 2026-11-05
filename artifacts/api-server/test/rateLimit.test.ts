@@ -10,8 +10,10 @@ vi.mock("@clerk/express", () => ({
 import {
   clientIp,
   createRateLimit,
+  rateLimitBucketCountForTests,
   rateLimitKey,
   resetRateLimitStateForTests,
+  sweepExpiredRateLimits,
   stripIpPort,
 } from "../src/lib/rateLimit";
 
@@ -117,5 +119,30 @@ describe("createRateLimit", () => {
     chat(req, mockRes(), next);
     openai(req, mockRes(), next);
     expect(next).toHaveBeenCalledTimes(2);
+  });
+  it("uses the Cloudflare edge IP only on the Worker runtime", () => {
+    const req = mockReq({
+      ip: "10.0.0.1",
+      headers: { "cf-connecting-ip": "198.51.100.7", "x-forwarded-for": "1.2.3.4" },
+    } as Partial<Request>);
+    expect(clientIp(req, { ANIMA_RUNTIME: "worker" })).toBe("198.51.100.7");
+    // On Node / Cloud Run a caller could forge the header, so it is ignored.
+    expect(clientIp(req, { ANIMA_RUNTIME: "cloudrun" })).toBe("10.0.0.1");
+    expect(clientIp(req, {})).toBe("10.0.0.1");
+  });
+
+  it("sweeps expired buckets once the map grows", () => {
+    resetRateLimitStateForTests();
+    const limit = createRateLimit({ name: "sweep", max: 5, windowMs: 1_000 });
+    const start = Date.now();
+    vi.useFakeTimers();
+    vi.setSystemTime(start);
+    for (let i = 0; i < 1_000; i += 1) {
+      limit(mockReq({ ip: `192.0.2.${i % 250}-${i}` } as Partial<Request>), mockRes(), vi.fn());
+    }
+    expect(rateLimitBucketCountForTests()).toBe(1_000);
+    sweepExpiredRateLimits(start + 120_000);
+    expect(rateLimitBucketCountForTests()).toBe(0);
+    vi.useRealTimers();
   });
 });
