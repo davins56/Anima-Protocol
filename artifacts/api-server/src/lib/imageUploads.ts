@@ -247,6 +247,60 @@ export async function storeUploadedImage(
   };
 }
 
+export const AUDIO_TYPES = new Set(["audio/mpeg", "audio/wav"]);
+
+/** MP3 (ID3 tag or MPEG frame sync) or WAV (RIFF…WAVE). */
+export function audioBytesMatchType(contentType: string, bytes: Uint8Array): boolean {
+  if (contentType === "audio/mpeg") {
+    const id3 = bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33;
+    const sync = bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0;
+    return id3 || sync;
+  }
+  if (contentType === "audio/wav") {
+    return (
+      String.fromCharCode(...bytes.subarray(0, 4)) === "RIFF" &&
+      String.fromCharCode(...bytes.subarray(8, 12)) === "WAVE"
+    );
+  }
+  return false;
+}
+
+/**
+ * Server-produced audio (an Anima's voice note) in the same blob table as
+ * uploads, served by the same GET /api/storage/objects/uploads/:id route with
+ * its own content type. Not reachable from the browser upload endpoint, which
+ * stays image-only.
+ */
+export async function storeUploadedAudio(
+  userId: string,
+  bytes: Uint8Array,
+  contentType: string,
+): Promise<{ id: string; objectPath: string; contentType: string; byteSize: number }> {
+  const type = contentType.split(";")[0].trim().toLowerCase();
+  if (!AUDIO_TYPES.has(type)) throw new Error("Only MP3 or WAV audio is supported");
+  if (bytes.byteLength <= 0) throw new Error("Empty audio payload");
+  if (bytes.byteLength > MAX_UPLOAD_BYTES) throw new Error("Audio is too large (max 1 MB)");
+  if (!audioBytesMatchType(type, bytes)) throw new Error("That file doesn't look like MP3 or WAV audio.");
+  const id = randomUUID();
+  const row = {
+    id,
+    userId,
+    contentType: type,
+    dataBase64: Buffer.from(bytes).toString("base64"),
+    byteSize: bytes.byteLength,
+  };
+  await withTransientDbRetry(async () => {
+    try {
+      await insertUploadedImageRow(row);
+    } catch (err) {
+      if (!isMissingRelationError(err)) throw err;
+      await ensureSchemaOnce();
+      await insertUploadedImageRow(row);
+    }
+  });
+  return { id, objectPath: objectPathForUploadId(id), contentType: type, byteSize: bytes.byteLength };
+}
+
 /** Owner-only. False when the row is missing or belongs to someone else. */
 export async function deleteUploadedImage(userId: string, id: string): Promise<boolean> {
   const owner = String(userId || "").trim();

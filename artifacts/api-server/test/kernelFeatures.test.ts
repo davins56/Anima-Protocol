@@ -43,6 +43,7 @@ describe("kernel feature switches", () => {
       kernel: false,
       memory_consolidation: false,
       senses: false,
+      media: false,
     });
     for (const feature of FEATURES) {
       expect(isKernelFeatureEnabled(feature)).toBe(false);
@@ -105,6 +106,7 @@ describe("kernel feature switches", () => {
       kernel: false,
       memory_consolidation: false,
       senses: false,
+      media: false,
     });
   });
 

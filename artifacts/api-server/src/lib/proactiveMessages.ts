@@ -2,6 +2,8 @@ import webpush, { type PushSubscription as WebPushSubscription } from "web-push"
 import { dueThread, extractOpenThreads, threadFollowUpInstruction } from "./agencyThreads";
 import { isKernelFeatureEnabled } from "./kernelFeatures";
 import { recordAgencyOutcome, runAgencyTick } from "./kernel/agencyRuntime";
+import { maybeOutreachMedia, type OutreachMedia } from "./media/outreachMedia";
+import { pushTitleFor, type OutreachMediaKind } from "./media/outreachMediaCore";
 import { dreamConfig, dreamOpenerInstruction, shouldSurfaceDream } from "./dreams/dreamCore";
 import { pickDreamFragment, recordDreamSurfacing } from "./dreams/dreamLayer";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
@@ -430,8 +432,16 @@ async function persistMessage(
   userId: string,
   candidate: Candidate,
   content: string,
+  media: OutreachMedia | null = null,
 ): Promise<void> {
-  await persistCompanionMessage(userId, candidate, content, { source: "proactive_push" }, { proactive: true });
+  const metadata: Record<string, unknown> = { source: "proactive_push" };
+  const extra: Record<string, unknown> = { proactive: true };
+  if (media) {
+    metadata.media_kind = media.kind;
+    metadata.attachments = [media.attachment];
+    extra.attachments = [media.attachment];
+  }
+  await persistCompanionMessage(userId, candidate, content, metadata, extra);
 }
 
 /**
@@ -513,6 +523,7 @@ async function deliverPush(
   userId: string,
   candidate: Candidate,
   content: string,
+  mediaKind: OutreachMediaKind | null = null,
 ): Promise<number> {
   if (!configureWebPush()) return 0;
   const subscriptions = await db
@@ -520,7 +531,7 @@ async function deliverPush(
     .from(pushSubscriptions)
     .where(eq(pushSubscriptions.userId, userId));
   const payload = JSON.stringify({
-    title: `${candidate.character.name} sent you a message`,
+    title: pushTitleFor(String(candidate.character.name), mediaKind),
     body: content,
     icon: "/icon-192.png",
     badge: "/icon-192.png",
@@ -649,7 +660,6 @@ async function runClaim(claim: ClaimedPreference): Promise<ProactiveRunResult> {
       };
     }
     let content = "";
-    let delivered = 0;
     try {
       content = await generateMessage(
         claim.userId,
@@ -657,17 +667,30 @@ async function runClaim(claim: ClaimedPreference): Promise<ProactiveRunResult> {
         background.signal,
         background.maxTokens(120),
       );
-      if (!content) {
-        throw new Error("The model returned an empty proactive message");
-      }
-      await persistMessage(claim.userId, candidate, content);
-      delivered = await deliverPush(claim.userId, candidate, content);
-      await completePreference(claim.userId, candidate.sessionId);
-      if (decision?.act) {
-        await recordAgencyOutcome(claim.userId, characterId, decision).catch(() => {});
-      }
     } finally {
+      // Release before media and delivery: a photo render must not hold the
+      // local model slot that live chat needs.
       await background.release();
+    }
+    if (!content) {
+      throw new Error("The model returned an empty proactive message");
+    }
+    // Anima media (ANIMA_KERNEL_MEDIA): sometimes a photo or voice note rides
+    // along with the words. Null on any failure → text only.
+    const media = await maybeOutreachMedia({
+      userId: claim.userId,
+      characterId,
+      characterName: String(candidate.character.name),
+      sessionId: candidate.sessionId,
+      content,
+      situation: decision?.situation ?? null,
+      intent: decision?.act ? decision.intent : null,
+    });
+    await persistMessage(claim.userId, candidate, content, media);
+    const delivered = await deliverPush(claim.userId, candidate, content, media?.kind ?? null);
+    await completePreference(claim.userId, candidate.sessionId);
+    if (decision?.act) {
+      await recordAgencyOutcome(claim.userId, characterId, decision).catch(() => {});
     }
 
     // Fire-and-forget Relationship OS journal + Home artifact.
