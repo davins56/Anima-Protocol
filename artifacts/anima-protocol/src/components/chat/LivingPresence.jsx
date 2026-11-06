@@ -1,5 +1,5 @@
 // @ts-check
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import {
   getPose,
   getIdleSway,
@@ -41,6 +41,7 @@ export default function LivingPresence({
   detail = false,
   onExpand,
 }) {
+  const reduceMotion = useReducedMotion();
   const name = character?.name || "Companion";
   const pose = getPose(emotion, intensity);
   const r = Math.max(0, Math.min(100, Number(resonance) || 0));
@@ -80,7 +81,7 @@ export default function LivingPresence({
         <motion.div
           className="relative"
           style={{ width, height: size }}
-          animate={{
+          animate={reduceMotion ? { rotate: 0, y: 0 } : {
             rotate: pose.bounce
               ? [-sway, sway, -sway]
               : [-sway * 0.6, sway * 0.6, -sway * 0.6],
@@ -103,7 +104,7 @@ export default function LivingPresence({
             style={{
               background: `radial-gradient(ellipse at 50% 42%, ${emotionCss(emotion, 0.22 + glow * 0.18)}, transparent 68%)`,
             }}
-            animate={{ opacity: [0.55, 0.9, 0.55] }}
+            animate={reduceMotion ? { opacity: 0.7 } : { opacity: [0.55, 0.9, 0.55] }}
             transition={{ duration: breath * 1.3, repeat: Infinity, ease: "easeInOut" }}
             aria-hidden="true"
           />
@@ -115,7 +116,7 @@ export default function LivingPresence({
               data-presence-sprite
               className="relative z-10 h-full w-full object-contain object-bottom"
               draggable={false}
-              animate={{
+              animate={reduceMotion ? { scale: 1, filter: "none" } : {
                 scale: speaking ? [1, 1.03, 1] : [1, 1.012, 1],
                 filter: speaking
                   ? [
@@ -145,7 +146,7 @@ export default function LivingPresence({
                 background: accent,
                 boxShadow: `0 0 10px ${accent}`,
               }}
-              animate={{
+              animate={reduceMotion ? { opacity: 1 } : {
                 left: ["72%", "82%", "50%", "18%", "72%"],
                 top: ["10%", "4%", "2%", "4%", "10%"],
                 opacity: [0.4, 1, 0.5, 1, 0.4],
