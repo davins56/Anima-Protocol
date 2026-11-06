@@ -13,3 +13,12 @@
 :root[data-forge-bubble="square"] [data-message-bubble] { border-radius: .15rem; }
 :root[data-forge-navigation="floating"] .tab-bar { border-radius: 1.25rem; margin-inline: max(12px, env(safe-area-inset-left)); width: calc(100% - 24px); }
 @media (max-width: 600px) { :root[data-forge-navigation="floating"] .tab-bar { max-width: calc(100vw - 24px); } }
+
+/* Phase 2: compact navigation stays visible and keyboard-accessible. */
+:root[data-forge-navigation="minimal"] .tab-bar { max-width: min(460px, calc(100vw - 24px)); margin-inline: auto; border-radius: 1rem; }
+:root[data-forge-navigation="minimal"] .tab-bar button { min-width: 40px; }
+/* Phase 3: interaction styles; OS reduced-motion always wins. */
+:root[data-forge-transition="none"] button, :root[data-forge-transition="none"] a { transition: none !important; }
+:root[data-forge-transition="expressive"] button, :root[data-forge-transition="expressive"] a { transition-duration: 280ms; transition-timing-function: cubic-bezier(.2,.8,.2,1); }
+:root[data-forge-tap-feedback="enabled"] button:active { transform: scale(.97); }
+@media (prefers-reduced-motion: reduce) { :root[data-forge-tap-feedback="enabled"] button:active { transform: none; } }
