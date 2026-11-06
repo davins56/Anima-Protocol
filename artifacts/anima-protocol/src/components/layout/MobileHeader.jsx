@@ -1,5 +1,5 @@
 import { useNavigate, useLocation } from "react-router-dom";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, Cpu } from "lucide-react";
 
 // Routes where the back button should NOT appear
 const ROOT_ROUTES = new Set(["/", "/onboarding"]);
@@ -71,9 +71,10 @@ export default function MobileHeader() {
         <ChevronLeft className="w-5 h-5" />
         <span className="font-mono text-[10px] tracking-widest uppercase">Back</span>
       </button>
-      <h1 className="flex-1 text-center font-mono text-[11px] tracking-[0.25em] uppercase text-primary/80 pr-12">
+      <h1 className="flex-1 text-center font-mono text-[11px] tracking-[0.25em] uppercase text-primary/80 truncate">
         {title}
       </h1>
+      <button type="button" onClick={() => navigate("/?pet=1")} aria-label="Open Anima PET" className="min-h-11 min-w-11 flex items-center justify-center rounded-lg text-primary/80 hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><Cpu className="w-5 h-5" /></button>
     </div>
   );
 }
