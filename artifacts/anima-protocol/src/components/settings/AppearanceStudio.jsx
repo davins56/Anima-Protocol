@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { APPEARANCE_DEFAULTS, readAppearance, saveAppearance } from "@/lib/appearanceStudio";
 
-const themes = [["original", "Original"], ["nebula", "Nebula"], ["celestial", "Celestial"], ["emerald", "Emerald"], ["eclipse", "Eclipse"]];
+const themes = [["original", "Original"], ["nebula", "Nebula"], ["celestial", "Celestial"], ["emerald", "Emerald"], ["eclipse", "Eclipse"], ["cybernetic","Cybernetic"], ["garden","Enchanted Garden"], ["academia","Dark Academia"], ["zen","Zen Garden"], ["synthwave","Synthwave"], ["arcane","Arcane Realm"], ["brutalist","Neo-Brutalist"], ["soft-aura","Soft Aura"], ["living","Living Companion"]];
 const layouts = [["classic", "Classic"], ["compact", "Compact"], ["immersive", "Immersive"], ["dashboard", "Dashboard"]];
 export default function AppearanceStudio() {
   const [value, setValue] = useState(readAppearance);
