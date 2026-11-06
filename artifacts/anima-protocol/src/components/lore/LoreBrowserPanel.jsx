@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, X, BookOpen, Users, MapPin, Zap, ChevronRight } from 'lucide-react';
 
@@ -22,7 +22,7 @@ export default function LoreBrowserPanel({ sessionId, isOpen = true, onClose }) 
     loadLore();
 
     // Subscribe to lore updates
-    const unsubscribe = base44.entities.WorldState.subscribe((event) => {
+    const unsubscribe = animaClient.entities.WorldState.subscribe((event) => {
       if (event.data?.session_id === sessionId) {
         loadLore();
       }
@@ -33,7 +33,7 @@ export default function LoreBrowserPanel({ sessionId, isOpen = true, onClose }) 
 
   const loadLore = async () => {
     try {
-      const data = await base44.entities.WorldState.filter(
+      const data = await animaClient.entities.WorldState.filter(
         { session_id: sessionId, is_active: true },
         '-created_date',
         200

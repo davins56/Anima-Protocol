@@ -1,6 +1,6 @@
 // @ts-check
 import { useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 /**
  * @param {any[]} characters
@@ -12,7 +12,7 @@ export function useCharacterEnrichment(characters) {
     // Enrich non-enriched characters from Wikipedia
     characters.forEach((/** @type {any} */ char) => {
       if (!char._enriched_at && !char._isAnima) {
-        base44.functions.invoke('enrichCharacterFromWikipedia', {
+        animaClient.functions.invoke('enrichCharacterFromWikipedia', {
           character_id: char.id,
           character_name: char.name,
           universe: char.universe,

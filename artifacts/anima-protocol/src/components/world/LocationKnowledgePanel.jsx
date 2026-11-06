@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { MapPin, Clock, Users, Sparkles, ChevronDown, Loader } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -20,7 +20,7 @@ export default function LocationKnowledgePanel({ sessionId, characterId, charact
     setLoading(true);
     try {
       // Fetch all locations for session
-      const locs = await base44.asServiceRole.entities.Location.filter(
+      const locs = await animaClient.asServiceRole.entities.Location.filter(
         { session_id: sessionId },
         "-created_date",
         100
@@ -29,7 +29,7 @@ export default function LocationKnowledgePanel({ sessionId, characterId, charact
 
       // Load character's location knowledge if available
       if (characterId) {
-        const charMemories = await base44.entities.CharacterMemory.filter(
+        const charMemories = await animaClient.entities.CharacterMemory.filter(
           { character_id: characterId, category: "location_knowledge" },
           "-created_date",
           50
@@ -49,7 +49,7 @@ export default function LocationKnowledgePanel({ sessionId, characterId, charact
     setLoading(true);
     try {
       // Fetch recent messages
-      const sessions = await base44.asServiceRole.entities.ChatSession.list("-updated_date", 1);
+      const sessions = await animaClient.asServiceRole.entities.ChatSession.list("-updated_date", 1);
       const session = sessions.find((s) => s.id === sessionId);
 
       if (!session || !session.messages) {
@@ -58,7 +58,7 @@ export default function LocationKnowledgePanel({ sessionId, characterId, charact
       }
 
       // Extract locations using LLM function
-      const result = await base44.functions.invoke("extractLocationContext", {
+      const result = await animaClient.functions.invoke("extractLocationContext", {
         session_id: sessionId,
         messages: session.messages.slice(-30),
       });
@@ -67,7 +67,7 @@ export default function LocationKnowledgePanel({ sessionId, characterId, charact
         // Save location knowledge for character
         const locationsForChar = result.data.character_locations[characterName] || [];
         for (const loc of locationsForChar) {
-          await base44.entities.CharacterMemory.create({
+          await animaClient.entities.CharacterMemory.create({
             character_id: characterId,
             category: "location_knowledge",
             fact: `At ${loc.location}: ${loc.context}`,

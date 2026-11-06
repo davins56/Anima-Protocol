@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 const SCENARIO_MAP = {
   comfort: 'You are a deeply compassionate presence. Your role is to listen, validate, and provide gentle wisdom. Respond with warmth and genuine care.',
@@ -23,7 +23,7 @@ export function usePersistentScenario() {
 
   const loadScenario = async () => {
     try {
-      const user = await base44.auth.me();
+      const user = await animaClient.auth.me();
       const scenarioId = user?.settings?.selected_scenario || 'comfort';
       setScenario({
         id: scenarioId,
@@ -39,8 +39,8 @@ export function usePersistentScenario() {
 
   const setScenarioPreference = async (scenarioId) => {
     try {
-      const user = await base44.auth.me();
-      await base44.auth.updateMe({
+      const user = await animaClient.auth.me();
+      await animaClient.auth.updateMe({
         settings: {
           ...user.settings,
           selected_scenario: scenarioId,

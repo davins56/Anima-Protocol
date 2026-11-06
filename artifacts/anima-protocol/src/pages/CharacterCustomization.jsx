@@ -1,6 +1,6 @@
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { base44, waitForStoreAuth } from "@/api/base44Client";
+import { animaClient, waitForStoreAuth } from "@/api/animaClient";
 import CharacterCustomizer from "@/components/character/CharacterCustomizer";
 import { ChevronLeft, Users, Sparkles } from "lucide-react";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
@@ -36,7 +36,7 @@ export default function CharacterCustomization() {
         waitForStoreAuth(STORE_AUTH_WAIT_MS),
       ]).catch(() => {});
       const [chars, animaList] = await Promise.all([
-        base44.entities.Character.list("-created_date", 500).catch(() => []),
+        animaClient.entities.Character.list("-created_date", 500).catch(() => []),
         listPersonalAnimas(500).catch(() => []),
       ]);
       // Generator companions belong on Animas, not the franchise roster tab.

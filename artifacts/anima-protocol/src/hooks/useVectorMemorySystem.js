@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 export function useVectorMemorySystem(characterId) {
   const [searchResults, setSearchResults] = useState([]);
@@ -12,7 +12,7 @@ export function useVectorMemorySystem(characterId) {
     async (sessionId, memoryType, title, content, options = {}) => {
       if (!characterId) return null;
       try {
-        const result = await base44.functions.invoke('createVectorMemory', {
+        const result = await animaClient.functions.invoke('createVectorMemory', {
           character_id: characterId,
           session_id: sessionId,
           memory_type: memoryType,
@@ -39,7 +39,7 @@ export function useVectorMemorySystem(characterId) {
       if (!characterId) return [];
       setSearching(true);
       try {
-        const result = await base44.functions.invoke('vectorMemorySearch', {
+        const result = await animaClient.functions.invoke('vectorMemorySearch', {
           character_id: characterId,
           query,
           memory_types: options.memoryTypes,
@@ -65,7 +65,7 @@ export function useVectorMemorySystem(characterId) {
     async (characterBId, sessionId, scoreDelta, options = {}) => {
       if (!characterId) return null;
       try {
-        const result = await base44.functions.invoke('evolveRelationshipHistory', {
+        const result = await animaClient.functions.invoke('evolveRelationshipHistory', {
           character_a_id: characterId,
           character_b_id: characterBId,
           session_id: sessionId,
@@ -88,7 +88,7 @@ export function useVectorMemorySystem(characterId) {
     if (!characterId) return null;
     setLoading(true);
     try {
-      const result = await base44.functions.invoke('getRelationshipNarrative', {
+      const result = await animaClient.functions.invoke('getRelationshipNarrative', {
         character_a_id: characterId,
         character_b_id: characterBId,
       });

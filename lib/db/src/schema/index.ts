@@ -235,7 +235,7 @@ export const memoryEmbeddings = pgTable(
 export type MemoryEmbedding = typeof memoryEmbeddings.$inferSelect;
 
 // Generic per-user entity store. One row per (user, entity name, entity id),
-// holding the whole record as JSON. Backs the client's base44 entity CRUD so
+// holding the whole record as JSON. Backs the client's animaClient entity CRUD so
 // that all user progress (characters, chats, journals, inventory, quests, world
 // state, settings, etc.) persists on the server scoped to the Clerk account.
 export const userEntities = pgTable(

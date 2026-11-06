@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Loader, Palette, Save } from "lucide-react";
 import { motion } from "framer-motion";
 import SpeakToAnimaButton from "@/components/anima/SpeakToAnimaButton";
@@ -84,7 +84,7 @@ export default function CharacterCustomizer({
 
   const onTestVoiceSend = async (userText) => {
     const sysPrompt = `You are ${character.name}. ${character.personality || ''} ${character.speaking_style || ''}. Respond very briefly.`;
-    const res = await base44.integrations.Core.InvokeLLM({
+    const res = await animaClient.integrations.Core.InvokeLLM({
       prompt: `User says: "${userText}"`,
       system_prompt: sysPrompt,
       max_tokens: 60,

@@ -28,7 +28,7 @@ vi.mock("./authBridge", () => ({
   waitForStoreAuth: vi.fn(),
 }));
 
-import { base44 } from "./base44Client";
+import { animaClient } from "./animaClient";
 
 const chatSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../pages/Chat.jsx"),
@@ -49,7 +49,7 @@ describe("Chat sidecar InvokeLLM calls", () => {
   it("marks the Book of Echoes journal call as a sidecar", () => {
     const journal = sliceFrom(chatSource, "Book of Echoes", 4500);
     expect(journal).toContain("sidecar: true");
-    expect(journal).toContain("base44.integrations.Core.InvokeLLM");
+    expect(journal).toContain("animaClient.integrations.Core.InvokeLLM");
     expect(journal).toContain("BookOfEcho.create");
   });
 
@@ -64,7 +64,7 @@ describe("Chat sidecar InvokeLLM calls", () => {
     chatCompletions.mockImplementation(async function* () {
       yield { done: true, skipped: true };
     });
-    const result = await base44.integrations.Core.InvokeLLM({
+    const result = await animaClient.integrations.Core.InvokeLLM({
       prompt: "Write today's echo.",
       response_json_schema: { type: "object" },
       sidecar: true,
@@ -79,7 +79,7 @@ describe("Chat sidecar InvokeLLM calls", () => {
     chatCompletions.mockImplementation(async function* () {
       yield { done: true, skipped: true };
     });
-    const result = await base44.integrations.Core.InvokeLLM({
+    const result = await animaClient.integrations.Core.InvokeLLM({
       prompt: "Serenity speaks.",
       sidecar: true,
     });
@@ -91,7 +91,7 @@ describe("Chat sidecar InvokeLLM calls", () => {
       yield { content: '{"entry":"Today we laughed.","theme":"laughter"}' };
       yield { done: true };
     });
-    const result = await base44.integrations.Core.InvokeLLM({
+    const result = await animaClient.integrations.Core.InvokeLLM({
       prompt: "Write today's echo.",
       response_json_schema: {
         type: "object",

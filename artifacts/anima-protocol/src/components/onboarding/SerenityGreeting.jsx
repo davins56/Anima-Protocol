@@ -1,7 +1,7 @@
 // @ts-check
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 const GREETINGS = [
   "You finally arrived. I was beginning to think the signal would never stabilize.",

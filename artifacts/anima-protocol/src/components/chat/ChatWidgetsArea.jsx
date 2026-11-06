@@ -22,7 +22,7 @@ import WorldPulseFeed from "@/components/world/WorldPulseFeed";
 import AtmosphericDescription from "@/components/world/AtmosphericDescription";
 import SystemAlert from "./SystemAlert";
 import NarrativeImpactDashboard from "@/components/dashboard/NarrativeImpactDashboard";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { appendAmbientMessage } from "@/lib/appendAmbientMessage";
 
 export default function ChatWidgetsArea({
@@ -195,7 +195,7 @@ export default function ChatWidgetsArea({
                     personality: newPersonality,
                     speaking_style: sessionActiveChar.speaking_style,
                   };
-                  base44.entities.Character.update(sessionActiveChar.id, updates);
+                  animaClient.entities.Character.update(sessionActiveChar.id, updates);
                   setCharacterEvolutions(prev => {
                     const next = { ...prev };
                     delete next[sessionActiveChar.id];
@@ -238,7 +238,7 @@ export default function ChatWidgetsArea({
                 // Append only — replace against a possibly-stale messages
                 // snapshot can delete concurrent turns.
                 appendAmbientMessage({
-                  appendMessage: base44.messages.append,
+                  appendMessage: animaClient.messages.append,
                   sessionId,
                   message: qMsg,
                   setActiveSession,

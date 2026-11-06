@@ -76,10 +76,10 @@ vi.mock("@/lib/loadCustomiseAnimaCompanions", () => ({
   loadCustomiseAnimaCompanions: (...args) => loadCompanionsMock(...args),
 }));
 
-vi.mock("@/api/base44Client", () => ({
+vi.mock("@/api/animaClient", () => ({
   exportData: vi.fn(),
   waitForStoreAuth: vi.fn().mockResolvedValue("token"),
-  base44: {
+  animaClient: {
     auth: {
       me: meMock,
       updateMe: updateMeMock,

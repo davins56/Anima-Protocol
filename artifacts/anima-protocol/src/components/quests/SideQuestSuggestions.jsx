@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Scroll, X, ChevronDown, ChevronUp, Sparkles, Package, BookOpen, Swords } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 
 const DIFFICULTY_COLORS = {
   easy: "text-green-400 border-green-400/30 bg-green-400/5",
@@ -143,7 +143,7 @@ export default function SideQuestSuggestions({
   const fetchSuggestions = async () => {
     setLoading(true);
     try {
-      const res = await base44.functions.invoke("suggestSideQuests", {
+      const res = await animaClient.functions.invoke("suggestSideQuests", {
         session_id: sessionId,
         character_id: characterId,
         recent_messages: recentMessages.slice(-10),

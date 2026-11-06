@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
 
 export default function RelationshipNetworkDashboard({ sessionId }) {
@@ -20,9 +20,9 @@ export default function RelationshipNetworkDashboard({ sessionId }) {
   const loadData = async () => {
     setLoading(true);
     const [rels, chars, points] = await Promise.all([
-      base44.entities.CharacterRelationship.filter({ session_id: sessionId }, "-updated_date", 100),
-      base44.entities.Character.list("-created_date", 100),
-      base44.entities.Storypoint.filter({ session_id: sessionId }, "order", 100),
+      animaClient.entities.CharacterRelationship.filter({ session_id: sessionId }, "-updated_date", 100),
+      animaClient.entities.Character.list("-created_date", 100),
+      animaClient.entities.Storypoint.filter({ session_id: sessionId }, "order", 100),
     ]);
     setRelationships(rels || []);
     setCharacters(chars || []);

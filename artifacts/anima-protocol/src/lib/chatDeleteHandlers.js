@@ -6,7 +6,7 @@
 // before deleting a whole session, and navigating away from a session that is
 // being deleted while it is the active one.
 
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { deleteWithUndo, deleteArrayItemWithUndo } from "@/lib/undoableDelete";
 
 // Delete a whole chat session after a confirm prompt, with an undo window.
@@ -49,7 +49,7 @@ export async function deleteMessageFlow(idx, { activeSession, setActiveSession }
     index: idx,
     label: "Message",
     onChange: async () => {
-      const fresh = await base44.entities.ChatSession.get(sessionId);
+      const fresh = await animaClient.entities.ChatSession.get(sessionId);
       if (fresh) {
         setActiveSession((prev) =>
           prev && prev.id === sessionId

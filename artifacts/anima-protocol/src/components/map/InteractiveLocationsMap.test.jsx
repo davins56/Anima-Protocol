@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import InteractiveLocationsMap from "./InteractiveLocationsMap";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 
-vi.mock("@/api/base44Client", () => ({
-  base44: {
+vi.mock("@/api/animaClient", () => ({
+  animaClient: {
     entities: {
       WorldState: {
         filter: vi.fn(),
@@ -22,12 +22,12 @@ vi.mock("@/api/base44Client", () => ({
 describe("InteractiveLocationsMap", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    base44.entities.ChatSession.list.mockResolvedValue([]);
+    animaClient.entities.ChatSession.list.mockResolvedValue([]);
   });
 
   it("renders default fallback location markers when DB records are empty", async () => {
-    base44.entities.WorldState.filter.mockResolvedValue([]);
-    base44.entities.Location.list.mockResolvedValue([]);
+    animaClient.entities.WorldState.filter.mockResolvedValue([]);
+    animaClient.entities.Location.list.mockResolvedValue([]);
 
     render(<InteractiveLocationsMap sessionId={null} />);
 
@@ -37,7 +37,7 @@ describe("InteractiveLocationsMap", () => {
   });
 
   it("renders locations returned from WorldState and Location entities", async () => {
-    base44.entities.WorldState.filter.mockResolvedValue([
+    animaClient.entities.WorldState.filter.mockResolvedValue([
       {
         id: "ws-1",
         subject: "The Air Temple",
@@ -46,7 +46,7 @@ describe("InteractiveLocationsMap", () => {
         session_id: "s1",
       },
     ]);
-    base44.entities.Location.list.mockResolvedValue([
+    animaClient.entities.Location.list.mockResolvedValue([
       {
         id: "loc-1",
         name: "Stark Tower",

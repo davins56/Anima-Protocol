@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Loader, Plus, X, Edit2, Trash2, Brain, Zap } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -43,7 +43,7 @@ export default function CharacterMemoryManager({ characterId, characterName }) {
     setLoading(true);
     setError("");
     try {
-      const data = await base44.entities.CharacterMemory.filter(
+      const data = await animaClient.entities.CharacterMemory.filter(
         { character_id: characterId },
         "-created_date",
         100
@@ -61,7 +61,7 @@ export default function CharacterMemoryManager({ characterId, characterName }) {
     if (!characterId || !newMemory.trim()) return;
     setError("");
     try {
-      await base44.entities.CharacterMemory.create({
+      await animaClient.entities.CharacterMemory.create({
         character_id: characterId,
         fact: newMemory.trim(),
         category: newTags.length > 0 ? newTags[0] : "personal",
@@ -81,7 +81,7 @@ export default function CharacterMemoryManager({ characterId, characterName }) {
     if (!editText.trim()) return;
     setError("");
     try {
-      await base44.entities.CharacterMemory.update(id, {
+      await animaClient.entities.CharacterMemory.update(id, {
         fact: editText.trim(),
         tags: editTags,
       });
@@ -102,7 +102,7 @@ export default function CharacterMemoryManager({ characterId, characterName }) {
     if (!ok) return;
     setError("");
     try {
-      await base44.entities.CharacterMemory.delete(id);
+      await animaClient.entities.CharacterMemory.delete(id);
       await loadMemories();
     } catch (err) {
       console.error("Error deleting memory:", err);
@@ -131,7 +131,7 @@ Provide a concise, narrative summary (2-3 sentences) that captures:
 3. Character's emotional trajectory
 Keep it vivid and story-focused.`;
 
-      const result = await base44.integrations.Core.InvokeLLM({
+      const result = await animaClient.integrations.Core.InvokeLLM({
         prompt,
       });
 

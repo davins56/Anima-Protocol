@@ -4,14 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import MessageBubble from "@/components/chat/MessageBubble";
 import { useDivergentPaths } from "@/hooks/useDivergentPaths";
 import { useLoreKeywordScanning } from "@/hooks/useLoreKeywordScanning";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import {
   resetLocalOnlyLlmChainForTests,
   setLocalOnlyLlmChainForTests,
 } from "@/lib/localOnlyLlm";
 
-vi.mock("@/api/base44Client", () => ({
-  base44: {
+vi.mock("@/api/animaClient", () => ({
+  animaClient: {
     functions: {
       invoke: vi.fn(async () => ({ data: { context: [], paths: [], linked_messages: [] } })),
     },
@@ -52,7 +52,7 @@ describe("local-only chat transcript", () => {
 
   beforeEach(() => {
     setLocalOnlyLlmChainForTests(true);
-    base44.functions.invoke.mockClear();
+    animaClient.functions.invoke.mockClear();
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -91,6 +91,6 @@ describe("local-only chat transcript", () => {
       await new Promise((resolve) => setTimeout(resolve, 900));
     });
 
-    expect(base44.functions.invoke).not.toHaveBeenCalled();
+    expect(animaClient.functions.invoke).not.toHaveBeenCalled();
   });
 });

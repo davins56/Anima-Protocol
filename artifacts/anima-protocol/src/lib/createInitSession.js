@@ -1,4 +1,4 @@
-import { awaitCompanionStoreAuth, base44 } from "@/api/base44Client";
+import { awaitCompanionStoreAuth, animaClient } from "@/api/animaClient";
 import { isRetryableStoreWriteError, isStoreTimeoutError } from "@/lib/storeErrorSignals";
 import { STORE_SESSION_CREATE_RETRY_LIMIT } from "@/lib/storeTimeouts";
 import { isTherapySession, therapyOpeningMessage } from "@/lib/therapyManuals";
@@ -321,9 +321,9 @@ export function beginBundledStarterUpsert({
 export async function createInitChatSession(
   payload,
   {
-    create = (data) => base44.entities.ChatSession.create(data),
+    create = (data) => animaClient.entities.ChatSession.create(data),
     persistMessages = (sessionId, messages) =>
-      base44.messages.replace(sessionId, messages),
+      animaClient.messages.replace(sessionId, messages),
     retryLimit = STORE_SESSION_CREATE_RETRY_LIMIT,
     waitForAuth = () => awaitCompanionStoreAuth(),
   } = {},

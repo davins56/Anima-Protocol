@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { useLocalOnlyLlmChain } from '@/lib/localOnlyLlm';
 
 export const useDivergentPaths = (sessionId, characterId, characterName, messages) => {
@@ -15,7 +15,7 @@ export const useDivergentPaths = (sessionId, characterId, characterName, message
 
     setLoading(true);
     try {
-      const result = await base44.functions.invoke('generateDivergentPaths', {
+      const result = await animaClient.functions.invoke('generateDivergentPaths', {
         session_id: sessionId,
         character_id: characterId,
         character_name: characterName,

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Upload, FileText, X, Loader, Lock } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { useNavigate } from "react-router-dom";
 import { useBiometricAuth } from "@/hooks/useBiometricAuth";
 import { useConfirm } from "@/lib/ConfirmDialog";
@@ -72,7 +72,7 @@ export default function YnStoryImporter({ onClose }) {
     try {
       if (mode === "username") {
         // Fetch stories by username
-        const result = await base44.functions.invoke("fetchYnStoryByUsername", {
+        const result = await animaClient.functions.invoke("fetchYnStoryByUsername", {
           username: content.trim(),
         });
         
@@ -88,7 +88,7 @@ export default function YnStoryImporter({ onClose }) {
             const storyContent = story.content || story.text || story.body || "";
             if (!storyContent) continue;
             
-            await base44.entities.ChatSession.create({
+            await animaClient.entities.ChatSession.create({
               title: story.title || story.name || "Imported Y/n Story",
               mode: "solo",
               messages: [
@@ -116,7 +116,7 @@ export default function YnStoryImporter({ onClose }) {
         onClose?.();
       } else {
         // Parse pasted or uploaded content
-        const result = await base44.functions.invoke("parseYnStory", {
+        const result = await animaClient.functions.invoke("parseYnStory", {
           content: content.trim(),
         });
         const sessionId = result?.data?.session_id || result?.session_id;

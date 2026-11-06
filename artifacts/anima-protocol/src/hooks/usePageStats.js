@@ -1,6 +1,6 @@
 // @ts-check
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 /**
  * Batches user data + entity counts in a single query.
@@ -11,9 +11,9 @@ export function usePageStats() {
     queryKey: ['pageStats'],
     queryFn: async () => {
       const [user, sessions, chars] = await Promise.all([
-        base44.auth.me(),
-        base44.entities.ChatSession.list('-updated_date', 1),
-        base44.entities.Character.list('-created_date', 1),
+        animaClient.auth.me(),
+        animaClient.entities.ChatSession.list('-updated_date', 1),
+        animaClient.entities.Character.list('-created_date', 1),
       ]);
 
       return {

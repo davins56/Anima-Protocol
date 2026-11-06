@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { ChevronLeft, ChevronRight, Loader, Zap } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -34,14 +34,14 @@ export default function IntegratedWorldCalendar() {
 
   const loadCalendarData = async () => {
     try {
-      const cals = await base44.entities.Calendar.filter(
+      const cals = await animaClient.entities.Calendar.filter(
         sessionId ? { session_id: sessionId } : {}
       );
       if (cals?.length > 0) {
         setCalendar(cals[0]);
       }
 
-      const events = await base44.entities.WorldState.filter(
+      const events = await animaClient.entities.WorldState.filter(
         sessionId ? { session_id: sessionId, importance: "critical" } : { importance: "critical" },
         "-created_date",
         20
@@ -58,7 +58,7 @@ export default function IntegratedWorldCalendar() {
     if (!calendar || !sessionId) return;
     setSyncing(true);
     try {
-      await base44.functions.invoke("updateSeasonalContext", {
+      await animaClient.functions.invoke("updateSeasonalContext", {
         session_id: sessionId,
         user_message: "[Manual day advancement]",
         ai_response: "[Day advanced]",

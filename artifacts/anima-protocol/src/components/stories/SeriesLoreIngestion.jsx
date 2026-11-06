@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { motion, AnimatePresence } from "framer-motion";
 import { BookOpen, Search, Zap, Check, X } from "lucide-react";
 
@@ -39,7 +39,7 @@ export default function SeriesLoreIngestion({ sessionId, characterId, onComplete
     setSelectedSeries(null);
 
     try {
-      const response = await base44.functions.invoke("ingestSeriesLore", {
+      const response = await animaClient.functions.invoke("ingestSeriesLore", {
         series_title: seriesTitle,
         session_id: sessionId,
         character_id: characterId,

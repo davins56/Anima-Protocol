@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { updateCompanionRecord } from "@/lib/listPersonalAnimas";
 import SpeakToAnimaButton from "@/components/anima/SpeakToAnimaButton";
 import VoicePicker from "@/components/voice/VoicePicker";
@@ -47,7 +47,7 @@ export default function AnimaVoicePanel({ anima, onSave }) {
 
   const onTestVoiceSend = async (userText) => {
     const sysPrompt = `You are ${anima?.name || "Anima"}. ${anima?.personality || ""} ${anima?.speaking_style || ""}. Respond very briefly.`;
-    const res = await base44.integrations.Core.InvokeLLM({
+    const res = await animaClient.integrations.Core.InvokeLLM({
       prompt: `User says: "${userText}"`,
       system_prompt: sysPrompt,
       max_tokens: 60,

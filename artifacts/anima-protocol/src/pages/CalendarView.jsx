@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { ChevronLeft, Loader, Zap, RefreshCw } from "lucide-react";
 import { Link } from "react-router-dom";
 import SeasonalCalendar from "@/components/calendar/SeasonalCalendar";
@@ -32,7 +32,7 @@ export default function CalendarView() {
   const loadSessions = async () => {
     setLoading(true);
     try {
-      const data = await base44.entities.ChatSession.list("-updated_date", 50);
+      const data = await animaClient.entities.ChatSession.list("-updated_date", 50);
       setSessions(data || []);
       if (!selectedSession && data?.length > 0) {
         setSelectedSession(data[0].id);
@@ -48,8 +48,8 @@ export default function CalendarView() {
     setLoading(true);
     try {
       const [calData, loreData] = await Promise.all([
-        base44.entities.Calendar.filter({ session_id: selectedSession }),
-        base44.entities.WorldState.filter({
+        animaClient.entities.Calendar.filter({ session_id: selectedSession }),
+        animaClient.entities.WorldState.filter({
           session_id: selectedSession,
           category: "event",
         }, "-created_date", 50),
@@ -70,7 +70,7 @@ export default function CalendarView() {
     if (!selectedSession) return;
     setGenerating(true);
     try {
-      const result = await base44.functions.invoke("suggestWorldEvents", {
+      const result = await animaClient.functions.invoke("suggestWorldEvents", {
         session_id: selectedSession,
       });
       if (result?.data?.suggestions) {
@@ -87,7 +87,7 @@ export default function CalendarView() {
     if (!selectedSession) return;
     try {
       // Create world state entry for the event
-      await base44.entities.WorldState.create({
+      await animaClient.entities.WorldState.create({
         session_id: selectedSession,
         category: "event",
         subject: event.title,
@@ -97,7 +97,7 @@ export default function CalendarView() {
       });
 
       // Update seasonal context
-      await base44.functions.invoke("updateSeasonalContext", {
+      await animaClient.functions.invoke("updateSeasonalContext", {
         session_id: selectedSession,
         user_message: `[WORLD EVENT: ${event.title}]`,
         ai_response: event.narrative_hook,

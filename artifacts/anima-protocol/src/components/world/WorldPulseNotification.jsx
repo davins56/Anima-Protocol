@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Zap, TrendingUp, TrendingDown, Wind, Heart } from 'lucide-react';
 
@@ -13,7 +13,7 @@ export default function WorldPulseNotification({ sessionId, isVisible = true }) 
     // Fetch latest pulse for this session
     const fetchLatestPulse = async () => {
       try {
-        const pulses = await base44.entities.WorldPulse.filter(
+        const pulses = await animaClient.entities.WorldPulse.filter(
           { session_id: sessionId },
           '-pulse_date',
           1
@@ -29,7 +29,7 @@ export default function WorldPulseNotification({ sessionId, isVisible = true }) 
     fetchLatestPulse();
 
     // Subscribe to new pulses
-    const unsubscribe = base44.entities.WorldPulse.subscribe((event) => {
+    const unsubscribe = animaClient.entities.WorldPulse.subscribe((event) => {
       if (event.type === 'create' && event.data?.session_id === sessionId) {
         setPulse(event.data);
       }

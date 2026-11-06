@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { X, MapPin, Loader, Zap } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 
 export default function LocationEventPin({ location, sessionId, onClose, onEventPinned }) {
   const [eventForm, setEventForm] = useState({ title: "", description: "", event_type: "story" });
@@ -13,7 +13,7 @@ export default function LocationEventPin({ location, sessionId, onClose, onEvent
     setLoading(true);
     try {
       // Create lore entry tied to location
-      const loreEntry = await base44.entities.WorldState.create({
+      const loreEntry = await animaClient.entities.WorldState.create({
         session_id: sessionId,
         category: "event",
         subject: location.name,
@@ -36,7 +36,7 @@ export default function LocationEventPin({ location, sessionId, onClose, onEvent
   const generateAISuggestion = async () => {
     setGeneratingAI(true);
     try {
-      const result = await base44.integrations.Core.InvokeLLM({
+      const result = await animaClient.integrations.Core.InvokeLLM({
         prompt: `Generate a brief, compelling narrative event that could occur at "${location.name}" (a ${location.category} location). The event should be mysterious, engaging, and relevant to an interactive story. Return in JSON format: {"title": "event title", "description": "2-3 sentence description", "event_type": "mystery|discovery|conflict|revelation"}`,
         response_json_schema: {
           type: "object",

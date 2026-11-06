@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Loader, X, Info, Search, Download } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import CharacterNodeModal from "./CharacterNodeModal";
@@ -41,14 +41,14 @@ export default function FactionNetworkGraph({ sessionId }) {
     setLoading(true);
     try {
       const [characters, relationships, factionData, worldState] = await Promise.all([
-        base44.entities.Character.list("-created_date", 100),
-        base44.entities.CharacterRelationship.filter(
+        animaClient.entities.Character.list("-created_date", 100),
+        animaClient.entities.CharacterRelationship.filter(
           { session_id: sessionId },
           "-created_date",
           200
         ),
-        base44.entities.Faction.list("-created_date", 100),
-        base44.entities.WorldState.filter(
+        animaClient.entities.Faction.list("-created_date", 100),
+        animaClient.entities.WorldState.filter(
           { session_id: sessionId, is_active: true },
           "-created_date",
           100

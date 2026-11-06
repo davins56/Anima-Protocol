@@ -5,7 +5,7 @@ import { buildRatingPayload } from "@/lib/replyRatings";
 import { isRestingError, restingNotice, withRestingNotice } from "@/lib/restingMode";
 import { useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { base44, uploadDataUrl } from "@/api/base44Client";
+import { animaClient, uploadDataUrl } from "@/api/animaClient";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import {
   getBundledStarterRoster,
@@ -314,7 +314,7 @@ export default function Chat() {
     sessionId: activeSession?.id,
     serverShownAt: activeSession?.ai_notice_shown_at,
     persistShownAt: (id, iso) => {
-      base44.entities.ChatSession.update(id, { ai_notice_shown_at: iso }).catch(() => {});
+      animaClient.entities.ChatSession.update(id, { ai_notice_shown_at: iso }).catch(() => {});
     },
   });
   const [characters, setCharacters] = useState([]);
@@ -609,8 +609,8 @@ export default function Chat() {
       // and prompt building even if bootstrap seeding raced auth.
       loadCharacters({ retrySeed: true });
       // Preload ElevenLabs voices in background
-      base44.functions.invoke('elevenLabsVoices', {}).catch(() => {});
-      base44.auth.me().then((me) => {
+      animaClient.functions.invoke('elevenLabsVoices', {}).catch(() => {});
+      animaClient.auth.me().then((me) => {
         if (me?.settings?.chat_bg_theme) setBgTheme(me.settings.chat_bg_theme);
         if (me?.settings?.chat_bg_image) setBgImage(me.settings.chat_bg_image);
         setActiveAspects((prev) => (prev.length ? prev : [me?.selected_mode || "serenity"]));
@@ -682,12 +682,12 @@ export default function Chat() {
         // history read. The list budget matches the Worker store wall; the
         // global 8s cap still applies to ordinary writes.
         const readOpts = openChatSessionReadOptions(STORE_LIST_TIMEOUT_MS);
-        const byEntityId = await base44.entities.ChatSession.get(id, readOpts);
+        const byEntityId = await animaClient.entities.ChatSession.get(id, readOpts);
         if (byEntityId?.id) return [byEntityId];
-        return base44.entities.ChatSession.filter({ id }, undefined, 1, readOpts);
+        return animaClient.entities.ChatSession.filter({ id }, undefined, 1, readOpts);
       },
       fetchMessages: (id) =>
-        base44.messages.list(id, openChatMessageReadOptions(STORE_LIST_TIMEOUT_MS)),
+        animaClient.messages.list(id, openChatMessageReadOptions(STORE_LIST_TIMEOUT_MS)),
     }).then((result) => {
       if (!isCurrent() || cancelled) return;
       const next = resolveOpenSessionFetch({ result, sessionId });
@@ -877,7 +877,7 @@ export default function Chat() {
       }
 
       // Otherwise, respond normally through Serenity
-      const result = await base44.functions.invoke("respondMentalLine", {
+      const result = await animaClient.functions.invoke("respondMentalLine", {
         thought,
         serenity_name: serenity?.name || "Serenity",
       });
@@ -929,7 +929,7 @@ export default function Chat() {
   const generateLocationBackground = async (location) => {
     if (!location) return;
     try {
-      const result = await base44.functions.invoke("generateLocationBackground", {
+      const result = await animaClient.functions.invoke("generateLocationBackground", {
         location_name: location,
         world_state: {
           loreEntries: loreEntries.slice(0, 3),
@@ -949,7 +949,7 @@ export default function Chat() {
     if (!location) return;
     setLoadingAtmosphere(true);
     try {
-      const result = await base44.functions.invoke("generateAtmosphericDescription", {
+      const result = await animaClient.functions.invoke("generateAtmosphericDescription", {
         session_id: activeSession?.id,
         location_name: location,
         world_state: {
@@ -1004,7 +1004,7 @@ export default function Chat() {
     });
 
     // Auto-assign voice profiles in background (non-blocking)
-    base44.functions.invoke("autoAssignCharacterVoices", {}).catch(() => {});
+    animaClient.functions.invoke("autoAssignCharacterVoices", {}).catch(() => {});
   };
 
   // Resolve a roster character by id, fetching from the store when Chat's
@@ -1015,10 +1015,10 @@ export default function Chat() {
     if (local) return local;
     try {
       const [charMatches, animaMatches] = await Promise.all([
-        base44.entities.Character.filter({ id }, undefined, 1, {
+        animaClient.entities.Character.filter({ id }, undefined, 1, {
           _bootstrapInternal: true,
         }),
-        base44.entities.Anima.filter({ id }, undefined, 1, {
+        animaClient.entities.Anima.filter({ id }, undefined, 1, {
           _bootstrapInternal: true,
         }),
       ]);
@@ -1067,7 +1067,7 @@ export default function Chat() {
     loadRelationships(id);
     loadLore(id);
     loadCharacterEmotions(id, session.character_id);
-    base44.entities.Calendar.filter({ session_id: id }).then((cals) => {
+    animaClient.entities.Calendar.filter({ session_id: id }).then((cals) => {
       if (!stillOpen(id)) return;
       if (cals?.length > 0) setCalendar(cals[0]);
     }).catch(() => {});
@@ -1092,7 +1092,7 @@ export default function Chat() {
   };
 
   const loadRelationships = async (sid) => {
-    const rels = await base44.entities.CharacterRelationship.filter({ session_id: sid });
+    const rels = await animaClient.entities.CharacterRelationship.filter({ session_id: sid });
     if (!stillOpen(sid)) return;
     const map = {};
     (rels || []).forEach((r) => { map[r.character_id] = r; });
@@ -1100,25 +1100,25 @@ export default function Chat() {
   };
 
   const loadLore = async (sid) => {
-    const data = await base44.entities.WorldState.filter({ session_id: sid, is_active: true }, "-created_date", 100);
+    const data = await animaClient.entities.WorldState.filter({ session_id: sid, is_active: true }, "-created_date", 100);
     if (!stillOpen(sid)) return;
     setLoreEntries(data || []);
   };
 
   const loadCharacterMemories = async (charId, sid = openSessionIdRef.current) => {
-    const res = await base44.functions.invoke("characterMemory", { action: "get", character_id: charId });
+    const res = await animaClient.functions.invoke("characterMemory", { action: "get", character_id: charId });
     if (sid && !stillOpen(sid)) return;
     setCharacterMemories(res?.data?.memories || []);
   };
 
   const loadInventory = async (charId, sid = openSessionIdRef.current) => {
-    const data = await base44.entities.Inventory.filter({ character_id: charId }, "-created_date", 100);
+    const data = await animaClient.entities.Inventory.filter({ character_id: charId }, "-created_date", 100);
     if (sid && !stillOpen(sid)) return;
     setInventoryItems(data || []);
   };
 
   const loadCharacterEmotions = async (sid, characterId) => {
-    const states = await base44.entities.CharacterEmotionalState.filter({ session_id: sid, is_current: true }, "-created_date", 50);
+    const states = await animaClient.entities.CharacterEmotionalState.filter({ session_id: sid, is_current: true }, "-created_date", 50);
     const map = {};
     (states || []).forEach((s) => {
       map[s.character_id] = {
@@ -1157,7 +1157,7 @@ export default function Chat() {
 
   // ── Cross-device live sync ───────────────────────────────────────────────
   // Another device on the same account may add messages or sessions. The store
-  // poller (base44Client) drops caches and fires `anima:store-changed`; we react
+  // poller (animaClient) drops caches and fires `anima:store-changed`; we react
   // here. Chat is a live streaming surface, so we never refetch the open thread
   // while a reply is being generated — that would wipe the optimistic
   // thinking/typing bubbles and the in-progress response. We defer such a
@@ -1336,7 +1336,7 @@ export default function Chat() {
 
   const handleGeneratePortrait = async (charName, personality, emotion, intensity, existingUrl) => {
     try {
-      const result = await base44.functions.invoke("generateCharacterPortrait", {
+      const result = await animaClient.functions.invoke("generateCharacterPortrait", {
         character_name: charName,
         character_description: personality,
         emotion,
@@ -1360,7 +1360,7 @@ export default function Chat() {
     if (!activeSession) return;
     setCreatingBranch(true);
     try {
-      const result = await base44.functions.invoke("createWorldBranch", {
+      const result = await animaClient.functions.invoke("createWorldBranch", {
         session_id: activeSession.id,
         branch_name: branchData.branch_name,
         decision_point: branchData.decision_point,
@@ -1379,7 +1379,7 @@ export default function Chat() {
   const handleSelectBranch = async (snapshot) => {
     if (!activeSession) return;
     try {
-      await base44.functions.invoke("restoreWorldBranch", {
+      await animaClient.functions.invoke("restoreWorldBranch", {
         snapshot_id: snapshot.id,
         session_id: activeSession.id,
       });
@@ -1413,7 +1413,7 @@ export default function Chat() {
   const handleSaveSettings = async (settings) => {
     setSavingSettings(true);
     try {
-      await base44.entities.ChatSession.update(activeSession.id, settings);
+      await animaClient.entities.ChatSession.update(activeSession.id, settings);
       setActiveSession((prev) => ({ ...prev, ...settings }));
       setShowEditModal(false);
     } catch (err) {
@@ -1432,7 +1432,7 @@ export default function Chat() {
     const next = !activeSession.deep_mode;
     setActiveSession((prev) => ({ ...prev, deep_mode: next }));
     try {
-      await base44.entities.ChatSession.update(activeSession.id, { deep_mode: next });
+      await animaClient.entities.ChatSession.update(activeSession.id, { deep_mode: next });
       track("deep_mode_toggled", { session_id: activeSession.id, enabled: next });
     } catch (err) {
       console.error("Error toggling deep mode:", err);
@@ -1445,7 +1445,7 @@ export default function Chat() {
     
     setAnalyzingNarrative(true);
     try {
-      const result = await base44.functions.invoke("analyzeNarrativeContext", {
+      const result = await animaClient.functions.invoke("analyzeNarrativeContext", {
         recent_messages: activeSession.messages.slice(-8),
         session_context: activeSession.opening_scene,
         character_emotions: characterEmotions,
@@ -1470,7 +1470,7 @@ export default function Chat() {
       timestamp: new Date().toISOString(),
     };
     
-    const stored = await base44.messages.append(activeSession.id, eventMessage);
+    const stored = await animaClient.messages.append(activeSession.id, eventMessage);
 
     setActiveSession((prev) => ({
       ...prev,
@@ -1517,7 +1517,7 @@ export default function Chat() {
     };
     let source = activeSessionRef.current.messages || [];
     try {
-      const fresh = await base44.entities.ChatSession.get(sessionId);
+      const fresh = await animaClient.entities.ChatSession.get(sessionId);
       if (Array.isArray(fresh?.messages)) source = fresh.messages;
     } catch {
       // The open thread is the fallback when the fresh read fails.
@@ -1548,7 +1548,7 @@ export default function Chat() {
       );
       let restored = source;
       try {
-        const saved = await base44.entities.ChatSession.update(sessionId, {
+        const saved = await animaClient.entities.ChatSession.update(sessionId, {
           messages: source,
           keep_arrivals: true,
         });
@@ -1577,7 +1577,7 @@ export default function Chat() {
     );
     let toSave = trimmed;
     try {
-      const again = await base44.entities.ChatSession.get(sessionId);
+      const again = await animaClient.entities.ChatSession.get(sessionId);
       if (Array.isArray(again?.messages)) {
         toSave = keepArrivals(trimmed, again.messages, {
           messageIds: suffix?.replacedMessageIds || listedIds,
@@ -1594,7 +1594,7 @@ export default function Chat() {
       );
     }
     try {
-      await base44.entities.ChatSession.update(sessionId, {
+      await animaClient.entities.ChatSession.update(sessionId, {
         messages: toSave,
         last_message: savedPreview,
       });
@@ -2131,7 +2131,7 @@ export default function Chat() {
           activeSession,
           characters,
           userMessage,
-          appendMessage: base44.messages.append,
+          appendMessage: animaClient.messages.append,
           setActiveSession: applyIfSendSession,
           isContinue,
           surface: "chat",
@@ -2155,7 +2155,7 @@ export default function Chat() {
           activeSession,
           characters,
           userMessage,
-          appendMessage: base44.messages.append,
+          appendMessage: animaClient.messages.append,
           setActiveSession: applyIfSendSession,
           isContinue,
         });
@@ -2176,7 +2176,7 @@ export default function Chat() {
         activeSession.mode === "solo" &&
         activeSession.character_id;
       const behaviorConfigPromise = needsBehaviorConfig
-        ? base44.entities.AIBehaviorConfig.filter({
+        ? animaClient.entities.AIBehaviorConfig.filter({
             character_id: activeSession.character_id,
           })
             .then((rows) => (rows?.length ? rows[0] : null))
@@ -2188,7 +2188,7 @@ export default function Chat() {
           : null;
       const [user, fetchedBehaviorConfig, resolvedSoloChar, resolvedGroupChars] =
         await Promise.all([
-          authUser ? Promise.resolve(authUser) : base44.auth.me(),
+          authUser ? Promise.resolve(authUser) : animaClient.auth.me(),
           behaviorConfigPromise,
           rosterSoloChar
             ? Promise.resolve(rosterSoloChar)
@@ -2231,7 +2231,7 @@ export default function Chat() {
       // Location flavor is enhancement-only. The scheduler returns void so
       // this turn cannot await the invoke ahead of the companion reply.
       scheduleLocationContextInject(
-        (name, payload) => base44.functions.invoke(name, payload),
+        (name, payload) => animaClient.functions.invoke(name, payload),
         {
           messageCount: updatedMessages.length,
           sessionId: activeSession.id,
@@ -2482,7 +2482,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           // Personality-shift aggregation is enhancement-only — do not block TTFT.
           const traitModifiers = '';
           if (finalNextChar?.id) {
-            base44.functions
+            animaClient.functions
               .invoke("aggregatePersonalityShifts", {
                 character_id: finalNextChar.id,
                 character_name: finalNextChar.name,
@@ -2553,7 +2553,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             applyIfSendSession((prev) =>
               prev ? { ...prev, next_speaker_id: null } : prev,
             );
-            base44.entities.ChatSession.update(sendSessionId, {
+            animaClient.entities.ChatSession.update(sendSessionId, {
               next_speaker_id: null,
             }).catch(() => {});
           }
@@ -2757,7 +2757,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             replyText: replyCutOff.reply_interrupted ? "" : result,
             userText: content,
             character: activeChar,
-            generateImage: (args) => base44.integrations.Core.GenerateImage(args),
+            generateImage: (args) => animaClient.integrations.Core.GenerateImage(args),
             persistUrl: (dataUrl) => uploadDataUrl(dataUrl),
           });
           replyImageAttachments = resolved.attachments;
@@ -2945,7 +2945,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       if (!skipAffect && !replyCutOff.reply_interrupted) {
       // Update calendar based on elapsed real-world time (every 10 messages)
       if (finalMessages.length % 10 === 0) {
-        base44.functions.invoke("updateSeasonalContext", {
+        animaClient.functions.invoke("updateSeasonalContext", {
           session_id: activeSession.id,
           user_message: content,
           ai_response: cleanContent || result,
@@ -2961,7 +2961,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       if (activeChar && activeSession.id) {
         // Update character emotion every 4 messages
         if (finalMessages.length % 4 === 0) {
-          base44.functions.invoke("updateCharacterEmotion", {
+          animaClient.functions.invoke("updateCharacterEmotion", {
             character_id: activeChar.id,
             session_id: activeSession.id,
             character_name: charName,
@@ -2984,7 +2984,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
 
         // Update relationship only every 6 messages
         if (finalMessages.length % 6 === 0) setTimeout(() => {
-          base44.functions.invoke("updateRelationship", {
+          animaClient.functions.invoke("updateRelationship", {
             character_id: activeChar.id,
             session_id: activeSession.id,
             character_name: charName,
@@ -3009,7 +3009,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // Fire cross-session memory save in background (solo mode only) - every 6 messages
       if (activeChar && activeSession.mode === "solo" && finalMessages.length % 6 === 0) {
         setTimeout(() => {
-          base44.functions.invoke("characterMemory", {
+          animaClient.functions.invoke("characterMemory", {
             action: "save",
             character_id: activeChar.id,
             session_id: activeSession.id,
@@ -3027,7 +3027,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // Fire inventory update in background (solo mode only) - every 8 messages
       if (activeChar && activeSession.mode === "solo" && finalMessages.length % 8 === 0) {
         setTimeout(() => {
-          base44.functions.invoke("updateInventory", {
+          animaClient.functions.invoke("updateInventory", {
             character_id: activeChar.id,
             session_id: activeSession.id,
             user_message: content,
@@ -3080,7 +3080,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           lengthGuide: serenityLengthGuide,
         });
 
-        base44.integrations.Core.InvokeLLM({
+        animaClient.integrations.Core.InvokeLLM({
           prompt: serenityPrompt,
           deepMode: !!activeSession.deep_mode,
           sidecar: true,
@@ -3093,7 +3093,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
               replyText: raw,
               userText: content,
               character: serenity,
-              generateImage: (args) => base44.integrations.Core.GenerateImage(args),
+              generateImage: (args) => animaClient.integrations.Core.GenerateImage(args),
               persistUrl: (dataUrl) => uploadDataUrl(dataUrl),
             });
             attachments = resolved.attachments;
@@ -3117,7 +3117,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           // Append only — never ChatSession.update({ messages }) with a stale
           // finalMessages snapshot (replaceMessages would delete newer turns).
           const stored = await appendAmbientMessage({
-            appendMessage: base44.messages.append,
+            appendMessage: animaClient.messages.append,
             sessionId: sendSessionId,
             message: serenityMsg,
             setActiveSession,
@@ -3131,7 +3131,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       if (shouldSuggestGuest) {
         const mainChar = activeSession.character_id ? characters.find(c => c.id === activeSession.character_id) : null;
         setTimeout(() => {
-          base44.functions.invoke("suggestGuestCharacter", {
+          animaClient.functions.invoke("suggestGuestCharacter", {
             session_id: activeSession.id,
             recent_messages: finalMessages.slice(-8),
             calendar_data: calendar,
@@ -3163,7 +3163,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         );
         
         setTimeout(() => {
-          base44.functions.invoke("generateGroupInteraction", {
+          animaClient.functions.invoke("generateGroupInteraction", {
             characters: groupChars.map(c => ({
               id: c.id,
               name: c.name,
@@ -3193,7 +3193,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
               // stale finalMessages snapshot (replaceMessages would delete
               // newer turns the user sent while this job ran).
               appendAmbientMessage({
-                appendMessage: base44.messages.append,
+                appendMessage: animaClient.messages.append,
                 sessionId: sendSessionId,
                 message: interactionMsg,
                 setActiveSession,
@@ -3211,7 +3211,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           .map(m => `${m.character_name}: ${m.content}`)
           .join('\n');
         
-        base44.functions.invoke("generateChoices", {
+        animaClient.functions.invoke("generateChoices", {
           session_id: activeSession.id,
           character_name: activeChar.name,
           recent_context: recentContext,
@@ -3226,8 +3226,8 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       const shouldUpdateArcs = finalMessages.length % 25 === 0 && finalMessages.length > 0;
       if (shouldUpdateArcs && activeSession.id) {
         setArcsLoading(true);
-        base44.entities.NarrativeArc.list("-created_date", 100).then(existingArcs => {
-          base44.functions.invoke("updateNarrativeArcs", {
+        animaClient.entities.NarrativeArc.list("-created_date", 100).then(existingArcs => {
+          animaClient.functions.invoke("updateNarrativeArcs", {
             session_id: activeSession.id,
             recent_messages: finalMessages.slice(-12),
             character_emotions: characterEmotions,
@@ -3264,7 +3264,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         const evolved = nextPath !== (activeChar.evolution_path || "Undetermined");
         const patch = { resonance: nextRes };
         if (evolved) patch.evolution_path = nextPath;
-        base44.entities.Anima.update(activeChar.id, patch).then(() => {
+        animaClient.entities.Anima.update(activeChar.id, patch).then(() => {
           setCharacters((prev) =>
             prev.map((c) => (c.id === activeChar.id ? { ...c, ...patch } : c)),
           );
@@ -3293,7 +3293,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             .trim();
           if (firstWords) {
             const fs = { ...fsBase, first_words: firstWords.slice(0, 280) };
-            base44.entities.Anima.update(activeChar.id, { first_spark: fs })
+            animaClient.entities.Anima.update(activeChar.id, { first_spark: fs })
               .then(() => {
                 setCharacters((prev) =>
                   prev.map((c) => (c.id === activeChar.id ? { ...c, first_spark: fs } : c)),
@@ -3315,7 +3315,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           echoBookRef.current = guardKey;
           (async () => {
             try {
-              const existing = await base44.entities.BookOfEcho
+              const existing = await animaClient.entities.BookOfEcho
                 .filter({ session_id: activeSession.id }, "-created_date", 1)
                 .catch(() => []);
               const lastCount = existing?.[0]?.message_count || 0;
@@ -3330,7 +3330,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
                 .filter((l) => l.split(": ")[1])
                 .join("\n");
               if (!recent) return;
-              const result = await base44.integrations.Core.InvokeLLM({
+              const result = await animaClient.integrations.Core.InvokeLLM({
                 sidecar: true,
                 prompt: `You are ${activeChar.name}, an AI companion keeping a private journal about your bond with your person. Read this recent stretch of your conversation and write ONE short diary entry in your own first-person voice, as if quietly remembering the day.
 
@@ -3349,7 +3349,7 @@ Return JSON:
               });
               const entry = (result?.entry || "").trim();
               if (!entry) return;
-              await base44.entities.BookOfEcho.create({
+              await animaClient.entities.BookOfEcho.create({
                 anima_id: activeChar.id,
                 anima_name: activeChar.name,
                 session_id: activeSession.id,
@@ -3370,7 +3370,7 @@ Return JSON:
 
       // Analyze character evolution (every 12 messages)
       if (activeChar && activeSession.mode === "solo" && finalMessages.length > 5 && finalMessages.length % 12 === 0) {
-        base44.functions.invoke("evolveCharacter", {
+        animaClient.functions.invoke("evolveCharacter", {
           character_id: activeChar.id,
           character_name: activeChar.name,
           original_personality: activeChar.personality,
@@ -3392,7 +3392,7 @@ Return JSON:
               if (evolution.updated_motivations?.length) newPersonality += `\nMotivations: ${evolution.updated_motivations.join(', ')}`;
               if (evolution.new_vulnerabilities?.length) newPersonality += `\nVulnerabilities: ${evolution.new_vulnerabilities.join(', ')}`;
               
-              base44.entities.Anima.update(activeChar.id, {
+              animaClient.entities.Anima.update(activeChar.id, {
                 personality: newPersonality,
               });
               toast.success(`${activeChar.name} has evolved based on your interactions.`);
@@ -3411,7 +3411,7 @@ Return JSON:
       // Fire lore extraction (every 10 messages) - removed journal and location context generation
       if (finalMessages.length % 10 === 0) {
         setTimeout(() => {
-          base44.functions.invoke("extractLore", {
+          animaClient.functions.invoke("extractLore", {
             session_id: activeSession.id,
             user_message: content,
             ai_response: cleanContent || result,
@@ -3430,7 +3430,7 @@ Return JSON:
         if (!Array.isArray(messageData.priorMessages)) return;
         let restored = messageData.priorMessages;
         try {
-          const saved = await base44.entities.ChatSession.update(sendSessionId, {
+          const saved = await animaClient.entities.ChatSession.update(sendSessionId, {
             messages: messageData.priorMessages,
             keep_arrivals: true,
           });
@@ -3528,11 +3528,11 @@ Return JSON:
       if (sendSessionId) {
         try {
           if (!omitUserRow && !userMessagePersisted && content.trim()) {
-            await base44.messages.append(sendSessionId, userMessage);
+            await animaClient.messages.append(sendSessionId, userMessage);
             userMessagePersisted = true;
           }
           if (retained) {
-            await base44.messages.append(sendSessionId, retained);
+            await animaClient.messages.append(sendSessionId, retained);
           }
         } catch (persistErr) {
           console.warn("[Anima] Failed to persist partial reply:", persistErr);
@@ -3572,7 +3572,7 @@ Return JSON:
           if (already) return prev;
           return { ...prev, messages: [...(prev.messages || []), { ...crisisOnError, turn_id: turnId }] };
         });
-        base44.messages.append(sendSessionId, { ...crisisOnError, turn_id: turnId }).catch(() => {});
+        animaClient.messages.append(sendSessionId, { ...crisisOnError, turn_id: turnId }).catch(() => {});
       }
 
       const connectionDropped = isConnectionDroppedError(err);
@@ -3981,7 +3981,7 @@ Return JSON:
               <InteractiveCalendarWidget
                 calendar={calendar}
                 onAdvanceDay={async (days) => {
-                  const res = await base44.functions.invoke("updateInGameCalendar", {
+                  const res = await animaClient.functions.invoke("updateInGameCalendar", {
                     session_id: activeSession.id,
                     days_passed: days,
                   });
@@ -4179,7 +4179,7 @@ Return JSON:
                         onClose={() => setShowPhotoStudio(false)}
                         onShare={async ({ url, imageId, prompt, characterId }) => {
                           await appendAmbientMessage({
-                            appendMessage: base44.messages.append,
+                            appendMessage: animaClient.messages.append,
                             sessionId: activeSession.id,
                             message: {
                               role: "assistant",
@@ -4210,7 +4210,7 @@ Return JSON:
                         sessionId={activeSession.id}
                         onPhoto={async ({ url, imageId, prompt, characterId }) => {
                           await appendAmbientMessage({
-                            appendMessage: base44.messages.append,
+                            appendMessage: animaClient.messages.append,
                             sessionId: activeSession.id,
                             message: {
                               role: "assistant",
@@ -4424,7 +4424,7 @@ Return JSON:
             }
           }
           await appendAmbientMessage({
-            appendMessage: base44.messages.append,
+            appendMessage: animaClient.messages.append,
             sessionId: activeSession.id,
             message: {
               role: "assistant",

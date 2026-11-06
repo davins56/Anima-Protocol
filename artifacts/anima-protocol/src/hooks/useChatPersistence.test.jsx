@@ -6,11 +6,11 @@ import {
   createChatTurnId,
   useChatPersistence,
 } from "./useChatPersistence";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { animaApi } from "@/api/animaApi";
 
-vi.mock("@/api/base44Client", () => ({
-  base44: {
+vi.mock("@/api/animaClient", () => ({
+  animaClient: {
     messages: {
       append: vi.fn(),
     },
@@ -112,7 +112,7 @@ describe("useChatPersistence persistTurn", () => {
     const appendOrder = [];
     const appendDelay = 15;
 
-    base44.messages.append.mockImplementation(async (sessionId, msg) => {
+    animaClient.messages.append.mockImplementation(async (sessionId, msg) => {
       activeAppends++;
       maxConcurrentAppends = Math.max(maxConcurrentAppends, activeAppends);
       appendOrder.push(msg.content);
@@ -121,7 +121,7 @@ describe("useChatPersistence persistTurn", () => {
       return { ...msg, _stored: true };
     });
 
-    base44.entities.ChatSession.update.mockResolvedValue({});
+    animaClient.entities.ChatSession.update.mockResolvedValue({});
     animaApi.chat.commitTurn.mockResolvedValue({});
 
     const { result: hookRef, unmount } = renderHook(() => useChatPersistence());
@@ -147,8 +147,8 @@ describe("useChatPersistence persistTurn", () => {
 
     expect(result).toHaveLength(4);
     expect(result[0]._stored).toBe(true);
-    expect(base44.messages.append).toHaveBeenCalledTimes(4);
-    expect(base44.entities.ChatSession.update).toHaveBeenCalledWith("session_1", {
+    expect(animaClient.messages.append).toHaveBeenCalledTimes(4);
+    expect(animaClient.entities.ChatSession.update).toHaveBeenCalledWith("session_1", {
       last_message: "Hello world response content",
       title: "Title 1",
     });
@@ -162,7 +162,7 @@ describe("useChatPersistence persistTurn", () => {
   });
 
   it("handles errors and triggers retryTurn", async () => {
-    base44.messages.append.mockRejectedValue(new Error("Append failed"));
+    animaClient.messages.append.mockRejectedValue(new Error("Append failed"));
     animaApi.chat.retryTurn.mockResolvedValue({});
 
     const { result: hookRef, unmount } = renderHook(() => useChatPersistence());

@@ -30,8 +30,8 @@ vi.mock("react-router-dom", async () => {
   };
 });
 
-vi.mock("@/api/base44Client", () => ({
-  base44: {
+vi.mock("@/api/animaClient", () => ({
+  animaClient: {
     auth: { me: mocks.me },
     entities: {
       Anima: { list: mocks.listAnima },

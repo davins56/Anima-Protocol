@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 export function useAmbientAudio(sessionId, location, characterEmotions, narrativeContext) {
   const audioRef = useRef(null);
@@ -15,7 +15,7 @@ export function useAmbientAudio(sessionId, location, characterEmotions, narrativ
 
     setLoading(true);
     try {
-      const result = await base44.functions.invoke('generateAmbientAudioContext', {
+      const result = await animaClient.functions.invoke('generateAmbientAudioContext', {
         location: location || 'unknown',
         emotional_state: Object.values(characterEmotions).reduce((avg, e) => avg + (e?.emotion || ''), '') || '',
         narrative_context: narrativeContext || '',

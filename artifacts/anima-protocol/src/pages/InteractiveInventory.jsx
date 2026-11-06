@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { useParams } from "react-router-dom";
 import { Package, Zap, TrendingUp, BookOpen, Loader } from "lucide-react";
 import { motion } from "framer-motion";
@@ -28,7 +28,7 @@ export default function InteractiveInventory() {
     try {
       // Load session and character
       const [sessions, roster] = await Promise.all([
-        base44.entities.ChatSession.list("-updated_date", 1),
+        animaClient.entities.ChatSession.list("-updated_date", 1),
         loadRosterCharacters({
           retrySeed: false,
           allowBundledFallback: false,
@@ -48,7 +48,7 @@ export default function InteractiveInventory() {
 
       // Load items for this character after any steward grant has settled.
       if (activeChar?.id && grantDone) {
-        const invItems = await base44.entities.Inventory.filter(
+        const invItems = await animaClient.entities.Inventory.filter(
           { character_id: activeChar.id },
           "-created_date",
           INVENTORY_LIST_LIMIT
@@ -69,7 +69,7 @@ export default function InteractiveInventory() {
     const messageText = recentMessages.map(m => m.content).join(" ");
 
     try {
-      const result = await base44.functions.invoke("applyNarrativeItemEvents", {
+      const result = await animaClient.functions.invoke("applyNarrativeItemEvents", {
         session_id: session.id,
         character_id: character.id,
         message_content: messageText,
@@ -86,7 +86,7 @@ export default function InteractiveInventory() {
           },
         ]);
         // Reload items
-        const updatedItems = await base44.entities.Inventory.filter(
+        const updatedItems = await animaClient.entities.Inventory.filter(
           { character_id: character.id },
           "-created_date",
           INVENTORY_LIST_LIMIT

@@ -1,6 +1,6 @@
 // @ts-check
 import { useEffect, useCallback } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { whenBootstrapReady } from '@/lib/syncBootstrap';
 import { useStoreSync } from '@/lib/useStoreSync';
 
@@ -9,8 +9,8 @@ export default function CharacterLoader({ onCharactersLoaded }) {
   const loadAndEnrichCharacters = useCallback(async () => {
     try {
       const [chars, animas] = await Promise.all([
-        base44.entities.Character.list("-created_date", 500),
-        base44.entities.Anima.list("-created_date", 100),
+        animaClient.entities.Character.list("-created_date", 500),
+        animaClient.entities.Anima.list("-created_date", 100),
       ]);
 
       const enhancedChars = chars || [];
@@ -27,7 +27,7 @@ export default function CharacterLoader({ onCharactersLoaded }) {
       // Enrich non-enriched characters from Wikipedia in background
       allChars.forEach((char) => {
         if (!char._enriched_at && !char._isAnima) {
-          base44.functions.invoke("enrichCharacterFromWikipedia", {
+          animaClient.functions.invoke("enrichCharacterFromWikipedia", {
             character_id: char.id,
             character_name: char.name,
             universe: char.universe,
@@ -36,7 +36,7 @@ export default function CharacterLoader({ onCharactersLoaded }) {
       });
 
       // Auto-assign voice profiles
-      base44.functions.invoke("autoAssignCharacterVoices", {}).catch(() => {});
+      animaClient.functions.invoke("autoAssignCharacterVoices", {}).catch(() => {});
     } catch (err) {
       console.error('Error loading characters:', err);
       onCharactersLoaded([]);
