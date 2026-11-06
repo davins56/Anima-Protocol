@@ -106,6 +106,7 @@ const PAGES = {
   TemplateHub: lazy(() => import("../pages/TemplateHub")),
   TermsOfUse: lazy(() => import("../pages/TermsOfUse")),
   TimelineDashboard: lazy(() => import("../pages/TimelineDashboard")),
+  ScenarioHub: lazy(() => import("../pages/ScenarioHub")),
   WhatIfScenarios: lazy(() => import("../pages/WhatIfScenarios")),
   WhatSheRemembers: lazy(() => import("../pages/WhatSheRemembers")),
   Wiki: lazy(() => import("../pages/Wiki")),

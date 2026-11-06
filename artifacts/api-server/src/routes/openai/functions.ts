@@ -45,6 +45,15 @@ import {
 } from "../../lib/openrouterImage";
 import { logger } from "../../lib/logger";
 import { buildInBrowserCodespaceSystemPrompt } from "../../lib/codespaceAgentPrompt";
+import { normalizePredictedBranches } from "../../lib/whatIfBranches";
+import {
+  computeInventoryStats,
+  matchGraphNodes,
+  parseJsonLoose,
+  scoreMemories,
+  type GraphEdge,
+  type GraphNode,
+} from "../../lib/exploreInsights";
 
 /**
  * Partial test mocks omit this export and throw on access.
@@ -1134,6 +1143,86 @@ export function buildContextPromptString(records: Record<string, unknown>[]): st
   );
 }
 
+// Snapshots are read by the timeline views as `entities.WorldSnapshot`.
+const WORLD_SNAPSHOT = "WorldSnapshot";
+// Entities written by the Explore-page helpers below. The names match the
+// `entities.<Name>` the pages read back through /api/store.
+const VECTOR_MEMORY = "VectorMemory";
+const CHARACTER_EMOTION = "CharacterEmotion";
+const QUEST_ENTITY = "Quest";
+const TRADE_ENTITY = "Trade";
+const WORLD_STATE_ENTITY = "WorldState";
+const KNOWLEDGE_GRAPH = "KnowledgeGraph";
+const CHARACTER_ENTITY = "Character";
+const RELATIONSHIP_ENTITY = "CharacterRelationship";
+
+async function listUserEntity(userId: string, entityName: string) {
+  return db
+    .select()
+    .from(userEntities)
+    .where(
+      and(
+        eq(userEntities.userId, userId),
+        eq(userEntities.entityName, entityName),
+      ),
+    );
+}
+
+async function readUserEntity(
+  userId: string,
+  entityName: string,
+  entityId: string,
+) {
+  const rows = await db
+    .select()
+    .from(userEntities)
+    .where(
+      and(
+        eq(userEntities.userId, userId),
+        eq(userEntities.entityName, entityName),
+        eq(userEntities.entityId, entityId),
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+async function writeUserEntity(
+  userId: string,
+  entityName: string,
+  entityId: string,
+  payload: Record<string, unknown>,
+) {
+  const existing = await readUserEntity(userId, entityName, entityId);
+  if (existing) {
+    await db
+      .update(userEntities)
+      .set({ data: payload, updatedAt: new Date() })
+      .where(
+        and(
+          eq(userEntities.userId, userId),
+          eq(userEntities.entityName, entityName),
+          eq(userEntities.entityId, entityId),
+        ),
+      );
+  } else {
+    await db.insert(userEntities).values({
+      userId,
+      entityName,
+      entityId,
+      data: payload,
+    });
+  }
+  notifyUser(userId);
+  return payload;
+}
+
+async function characterDisplayName(userId: string, characterId: string) {
+  const row = await readUserEntity(userId, CHARACTER_ENTITY, characterId);
+  const data = (row?.data ?? {}) as Record<string, unknown>;
+  return String(data.name ?? data.title ?? "Companion");
+}
+
 router.post("/invoke/:fnName", async (req, res) => {
   const { fnName } = req.params;
   const data = req.body as Record<string, unknown>;
@@ -1172,6 +1261,131 @@ router.post("/invoke/:fnName", async (req, res) => {
           { sidecar: true },
         );
         try { result = JSON.parse(raw); } catch { result = []; }
+        break;
+      }
+
+      case "createWorldBranch": {
+        // Chat.jsx only closes its "create branch" modal when this returns
+        // data.success, and WhatIfCreator only calls onCreated() on the same
+        // shape. Without a case here the generic handler returned prose, the
+        // flag was undefined, and the modal stayed open forever with nothing
+        // saved.
+        const branchUserId = auth.userId || "";
+        const sessionId =
+          typeof data.session_id === "string" ? data.session_id : "";
+        const branchName =
+          typeof data.branch_name === "string" ? data.branch_name.trim() : "";
+        const decisionPoint =
+          typeof data.decision_point === "string"
+            ? data.decision_point.trim()
+            : "";
+        if (!branchUserId || !sessionId || !branchName || !decisionPoint) {
+          res.status(400).json({
+            error: "session_id, branch_name and decision_point are required.",
+          });
+          return;
+        }
+        const id = makeId();
+        const now = new Date().toISOString();
+        const branch = {
+          id,
+          session_id: sessionId,
+          branch_name: branchName,
+          decision_point: decisionPoint,
+          divergence_point: decisionPoint,
+          outcome_summary:
+            typeof data.outcome_summary === "string"
+              ? data.outcome_summary.trim()
+              : "",
+          parent_snapshot_id:
+            typeof data.parent_snapshot_id === "string" && data.parent_snapshot_id
+              ? data.parent_snapshot_id
+              : null,
+          is_active: false,
+          created_date: now,
+          updated_date: now,
+        };
+        await db.insert(userEntities).values({
+          userId: branchUserId,
+          entityName: WORLD_SNAPSHOT,
+          entityId: id,
+          data: branch,
+        });
+        result = { data: { success: true, branch } };
+        break;
+      }
+
+      case "restoreWorldBranch": {
+        // Switching timelines: exactly one snapshot per session is active, so
+        // the timeline view and the reply context agree on where the story is.
+        const restoreUserId = auth.userId || "";
+        const snapshotId =
+          typeof data.snapshot_id === "string" ? data.snapshot_id : "";
+        const restoreSessionId =
+          typeof data.session_id === "string" ? data.session_id : "";
+        if (!restoreUserId || !snapshotId) {
+          res.status(400).json({ error: "snapshot_id is required." });
+          return;
+        }
+        const rows = await db
+          .select()
+          .from(userEntities)
+          .where(
+            and(
+              eq(userEntities.userId, restoreUserId),
+              eq(userEntities.entityName, WORLD_SNAPSHOT),
+            ),
+          );
+        const target = rows.find((row) => row.entityId === snapshotId);
+        if (!target) {
+          res.status(404).json({ error: "That timeline no longer exists." });
+          return;
+        }
+        for (const row of rows) {
+          const rowData = (row.data ?? {}) as Record<string, unknown>;
+          if (restoreSessionId && rowData.session_id !== restoreSessionId) continue;
+          const nextActive = row.entityId === snapshotId;
+          if (Boolean(rowData.is_active) === nextActive) continue;
+          await db
+            .update(userEntities)
+            .set({
+              data: {
+                ...rowData,
+                is_active: nextActive,
+                updated_date: new Date().toISOString(),
+              },
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(userEntities.userId, restoreUserId),
+                eq(userEntities.entityName, WORLD_SNAPSHOT),
+                eq(userEntities.entityId, row.entityId),
+              ),
+            );
+        }
+        result = { data: { success: true, snapshot_id: snapshotId } };
+        break;
+      }
+
+      case "predictNarrativeBranches": {
+        // Without this case the generic handler below returned a prose string,
+        // so `result.data.branches` was undefined and the branch UI silently
+        // rendered nothing on three screens.
+        const context = JSON.stringify(data);
+        const raw = await llm(
+          "You are a narrative designer for an interactive story. Given the recent messages, propose 3 plausible what-if branches the story could take next. Return a JSON array of objects with fields: { branch_name, decision_point, outcome_summary, divergence_probability (0-1), prompt }. Output only valid JSON.",
+          `Context: ${context}`,
+          1024,
+          { sidecar: true },
+        );
+        let parsed: unknown = [];
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          parsed = [];
+        }
+        result = { data: { branches: normalizePredictedBranches(parsed) } };
         break;
       }
 
@@ -1739,6 +1953,538 @@ router.post("/invoke/:fnName", async (req, res) => {
           }
         }
         result = { data: { context: matchLoreKeywordContext(content, entries) } };
+        break;
+      }
+
+      case "updateCharacterEmotion": {
+        const emotionUserId = auth.userId || "";
+        const emotionCharacterId = String(data.character_id ?? "").trim();
+        if (!emotionUserId || !emotionCharacterId) {
+          res.status(400).json({ error: "character_id is required." });
+          return;
+        }
+        const raw = await llm(
+          'You infer how a companion feels right after an exchange. Reply with JSON only: {"emotion":"one word","intensity":1-10,"trigger":"short phrase"}.',
+          JSON.stringify({
+            character_name: data.character_name,
+            user_message: data.user_message,
+            ai_response: data.ai_response,
+          }),
+          300,
+        ).catch(() => "");
+        const parsed = parseJsonLoose<{
+          emotion?: string;
+          intensity?: number;
+          trigger?: string;
+        }>(raw, {});
+        const emotion = String(parsed.emotion ?? "").trim();
+        if (!emotion) {
+          result = { data: { created: false } };
+          break;
+        }
+        const intensity = Math.min(
+          10,
+          Math.max(1, Math.round(Number(parsed.intensity) || 5)),
+        );
+        const trigger = String(parsed.trigger ?? "").trim();
+        const now = new Date().toISOString();
+        const record = {
+          id: makeId(),
+          character_id: emotionCharacterId,
+          session_id: String(data.session_id ?? ""),
+          emotion,
+          intensity,
+          trigger,
+          source: "chat",
+          created_date: now,
+          updated_date: now,
+        };
+        await writeUserEntity(
+          emotionUserId,
+          CHARACTER_EMOTION,
+          String(record.id),
+          record,
+        );
+        result = { data: { created: true, emotion, intensity, trigger } };
+        break;
+      }
+
+      case "suggestGuestCharacter": {
+        const guestUserId = auth.userId || "";
+        if (!guestUserId) {
+          res.status(401).json({ error: "Sign in to suggest a guest." });
+          return;
+        }
+        const raw = await llm(
+          'You are casting a guest for an interactive scene. Pick ONE character who would complicate it. Reply with JSON only: {"name":"","universe":"","reason":"one sentence"}. Use a name from all_available_characters when one fits.',
+          JSON.stringify({
+            recent_messages: data.recent_messages,
+            main_character: data.main_character,
+            narrative_stage: data.narrative_stage,
+            story_tone: data.story_tone,
+            calendar_data: data.calendar_data,
+            all_available_characters: data.all_available_characters,
+          }),
+          300,
+        ).catch(() => "");
+        const parsed = parseJsonLoose<{
+          name?: string;
+          universe?: string;
+          reason?: string;
+        }>(raw, {});
+        const name = String(parsed.name ?? "").trim();
+        result = {
+          data: {
+            suggested: name
+              ? {
+                  name,
+                  universe: String(parsed.universe ?? "").trim(),
+                  reason: String(parsed.reason ?? "").trim(),
+                }
+              : null,
+          },
+        };
+        break;
+      }
+
+      case "detectAndCreateQuests": {
+        const questUserId = auth.userId || "";
+        const questSessionId = String(data.session_id ?? "").trim();
+        if (!questUserId || !questSessionId) {
+          res.status(400).json({ error: "session_id is required." });
+          return;
+        }
+        const raw = await llm(
+          'Detect whether this exchange opens a concrete quest. Reply with JSON only: {"quests":[{"title":"","description":"","objective":""}]}. Use an empty array when nothing new started.',
+          JSON.stringify({
+            user_message: data.user_message,
+            ai_response: data.ai_response,
+            character_name: data.character_name,
+          }),
+          400,
+        ).catch(() => "");
+        const parsed = parseJsonLoose<{ quests?: unknown[] }>(raw, {});
+        const now = new Date().toISOString();
+        const created: Record<string, unknown>[] = [];
+        for (const entry of (Array.isArray(parsed.quests) ? parsed.quests : []).slice(0, 3)) {
+          const obj = (entry ?? {}) as Record<string, unknown>;
+          const title = String(obj.title ?? "").trim();
+          if (!title) continue;
+          const record = {
+            id: makeId(),
+            session_id: questSessionId,
+            title,
+            description: String(obj.description ?? "").trim(),
+            objective: String(obj.objective ?? "").trim(),
+            status: "active",
+            character_name: String(data.character_name ?? ""),
+            created_date: now,
+            updated_date: now,
+          };
+          await writeUserEntity(questUserId, QUEST_ENTITY, String(record.id), record);
+          created.push(record);
+        }
+        result = { data: { created: created.length, quests: created } };
+        break;
+      }
+
+      case "vectorMemorySearch": {
+        const memoryUserId = auth.userId || "";
+        const memoryCharacterId = String(data.character_id ?? "").trim();
+        if (!memoryUserId || !memoryCharacterId) {
+          res.status(400).json({ error: "character_id is required." });
+          return;
+        }
+        const rows = await listUserEntity(memoryUserId, VECTOR_MEMORY);
+        const memories: Record<string, unknown>[] = rows.map((row) => ({
+          id: row.entityId,
+          ...((row.data ?? {}) as Record<string, unknown>),
+        }));
+        const matches = memories
+          .filter(
+            (memory) =>
+              !memory.character_id || memory.character_id === memoryCharacterId,
+          );
+        result = {
+          data: {
+            memories: scoreMemories(String(data.query ?? ""), matches, {
+              limit: Number(data.limit) || 8,
+              threshold:
+                data.similarity_threshold == null
+                  ? 0.4
+                  : Number(data.similarity_threshold),
+            }),
+          },
+        };
+        break;
+      }
+
+      case "scanAndLinkLoreKeywords": {
+        const loreUserId = auth.userId || "";
+        if (!loreUserId) {
+          res.status(401).json({ error: "Sign in to scan lore." });
+          return;
+        }
+        const loreSessionId = String(data.session_id ?? "").trim();
+        const messages = Array.isArray(data.messages) ? data.messages : [];
+        const entries = loreSessionId
+          ? await loadSessionLoreEntries(loreUserId, loreSessionId).catch(() => [])
+          : [];
+        const linked_messages = messages
+          .slice(0, 60)
+          .map((message, index) => {
+            const obj = (message ?? {}) as Record<string, unknown>;
+            const content = String(obj.content ?? "");
+            return {
+              message_index: index,
+              lore_links: matchLoreKeywordContext(content, entries),
+            };
+          })
+          .filter((entry) => entry.lore_links.length > 0);
+        result = { data: { linked_messages } };
+        break;
+      }
+
+      case "generateDivergentPaths": {
+        const pathUserId = auth.userId || "";
+        if (!pathUserId) {
+          res.status(401).json({ error: "Sign in to explore paths." });
+          return;
+        }
+        const raw = await llm(
+          'Propose three divergent continuations of this scene. Reply with JSON only: {"paths":[{"title":"","description":"","emotional_arc":""}]}.',
+          JSON.stringify({
+            character_name: data.character_name,
+            recent_messages: data.recent_messages,
+          }),
+          500,
+        ).catch(() => "");
+        const parsed = parseJsonLoose<{ paths?: unknown[] }>(raw, {});
+        const paths = (Array.isArray(parsed.paths) ? parsed.paths : [])
+          .slice(0, 3)
+          .map((entry) => {
+            const obj = (entry ?? {}) as Record<string, unknown>;
+            return {
+              title: String(obj.title ?? "").trim(),
+              description: String(obj.description ?? "").trim(),
+              emotional_arc: String(obj.emotional_arc ?? "").trim(),
+            };
+          })
+          .filter((path) => path.title);
+        result = { data: { paths } };
+        break;
+      }
+
+      case "ingestCheckInToWorldState": {
+        const checkInUserId = auth.userId || "";
+        const checkInId = String(data.check_in_id ?? "").trim();
+        if (!checkInUserId || !checkInId) {
+          res.status(400).json({ error: "check_in_id is required." });
+          return;
+        }
+        const checkInRow = await readUserEntity(checkInUserId, "CheckIn", checkInId);
+        if (!checkInRow) {
+          res.status(404).json({ error: "That check-in no longer exists." });
+          return;
+        }
+        const checkIn = (checkInRow.data ?? {}) as Record<string, unknown>;
+        const now = new Date().toISOString();
+        const worldStateId = makeId();
+        const mood = String(checkIn.mood ?? "present").trim();
+        const focus = String(checkIn.current_focus ?? "").trim();
+        const revelation = String(checkIn.revelation ?? "").trim();
+        const note = String(checkIn.freeform_note ?? "").trim();
+        const fact = [focus && `Focus: ${focus}`, revelation && `Insight: ${revelation}`, note]
+          .filter(Boolean)
+          .join(" · ");
+        const record = {
+          id: worldStateId,
+          session_id: String(data.session_id ?? checkIn.session_id ?? ""),
+          character_id: String(data.character_id ?? ""),
+          title: `Check-in: ${mood}`,
+          subject: mood,
+          fact: fact || `Checked in feeling ${mood}.`,
+          description: fact || `Checked in feeling ${mood}.`,
+          category: "check_in",
+          importance: "critical",
+          is_active: true,
+          source_check_in_id: checkInId,
+          created_date: now,
+          updated_date: now,
+        };
+        await writeUserEntity(
+          checkInUserId,
+          WORLD_STATE_ENTITY,
+          worldStateId,
+          record,
+        );
+        result = { data: { success: true, world_state_id: worldStateId } };
+        break;
+      }
+
+      case "calculateInventoryStats": {
+        const statsUserId = auth.userId || "";
+        const statsCharacterId = String(data.character_id ?? "").trim();
+        if (!statsUserId || !statsCharacterId) {
+          res.status(400).json({ error: "character_id is required." });
+          return;
+        }
+        const sessionFilter = String(data.session_id ?? "").trim();
+        const rows = await loadInventoryItems(statsUserId, statsCharacterId);
+        const items = rows
+          .map((row) => row.item)
+          .filter(
+            (item) =>
+              !sessionFilter || !item.session_id || item.session_id === sessionFilter,
+          );
+        result = { data: computeInventoryStats(items) };
+        break;
+      }
+
+      case "inventoryNarrativeImpact": {
+        const impactUserId = auth.userId || "";
+        const impactCharacterId = String(data.character_id ?? "").trim();
+        if (!impactUserId || !impactCharacterId) {
+          res.status(400).json({ error: "character_id is required." });
+          return;
+        }
+        const rows = await loadInventoryItems(impactUserId, impactCharacterId);
+        const itemNames = rows
+          .map((row) => String(row.item.name ?? "").trim())
+          .filter(Boolean)
+          .slice(0, 20);
+        if (itemNames.length === 0) {
+          result = { data: { narrative_choices: [] } };
+          break;
+        }
+        const raw = await llm(
+          'Given the items a character carries, propose two narrative choices that only those items unlock. Reply with JSON only: {"narrative_choices":[{"title":"","description":"","item_requirement":"","stat_bonus":""}]}.',
+          JSON.stringify({
+            items: itemNames,
+            recent_messages: data.recent_messages,
+          }),
+          400,
+        ).catch(() => "");
+        const parsed = parseJsonLoose<{ narrative_choices?: unknown[] }>(raw, {});
+        const narrative_choices = (Array.isArray(parsed.narrative_choices)
+          ? parsed.narrative_choices
+          : []
+        )
+          .slice(0, 3)
+          .map((entry) => {
+            const obj = (entry ?? {}) as Record<string, unknown>;
+            return {
+              title: String(obj.title ?? "").trim(),
+              description: String(obj.description ?? "").trim(),
+              item_requirement: String(obj.item_requirement ?? "").trim(),
+              stat_bonus: String(obj.stat_bonus ?? "").trim(),
+            };
+          })
+          .filter((choice) => choice.title);
+        result = { data: { narrative_choices } };
+        break;
+      }
+
+      case "inventoryTrading": {
+        const tradeUserId = auth.userId || "";
+        const action = String(data.action ?? "").trim();
+        if (!tradeUserId) {
+          res.status(401).json({ error: "Sign in to trade." });
+          return;
+        }
+        const now = new Date().toISOString();
+        if (action === "initiate_trade") {
+          const initiatorId = String(data.initiator_id ?? "").trim();
+          const recipientId = String(data.recipient_id ?? "").trim();
+          const requested = Array.isArray(data.initiator_items)
+            ? data.initiator_items.map((id: unknown) => String(id))
+            : [];
+          if (!initiatorId || !recipientId || requested.length === 0) {
+            res.status(400).json({ error: "initiator_id, recipient_id and items are required." });
+            return;
+          }
+          const rows = await loadInventoryItems(tradeUserId, initiatorId);
+          const owned = new Set(rows.map((row) => row.entityId));
+          const itemIds = requested.filter((id: string) => owned.has(id));
+          if (itemIds.length === 0) {
+            res.status(400).json({ error: "None of those items are in that inventory." });
+            return;
+          }
+          const trade = {
+            id: makeId(),
+            session_id: String(data.session_id ?? ""),
+            initiator_id: initiatorId,
+            initiator_name: await characterDisplayName(tradeUserId, initiatorId),
+            recipient_id: recipientId,
+            initiator_items: itemIds,
+            status: "pending",
+            created_date: now,
+            updated_date: now,
+          };
+          await writeUserEntity(tradeUserId, TRADE_ENTITY, String(trade.id), trade);
+          result = { data: { success: true, trade } };
+          break;
+        }
+        if (action === "accept_trade") {
+          const tradeId = String(data.trade_id ?? "").trim();
+          const tradeRow = await readUserEntity(tradeUserId, TRADE_ENTITY, tradeId);
+          if (!tradeRow) {
+            res.status(404).json({ error: "That trade no longer exists." });
+            return;
+          }
+          const trade = (tradeRow.data ?? {}) as Record<string, unknown>;
+          if (trade.status !== "pending") {
+            res.status(400).json({ error: "That trade is already settled." });
+            return;
+          }
+          const recipientId = String(trade.recipient_id ?? "");
+          const itemIds = Array.isArray(trade.initiator_items)
+            ? trade.initiator_items.map((id: unknown) => String(id))
+            : [];
+          let moved = 0;
+          for (const itemId of itemIds) {
+            const itemRow = await readUserEntity(tradeUserId, INVENTORY, itemId);
+            if (!itemRow) continue;
+            const item = (itemRow.data ?? {}) as Record<string, unknown>;
+            await writeUserEntity(tradeUserId, INVENTORY, itemId, {
+              ...item,
+              character_id: recipientId,
+              updated_date: now,
+            });
+            moved += 1;
+          }
+          await writeUserEntity(tradeUserId, TRADE_ENTITY, tradeId, {
+            ...trade,
+            status: "completed",
+            completed_date: now,
+            updated_date: now,
+          });
+          result = { data: { success: true, trade_id: tradeId, moved } };
+          break;
+        }
+        res.status(400).json({ error: "Unknown trade action." });
+        return;
+      }
+
+      case "buildKnowledgeGraph": {
+        const graphUserId = auth.userId || "";
+        if (!graphUserId) {
+          res.status(401).json({ error: "Sign in to build a graph." });
+          return;
+        }
+        const [characterRows, memoryRows, loreRows, relationshipRows] =
+          await Promise.all([
+            listUserEntity(graphUserId, CHARACTER_ENTITY),
+            listUserEntity(graphUserId, VECTOR_MEMORY),
+            listUserEntity(graphUserId, WORLD_STATE_ENTITY),
+            listUserEntity(graphUserId, RELATIONSHIP_ENTITY),
+          ]);
+        const nodes: GraphNode[] = [];
+        for (const row of characterRows) {
+          const d = (row.data ?? {}) as Record<string, unknown>;
+          nodes.push({
+            id: row.entityId,
+            label: String(d.name ?? d.title ?? "Unknown"),
+            type: "character",
+            description: String(d.description ?? d.personality ?? ""),
+          });
+        }
+        for (const row of memoryRows) {
+          const d = (row.data ?? {}) as Record<string, unknown>;
+          nodes.push({
+            id: row.entityId,
+            label: String(d.title ?? d.subject ?? "Memory"),
+            type: "memory",
+            description: String(d.content ?? d.description ?? ""),
+          });
+        }
+        for (const row of loreRows) {
+          const d = (row.data ?? {}) as Record<string, unknown>;
+          nodes.push({
+            id: row.entityId,
+            label: String(d.title ?? d.subject ?? "Lore"),
+            type: "lore",
+            description: String(d.fact ?? d.description ?? ""),
+          });
+        }
+        const nodeIds = new Set(nodes.map((node) => node.id));
+        const edges: GraphEdge[] = [];
+        for (const row of relationshipRows) {
+          const d = (row.data ?? {}) as Record<string, unknown>;
+          const source = String(d.character_a_id ?? d.from_id ?? "");
+          const target = String(d.character_b_id ?? d.to_id ?? "");
+          if (!source || !target || !nodeIds.has(source) || !nodeIds.has(target)) continue;
+          edges.push({
+            source,
+            target,
+            relation: String(d.relationship_type ?? d.type ?? "knows"),
+          });
+        }
+        for (const row of memoryRows) {
+          const d = (row.data ?? {}) as Record<string, unknown>;
+          const characterId = String(d.character_id ?? "");
+          if (characterId && nodeIds.has(characterId)) {
+            edges.push({ source: row.entityId, target: characterId, relation: "remembered by" });
+          }
+        }
+        const previous = await listUserEntity(graphUserId, KNOWLEDGE_GRAPH);
+        for (const row of previous) {
+          const d = (row.data ?? {}) as Record<string, unknown>;
+          if (d.is_active) {
+            await writeUserEntity(graphUserId, KNOWLEDGE_GRAPH, row.entityId, {
+              ...d,
+              is_active: false,
+            });
+          }
+        }
+        const now = new Date().toISOString();
+        const graph = {
+          id: makeId(),
+          is_active: true,
+          nodes,
+          edges,
+          total_entities: nodes.length,
+          document_count: memoryRows.length + loreRows.length,
+          created_date: now,
+          updated_date: now,
+        };
+        await writeUserEntity(
+          graphUserId,
+          KNOWLEDGE_GRAPH,
+          String(graph.id),
+          graph as unknown as Record<string, unknown>,
+        );
+        result = {
+          data: {
+            success: true,
+            total_entities: nodes.length,
+            edge_count: edges.length,
+          },
+        };
+        break;
+      }
+
+      case "queryKnowledgeGraph": {
+        const queryUserId = auth.userId || "";
+        if (!queryUserId) {
+          res.status(401).json({ error: "Sign in to search the graph." });
+          return;
+        }
+        const graphs = await listUserEntity(queryUserId, KNOWLEDGE_GRAPH);
+        const active =
+          graphs.find((row) => Boolean((row.data as Record<string, unknown>)?.is_active)) ??
+          graphs[0] ??
+          null;
+        if (!active) {
+          result = { data: { results: [] } };
+          break;
+        }
+        const stored = (active.data ?? {}) as Record<string, unknown>;
+        const nodes = (Array.isArray(stored.nodes) ? stored.nodes : []) as GraphNode[];
+        const edges = (Array.isArray(stored.edges) ? stored.edges : []) as GraphEdge[];
+        result = {
+          data: { results: matchGraphNodes(String(data.query ?? ""), nodes, edges) },
+        };
         break;
       }
 

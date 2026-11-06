@@ -18,9 +18,9 @@ export default function KnowledgeGraphViewer() {
   const loadGraph = async () => {
     try {
       setLoading(true);
-      const user = await animaClient.auth.me();
       const graphs = await animaClient.entities.KnowledgeGraph.filter({
-        user_email: user.email,
+        // The store is already scoped to the signed-in user; filtering by the
+        // Clerk email as well only ever matched rows the browser itself wrote.
         is_active: true
       });
       if (graphs?.length > 0) {
