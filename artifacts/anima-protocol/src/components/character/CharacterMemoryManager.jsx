@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { Loader, Plus, X, Edit2, Trash2, Brain, Zap } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -20,6 +20,7 @@ import { useConfirm } from "@/lib/ConfirmDialog";
 
 export default function CharacterMemoryManager({ characterId, characterName }) {
   const confirm = useConfirm();
+  const requestVersion = useRef(0);
   const [memories, setMemories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState(null);
@@ -34,26 +35,38 @@ export default function CharacterMemoryManager({ characterId, characterName }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    // Invalidate requests from the previous companion when switching profiles.
     if (characterId) {
-      loadMemories();
+      void loadMemories();
+    } else {
+      requestVersion.current += 1;
+      setMemories([]);
+      setLoading(false);
     }
+    return () => {
+      requestVersion.current += 1;
+    };
   }, [characterId]);
 
   const loadMemories = async () => {
+    const version = ++requestVersion.current;
     setLoading(true);
     setError("");
+    setMemories([]);
     try {
       const data = await base44.entities.CharacterMemory.filter(
         { character_id: characterId },
         "-created_date",
         100
       );
-      setMemories(data || []);
+      if (version === requestVersion.current) setMemories(data || []);
     } catch (err) {
-      console.error("Error loading memories:", err);
-      setError("Could not load memories. Please retry.");
+      if (version === requestVersion.current) {
+        console.error("Error loading memories:", err);
+        setError("Could not load memories. Please retry.");
+      }
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
   };
 
