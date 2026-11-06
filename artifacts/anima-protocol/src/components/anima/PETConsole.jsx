@@ -1,9 +1,12 @@
 import { useNavigate } from "react-router-dom";
+import { useLivingAnima } from "@/hooks/useLivingAnima";
+import LivingPresence from "@/components/chat/LivingPresence";
 import { MessageSquare, Swords, Compass, Settings2, Sparkles } from "lucide-react";
 
 /** PET operator console. Uses the existing Anima record, never creates a new identity. */
 export default function PETConsole({ anima, compact = false, onClose }) {
   const navigate = useNavigate();
+  const { activity, setActivity, emotion } = useLivingAnima(anima?.id);
   const actions = [
     { label: "Talk", icon: MessageSquare, path: "/chat" },
     { label: "Network", icon: Compass, path: "/worldmap" },
@@ -21,6 +24,16 @@ export default function PETConsole({ anima, compact = false, onClose }) {
       </div>
       <div className="min-w-0"><p className="font-semibold truncate">{anima?.name || "Your companion"}</p><p className="text-xs text-cyan-300/70">{anima ? "Link established" : "Complete Anima onboarding to establish link"}</p><p className="text-[10px] text-cyan-300/50 mt-1">Identity and memories remain attached to your existing companion.</p></div>
     </div>
+    {anima?.id && <div className="flex flex-col items-center gap-3 py-3 border-t border-cyan-400/20" aria-label="Living Anima stage">
+      <LivingPresence character={{ ...anima, _isAnima: true }} emotion={emotion} size={compact ? 150 : 200} showLabel />
+      <div className="flex flex-wrap justify-center gap-2" role="group" aria-label="Anima presentation">
+        {[["idle","At ease"],["focused","Focus"],["celebrating","Celebrate"]].map(([value,label]) =>
+          <button key={value} type="button" aria-pressed={activity === value} onClick={() => setActivity(value)}
+            className={`min-h-11 px-3 rounded-lg border text-xs ${activity === value ? "border-cyan-300 bg-cyan-400/20" : "border-cyan-400/20 bg-transparent"}`}>{label}</button>
+        )}
+      </div>
+      <p className="text-[10px] text-cyan-300/60 text-center">Expressions reflect selected presentation modes, not detected emotions.</p>
+    </div>}
     <div className={`grid ${compact ? "grid-cols-4" : "grid-cols-2 sm:grid-cols-4"} gap-2`}>
       {actions.map(({label,icon:Icon,path})=><button key={label} type="button" onClick={()=>{onClose?.();navigate(path);}} className="min-h-12 rounded-lg border border-cyan-400/25 bg-cyan-400/5 hover:bg-cyan-400/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300 flex flex-col items-center justify-center gap-1 px-1"><Icon className="w-4 h-4"/><span className="text-[10px]">{label}</span></button>)}
     </div>
