@@ -57,6 +57,7 @@ import {
   repeatRetryBudgetMs,
   shouldRegenerateRepeatedReply,
   watchClientLeave,
+  chatContextMessageLimit,
 } from "../lib/chatTimeouts";
 import { hintLocalLlmWarm } from "../lib/localLlmWarm";
 import {
@@ -176,7 +177,7 @@ import {
   replySurvivesDatabaseTimeout,
 } from "../lib/chatTelemetry";
 import { streamErrorMessage } from "../lib/chatStreamError";
-import { optionalChatContext } from "../lib/optionalChatContext";
+import { optionalChatContext, optionalChatContextTimeoutMs } from "../lib/optionalChatContext";
 import { buildMemoryCoreContext, isMemoryCoreEnabled } from "../lib/memoryCore/sessionContext";
 import { buildCorrectionsContext } from "../lib/corrections/corrections";
 import { searchContextForTurn } from "../lib/search/searchService";
@@ -2854,7 +2855,7 @@ router.post("/messages", async (req, res) => {
       // no longer includes either; a failed read must not become an empty chat.
       loadCharacters(userId, characterIds),
       memoriesPromise,
-      readRecentStoreMessages(userId, sessionId, 24, {
+      readRecentStoreMessages(userId, sessionId, chatContextMessageLimit(), {
         skipMigrate: Boolean(sessionData.messages_migrated),
       }),
       memoriesPromise.then((rows) => {
@@ -2879,6 +2880,11 @@ router.post("/messages", async (req, res) => {
   const promptRecentMessages = promptDropsReplaced
     ? recentMessages.filter((message) => !shouldDiscardStoredMessage(message, discardedReply))
     : recentMessages;
+  // What this turn actually sent the model, plus the ceiling the optional
+  // branches ran under: pair these with context_load_ms and first_word_ms to
+  // show a context-budget change really shortened the wait.
+  telemetry.note("prompt_messages", promptRecentMessages.length);
+  telemetry.note("optional_context_budget_ms", optionalChatContextTimeoutMs());
   const promptMemories =
     discardedReply.turnIds.length > 0
       ? adaptedMemories.map((memory) => ({
