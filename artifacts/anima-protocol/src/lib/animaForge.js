@@ -1,7 +1,7 @@
 // Device-local personalisation profiles. Images are stored as data URLs; limit size.
 export const FORGE_KEY = "anima-forge-v1";
-export const FORGE_DEFAULTS = { background: "", backgroundFit: "cover", overlay: 35, font: "default", glass: 0, navigation: "standard", bubble: "default" };
-const choices = { backgroundFit: ["cover","contain"], font: ["default","serif","mono"], navigation: ["standard","floating"], bubble: ["default","soft","square"] };
+export const FORGE_DEFAULTS = { background: "", backgroundFit: "cover", overlay: 35, font: "default", glass: 0, navigation: "standard", bubble: "default", transition: "subtle", tapFeedback: false };
+const choices = { backgroundFit: ["cover","contain"], font: ["default","serif","mono"], navigation: ["standard","floating","minimal"] , transition: ["none","subtle","expressive"], bubble: ["default","soft","square"] };
 const clamp = (v, min, max) => Math.max(min, Math.min(max, Number(v) || 0));
 export function sanitizeForge(value = {}) {
   const background = typeof value.background === "string" && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(value.background) && value.background.length < 1400000 ? value.background : "";
@@ -10,6 +10,8 @@ export function sanitizeForge(value = {}) {
     font: choices.font.includes(value.font) ? value.font : "default",
     navigation: choices.navigation.includes(value.navigation) ? value.navigation : "standard",
     bubble: choices.bubble.includes(value.bubble) ? value.bubble : "default",
+    transition: choices.transition.includes(value.transition) ? value.transition : "subtle",
+    tapFeedback: value.tapFeedback === true,
     overlay: clamp(value.overlay,0,90), glass: clamp(value.glass,0,90) };
 }
 export function readForge() { try { return sanitizeForge(JSON.parse(localStorage.getItem(FORGE_KEY) || "{}")); } catch { return { ...FORGE_DEFAULTS }; } }
@@ -19,6 +21,8 @@ export function applyForge(value = readForge()) {
   root.dataset.forgeFont = value.font;
   root.dataset.forgeNavigation = value.navigation;
   root.dataset.forgeBubble = value.bubble;
+  root.dataset.forgeTransition = value.transition;
+  root.dataset.forgeTapFeedback = value.tapFeedback ? "enabled" : "disabled";
   root.style.setProperty("--forge-background", value.background ? `url("${value.background}")` : "none");
   root.style.setProperty("--forge-background-fit", value.backgroundFit);
   root.style.setProperty("--forge-overlay", String(value.overlay / 100));

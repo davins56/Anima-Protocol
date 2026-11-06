@@ -1,7 +1,7 @@
 // Global appearance preferences, independent of chat-specific backgrounds.
 export const APPEARANCE_KEY = "anima-appearance-v1";
 export const APPEARANCE_DEFAULTS = Object.freeze({ theme: "original", layout: "classic", radius: "default", scale: "normal", motion: "system" });
-export const APPEARANCE_THEMES = ["original", "nebula", "celestial", "emerald", "eclipse"];
+export const APPEARANCE_THEMES = ["original", "nebula", "celestial", "emerald", "eclipse", "cybernetic", "garden", "academia", "zen", "synthwave", "arcane", "brutalist", "soft-aura", "living"];
 export const APPEARANCE_LAYOUTS = ["classic", "compact", "immersive", "dashboard"];
 export function readAppearance() {
   try {
