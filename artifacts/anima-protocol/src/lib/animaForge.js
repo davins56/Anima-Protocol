@@ -26,7 +26,12 @@ export function applyForge(value = readForge()) {
   root.style.setProperty("--forge-background", value.background ? `url("${value.background}")` : "none");
   root.style.setProperty("--forge-background-fit", value.backgroundFit);
   root.style.setProperty("--forge-overlay", String(value.overlay / 100));
-  root.style.setProperty("--forge-glass", String(value.glass / 100));
+  // Glass frosts the atmospheric background and the app shell. 0-90 maps to a
+  // 0-6px blur; the shell keeps more of its own colour as glass rises so text
+  // stays readable over a busy image.
+  root.style.setProperty("--forge-glass-blur", `${Math.round((value.glass / 15) * 100) / 100}px`);
+  root.style.setProperty("--forge-glass-solid", `${Math.round(100 - value.glass * 0.6)}%`);
+  root.dataset.forgeGlass = value.glass > 0 ? "on" : "off";
   root.dataset.forgeBackground = value.background ? "enabled" : "disabled";
 }
 export function saveForge(patch) {

@@ -1541,7 +1541,14 @@ const AuthenticatedApp = () => {
               <Route
                 path="/what-if"
                 element={
-                    <ExtraPage name="WhatIfScenarios" />
+                    <ExtraPage name="ScenarioHub" />
+                }
+              />
+              {/* CreateScenario saves then redirects here; keep the two in sync. */}
+              <Route
+                path="/scenario-hub"
+                element={
+                    <ExtraPage name="ScenarioHub" />
                 }
               />
               <Route
