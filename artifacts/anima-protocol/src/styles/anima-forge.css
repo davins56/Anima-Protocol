@@ -1,0 +1,15 @@
+/* Global atmospheric layer is pointer-transparent and never obstructs controls. */
+:root[data-forge-background="enabled"] body::before {
+  content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image: linear-gradient(rgba(0,0,0,var(--forge-overlay)),rgba(0,0,0,var(--forge-overlay))), var(--forge-background);
+  background-position: center; background-size: cover, var(--forge-background-fit);
+  background-repeat: no-repeat; opacity: 1;
+}
+:root[data-forge-background="enabled"] #root { position: relative; isolation: isolate; }
+:root[data-forge-background="enabled"] .app-shell-main { background-color: transparent; }
+:root[data-forge-font="serif"] body { font-family: Georgia, "Times New Roman", serif; }
+:root[data-forge-font="mono"] body { font-family: "Share Tech Mono", monospace; }
+:root[data-forge-bubble="soft"] [data-message-bubble] { border-radius: 1.5rem; }
+:root[data-forge-bubble="square"] [data-message-bubble] { border-radius: .15rem; }
+:root[data-forge-navigation="floating"] .tab-bar { border-radius: 1.25rem; margin-inline: max(12px, env(safe-area-inset-left)); width: calc(100% - 24px); }
+@media (max-width: 600px) { :root[data-forge-navigation="floating"] .tab-bar { max-width: calc(100vw - 24px); } }
