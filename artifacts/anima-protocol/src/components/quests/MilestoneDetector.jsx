@@ -1,6 +1,6 @@
 // @ts-check
 import { useEffect, useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 /**
  * @param {{ sessionId?: string, onMilestoneDetected: (milestone: any) => void }} props
@@ -13,7 +13,7 @@ export default function MilestoneDetector({ sessionId, onMilestoneDetected }) {
 
     const checkForMilestones = async () => {
       try {
-        const session = await base44.entities.ChatSession.list().then(s =>
+        const session = await animaClient.entities.ChatSession.list().then(s =>
           s.find(x => x.id === sessionId)
         );
 
@@ -26,7 +26,7 @@ export default function MilestoneDetector({ sessionId, onMilestoneDetected }) {
           const newMessages = session.messages.slice(lastMessageCount);
           
           // Detect narrative milestones
-          const milestone = await base44.functions.invoke('detectAndCreateQuests', {
+          const milestone = await animaClient.functions.invoke('detectAndCreateQuests', {
             session_id: sessionId,
             recent_messages: newMessages.slice(-5),
             message_count: currentMessageCount,

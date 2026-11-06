@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// The page handler persists changes through base44. Back it with a simple
+// The page handler persists changes through animaClient. Back it with a simple
 // in-memory store so the edit flow can be tested without a server or auth
 // token. update() acts as an upsert, mirroring the real client.
-vi.mock("@/api/base44Client", () => {
+vi.mock("@/api/animaClient", () => {
   const stores = new Map();
   let counter = 0;
   const store = (name) => {
@@ -49,10 +49,10 @@ vi.mock("@/api/base44Client", () => {
     },
   });
   const entities = new Proxy({}, { get: (_, name) => entity(name) });
-  return { base44: { entities }, default: { entities } };
+  return { animaClient: { entities }, default: { entities } };
 });
 
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { editMessageFlow } from "@/lib/chatEditHandlers";
 
 // A short conversation reused across tests:
@@ -68,7 +68,7 @@ function sampleMessages() {
 }
 
 async function makeSession(messages = sampleMessages()) {
-  return base44.entities.ChatSession.create({ title: "Story", messages });
+  return animaClient.entities.ChatSession.create({ title: "Story", messages });
 }
 
 beforeEach(() => {
@@ -107,7 +107,7 @@ describe("editMessageFlow (rewrite his message and request a new reply)", () => 
 
     expect(result.status).toBe("sent");
     // Her reply and anything after his message are gone before the send.
-    const stored = await base44.entities.ChatSession.get(session.id);
+    const stored = await animaClient.entities.ChatSession.get(session.id);
     expect(stored.messages.map((message) => message.content)).toEqual(["hello", "hi there"]);
     expect(stored.messages.some((message) => message.content === "once upon a time")).toBe(false);
     // Exactly one send, marked so mood/memory are not counted again, and the
@@ -139,7 +139,7 @@ describe("editMessageFlow (rewrite his message and request a new reply)", () => 
     expect(result.status).toBe("empty");
     expect(confirm).not.toHaveBeenCalled();
     expect(sendMessage).not.toHaveBeenCalled();
-    const stored = await base44.entities.ChatSession.get(session.id);
+    const stored = await animaClient.entities.ChatSession.get(session.id);
     expect(stored.messages).toHaveLength(5);
   });
 
@@ -159,7 +159,7 @@ describe("editMessageFlow (rewrite his message and request a new reply)", () => 
 
     expect(result.status).toBe("cancelled");
     expect(sendMessage).not.toHaveBeenCalled();
-    const stored = await base44.entities.ChatSession.get(session.id);
+    const stored = await animaClient.entities.ChatSession.get(session.id);
     expect(stored.messages).toHaveLength(5);
   });
 
@@ -195,7 +195,7 @@ describe("editMessageFlow (rewrite his message and request a new reply)", () => 
       sendMessage,
     });
 
-    const stored = await base44.entities.ChatSession.get(session.id);
+    const stored = await animaClient.entities.ChatSession.get(session.id);
     expect(stored.messages).toEqual([]);
     expect(sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ text: "HELLO", replyAction: "edit", history: [] }),
@@ -209,8 +209,8 @@ describe("editMessageFlow (rewrite his message and request a new reply)", () => 
     ]);
     const setActiveSession = vi.fn();
     const sendMessage = vi.fn().mockImplementation(async () => {
-      const current = await base44.entities.ChatSession.get(session.id);
-      await base44.entities.ChatSession.update(session.id, {
+      const current = await animaClient.entities.ChatSession.get(session.id);
+      await animaClient.entities.ChatSession.update(session.id, {
         messages: [
           ...(current.messages || []),
           { id: "fresh", role: "user", content: "from another device" },
@@ -228,7 +228,7 @@ describe("editMessageFlow (rewrite his message and request a new reply)", () => 
     });
 
     expect(result.status).toBe("not_started");
-    const stored = await base44.entities.ChatSession.get(session.id);
+    const stored = await animaClient.entities.ChatSession.get(session.id);
     expect(stored.messages.map((message) => message.id)).toEqual(["u1", "a1", "fresh"]);
     expect(stored.last_message).toBe("from another device");
   });

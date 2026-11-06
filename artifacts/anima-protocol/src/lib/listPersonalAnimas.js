@@ -1,4 +1,4 @@
-import { awaitCompanionStoreAuth, base44 } from "@/api/base44Client";
+import { awaitCompanionStoreAuth, animaClient } from "@/api/animaClient";
 
 export { awaitCompanionStoreAuth };
 import {
@@ -31,7 +31,7 @@ export function companionLookHref(id) {
 
 export async function updateCompanionRecord(row, patch) {
   const entity = companionStoreEntity(row);
-  return base44.entities[entity].update(row.id, patch);
+  return animaClient.entities[entity].update(row.id, patch);
 }
 
 /**
@@ -44,7 +44,7 @@ export async function loadCompanionRecord(id, preferredEntity) {
   const first = preferredEntity === "Character" ? "Character" : "Anima";
   const second = first === "Character" ? "Anima" : "Character";
   for (const entity of [first, second]) {
-    const rows = await base44.entities[entity]
+    const rows = await animaClient.entities[entity]
       .list("-created_date", 100)
       .catch(() => []);
     const found = (rows || []).find((row) => row && row.id === id);
@@ -107,7 +107,7 @@ export function mergePersonalCompanions(animas, characters) {
 }
 
 async function listByNameSearch(entity, name, limit) {
-  return base44.entities[entity]
+  return animaClient.entities[entity]
     .list("-created_date", limit, { search: { name } })
     .catch(() => []);
 }
@@ -126,13 +126,13 @@ export async function listPersonalAnimas(limit = 500) {
   // Primary Anima.list must throw so Customise Anima can classify
   // timeout / database / misconfigured failures. Recovery queries are
   // best-effort and must not hide that error.
-  const animas = await base44.entities.Anima.list("-created_date", limit);
-  const characters = await base44.entities.Character.list(
+  const animas = await animaClient.entities.Anima.list("-created_date", limit);
+  const characters = await animaClient.entities.Character.list(
     "-created_date",
     limit,
   ).catch(() => []);
   const [prompted, ...namedCharacters] = await Promise.all([
-    base44.entities.Character.filter(
+    animaClient.entities.Character.filter(
       { creation_method: "ai_prompt" },
       "-created_date",
       limit,

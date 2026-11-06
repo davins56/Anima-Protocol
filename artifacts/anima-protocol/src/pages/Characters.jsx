@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { useStoreSync } from "@/lib/useStoreSync";
 import { Plus, X, Edit2, Trash2, Volume2, BookOpen, Loader, ImagePlus, Library } from "lucide-react";
 import {
@@ -230,7 +230,7 @@ export default function Characters() {
       // personality/backstory/speaking_style, scour the web for their
       // mannerisms and speech patterns to populate the gaps.
       if (!editingChar && form.universe && (!form.personality || !form.backstory || !form.speaking_style)) {
-        const generated = await base44.functions.invoke('generateCharacterTraits', {
+        const generated = await animaClient.functions.invoke('generateCharacterTraits', {
           name: form.name,
           universe: form.universe
         });
@@ -244,7 +244,7 @@ export default function Characters() {
       }
 
       if (editingChar) {
-        await base44.entities.Character.update(editingChar.id, finalForm);
+        await animaClient.entities.Character.update(editingChar.id, finalForm);
       } else {
         const created = await createCompanionRecord("Character", finalForm);
         // No photo provided? Auto-search one in the background.
@@ -300,7 +300,7 @@ export default function Characters() {
     if (!form.name.trim()) return;
     setFetchingBio(true);
     try {
-      const bioData = await base44.functions.invoke("generateCharacterTraits", {
+      const bioData = await animaClient.functions.invoke("generateCharacterTraits", {
         name: form.name,
         universe: form.universe || null,
       });
@@ -656,7 +656,7 @@ export default function Characters() {
                   onUpdate={(data) => {
                     setForm((f) => ({ ...f, elevenlabs_voice_id: data.elevenlabs_voice_id || f.elevenlabs_voice_id }));
                     if (editingChar) {
-                      base44.entities.Character.update(editingChar.id, data).catch(console.error);
+                      animaClient.entities.Character.update(editingChar.id, data).catch(console.error);
                     }
                   }}
                 />

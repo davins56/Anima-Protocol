@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ChevronDown, GitBranch, Zap, TrendingUp, Copy, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 export default function WhatIfBranchExplorer({ sessionId, characterId, characterName, recentMessages }) {
   const [branches, setBranches] = useState([]);
@@ -18,7 +18,7 @@ export default function WhatIfBranchExplorer({ sessionId, characterId, character
   const generateBranches = async () => {
     setLoading(true);
     try {
-      const result = await base44.functions.invoke('predictNarrativeBranches', {
+      const result = await animaClient.functions.invoke('predictNarrativeBranches', {
         session_id: sessionId,
         character_id: characterId,
         character_name: characterName,

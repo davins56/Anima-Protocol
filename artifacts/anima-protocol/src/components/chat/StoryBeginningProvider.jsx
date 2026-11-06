@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import StoryBeginningModal from "./StoryBeginningModal";
 
 export default function StoryBeginningProvider({ sessionId, isNewSession, onStoryBeginningSubmitted }) {
@@ -15,7 +15,7 @@ export default function StoryBeginningProvider({ sessionId, isNewSession, onStor
   const handleSubmit = async (text) => {
     if (sessionId && text) {
       try {
-        await base44.entities.ChatSession.update(sessionId, {
+        await animaClient.entities.ChatSession.update(sessionId, {
           story_beginning: text,
         });
         onStoryBeginningSubmitted?.(text);

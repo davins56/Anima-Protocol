@@ -8,11 +8,11 @@ description: How the Anima companion's avatar_url is populated and the localStor
 The Anima companion is created (onboarding / CreateCompanionModal) WITHOUT an
 `avatar_url`, so home surfaces fall back to the `/api/placeholder/150/150`
 placeholder until one is set. Three ways it gets populated:
-- `AnimaCustomizer` — AI-generated portrait via `base44.integrations.Core.GenerateImage` (remote URL).
+- `AnimaCustomizer` — AI-generated portrait via `animaClient.integrations.Core.GenerateImage` (remote URL).
 - Seed characters use remote wiki/CDN URLs (these are Characters, not the Anima).
 - MainHome avatar box — user uploads a local photo.
 
-**Rule:** entities are localStorage-backed (`base44Client.js`). User-uploaded
+**Rule:** entities are localStorage-backed (`animaClient.js`). User-uploaded
 photos MUST be downscaled to a small JPEG **data URL** before saving to
 `avatar_url` (MainHome uses a canvas, max 512px, quality 0.85), or large images
 risk `QuotaExceededError`.

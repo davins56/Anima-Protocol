@@ -334,7 +334,7 @@ describe("Chat Init wiring", () => {
     );
     const init = readFileSync(join(srcRoot, "lib/createInitSession.js"), "utf8");
     const auth = readFileSync(join(srcRoot, "lib/AuthContext.jsx"), "utf8");
-    const client = readFileSync(join(srcRoot, "api/base44Client.js"), "utf8");
+    const client = readFileSync(join(srcRoot, "api/animaClient.js"), "utf8");
 
     expect(modal).toMatch(/if \(mode === "solo"\) \{\s*setSelected\(\[id\]\)/);
     expect(modal).toContain("character_id: selectedIds[0]");
@@ -409,7 +409,7 @@ describe("Chat Init wiring", () => {
     expect(chooser).toContain("createInitChatSession(");
     expect(chooser).toContain("buildInitSessionPayload(");
     expect(chooser).not.toMatch(/entities\.ChatSession\.create\s*\(/);
-    expect(chooser).not.toMatch(/await\s+base44\.messages\.replace/);
+    expect(chooser).not.toMatch(/await\s+animaClient\.messages\.replace/);
   });
 
   it("chooser handoff remembers the primed session and navigates with location.state", () => {

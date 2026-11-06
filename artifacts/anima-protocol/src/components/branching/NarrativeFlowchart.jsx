@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Loader, ChevronRight, GitBranch, RotateCcw, Copy } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -18,7 +18,7 @@ export default function NarrativeFlowchart({ sessionId, onRestore, onFork }) {
   const loadSnapshots = async () => {
     setLoading(true);
     try {
-      const data = await base44.entities.WorldSnapshot.filter(
+      const data = await animaClient.entities.WorldSnapshot.filter(
         { session_id: sessionId },
         "-created_date",
         200

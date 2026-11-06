@@ -5,10 +5,10 @@ vi.mock("@/lib/downscaleImage", () => ({
 }));
 
 import {
-  base44,
+  animaClient,
   clearAuthTokenGetter,
   setAuthTokenGetter,
-} from "./base44Client";
+} from "./animaClient";
 
 describe("UploadFile / storage uploads", () => {
   beforeEach(() => {
@@ -41,7 +41,7 @@ describe("UploadFile / storage uploads", () => {
     const file = new File([new Uint8Array([137, 80, 78, 71])], "face.png", {
       type: "image/png",
     });
-    const result = await base44.integrations.Core.UploadFile({ file });
+    const result = await animaClient.integrations.Core.UploadFile({ file });
     expect(result.file_url).toBe("/api/storage/objects/uploads/abc");
     expect(result.url).toBe("/api/storage/objects/uploads/abc");
   });
@@ -56,7 +56,7 @@ describe("UploadFile / storage uploads", () => {
     const file = new File([new Uint8Array([1, 2, 3])], "face.png", {
       type: "image/png",
     });
-    await expect(base44.integrations.Core.UploadFile({ file })).rejects.toThrow(
+    await expect(animaClient.integrations.Core.UploadFile({ file })).rejects.toThrow(
       /too large/i,
     );
   });
@@ -67,7 +67,7 @@ describe("UploadFile / storage uploads", () => {
     const file = new File([new Uint8Array([1, 2, 3])], "face.png", {
       type: "image/png",
     });
-    await expect(base44.integrations.Core.UploadFile({ file })).rejects.toThrow(
+    await expect(animaClient.integrations.Core.UploadFile({ file })).rejects.toThrow(
       /sign in/i,
     );
     expect(global.fetch).not.toHaveBeenCalled();
@@ -80,7 +80,7 @@ describe("UploadFile / storage uploads", () => {
     const file = new File([new Uint8Array([1, 2, 3])], "face.png", {
       type: "image/png",
     });
-    await expect(base44.integrations.Core.UploadFile({ file })).rejects.toThrow(
+    await expect(animaClient.integrations.Core.UploadFile({ file })).rejects.toThrow(
       /too large/i,
     );
   });
@@ -103,7 +103,7 @@ describe("UploadFile / storage uploads", () => {
     const file = new File([new Uint8Array([1, 2, 3])], "face.png", {
       type: "image/png",
     });
-    const result = await base44.integrations.Core.UploadFile({ file });
+    const result = await animaClient.integrations.Core.UploadFile({ file });
     expect(posts).toBe(2);
     expect(result.file_url).toBe("/api/storage/objects/uploads/retried");
   });
@@ -126,7 +126,7 @@ describe("UploadFile / storage uploads", () => {
     const file = new File([new Uint8Array([1, 2, 3])], "face.png", {
       type: "image/png",
     });
-    const result = await base44.integrations.Core.UploadFile({ file });
+    const result = await animaClient.integrations.Core.UploadFile({ file });
     expect(posts).toBe(2);
     expect(result.file_url).toBe("/api/storage/objects/uploads/after-unavailable");
   });
@@ -143,7 +143,7 @@ describe("UploadFile / storage uploads", () => {
     const file = new File([new Uint8Array([1, 2, 3])], "face.png", {
       type: "image/png",
     });
-    await expect(base44.integrations.Core.UploadFile({ file })).rejects.toThrow(
+    await expect(animaClient.integrations.Core.UploadFile({ file })).rejects.toThrow(
       /database|unavailable/i,
     );
     expect(posts).toBe(2);
@@ -161,7 +161,7 @@ describe("UploadFile / storage uploads", () => {
     const file = new File([new Uint8Array([1, 2, 3])], "face.png", {
       type: "image/png",
     });
-    await expect(base44.integrations.Core.UploadFile({ file })).rejects.toThrow(
+    await expect(animaClient.integrations.Core.UploadFile({ file })).rejects.toThrow(
       /schema|unavailable|database/i,
     );
     expect(posts).toBe(1);
@@ -177,7 +177,7 @@ describe("UploadFile / storage uploads", () => {
     const file = new File([new Uint8Array([1, 2, 3])], "face.png", {
       type: "image/png",
     });
-    await expect(base44.integrations.Core.UploadFile({ file })).rejects.toThrow(
+    await expect(animaClient.integrations.Core.UploadFile({ file })).rejects.toThrow(
       /not found|not available/i,
     );
   });

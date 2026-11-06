@@ -5,18 +5,18 @@ description: How Replit-managed Clerk is bridged into Anima Protocol's existing 
 
 # Anima Protocol — Clerk auth bridge
 
-Clerk owns identity + session; the localStorage `base44` record (base44Client.js)
-holds profile/settings the rest of the app reads via `base44.auth.me()`.
+Clerk owns identity + session; the localStorage `animaClient` record (animaClient.js)
+holds profile/settings the rest of the app reads via `animaClient.auth.me()`.
 
 **The bridge (`src/lib/AuthContext.jsx`):**
 - Reads Clerk `useUser`/`useClerk`; derives `isAuthenticated`/`isLoadingAuth` from
-  Clerk, NOT from base44.
+  Clerk, NOT from animaClient.
 - On sign-in, merges Clerk identity into the local profile via
-  `base44.auth.syncIdentity({id,email,full_name})`; on sign-out calls
-  `base44.auth.clearSession()`.
+  `animaClient.auth.syncIdentity({id,email,full_name})`; on sign-out calls
+  `animaClient.auth.clearSession()`.
 - `logout()` clears the local profile then `signOut({ redirectUrl: '/' })`.
   **Why:** Clerk owns the post-logout redirect — signed-out users must land on
-  the public Landing at `/`, never the bare `/sign-in` screen. `base44.auth.logout`
+  the public Landing at `/`, never the bare `/sign-in` screen. `animaClient.auth.logout`
   was reduced to clear-only (its old redirect arg is now ignored at all callsites).
 
 **Routing contract (App.full.jsx):**

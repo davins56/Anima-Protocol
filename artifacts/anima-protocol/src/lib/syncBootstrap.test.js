@@ -21,7 +21,7 @@ const {
   resetSeedLock: vi.fn(),
 }));
 
-vi.mock("@/api/base44Client", () => ({
+vi.mock("@/api/animaClient", () => ({
   bulkImport,
   restoreData,
   notifyStoreChanged,

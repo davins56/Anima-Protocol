@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Lightbulb, Loader, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -24,7 +24,7 @@ export default function LocationDialogueHints({
   const generateHints = async () => {
     setLoading(true);
     try {
-      const result = await base44.functions.invoke("generateLocationHints", {
+      const result = await animaClient.functions.invoke("generateLocationHints", {
         session_id: sessionId,
         character_id: characterId,
         current_location: currentLocation,

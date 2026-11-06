@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import ContextualInventorySuggestions from "../inventory/ContextualInventorySuggestions";
 import { X, Package, Plus, Trash2, Shield, Sword, Zap, Star, Edit2, Check } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { deleteWithUndo } from "@/lib/undoableDelete";
 
 const TYPE_ICONS = {
@@ -48,21 +48,21 @@ export default function InventoryDrawer({ characterId, characterName, onClose, r
 
   const loadItems = async () => {
     setLoading(true);
-    const data = await base44.entities.Inventory.filter({ character_id: characterId }, "-created_date", 100);
+    const data = await animaClient.entities.Inventory.filter({ character_id: characterId }, "-created_date", 100);
     setItems(data || []);
     setLoading(false);
   };
 
   const handleAdd = async () => {
     if (!form.name.trim()) return;
-    await base44.entities.Inventory.create({ ...form, character_id: characterId });
+    await animaClient.entities.Inventory.create({ ...form, character_id: characterId });
     setForm(defaultForm);
     setShowAddForm(false);
     await loadItems();
   };
 
   const handleUpdate = async (id, patch) => {
-    await base44.entities.Inventory.update(id, patch);
+    await animaClient.entities.Inventory.update(id, patch);
     setItems(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i));
   };
 
@@ -79,7 +79,7 @@ export default function InventoryDrawer({ characterId, characterName, onClose, r
 
   const handleEditSave = async () => {
     if (!editingId) return;
-    await base44.entities.Inventory.update(editingId, form);
+    await animaClient.entities.Inventory.update(editingId, form);
     setEditingId(null);
     await loadItems();
   };
@@ -121,7 +121,7 @@ export default function InventoryDrawer({ characterId, characterName, onClose, r
             items={items}
             recentMessages={recentMessages}
             onItemSuggested={(item) => {
-              base44.functions.invoke("updateInventory", {
+              animaClient.functions.invoke("updateInventory", {
                 character_id: characterId,
                 session_id: null,
                 user_message: `Using ${item.name}`,

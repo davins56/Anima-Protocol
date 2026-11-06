@@ -10,8 +10,8 @@ const { updateMeMock, setUserMock, authState } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@/api/base44Client", () => ({
-  base44: {
+vi.mock("@/api/animaClient", () => ({
+  animaClient: {
     auth: { updateMe: (...args) => updateMeMock(...args) },
   },
 }));

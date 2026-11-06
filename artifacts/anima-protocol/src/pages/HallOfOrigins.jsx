@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { useStoreSync } from '@/lib/useStoreSync';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Sparkles, Gem, Loader, Stars, BookOpen } from 'lucide-react';
@@ -41,12 +41,12 @@ export default function HallOfOrigins() {
 
   const load = useCallback(async () => {
     try {
-      const me = await base44.auth.me();
+      const me = await animaClient.auth.me();
       const [animas, sessions, memories, crystals] = await Promise.all([
-        base44.entities.Anima.list().catch(() => []),
-        base44.entities.ChatSession.list().catch(() => []),
-        base44.entities.CrossSessionMemory.list().catch(() => []),
-        base44.entities.MemoryCrystal.list().catch(() => []),
+        animaClient.entities.Anima.list().catch(() => []),
+        animaClient.entities.ChatSession.list().catch(() => []),
+        animaClient.entities.CrossSessionMemory.list().catch(() => []),
+        animaClient.entities.MemoryCrystal.list().catch(() => []),
       ]);
 
       const primary = animas?.find((a) => a.assigned_user === me?.email) || animas?.[0] || null;

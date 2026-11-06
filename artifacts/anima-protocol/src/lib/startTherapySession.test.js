@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@/api/base44Client", () => {
+vi.mock("@/api/animaClient", () => {
   return {
-    base44: {
+    animaClient: {
       entities: {
         ChatSession: {
           create: vi.fn(),
@@ -12,7 +12,7 @@ vi.mock("@/api/base44Client", () => {
   };
 });
 
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { startTherapySession, pickDefaultAnima } from "./startTherapySession";
 
 describe("pickDefaultAnima", () => {
@@ -32,13 +32,13 @@ describe("pickDefaultAnima", () => {
 
 describe("startTherapySession", () => {
   beforeEach(() => {
-    base44.entities.ChatSession.create.mockReset();
-    base44.entities.ChatSession.create.mockResolvedValue({ id: "sess-1" });
+    animaClient.entities.ChatSession.create.mockReset();
+    animaClient.entities.ChatSession.create.mockResolvedValue({ id: "sess-1" });
   });
 
   it("refuses to start without an Anima", async () => {
     await expect(startTherapySession({})).rejects.toThrow(/Choose your Anima/);
-    expect(base44.entities.ChatSession.create).not.toHaveBeenCalled();
+    expect(animaClient.entities.ChatSession.create).not.toHaveBeenCalled();
   });
 
   it("creates a solo therapy session with an opening from the Anima", async () => {
@@ -47,7 +47,7 @@ describe("startTherapySession", () => {
       userName: "Dav",
     });
     expect(session.id).toBe("sess-1");
-    const payload = base44.entities.ChatSession.create.mock.calls[0][0];
+    const payload = animaClient.entities.ChatSession.create.mock.calls[0][0];
     expect(payload.mode).toBe("solo");
     expect(payload.character_id).toBe("anima-9");
     expect(payload.therapy_mode).toBe(true);
@@ -67,7 +67,7 @@ describe("startTherapySession", () => {
       topicId: "topic-3",
       topicNotes: "empty after 6pm",
     });
-    const payload = base44.entities.ChatSession.create.mock.calls[0][0];
+    const payload = animaClient.entities.ChatSession.create.mock.calls[0][0];
     expect(payload.title).toBe("Therapy · Work burnout");
     expect(payload.therapy_topic).toBe("Work burnout");
     expect(payload.therapy_topic_id).toBe("topic-3");

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { base44, uploadDataUrl, urlToDataUrl } from "@/api/base44Client";
+import { animaClient, uploadDataUrl, urlToDataUrl } from "@/api/animaClient";
 import { useStoreSync } from "@/lib/useStoreSync";
 import { motion } from "framer-motion";
 import { Moon, Plus, Sparkles } from "lucide-react";
@@ -52,7 +52,7 @@ export default function MainHome() {
   const handleApplyAiPhoto = async (dataUrl) => {
     if (!anima?.id) return;
     const file_url = await uploadDataUrl(dataUrl);
-    await base44.entities.Anima.update(anima.id, { avatar_url: file_url });
+    await animaClient.entities.Anima.update(anima.id, { avatar_url: file_url });
     setAnima((prev) => (prev ? { ...prev, avatar_url: file_url } : prev));
   };
 
@@ -100,12 +100,12 @@ export default function MainHome() {
   const loadHomeData = useCallback(async () => {
     try {
       const [me, sessionList, animas, checkIns] = await Promise.all([
-        base44.auth.me(),
-        base44.entities.ChatSession.list("-updated_date", RECENT_CHATS_LIMIT, {
+        animaClient.auth.me(),
+        animaClient.entities.ChatSession.list("-updated_date", RECENT_CHATS_LIMIT, {
           withMessages: false,
         }),
-        base44.entities.Anima.list(),
-        base44.entities.CheckIn.list(),
+        animaClient.entities.Anima.list(),
+        animaClient.entities.CheckIn.list(),
       ]);
       setSelectedMode(me?.selected_mode || "serenity");
       setHomeSettings(me?.settings || null);
@@ -183,7 +183,7 @@ export default function MainHome() {
   const handleSelectMode = async (key) => {
     setSelectedMode(key);
     try {
-      await base44.auth.updateMe({ selected_mode: key });
+      await animaClient.auth.updateMe({ selected_mode: key });
     } catch (err) {
       console.debug("Could not persist mode selection");
     }

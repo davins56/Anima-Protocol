@@ -4,8 +4,8 @@ import { createRoot } from "react-dom/client";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-vi.mock("@/api/base44Client", () => ({
-  base44: { entities: { WorldState: { list: vi.fn().mockResolvedValue([]) } } },
+vi.mock("@/api/animaClient", () => ({
+  animaClient: { entities: { WorldState: { list: vi.fn().mockResolvedValue([]) } } },
 }));
 vi.mock("@/hooks/useMemoryHighlight", () => ({
   useMemoryHighlight: () => ({ isMemoryReference: false, memoryDetail: null }),

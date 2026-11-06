@@ -103,7 +103,7 @@ Then add them to the dashboard area in Chat (around line 1400):
 The components use the `updateRelationship` backend function to track changes automatically:
 
 ```javascript
-await base44.functions.invoke("updateRelationship", {
+await animaClient.functions.invoke("updateRelationship", {
   character_id: charA_id,
   session_id: sessionId,
   character_name: charA_name,

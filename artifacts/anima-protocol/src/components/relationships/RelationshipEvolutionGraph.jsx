@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, ChevronRight, Zap, Users } from "lucide-react";
 
@@ -36,7 +36,7 @@ export default function RelationshipEvolutionGraph({ sessionId, characters = [] 
 
   const loadRelationships = async () => {
     try {
-      const data = await base44.entities.CharacterRelationship.filter(
+      const data = await animaClient.entities.CharacterRelationship.filter(
         { session_id: sessionId },
         "-created_date",
         500

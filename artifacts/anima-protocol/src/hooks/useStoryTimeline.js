@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 export function useStoryTimeline(sessionId) {
   const [milestones, setMilestones] = useState([]);
@@ -15,12 +15,12 @@ export function useStoryTimeline(sessionId) {
     setLoading(true);
     try {
       const [snapshots, memories] = await Promise.all([
-        base44.entities.WorldSnapshot.filter(
+        animaClient.entities.WorldSnapshot.filter(
           { session_id: sessionId, is_active: true },
           'created_date',
           100
         ),
-        base44.entities.VectorMemory.filter(
+        animaClient.entities.VectorMemory.filter(
           { session_id: sessionId },
           'created_date',
           100

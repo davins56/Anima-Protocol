@@ -1,6 +1,6 @@
 // @ts-check
 import { useState, useEffect, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 
 /**
  * @param {string} sessionId
@@ -20,7 +20,7 @@ export function useAIInsights(sessionId, messages) {
 
     setLoading(true);
     try {
-      const result = await base44.functions.invoke("generateInsightsSummary", {
+      const result = await animaClient.functions.invoke("generateInsightsSummary", {
         session_id: sessionId,
         messages: messages.slice(-50), // Last 50 messages for context
         focus_areas: ["character_themes", "plot_coherence", "character_evolution"],

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import ShareCompanionCard from "@/components/companions/ShareCompanionCard";
 
 /** /companions/:characterId/card — identity-only share card for one companion. */
@@ -14,7 +14,7 @@ export default function CompanionCard() {
     let live = true;
     (async () => {
       for (const entity of ["Character", "Anima"]) {
-        const rows = await base44.entities[entity].filter({ id: characterId }, undefined, 1).catch(() => []);
+        const rows = await animaClient.entities[entity].filter({ id: characterId }, undefined, 1).catch(() => []);
         if (rows?.[0]) {
           if (live) setCharacter(rows[0]);
           return;

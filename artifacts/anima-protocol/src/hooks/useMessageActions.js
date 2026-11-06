@@ -1,4 +1,4 @@
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { useConfirm } from "@/lib/ConfirmDialog";
 import { editMessageFlow } from "@/lib/chatEditHandlers";
 import { regenerateMessageFlow } from "@/lib/chatRewindHandlers";
@@ -18,7 +18,7 @@ export function useMessageActions({ activeSession, setActiveSession, isLoading, 
     });
     if (!ok) return;
     const updated = (activeSession.messages || []).filter((_, i) => i !== messageIndex);
-    await base44.entities.ChatSession.update(activeSession.id, { messages: updated });
+    await animaClient.entities.ChatSession.update(activeSession.id, { messages: updated });
     setActiveSession(prev => ({ ...prev, messages: updated }));
   };
 

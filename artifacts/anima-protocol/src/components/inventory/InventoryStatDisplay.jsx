@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Brain, Shield, Activity, Zap } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 export default function InventoryStatDisplay({ characterId, sessionId }) {
   const [stats, setStats] = useState(null);
@@ -12,7 +12,7 @@ export default function InventoryStatDisplay({ characterId, sessionId }) {
     
     const fetchStats = async () => {
       try {
-        const result = await base44.functions.invoke('calculateInventoryStats', {
+        const result = await animaClient.functions.invoke('calculateInventoryStats', {
           character_id: characterId,
           session_id: sessionId,
         });

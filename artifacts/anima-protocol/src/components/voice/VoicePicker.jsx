@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Volume2, Loader, CheckCircle2, Play } from "lucide-react";
 
 export default function VoicePicker({ value, onChange }) {
@@ -13,7 +13,7 @@ export default function VoicePicker({ value, onChange }) {
   useEffect(() => {
     if (!open || voices.length > 0) return;
     setLoading(true);
-    base44.functions.invoke("elevenLabsVoices", {})
+    animaClient.functions.invoke("elevenLabsVoices", {})
       .then((res) => setVoices(res.data?.voices || []))
       .finally(() => setLoading(false));
   }, [open]);

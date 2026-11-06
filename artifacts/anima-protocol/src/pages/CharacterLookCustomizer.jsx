@@ -1,6 +1,6 @@
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import PortraitUploader from "@/components/character/PortraitUploader";
 import { ChevronLeft, Loader, Save, Sparkles, Users, X } from "lucide-react";
 import { motion } from "framer-motion";
@@ -44,8 +44,8 @@ export default function CharacterLookCustomizer() {
     setLoading(true);
     try {
       const [chars, animaList] = await Promise.all([
-        base44.entities.Character.list("-created_date", 100),
-        base44.entities.Anima.list("-created_date", 100),
+        animaClient.entities.Character.list("-created_date", 100),
+        animaClient.entities.Anima.list("-created_date", 100),
       ]);
       setCharacters(chars || []);
       setAnimas(animaList || []);
@@ -62,7 +62,7 @@ export default function CharacterLookCustomizer() {
 
   const loadCustomLook = async (charId) => {
     try {
-      const looks = await base44.entities.CustomLook.filter({
+      const looks = await animaClient.entities.CustomLook.filter({
         character_id: charId,
         is_active: true,
       });
@@ -112,9 +112,9 @@ export default function CharacterLookCustomizer() {
       };
 
       if (customLook) {
-        await base44.entities.CustomLook.update(customLook.id, data);
+        await animaClient.entities.CustomLook.update(customLook.id, data);
       } else {
-        await base44.entities.CustomLook.create(data);
+        await animaClient.entities.CustomLook.create(data);
       }
 
       await loadCustomLook(characterId);

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Zap, TrendingDown, TrendingUp, AlertTriangle, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 const IMPACT_COLORS = {
   major: 'border-red-400/50 bg-red-400/5 text-red-300',
@@ -37,7 +37,7 @@ export default function WorldPulseHeadlines({
   const generateWorldPulse = async () => {
     setLoading(true);
     try {
-      const result = await base44.functions.invoke('aggregateWorldImpact', {
+      const result = await animaClient.functions.invoke('aggregateWorldImpact', {
         session_id: sessionId,
         recent_messages: recentMessages.slice(-12),
         character_emotions: characterEmotions || {},
