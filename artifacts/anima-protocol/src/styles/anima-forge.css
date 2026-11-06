@@ -13,3 +13,20 @@
 :root[data-forge-bubble="square"] [data-message-bubble] { border-radius: .15rem; }
 :root[data-forge-navigation="floating"] .tab-bar { border-radius: 1.25rem; margin-inline: max(12px, env(safe-area-inset-left)); width: calc(100% - 24px); }
 @media (max-width: 600px) { :root[data-forge-navigation="floating"] .tab-bar { max-width: calc(100vw - 24px); } }
+
+/* Glass: frost the atmospheric layer and let it read through the shell.
+   Only applied when the Forge glass slider is above zero, so the default
+   look is untouched. The shell keeps --forge-glass-solid of its own colour
+   so text stays legible as the blur rises. */
+:root[data-forge-glass="on"] body::before {
+  filter: blur(var(--forge-glass-blur, 0px));
+  transform: scale(1.04);
+}
+:root[data-forge-glass="on"] .app-shell-main {
+  background-color: color-mix(in srgb, var(--background) var(--forge-glass-solid, 70%), transparent);
+  backdrop-filter: blur(var(--forge-glass-blur, 0px));
+  -webkit-backdrop-filter: blur(var(--forge-glass-blur, 0px));
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-forge-glass="on"] .app-shell-main { background-color: var(--background); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
