@@ -9,7 +9,7 @@ The **live** AI prompt assembly for chat is in `artifacts/anima-protocol/src/pag
 inside `handleSendMessage`. It builds three prompt variants from a shared
 `adultInstruction` string (defined once in that function): solo character prompt,
 group prompt (via `buildGroupPrompt`), the "continue story" group fallback, and a
-separate Serenity ambient prompt. All go out through `base44.integrations.Core.InvokeLLM`.
+separate Serenity ambient prompt. All go out through `animaClient.integrations.Core.InvokeLLM`.
 
 `src/lib/chatMessageHandler.js` (`sendChatMessage`) looks like a parallel implementation
 but is **dead code — it is never imported anywhere**. Editing it has no runtime effect.

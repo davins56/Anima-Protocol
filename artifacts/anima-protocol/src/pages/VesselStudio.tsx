@@ -118,7 +118,7 @@ export default function VesselStudio() {
         <p className="font-mono text-xs text-primary tracking-widest uppercase">
           Vessel {name ? `· ${name}` : ""} {version ? `· v${version}` : "· unsaved"}
         </p>
-        <VesselCustomizer value={config} onChange={setConfig} />
+        <VesselCustomizer value={config} onChange={setConfig} onTextApplied={(text) => setNote(text.slice(0, 200))} />
         <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} placeholder="What changed? (stored in memory)" className="w-full bg-transparent border border-border px-2 py-2 text-sm" />
         <label className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
           <input type="checkbox" checked={withSnapshot} onChange={(e) => setWithSnapshot(e.target.checked)} /> Save a snapshot as photo reference

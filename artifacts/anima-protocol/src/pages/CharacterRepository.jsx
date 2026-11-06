@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, Sparkles, Heart, Trash2, ArrowLeft } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { useConfirm } from "@/lib/ConfirmDialog";
 import PullToRefreshContainer from "@/components/mobile/PullToRefreshContainer";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
@@ -34,8 +34,8 @@ export default function CharacterRepository() {
     setLoading(true);
     try {
       const [chars, animas] = await Promise.all([
-        base44.entities.Character.list("-created_date", 100),
-        base44.entities.Anima.list("-created_date", 100),
+        animaClient.entities.Character.list("-created_date", 100),
+        animaClient.entities.Anima.list("-created_date", 100),
       ]);
 
       const animaAsChars = (animas || []).map(a => ({
@@ -67,7 +67,7 @@ export default function CharacterRepository() {
     if (charEvolutions[char.id] && charTimelines[char.id]) return;
 
     try {
-      const evoRes = await base44.functions.invoke("trackCharacterEvolution", {
+      const evoRes = await animaClient.functions.invoke("trackCharacterEvolution", {
         character_id: char.id,
         character_name: char.name,
       });
@@ -80,8 +80,8 @@ export default function CharacterRepository() {
 
     try {
       const [journals, rels] = await Promise.all([
-        base44.entities.CharacterJournal.filter({ character_id: char.id }, "-created_date", 10),
-        base44.entities.CharacterRelationship.filter({ character_id: char.id }, "-created_date", 10),
+        animaClient.entities.CharacterJournal.filter({ character_id: char.id }, "-created_date", 10),
+        animaClient.entities.CharacterRelationship.filter({ character_id: char.id }, "-created_date", 10),
       ]);
       setCharTimelines(prev => ({
         ...prev,
@@ -135,8 +135,8 @@ export default function CharacterRepository() {
     if (!ok) return;
     try {
       await (char._isAnima
-        ? base44.entities.Anima.delete(charId)
-        : base44.entities.Character.delete(charId));
+        ? animaClient.entities.Anima.delete(charId)
+        : animaClient.entities.Character.delete(charId));
       setCharacters(prev => prev.filter(c => c.id !== charId));
       if (selectedChar?.id === charId) setSelectedChar(null);
     } catch (err) {

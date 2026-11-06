@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BookOpen, ArrowLeft, RefreshCw, Search, ChevronDown, ChevronUp,
@@ -187,11 +187,11 @@ export default function Chronicles() {
     setLoading(true);
     try {
       const [j, c, s] = await Promise.all([
-        base44.entities.CharacterJournal.list("-created_date", 200),
-        base44.entities.Character.list("-created_date", 100),
+        animaClient.entities.CharacterJournal.list("-created_date", 200),
+        animaClient.entities.Character.list("-created_date", 100),
         // Sessions are only used as a title lookup for each journal entry — skip
         // hydrating every session's full message history.
-        base44.entities.ChatSession.list("-created_date", 100, { withMessages: false }),
+        animaClient.entities.ChatSession.list("-created_date", 100, { withMessages: false }),
       ]);
       setJournals(j || []);
       setCharacters(c || []);
@@ -210,7 +210,7 @@ export default function Chronicles() {
     setCompiling(true);
     setCompileResult(null);
     try {
-      const result = await base44.functions.invoke("compileDailyChronicles", {});
+      const result = await animaClient.functions.invoke("compileDailyChronicles", {});
       setCompileResult(result?.data || result);
       await loadData();
     } catch (err) {

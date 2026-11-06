@@ -4,7 +4,7 @@ import { MessageSquare, Users, Brain, Settings as SettingsIcon, Compass, Home, X
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { syncReservedTabBarHeight } from "@/lib/tabBarLayout";
 import { AnimatePresence, motion } from "framer-motion";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { useAuth } from "@/lib/AuthContext";
 import { useModelTutor } from "@/hooks/useModelTutor";
 import { PRIMARY_TABS, exploreModules } from "@/lib/mobileNav";
@@ -96,7 +96,7 @@ export default function BottomTabBar() {
   }, []);
 
   useEffect(() => {
-    base44.entities.ChatSession.list("-updated_date", 1).then(sessions => {
+    animaClient.entities.ChatSession.list("-updated_date", 1).then(sessions => {
       if (sessions?.length > 0) setMostRecentSessionId(sessions[0].id);
     }).catch(() => {});
   }, []);

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { TrendingUp, Zap, AlertCircle, Activity } from 'lucide-react';
@@ -31,17 +31,17 @@ export default function PulseRealTimeDashboard({ sessionId, isVisible = true }) 
   const loadPulseData = async () => {
     try {
       const [worldEvents, emotions, arcs] = await Promise.all([
-        base44.entities.WorldState.filter(
+        animaClient.entities.WorldState.filter(
           { session_id: sessionId, category: 'event' },
           '-created_date',
           100
         ),
-        base44.entities.CharacterEmotionalState.filter(
+        animaClient.entities.CharacterEmotionalState.filter(
           { session_id: sessionId, is_current: true },
           '-created_date',
           50
         ),
-        base44.entities.NarrativeArc.filter(
+        animaClient.entities.NarrativeArc.filter(
           { session_id: sessionId },
           '-created_date',
           20

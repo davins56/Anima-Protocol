@@ -10,7 +10,7 @@
 // They take their page concerns (confirm dialog, active session state, the send
 // function) as injected deps so the tests can drive them directly.
 
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { planRetryReply } from "@/lib/chatReplyActions";
 
 // Compute the short "last_message" preview the page stores alongside a session.
@@ -37,10 +37,10 @@ export async function rewindToMessageFlow(messageIndex, { confirm, activeSession
   // before the (user-paced) confirm dialog — ChatSession.update({messages})
   // reconciles the whole array against server rows, so a stale snapshot would
   // silently delete any message that arrived while the dialog was open.
-  const fresh = await base44.entities.ChatSession.get(activeSession.id);
+  const fresh = await animaClient.entities.ChatSession.get(activeSession.id);
   const rewoundMessages = (fresh?.messages || activeSession.messages || []).slice(0, messageIndex + 1);
   const last_message = lastMessagePreview(rewoundMessages);
-  await base44.entities.ChatSession.update(activeSession.id, { messages: rewoundMessages, last_message });
+  await animaClient.entities.ChatSession.update(activeSession.id, { messages: rewoundMessages, last_message });
   setActiveSession((prev) => ({ ...prev, messages: rewoundMessages, last_message }));
 }
 
@@ -82,12 +82,12 @@ export async function regenerateMessageFlow(
   // Re-read fresh — see the comment in rewindToMessageFlow: a stale
   // activeSession snapshot here would delete any message that arrived while
   // the confirm dialog was open.
-  const fresh = await base44.entities.ChatSession.get(activeSession.id);
+  const fresh = await animaClient.entities.ChatSession.get(activeSession.id);
   const messages = fresh?.messages || activeSession.messages || [];
   const plan = planRetryReply(messages, idx);
   if (!plan.ok) return;
   const last_message = plan.kept[plan.kept.length - 1]?.content?.slice(0, 60) || "";
-  await base44.entities.ChatSession.update(activeSession.id, { messages: plan.kept, last_message });
+  await animaClient.entities.ChatSession.update(activeSession.id, { messages: plan.kept, last_message });
   setActiveSession((prev) => ({ ...prev, messages: plan.kept, last_message }));
   if (!plan.userContent) return;
   const result = await sendMessage({
@@ -103,7 +103,7 @@ export async function regenerateMessageFlow(
     ...(correction ? { correction } : {}),
   });
   if (result?.started === false) {
-    const saved = await base44.entities.ChatSession.update(activeSession.id, {
+    const saved = await animaClient.entities.ChatSession.update(activeSession.id, {
       messages,
       keep_arrivals: true,
     });

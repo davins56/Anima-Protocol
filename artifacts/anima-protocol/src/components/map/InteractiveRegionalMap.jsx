@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { ChevronDown, MapPin, Flag, Eye } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 
 const FACTION_COLORS = {
   color1: "#ff6b6b",
@@ -31,9 +31,9 @@ export default function InteractiveRegionalMap({ sessionId }) {
     setLoading(true);
     try {
       const [locs, facs, events] = await Promise.all([
-        base44.entities.Location.list("-created_date", 100),
-        base44.entities.Faction.list("-created_date", 50),
-        base44.entities.WorldState.filter({ session_id: sessionId || "", category: "event" }, "-created_date", 100),
+        animaClient.entities.Location.list("-created_date", 100),
+        animaClient.entities.Faction.list("-created_date", 50),
+        animaClient.entities.WorldState.filter({ session_id: sessionId || "", category: "event" }, "-created_date", 100),
       ]);
       
       setLocations(locs || []);
@@ -178,7 +178,7 @@ export default function InteractiveRegionalMap({ sessionId }) {
         if (!visitedLocations.has(loc.id)) {
           setVisitedLocations(new Set([...visitedLocations, loc.id]));
           // Update database
-          base44.entities.Location.update(loc.id, { visited: true }).catch(() => {});
+          animaClient.entities.Location.update(loc.id, { visited: true }).catch(() => {});
         }
       }
     });

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Loader, X, ZoomIn, ZoomOut, Share2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import NetworkGraphVisualization from "@/components/graph/NetworkGraphVisualization";
@@ -23,12 +23,12 @@ export default function InteractiveGraphVisualization() {
     setLoading(true);
     try {
       const [chars, factions, locs, rels, memories, lore] = await Promise.all([
-        base44.entities.Character.list("-created_date", 100),
-        base44.entities.Faction.list("-created_date", 100),
-        base44.entities.Location.list("-created_date", 100),
-        sessionId ? base44.entities.CharacterRelationship.filter({ session_id: sessionId }) : Promise.resolve([]),
-        sessionId ? base44.entities.CharacterMemory.filter({ session_id: sessionId }) : Promise.resolve([]),
-        sessionId ? base44.entities.WorldState.filter({ session_id: sessionId, is_active: true }) : Promise.resolve([]),
+        animaClient.entities.Character.list("-created_date", 100),
+        animaClient.entities.Faction.list("-created_date", 100),
+        animaClient.entities.Location.list("-created_date", 100),
+        sessionId ? animaClient.entities.CharacterRelationship.filter({ session_id: sessionId }) : Promise.resolve([]),
+        sessionId ? animaClient.entities.CharacterMemory.filter({ session_id: sessionId }) : Promise.resolve([]),
+        sessionId ? animaClient.entities.WorldState.filter({ session_id: sessionId, is_active: true }) : Promise.resolve([]),
       ]);
 
       setData({

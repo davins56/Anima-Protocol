@@ -1,7 +1,7 @@
 import { BOOTSTRAP_UI_TIMEOUT_MS } from "@/lib/storeTimeouts";
 
 // Lightweight bootstrap lifecycle flags shared between syncBootstrap and the
-// store client. Kept in its own module (no imports from base44Client or
+// store client. Kept in its own module (no imports from animaClient or
 // syncBootstrap) so queryEntity can wait for starter seeding without creating a
 // circular dependency.
 

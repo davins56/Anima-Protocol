@@ -1,5 +1,5 @@
 import { track } from "@/lib/analytics";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import {
   classifyDeviceScanRequest,
   isTalkingToAnima,
@@ -90,7 +90,7 @@ function scanMessage({ content, characterName, report, needsPermission = false }
 async function persistAnimaGrant(id) {
   if (!id) return;
   try {
-    await base44.entities.Anima.update(id, {
+    await animaClient.entities.Anima.update(id, {
       device_scan_granted: true,
       device_scan_granted_at: new Date().toISOString(),
     });
@@ -109,7 +109,7 @@ export async function revokeDeviceScanForAnima(id) {
   const payload = writeDeviceScanPermission(false, id || null);
   if (id) {
     try {
-      await base44.entities.Anima.update(id, {
+      await animaClient.entities.Anima.update(id, {
         device_scan_granted: false,
         device_scan_granted_at: null,
       });

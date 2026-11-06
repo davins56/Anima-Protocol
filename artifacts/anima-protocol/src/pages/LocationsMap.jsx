@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { ArrowLeft, MapPin, Eye } from "lucide-react";
 import { Link } from "react-router-dom";
 import InteractiveLocationsMap from "@/components/map/InteractiveLocationsMap";
@@ -12,7 +12,7 @@ export default function LocationsMap() {
   const [selectedSession, setSelectedSession] = useState(sessionId || "");
 
   useEffect(() => {
-    base44.entities.ChatSession.list("-updated_date", 100)
+    animaClient.entities.ChatSession.list("-updated_date", 100)
       .then((rows) => setSessions(Array.isArray(rows) ? rows : []))
       .catch(() => setSessions([]));
   }, []);

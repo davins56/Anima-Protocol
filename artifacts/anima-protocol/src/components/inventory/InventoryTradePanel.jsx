@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Send, X, Check, TrendingUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 export default function InventoryTradePanel({ 
   sessionId, 
@@ -22,8 +22,8 @@ export default function InventoryTradePanel({
   const loadInventoryAndTrades = async () => {
     try {
       const [items, allTrades] = await Promise.all([
-        base44.entities.Inventory.filter({ character_id: characterId, session_id: sessionId }),
-        base44.entities.Trade.filter({ session_id: sessionId }),
+        animaClient.entities.Inventory.filter({ character_id: characterId, session_id: sessionId }),
+        animaClient.entities.Trade.filter({ session_id: sessionId }),
       ]);
       setAvailableItems(items || []);
       setTrades(allTrades || []);
@@ -37,7 +37,7 @@ export default function InventoryTradePanel({
     setLoading(true);
 
     try {
-      await base44.functions.invoke('inventoryTrading', {
+      await animaClient.functions.invoke('inventoryTrading', {
         action: 'initiate_trade',
         session_id: sessionId,
         initiator_id: characterId,
@@ -58,7 +58,7 @@ export default function InventoryTradePanel({
   const handleAcceptTrade = async (tradeId) => {
     setLoading(true);
     try {
-      await base44.functions.invoke('inventoryTrading', {
+      await animaClient.functions.invoke('inventoryTrading', {
         action: 'accept_trade',
         trade_id: tradeId,
       });

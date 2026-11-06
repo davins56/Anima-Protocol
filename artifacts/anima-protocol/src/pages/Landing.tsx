@@ -62,14 +62,14 @@ export default function Landing() {
       const token = await getToken();
       if (!token) return;
       try {
-        const { base44 } = await import("@/api/base44Client");
-        const me = await base44.auth.me();
+        const { animaClient } = await import("@/api/animaClient");
+        const me = await animaClient.auth.me();
         if (me) {
           const raw = me.full_name?.split(" ")[0] || me.name || me.email?.split("@")[0] || "";
           setUserName(resolveGuestDisplayName(raw));
         }
 
-        const animas = await base44.entities.Anima.list("-created_date", 1);
+        const animas = await animaClient.entities.Anima.list("-created_date", 1);
         if (animas && animas.length > 0) {
           const userAnima =
             animas.find((a: { assigned_user?: string }) => a.assigned_user === me?.email) || animas[0];
@@ -84,7 +84,7 @@ export default function Landing() {
 
           let dream = null;
           try {
-            const dreams = await base44.entities.AnimaDream.filter(
+            const dreams = await animaClient.entities.AnimaDream.filter(
               { anima_id: userAnima.id },
               "-created_date",
               1,

@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// The sync handlers fetch the open thread's messages through base44. Back it with
+// The sync handlers fetch the open thread's messages through animaClient. Back it with
 // a controllable in-memory mock so we can drive the exact timing of the
 // cross-device race without a server or auth token. `messages.list` is the only
 // surface the handlers touch.
-vi.mock("@/api/base44Client", () => {
-  return { base44: { messages: { list: vi.fn() } } };
+vi.mock("@/api/animaClient", () => {
+  return { animaClient: { messages: { list: vi.fn() } } };
 });
 
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import {
   syncActiveMessages,
   syncFromRemote,
@@ -71,7 +71,7 @@ beforeEach(() => {
 describe("syncActiveMessages (apply remote messages, never over an in-flight reply)", () => {
   it("applies fetched messages when the thread is idle", async () => {
     const h = makeHarness([userMsg]);
-    base44.messages.list.mockResolvedValueOnce(remoteMessages());
+    animaClient.messages.list.mockResolvedValueOnce(remoteMessages());
 
     const applied = await syncActiveMessages({
       sessionId: SESSION_ID,
@@ -80,7 +80,7 @@ describe("syncActiveMessages (apply remote messages, never over an in-flight rep
     });
 
     expect(applied).toBe(true);
-    expect(base44.messages.list).toHaveBeenCalledWith(SESSION_ID);
+    expect(animaClient.messages.list).toHaveBeenCalledWith(SESSION_ID);
     expect(h.session.messages.map((m) => m.content)).toEqual([
       "hi",
       "remote reply",
@@ -98,7 +98,7 @@ describe("syncActiveMessages (apply remote messages, never over an in-flight rep
     "never clobbers a thread with an optimistic %s bubble and asks to retry",
     async (_label, bubble) => {
       const h = makeHarness([userMsg, bubble]);
-      base44.messages.list.mockResolvedValueOnce(remoteMessages());
+      animaClient.messages.list.mockResolvedValueOnce(remoteMessages());
 
       const applied = await syncActiveMessages({
         sessionId: SESSION_ID,
@@ -120,7 +120,7 @@ describe("syncActiveMessages (apply remote messages, never over an in-flight rep
       content: "just finished streaming",
     };
     const h = makeHarness([userMsg, optimisticTurn]);
-    base44.messages.list.mockResolvedValueOnce(remoteMessages());
+    animaClient.messages.list.mockResolvedValueOnce(remoteMessages());
 
     const applied = await syncActiveMessages({
       sessionId: SESSION_ID,
@@ -145,7 +145,7 @@ describe("syncActiveMessages (apply remote messages, never over an in-flight rep
       content: "second reply that did persist",
     };
     const h = makeHarness([userMsg, failedPersistTurn, laterPersisted]);
-    base44.messages.list.mockResolvedValueOnce([
+    animaClient.messages.list.mockResolvedValueOnce([
       userMsg,
       { id: "srv-2", role: "assistant", content: "second reply that did persist" },
     ]);
@@ -164,7 +164,7 @@ describe("syncActiveMessages (apply remote messages, never over an in-flight rep
   it("never clobbers an optimistic user turn that has not been persisted yet", async () => {
     const optimisticUser = { role: "user", content: "just typed" }; // no id
     const h = makeHarness([userMsg, optimisticUser]);
-    base44.messages.list.mockResolvedValueOnce(remoteMessages());
+    animaClient.messages.list.mockResolvedValueOnce(remoteMessages());
 
     const applied = await syncActiveMessages({
       sessionId: SESSION_ID,
@@ -182,7 +182,7 @@ describe("syncActiveMessages (apply remote messages, never over an in-flight rep
     // snapshot — but a reply begins while the fetch is in flight.
     const h = makeHarness([userMsg]);
     const d = deferred();
-    base44.messages.list.mockReturnValueOnce(d.promise);
+    animaClient.messages.list.mockReturnValueOnce(d.promise);
 
     const promise = syncActiveMessages({
       sessionId: SESSION_ID,
@@ -203,7 +203,7 @@ describe("syncActiveMessages (apply remote messages, never over an in-flight rep
   it("returns true (nothing to apply) when the user navigated to another thread", async () => {
     const h = makeHarness([userMsg]);
     h.session = { id: "other", messages: [userMsg] };
-    base44.messages.list.mockResolvedValueOnce(remoteMessages());
+    animaClient.messages.list.mockResolvedValueOnce(remoteMessages());
 
     const applied = await syncActiveMessages({
       sessionId: SESSION_ID,
@@ -217,7 +217,7 @@ describe("syncActiveMessages (apply remote messages, never over an in-flight rep
 
   it("returns false on a transient fetch error so the caller re-arms a retry", async () => {
     const h = makeHarness([userMsg]);
-    base44.messages.list.mockRejectedValueOnce(new Error("network"));
+    animaClient.messages.list.mockRejectedValueOnce(new Error("network"));
 
     const applied = await syncActiveMessages({
       sessionId: SESSION_ID,
@@ -236,7 +236,7 @@ describe("syncActiveMessages (apply remote messages, never over an in-flight rep
       setActiveSession: vi.fn(),
     });
     expect(applied).toBe(true);
-    expect(base44.messages.list).not.toHaveBeenCalled();
+    expect(animaClient.messages.list).not.toHaveBeenCalled();
   });
 });
 
@@ -272,7 +272,7 @@ describe("syncFromRemote (react to a remote change)", () => {
     const h = makeHarness([userMsg]);
     const loadSessions = vi.fn();
     const pendingRemoteSyncRef = { current: false };
-    base44.messages.list.mockResolvedValueOnce(remoteMessages());
+    animaClient.messages.list.mockResolvedValueOnce(remoteMessages());
     const runSync = () =>
       syncActiveMessages({
         sessionId: SESSION_ID,
@@ -317,7 +317,7 @@ describe("syncFromRemote (react to a remote change)", () => {
     const h = makeHarness([userMsg, thinkingBubble]);
     const loadSessions = vi.fn();
     const pendingRemoteSyncRef = { current: false };
-    base44.messages.list.mockResolvedValueOnce(remoteMessages());
+    animaClient.messages.list.mockResolvedValueOnce(remoteMessages());
     const runSync = () =>
       syncActiveMessages({
         sessionId: SESSION_ID,
@@ -357,7 +357,7 @@ describe("settleDeferredSync (catch up once generation settles)", () => {
   it("applies the deferred change and clears the flag once idle", async () => {
     const h = makeHarness([userMsg]);
     const pendingRemoteSyncRef = { current: true };
-    base44.messages.list.mockResolvedValueOnce(remoteMessages());
+    animaClient.messages.list.mockResolvedValueOnce(remoteMessages());
     const runSync = () =>
       syncActiveMessages({
         sessionId: SESSION_ID,
@@ -411,13 +411,13 @@ describe("the dropped-update race (remote change mid-reply, second send mid-catc
       messages: [userMsg, { id: "m-a1", role: "assistant", content: "first reply" }],
     };
     const fetch1 = deferred();
-    base44.messages.list.mockReturnValueOnce(fetch1.promise);
+    animaClient.messages.list.mockReturnValueOnce(fetch1.promise);
     const cleanup1 = settleDeferredSync({
       isLoading: false,
       pendingRemoteSyncRef,
       runSync,
     });
-    expect(base44.messages.list).toHaveBeenCalledTimes(1);
+    expect(animaClient.messages.list).toHaveBeenCalledTimes(1);
     expect(pendingRemoteSyncRef.current).toBe(true); // not cleared yet
 
     // 3) A SECOND send starts before that catch-up resolves: a new optimistic
@@ -452,7 +452,7 @@ describe("the dropped-update race (remote change mid-reply, second send mid-catc
         { id: "m-a2", role: "assistant", content: "second reply" },
       ],
     };
-    base44.messages.list.mockResolvedValueOnce(remoteMessages());
+    animaClient.messages.list.mockResolvedValueOnce(remoteMessages());
     settleDeferredSync({ isLoading: false, pendingRemoteSyncRef, runSync });
     await flush();
 

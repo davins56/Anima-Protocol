@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Upload, Trash2, Play, Loader, Check, Mic } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { motion } from "framer-motion";
 import VoiceRecorder from "@/components/voice/VoiceRecorder";
 
@@ -32,7 +32,7 @@ export default function VoiceCloneManager({ character, onUpdate }) {
 
     setUploading(newCloneName);
     try {
-      const uploadRes = await base44.integrations.Core.UploadFile({ file });
+      const uploadRes = await animaClient.integrations.Core.UploadFile({ file });
       const clone = {
         id: Date.now().toString(),
         name: newCloneName,
@@ -96,7 +96,7 @@ export default function VoiceCloneManager({ character, onUpdate }) {
     if (!newCloneName.trim()) return;
     setUploading(newCloneName);
     try {
-      const uploadRes = await base44.integrations.Core.UploadFile({ file: audioBlob });
+      const uploadRes = await animaClient.integrations.Core.UploadFile({ file: audioBlob });
       const clone = {
         id: Date.now().toString(),
         name: newCloneName,

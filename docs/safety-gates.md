@@ -27,6 +27,14 @@ The client may show or hide things; the API decides.
 - Settings → Content Rating → the 18+ dialog (`AgeGateDialog.jsx`) asks for
   the DOB plus a confirmation and only enables the toggle when the server
   says `adult_eligible`.
+- `ensureSchema` (`lib/db/src/ensure-schema.ts`) also creates
+  `age_attestations`, its index, `age_attestation_latest` and the immutability
+  trigger, and `POST /api/safety/age-attestation` runs it before writing. The
+  migration is applied by hand and `drizzle-kit push` skips protected tables,
+  so a database that only ever ran `db push` had no table: the attestation
+  503'd, `PUT /api/store/profile` reset the flag, and adult mode could never be
+  switched on. A missing table now answers `503 schema_unavailable` instead of
+  a bare "try again".
 
 ### Plugging in a third-party age verification provider
 

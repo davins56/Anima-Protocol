@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChevronLeft, Zap, BookText, Check, Loader, BookOpen, Sparkles, Palette } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import MoodIndicator from "@/components/chat/MoodIndicator";
 import VesselPortrait from "@/components/vessel/VesselPortrait";
 import MemoryHealth from "@/components/memory/MemoryHealth";
@@ -26,7 +26,7 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
   const handleSummarize = async () => {
     if (!session?.id || summarizing) return;
     setSummarizing(true);
-    await base44.functions.invoke("generateStorySummary", { session_id: session.id }).catch(() => {});
+    await animaClient.functions.invoke("generateStorySummary", { session_id: session.id }).catch(() => {});
     setSummarizing(false);
     setSummarized(true);
     setTimeout(() => setSummarized(false), 3000);
@@ -71,7 +71,7 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
   const emotionArousalLabel = emotionArousalPct != null ? `${emotionArousalPct}%` : null;
 
   return (
-    <div className="flex items-center gap-2 sm:gap-4 px-3 sm:px-4 py-2 sm:py-3 bg-transparent">
+    <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 bg-transparent min-w-max">
       <button
         onClick={() => navigate("/")}
         className="lg:hidden text-primary/40 hover:text-primary transition-colors p-1"

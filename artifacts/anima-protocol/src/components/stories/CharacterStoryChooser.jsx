@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { ChevronLeft, BookOpen, User, Sparkles } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { motion, AnimatePresence } from "framer-motion";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import { useStoreSync } from "@/lib/useStoreSync";
@@ -131,7 +131,7 @@ export default function CharacterStoryChooser({ onClose, onCreateSession }) {
     try {
       const narratorExposition = `[LOCATION: ${point.setting || targetCharacter.universe || "Unknown"}]\n\n${point.narrative}`;
 
-      const session = await base44.entities.ChatSession.create({
+      const session = await animaClient.entities.ChatSession.create({
         mode: "solo",
         character_id: targetCharacter.id,
         title: `${selfCharacter.name} enters ${targetCharacter.name}'s Story`,

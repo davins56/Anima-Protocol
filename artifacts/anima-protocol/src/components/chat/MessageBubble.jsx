@@ -15,7 +15,7 @@ import { openPdfDocument } from "@/api/pdfDocuments";
 import { toast } from "sonner";
 import { renderItalicText } from "./renderItalicText";
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { useMemoryHighlight } from "@/hooks/useMemoryHighlight";
 import { useLoreDetection } from "@/hooks/useLoreDetection";
 import { isOwnModelReply } from "@/lib/modelTutor";
@@ -48,7 +48,7 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
 
   useEffect(() => {
     // Load lore entries on mount
-    base44.entities.WorldState.list("-created_date", 100)
+    animaClient.entities.WorldState.list("-created_date", 100)
       .then(entries => setLoreEntries(entries || []))
       .catch(() => {});
   }, []);
@@ -109,6 +109,7 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
           </span>
         )}
         <div
+          data-message-bubble=""
           className={`relative px-3 sm:px-4 py-2 sm:py-3 font-mono text-xs sm:text-sm leading-relaxed hud-corner transition-all duration-500 ${
             isMemoryReference
               ? "border-amber-400/60 bg-black/40 shadow-[0_0_20px_rgba(251,191,36,0.15)]"

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 
 export default function RelationshipTimeline({ sessionId }) {
   const [characters, setCharacters] = useState([]);
@@ -17,9 +17,9 @@ export default function RelationshipTimeline({ sessionId }) {
     setLoading(true);
     try {
       const [chars, rels, emots] = await Promise.all([
-        base44.entities.Character.list("-created_date", 100),
-        sessionId ? base44.entities.CharacterRelationship.filter({ session_id: sessionId }) : Promise.resolve([]),
-        sessionId ? base44.entities.CharacterEmotionalState.filter({ session_id: sessionId }, "-created_date", 100) : Promise.resolve([]),
+        animaClient.entities.Character.list("-created_date", 100),
+        sessionId ? animaClient.entities.CharacterRelationship.filter({ session_id: sessionId }) : Promise.resolve([]),
+        sessionId ? animaClient.entities.CharacterEmotionalState.filter({ session_id: sessionId }, "-created_date", 100) : Promise.resolve([]),
       ]);
       setCharacters(chars || []);
       setRelationships(rels || []);

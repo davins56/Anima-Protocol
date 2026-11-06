@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 export function useNarrativeBranching(sessionId) {
   const [lastUserChoice, setLastUserChoice] = useState(null);
@@ -12,7 +12,7 @@ export function useNarrativeBranching(sessionId) {
 
       setBranchLoading(true);
       try {
-        const result = await base44.functions.invoke('predictNarrativeBranches', {
+        const result = await animaClient.functions.invoke('predictNarrativeBranches', {
           session_id: sessionId,
           last_user_choice: userMessage,
           recent_messages: recentMessages.slice(-5),

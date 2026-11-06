@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 export function useInventoryIntegration() {
   const detectAndProcessItemLoss = useCallback(async (narrative, characterId, sessionId) => {
@@ -15,7 +15,7 @@ export function useInventoryIntegration() {
 
         if (itemMatches?.[1]) {
           const itemName = itemMatches[1].trim();
-          await base44.functions.invoke('processItemLoss', {
+          await animaClient.functions.invoke('processItemLoss', {
             character_id: characterId,
             session_id: sessionId,
             loss_type: 'narrative',
@@ -32,7 +32,7 @@ export function useInventoryIntegration() {
 
   const calculateEquipmentImpact = useCallback(async (characterId, sessionId) => {
     try {
-      const result = await base44.functions.invoke('calculateInventoryStats', {
+      const result = await animaClient.functions.invoke('calculateInventoryStats', {
         character_id: characterId,
         session_id: sessionId,
       });
@@ -45,7 +45,7 @@ export function useInventoryIntegration() {
 
   const generateInventoryNarrativeChoices = useCallback(async (characterId, sessionId, recentMessages) => {
     try {
-      const result = await base44.functions.invoke('inventoryNarrativeImpact', {
+      const result = await animaClient.functions.invoke('inventoryNarrativeImpact', {
         character_id: characterId,
         session_id: sessionId,
         recent_messages: recentMessages,

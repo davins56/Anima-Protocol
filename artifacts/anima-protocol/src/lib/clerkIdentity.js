@@ -1,7 +1,7 @@
 /**
- * Clerk → base44 identity mapping and session-clear policy.
+ * Clerk → animaClient identity mapping and session-clear policy.
  *
- * Settings and most of the app read `base44.auth.me()`, which overlays this
+ * Settings and most of the app read `animaClient.auth.me()`, which overlays this
  * in-memory Clerk identity on the server profile. If identity is missing, the
  * Account fields render as "—" even while Clerk `<SignedIn>` shows Home.
  */
@@ -69,7 +69,7 @@ export function clerkDisplayNameFromUser(clerkUser) {
 }
 
 /**
- * Identity payload for `base44.auth.syncIdentity`.
+ * Identity payload for `animaClient.auth.syncIdentity`.
  *
  * @param {object | null | undefined} clerkUser
  * @returns {null | {
@@ -117,7 +117,7 @@ export function clerkIdentityHydrationKey(clerkUser) {
 }
 
 /**
- * Whether AuthContext may wipe the in-memory base44 identity.
+ * Whether AuthContext may wipe the in-memory animaClient identity.
  *
  * Must stay false while Clerk reports a session (`isSignedIn`) even if the
  * user object is still hydrating, and while a handshake / just-returned

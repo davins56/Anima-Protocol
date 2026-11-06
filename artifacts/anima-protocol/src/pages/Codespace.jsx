@@ -5,7 +5,7 @@ import {
   FolderInput, Upload, GitPullRequest,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { useStoreSync } from "@/lib/useStoreSync";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import FileExplorer from "@/components/codespace/FileExplorer";
@@ -138,7 +138,7 @@ export default function Codespace({ isRepoMode = false }) {
     }
     if (!projectIdRef.current) return;
     try {
-      await base44.entities.CodespaceProject.update(projectIdRef.current, {
+      await animaClient.entities.CodespaceProject.update(projectIdRef.current, {
         files: repoLiveRef.current
           ? sessionFiles(filesRef.current)
           : filesRef.current,
@@ -183,10 +183,10 @@ export default function Codespace({ isRepoMode = false }) {
 
   const loadProject = useCallback(async () => {
     try {
-      const list = await base44.entities.CodespaceProject.list("-updated_date", 20);
+      const list = await animaClient.entities.CodespaceProject.list("-updated_date", 20);
       let proj = pickCodespaceProject(list, { isRepoMode });
       if (!proj) {
-        proj = await base44.entities.CodespaceProject.create(
+        proj = await animaClient.entities.CodespaceProject.create(
           isRepoMode ? emptyRepoProject() : newProject("my-codespace"),
         );
       }
@@ -246,9 +246,9 @@ export default function Codespace({ isRepoMode = false }) {
   const loadRoster = useCallback(async () => {
     try {
       const [cs, animas, profile] = await Promise.all([
-        base44.entities.Character.list("-updated_date", 100).catch(() => []),
+        animaClient.entities.Character.list("-updated_date", 100).catch(() => []),
         listPersonalAnimas(100).catch(() => []),
-        base44.auth.me().catch(() => null),
+        animaClient.auth.me().catch(() => null),
       ]);
       setCharacters(cs || []);
       setPersonalAnimas(animas || []);

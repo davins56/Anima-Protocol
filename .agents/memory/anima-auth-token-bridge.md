@@ -20,7 +20,7 @@ function, and ``Bearer ${token}`` stringifies the function body into the header.
   on any "add characters" / write.
 - "No preloaded characters" on first sign-in — starter seeding
   (`seedCharactersIfNeeded` via `syncBootstrap`/`bootstrapUserData`) goes through
-  the same base44 → authBridge path, so a bad token header silently fails it too.
+  the same animaClient → authBridge path, so a bad token header silently fails it too.
 
 **How to apply:** when registering the Clerk token getter in AuthContext.jsx,
 pass the async getter directly (single arrow). The unit contract is fixed by

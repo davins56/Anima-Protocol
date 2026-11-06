@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Download, X, Check, Loader } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 const EXPORT_OPTIONS = [
   { id: 'messages', label: 'Chat Messages', desc: 'All conversation history' },
@@ -32,7 +32,7 @@ export default function DataExportModal({ isOpen, onClose, session }) {
     setStatus('idle');
 
     try {
-      const result = await base44.functions.invoke('exportSessionData', {
+      const result = await animaClient.functions.invoke('exportSessionData', {
         session_id: session.id,
         format: format,
         data_types: selectedTypes,

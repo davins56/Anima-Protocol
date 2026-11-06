@@ -11,7 +11,7 @@ function — NOT by the MemoryCrystal / Lore / VectorMemory features. The client
 the prompt as "PERSISTENT MEMORIES" / "LONG-TERM MEMORY", and saves distilled
 facts every few messages (action:"save").
 
-**Non-obvious contract (the trap):** `base44.functions.invoke` returns
+**Non-obvious contract (the trap):** `animaClient.functions.invoke` returns
 `json.result`, so an invoke handler must return `result = { data: {...} }` for the
 client's `res.data.*` to resolve. A handler that returns plain text/`result = <x>`
 compiles and "works" but the client silently sees `res.data === undefined` — which

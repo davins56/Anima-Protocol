@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { BarChart3, TrendingUp, Award, Zap } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -13,7 +13,7 @@ export default function QuestStatsDashboard({ sessionId, characterId }) {
 
   const loadStats = async () => {
     try {
-      const result = await base44.functions.invoke("generateQuestStatistics", {
+      const result = await animaClient.functions.invoke("generateQuestStatistics", {
         session_id: sessionId,
         character_id: characterId,
       });

@@ -7,9 +7,9 @@ const mocks = vi.hoisted(() => ({
   waitForStoreAuth: vi.fn(),
 }));
 
-vi.mock("@/api/base44Client", () => ({
+vi.mock("@/api/animaClient", () => ({
   awaitCompanionStoreAuth: vi.fn().mockResolvedValue("token"),
-  base44: {
+  animaClient: {
     entities: {
       Anima: { list: mocks.listAnima },
       Character: { list: mocks.listCharacter, filter: mocks.filterCharacter },
@@ -18,7 +18,7 @@ vi.mock("@/api/base44Client", () => ({
   waitForStoreAuth: mocks.waitForStoreAuth,
 }));
 
-import { awaitCompanionStoreAuth } from "@/api/base44Client";
+import { awaitCompanionStoreAuth } from "@/api/animaClient";
 import {
   companionLookHref,
   companionPersistPatch,

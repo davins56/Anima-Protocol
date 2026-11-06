@@ -307,6 +307,24 @@ export const COMPANION_REPLY_MAX_TOKENS = 1024;
  */
 export const SHORT_REPLY_MAX_TOKENS = 90;
 
+/**
+ * Recent messages read into a companion turn's prompt.
+ *
+ * Prefill on the single-CPU local host is the dominant cost before the first
+ * token and scales with prompt length, so this window is a latency knob. It is
+ * deliberately left at 24: `conversationDepth` for model routing is this same
+ * number, and `DEEP_CONVERSATION_DEPTH` is 24 (`lib/modelRouter.ts`), so a
+ * smaller window silently stops deep threads escalating to the heavy tier.
+ * Lower it per deployment only with that trade in mind.
+ */
+export const CHAT_CONTEXT_MESSAGES = 24;
+
+export function chatContextMessageLimit(): number {
+  const raw = Number(process.env.ANIMA_CHAT_CONTEXT_MESSAGES);
+  if (!Number.isFinite(raw) || raw <= 0) return CHAT_CONTEXT_MESSAGES;
+  return Math.min(Math.max(Math.floor(raw), 6), 40);
+}
+
 export function companionReplyMaxTokens(routedMax: number): number {
   if (!Number.isFinite(routedMax) || routedMax <= 0) {
     return COMPANION_REPLY_MAX_TOKENS;

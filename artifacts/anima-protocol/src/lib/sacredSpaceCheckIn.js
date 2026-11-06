@@ -1,4 +1,4 @@
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { setGlobalCheckInContext } from "@/hooks/useCheckInRitual";
 
 const FOCUS_MOOD = {
@@ -104,7 +104,7 @@ export function appearsInCheckInList(entry) {
  */
 export async function recordSacredSpaceCheckIn(input) {
   const payload = buildSacredSpaceCheckIn(input);
-  const created = await base44.entities.CheckIn.create(payload);
+  const created = await animaClient.entities.CheckIn.create(payload);
   const focus = payload.ritual_focus ? ` (${payload.ritual_focus})` : "";
   setGlobalCheckInContext(
     `User mood: ${payload.mood}. Sacred Space${focus}. Reflection: ${payload.reflection}`,

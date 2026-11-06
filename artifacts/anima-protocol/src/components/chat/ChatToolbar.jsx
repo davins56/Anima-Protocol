@@ -13,7 +13,6 @@ import ProtocolUpgradeConsole from "./ProtocolUpgradeConsole";
 import DeviceScanConsole from "./DeviceScanConsole";
 import PortaledFixedPanel from "./PortaledFixedPanel";
 import { useAuth } from "@/lib/AuthContext";
-import { AI_COMPANION_HEADER_LINE } from "@/lib/aiCompanionNotice";
 import { sessionMemoryTargets } from "@/lib/whatSheRemembers";
 
 export default function ChatToolbar({
@@ -72,9 +71,9 @@ export default function ChatToolbar({
 
   return (
     <div className="flex flex-col border-b border-primary/20 bg-black/60 backdrop-blur-md flex-shrink-0 relative">
-      {/* Single row: session info + Online button */}
-      <div className="flex items-center min-w-0 h-12">
-        <div className="flex-shrink-0 min-w-[200px] max-w-[60%]">
+      {/* Stack navigation on narrow screens; never let header actions overlap. */}
+      <div className="flex flex-col lg:flex-row lg:items-center min-w-0">
+        <div className="min-w-0 w-full lg:flex-1 overflow-x-auto overscroll-x-contain">
           <ChatHeader
             session={activeSession}
             characters={characters}
@@ -87,7 +86,7 @@ export default function ChatToolbar({
           />
         </div>
 
-        <div className="ml-auto flex items-center gap-2 px-3 flex-shrink-0">
+        <div className="flex items-center justify-end gap-2 px-3 py-2 lg:py-0 flex-shrink-0 border-t border-primary/10 lg:border-t-0">
           {typeof onOpenHistory === "function" && (
             <button
               type="button"
@@ -130,13 +129,6 @@ export default function ChatToolbar({
           </button>
         </div>
       </div>
-
-      <p
-        data-testid="ai-companion-header-line"
-        className="w-full px-3 py-2 text-base leading-snug text-cyan-50 border-t border-cyan-300/40 bg-cyan-950/70"
-      >
-        {AI_COMPANION_HEADER_LINE}
-      </p>
 
       <PortaledFixedPanel
         open={showActionsPanel}

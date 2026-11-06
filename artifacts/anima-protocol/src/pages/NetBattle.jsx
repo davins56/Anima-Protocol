@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import NetBattleArena from "@/components/battle/NetBattleArena";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { track } from "@/lib/analytics";
 import {
   battleSummary,
@@ -47,7 +47,7 @@ function spectrumMeta(spectrum) {
 
 function persistHidden(anima, hidden) {
   if (!anima?.id) return;
-  base44.entities.Anima.update(anima.id, {
+  animaClient.entities.Anima.update(anima.id, {
     hidden_sequences: hidden,
   }).catch(() => {});
 }
@@ -70,8 +70,8 @@ export default function NetBattle() {
       try {
         const animaId = searchParams.get("anima");
         const [animas, profile] = await Promise.all([
-          base44.entities.Anima.list("-created_date", 20).catch(() => []),
-          base44.auth.me().catch(() => null),
+          animaClient.entities.Anima.list("-created_date", 20).catch(() => []),
+          animaClient.auth.me().catch(() => null),
         ]);
         if (!active) return;
         const chosen =
@@ -200,7 +200,7 @@ export default function NetBattle() {
       if (next.progressed) {
         const saved = accountToLibrary(next.account);
         setLibrary(saved);
-        base44.auth
+        animaClient.auth
           .updateMe({
             settings: { echo_keys: saved },
           })

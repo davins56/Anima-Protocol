@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { X, Wand2, Loader, Check, RotateCcw, Ban } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { editImage } from "@/api/base44Client";
+import { editImage } from "@/api/animaClient";
 import { applyAvatarEdit, canShowApply } from "@/lib/avatarPhoto";
 
 // gpt-image-1 edits usually land in this window. Used to drive the estimate

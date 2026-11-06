@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { useConfirm } from "@/lib/ConfirmDialog";
 import { ChevronDown, Check, X, AlertCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -16,7 +16,7 @@ export default function PersistentQuestLog({ sessionId, characterId }) {
     loadQuests();
 
     // Subscribe to quest updates
-    const unsubscribe = base44.entities.Quest.subscribe((event) => {
+    const unsubscribe = animaClient.entities.Quest.subscribe((event) => {
       if (event.data?.session_id === sessionId) {
         loadQuests();
       }
@@ -27,7 +27,7 @@ export default function PersistentQuestLog({ sessionId, characterId }) {
 
   const loadQuests = async () => {
     try {
-      const data = await base44.entities.Quest.filter({
+      const data = await animaClient.entities.Quest.filter({
         session_id: sessionId,
         status: { $in: ["available", "active"] },
       }, "-created_date", 50);
@@ -49,7 +49,7 @@ export default function PersistentQuestLog({ sessionId, characterId }) {
 
       const allCompleted = updatedObjectives.every((obj) => obj.completed);
 
-      await base44.entities.Quest.update(questId, {
+      await animaClient.entities.Quest.update(questId, {
         objectives: updatedObjectives,
         status: allCompleted ? "completed" : quest.status,
       });
@@ -72,7 +72,7 @@ export default function PersistentQuestLog({ sessionId, characterId }) {
     if (!ok) return;
 
     try {
-      await base44.entities.Quest.update(questId, { status: "abandoned" });
+      await animaClient.entities.Quest.update(questId, { status: "abandoned" });
       setQuests((prev) => prev.filter((q) => q.id !== questId));
     } catch (err) {
       console.error("Error abandoning quest:", err);

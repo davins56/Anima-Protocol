@@ -1,4 +1,4 @@
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { apiUrl } from '@/lib/apiOrigin';
 import { authHeaders } from '@/api/authBridge';
 
@@ -48,7 +48,7 @@ export async function speakToAnima({
 
   if (!resolvedVoiceId && characterId) {
     try {
-      const chars = await base44.entities.Character.list();
+      const chars = await animaClient.entities.Character.list();
       const char = chars.find((c) => c.id === characterId);
       resolvedVoiceId = char?.elevenlabs_voice_id || null;
     } catch {

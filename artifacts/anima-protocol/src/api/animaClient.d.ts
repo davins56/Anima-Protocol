@@ -1,4 +1,4 @@
-// Type declarations for the JS base44 client (base44Client.js). The runtime
+// Type declarations for the JS animaClient client (animaClient.js). The runtime
 // implementation is a server-backed store with a Proxy-based `entities`/
 // `functions` surface, so entity records are intentionally typed loosely as
 // `any` while the call shapes (list/get/create/update/delete/filter, auth,
@@ -60,7 +60,7 @@ export interface MessagePageOptions {
   beforeSeq?: number;
 }
 
-export interface Base44Messages {
+export interface AnimaMessages {
   // Read a session's messages in ascending (chronological) seq order. No
   // options returns the whole history; limit/beforeSeq page it.
   list(sessionId: string, opts?: MessagePageOptions): Promise<any[]>;
@@ -75,7 +75,7 @@ export interface Base44Messages {
   counts(ids: string[]): Promise<Record<string, number>>;
 }
 
-export interface Base44Auth {
+export interface AnimaAuth {
   isAuthenticated(): Promise<boolean>;
   redirectToLogin(): void;
   me(): Promise<any>;
@@ -87,7 +87,7 @@ export interface Base44Auth {
   logout(): Promise<void>;
 }
 
-export interface Base44Integrations {
+export interface AnimaIntegrations {
   Core: {
     InvokeLLM(args: {
       prompt: string;
@@ -105,21 +105,21 @@ export interface Base44Integrations {
   };
 }
 
-export interface Base44Function {
+export interface AnimaFunction {
   invoke(data?: Record<string, unknown>): Promise<any>;
 }
 
-export type Base44Functions = {
+export type AnimaFunctions = {
   invoke(name: string, data?: Record<string, unknown>): Promise<any>;
-} & Record<string, Base44Function>;
+} & Record<string, AnimaFunction>;
 
-export interface Base44Client {
-  auth: Base44Auth;
+export interface AnimaClient {
+  auth: AnimaAuth;
   entities: EntitiesProxy;
-  messages: Base44Messages;
+  messages: AnimaMessages;
   asServiceRole: { entities: EntitiesProxy };
-  integrations: Base44Integrations;
-  functions: Base44Functions;
+  integrations: AnimaIntegrations;
+  functions: AnimaFunctions;
 }
 
 export declare function setAuthTokenGetter(
@@ -143,6 +143,6 @@ export declare function awaitCompanionStoreAuth(
 ): Promise<string | null>;
 export declare function notifyStoreChanged(): void;
 
-export declare const base44: Base44Client;
+export declare const animaClient: AnimaClient;
 
-export default base44;
+export default animaClient;

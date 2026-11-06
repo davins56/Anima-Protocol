@@ -21,7 +21,11 @@ export default function AgeGateDialog({ onCancel, onAttested, api = animaApi }) 
       if (res?.adult_eligible) onAttested?.();
       else setError("Adult mode isn't available.");
     } catch (err) {
-      setError(err?.message || "Couldn't check that right now.");
+      // Keep the server's reason on screen: a bare "couldn't save" hides whether
+      // the table is missing, the role can't write, or the write was refused.
+      const reason = err?.payload?.detail || err?.code;
+      const message = err?.message || "Couldn't check that right now.";
+      setError(reason ? `${message} (${reason})` : message);
     } finally {
       setBusy(false);
     }
