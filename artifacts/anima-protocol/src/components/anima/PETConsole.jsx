@@ -9,7 +9,7 @@ export default function PETConsole({ anima, compact = false, onClose }) {
   const { activity, setActivity, emotion } = useLivingAnima(anima?.id);
   const actions = [
     { label: "Talk", icon: MessageSquare, path: "/chat" },
-    { label: "Network", icon: Compass, path: "/worldmap" },
+    { label: "Network", icon: Compass, path: "/anima-network" },
     { label: "NetBattle", icon: Swords, path: "/net-battle" },
     { label: "Customize", icon: Settings2, path: "/customise-anima" },
   ];
