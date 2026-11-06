@@ -76,7 +76,7 @@ jobs:
         run: pnpm llm:eval
       - name: Upload report
         if: always() && steps.host.outputs.configured == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: llm-eval-report
           path: scripts/llm/output/eval-report.*
