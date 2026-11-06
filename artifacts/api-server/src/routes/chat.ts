@@ -3093,12 +3093,13 @@ router.post("/messages", async (req, res) => {
       ? await describeSharedPhotos({ count: photoCount, photos })
       : null,
   });
+  const resolvedCorrections = await correctionsPromise;
   const messages = telemetry.measureSync("prompt_build_ms", () =>
     composeCompanionChatMessages({
       clientContext: body.system_prompt,
       repositoryKnowledge,
       pdfContext: [pdfContext, webSearchContext].filter(Boolean).join("\n\n") || pdfContext,
-      memoryCoreContext: [memoryCoreContext, await correctionsPromise].filter(Boolean).join("\n\n"),
+      memoryCoreContext: [memoryCoreContext, resolvedCorrections].filter(Boolean).join("\n\n"),
       photoNote,
       characters: adaptedChars,
       activeCharacter: activeChar,

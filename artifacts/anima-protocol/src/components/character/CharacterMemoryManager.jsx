@@ -31,6 +31,7 @@ export default function CharacterMemoryManager({ characterId, characterName }) {
   const [summarizing, setSummarizing] = useState(false);
   const [summary, setSummary] = useState(null);
   const [filterTag, setFilterTag] = useState("all");
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (characterId) {
@@ -40,6 +41,7 @@ export default function CharacterMemoryManager({ characterId, characterName }) {
 
   const loadMemories = async () => {
     setLoading(true);
+    setError("");
     try {
       const data = await base44.entities.CharacterMemory.filter(
         { character_id: characterId },
@@ -49,17 +51,19 @@ export default function CharacterMemoryManager({ characterId, characterName }) {
       setMemories(data || []);
     } catch (err) {
       console.error("Error loading memories:", err);
+      setError("Could not load memories. Please retry.");
     } finally {
       setLoading(false);
     }
   };
 
   const handleAddMemory = async () => {
-    if (!newMemory.trim()) return;
+    if (!characterId || !newMemory.trim()) return;
+    setError("");
     try {
       await base44.entities.CharacterMemory.create({
         character_id: characterId,
-        fact: newMemory,
+        fact: newMemory.trim(),
         category: newTags.length > 0 ? newTags[0] : "personal",
         tags: newTags,
       });
@@ -69,20 +73,23 @@ export default function CharacterMemoryManager({ characterId, characterName }) {
       await loadMemories();
     } catch (err) {
       console.error("Error adding memory:", err);
+      setError("Memory could not be saved. Please retry.");
     }
   };
 
   const handleEditMemory = async (id) => {
     if (!editText.trim()) return;
+    setError("");
     try {
       await base44.entities.CharacterMemory.update(id, {
-        fact: editText,
+        fact: editText.trim(),
         tags: editTags,
       });
       setEditingId(null);
       await loadMemories();
     } catch (err) {
       console.error("Error editing memory:", err);
+      setError("Memory could not be updated. Please retry.");
     }
   };
 
@@ -93,11 +100,13 @@ export default function CharacterMemoryManager({ characterId, characterName }) {
       confirmLabel: "Delete",
     });
     if (!ok) return;
+    setError("");
     try {
       await base44.entities.CharacterMemory.delete(id);
       await loadMemories();
     } catch (err) {
       console.error("Error deleting memory:", err);
+      setError("Memory could not be deleted. Please retry.");
     }
   };
 
@@ -126,9 +135,13 @@ Keep it vivid and story-focused.`;
         prompt,
       });
 
-      setSummary(result);
+      const summaryText = typeof result === "string"
+        ? result
+        : result?.response || result?.text || result?.content || "";
+      setSummary(typeof summaryText === "string" ? summaryText : "");
     } catch (err) {
       console.error("Error summarizing relationships:", err);
+      setError("Relationship summary is unavailable. Please retry.");
     } finally {
       setSummarizing(false);
     }
@@ -154,6 +167,12 @@ Keep it vivid and story-focused.`;
 
   return (
     <div className="space-y-4">
+      {error && (
+        <div role="alert" className="rounded border border-red-500/40 bg-red-950/20 p-3 text-xs text-red-300">
+          {error}
+          <button type="button" onClick={() => setError("")} className="ml-3 underline">Dismiss</button>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -161,8 +180,7 @@ Keep it vivid and story-focused.`;
             {characterName}'s Memories
           </h3>
           <p className="text-[9px] font-mono text-primary/40 mt-1">
-            {filteredMemories.length} memory
-            {filteredMemories.length !== 1 ? "ies" : ""} • Manage what{" "}
+            {filteredMemories.length} {filteredMemories.length === 1 ? "memory" : "memories"} • Manage what{" "}
             {characterName} remembers
           </p>
         </div>
