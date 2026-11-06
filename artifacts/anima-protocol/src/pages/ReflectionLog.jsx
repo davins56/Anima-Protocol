@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { useStoreSync } from "@/lib/useStoreSync";
 import { appearsInCheckInList } from "@/lib/sacredSpaceCheckIn";
 import { ArrowLeft, Search, Sparkles, Heart, Plus } from "lucide-react";
@@ -45,7 +45,7 @@ export default function ReflectionLog() {
     setLoading(true);
     try {
       // No limit → fetch the full history so every reflection is logged.
-      const data = await base44.entities.CheckIn.list("-created_date");
+      const data = await animaClient.entities.CheckIn.list("-created_date");
       setEntries((data || []).filter(appearsInCheckInList));
     } catch (err) {
       console.error("Error loading reflection log:", err);

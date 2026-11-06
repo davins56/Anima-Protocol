@@ -1,4 +1,4 @@
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { therapyOpeningMessage } from "./therapyManuals";
 import { normalizeTherapyTopic, therapySessionTitle } from "./therapyTopics";
 
@@ -36,7 +36,7 @@ export async function startTherapySession({
     timestamp: new Date().toISOString(),
   };
 
-  const session = await base44.entities.ChatSession.create({
+  const session = await animaClient.entities.ChatSession.create({
     mode: "solo",
     character_id: anima.id,
     therapy_mode: true,

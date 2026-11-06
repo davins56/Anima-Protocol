@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 export function useAutoWikiTagging(sessionId, recentMessages = [], enabled = true) {
   const [autoDetectedEntities, setAutoDetectedEntities] = useState([]);
@@ -21,7 +21,7 @@ export function useAutoWikiTagging(sessionId, recentMessages = [], enabled = tru
   const triggerAutoTagging = async () => {
     setIsExtracting(true);
     try {
-      const result = await base44.functions.invoke('autoTagWikiEntities', {
+      const result = await animaClient.functions.invoke('autoTagWikiEntities', {
         session_id: sessionId,
         recent_messages: recentMessages.slice(-10),
         action: 'extract_and_update',
@@ -44,7 +44,7 @@ export function useAutoWikiTagging(sessionId, recentMessages = [], enabled = tru
   const linkAcrossSession = async (entityName, entityType, targetSessionId) => {
     try {
       // Find the entity in current session
-      const entries = await base44.entities.WikiCodex.filter({
+      const entries = await animaClient.entities.WikiCodex.filter({
         name: entityName,
         entry_type: entityType,
         session_ids: { $elemMatch: sessionId },
@@ -56,7 +56,7 @@ export function useAutoWikiTagging(sessionId, recentMessages = [], enabled = tru
         // Add target session to session_ids to track cross-session mentions
         const updatedSessionIds = [...new Set([...(entry.session_ids || []), targetSessionId])];
         
-        await base44.entities.WikiCodex.update(entry.id, {
+        await animaClient.entities.WikiCodex.update(entry.id, {
           session_ids: updatedSessionIds,
           mention_count: (entry.mention_count || 0) + 1,
         });

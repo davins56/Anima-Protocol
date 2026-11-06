@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { X, Wand2, Loader } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 
 /**
  * @param {{ isOpen?: boolean, onClose: () => void, onImageGenerated?: (url: string, prompt?: string) => void, characterName?: string }} props
@@ -19,7 +19,7 @@ export default function ImageGenerationModal({ isOpen, onClose, onImageGenerated
     setLoading(true);
     setError("");
     try {
-      const result = await base44.integrations.Core.GenerateImage({
+      const result = await animaClient.integrations.Core.GenerateImage({
         prompt: prompt.trim(),
       });
 

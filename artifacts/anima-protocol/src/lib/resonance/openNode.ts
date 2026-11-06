@@ -4,7 +4,7 @@
  * chat and seed the opening transmission. Shared by the /resonance page and
  * the voice agent's open_resonance_node tool.
  */
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { createCompanionRecord } from "@/lib/createCompanion";
 import { ensureBuiltInCompanion } from "@/lib/companions/builtInCompanions";
 import { startSoloCompanionChatSession, isUsableSessionId } from "@/lib/createInitSession";
@@ -82,7 +82,7 @@ export async function openResonanceNode(args: {
       ? `*the omega band clears — a familiar signal at ${node.frequency.toFixed(1)}* I knew you'd find me here.`
       : `*signal locked · ${node.band} ${node.frequency.toFixed(1)}* …I can hear you now.`);
   const message = { role: "assistant", content: greeting, character_name: character.name, timestamp: new Date().toISOString() };
-  await appendAmbientMessage({ appendMessage: base44.messages.append, sessionId: session.id, message }).catch(() => {});
+  await appendAmbientMessage({ appendMessage: animaClient.messages.append, sessionId: session.id, message }).catch(() => {});
   const primedSession = { ...session, messages: [...(Array.isArray(session.messages) ? session.messages : []), message] };
   rememberCreatedSession(primedSession);
   navigate(`/chat/${session.id}`, { state: { primedSession } });

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { BookOpen, Heart, Lock, Sparkles, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -17,9 +17,9 @@ export default function CharacterWiki() {
     const loadData = async () => {
       try {
         const [sess, rels, mems] = await Promise.all([
-          base44.entities.ChatSession.list('-updated_date', 50).then(s => s.find(x => x.id === sessionId)),
-          base44.entities.CharacterRelationship.filter({ session_id: sessionId }),
-          base44.entities.VectorMemory.filter({ session_id: sessionId }),
+          animaClient.entities.ChatSession.list('-updated_date', 50).then(s => s.find(x => x.id === sessionId)),
+          animaClient.entities.CharacterRelationship.filter({ session_id: sessionId }),
+          animaClient.entities.VectorMemory.filter({ session_id: sessionId }),
         ]);
 
         setSession(sess);
@@ -29,7 +29,7 @@ export default function CharacterWiki() {
           ? [sess.character_id]
           : sess?.group_character_ids || [];
 
-        const chars = await base44.entities.Character.list('-created_date', 500);
+        const chars = await animaClient.entities.Character.list('-created_date', 500);
         const sessionChars = chars.filter(c => charIds.includes(c.id));
         setCharacters(sessionChars);
 

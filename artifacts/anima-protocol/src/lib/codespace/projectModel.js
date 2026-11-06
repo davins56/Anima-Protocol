@@ -1,7 +1,7 @@
 // Codespace project + session model.
 //
 // A project is { name, companion_id, files[], active_path, agent_log[] } and is
-// persisted through the base44/store entity layer (entity "CodespaceProject"),
+// persisted through the animaClient/store entity layer (entity "CodespaceProject"),
 // so projects survive refresh and sync across devices like other Anima data.
 //
 // Sessions: snapshots of the whole workspace (files + the companion's build

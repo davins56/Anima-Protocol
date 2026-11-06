@@ -6,7 +6,7 @@
 // not stop at a silent text rewrite — she has to answer the edited line. The
 // send is marked `edit` so mood and memory are not written a second time.
 
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { planEditResend } from "@/lib/chatReplyActions";
 
 function replacementBlocked(isLoading) {
@@ -35,12 +35,12 @@ export async function editMessageFlow(idx, newText, { confirm, activeSession, is
     if (!ok) return { status: "cancelled" };
   }
   if (replacementBlocked(isLoading)) return { status: "blocked" };
-  const fresh = await base44.entities.ChatSession.get(activeSession.id);
+  const fresh = await animaClient.entities.ChatSession.get(activeSession.id);
   const messages = fresh?.messages || activeSession.messages || [];
   const plan = planEditResend(messages, idx, newText);
   if (!plan.ok) return { status: plan.reason };
   const last_message = plan.kept[plan.kept.length - 1]?.content?.slice(0, 60) || "";
-  await base44.entities.ChatSession.update(activeSession.id, { messages: plan.kept, last_message });
+  await animaClient.entities.ChatSession.update(activeSession.id, { messages: plan.kept, last_message });
   setActiveSession((prev) => ({ ...prev, messages: plan.kept, last_message }));
   const result = await sendMessage({
     text: plan.content,
@@ -54,7 +54,7 @@ export async function editMessageFlow(idx, newText, { confirm, activeSession, is
     replacedMessageIds: plan.replacedMessageIds || [],
   });
   if (result?.started === false) {
-    const saved = await base44.entities.ChatSession.update(activeSession.id, {
+    const saved = await animaClient.entities.ChatSession.update(activeSession.id, {
       messages,
       keep_arrivals: true,
     });

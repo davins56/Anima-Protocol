@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { X, MapPin, Users, Zap, BookOpen } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -20,10 +20,10 @@ export default function InteractiveWorldMap({ sessionId }) {
     setLoading(true);
     try {
       const [locData, loreData, eventData, charData] = await Promise.all([
-        base44.entities.Location.list("-created_date", 100),
-        base44.entities.WorldState.filter({ session_id: sessionId, is_active: true }, "-created_date", 50),
-        base44.functions.invoke("autoEvolveWorldState", { session_id: sessionId, message_count: 1, recent_messages: [] }).then(r => r?.data?.world_events || []),
-        base44.entities.Character.list("-created_date", 100),
+        animaClient.entities.Location.list("-created_date", 100),
+        animaClient.entities.WorldState.filter({ session_id: sessionId, is_active: true }, "-created_date", 50),
+        animaClient.functions.invoke("autoEvolveWorldState", { session_id: sessionId, message_count: 1, recent_messages: [] }).then(r => r?.data?.world_events || []),
+        animaClient.entities.Character.list("-created_date", 100),
       ]);
       setLocations(locData || []);
       setLoreEntries(loreData || []);

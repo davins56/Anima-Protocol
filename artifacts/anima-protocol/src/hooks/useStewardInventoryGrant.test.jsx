@@ -16,8 +16,8 @@ const { updateMeMock, createMock, filterMock, setUserMock, authState, rosterStat
   },
 }));
 
-vi.mock("@/api/base44Client", () => ({
-  base44: {
+vi.mock("@/api/animaClient", () => ({
+  animaClient: {
     auth: { updateMe: (...args) => updateMeMock(...args) },
     entities: {
       Inventory: {

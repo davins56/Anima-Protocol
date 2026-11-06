@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { animaApi } from './animaApi';
-import { base44, clearAuthTokenGetter, setAuthTokenGetter } from './base44Client';
+import { animaClient, clearAuthTokenGetter, setAuthTokenGetter } from './animaClient';
 
 describe('API auth bridge', () => {
   beforeEach(() => {
@@ -20,7 +20,7 @@ describe('API auth bridge', () => {
   });
 
   it('attaches Clerk and public-host headers to function invokes', async () => {
-    await base44.functions.invoke('debugApp', {});
+    await animaClient.functions.invoke('debugApp', {});
 
     const [, options] = global.fetch.mock.calls[0];
     expect(options.headers.Authorization).toBe('Bearer test-token');
@@ -75,7 +75,7 @@ describe('API auth bridge', () => {
     // Classic mistake: treating setAuthTokenGetter like React setState.
     setAuthTokenGetter(() => async () => 'unwrapped-token');
 
-    await base44.functions.invoke('debugApp', {});
+    await animaClient.functions.invoke('debugApp', {});
 
     const [, options] = global.fetch.mock.calls[0];
     expect(options.headers.Authorization).toBe('Bearer unwrapped-token');
@@ -85,7 +85,7 @@ describe('API auth bridge', () => {
   it('refuses to POST /openai/invoke without a Bearer token', async () => {
     clearAuthTokenGetter();
 
-    const result = await base44.functions.invoke('debugApp', {});
+    const result = await animaClient.functions.invoke('debugApp', {});
 
     expect(result).toBeNull();
     expect(global.fetch).not.toHaveBeenCalled();
@@ -111,7 +111,7 @@ describe('API auth bridge', () => {
         json: async () => ({ result: { ok: true } }),
       });
 
-    const result = await base44.functions.invoke('debugApp', {});
+    const result = await animaClient.functions.invoke('debugApp', {});
 
     expect(result).toEqual({ ok: true });
     expect(global.fetch).toHaveBeenCalledTimes(2);

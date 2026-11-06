@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 
 export default function ChoicesDisplay({ sessionId, characterId, onChoiceMade, choices }) {
   const [selecting, setSelecting] = useState(null);
@@ -11,7 +11,7 @@ export default function ChoicesDisplay({ sessionId, characterId, onChoiceMade, c
       // Update relationships for affected characters
       if (choice.affects_relationships) {
         for (const [charId, delta] of Object.entries(choice.affects_relationships)) {
-          const rels = await base44.entities.CharacterRelationship.filter({
+          const rels = await animaClient.entities.CharacterRelationship.filter({
             character_id: charId,
             session_id: sessionId,
           });
@@ -19,7 +19,7 @@ export default function ChoicesDisplay({ sessionId, characterId, onChoiceMade, c
           if (rels?.length > 0) {
             const rel = rels[0];
             const newScore = Math.max(-100, Math.min(100, rel.score + delta));
-            await base44.entities.CharacterRelationship.update(rel.id, {
+            await animaClient.entities.CharacterRelationship.update(rel.id, {
               score: newScore,
             });
           }
@@ -29,7 +29,7 @@ export default function ChoicesDisplay({ sessionId, characterId, onChoiceMade, c
       // Update emotions for affected characters
       if (choice.affects_emotions) {
         for (const [charId, emotionData] of Object.entries(choice.affects_emotions)) {
-          await base44.entities.CharacterEmotionalState.create({
+          await animaClient.entities.CharacterEmotionalState.create({
             character_id: charId,
             session_id: sessionId,
             primary_emotion: emotionData.emotion,

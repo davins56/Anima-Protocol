@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 export function useSessionTimeline(sessionId) {
   const [events, setEvents] = useState([]);
@@ -14,11 +14,11 @@ export function useSessionTimeline(sessionId) {
     const fetchTimeline = async () => {
       try {
         const [worldStates, relationships, quests, emotionalStates, memories] = await Promise.all([
-          base44.entities.WorldState.filter({ session_id: sessionId }, '-created_date', 100),
-          base44.entities.CharacterRelationship.filter({ session_id: sessionId }, '-created_date', 100),
-          base44.entities.Quest.filter({ session_id: sessionId }, '-created_date', 100),
-          base44.entities.CharacterEmotionalState.filter({ session_id: sessionId }, '-created_date', 100),
-          base44.entities.VectorMemory.filter({ session_id: sessionId }, '-created_date', 100),
+          animaClient.entities.WorldState.filter({ session_id: sessionId }, '-created_date', 100),
+          animaClient.entities.CharacterRelationship.filter({ session_id: sessionId }, '-created_date', 100),
+          animaClient.entities.Quest.filter({ session_id: sessionId }, '-created_date', 100),
+          animaClient.entities.CharacterEmotionalState.filter({ session_id: sessionId }, '-created_date', 100),
+          animaClient.entities.VectorMemory.filter({ session_id: sessionId }, '-created_date', 100),
         ]);
 
         // Build timeline events

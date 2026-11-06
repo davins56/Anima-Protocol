@@ -1,6 +1,6 @@
 // @ts-check
 import { useEffect, useRef, useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { isFinishedLoreMessage, useLocalOnlyLlmChain } from '@/lib/localOnlyLlm';
 
 const LORE_DETECT_DEBOUNCE_MS = 400;
@@ -36,7 +36,7 @@ export function useLoreDetection(messageOrContent, sessionId) {
     const timer = setTimeout(() => {
       attempted.current.add(key);
       setIsLoading(true);
-      base44.functions
+      animaClient.functions
         .invoke(
           'detectLoreKeywords',
           { content, session_id: sessionId },

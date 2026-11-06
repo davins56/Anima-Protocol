@@ -18,11 +18,11 @@ const {
   findCharacterPhoto: vi.fn(),
 }));
 
-vi.mock("@/api/base44Client", () => ({
+vi.mock("@/api/animaClient", () => ({
   waitForStoreAuth,
   clearStoreCache,
   notifyStoreChanged,
-  base44: {
+  animaClient: {
     entities: {
       Character: {
         list: characterList,

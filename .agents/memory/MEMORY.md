@@ -6,7 +6,7 @@
 - [Anima character seeding race](anima-seeding-race.md) — localStorage seed effects must be StrictMode-race-safe (promise lock + guard); api-server dev has no watch, restart to rebuild.
 - [Anima avatar storage](anima-avatar-storage.md) — Anima created with no avatar_url; user photos must be downscaled to small JPEG data URLs (no object storage; localStorage quota).
 - [Anima avatar object storage](anima-avatar-object-storage.md) — portraits now stored as real files via presigned-PUT; serve publicly (img tags); store root-relative path; re-edit needs data: URL.
-- [Anima Clerk auth bridge](anima-clerk-auth.md) — Clerk owns identity/session, base44 localStorage holds profile; HomeGate at "/", signed-out→Landing; showChrome gates header/tabs/disclaimer.
+- [Anima Clerk auth bridge](anima-clerk-auth.md) — Clerk owns identity/session, animaClient localStorage holds profile; HomeGate at "/", signed-out→Landing; showChrome gates header/tabs/disclaimer.
 - [Anima auth token bridge contract](anima-auth-token-bridge.md) — setAuthTokenGetter takes the token-getter DIRECTLY (not a setState); a `()=>async()=>{}` double-arrow stringifies the fn into the Bearer header → breaks all writes + starter seeding.
 - [Anima cross-device live sync](anima-cross-device-sync.md) — /store/revision token + 15s/focus poller drops caches & fires `anima:store-changed`; self-write suppression must NOT advance baseline.
 - [Anima SSE push hardening](anima-sse-hardening.md) — SSE client must collapse CRLF→LF before `\n\n` split; watchdog > 2× server heartbeat; `anima:sync-mode` event; registry is process-local.
@@ -14,7 +14,7 @@
 - [Helium DB credential recovery](db-credential-recovery.md) — after creds overwritten, deleteEnvVars restores PG* env vars but DATABASE_URL/PGPASSWORD are Secrets the user must delete in the tab; original DB+data survive.
 - [api-server rate-limit leak](api-server-ratelimit-leak.md) — path-less mounted sub-routers' top-level router.use(rateLimit) runs for ALL /api requests (429s on /api/store); scope it to the router's own paths.
 - [lib/db decl rebuild for typecheck](db-decl-rebuild-for-typecheck.md) — after schema edits, api-server typecheck reads stale lib/db/dist .d.ts ("no exported member"); run `cd lib/db && npx tsc -b` first.
-- [Anima Undo/delete-flow tests](anima-undo-tests.md) — real base44 hangs in vitest (no token getter); mock base44 in-memory + extract Chat page handlers to DI functions to test.
+- [Anima Undo/delete-flow tests](anima-undo-tests.md) — real animaClient hangs in vitest (no token getter); mock animaClient in-memory + extract Chat page handlers to DI functions to test.
 - [Anima typecheck scope](anima-typecheck-scope.md) — typecheck only covers .ts/.tsx (allowJs off on purpose); JS-from-tsx needs colocated .d.ts; mockups/ excluded.
 - [api-server integration tests](api-server-integration-tests.md) — test /api/store against REAL Postgres, mock @clerk/express getAuth via x-test-user header; client-only guarantees tested in anima vitest.
 - [Anima checkJs rollout](anima-checkjs-rollout.md) — adopt `// @ts-check` per-file (never global flip); measure clean files via temp checkJs; useState(null)→never & default-undefined props→uncallable are the recurring real bugs.
@@ -36,4 +36,4 @@
 - [Anima auto-update PWA](anima-pwa-autoupdate.md) — vite-plugin-pwa autoUpdate; precache ONLY hashed assets + navigateFallback:null because prerender rewrites HTML post-build (precaching HTML serves a stale shell).
 - [Anima page scroll contract](anima-page-scroll-contract.md) — page roots must be `flex-1 min-h-0 (+overflow-y-auto)`, NEVER `*-screen`/`*-[100dvh]`; wrapper already pads for the fixed tab bar.
 - [Anima onboarding gate](anima-onboarding-gate.md) — Serenity is the (unseeded) guide not a companion; SignedInHome gates "/" on Anima existence (mount-only → needs onComplete to flip, fails open to home).
-- [Anima auto-gen entity dedupe](anima-autogen-dedupe.md) — client ref + read-then-create dedupe is best-effort only (base44 has no unique constraint); always guard the first-entry case with lastCount>0.
+- [Anima auto-gen entity dedupe](anima-autogen-dedupe.md) — client ref + read-then-create dedupe is best-effort only (animaClient has no unique constraint); always guard the first-entry case with lastCount>0.

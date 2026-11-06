@@ -2,7 +2,7 @@ import { useState, useRef, useLayoutEffect, useEffect } from "react";
 import { mergeDraftIntoComposer } from "@/lib/heldChatSend";
 import { Send, Zap, Paperclip, Loader, FileText } from "lucide-react";
 import { toast } from "sonner";
-import { base44, deleteUploadedFile } from "@/api/base44Client";
+import { animaClient, deleteUploadedFile } from "@/api/animaClient";
 import { pdfProgressLabel, uploadPdfDocument, deletePdfDocument, openPdfDocument } from "@/api/pdfDocuments";
 import PdfFileChip from "@/components/pdf/PdfFileChip";
 import { formatImageUploadError } from "@/lib/characterAvatarUpload";
@@ -220,7 +220,7 @@ export default function ChatInput({
 
     setUploadingMedia(true);
     try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      const { file_url } = await animaClient.integrations.Core.UploadFile({ file });
       setAttachments((prev) => [
         ...prev,
         { url: file_url, type: "image", name: file.name },

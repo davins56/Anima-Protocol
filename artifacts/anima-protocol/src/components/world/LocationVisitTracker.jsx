@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Loader, MapPin } from "lucide-react";
 
 export default function LocationVisitTracker({ sessionId }) {
@@ -16,7 +16,7 @@ export default function LocationVisitTracker({ sessionId }) {
     setLoading(true);
     try {
       // Get all locations marked as visited for this session
-      const locations = await base44.entities.Location.filter(
+      const locations = await animaClient.entities.Location.filter(
         { visited: true, first_visit_session_id: sessionId },
         "-created_date",
         50

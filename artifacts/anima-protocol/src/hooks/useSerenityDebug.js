@@ -1,5 +1,5 @@
 // @ts-check
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 export function useSerenityDebug() {
   /**
@@ -11,7 +11,7 @@ export function useSerenityDebug() {
     
     if (isDebugRequest) {
       try {
-        const diagnostics = await base44.functions.invoke("debugApp", {
+        const diagnostics = await animaClient.functions.invoke("debugApp", {
           session_id: activeSessionId,
           debug_level: thought.toLowerCase().includes('deep') ? 'deep' : 'standard',
         });

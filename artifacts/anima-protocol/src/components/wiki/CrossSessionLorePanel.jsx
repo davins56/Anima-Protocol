@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { BookOpen, Loader } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -20,7 +20,7 @@ export default function CrossSessionLorePanel({
     setLoading(true);
     try {
       // Find wiki entries mentioned in this session
-      const entries = await base44.entities.WikiCodex.filter({
+      const entries = await animaClient.entities.WikiCodex.filter({
         session_ids: { $elemMatch: sessionId },
       }, '-mention_count', 50);
 

@@ -1,7 +1,7 @@
 // @ts-check
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import SerenityGreeting from './SerenityGreeting';
 import PresetScenarios from './PresetScenarios';
 import { useNavigate } from 'react-router-dom';
@@ -22,7 +22,7 @@ export default function EmotionalOnboarding({ user, onComplete }) {
 
     try {
       // Save user's scenario preference
-      await base44.auth.updateMe({
+      await animaClient.auth.updateMe({
         settings: {
           selected_scenario: scenario.id,
           scenario_system_prompt: scenario.systemPrompt,
@@ -31,7 +31,7 @@ export default function EmotionalOnboarding({ user, onComplete }) {
       });
 
       // Create initial greeting memory
-      await base44.functions.invoke('generateOnboardingMemory', {
+      await animaClient.functions.invoke('generateOnboardingMemory', {
         user_name: user?.full_name || 'Friend',
         scenario_id: scenario.id,
         scenario_name: scenario.label,
