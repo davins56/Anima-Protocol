@@ -1,4 +1,5 @@
 /** Customization panel (touch-friendly, iPad-first). Pure controlled component. */
+import { useState } from "react";
 import {
   ACCESSORIES,
   AURAS,
@@ -14,10 +15,16 @@ import {
   type SerenityForm,
   type VesselConfig,
 } from "@/lib/vessel/vesselConfig";
+import { applyVesselText } from "@/lib/vessel/vesselText";
 
 const FORM_KEYS = Object.keys(SERENITY_FORMS) as SerenityForm[];
 
-type Props = { value: VesselConfig; onChange: (v: VesselConfig) => void };
+type Props = {
+  value: VesselConfig;
+  onChange: (v: VesselConfig) => void;
+  /** Gets the typed description that produced a change, so it can be stored as the save note. */
+  onTextApplied?: (text: string) => void;
+};
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -55,10 +62,62 @@ function Color({ label, value, onChange }: { label: string; value: string; onCha
   );
 }
 
-export default function VesselCustomizer({ value: v, onChange }: Props) {
+/** Type the customisation in words; the parser fills the controls below. */
+function Describe({ value, onApply }: { value: VesselConfig; onApply: (next: VesselConfig, text: string) => void }) {
+  const [text, setText] = useState("");
+  const [result, setResult] = useState<{ applied: string[]; unmatched: string[] } | null>(null);
+  const run = () => {
+    if (!text.trim()) return;
+    const parsed = applyVesselText(text, value);
+    onApply(parsed.config, text);
+    setResult({ applied: parsed.applied, unmatched: parsed.unmatched });
+  };
+  return (
+    <div className="space-y-2">
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={3}
+        maxLength={400}
+        aria-label="Describe the vessel"
+        placeholder="short white hair, silver-blue eyes, white robe with an indigo sash, small halo, violet wings…"
+        className="w-full bg-transparent border border-border px-2 py-2 text-sm"
+      />
+      <button
+        type="button"
+        onClick={run}
+        disabled={!text.trim()}
+        className="w-full min-h-[40px] border border-primary bg-primary/15 text-primary font-mono text-[11px] tracking-widest uppercase disabled:opacity-40"
+      >
+        Generate from text
+      </button>
+      {result && (
+        <div className="font-mono text-[10px] text-muted-foreground space-y-0.5">
+          {result.applied.length ? (
+            result.applied.map((line, i) => <p key={`${line}-${i}`}>· {line}</p>)
+          ) : (
+            <p>Nothing recognised — name her hair, eyes, outfit, a colour or an aura.</p>
+          )}
+          {result.unmatched.length > 0 && <p className="opacity-70">not used: {result.unmatched.join(", ")}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function VesselCustomizer({ value: v, onChange, onTextApplied }: Props) {
   const set = (patch: Partial<VesselConfig>) => onChange(parseVesselConfig({ ...v, ...patch }));
   return (
     <div className="space-y-5">
+      <Section title="Type it">
+        <Describe
+          value={v}
+          onApply={(next, text) => {
+            onChange(next);
+            onTextApplied?.(text);
+          }}
+        />
+      </Section>
       <Section title="Preset">
         <Chips options={VESSEL_BASES} value={v.base} onPick={(b) => set(b === "custom" ? { base: "custom" } : { ...VESSEL_PRESETS[b] })} />
       </Section>
