@@ -115,6 +115,17 @@ async function ensureSchemaMiddleware(
 }
 
 router.use(ensureSchemaMiddleware);
+// Import and restore are legacy migration paths; never allow them to bypass
+// the operator identity gate. Existing Character records remain untouched.
+router.use((req, res, next) => {
+  if (req.method === "POST" && (req.path === "/import" || req.path === "/restore")
+    && req.body?.entities && Object.prototype.hasOwnProperty.call(req.body.entities, "OperatorAnima")) {
+    res.status(403).json({ error: "OperatorAnima cannot be imported or restored through the generic store." });
+    return;
+  }
+  next();
+});
+
 
 
 
