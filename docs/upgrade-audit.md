@@ -191,9 +191,9 @@ Affirmations / Hyperdrive / schema inspect (PR #303 era): **healthy on this snap
 
 ### P1-7 — Store export/import still on the 8s budget
 
-**What’s wrong:** Companion create got 20s (#371–373). `exportData` / `bulkImport` / `restoreData` still use `STORE_FETCH_TIMEOUT_MS` (8s) in `base44Client.js`. First authenticated store hit also runs `ensureSchemaOnce()` under that budget.
+**What’s wrong:** Companion create got 20s (#371–373). `exportData` / `bulkImport` / `restoreData` still use `STORE_FETCH_TIMEOUT_MS` (8s) in `animaClient.js`. First authenticated store hit also runs `ensureSchemaOnce()` under that budget.
 
-**Where:** `artifacts/anima-protocol/src/lib/storeTimeouts.js`; `artifacts/anima-protocol/src/api/base44Client.js`; `artifacts/api-server/src/routes/store.ts` (`ensureSchemaMiddleware`).
+**Where:** `artifacts/anima-protocol/src/lib/storeTimeouts.js`; `artifacts/anima-protocol/src/api/animaClient.js`; `artifacts/api-server/src/routes/store.ts` (`ensureSchemaMiddleware`).
 
 **Why it matters:** Large accounts fail backup/restore while creates succeed. Cold-start list can still abort.
 

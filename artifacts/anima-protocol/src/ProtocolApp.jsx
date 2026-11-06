@@ -47,7 +47,7 @@ import {
   dismissLeftoverLocalData,
 } from "@/lib/syncBootstrap";
 import { prefetchHotRoutes } from "@/lib/prefetchHotRoutes";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import {
   CLERK_FAILURE_HINT,
   CLERK_PROXY_REQUIRED_HINT,
@@ -524,7 +524,7 @@ function SignedInHome() {
     let cancelled = false;
     (async () => {
       try {
-        const animas = await base44.entities.Anima.list("-created_date", 1);
+        const animas = await animaClient.entities.Anima.list("-created_date", 1);
         if (cancelled) return;
         const has = (animas?.length || 0) > 0;
         rememberHasCompanion(has);

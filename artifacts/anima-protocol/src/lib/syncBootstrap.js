@@ -3,7 +3,7 @@ import {
   restoreData,
   notifyStoreChanged,
   waitForStoreAuth,
-} from "@/api/base44Client";
+} from "@/api/animaClient";
 import {
   beginBootstrap,
   endBootstrap,

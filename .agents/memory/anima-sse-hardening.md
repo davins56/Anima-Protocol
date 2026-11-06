@@ -6,7 +6,7 @@ description: Constraints for the cross-device instant-sync SSE transport (client
 # Anima instant-sync (SSE) transport hardening
 
 The live cross-device push is a fetch-streamed SSE in
-`artifacts/anima-protocol/src/api/base44Client.js` (connectSse), fed by
+`artifacts/anima-protocol/src/api/animaClient.js` (connectSse), fed by
 `artifacts/api-server` GET /api/store/events; polling /revision is the safety net.
 
 ## Durable constraints

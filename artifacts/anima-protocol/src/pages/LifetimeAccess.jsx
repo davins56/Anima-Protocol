@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { Check, ArrowLeft, Loader, AlertCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -21,7 +21,7 @@ export default function LifetimeAccess() {
 
   const loadPrices = async () => {
     try {
-      const allPrices = await base44.integrations.Core.GetStripeLifetimePrices?.() || [];
+      const allPrices = await animaClient.integrations.Core.GetStripeLifetimePrices?.() || [];
       
       // Filter for lifetime product prices
       const lifetimePrices = allPrices.filter(
@@ -48,7 +48,7 @@ export default function LifetimeAccess() {
 
     try {
       const currentUrl = window.location.origin;
-      const result = await base44.functions.invoke('createLifetimeCheckout', {
+      const result = await animaClient.functions.invoke('createLifetimeCheckout', {
         priceId,
         successUrl: `${currentUrl}/lifetime-success`,
         cancelUrl: `${currentUrl}/lifetime-access`,

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // The restore flow is the most destructive write path in the app: "Replace
-// Everything" wipes the account before inserting the backup. We back base44's
+// Everything" wipes the account before inserting the backup. We back animaClient's
 // restoreData() with an in-memory backend that mirrors the REAL server's
 // merge/replace semantics (see api-server store /restore) so we can prove,
 // without a server, that:
@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 // The in-memory db is a Map<entityName, Map<id, record>> plus a profile object.
 // restoreData snapshots the db, mutates it, and on any error restores the
 // snapshot and rethrows — exactly what the server's db.transaction guarantees.
-vi.mock("@/api/base44Client", () => {
+vi.mock("@/api/animaClient", () => {
   const db = new Map();
   let profile = {};
   // A record carrying this marker makes the insert throw, so a test can simulate
@@ -111,7 +111,7 @@ import {
   __profile,
   __reset,
   __POISON,
-} from "@/api/base44Client";
+} from "@/api/animaClient";
 import { performRestoreFlow } from "@/lib/restoreHandlers";
 
 // Build the deps bag performRestoreFlow expects, with vi.fn() spies for the

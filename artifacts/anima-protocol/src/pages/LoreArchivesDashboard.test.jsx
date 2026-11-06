@@ -5,12 +5,12 @@ import { MemoryRouter } from "react-router-dom";
 
 // LoreArchivesDashboard's whole point is the FAST path: it lists ChatSession
 // metadata-only ({ withMessages: false }) and derives XP/rank totals from a
-// single server-side message COUNT (base44.messages.counts), instead of
+// single server-side message COUNT (animaClient.messages.counts), instead of
 // hydrating every session's full chat history on open. A regression — dropping
 // the withMessages flag, or reverting totals to s.messages.length — would
 // silently bring back the slow load.
 //
-// The real base44 client gates every request on a Clerk token getter that never
+// The real animaClient client gates every request on a Clerk token getter that never
 // resolves under vitest (it would hang), so we back it with an in-memory mock
 // that RECORDS every call. That lets us prove, without a server:
 //   - ChatSession.list is always asked for metadata only (withMessages:false)
@@ -20,7 +20,7 @@ import { MemoryRouter } from "react-router-dom";
 //     not-yet-migrated sessions
 //   - auto-crystal generation fetches message content ONLY for eligible
 //     sessions (count >= 10), on demand, capped at 5
-vi.mock("@/api/base44Client", () => {
+vi.mock("@/api/animaClient", () => {
   // Recorded calls + seedable backend state.
   const calls = {
     chatSessionList: [], // each list() opts
@@ -88,7 +88,7 @@ vi.mock("@/api/base44Client", () => {
     },
   };
 
-  const base44 = {
+  const animaClient = {
     auth: {
       me: async () => state.me,
       updateMe: async (payload) => ({ ...state.me, ...payload }),
@@ -98,8 +98,8 @@ vi.mock("@/api/base44Client", () => {
   };
 
   return {
-    base44,
-    default: base44,
+    animaClient,
+    default: animaClient,
     __setState: (next) => {
       state = {
         me: { email: "seeker@anima.test" },
@@ -118,7 +118,7 @@ vi.mock("@/api/base44Client", () => {
   };
 });
 
-import { __setState, __calls, __reset } from "@/api/base44Client";
+import { __setState, __calls, __reset } from "@/api/animaClient";
 import LoreArchivesDashboard from "@/pages/LoreArchivesDashboard";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;

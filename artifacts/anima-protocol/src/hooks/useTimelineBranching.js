@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 
 /**
  * Hook to manage timeline branching when creating new chat sessions
@@ -15,7 +15,7 @@ export const useTimelineBranching = () => {
             .map(c => c.name)
             .join(", ");
 
-      await base44.entities.WorldSnapshot.create({
+      await animaClient.entities.WorldSnapshot.create({
         session_id: session.id,
         branch_name: `Universe: ${session.title}`,
         decision_point: `New reality forged with ${characterNames}`,

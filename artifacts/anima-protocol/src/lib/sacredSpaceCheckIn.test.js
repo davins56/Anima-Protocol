@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/api/base44Client", () => ({
-  base44: {
+vi.mock("@/api/animaClient", () => ({
+  animaClient: {
     entities: {
       CheckIn: {
         create: vi.fn(),
@@ -15,7 +15,7 @@ vi.mock("@/hooks/useCheckInRitual", () => ({
   setGlobalCheckInContext: vi.fn(),
 }));
 
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { setGlobalCheckInContext } from "@/hooks/useCheckInRitual";
 import {
   appearsInCheckInList,
@@ -115,7 +115,7 @@ describe("appearsInCheckInList", () => {
 
 describe("recordSacredSpaceCheckIn", () => {
   beforeEach(() => {
-    base44.entities.CheckIn.create.mockReset();
+    animaClient.entities.CheckIn.create.mockReset();
     setGlobalCheckInContext.mockReset();
   });
 
@@ -125,7 +125,7 @@ describe("recordSacredSpaceCheckIn", () => {
       reflection: "I felt held.",
       source: "sacred_space",
     };
-    base44.entities.CheckIn.create.mockResolvedValue(created);
+    animaClient.entities.CheckIn.create.mockResolvedValue(created);
 
     const result = await recordSacredSpaceCheckIn({
       reflection: "I felt held.",
@@ -135,8 +135,8 @@ describe("recordSacredSpaceCheckIn", () => {
     });
 
     expect(result).toEqual(created);
-    expect(base44.entities.CheckIn.create).toHaveBeenCalledTimes(1);
-    const body = base44.entities.CheckIn.create.mock.calls[0][0];
+    expect(animaClient.entities.CheckIn.create).toHaveBeenCalledTimes(1);
+    const body = animaClient.entities.CheckIn.create.mock.calls[0][0];
     expect(body.reflection).toBe("I felt held.");
     expect(body.source).toBe("sacred_space");
     expect(appearsInCheckInList(body)).toBe(true);
@@ -146,7 +146,7 @@ describe("recordSacredSpaceCheckIn", () => {
   });
 
   it("does not hide a failed create — callers see the rejection (no silent no-op)", async () => {
-    base44.entities.CheckIn.create.mockRejectedValue(new Error("store 400"));
+    animaClient.entities.CheckIn.create.mockRejectedValue(new Error("store 400"));
     await expect(
       recordSacredSpaceCheckIn({ reflection: "note" }),
     ).rejects.toThrow(/store 400/);
@@ -168,8 +168,8 @@ describe("check-ins list after a Sacred Space save (failing path)", () => {
       return { id: "ci-new", created_date: payload.timestamp, ...payload };
     })();
 
-    base44.entities.CheckIn.list.mockResolvedValue([created, ...existing]);
-    const listed = await base44.entities.CheckIn.list("-created_date");
+    animaClient.entities.CheckIn.list.mockResolvedValue([created, ...existing]);
+    const listed = await animaClient.entities.CheckIn.list("-created_date");
     const visible = (listed || []).filter(appearsInCheckInList);
 
     expect(visible.map((row) => row.id)).toEqual(["ci-new", "ci-old"]);

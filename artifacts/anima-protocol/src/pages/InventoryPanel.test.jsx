@@ -17,8 +17,8 @@ vi.mock("@/lib/loadRosterCharacters", () => ({
   loadRosterCharacters: (...args) => loadRosterMock(...args),
 }));
 
-vi.mock("@/api/base44Client", () => ({
-  base44: {
+vi.mock("@/api/animaClient", () => ({
+  animaClient: {
     entities: {
       Inventory: {
         filter: (...args) => inventoryFilterMock(...args),

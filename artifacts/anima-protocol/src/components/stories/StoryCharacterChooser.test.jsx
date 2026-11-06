@@ -19,9 +19,9 @@ vi.mock("sonner", () => ({
   toast: { error: vi.fn() },
 }));
 
-vi.mock("@/api/base44Client", () => ({
+vi.mock("@/api/animaClient", () => ({
   awaitCompanionStoreAuth: vi.fn().mockResolvedValue("tok"),
-  base44: {
+  animaClient: {
     entities: {
       ChatSession: {
         create: chatSessionCreateMock,

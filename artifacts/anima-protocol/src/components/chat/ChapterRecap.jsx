@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { BookOpen, ChevronDown, Loader } from 'lucide-react';
 
 export default function ChapterRecap({ sessionId, isVisible }) {
@@ -16,7 +16,7 @@ export default function ChapterRecap({ sessionId, isVisible }) {
   const generateRecap = async () => {
     setLoading(true);
     try {
-      const result = await base44.functions.invoke('generateSessionSummary', {
+      const result = await animaClient.functions.invoke('generateSessionSummary', {
         session_id: sessionId
       });
       if (result?.data?.summary) {

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Download, Share2, Loader, BookOpen } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 
 export default function SessionRecapModal({ isOpen, sessionId, onClose }) {
   const [recap, setRecap] = useState(null);
@@ -17,7 +17,7 @@ export default function SessionRecapModal({ isOpen, sessionId, onClose }) {
     setLoading(true);
     try {
       // Fetch the session data
-      const sessions = await base44.entities.ChatSession.list("-updated_date", 1);
+      const sessions = await animaClient.entities.ChatSession.list("-updated_date", 1);
       const session = sessions.find(s => s.id === sessionId);
 
       if (!session) {
@@ -27,8 +27,8 @@ export default function SessionRecapModal({ isOpen, sessionId, onClose }) {
 
       // Generate session summary and daily journal compilation in parallel
       const [summaryRes, journalRes] = await Promise.all([
-        base44.functions.invoke("generateSessionSummary", { session_id: sessionId }),
-        base44.functions.invoke("dailyJournalCompilation", { session_id: sessionId }),
+        animaClient.functions.invoke("generateSessionSummary", { session_id: sessionId }),
+        animaClient.functions.invoke("dailyJournalCompilation", { session_id: sessionId }),
       ]);
 
       // Compile the recap

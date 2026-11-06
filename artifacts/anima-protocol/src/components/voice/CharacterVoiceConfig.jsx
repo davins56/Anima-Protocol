@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Loader, Volume2, Check, AlertCircle } from "lucide-react";
 import { motion } from "framer-motion";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -22,8 +22,8 @@ export default function CharacterVoiceConfig({ sessionId }) {
     setLoading(true);
     try {
       const [chars, voicesList] = await Promise.all([
-        base44.entities.Character.list("-created_date", 100),
-        base44.functions.invoke("elevenLabsVoices", {}),
+        animaClient.entities.Character.list("-created_date", 100),
+        animaClient.functions.invoke("elevenLabsVoices", {}),
       ]);
       setCharacters(chars || []);
       setVoices(voicesList?.data?.voices || []);
@@ -41,7 +41,7 @@ export default function CharacterVoiceConfig({ sessionId }) {
 
   const handleVoiceAssign = async (characterId, voiceId) => {
     try {
-      await base44.entities.Character.update(characterId, {
+      await animaClient.entities.Character.update(characterId, {
         elevenlabs_voice_id: voiceId,
       });
       setSaveSuccess(true);
@@ -56,7 +56,7 @@ export default function CharacterVoiceConfig({ sessionId }) {
     if (!selectedVoice || !testDialogue.trim()) return;
     setTesting(true);
     try {
-      await base44.functions.invoke("elevenLabsTTS", {
+      await animaClient.functions.invoke("elevenLabsTTS", {
         text: testDialogue,
         voice_id: selectedVoice,
       });

@@ -79,7 +79,7 @@ const MyComponent = () => {
 
 ```javascript
 // In a backend function (e.g., for Anima responses)
-const { contextPrompt } = await base44.functions.invoke('buildUserContextPrompt', {});
+const { contextPrompt } = await animaClient.functions.invoke('buildUserContextPrompt', {});
 
 const systemPrompt = `${contextPrompt}
 
@@ -177,7 +177,7 @@ Respond with warmth, insight, and genuine understanding of who they are.
 `;
 
 // Pass systemMessage to your LLM call
-const response = await base44.integrations.Core.InvokeLLM({
+const response = await animaClient.integrations.Core.InvokeLLM({
   prompt: userMessage,
   systemMessage,
 });

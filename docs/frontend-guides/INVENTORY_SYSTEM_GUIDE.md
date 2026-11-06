@@ -193,7 +193,7 @@ const itemChoices = await generateInventoryNarrativeChoices(
 
 ```javascript
 // In narrative processing or directly in Chat:
-await base44.entities.Inventory.create({
+await animaClient.entities.Inventory.create({
   character_id: activeChar.id,
   session_id: activeSession.id,
   name: "Ancient Sword",
@@ -212,7 +212,7 @@ await base44.entities.Inventory.create({
 
 ```javascript
 // Step 1: Initiate trade
-await base44.functions.invoke('inventoryTrading', {
+await animaClient.functions.invoke('inventoryTrading', {
   action: 'initiate_trade',
   session_id: sessionId,
   initiator_id: char1Id,
@@ -221,7 +221,7 @@ await base44.functions.invoke('inventoryTrading', {
 });
 
 // Step 2: Recipient accepts
-await base44.functions.invoke('inventoryTrading', {
+await animaClient.functions.invoke('inventoryTrading', {
   action: 'accept_trade',
   trade_id: tradeId,
 });
@@ -234,7 +234,7 @@ await base44.functions.invoke('inventoryTrading', {
 "The ancient sword shattered against the demon's scales..."
 
 // This triggers automatic detection:
-await base44.functions.invoke('processItemLoss', {
+await animaClient.functions.invoke('processItemLoss', {
   character_id: characterId,
   session_id: sessionId,
   loss_type: 'destroy',

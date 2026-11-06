@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { ArrowLeft, Check, X, Archive, Loader, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -38,9 +38,9 @@ export default function DiscoveryQueue() {
     try {
       const query = filter === "all" ? {} : { status: filter };
       const [discoveries, sessions] = await Promise.all([
-        base44.entities.PendingDiscovery.filter(query, "-created_date", 100),
+        animaClient.entities.PendingDiscovery.filter(query, "-created_date", 100),
         // Metadata only on open; scan fetches that session's messages on demand.
-        base44.entities.ChatSession.list("-created_date", 100, { withMessages: false }),
+        animaClient.entities.ChatSession.list("-created_date", 100, { withMessages: false }),
       ]);
       setDiscoveries(discoveries || []);
       setSessions(sessions || []);
@@ -59,11 +59,11 @@ export default function DiscoveryQueue() {
       const session = sessions.find(s => s.id === sessionId);
       let messages = session?.messages;
       if (!messages?.length) {
-        messages = await base44.messages.list(sessionId).catch(() => []);
+        messages = await animaClient.messages.list(sessionId).catch(() => []);
       }
       if (!messages?.length) return;
 
-      await base44.functions.invoke('detectWorldBuildingDetails', {
+      await animaClient.functions.invoke('detectWorldBuildingDetails', {
         session_id: sessionId,
         messages,
         start_index: 0
@@ -79,7 +79,7 @@ export default function DiscoveryQueue() {
     setArchiving(discovery.id);
     
     // Create lore entry
-    const loreEntry = await base44.entities.WorldState.create({
+    const loreEntry = await animaClient.entities.WorldState.create({
       session_id: discovery.session_id,
       category: discovery.discovery_type,
       subject: discovery.subject,
@@ -89,7 +89,7 @@ export default function DiscoveryQueue() {
     });
 
     // Mark discovery as approved
-    await base44.entities.PendingDiscovery.update(discovery.id, {
+    await animaClient.entities.PendingDiscovery.update(discovery.id, {
       status: 'archived',
       related_lore_id: loreEntry.id,
       approved_at: new Date().toISOString()
@@ -101,7 +101,7 @@ export default function DiscoveryQueue() {
 
   const handleReject = async (id) => {
     setArchiving(id);
-    await base44.entities.PendingDiscovery.update(id, { status: 'rejected' });
+    await animaClient.entities.PendingDiscovery.update(id, { status: 'rejected' });
     await loadData();
     setArchiving(null);
   };

@@ -1,9 +1,9 @@
 import {
-  base44,
+  animaClient,
   waitForStoreAuth,
   notifyStoreChanged,
   clearStoreCache,
-} from "@/api/base44Client";
+} from "@/api/animaClient";
 import { findCharacterPhoto } from "@/lib/characterPhoto";
 import { characterUpsertIdMap } from "@/lib/createInitSession";
 
@@ -503,7 +503,7 @@ export async function repairStarterCharacters() {
   notifyStoreChanged();
 
   const starters = getStarterRoster();
-  const existing = await base44.entities.Character.list("-created_date", 5000, {
+  const existing = await animaClient.entities.Character.list("-created_date", 5000, {
     _bootstrapInternal: true,
   });
   const existingIds = new Set((existing || []).map((c) => c.id));
@@ -567,7 +567,7 @@ export async function autoAssignCharacterPhoto(character) {
   if (!character?.id) return null;
   const url = await findCharacterPhoto(character.name, character.universe);
   if (url) {
-    await base44.entities.Character.update(character.id, { avatar_url: url });
+    await animaClient.entities.Character.update(character.id, { avatar_url: url });
   }
   return url;
 }
@@ -588,7 +588,7 @@ const BACKFILL_BATCH = 30;
 
 async function doBackfillPhotos() {
   try {
-    const all = await base44.entities.Character.list("-created_date", 1000, {
+    const all = await animaClient.entities.Character.list("-created_date", 1000, {
       _bootstrapInternal: true,
     });
     const attempts = getPhotoAttempts();
@@ -749,8 +749,8 @@ async function bulkUpsertCharactersBatched(chars, { timeoutMs } = {}) {
     const batch = chars.slice(i, i + UPSERT_BATCH_SIZE);
     try {
       const result = bulkOpts
-        ? await base44.entities.Character.bulkUpsert(batch, bulkOpts)
-        : await base44.entities.Character.bulkUpsert(batch);
+        ? await animaClient.entities.Character.bulkUpsert(batch, bulkOpts)
+        : await animaClient.entities.Character.bulkUpsert(batch);
       const items = Array.isArray(result?.items) && result.items.length
         ? result.items
         : batch;
@@ -772,7 +772,7 @@ async function bulkUpsertCharactersBatched(chars, { timeoutMs } = {}) {
       }
       for (const char of batch) {
         try {
-          await base44.entities.Character.update(char.id, char);
+          await animaClient.entities.Character.update(char.id, char);
           upserted.push(char);
         } catch (updateErr) {
           throw new Error(
@@ -801,7 +801,7 @@ export async function upsertCharacters(
   // Skip Character.list(5000) so that extra 8s-budget GET cannot abort Init
   // before ChatSession.create runs. bulk-upsert is idempotent by id.
   if (!skipExistingLookup) {
-    const existing = await base44.entities.Character.list("-created_date", 5000, {
+    const existing = await animaClient.entities.Character.list("-created_date", 5000, {
       _bootstrapInternal: true,
     });
     const existingIds = new Set((existing || []).map((c) => c.id));
@@ -830,7 +830,7 @@ export async function upsertCharacters(
 
 async function upsertMissingStarters() {
   const starters = getStarterRoster();
-  const existing = await base44.entities.Character.list("-created_date", 5000, {
+  const existing = await animaClient.entities.Character.list("-created_date", 5000, {
     _bootstrapInternal: true,
   });
   const existingIds = new Set((existing || []).map((c) => c.id));

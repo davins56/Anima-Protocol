@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { ArrowLeft, BookOpen, Plus, Trash2, Edit2, X, Check, Filter } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 
@@ -39,7 +39,7 @@ export default function LoreBook() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    base44.entities.ChatSession.list("-updated_date", 100)
+    animaClient.entities.ChatSession.list("-updated_date", 100)
       .then((rows) => setSessions(Array.isArray(rows) ? rows : []))
       .catch(() => setSessions([]));
   }, []);
@@ -51,7 +51,7 @@ export default function LoreBook() {
 
   const loadEntries = async () => {
     const query = { session_id: selectedSession, is_active: true };
-    const data = await base44.entities.WorldState.filter(query, "-created_date", 200);
+    const data = await animaClient.entities.WorldState.filter(query, "-created_date", 200);
     setEntries(data || []);
   };
 
@@ -66,7 +66,7 @@ export default function LoreBook() {
   };
 
   const handleDelete = async (id) => {
-    await base44.entities.WorldState.update(id, { is_active: false });
+    await animaClient.entities.WorldState.update(id, { is_active: false });
     setEntries(prev => prev.filter(e => e.id !== id));
   };
 
@@ -74,9 +74,9 @@ export default function LoreBook() {
     if (!form.fact.trim() || !selectedSession) return;
     setSaving(true);
     if (editingEntry) {
-      await base44.entities.WorldState.update(editingEntry.id, form);
+      await animaClient.entities.WorldState.update(editingEntry.id, form);
     } else {
-      await base44.entities.WorldState.create({ ...form, session_id: selectedSession, is_active: true });
+      await animaClient.entities.WorldState.create({ ...form, session_id: selectedSession, is_active: true });
     }
     await loadEntries();
     setShowForm(false);

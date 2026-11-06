@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 
 export function useDailyCompilation(sessionId, calendar, activeCharacterId) {
   const [summary, setSummary] = useState(null);
@@ -28,7 +28,7 @@ export function useDailyCompilation(sessionId, calendar, activeCharacterId) {
 
   const generateDailySummary = async (sid, charId) => {
     try {
-      const result = await base44.functions.invoke("dailyJournalCompilation", {
+      const result = await animaClient.functions.invoke("dailyJournalCompilation", {
         session_id: sid,
         character_id: charId,
       });

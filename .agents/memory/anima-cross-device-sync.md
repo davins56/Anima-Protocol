@@ -38,7 +38,7 @@ cross-device updates are layered on top without rewriting call sites:
   (NOT `getTime()` ms) so sub-millisecond writes still shift the token and so the
   pg driver's Date parsing can't truncate precision. `count` catches deletes;
   `max(updatedAt)` catches creates/updates (every upsert sets `updatedAt = now()`).
-- **Client** (`base44Client.js`): `startStoreSync`/`stopStoreSync` poll `/revision`
+- **Client** (`animaClient.js`): `startStoreSync`/`stopStoreSync` poll `/revision`
   every 15s while the tab is visible, plus on `focus` and `visibilitychange`. On a
   detected change it drops list+profile caches and dispatches window event
   `anima:store-changed`. `useStoreSync(loadFn)` hook re-runs a page's loader on that
@@ -80,5 +80,5 @@ bubble. Rules that keep it correct:
 - The three Chat sync closures live in `src/lib/chatSyncHandlers.js` (DI functions:
   `syncActiveMessages`, `syncFromRemote`, `settleDeferredSync`); Chat.jsx wraps them
   in its useCallback/useEffect. Same extract-to-DI pattern as edit/delete/rewind so
-  the mid-reply race can be driven deterministically (mock base44 `messages.list`).
+  the mid-reply race can be driven deterministically (mock animaClient `messages.list`).
 - The dropped-update race regression test is `src/lib/chatSyncHandlers.test.js`.

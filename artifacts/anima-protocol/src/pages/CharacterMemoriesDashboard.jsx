@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Search, Loader, Pin, Trash2, Tag, Heart } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -25,7 +25,7 @@ export default function CharacterMemoriesDashboard() {
 
   const loadCharacters = async () => {
     try {
-      const chars = await base44.entities.Character.list("-created_date", 100);
+      const chars = await animaClient.entities.Character.list("-created_date", 100);
       setCharacters(chars || []);
       if (chars?.length > 0) {
         setSelectedCharId(chars[0].id);
@@ -40,7 +40,7 @@ export default function CharacterMemoriesDashboard() {
   const loadMemories = async () => {
     try {
       setLoading(true);
-      const result = await base44.functions.invoke("characterMemory", {
+      const result = await animaClient.functions.invoke("characterMemory", {
         action: "get",
         character_id: selectedCharId,
       });
@@ -48,7 +48,7 @@ export default function CharacterMemoriesDashboard() {
       setMemories(mems);
       
       // Load pinned status from user metadata
-      const user = await base44.auth.me();
+      const user = await animaClient.auth.me();
       const pinned = user?.pinned_memories?.[selectedCharId] || [];
       setPinnedMemories(pinned);
     } catch (err) {
@@ -63,7 +63,7 @@ export default function CharacterMemoriesDashboard() {
 
     setSearching(true);
     try {
-      const result = await base44.functions.invoke("searchMemoriesSemantically", {
+      const result = await animaClient.functions.invoke("searchMemoriesSemantically", {
         character_id: selectedCharId,
         query: searchQuery,
         limit: 10,
@@ -84,7 +84,7 @@ export default function CharacterMemoriesDashboard() {
     setPinnedMemories(newPinned);
 
     try {
-      const user = await base44.auth.me();
+      const user = await animaClient.auth.me();
       const updated = {
         ...user,
         pinned_memories: {
@@ -92,7 +92,7 @@ export default function CharacterMemoriesDashboard() {
           [selectedCharId]: newPinned,
         },
       };
-      await base44.auth.updateMe(updated);
+      await animaClient.auth.updateMe(updated);
     } catch (err) {
       console.error("Error updating pinned memories:", err);
     }

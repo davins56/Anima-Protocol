@@ -1,4 +1,4 @@
-import { base44, uploadDataUrl } from "@/api/base44Client";
+import { animaClient, uploadDataUrl } from "@/api/animaClient";
 import { isRetryableStoreWriteError } from "@/lib/storeErrorSignals";
 import {
   STORE_COMPANION_CREATE_RETRY_LIMIT,
@@ -135,10 +135,10 @@ export async function createCompanionRecord(
   const entity = rosterEntity(entityName);
   const createFn =
     create ||
-    ((payload, opts) => base44.entities[entity].create(payload, opts));
+    ((payload, opts) => animaClient.entities[entity].create(payload, opts));
   const listFn =
     list ||
-    ((sort, limit, opts) => base44.entities[entity].list(sort, limit, opts));
+    ((sort, limit, opts) => animaClient.entities[entity].list(sort, limit, opts));
 
   const payload = { ...(data || {}) };
   payload.avatar_url = await persistCompanionAvatarUrl(

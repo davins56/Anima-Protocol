@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { useAuth } from "@/lib/AuthContext";
 import { track } from "@/lib/analytics";
 import {
@@ -66,7 +66,7 @@ export default function useEchoLibrary() {
       setSaving(true);
       setError(null);
       try {
-        const updated = await base44.auth.updateMe({
+        const updated = await animaClient.auth.updateMe({
           settings: {
             ...(user?.settings || {}),
             echo_keys: normalized,

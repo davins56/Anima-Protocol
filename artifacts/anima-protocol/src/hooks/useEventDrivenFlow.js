@@ -1,6 +1,6 @@
 // @ts-check
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 /**
  * @param {string} sessionId
@@ -22,7 +22,7 @@ export function useEventDrivenFlow(sessionId, messages) {
   const analyzeEventFlow = async () => {
     setLoading(true);
     try {
-      const result = await base44.functions.invoke('eventDrivenStoryFlow', {
+      const result = await animaClient.functions.invoke('eventDrivenStoryFlow', {
         session_id: sessionId,
         recent_messages: messages.slice(-10),
       });

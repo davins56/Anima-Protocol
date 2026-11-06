@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { ChevronDown, BookOpen, CheckCircle2, Clock, Zap, Gift, X, AlertCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -14,7 +14,7 @@ export default function QuestSidebar({ sessionId, characterId }) {
     loadQuests();
 
     // Subscribe to real-time quest updates
-    const unsubscribe = base44.entities.Quest.subscribe((event) => {
+    const unsubscribe = animaClient.entities.Quest.subscribe((event) => {
       if (event.data?.session_id === sessionId) {
         loadQuests();
       }
@@ -25,7 +25,7 @@ export default function QuestSidebar({ sessionId, characterId }) {
 
   const loadQuests = async () => {
     try {
-      const data = await base44.entities.Quest.filter(
+      const data = await animaClient.entities.Quest.filter(
         { session_id: sessionId },
         "-created_date",
         100

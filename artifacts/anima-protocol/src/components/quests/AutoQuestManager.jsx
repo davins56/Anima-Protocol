@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { useBackgroundQuestDetection } from "@/hooks/useBackgroundQuestDetection";
 
 export function useAutoQuestManager({
@@ -35,7 +35,7 @@ export function useAutoQuestManager({
   const handleAcceptQuest = async (quest) => {
     try {
       // Create quest record in database
-      const created = await base44.entities.Quest.create({
+      const created = await animaClient.entities.Quest.create({
         session_id: sessionId,
         title: quest.title || quest.name,
         description: quest.description || quest.summary || "",

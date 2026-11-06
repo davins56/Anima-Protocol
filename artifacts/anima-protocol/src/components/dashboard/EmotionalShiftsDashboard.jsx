@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LineChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { Zap, TrendingUp, Users, AlertCircle } from 'lucide-react';
@@ -62,8 +62,8 @@ export default function EmotionalShiftsDashboard({ sessionId }) {
     setLoading(true);
     try {
       const [shiftData, charData] = await Promise.all([
-        base44.functions.invoke('trackEmotionalShifts', { session_id: sessionId }),
-        base44.entities.Character.list("-created_date", 100),
+        animaClient.functions.invoke('trackEmotionalShifts', { session_id: sessionId }),
+        animaClient.entities.Character.list("-created_date", 100),
       ]);
       
       setData(shiftData?.data);

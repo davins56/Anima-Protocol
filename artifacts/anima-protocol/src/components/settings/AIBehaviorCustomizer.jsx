@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Loader, RefreshCw } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -16,14 +16,14 @@ export default function AIBehaviorCustomizer({ characterId, onSave }) {
   const loadConfig = async () => {
     setLoading(true);
     try {
-      const configs = await base44.entities.AIBehaviorConfig.filter({
+      const configs = await animaClient.entities.AIBehaviorConfig.filter({
         character_id: characterId,
       });
       if (configs?.length > 0) {
         setConfig(configs[0]);
       } else {
         // Create default config
-        const newConfig = await base44.entities.AIBehaviorConfig.create({
+        const newConfig = await animaClient.entities.AIBehaviorConfig.create({
           character_id: characterId,
           response_style: 50,
           narrative_tone: 50,
@@ -45,7 +45,7 @@ export default function AIBehaviorCustomizer({ characterId, onSave }) {
     if (!config) return;
     setSynthesizing(true);
     try {
-      const result = await base44.functions.invoke(
+      const result = await animaClient.functions.invoke(
         "synthesizeCharacterTraits",
         { character_id: characterId }
       );
@@ -70,7 +70,7 @@ export default function AIBehaviorCustomizer({ characterId, onSave }) {
     if (!config) return;
     setSaving(true);
     try {
-      await base44.entities.AIBehaviorConfig.update(config.id, config);
+      await animaClient.entities.AIBehaviorConfig.update(config.id, config);
       onSave?.(config);
     } catch (err) {
       console.error("Error saving config:", err);

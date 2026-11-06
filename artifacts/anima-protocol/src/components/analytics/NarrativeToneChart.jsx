@@ -13,7 +13,7 @@ import {
 } from "recharts";
 import { motion } from "framer-motion";
 import { Loader } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 
 const toneValues = {
   uplifting: 8,
@@ -41,14 +41,14 @@ export default function NarrativeToneChart({ sessionId }) {
     setLoading(true);
     try {
       // Fetch all snapshots for this session
-      const snapshots = await base44.entities.WorldSnapshot.filter(
+      const snapshots = await animaClient.entities.WorldSnapshot.filter(
         { session_id: sessionId },
         "created_date",
         100
       );
 
       // Fetch narrative arcs
-      const arcs = await base44.entities.NarrativeArc.list("-created_date", 100);
+      const arcs = await animaClient.entities.NarrativeArc.list("-created_date", 100);
 
       // Build data points for each snapshot/chapter
       const data = (snapshots || []).map((snap, idx) => {

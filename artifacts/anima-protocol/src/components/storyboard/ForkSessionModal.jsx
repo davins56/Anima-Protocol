@@ -1,6 +1,6 @@
 // @ts-check
 import { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { X } from "lucide-react";
 
 /**
@@ -16,7 +16,7 @@ export default function ForkSessionModal({ storypoint, onClose, onSuccess }) {
 
     try {
       // Get original session
-      const originalSession = await base44.entities.ChatSession.list("-updated_date", 200);
+      const originalSession = await animaClient.entities.ChatSession.list("-updated_date", 200);
       const session = originalSession.find((s) => s.id === storypoint.session_id);
 
       if (!session) {
@@ -25,7 +25,7 @@ export default function ForkSessionModal({ storypoint, onClose, onSuccess }) {
       }
 
       // Create forked session with history up to this point
-      const forkedSession = await base44.entities.ChatSession.create({
+      const forkedSession = await animaClient.entities.ChatSession.create({
         title: sessionName,
         mode: session.mode,
         character_id: session.character_id || null,

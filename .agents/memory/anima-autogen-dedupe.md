@@ -7,7 +7,7 @@ Auto-generated companion entities written during chat (e.g. `BookOfEcho` journal
 entries) are deduped with a client-side `useRef` guard plus a read-then-create
 check (filter newest row, compare a stored `message_count`/bucket before writing).
 
-**Why:** the base44 schemaless store has **no unique constraints or atomic
+**Why:** the animaClient schemaless store has **no unique constraints or atomic
 upserts**, so two tabs/devices hitting the same trigger bucket can both pass the
 read and both create — duplicates are possible across concurrent clients. The ref
 only protects a single client/session.

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import AnimaOrb from '../AnimaOrb';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { Sparkles, ArrowRight } from 'lucide-react';
 
 const QUESTIONS = [
@@ -50,7 +50,7 @@ export default function AwakeningCeremony({ onAwakened, onCancel }: AwakeningCer
     Forge a companion whose personality, backstory, and voice perfectly balance, challenge, or comfort these traits. Make them feel mythical and deeply empathetic.`;
 
     try {
-      const result = await base44.functions.invoke("generateCompanionFromPrompt", { prompt });
+      const result = await animaClient.functions.invoke("generateCompanionFromPrompt", { prompt });
       if (result?.success && result?.companion) {
         // Inject an artificial "Soulprint" for the UI reveal
         const companion = {

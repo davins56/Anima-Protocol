@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { X, Search, Check, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { awaitCompanionStoreAuth } from "@/lib/listPersonalAnimas";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import StoryTemplateBrowser from "@/components/templates/StoryTemplateBrowser";
 import CanonicalStoriesBrowser from "@/components/stories/CanonicalStoriesBrowser";
 import StoryCharacterChooser from "@/components/stories/StoryCharacterChooser";
@@ -104,7 +104,7 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
       });
       applyRoster(rosterResult);
       try {
-        const grps = await base44.entities.CharacterGroup.list(
+        const grps = await animaClient.entities.CharacterGroup.list(
           "-created_date",
           100,
         );
@@ -281,7 +281,7 @@ export default function NewSessionModal({ mode, onClose, onCreate }) {
         try {
           const sessionForBranch =
             newSession ||
-            (await base44.entities.ChatSession.list("-created_date", 1))?.[0];
+            (await animaClient.entities.ChatSession.list("-created_date", 1))?.[0];
           if (sessionForBranch) {
             await createBranchForSession(sessionForBranch, characters, mode);
           }
