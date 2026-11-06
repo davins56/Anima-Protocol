@@ -9,12 +9,12 @@ import {
   writeHeldDraft,
 } from "@/lib/heldChatSend";
 import { toast } from "sonner";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import ChatInput from "./ChatInput";
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
-vi.mock("@/api/base44Client", () => ({
-  base44: { integrations: { Core: { UploadFile: vi.fn() } } },
+vi.mock("@/api/animaClient", () => ({
+  animaClient: { integrations: { Core: { UploadFile: vi.fn() } } },
   deleteUploadedFile: vi.fn(),
 }));
 vi.mock("@/api/pdfDocuments", () => ({
@@ -257,8 +257,8 @@ describe("ChatInput while a reply is in flight", () => {
 
   it("accepts a jpeg photo and refuses a gif", async () => {
     toast.error.mockClear();
-    base44.integrations.Core.UploadFile.mockClear();
-    base44.integrations.Core.UploadFile.mockResolvedValue({
+    animaClient.integrations.Core.UploadFile.mockClear();
+    animaClient.integrations.Core.UploadFile.mockResolvedValue({
       file_url: "/api/storage/objects/uploads/pic",
     });
     render(<ChatInput onSend={vi.fn()} />);
@@ -272,13 +272,13 @@ describe("ChatInput while a reply is in flight", () => {
     Object.defineProperty(photo, "files", { configurable: true, value: [gif] });
     fireEvent.change(photo);
     expect(toast.error).toHaveBeenCalled();
-    expect(base44.integrations.Core.UploadFile).not.toHaveBeenCalled();
+    expect(animaClient.integrations.Core.UploadFile).not.toHaveBeenCalled();
 
     const jpeg = new File([new Uint8Array([1, 2, 3])], "shot.jpg", { type: "image/jpeg" });
     Object.defineProperty(photo, "files", { configurable: true, value: [jpeg] });
     fireEvent.change(photo);
     expect(await screen.findByAltText("preview")).toBeTruthy();
-    expect(base44.integrations.Core.UploadFile).toHaveBeenCalledWith({ file: jpeg });
+    expect(animaClient.integrations.Core.UploadFile).toHaveBeenCalledWith({ file: jpeg });
   });
 
   it("stays locked when a reply is in flight and composeWhileBusy is off", () => {

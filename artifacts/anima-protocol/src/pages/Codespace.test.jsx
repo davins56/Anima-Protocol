@@ -21,10 +21,10 @@ const mocks = vi.hoisted(() => ({
   pullGithub: vi.fn(),
 }));
 
-vi.mock("@/api/base44Client", () => ({
+vi.mock("@/api/animaClient", () => ({
   awaitCompanionStoreAuth: vi.fn().mockResolvedValue("token"),
   waitForStoreAuth: vi.fn().mockResolvedValue("token"),
-  base44: {
+  animaClient: {
     auth: { me: mocks.me },
     entities: {
       Anima: { list: mocks.listAnima },

@@ -78,6 +78,8 @@ export class ChatPipelineTelemetry {
   private firstWordAtWallMs: number | null = null;
   private readonly constructedAtWallMs = Date.now();
   private readonly measurements: Record<string, number> = {};
+  /** Non-duration numbers (counts, effective budgets) that ride the same payload. */
+  private readonly gauges: Record<string, number> = {};
   private phase: ChatFailurePhase = "queue";
 
   constructor(private readonly fields: ChatTelemetryFields) {}
@@ -135,6 +137,14 @@ export class ChatPipelineTelemetry {
     this.measurements[name] = Math.max(0, Math.round(valueMs));
   }
 
+  /**
+   * Attach a count or budget to this turn's telemetry (prompt size, the
+   * context ceiling actually in force). Durations belong in `measure`.
+   */
+  note(name: string, value: number): void {
+    this.gauges[name] = Math.max(0, Math.round(Number(value) || 0));
+  }
+
   report(
     outcome: "completed" | "failed",
     details: Record<string, unknown> = {},
@@ -164,6 +174,7 @@ export class ChatPipelineTelemetry {
           ? Math.max(0, this.constructedAtWallMs - this.fields.requestStartedAtMs)
           : null,
       ...this.measurements,
+      ...this.gauges,
       ...details,
       ...(outcome === "failed"
         ? {

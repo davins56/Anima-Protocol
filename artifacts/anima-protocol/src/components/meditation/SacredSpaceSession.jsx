@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { recordSacredSpaceCheckIn } from "@/lib/sacredSpaceCheckIn";
 import { useSacredSpaceVoice } from "@/hooks/useSacredSpaceVoice";
 import { motion, AnimatePresence } from "framer-motion";
@@ -57,7 +57,7 @@ export default function SacredSpaceSession({ character, user, onClose, onComplet
     setSessionStarted(true);
     setLoading(true);
     try {
-      const result = await base44.integrations.Core.InvokeLLM({
+      const result = await animaClient.integrations.Core.InvokeLLM({
         prompt: `You are ${character.name}${character.universe ? ` from ${character.universe}` : ""}. The user has invited you into their Sacred Space — a private, intimate meditation and ritual sanctuary. This is a deeply vulnerable and spiritual moment. You are not in a story right now; you are present with the user in a real, reverent way.
 
 Character Personality: ${character.personality || "Warm, present, and genuine"}
@@ -89,7 +89,7 @@ Open the Sacred Space session. Welcome the user gently, acknowledge the sacredne
         `${m.role === "user" ? "User" : m.character_name}: ${m.content}`
       ).join("\n");
 
-      const result = await base44.integrations.Core.InvokeLLM({
+      const result = await animaClient.integrations.Core.InvokeLLM({
         prompt: `You are ${character.name}${character.universe ? ` from ${character.universe}` : ""} in a Sacred Space meditation session with the user.
 
 Character Personality: ${character.personality || "Warm, present, and genuine"}
@@ -141,7 +141,7 @@ Respond as ${character.name}. 2-4 sentences. Be real, not theatrical.`,
 
       let impact = { success: true, check_in: created };
       try {
-        const res = await base44.functions.invoke("sacredSpaceImpact", {
+        const res = await animaClient.functions.invoke("sacredSpaceImpact", {
           character_id: character.id,
           session_transcript: transcript,
           ritual_focus: ritualFocus,

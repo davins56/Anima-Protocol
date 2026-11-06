@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import {
   acceptLiveJackIn,
   addExperienceNote,
@@ -20,7 +20,7 @@ import {
 
 function persistAnimaHidden(animaId, hidden) {
   if (!animaId) return;
-  base44.entities.Anima.update(animaId, { hidden_sequences: hidden }).catch(() => {});
+  animaClient.entities.Anima.update(animaId, { hidden_sequences: hidden }).catch(() => {});
 }
 
 /**

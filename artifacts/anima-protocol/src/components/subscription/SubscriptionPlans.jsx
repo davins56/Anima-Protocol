@@ -1,6 +1,6 @@
 // @ts-check
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import AddOnPlans from "./AddOnPlans";
 
 const PLANS = [
@@ -44,7 +44,7 @@ export default function SubscriptionPlans() {
   const [user, setUser] = useState(/** @type {any} */ (null));
 
   useEffect(() => {
-    base44.auth.me().then(setUser).catch(() => {});
+    animaClient.auth.me().then(setUser).catch(() => {});
   }, []);
 
   // Stripe Checkout add-ons (server-priced, webhook-fulfilled).

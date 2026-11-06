@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 export function useCrossSessionMemory(characterId, sessionId) {
   const [memoryContext, setMemoryContext] = useState('');
@@ -11,7 +11,7 @@ export function useCrossSessionMemory(characterId, sessionId) {
     if (!characterId) return;
     setMemoryLoading(true);
     try {
-      const result = await base44.functions.invoke('buildMemoryContext', {
+      const result = await animaClient.functions.invoke('buildMemoryContext', {
         character_id: characterId,
         session_id: sessionId,
         include_all_memories: true,
@@ -31,7 +31,7 @@ export function useCrossSessionMemory(characterId, sessionId) {
   const formMemoriesFromSession = useCallback(async (recentMessages, relatedCharacterId = null) => {
     if (!characterId || !sessionId || !recentMessages) return null;
     try {
-      const result = await base44.functions.invoke('formCrossSessionMemory', {
+      const result = await animaClient.functions.invoke('formCrossSessionMemory', {
         character_id: characterId,
         session_id: sessionId,
         related_character_id: relatedCharacterId,
@@ -48,7 +48,7 @@ export function useCrossSessionMemory(characterId, sessionId) {
   const updateMemoriesFromSession = useCallback(async (relationshipChanges, newInteractions, emotionalDiscoveries) => {
     if (!characterId || !sessionId) return null;
     try {
-      const result = await base44.functions.invoke('updateMemoryFromSession', {
+      const result = await animaClient.functions.invoke('updateMemoryFromSession', {
         character_id: characterId,
         session_id: sessionId,
         relationship_changes: relationshipChanges || {},
@@ -66,7 +66,7 @@ export function useCrossSessionMemory(characterId, sessionId) {
   const retrieveMemories = useCallback(async (memoryTypes = null, relatedCharacterId = null) => {
     if (!characterId) return [];
     try {
-      const result = await base44.functions.invoke('retrieveCrossSessionMemories', {
+      const result = await animaClient.functions.invoke('retrieveCrossSessionMemories', {
         character_id: characterId,
         related_character_id: relatedCharacterId,
         memory_types: memoryTypes,

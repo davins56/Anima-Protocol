@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  base44,
+  animaClient,
   clearAuthTokenGetter,
   clearStoreCache,
   setAuthTokenGetter,
@@ -9,7 +9,7 @@ import {
   STORE_LIST_RETRY_LIMIT,
   STORE_LIST_TIMEOUT_MS,
   STORE_SESSION_CREATE_TIMEOUT_MS,
-} from "./base44Client";
+} from "./animaClient";
 import {
   isStoreDatabaseError,
   isStoreReadUnavailable,
@@ -55,7 +55,7 @@ describe("ChatSession store wrapper", () => {
       return Response.json({});
     });
 
-    const session = await base44.entities.ChatSession.create({
+    const session = await animaClient.entities.ChatSession.create({
       title: "Init Session",
       opening_scene: "A neon room hums.",
       messages: [{ role: "assistant", content: "The scene begins." }],
@@ -102,7 +102,7 @@ describe("ChatSession store wrapper", () => {
       return Response.json({});
     });
 
-    const saved = await base44.entities.ChatSession.update("sess-1", {
+    const saved = await animaClient.entities.ChatSession.update("sess-1", {
       messages: [
         { id: "u", role: "user", content: "hi" },
         { id: "a", role: "assistant", content: "old" },
@@ -141,7 +141,7 @@ describe("ChatSession store wrapper", () => {
       return Response.json([]);
     });
 
-    await expect(base44.entities.CheckIn.list()).rejects.toMatchObject({
+    await expect(animaClient.entities.CheckIn.list()).rejects.toMatchObject({
       code: "timeout",
     });
     expect(timeoutSpy).toHaveBeenCalledWith(STORE_FETCH_TIMEOUT_MS);
@@ -167,7 +167,7 @@ describe("ChatSession store wrapper", () => {
       return Response.json([{ id: "check-1", note: "warm" }]);
     });
 
-    await expect(base44.entities.CheckIn.list()).resolves.toEqual([
+    await expect(animaClient.entities.CheckIn.list()).resolves.toEqual([
       { id: "check-1", note: "warm" },
     ]);
     expect(listGets).toBe(2);
@@ -186,7 +186,7 @@ describe("ChatSession store wrapper", () => {
       throw abortErr;
     });
 
-    await expect(base44.entities.CheckIn.create({ note: "x" })).rejects.toMatchObject({
+    await expect(animaClient.entities.CheckIn.create({ note: "x" })).rejects.toMatchObject({
       code: "timeout",
     });
     expect(creates).toBe(1);
@@ -213,7 +213,7 @@ describe("ChatSession store wrapper", () => {
       return Response.json({});
     });
 
-    const session = await base44.entities.ChatSession.create({
+    const session = await animaClient.entities.ChatSession.create({
       title: "Recovered session",
     });
 
@@ -242,7 +242,7 @@ describe("ChatSession store wrapper", () => {
     });
 
     await expect(
-      base44.entities.ChatSession.create({ title: "Blocked" }),
+      animaClient.entities.ChatSession.create({ title: "Blocked" }),
     ).rejects.toThrow(/schema is missing/i);
     expect(sessionPosts).toBe(1);
   });
@@ -264,7 +264,7 @@ describe("ChatSession store wrapper", () => {
       return Response.json({});
     });
 
-    const session = await base44.entities.ChatSession.create({
+    const session = await animaClient.entities.ChatSession.create({
       mode: "solo",
       character_id: "char-1",
       title: "T'Challa",
@@ -309,7 +309,7 @@ describe("ChatSession store wrapper", () => {
     });
 
     await expect(
-      base44.entities.ChatSession.create({ title: "Init Session" }),
+      animaClient.entities.ChatSession.create({ title: "Init Session" }),
     ).rejects.toMatchObject({ code: "timeout" });
     expect(timeoutSpy).toHaveBeenCalledWith(STORE_SESSION_CREATE_TIMEOUT_MS);
     expect(STORE_SESSION_CREATE_TIMEOUT_MS).toBe(20000);
@@ -339,7 +339,7 @@ describe("ChatSession store wrapper", () => {
       return Response.json({});
     });
 
-    const session = await base44.entities.ChatSession.create({ title: "Recovered" });
+    const session = await animaClient.entities.ChatSession.create({ title: "Recovered" });
 
     expect(session.id).toBe("session-fresh");
     expect(sessionPosts).toBe(2);
@@ -365,7 +365,7 @@ describe("ChatSession store wrapper", () => {
       return Response.json({ id: "sess-1", title: "T'Challa" }, { status: 201 });
     });
 
-    const pending = base44.entities.ChatSession.create({ title: "T'Challa" });
+    const pending = animaClient.entities.ChatSession.create({ title: "T'Challa" });
     await new Promise((r) => setTimeout(r, 40));
     expect(timeoutSpy).not.toHaveBeenCalled();
     expect(fetchStarted).toBe(false);
@@ -400,7 +400,7 @@ describe("ChatSession store wrapper", () => {
       return Response.json({});
     });
 
-    const session = await base44.entities.ChatSession.create({ title: "Recovered" });
+    const session = await animaClient.entities.ChatSession.create({ title: "Recovered" });
     expect(session.id).toBe("sess-auth");
     expect(sessionPosts).toBe(2);
     expect(timeoutSpy).toHaveBeenCalledTimes(2);
@@ -432,7 +432,7 @@ describe("Character roster list budget", () => {
       Response.json([{ id: "char-1", name: "Korra" }]),
     );
 
-    const rows = await base44.entities.Character.list("-created_date", 10, {
+    const rows = await animaClient.entities.Character.list("-created_date", 10, {
       _bootstrapInternal: true,
     });
     expect(rows).toEqual([{ id: "char-1", name: "Korra" }]);
@@ -451,7 +451,7 @@ describe("Character roster list budget", () => {
       Response.json([{ id: "aff-1", text: "I am here.", category: "healing" }]),
     );
 
-    const rows = await base44.entities.Affirmation.filter({
+    const rows = await animaClient.entities.Affirmation.filter({
       user_email: "operator@example.com",
       is_active: true,
     });
@@ -473,7 +473,7 @@ describe("Character roster list budget", () => {
       Response.json([{ id: "aff-2", text: "Listed.", category: "love" }]),
     );
 
-    const rows = await base44.entities.Affirmation.list("-created_date", 20);
+    const rows = await animaClient.entities.Affirmation.list("-created_date", 20);
     expect(rows).toEqual([{ id: "aff-2", text: "Listed.", category: "love" }]);
     expect(timeoutSpy).toHaveBeenCalledWith(STORE_LIST_TIMEOUT_MS);
   });
@@ -491,7 +491,7 @@ describe("Character roster list budget", () => {
       ]);
     });
 
-    const rows = await base44.entities.Affirmation.filter(
+    const rows = await animaClient.entities.Affirmation.filter(
       { is_active: true },
       undefined,
       undefined,
@@ -524,7 +524,7 @@ describe("Character / Anima store create budget", () => {
       Response.json({ id: "char-alyndra", name: "Alyndra" }, { status: 201 }),
     );
 
-    const created = await base44.entities.Character.create({ name: "Alyndra" });
+    const created = await animaClient.entities.Character.create({ name: "Alyndra" });
 
     expect(created.id).toBe("char-alyndra");
     expect(timeoutSpy).toHaveBeenCalledWith(STORE_COMPANION_CREATE_TIMEOUT_MS);
@@ -542,7 +542,7 @@ describe("Character / Anima store create budget", () => {
       Response.json({ id: "anima-1", name: "Alyndra" }, { status: 201 }),
     );
 
-    await base44.entities.Anima.create({ name: "Alyndra" });
+    await animaClient.entities.Anima.create({ name: "Alyndra" });
     expect(timeoutSpy).toHaveBeenCalledWith(STORE_COMPANION_CREATE_TIMEOUT_MS);
   });
 });
@@ -550,7 +550,7 @@ describe("Character / Anima store create budget", () => {
 describe("parseStoreErrorResponse", () => {
   it("never dumps Cloudflare HTML into the error message", async () => {
     const { parseStoreErrorResponse, STORE_UNREACHABLE_MESSAGE } =
-      await import("./base44Client");
+      await import("./animaClient");
     const html = `<!DOCTYPE html> <!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US"> <![endif]-->`;
     const message = await parseStoreErrorResponse(
       new Response(html, {
@@ -563,7 +563,7 @@ describe("parseStoreErrorResponse", () => {
   });
 
   it("keeps JSON store errors", async () => {
-    const { parseStoreErrorResponse } = await import("./base44Client");
+    const { parseStoreErrorResponse } = await import("./animaClient");
     const message = await parseStoreErrorResponse(
       Response.json(
         { error: "Database connection reset", reason: "reset" },
@@ -575,7 +575,7 @@ describe("parseStoreErrorResponse", () => {
 
   it("never dumps Cloudflare's www 301 HTML (<center>cloudflare</center>)", async () => {
     const { parseStoreErrorResponse, STORE_UNREACHABLE_MESSAGE } =
-      await import("./base44Client");
+      await import("./animaClient");
     const html = `<html>
 <head><title>301 Moved Permanently</title></head>
 <body>
@@ -597,7 +597,7 @@ describe("parseStoreErrorResponse", () => {
   });
 
   it("explains a plain 404 without treating it as HTML", async () => {
-    const { parseStoreErrorResponse } = await import("./base44Client");
+    const { parseStoreErrorResponse } = await import("./animaClient");
     const message = await parseStoreErrorResponse(
       new Response("Cannot GET /api/store/Character", { status: 404 }),
     );
@@ -632,7 +632,7 @@ describe("Character.list HTML failures", () => {
 
     let caught;
     try {
-      await base44.entities.Character.list("-created_date", 100, {
+      await animaClient.entities.Character.list("-created_date", 100, {
         _bootstrapInternal: true,
       });
     } catch (err) {
@@ -663,7 +663,7 @@ describe("Character.list HTML failures", () => {
     );
 
     await expect(
-      base44.entities.CheckIn.list(),
+      animaClient.entities.CheckIn.list(),
     ).rejects.toMatchObject({
       status: 503,
       message: expect.stringMatching(/unreachable|database/i),
@@ -677,7 +677,7 @@ describe("Character.list HTML failures", () => {
       Response.json([{ id: "char_custom", name: "Aelynd" }]),
     );
 
-    const pending = base44.entities.Character.list("-created_date", 100, {
+    const pending = animaClient.entities.Character.list("-created_date", 100, {
       _bootstrapInternal: true,
     });
     await new Promise((r) => setTimeout(r, 40));
@@ -695,7 +695,7 @@ describe("Character.list HTML failures", () => {
     );
 
     await expect(
-      base44.entities.Character.list("-created_date", 100, {
+      animaClient.entities.Character.list("-created_date", 100, {
         _bootstrapInternal: true,
       }),
     ).rejects.toMatchObject({
@@ -711,7 +711,7 @@ describe("Character.list HTML failures", () => {
     clearAuthTokenGetter();
     global.fetch = vi.fn();
     await expect(
-      base44.entities.Character.list("-created_date", 100, {
+      animaClient.entities.Character.list("-created_date", 100, {
         _bootstrapInternal: true,
       }),
     ).resolves.toEqual([]);
@@ -725,7 +725,7 @@ describe("Character.list HTML failures", () => {
       }),
     );
 
-    const rows = await base44.entities.Character.list("-created_date", 100, {
+    const rows = await animaClient.entities.Character.list("-created_date", 100, {
       _bootstrapInternal: true,
     });
     expect(rows).toEqual([{ id: "char_custom", name: "Aelynd" }]);
@@ -734,7 +734,7 @@ describe("Character.list HTML failures", () => {
 
 describe("auth.me Clerk identity", () => {
   afterEach(() => {
-    base44.auth.clearSession();
+    animaClient.auth.clearSession();
     clearAuthTokenGetter();
     vi.restoreAllMocks();
     delete global.fetch;
@@ -742,13 +742,13 @@ describe("auth.me Clerk identity", () => {
 
   it("returns synced Clerk identity when the store token is not ready yet", async () => {
     clearAuthTokenGetter();
-    base44.auth.syncIdentity({
+    animaClient.auth.syncIdentity({
       id: "user_abc",
       email: "ada@example.com",
       full_name: "Ada Lovelace",
     });
 
-    const me = await base44.auth.me();
+    const me = await animaClient.auth.me();
     expect(me.id).toBe("user_abc");
     expect(me.email).toBe("ada@example.com");
     expect(me.full_name).toBe("Ada Lovelace");
@@ -757,7 +757,7 @@ describe("auth.me Clerk identity", () => {
   it("waits for a registered token getter before fetching the store profile", async () => {
     let token = null;
     setAuthTokenGetter(() => token);
-    base44.auth.syncIdentity({
+    animaClient.auth.syncIdentity({
       id: "user_abc",
       email: "ada@example.com",
       full_name: "Ada Lovelace",
@@ -773,7 +773,7 @@ describe("auth.me Clerk identity", () => {
       return Response.json({});
     });
 
-    const pending = base44.auth.me();
+    const pending = animaClient.auth.me();
     await new Promise((r) => setTimeout(r, 80));
     expect(global.fetch).not.toHaveBeenCalled();
     token = "live-jwt";
@@ -785,8 +785,8 @@ describe("auth.me Clerk identity", () => {
 
   it("does not cache an empty profile when getToken is missing", async () => {
     clearAuthTokenGetter();
-    base44.auth.clearSession();
-    await base44.auth.me();
+    animaClient.auth.clearSession();
+    await animaClient.auth.me();
 
     setAuthTokenGetter(() => "test-token");
     global.fetch = vi.fn(async (url) => {
@@ -799,13 +799,13 @@ describe("auth.me Clerk identity", () => {
       }
       return Response.json({});
     });
-    base44.auth.syncIdentity({
+    animaClient.auth.syncIdentity({
       id: "user_abc",
       email: "ada@example.com",
       full_name: "Ada Lovelace",
     });
 
-    const me = await base44.auth.me();
+    const me = await animaClient.auth.me();
     expect(global.fetch).toHaveBeenCalled();
     expect(me.display_name).toBe("Ada");
     expect(me.email).toBe("ada@example.com");
@@ -813,17 +813,17 @@ describe("auth.me Clerk identity", () => {
   });
 
   it("does not let a later empty syncIdentity wipe a hydrated email", async () => {
-    base44.auth.syncIdentity({
+    animaClient.auth.syncIdentity({
       id: "user_abc",
       email: "ada@example.com",
       full_name: "Ada Lovelace",
     });
-    base44.auth.syncIdentity({
+    animaClient.auth.syncIdentity({
       id: "user_abc",
       email: "",
       full_name: "",
     });
-    const me = await base44.auth.me();
+    const me = await animaClient.auth.me();
     expect(me.email).toBe("ada@example.com");
     expect(me.full_name).toBe("Ada Lovelace");
   });
@@ -831,13 +831,13 @@ describe("auth.me Clerk identity", () => {
   it("peekMe returns synced identity without fetching /profile", async () => {
     setAuthTokenGetter(() => "test-token");
     global.fetch = vi.fn(async () => Response.json({ display_name: "Ada" }));
-    base44.auth.syncIdentity({
+    animaClient.auth.syncIdentity({
       id: "user_abc",
       email: "ada@example.com",
       full_name: "Ada Lovelace",
     });
 
-    const peeked = base44.auth.peekMe();
+    const peeked = animaClient.auth.peekMe();
     expect(peeked.email).toBe("ada@example.com");
     expect(peeked.id).toBe("user_abc");
     expect(global.fetch).not.toHaveBeenCalled();
@@ -850,7 +850,7 @@ describe("auth.me Clerk identity", () => {
       return controller.signal;
     });
     setAuthTokenGetter(() => "test-token");
-    base44.auth.syncIdentity({
+    animaClient.auth.syncIdentity({
       id: "user_abc",
       email: "ada@example.com",
     });
@@ -862,7 +862,7 @@ describe("auth.me Clerk identity", () => {
       return Response.json({});
     });
 
-    const me = await base44.auth.me();
+    const me = await animaClient.auth.me();
     expect(me.display_name).toBe("Ada");
     expect(timeoutSpy).toHaveBeenCalledWith(STORE_LIST_TIMEOUT_MS);
     expect(STORE_LIST_TIMEOUT_MS).toBe(20000);
@@ -898,7 +898,7 @@ describe("auth.updateMe profile persist", () => {
     });
 
     await expect(
-      base44.auth.updateMe({
+      animaClient.auth.updateMe({
         settings: { chat_bg_image: "/api/storage/objects/uploads/bg" },
       }),
     ).rejects.toMatchObject({
@@ -933,7 +933,7 @@ describe("functions.invoke timeout", () => {
       });
     });
 
-    const result = await base44.functions.invoke(
+    const result = await animaClient.functions.invoke(
       "detectLoreKeywords",
       { content: "hi" },
       { timeoutMs: 30 },
@@ -945,7 +945,7 @@ describe("functions.invoke timeout", () => {
   it("does not put the sidecar timeout on a foreground invoke", async () => {
     const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
     global.fetch = vi.fn(async () => Response.json({ result: { name: "Nyx" } }));
-    const result = await base44.functions.invoke("generateCompanionFromPrompt", {
+    const result = await animaClient.functions.invoke("generateCompanionFromPrompt", {
       prompt: "a quiet fox",
     });
     expect(result).toEqual({ name: "Nyx" });
@@ -957,7 +957,7 @@ describe("functions.invoke timeout", () => {
       () => new AbortController().signal,
     );
     global.fetch = vi.fn(async () => Response.json({ result: null }));
-    await base44.functions.invoke("generateDivergentPaths", { session_id: "s" });
+    await animaClient.functions.invoke("generateDivergentPaths", { session_id: "s" });
     expect(timeoutSpy).toHaveBeenCalledWith(12_000);
   });
 
@@ -980,7 +980,7 @@ describe("functions.invoke timeout", () => {
       });
     });
     try {
-      const result = await base44.functions.invoke(
+      const result = await animaClient.functions.invoke(
         "scanAndLinkLoreKeywords",
         { messages: [] },
         { timeoutMs: 30 },

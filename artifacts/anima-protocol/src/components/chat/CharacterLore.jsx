@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { BookOpen, Plus, X, Trash2 } from "lucide-react";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
@@ -19,7 +19,7 @@ export default function CharacterLore({ characterId, characterName }) {
   }, [characterId]);
 
   const loadMemories = async () => {
-    const data = await base44.entities.CharacterMemory.filter({
+    const data = await animaClient.entities.CharacterMemory.filter({
       character_id: characterId,
     });
     setMemories(data);
@@ -28,7 +28,7 @@ export default function CharacterLore({ characterId, characterName }) {
   const handleSave = async () => {
     if (!form.fact.trim()) return;
     setSavingForm(true);
-    await base44.entities.CharacterMemory.create({
+    await animaClient.entities.CharacterMemory.create({
       character_id: characterId,
       fact: form.fact,
       category: form.category,
@@ -41,7 +41,7 @@ export default function CharacterLore({ characterId, characterName }) {
   };
 
   const deleteMemory = async (id) => {
-    await base44.entities.CharacterMemory.delete(id);
+    await animaClient.entities.CharacterMemory.delete(id);
     await loadMemories();
   };
 

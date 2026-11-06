@@ -22,10 +22,10 @@ vi.mock("react-router-dom", async () => {
   };
 });
 
-vi.mock("@/api/base44Client", () => ({
+vi.mock("@/api/animaClient", () => ({
   uploadDataUrl: vi.fn(),
   urlToDataUrl: vi.fn(),
-  base44: {
+  animaClient: {
     auth: { me: mocks.me, updateMe: mocks.updateMe },
     entities: {
       ChatSession: { list: mocks.listSessions },

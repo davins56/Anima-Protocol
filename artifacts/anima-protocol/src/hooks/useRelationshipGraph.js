@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 
 export function useRelationshipGraph(sessionId, characters, messages) {
   const [nodes, setNodes] = useState([]);
@@ -17,7 +17,7 @@ export function useRelationshipGraph(sessionId, characters, messages) {
     setLoading(true);
     try {
       // Fetch all relationship data for this session
-      const relationships = await base44.entities.CharacterRelationship.filter(
+      const relationships = await animaClient.entities.CharacterRelationship.filter(
         { session_id: sessionId },
         "-updated_date",
         500

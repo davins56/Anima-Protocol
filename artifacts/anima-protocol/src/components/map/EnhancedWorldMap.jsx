@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { MapPin, X, Users, Zap, BookOpen, ChevronRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -21,10 +21,10 @@ export default function EnhancedWorldMap({ sessionId }) {
     setLoading(true);
     try {
       const [locsRes, loreRes, charsRes, eventsRes] = await Promise.all([
-        base44.entities.Location.list("-created_date", 100),
-        base44.entities.WorldState.filter({ session_id: sessionId, is_active: true }, "-created_date", 50),
-        base44.entities.Character.list("-created_date", 100),
-        base44.functions.invoke("generateWorldEvent", { session_id: sessionId }),
+        animaClient.entities.Location.list("-created_date", 100),
+        animaClient.entities.WorldState.filter({ session_id: sessionId, is_active: true }, "-created_date", 50),
+        animaClient.entities.Character.list("-created_date", 100),
+        animaClient.functions.invoke("generateWorldEvent", { session_id: sessionId }),
       ]);
 
       setLocations(locsRes || []);

@@ -1170,7 +1170,7 @@ async function queryEntity(entityName, opts) {
 // --- Chat messages (stored as individual rows) ------------------------------
 // Chat messages now live as their own rows on the server (see api-server
 // /messages routes), not as one big array on the ChatSession record. These
-// helpers back base44.messages and the ChatSession hydration/shim below so the
+// helpers back animaClient.messages and the ChatSession hydration/shim below so the
 // ~50 places that read `session.messages` and the handful that write it keep
 // working unchanged, while appends stay O(1) and reads can page.
 async function throwErr(res) {
@@ -1446,7 +1446,7 @@ function entityStore(entityName) {
   //  - update({messages}) reconciles the array into rows (an edit touches one
   //    row, a rewind trims the tail) instead of rewriting the whole history.
   // The high-frequency append path does NOT go through here — callers use
-  // base44.messages.append for an O(1) single-row insert.
+  // animaClient.messages.append for an O(1) single-row insert.
   if (entityName === 'ChatSession') {
     return {
       ...base,
@@ -1522,7 +1522,7 @@ function entityStore(entityName) {
 // Clerk owns identity (id, email, full_name); the server profile record holds
 // everything else (settings, display_name, selected_mode, etc.). me() merges
 // the Clerk identity over the server profile so the rest of the app keeps
-// reading a single user object via base44.auth.me().
+// reading a single user object via animaClient.auth.me().
 const PROFILE_DEFAULTS = {
   role: 'User',
   selected_mode: 'companion',
@@ -1627,7 +1627,7 @@ const entitiesProxy = new Proxy(
   },
 );
 
-export const base44 = {
+export const animaClient = {
   auth: {
     isAuthenticated: async () => !!(await getToken()),
 
@@ -1709,7 +1709,7 @@ export const base44 = {
   entities: entitiesProxy,
 
   // Chat messages stored as individual rows (see the /messages routes). The
-  // hot append path uses base44.messages.append for an O(1) single-row insert;
+  // hot append path uses animaClient.messages.append for an O(1) single-row insert;
   // reads can page via list({ limit, beforeSeq }).
   messages: {
     list: (sessionId, opts) => listMessages(sessionId, opts),
@@ -1823,8 +1823,8 @@ export const base44 = {
       get: (_, fnName) => {
         const callFn = async (nameOrData, data, options) => {
           // Support both call styles:
-          // base44.functions.invoke("fnName", data, options)
-          // base44.functions.realName.invoke(data)
+          // animaClient.functions.invoke("fnName", data, options)
+          // animaClient.functions.realName.invoke(data)
           const realName = fnName === 'invoke' ? nameOrData : fnName;
           const payload = fnName === 'invoke' ? data : nameOrData;
           const invokeOptions = fnName === 'invoke' ? options : undefined;
@@ -1864,7 +1864,7 @@ export const base44 = {
             const json = await res.json();
             return json.result;
           } catch (err) {
-            console.warn(`base44.functions.${String(realName)} failed:`, err.message);
+            console.warn(`animaClient.functions.${String(realName)} failed:`, err.message);
             return null;
           } finally {
             timeout.cancel();
@@ -1880,4 +1880,4 @@ export const base44 = {
   ),
 };
 
-export default base44;
+export default animaClient;

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 
 export default function QuestAutoDetector({ sessionId, characterId, messages = [] }) {
   const lastMessageCountRef = useRef(0);
@@ -29,7 +29,7 @@ export default function QuestAutoDetector({ sessionId, characterId, messages = [
       }));
 
       // Call detection function
-      const result = await base44.functions.invoke("detectQuestsFromNarrative", {
+      const result = await animaClient.functions.invoke("detectQuestsFromNarrative", {
         session_id: sessionId,
         character_id: characterId,
         recent_messages: recentMessages,
@@ -50,7 +50,7 @@ export default function QuestAutoDetector({ sessionId, characterId, messages = [
         }));
 
         // Check if quest already exists to avoid duplicates
-        const existing = await base44.entities.Quest.filter({
+        const existing = await animaClient.entities.Quest.filter({
           session_id: sessionId,
           title: { $in: quests.map(q => q.title) },
         });
@@ -60,7 +60,7 @@ export default function QuestAutoDetector({ sessionId, characterId, messages = [
 
         // Create new quests
         if (newQuests.length > 0) {
-          await base44.entities.Quest.bulkCreate(newQuests);
+          await animaClient.entities.Quest.bulkCreate(newQuests);
         }
       }
     } catch (err) {

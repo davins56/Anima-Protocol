@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 /**
  * Small status indicator to confirm the active custom Anima has an ElevenLabs voice assigned.
@@ -14,7 +14,7 @@ export default function CustomAnimaVoiceStatus({ characterId, className = '' }) 
       return;
     }
 
-    base44.entities.Character
+    animaClient.entities.Character
       .list()
       .then((chars) => {
         if (cancelled) return;

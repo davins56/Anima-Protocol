@@ -1,6 +1,6 @@
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import CharacterMemoryManager from "@/components/character/CharacterMemoryManager";
 import CharacterHistoryTimeline from "@/components/character/CharacterHistoryTimeline";
 import { ChevronLeft, Users, Calendar, History } from "lucide-react";
@@ -21,7 +21,7 @@ export default function CharacterMemories() {
   const loadCharacters = async () => {
     setLoading(true);
     try {
-      const chars = await base44.entities.Character.list("-created_date", 100);
+      const chars = await animaClient.entities.Character.list("-created_date", 100);
       setCharacters(chars || []);
       
       if (characterId) {

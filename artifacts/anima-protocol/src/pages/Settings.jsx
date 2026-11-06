@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useUser } from "@clerk/react";
-import { base44, exportData } from "@/api/base44Client";
+import { animaClient, exportData } from "@/api/animaClient";
 import { useAuth } from "@/lib/AuthContext";
 import {
   classifyCustomiseAnimaLoadError,
@@ -38,6 +38,9 @@ import { entityLabel, parseBackup, summarizeEntities } from "@/lib/restoreBackup
 import { performRestoreFlow } from "@/lib/restoreHandlers";
 import { repairStarterCharacters } from "@/lib/seedCharacters";
 import ProactiveMessageSettings from "@/components/settings/ProactiveMessageSettings";
+import AppearanceStudio from "@/components/settings/AppearanceStudio";
+import AnimaForge from "@/components/settings/AnimaForge";
+import ForgeProfiles from "@/components/settings/ForgeProfiles";
 
 import { CONFIGURED_LLM_PROVIDERS } from "@/lib/llmProviderLabel";
 import { toast } from "sonner";
@@ -209,7 +212,7 @@ export default function Settings() {
   }, [section, isAuthenticated, authUser?.id, clerkIdentity?.id]);
 
   const loadUser = async () => {
-    const me = await base44.auth.me();
+    const me = await animaClient.auth.me();
     // Clerk / AuthContext identity first — empty store strings must not win.
     setUser((prev) => mergeAccountIdentity(clerkIdentity, authUser, prev, me));
     if (me?.settings) {
@@ -243,8 +246,8 @@ export default function Settings() {
     const [sessions, chars] = await Promise.all([
       // Stats only needs the row count — skip hydrating every session's full
       // message history so this loads instantly for users with lots of chats.
-      base44.entities.ChatSession.list("-created_date", 200, { withMessages: false }),
-      base44.entities.Character.list("-created_date", 200),
+      animaClient.entities.ChatSession.list("-created_date", 200, { withMessages: false }),
+      animaClient.entities.Character.list("-created_date", 200),
     ]);
     setSessionCount(sessions.length);
     setCharCount(chars.length);
@@ -252,7 +255,7 @@ export default function Settings() {
 
   const handleSave = async () => {
     try {
-      await base44.auth.updateMe({ settings: prefs, display_name: prefs.display_name });
+      await animaClient.auth.updateMe({ settings: prefs, display_name: prefs.display_name });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
@@ -263,7 +266,7 @@ export default function Settings() {
   const handleClearSessions = async () => {
     setClearingData("sessions");
     try {
-      const sessions = await base44.entities.ChatSession.list("-created_date", 200);
+      const sessions = await animaClient.entities.ChatSession.list("-created_date", 200);
       await deleteAllWithUndo({
         entity: "ChatSession",
         items: sessions,
@@ -278,7 +281,7 @@ export default function Settings() {
   const handleClearCustomChars = async () => {
     setClearingData("chars");
     try {
-      const chars = await base44.entities.Character.filter({ is_default: false });
+      const chars = await animaClient.entities.Character.filter({ is_default: false });
       await deleteAllWithUndo({
         entity: "Character",
         items: chars,
@@ -296,25 +299,25 @@ export default function Settings() {
       // Fetch all linked entities in parallel
       const [sessions, chars, memories, vectorMemories, inventory, checkIns, lore, quests] = await Promise.all([
         // Deleting only needs each session's id — skip message hydration.
-        base44.entities.ChatSession.list("-created_date", 500, { withMessages: false }),
-        base44.entities.Character.filter({ is_default: false }),
-        base44.entities.CharacterMemory.list("-created_date", 500).catch(() => []),
-        base44.entities.VectorMemory.list("-created_date", 500).catch(() => []),
-        base44.entities.Inventory.list("-created_date", 500).catch(() => []),
-        base44.entities.CheckIn.list("-created_date", 500).catch(() => []),
-        base44.entities.WorldState.list("-created_date", 500).catch(() => []),
-        base44.entities.Quest.list("-created_date", 500).catch(() => []),
+        animaClient.entities.ChatSession.list("-created_date", 500, { withMessages: false }),
+        animaClient.entities.Character.filter({ is_default: false }),
+        animaClient.entities.CharacterMemory.list("-created_date", 500).catch(() => []),
+        animaClient.entities.VectorMemory.list("-created_date", 500).catch(() => []),
+        animaClient.entities.Inventory.list("-created_date", 500).catch(() => []),
+        animaClient.entities.CheckIn.list("-created_date", 500).catch(() => []),
+        animaClient.entities.WorldState.list("-created_date", 500).catch(() => []),
+        animaClient.entities.Quest.list("-created_date", 500).catch(() => []),
       ]);
       // Delete all linked entities in parallel
       await Promise.all([
-        ...sessions.map((s) => base44.entities.ChatSession.delete(s.id)),
-        ...chars.map((c) => base44.entities.Character.delete(c.id)),
-        ...memories.map((m) => base44.entities.CharacterMemory.delete(m.id)),
-        ...vectorMemories.map((m) => base44.entities.VectorMemory.delete(m.id)),
-        ...inventory.map((i) => base44.entities.Inventory.delete(i.id)),
-        ...checkIns.map((c) => base44.entities.CheckIn.delete(c.id)),
-        ...lore.map((l) => base44.entities.WorldState.delete(l.id)),
-        ...quests.map((q) => base44.entities.Quest.delete(q.id)),
+        ...sessions.map((s) => animaClient.entities.ChatSession.delete(s.id)),
+        ...chars.map((c) => animaClient.entities.Character.delete(c.id)),
+        ...memories.map((m) => animaClient.entities.CharacterMemory.delete(m.id)),
+        ...vectorMemories.map((m) => animaClient.entities.VectorMemory.delete(m.id)),
+        ...inventory.map((i) => animaClient.entities.Inventory.delete(i.id)),
+        ...checkIns.map((c) => animaClient.entities.CheckIn.delete(c.id)),
+        ...lore.map((l) => animaClient.entities.WorldState.delete(l.id)),
+        ...quests.map((q) => animaClient.entities.Quest.delete(q.id)),
       ]);
       // Clear local storage and sign out via Clerk
       localStorage.clear();
@@ -332,38 +335,38 @@ export default function Settings() {
       // Fetch all deletable entity lists in parallel
       const [sessions, chars, animas, quests, lore, memories, worldStates, checkIns, crystals, resonance, userContexts, graphs] = await Promise.all([
         // Deleting only needs each session's id — skip message hydration.
-        base44.entities.ChatSession.list("-created_date", 500, { withMessages: false }),
-        base44.entities.Character.filter({ is_default: false }),
-        base44.entities.Anima.list("-created_date", 500),
-        base44.entities.Quest.list("-created_date", 500),
-        base44.entities.WorldState.list("-created_date", 500),
-        base44.entities.CharacterMemory.list("-created_date", 500).catch(() => []),
-        base44.entities.VectorMemory.list("-created_date", 500).catch(() => []),
-        base44.entities.CheckIn.list("-created_date", 500).catch(() => []),
-        base44.entities.MemoryCrystal.list("-created_date", 500).catch(() => []),
-        base44.entities.ResonanceProfile.list("-created_date", 500).catch(() => []),
-        base44.entities.UserContext.list("-created_date", 500).catch(() => []),
-        base44.entities.KnowledgeGraph.list("-created_date", 500).catch(() => []),
+        animaClient.entities.ChatSession.list("-created_date", 500, { withMessages: false }),
+        animaClient.entities.Character.filter({ is_default: false }),
+        animaClient.entities.Anima.list("-created_date", 500),
+        animaClient.entities.Quest.list("-created_date", 500),
+        animaClient.entities.WorldState.list("-created_date", 500),
+        animaClient.entities.CharacterMemory.list("-created_date", 500).catch(() => []),
+        animaClient.entities.VectorMemory.list("-created_date", 500).catch(() => []),
+        animaClient.entities.CheckIn.list("-created_date", 500).catch(() => []),
+        animaClient.entities.MemoryCrystal.list("-created_date", 500).catch(() => []),
+        animaClient.entities.ResonanceProfile.list("-created_date", 500).catch(() => []),
+        animaClient.entities.UserContext.list("-created_date", 500).catch(() => []),
+        animaClient.entities.KnowledgeGraph.list("-created_date", 500).catch(() => []),
       ]);
 
       // Delete everything in parallel batches
       await Promise.all([
-        ...sessions.map(s => base44.entities.ChatSession.delete(s.id)),
-        ...chars.map(c => base44.entities.Character.delete(c.id)),
-        ...animas.map(a => base44.entities.Anima.delete(a.id)),
-        ...quests.map(q => base44.entities.Quest.delete(q.id)),
-        ...lore.map(l => base44.entities.WorldState.delete(l.id)),
-        ...memories.map(m => base44.entities.CharacterMemory.delete(m.id)),
-        ...worldStates.map(w => base44.entities.VectorMemory.delete(w.id)),
-        ...checkIns.map(c => base44.entities.CheckIn.delete(c.id)),
-        ...crystals.map(c => base44.entities.MemoryCrystal.delete(c.id)),
-        ...resonance.map(r => base44.entities.ResonanceProfile.delete(r.id)),
-        ...userContexts.map(u => base44.entities.UserContext.delete(u.id)),
-        ...graphs.map(g => base44.entities.KnowledgeGraph.delete(g.id)),
+        ...sessions.map(s => animaClient.entities.ChatSession.delete(s.id)),
+        ...chars.map(c => animaClient.entities.Character.delete(c.id)),
+        ...animas.map(a => animaClient.entities.Anima.delete(a.id)),
+        ...quests.map(q => animaClient.entities.Quest.delete(q.id)),
+        ...lore.map(l => animaClient.entities.WorldState.delete(l.id)),
+        ...memories.map(m => animaClient.entities.CharacterMemory.delete(m.id)),
+        ...worldStates.map(w => animaClient.entities.VectorMemory.delete(w.id)),
+        ...checkIns.map(c => animaClient.entities.CheckIn.delete(c.id)),
+        ...crystals.map(c => animaClient.entities.MemoryCrystal.delete(c.id)),
+        ...resonance.map(r => animaClient.entities.ResonanceProfile.delete(r.id)),
+        ...userContexts.map(u => animaClient.entities.UserContext.delete(u.id)),
+        ...graphs.map(g => animaClient.entities.KnowledgeGraph.delete(g.id)),
       ]);
 
       // Reset user settings to defaults
-      await base44.auth.updateMe({ settings: defaultPrefs, display_name: "" });
+      await animaClient.auth.updateMe({ settings: defaultPrefs, display_name: "" });
 
       // Clear all localStorage (tutorial flags, age verification, etc.)
       localStorage.clear();
@@ -470,13 +473,13 @@ export default function Settings() {
     try {
       const fileUrl = await uploadChatBackgroundImage(
         file,
-        (payload) => base44.integrations.Core.UploadFile(payload),
+        (payload) => animaClient.integrations.Core.UploadFile(payload),
       );
       setPrefs((p) => ({ ...p, chat_bg_theme: "custom", chat_bg_image: fileUrl }));
       const next = await persistChatBackgroundSettings({
         prefs,
         fileUrl,
-        updateMe: (data) => base44.auth.updateMe(data),
+        updateMe: (data) => animaClient.auth.updateMe(data),
       });
       setPrefs(next);
       setSaved(true);
@@ -494,7 +497,7 @@ export default function Settings() {
   const handleAssignVoices = async () => {
     setAssigningVoices(true);
     try {
-      const result = await base44.functions.invoke("assignCharacterVoices", {});
+      const result = await animaClient.functions.invoke("assignCharacterVoices", {});
       if (result?.data?.assigned > 0) {
         setVoicesAssigned(true);
         setTimeout(() => setVoicesAssigned(false), 3000);
@@ -923,6 +926,9 @@ export default function Settings() {
           {section === SECTION.INTERFACE && (
             <div className="space-y-4">
               <SectionTitle>Interface Preferences</SectionTitle>
+              <AppearanceStudio />
+              <AnimaForge />
+              <ForgeProfiles />
 
               <div className="border border-primary/15 bg-black/40 p-5 space-y-0 divide-y divide-primary/10">
                 <TogglePref
@@ -1315,7 +1321,7 @@ export default function Settings() {
                   label="AI Engine"
                   value={CONFIGURED_LLM_PROVIDERS.map((p) => p.label).join(", ")}
                 />
-                <InfoRow label="Platform" value="Base44" />
+                <InfoRow label="Platform" value="Cloudflare Workers" />
               </div>
             </div>
           )}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { ChevronDown, Loader, Sparkles, MapPin, Users } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -25,7 +25,7 @@ export default function QuestPanel({ sessionId, characterId }) {
 
   const loadQuests = async () => {
     try {
-      const data = await base44.entities.Quest.filter({ session_id: sessionId }, "-created_date", 20);
+      const data = await animaClient.entities.Quest.filter({ session_id: sessionId }, "-created_date", 20);
       setQuests(data || []);
     } catch (err) {
       console.error("Error loading quests:", err);
@@ -35,7 +35,7 @@ export default function QuestPanel({ sessionId, characterId }) {
   const handleGenerateQuests = async () => {
     setGenerating(true);
     try {
-      const result = await base44.functions.invoke("generateSessionQuests", {
+      const result = await animaClient.functions.invoke("generateSessionQuests", {
         session_id: sessionId,
         character_id: characterId,
       });
@@ -51,7 +51,7 @@ export default function QuestPanel({ sessionId, characterId }) {
 
   const handleActivateQuest = async (questId) => {
     try {
-      await base44.entities.Quest.update(questId, { status: "active", started_at: new Date().toISOString() });
+      await animaClient.entities.Quest.update(questId, { status: "active", started_at: new Date().toISOString() });
       setQuests((prev) => prev.map((q) => (q.id === questId ? { ...q, status: "active", started_at: new Date().toISOString() } : q)));
     } catch (err) {
       console.error("Error activating quest:", err);

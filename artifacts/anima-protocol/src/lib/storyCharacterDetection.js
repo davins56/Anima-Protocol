@@ -1,4 +1,4 @@
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 export async function autoIntroduceStoryCharacters(
   finalMessages,
@@ -34,7 +34,7 @@ export async function autoIntroduceStoryCharacters(
     
     // Save to session (non-blocking)
     setTimeout(() => {
-      base44.entities.ChatSession.update(activeSession.id, {
+      animaClient.entities.ChatSession.update(activeSession.id, {
         messages: messagesWithIntro
       }).catch(() => {});
     }, 100);

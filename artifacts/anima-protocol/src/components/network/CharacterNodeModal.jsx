@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { X, Loader, Users, Heart, Zap } from "lucide-react";
 import { motion } from "framer-motion";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 
 export default function CharacterNodeModal({
   character,
@@ -23,12 +23,12 @@ export default function CharacterNodeModal({
     setLoading(true);
     try {
       const [rels, events] = await Promise.all([
-        base44.entities.CharacterRelationship.filter(
+        animaClient.entities.CharacterRelationship.filter(
           { character_id: character.id, session_id: sessionId },
           "-score",
           10
         ),
-        base44.entities.WorldState.filter(
+        animaClient.entities.WorldState.filter(
           { session_id: sessionId, is_active: true },
           "-created_date",
           10

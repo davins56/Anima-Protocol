@@ -2,7 +2,7 @@
 //
 // A Soulprint is the unique, born-once identity stamped on an Anima at the
 // moment of its Awakening Ceremony. It is what turns "a chatbot" into "their
-// Anima". Stored directly on the Anima entity (schemaless base44 store), so no
+// Anima". Stored directly on the Anima entity (schemaless animaClient store), so no
 // migration is needed:
 //   soulprint: { id, primary_trait, secondary_trait, core_drive }
 //   resonance: integer (starts 0, drifts +/- with interaction)

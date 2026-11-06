@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Link } from "react-router-dom";
 import { ArrowLeft, Play, Pause, SkipForward, SkipBack, Plus, Volume2, VolumeX, Sparkles, Heart, Zap, Star } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -85,7 +85,7 @@ export default function Meditation() {
     if (!me?.email) return;
     void seedDefaultAffirmations({
       user: me,
-      create: (row) => base44.entities.Affirmation.create(row),
+      create: (row) => animaClient.entities.Affirmation.create(row),
       defaults: DEFAULT_AFFIRMATIONS,
     })
       .then((rows) => {
@@ -116,13 +116,13 @@ export default function Meditation() {
       // race filter with AFFIRMATION_LOAD_TIMEOUT — #437's leftover helper
       // ignored a late signed-in GET. Late rows still clear a hang-cap banner.
       const { me, existing, animas, chars } = await loadSacredSpaceSnapshot({
-        loadUser: () => base44.auth.me(),
-        peekUser: () => base44.auth.peekMe(),
+        loadUser: () => animaClient.auth.me(),
+        peekUser: () => animaClient.auth.peekMe(),
         filter: (query, opts) =>
-          base44.entities.Affirmation.filter(query, undefined, undefined, opts),
-        listAnimas: () => base44.entities.Anima.list("-created_date", 10),
+          animaClient.entities.Affirmation.filter(query, undefined, undefined, opts),
+        listAnimas: () => animaClient.entities.Anima.list("-created_date", 10),
         listCharacters: () =>
-          base44.entities.Character.list("-created_date", 100),
+          animaClient.entities.Character.list("-created_date", 100),
         listTimeoutSlackMs: STORE_TOKEN_TIMEOUT_MS,
         onRoster: ({ me: rosterUser, animas: nextAnimas, chars: nextChars }) => {
           if (gen !== initGen.current) return;
@@ -173,7 +173,7 @@ export default function Meditation() {
         user,
         text: newText,
         category: newCategory,
-        create: (row) => base44.entities.Affirmation.create(row),
+        create: (row) => animaClient.entities.Affirmation.create(row),
       });
       setAffirmations(prev => [...prev, created]);
       setNewText("");
@@ -189,7 +189,7 @@ export default function Meditation() {
     setAffirmations((prev) => prev.filter((a) => a.id !== id));
     if (isLocalAffirmationId(id)) return;
     try {
-      await base44.entities.Affirmation.update(id, { is_active: false });
+      await animaClient.entities.Affirmation.update(id, { is_active: false });
     } catch {
       // Local list already updated — store may be offline.
     }

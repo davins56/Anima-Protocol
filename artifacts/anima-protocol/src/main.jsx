@@ -4,6 +4,12 @@ import ReactDOM from "react-dom/client";
 import App from "./App.full.jsx";
 import { registerSW } from "virtual:pwa-register";
 import "./index.css";
+import "./styles/anima-forge.css";
+import { applyForge } from "./lib/animaForge";
+applyForge();
+import "./styles/appearance-studio.css";
+import { applyAppearance } from "./lib/appearanceStudio";
+applyAppearance();
 
 // Mixpanel + Algolia stay off the HTML entry chunk. Consent still gates
 // tracking inside analytics.js after this loads.

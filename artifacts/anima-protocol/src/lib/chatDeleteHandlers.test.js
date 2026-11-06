@@ -9,10 +9,10 @@ vi.mock("sonner", () => {
   return { toast };
 });
 
-// The page handlers talk to base44 through the undo helpers. Back base44 with a
+// The page handlers talk to animaClient through the undo helpers. Back animaClient with a
 // simple in-memory store so the confirm/navigate flow can be tested without a
 // server or auth token. update() acts as an upsert, mirroring the real client.
-vi.mock("@/api/base44Client", () => {
+vi.mock("@/api/animaClient", () => {
   const stores = new Map();
   let counter = 0;
   const store = (name) => {
@@ -44,11 +44,11 @@ vi.mock("@/api/base44Client", () => {
     },
   });
   const entities = new Proxy({}, { get: (_, name) => entity(name) });
-  return { base44: { entities }, default: { entities } };
+  return { animaClient: { entities }, default: { entities } };
 });
 
 import { toast } from "sonner";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { deleteSessionFlow, deleteMessageFlow } from "@/lib/chatDeleteHandlers";
 
 // Pull the Undo handler out of the most recent toast(...) call.
@@ -70,7 +70,7 @@ beforeEach(() => {
 
 describe("deleteSessionFlow (confirm-and-delete a chat session)", () => {
   it("does nothing when the user cancels the confirm dialog", async () => {
-    const session = await base44.entities.ChatSession.create({ title: "Keep me" });
+    const session = await animaClient.entities.ChatSession.create({ title: "Keep me" });
     const confirm = vi.fn().mockResolvedValue(false);
     const navigate = vi.fn();
     const loadSessions = vi.fn();
@@ -88,11 +88,11 @@ describe("deleteSessionFlow (confirm-and-delete a chat session)", () => {
     expect(navigate).not.toHaveBeenCalled();
     expect(loadSessions).not.toHaveBeenCalled();
     expect(toast).not.toHaveBeenCalled();
-    expect(await base44.entities.ChatSession.get(session.id)).not.toBeNull();
+    expect(await animaClient.entities.ChatSession.get(session.id)).not.toBeNull();
   });
 
   it("deletes the session and shows an undo toast when confirmed", async () => {
-    const session = await base44.entities.ChatSession.create({ title: "Doomed" });
+    const session = await animaClient.entities.ChatSession.create({ title: "Doomed" });
     const confirm = vi.fn().mockResolvedValue(true);
     const navigate = vi.fn();
     const loadSessions = vi.fn();
@@ -106,21 +106,21 @@ describe("deleteSessionFlow (confirm-and-delete a chat session)", () => {
     });
 
     // The record is gone, the page refresh ran, and an Undo affordance showed.
-    expect(await base44.entities.ChatSession.get(session.id)).toBeNull();
+    expect(await animaClient.entities.ChatSession.get(session.id)).toBeNull();
     expect(loadSessions).toHaveBeenCalled();
     const opts = toast.mock.calls[toast.mock.calls.length - 1][1];
     expect(opts.action.label).toBe("Undo");
 
     // And undo restores the session intact.
     await lastUndoAction()();
-    const restored = await base44.entities.ChatSession.get(session.id);
+    const restored = await animaClient.entities.ChatSession.get(session.id);
     expect(restored).not.toBeNull();
     expect(restored.title).toBe("Doomed");
   });
 
   it("navigates away only when the deleted session is the active one", async () => {
     // Active session deleted -> navigate("/") happens.
-    const active = await base44.entities.ChatSession.create({ title: "Active" });
+    const active = await animaClient.entities.ChatSession.create({ title: "Active" });
     const navigateActive = vi.fn();
     await deleteSessionFlow(active.id, {
       confirm: vi.fn().mockResolvedValue(true),
@@ -132,7 +132,7 @@ describe("deleteSessionFlow (confirm-and-delete a chat session)", () => {
     expect(navigateActive).toHaveBeenCalledWith("/");
 
     // A non-active session deleted -> no navigation.
-    const other = await base44.entities.ChatSession.create({ title: "Other" });
+    const other = await animaClient.entities.ChatSession.create({ title: "Other" });
     const navigateOther = vi.fn();
     await deleteSessionFlow(other.id, {
       confirm: vi.fn().mockResolvedValue(true),
@@ -156,7 +156,7 @@ describe("deleteMessageFlow (delete one message in the active session)", () => {
   });
 
   it("deletes the message and reflects it in the active session view", async () => {
-    const session = await base44.entities.ChatSession.create({
+    const session = await animaClient.entities.ChatSession.create({
       title: "Session",
       messages: [
         { role: "user", content: "first" },
@@ -169,7 +169,7 @@ describe("deleteMessageFlow (delete one message in the active session)", () => {
     await deleteMessageFlow(1, { activeSession: session, setActiveSession });
 
     // The message is gone from the store...
-    const current = await base44.entities.ChatSession.get(session.id);
+    const current = await animaClient.entities.ChatSession.get(session.id);
     expect(current.messages.map((m) => m.content)).toEqual(["first", "third"]);
     // ...the page view was updated, and an Undo affordance showed.
     expect(setActiveSession).toHaveBeenCalled();

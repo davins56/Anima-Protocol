@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { base44, uploadDataUrl } from "@/api/base44Client";
+import { animaClient, uploadDataUrl } from "@/api/animaClient";
 import {
   autoAssignCharacterPhoto,
   shouldAutoAssignCharacterPhoto,
@@ -68,7 +68,7 @@ export default function CompanionGenerator() {
     setCompanion(null);
 
     try {
-      const result = await base44.functions.invoke("generateCompanionFromPrompt", {
+      const result = await animaClient.functions.invoke("generateCompanionFromPrompt", {
         prompt: prompt.trim(),
       });
 
@@ -108,7 +108,7 @@ export default function CompanionGenerator() {
         .filter(Boolean)
         .join(" ");
 
-      const result = await base44.integrations.Core.GenerateImage({
+      const result = await animaClient.integrations.Core.GenerateImage({
         prompt: imagePrompt,
       });
       if (!result?.url) {

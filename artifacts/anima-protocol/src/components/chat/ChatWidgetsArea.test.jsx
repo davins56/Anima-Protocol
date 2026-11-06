@@ -14,8 +14,8 @@ vi.mock("framer-motion", async () => {
   };
 });
 
-vi.mock("@/api/base44Client", () => ({
-  base44: { entities: { Character: { update: vi.fn() } }, messages: { append: vi.fn() } },
+vi.mock("@/api/animaClient", () => ({
+  animaClient: { entities: { Character: { update: vi.fn() } }, messages: { append: vi.fn() } },
 }));
 vi.mock("@/lib/appendAmbientMessage", () => ({ appendAmbientMessage: vi.fn() }));
 

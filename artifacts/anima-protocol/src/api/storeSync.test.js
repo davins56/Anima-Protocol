@@ -10,7 +10,7 @@ import {
   setAuthTokenGetter,
   startStoreSync,
   stopStoreSync,
-} from './base44Client';
+} from './animaClient';
 
 // Regression coverage for the live-sync lifecycle. The dangerous case is the
 // teardown race: startStoreSync() opens the SSE stream (an async fetch), then

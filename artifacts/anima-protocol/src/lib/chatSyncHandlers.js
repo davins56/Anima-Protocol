@@ -13,7 +13,7 @@
 // sidebar loader, and the deferred-sync flag ref) as injected deps so the tests
 // can drive the exact race the review caught.
 
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 
 export function isOptimisticChatTail(tail) {
   if (!tail) return false;
@@ -36,7 +36,7 @@ export async function syncActiveMessages({ sessionId, activeSessionRef, setActiv
   if (!sessionId) return true;
   let messages;
   try {
-    messages = await base44.messages.list(sessionId);
+    messages = await animaClient.messages.list(sessionId);
   } catch {
     return false; // transient — caller re-arms a retry
   }

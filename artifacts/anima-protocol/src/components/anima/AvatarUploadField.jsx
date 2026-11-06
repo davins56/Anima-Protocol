@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { ImagePlus, Loader, Upload, X } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import {
   formatAvatarUploadError,
   uploadCharacterAvatar,
@@ -41,7 +41,7 @@ export default function AvatarUploadField({
     try {
       const fileUrl = await uploadCharacterAvatar(
         file,
-        (payload) => base44.integrations.Core.UploadFile(payload),
+        (payload) => animaClient.integrations.Core.UploadFile(payload),
       );
       onChange(fileUrl);
     } catch (err) {

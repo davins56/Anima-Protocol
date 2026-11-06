@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { useLocalOnlyLlmChain } from '@/lib/localOnlyLlm';
 
 export const useLoreKeywordScanning = (sessionId, messages) => {
@@ -19,7 +19,7 @@ export const useLoreKeywordScanning = (sessionId, messages) => {
     const scanWithDelay = async () => {
       setScanning(true);
       try {
-        const result = await base44.functions.invoke('scanAndLinkLoreKeywords', {
+        const result = await animaClient.functions.invoke('scanAndLinkLoreKeywords', {
           session_id: sessionId,
           messages: messages.filter(m => m.role !== 'system' && m.character_name !== '__typing__'),
         });

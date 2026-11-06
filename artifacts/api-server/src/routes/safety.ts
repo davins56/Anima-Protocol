@@ -7,6 +7,7 @@
  */
 import { Router, type IRouter, type Request, type Response } from "express";
 import { getAuth } from "@clerk/express";
+import { ensureSchemaOnce, withTransientDbRetry } from "@workspace/db";
 import { createRateLimit } from "../lib/rateLimit";
 import { logger } from "../lib/logger";
 import { callerIsProtocolSteward } from "../lib/protocolUpgradeAuth";
@@ -25,13 +26,19 @@ type Deps = {
   history: typeof attestationHistory;
   append: typeof appendAttestation;
   provider: () => AgeVerificationProvider;
+  /** Repairs the attestation table on a database that only ever ran db push. */
+  ensureSchema?: () => Promise<unknown>;
 };
 
 const defaults: Deps = {
   steward: callerIsProtocolSteward,
-  history: attestationHistory,
-  append: appendAttestation,
+  // Retried like the store routes: on Workers a stale Hyperdrive socket fails
+  // the first query of a request with ECONNRESET, which surfaced as a bare
+  // "Couldn't save that right now." even though nothing else was wrong.
+  history: (userId) => withTransientDbRetry(() => attestationHistory(userId)),
+  append: (row) => withTransientDbRetry(() => appendAttestation(row)),
   provider: () => activeAgeProvider(),
+  ensureSchema: () => ensureSchemaOnce(),
 };
 
 export function createSafetyRouter(deps: Deps = defaults): IRouter {
@@ -73,6 +80,14 @@ export function createSafetyRouter(deps: Deps = defaults): IRouter {
       return;
     }
     try {
+      // The table lives in supabase/migrations, which is applied by hand; a
+      // database restored with db push had no age_attestations, so the 18+
+      // toggle could never be switched on. Cheap and latched once per isolate.
+      try {
+        await deps.ensureSchema?.();
+      } catch (err) {
+        logger.warn({ err }, "age attestation schema ensure failed");
+      }
       const provider = deps.provider();
       const history = await deps.history(userId);
       if (provider.method === "self_declared_dob" && selfDeclarationLocked(history)) {
@@ -103,8 +118,36 @@ export function createSafetyRouter(deps: Deps = defaults): IRouter {
         res.status(400).json({ error: err.message, code: err.code });
         return;
       }
-      logger.error({ err }, "age attestation failed");
-      res.status(503).json({ error: "Couldn't save that right now." });
+      const pgCode = (err as { code?: string } | null)?.code;
+      // A bare "try again" told the steward nothing and hid a fixable setup
+      // problem. Return the Postgres code and a short detail so the dialog can
+      // name the cause; the detail never contains the user's date of birth.
+      const detail =
+        err instanceof Error ? err.message.replace(/\s+/g, " ").slice(0, 160) : undefined;
+      if (pgCode === "42P01") {
+        logger.error({ err }, "age attestation failed: table missing");
+        res.status(503).json({
+          error: "Adult mode isn't set up on this server yet — its age-check table is missing.",
+          code: "schema_unavailable",
+          detail,
+        });
+        return;
+      }
+      if (pgCode === "42501") {
+        logger.error({ err }, "age attestation failed: permission denied");
+        res.status(503).json({
+          error: "This server can't write age checks — the database role is missing INSERT on age_attestations.",
+          code: "schema_permission_denied",
+          detail,
+        });
+        return;
+      }
+      logger.error({ err, pgCode }, "age attestation failed");
+      res.status(503).json({
+        error: "Couldn't save that right now.",
+        code: pgCode ? `db_${pgCode}` : "attestation_failed",
+        detail,
+      });
     }
   });
 

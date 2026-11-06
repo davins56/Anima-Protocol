@@ -11,7 +11,7 @@ functions (in `artifacts/api-server/src/routes/openai/functions.ts`, switch in
 the `/invoke/:fnName` route) into a compact `ContextAnalysis` shape stored on the
 `UserContext` row in `user_entities`.
 
-**No real file storage.** `UploadFile` in `base44Client.js` is a stub returning
+**No real file storage.** `UploadFile` in `animaClient.js` is a stub returning
 `{ url: null }` — there is no object storage and no fetchable file URL. So the
 server CANNOT fetch an uploaded file. Anything that needs server-side reading of
 an upload must receive the bytes **inline** (the upload modal sends a downscaled

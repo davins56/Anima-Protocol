@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, Check, X, Edit2, Save, Plus, Trash2, AlertCircle } from 'lucide-react';
 
@@ -19,7 +19,7 @@ export default function QuestJournal({ sessionId, isVisible = true }) {
     if (!sessionId) return;
     loadQuests();
 
-    const unsubscribe = base44.entities.Quest.subscribe((event) => {
+    const unsubscribe = animaClient.entities.Quest.subscribe((event) => {
       if (event.data?.session_id === sessionId) {
         loadQuests();
       }
@@ -31,7 +31,7 @@ export default function QuestJournal({ sessionId, isVisible = true }) {
   const loadQuests = async () => {
     setLoading(true);
     try {
-      const allQuests = await base44.entities.Quest.filter({
+      const allQuests = await animaClient.entities.Quest.filter({
         session_id: sessionId,
       }, '-updated_date', 100);
 
@@ -62,7 +62,7 @@ export default function QuestJournal({ sessionId, isVisible = true }) {
 
       const allCompleted = updatedObjectives.every(obj => obj.completed);
 
-      await base44.entities.Quest.update(questId, {
+      await animaClient.entities.Quest.update(questId, {
         objectives: updatedObjectives,
         status: allCompleted && quest.status === 'active' ? 'completed' : quest.status,
       });
@@ -80,7 +80,7 @@ export default function QuestJournal({ sessionId, isVisible = true }) {
 
     setUpdatingId(questId);
     try {
-      await base44.entities.Quest.update(questId, { status: nextStatus });
+      await animaClient.entities.Quest.update(questId, { status: nextStatus });
       loadQuests();
     } catch (err) {
       console.error('Error updating quest status:', err);
@@ -102,7 +102,7 @@ export default function QuestJournal({ sessionId, isVisible = true }) {
           : obj
       );
 
-      await base44.entities.Quest.update(questId, {
+      await animaClient.entities.Quest.update(questId, {
         objectives: updatedObjectives,
       });
 
