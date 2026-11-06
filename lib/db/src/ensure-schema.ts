@@ -19,6 +19,11 @@ export const REQUIRED_TABLES = [
   "chat_turns",
   "companion_memories",
   "memory_embeddings",
+  // Adult mode's server-enforced age gate writes here. It is owned by
+  // supabase/migrations/20261022250000_age_attestations.sql, which is applied
+  // by hand — so a database recovered with ensureSchema had no table, the
+  // attestation POST 503'd and the 18+ toggle could never stay on.
+  "age_attestations",
   "uploaded_images",
   "pdf_documents",
   "pdf_chunks",
@@ -291,6 +296,68 @@ function tablesCreatedByRun(
 }
 
 /**
+ * Adult-mode age attestation (supabase/migrations/20261022250000_age_attestations.sql).
+ *
+ * Mirrored here because that file is applied by hand and `drizzle-kit push`
+ * skips protected tables on purpose, so nothing else creates it on a blank or
+ * restored database. Append-only, same columns, same latest-row-per-user view;
+ * the data minimisation the migration documents (birth year + age, never the
+ * full date of birth) is enforced by the caller, not the table.
+ *
+ * The immutability trigger is added only when its function already exists,
+ * because that function comes from earlier migrations.
+ */
+async function ensureAgeAttestationSchema(
+  run: (sql: string, label: string) => Promise<void>,
+): Promise<void> {
+  await run(
+    `CREATE TABLE IF NOT EXISTS "age_attestations" (
+      "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      "user_id" text NOT NULL,
+      "status" text NOT NULL CHECK ("status" IN ('attested', 'rejected', 'revoked')),
+      "method" text NOT NULL CHECK ("method" IN ('self_declared_dob', 'provider')),
+      "provider" text,
+      "provider_ref" text,
+      "birth_year" smallint CHECK ("birth_year" IS NULL OR "birth_year" BETWEEN 1900 AND 2100),
+      "age_years" smallint CHECK ("age_years" IS NULL OR "age_years" BETWEEN 0 AND 150),
+      "min_age" smallint NOT NULL DEFAULT 18,
+      "attested_at" timestamptz NOT NULL DEFAULT now()
+    )`,
+    "table:age_attestations",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "age_attestations_user_idx"
+       ON "age_attestations" USING btree ("user_id", "attested_at" DESC)`,
+    "index:age_attestations_user_idx",
+  );
+  await run(
+    `CREATE OR REPLACE VIEW "age_attestation_latest" AS
+       SELECT DISTINCT ON (user_id) *
+       FROM "age_attestations"
+       ORDER BY user_id, attested_at DESC, id DESC`,
+    "view:age_attestation_latest",
+  );
+  await run(
+    `DO $$ BEGIN
+       IF to_regproc('public.anima_forbid_mutation') IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM pg_trigger
+             WHERE tgname IN ('age_attestations_immutable', 'age_attestations_no_truncate')
+               AND tgrelid = 'age_attestations'::regclass
+          ) THEN
+         CREATE TRIGGER age_attestations_immutable
+           BEFORE UPDATE OR DELETE ON "age_attestations"
+           FOR EACH ROW EXECUTE FUNCTION public.anima_forbid_mutation();
+         CREATE TRIGGER age_attestations_no_truncate
+           BEFORE TRUNCATE ON "age_attestations"
+           FOR EACH STATEMENT EXECUTE FUNCTION public.anima_forbid_mutation();
+       END IF;
+     END $$`,
+    "trigger:age_attestations_immutable",
+  );
+}
+
+/**
  * Existing databases already have `chat_turns` from the fast path, which
  * skips CREATE TABLE. The lease columns still have to land or a retry join
  * cannot see the owner across isolates. A complete schema is left untouched.
@@ -387,6 +454,10 @@ async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
     `CREATE EXTENSION IF NOT EXISTS pg_trgm`,
     "extension:pg_trgm",
   );
+
+  // Self-heal the adult-mode age gate before anything that depends on it.
+  // Harmless when the hand-run migration already created it (IF NOT EXISTS).
+  await ensureAgeAttestationSchema(run);
 
   await run(
     `CREATE TABLE IF NOT EXISTS "conversations" (
