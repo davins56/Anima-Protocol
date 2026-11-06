@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { animaClient, uploadDataUrl, urlToDataUrl } from "@/api/animaClient";
 import { useStoreSync } from "@/lib/useStoreSync";
 import { motion } from "framer-motion";
@@ -29,6 +29,7 @@ const LONG_PRESS_MS = 520;
 
 export default function MainHome() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const canvasRef = useRef(null);
   const animRef = useRef(null);
   const photoInputRef = useRef(null);
@@ -41,7 +42,8 @@ export default function MainHome() {
   const [lastCheckIn, setLastCheckIn] = useState(null);
   const [selectedMode, setSelectedMode] = useState("serenity");
   const [panel, setPanel] = useState(null);
-  const [petOpen, setPetOpen] = useState(false);
+  const [petOpen, setPetOpen] = useState(() => new URLSearchParams(window.location.search).get("pet") === "1");
+  useEffect(() => { if (searchParams.get("pet") === "1") setPetOpen(true); }, [searchParams]);
   const [aiEditOpen, setAiEditOpen] = useState(false);
   const [editSource, setEditSource] = useState(null);
   const [editingNewPhoto, setEditingNewPhoto] = useState(false);
