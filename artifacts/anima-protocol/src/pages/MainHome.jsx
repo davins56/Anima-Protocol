@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { animaClient, uploadDataUrl, urlToDataUrl } from "@/api/animaClient";
 import { useStoreSync } from "@/lib/useStoreSync";
 import { motion } from "framer-motion";
@@ -18,6 +18,7 @@ import {
   rollFlavorChance,
 } from "@/lib/homeWake";
 import HomeDock from "@/components/home/HomeDock";
+import PETConsole from "@/components/anima/PETConsole";
 import MemoryResurfacing from "@/components/home/MemoryResurfacing";
 import { resurfacingAllowed } from "@/features/belonging/belonging";
 import HomeFloorSheets from "@/components/home/HomeFloorSheets";
@@ -28,6 +29,7 @@ const LONG_PRESS_MS = 520;
 
 export default function MainHome() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const canvasRef = useRef(null);
   const animRef = useRef(null);
   const photoInputRef = useRef(null);
@@ -40,6 +42,8 @@ export default function MainHome() {
   const [lastCheckIn, setLastCheckIn] = useState(null);
   const [selectedMode, setSelectedMode] = useState("serenity");
   const [panel, setPanel] = useState(null);
+  const [petOpen, setPetOpen] = useState(() => new URLSearchParams(window.location.search).get("pet") === "1");
+  useEffect(() => { if (searchParams.get("pet") === "1") setPetOpen(true); }, [searchParams]);
   const [aiEditOpen, setAiEditOpen] = useState(false);
   const [editSource, setEditSource] = useState(null);
   const [editingNewPhoto, setEditingNewPhoto] = useState(false);
@@ -245,6 +249,8 @@ export default function MainHome() {
             <p className="font-mono text-[11px] tracking-wider text-cyan-400">{identity}</p>
           </motion.div>
 
+          <div className="flex justify-center mb-3"><button type="button" aria-expanded={petOpen} aria-controls="anima-pet-console" onClick={() => setPetOpen(v => !v)} className="min-h-11 px-5 rounded-full border border-cyan-400/40 bg-cyan-400/10 text-cyan-200 font-mono text-xs tracking-widest uppercase"> {petOpen ? "Close PET" : "Open PET"} </button></div>
+          {petOpen && <div id="anima-pet-console" className="mb-4"><PETConsole anima={anima} onClose={() => setPetOpen(false)} /></div>}
           <div className="flex-1 min-h-[220px] flex flex-col items-center justify-center">
             <SerenityPresence anima={anima} />
 
