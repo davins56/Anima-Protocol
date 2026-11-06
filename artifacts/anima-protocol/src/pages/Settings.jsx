@@ -39,6 +39,7 @@ import { performRestoreFlow } from "@/lib/restoreHandlers";
 import { repairStarterCharacters } from "@/lib/seedCharacters";
 import ProactiveMessageSettings from "@/components/settings/ProactiveMessageSettings";
 import AppearanceStudio from "@/components/settings/AppearanceStudio";
+import AnimaForge from "@/components/settings/AnimaForge";
 
 import { CONFIGURED_LLM_PROVIDERS } from "@/lib/llmProviderLabel";
 import { toast } from "sonner";
@@ -925,6 +926,7 @@ export default function Settings() {
             <div className="space-y-4">
               <SectionTitle>Interface Preferences</SectionTitle>
               <AppearanceStudio />
+              <AnimaForge />
 
               <div className="border border-primary/15 bg-black/40 p-5 space-y-0 divide-y divide-primary/10">
                 <TogglePref
