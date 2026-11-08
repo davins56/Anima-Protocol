@@ -176,3 +176,44 @@ describe("SEC-001: speaker memory selection fails closed", () => {
     expect(all).not.toContain(SHARED_FACT);
   });
 });
+
+// The legacy/full prompt path has its own speaker-memory selection. Exercise
+// the real export as well as the live-chat path above; do not mock retrieval.
+import { composePrompt } from "../src/lib/promptBuilder";
+
+describe("SEC-001 composePrompt: group memory selection fails closed", () => {
+  const unusableSpeakers: Array<[string, CharacterData | undefined]> = [
+    ["no resolved speaker", undefined],
+    ...invalidIdentities,
+  ];
+
+  it.each(unusableSpeakers)("%s -> no private sentinel anywhere in final output", (_label, speaker) => {
+    const output = composePrompt(params({ activeCharacter: speaker }));
+    expect(presentSentinels(output)).toEqual([]);
+    for (const sentinel of ALL_PRIVATE) expect(output).not.toContain(sentinel);
+    expect(output).toContain(SHARED_FACT);
+  });
+
+  // Shared facts are gated on isCrossover in composePrompt. The same two-person
+  // crossover fixture explicitly enables it, including on the unfixed bases.
+  it.each(unusableSpeakers)("%s -> shared crossover fact remains accessible", (_label, speaker) => {
+    const p = params({ activeCharacter: speaker });
+    expect(p.mode).toBe("group");
+    expect(p.characters).toHaveLength(2);
+    expect(p.isCrossover).toBe(true);
+    expect(composePrompt(p)).toContain(SHARED_FACT);
+  });
+
+  it.each([["Natasha", natasha], ["Steve", steve]] as const)(
+    "valid %s speaker -> own memories and shared fact, no other Anima private state",
+    (_label, speaker) => {
+      const output = composePrompt(params({ activeCharacter: speaker }));
+      const own = speaker.id === natasha.id ? [NATASHA_PRIVATE, NATASHA_FACT] : STEVE_SENTINELS;
+      const forbidden = speaker.id === natasha.id ? STEVE_SENTINELS : [NATASHA_PRIVATE, NATASHA_FACT];
+      for (const sentinel of own) expect(output).toContain(sentinel);
+      for (const sentinel of forbidden) expect(output).not.toContain(sentinel);
+      expect(output).toContain(SHARED_FACT);
+      expect(output).toContain(`CHARACTER IDENTITY LOCK: Speak in first person as ${speaker.name}`);
+    },
+  );
+});
