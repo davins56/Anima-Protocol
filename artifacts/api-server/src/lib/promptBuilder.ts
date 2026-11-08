@@ -1447,7 +1447,7 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
   const speakerMemories =
     mainChar?.id != null && String(mainChar.id)
       ? memories.filter((m) => String(m.characterId) === String(mainChar.id))
-      : memories;
+      : [];
   const memoryBody = joinPromptParts([
     buildMemorySummaryBlock(speakerMemories, characterNames),
     formatMemoriesForPrompt(
