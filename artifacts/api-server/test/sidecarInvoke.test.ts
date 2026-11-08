@@ -108,20 +108,20 @@ describe("aggregatePersonalityShifts sidecar gate", () => {
     });
   });
 
-  it("returns null for a background sidecar when the chain is local-only", async () => {
+  it("links lore keywords locally without a model call when sidecars are enabled", async () => {
     await withSidecarEnv(true, async () => {
       const res = await invoke("scanAndLinkLoreKeywords");
       expect(res.status).toBe(200);
-      expect(res.json.result).toBeNull();
+      expect(res.json.result).toEqual({ data: { linked_messages: [] } });
       expect(createMock).not.toHaveBeenCalled();
     });
   });
 
-  it("still runs a user-started unhandled function when no companion turn is open", async () => {
+  it("still runs a user-started narrative-branch sidecar when no companion turn is open", async () => {
     await withSidecarEnv(true, async () => {
       const res = await invoke("predictNarrativeBranches");
       expect(res.status).toBe(200);
-      expect(res.json.result).toBe("warmer, more direct");
+      expect(res.json.result).toEqual({ data: { branches: [] } });
       expect(createMock).toHaveBeenCalledTimes(1);
     });
   });
