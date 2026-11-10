@@ -18,7 +18,7 @@ const ava = {
 };
 
 const mind: MindPromptOptions = {
-  promptTokens: 6000,
+  promptTokens: 12000,
   historyExchanges: 16,
   minHistoryExchanges: 4,
   historyMessageChars: 1600,

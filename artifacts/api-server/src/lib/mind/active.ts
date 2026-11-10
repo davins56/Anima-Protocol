@@ -7,6 +7,29 @@ import type { ModelTier } from "../modelRouter";
 import { workersAiChatModel } from "../workersAi";
 import { mindProfileFor, type MindProfile } from "./profile";
 
+function modelForProvider(provider: string, tier: ModelTier): string | null {
+  if (provider === "workersai") return workersAiChatModel();
+  if (provider === "openrouter") {
+    try {
+      return resolveOpenRouterModel(tier).model;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/** Models behind every provider after the first (failover / mid-stream fallback). */
+export function fallbackChatModels(tier: ModelTier = "standard"): Array<string | null> {
+  try {
+    return getProviderChain()
+      .slice(1)
+      .map((p) => modelForProvider(p, tier));
+  } catch {
+    return [];
+  }
+}
+
 export function activeChatModel(tier: ModelTier = "standard"): { provider: string | null; model: string | null } {
   const provider = getProviderChain()[0] ?? null;
   if (provider === "workersai") return { provider, model: workersAiChatModel() };
@@ -23,7 +46,8 @@ export function activeChatModel(tier: ModelTier = "standard"): { provider: strin
 export function activeMindProfile(tier: ModelTier = "standard"): MindProfile | null {
   try {
     const { provider, model } = activeChatModel(tier);
-    return mindProfileFor(provider, model);
+    // Built once and replayed on failover, so it must fit every model in the chain.
+    return mindProfileFor(provider, model, process.env, fallbackChatModels(tier));
   } catch {
     // A misconfigured chain (or a partial test mock) keeps the legacy path.
     return null;

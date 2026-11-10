@@ -184,6 +184,8 @@ import { searchContextForTurn } from "../lib/search/searchService";
 import { appendMemoryEvent } from "../lib/memoryCore/memoryCore";
 import {
   activeMindProfile,
+  factScopeForTurn,
+  type FactScope,
   type MindProfile,
   antiRepetitionNote,
   buildMindKnowledge,
@@ -2733,7 +2735,12 @@ router.post("/messages", async (req, res) => {
   let companionAffect: CompanionAffect | null = null;
   let activeCharacterId: string | null = null;
   // Set once the prompt is built; read by the post-stream background block.
-  let mindTurn: { profile: MindProfile; userName?: string; companionName?: string } | null = null;
+  let mindTurn: {
+    profile: MindProfile;
+    userName?: string;
+    companionName?: string;
+    factScope: FactScope;
+  } | null = null;
   let restingCharacterName: string | null = null;
   let isCrossover = false;
   let preStreamPersist: Promise<void> = Promise.resolve();
@@ -3231,6 +3238,9 @@ router.post("/messages", async (req, res) => {
       profile: mindProfile,
       userName: userDisplayName || undefined,
       companionName: activeChar?.name ? String(activeChar.name) : undefined,
+      // Facts are shared across this user's companions, except what was
+      // said in therapy or adult turns, which stays with this companion.
+      factScope: factScopeForTurn({ mode, therapy: therapyActive, adult: adultActive }),
     };
   }
 
@@ -4295,6 +4305,7 @@ router.post("/messages", async (req, res) => {
           userName: mindTurn.userName,
           companionName: mindTurn.companionName,
           profile: mindTurn.profile,
+          factScope: mindTurn.factScope,
           loadRecentMessages: (limit) =>
             readRecentStoreMessages(userId, sessionId, limit, { skipMigrate: true }),
         },
