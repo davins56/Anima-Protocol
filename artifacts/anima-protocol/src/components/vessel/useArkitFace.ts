@@ -1,6 +1,6 @@
 /** Per-frame ARKit face driver for plain GLB vessels (blink loop, smile, jaw ← speech openness). */
 import { useMemo, useRef } from "react";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import type { Object3D } from "three";
 import type { Expression } from "@/lib/vessel/emotion";
 import { applyArkitWeights, arkitFaceWeights, findArkitMeshes, type ArkitFaceWeights } from "@/lib/vessel/arkitFace";
@@ -22,6 +22,7 @@ export function useArkitFace(
   const jaw = useRef(0);
   const o = useRef(opts);
   o.current = opts;
+  const invalidate = useThree((s) => s.invalidate);
   useFrame(({ clock }, delta) => {
     if (!bindings.length) return;
     const { expression, speaking = false, audioLevel, override } = o.current;
@@ -30,6 +31,9 @@ export function useArkitFace(
     jaw.current += (open - jaw.current) * Math.min(1, dt / 0.05);
     const blink = blinker.update(dt, expression ? Math.max(0, expression.smile) : 0);
     applyArkitWeights(bindings, { ...arkitFaceWeights({ blink, openness: jaw.current, expression }), ...(override ?? {}) });
+    // Demand-frameloop hosts: keep frames coming while a blink or jaw move is in
+    // flight so they stay smooth, then let the canvas rest.
+    if (blink > 0 || speaking || Math.abs(open - jaw.current) > 0.002) invalidate();
   });
   return bindings.length > 0;
 }
