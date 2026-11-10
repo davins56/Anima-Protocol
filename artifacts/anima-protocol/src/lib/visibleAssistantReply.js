@@ -70,7 +70,7 @@ export function createVisibleReplyFilter() {
   let raw = "";
   let emittedVisible = "";
 
-  // Unclosed `<think>` is the production DeepSeek reply. Surface inner text
+  // Unclosed `<think>` is how DeepSeek R1 often replies. Surface inner text
   // as it arrives — do not wait for a closing tag that never comes.
   const peek = () => visibleAssistantReply(raw, { allowThinkFallback: true });
   const peekAnswer = () =>

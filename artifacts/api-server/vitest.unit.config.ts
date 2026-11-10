@@ -30,6 +30,11 @@ export default defineConfig({
       "test/identityEvals.test.ts",
       // Pure prompt helper + client/server parity; no Postgres needed.
       "test/voiceFingerprint.test.ts",
+      // Chat mind: pure ranking / parsing / guards / prompt sizing.
+      "test/mindRecall.test.ts",
+      "test/mindFactsSummary.test.ts",
+      "test/mindGuards.test.ts",
+      "test/mindPrompt.test.ts",
     ],
     environment: "node",
     fileParallelism: false,
