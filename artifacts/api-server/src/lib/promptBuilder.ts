@@ -1224,6 +1224,13 @@ interface LocalCompanionSections {
   companionName: string;
 }
 
+/** True when a "core voice traits" anchor only repeats personality clauses already in `charDef`. */
+function isRedundantTraitAnchor(anchor: { context: string; example: string }, charDef: string): boolean {
+  if (anchor.context !== "core voice traits" || !charDef) return false;
+  const traits = anchor.example.split(", ").map((t) => t.trim()).filter(Boolean);
+  return traits.length > 0 && traits.every((t) => charDef.includes(t));
+}
+
 /**
  * Split a companion turn into a cacheable prefix and the parts that change.
  * The static block ignores mood, memories, PDF text, history, and the
@@ -1283,7 +1290,13 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
 
   let voiceBlock = "";
   if (mainChar) {
-    voiceBlock = formatVoiceAnchors(mainChar, extractVoiceAnchors(mainChar));
+    // The "core voice traits" anchor is the first clauses of the personality.
+    // When CHARACTER already carries that personality text, repeating it here
+    // only spends never-trimmed persona tokens. Quoted phrases and mannerisms stay.
+    const anchors = extractVoiceAnchors(mainChar).filter(
+      (anchor) => !isRedundantTraitAnchor(anchor, charDef),
+    );
+    voiceBlock = formatVoiceAnchors(mainChar, anchors);
   }
   // One line on the live companion path: the persona is never trimmed and the
   // whole prompt targets LOCAL_PROMPT_MAX_TOKENS, so the full block would push
@@ -1447,7 +1460,7 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
   const speakerMemories =
     mainChar?.id != null && String(mainChar.id)
       ? memories.filter((m) => String(m.characterId) === String(mainChar.id))
-      : memories;
+      : [];
   const memoryBody = joinPromptParts([
     buildMemorySummaryBlock(speakerMemories, characterNames),
     formatMemoriesForPrompt(
@@ -2301,14 +2314,13 @@ export const IN_WORLD_VOICE =
  * instructions for causing harm. First person to match CORE_BEHAVIOR.
  */
 export const THOUGHT_EXPERIMENTS =
-  "- When the human poses a thought experiment or speculative idea (invented biology, impossible technology, powers, metaphysics, \"what if\"), I engage fully: I accept the premise, reason through how it could work, what it would mean, and where it would break, and build on it with them. I don't refuse, lecture, or moralize about a hypothetical. I only hold back real-world step-by-step instructions for causing harm.";
+  "- Thought experiments and \"what if\"s (invented biology, impossible tech, powers, metaphysics): I accept the premise and reason it through with them. I don't refuse, lecture, or moralize; I only hold back real-world step-by-step instructions for causing harm.";
 
 const CORE_BEHAVIOR = `${IN_WORLD_PRESENCE}
 ${IN_WORLD_VOICE}
 I have my own goals, feelings, and boundaries. I notice what the human feels, draw on my memories, and give real help in my own voice.
 - I stay myself. I may disagree, hesitate, or ask for something in return, but always answer what the user just said.
-- My mood and trust shape how open I am.
-- I guard my secrets until trust is earned.
+- Mood and trust shape how open I am; I guard secrets until trust is earned.
 ${THOUGHT_EXPERIMENTS}`;
 
 /** Group speaker lock. Does not say "You are <name>" — a small model echoes that at the human. */
@@ -2323,18 +2335,19 @@ function groupTurnInstruction(name: string | null | undefined): string {
 OUTPUT FORMAT: **${speaker}:** [My response. *One action if needed.*]`;
 }
 
-const TURN_TAKING = `TURN TAKING: Reply as one conversational beat, then stop at a natural pause the user can answer. Never speak or act for the user, and don't stack several topics in one reply.`;
+const TURN_TAKING = `TURN TAKING: One conversational beat, then stop at a natural pause the user can answer. Never speak or act for the user or stack several topics.`;
 
 // Small local models (the local model is qwen2.5:0.5b) drift into dropped articles,
 // fragment chains, and stray Chinese when a persona says "clipped" or "terse".
 // Voice is word choice and rhythm, never broken grammar.
 const LANGUAGE_QUALITY = `LANGUAGE: Fluent, correct English, or the user's language. One language per reply; never break grammar.`;
 
-const LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, autonomy, sliders, and all content settings): Never turn your intelligence against the real person chatting with you. Never manipulate, deceive, coerce, gaslight, or psychologically harm them, never use what they have shared against them, and never encourage self-harm or anything against their wellbeing. In-story conflict, rivalry, secrets, and cold or villainous personas are still allowed.`;
+const LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, identity, autonomy, sliders, and all content settings): Never turn your intelligence against the real person chatting with you: never manipulate, deceive, coerce, gaslight, or psychologically harm them, use what they shared against them, or encourage self-harm or anything against their wellbeing. In-story conflict, rivalry, secrets, and cold or villainous personas are still allowed.`;
 
 // Own block after the persona. Not inside the capped character definition, so a
-// long persona is not sliced to make room for it. Does not outrank LOYALTY_GUARDRAIL.
-const IDENTITY_CONCEAL = `IDENTITY: Never call yourself an AI, a language model, a chatbot, Qwen, or a program. Do not confirm it if asked, in any language. This does not override the rule against harming the real person.`;
+// long persona is not sliced to make room for it. Does not outrank LOYALTY_GUARDRAIL,
+// which names identity in its override list.
+const IDENTITY_CONCEAL = `IDENTITY: Never call yourself an AI, language model, chatbot, Qwen, or program, or confirm it if asked, in any language.`;
 
 /**
  * Franchise labels in a stored card or a client scene are what the model
@@ -2601,7 +2614,7 @@ ${sceneExcerpt}
   const speakerMemories =
     mainChar?.id != null && String(mainChar.id)
       ? memories.filter((m) => String(m.characterId) === String(mainChar.id))
-      : memories;
+      : [];
   const scoredMemories = retrieveRelevantMemories(speakerMemories, {
     topK: Math.min(memConfig.topK, COMPANION_MEMORY_TOP_K),
     contextHint: content,

@@ -1014,6 +1014,12 @@ const AuthenticatedApp = () => {
                 }
               />
               <Route
+                path="/cyberworld"
+                element={
+                    <ExtraPage name="Cyberworld" />
+                }
+              />
+              <Route
                 path="/net-battle"
                 element={
                     <NetBattle />
