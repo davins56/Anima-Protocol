@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildWorldLayout, HOME_RING_RADIUS, MAX_HOMES, homeZoneId } from "./layout";
-import { animaStandPoint, distanceToSegment, isWalkable, nearestAnima, resolveMove, stepToward } from "./collision";
+import { animaStandPoint, approachPoint, distanceToSegment, isWalkable, nearestAnima, resolveMove, stepToward } from "./collision";
 import { MOCK_ANIMAS } from "./mockAnimas";
 import { toWorldAnimas } from "./useCyberworldAnimas";
 
@@ -76,6 +76,11 @@ describe("collision", () => {
     const stand = animaStandPoint(home);
     expect(nearestAnima(layout, animas, stand)?.anima.id).toBe(home.animaId);
     expect(nearestAnima(layout, animas, [0, 0])).toBeNull();
+    // Walking up via the minimap stops in front of them, still in range and on the platform.
+    const ap = approachPoint(home);
+    expect(isWalkable(layout, ap)).toBe(true);
+    expect(nearestAnima(layout, animas, ap)?.anima.id).toBe(home.animaId);
+    expect(Math.hypot(ap[0] - stand[0], ap[1] - stand[1])).toBeCloseTo(1.4);
   });
 });
 
