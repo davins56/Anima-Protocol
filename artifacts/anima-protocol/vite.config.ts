@@ -186,6 +186,45 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rolldownOptions: {
+      output: {
+        // Named vendor chunks for the heavy, view-specific libraries (Vite 8 /
+        // Rolldown's replacement for Rollup's manualChunks). jspdf and
+        // html2canvas already split on their own and are used independently,
+        // so they are left alone. Each group is only
+        // reachable through a lazy route or component, so none of them is in
+        // the initial or Chat download; naming them keeps their hashes stable
+        // across app deploys (better HTTP/SW cache hits) and stops them being
+        // folded into whichever page happened to import them first.
+        // Do not add packages that are imported statically by the app shell or
+        // Chat (react, router, framer-motion, radix, lucide, dompurify, ...):
+        // a group pulls everything in it into every importer's static graph.
+        codeSplitting: {
+          // Capture only the matched packages, not their dependencies (the
+          // default would drag react/react-dom into vendor-three via R3F and
+          // make every page import it).
+          includeDependenciesRecursively: false,
+          groups: [
+            {
+              name: "vendor-three",
+              test: /[\\/]node_modules[\\/](three|@react-three|postprocessing|three-stdlib|three-mesh-bvh|troika-[^\\/]+|maath|camera-controls|meshline|stats-gl|@monogrid)[\\/]/,
+            },
+            {
+              name: "vendor-graph",
+              test: /[\\/]node_modules[\\/](cytoscape|react-cytoscapejs)[\\/]/,
+            },
+            {
+              name: "vendor-map",
+              test: /[\\/]node_modules[\\/](leaflet|react-leaflet|@react-leaflet)[\\/]/,
+            },
+            {
+              name: "vendor-charts",
+              test: /[\\/]node_modules[\\/](recharts|victory-vendor|d3-[^\\/]+|internmap|decimal\.js-light|@reduxjs|redux|reselect|immer)[\\/]/,
+            },
+          ],
+        },
+      },
+    },
   },
   server: {
     port: finalPort,
