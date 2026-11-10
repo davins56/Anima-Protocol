@@ -182,6 +182,19 @@ import { buildMemoryCoreContext, isMemoryCoreEnabled } from "../lib/memoryCore/s
 import { buildCorrectionsContext } from "../lib/corrections/corrections";
 import { searchContextForTurn } from "../lib/search/searchService";
 import { appendMemoryEvent } from "../lib/memoryCore/memoryCore";
+import {
+  activeMindProfile,
+  type MindProfile,
+  antiRepetitionNote,
+  buildMindKnowledge,
+  consumeWithMidstreamFallback,
+  createPersonaStreamGuard,
+  echoesRecentReply,
+  hasAlternativeProvider,
+  runMindPostTurn,
+  sanitizeCompanionReply,
+  shapeMessagesForModel,
+} from "../lib/mind";
 import { classifyDbError, errorCauseBlob } from "../lib/dbErrors";
 import {
   finalizeAssistantReply,
@@ -2719,6 +2732,8 @@ router.post("/messages", async (req, res) => {
   let synchroState: SynchroState | null = null;
   let companionAffect: CompanionAffect | null = null;
   let activeCharacterId: string | null = null;
+  // Set once the prompt is built; read by the post-stream background block.
+  let mindTurn: { profile: MindProfile; userName?: string; companionName?: string } | null = null;
   let restingCharacterName: string | null = null;
   let isCrossover = false;
   let preStreamPersist: Promise<void> = Promise.resolve();
@@ -2815,10 +2830,42 @@ router.post("/messages", async (req, res) => {
         [undefined, null, null] as const,
       )
     : Promise.resolve([undefined, null, null] as const);
+  // Chat mind: hosted models (Workers AI / OpenRouter) get a prompt sized
+  // for their context window, durable user facts, a rolling summary, and
+  // tuned sampling. Null on the self-hosted path (legacy packing).
+  const mindProfile = activeMindProfile();
+  const recentMessagesPromise = readRecentStoreMessages(
+    userId,
+    sessionId,
+    mindProfile
+      ? Math.max(chatContextMessageLimit(), mindProfile.historyExchanges * 2 + 2)
+      : chatContextMessageLimit(),
+    { skipMigrate: Boolean(sessionData.messages_migrated) },
+  );
   // Persistent memory core (identity anchor + ranked long-term memories).
   // Best-effort with its own 1.5s ceiling; never blocks the reply.
   const memoryCorePromise =
-    hintedCharId && isMemoryCoreEnabled()
+    hintedCharId && isMemoryCoreEnabled() && mindProfile
+      ? optionalChatContext(
+          "chat_mind",
+          async () => {
+            const historyWait = new Promise<MsgData[]>((resolve) => setTimeout(() => resolve([]), 250));
+            const [[character], history] = await Promise.all([
+              loadCharacters(userId, [hintedCharId]),
+              Promise.race([recentMessagesPromise.catch(() => [] as MsgData[]), historyWait]),
+            ]);
+            return buildMindKnowledge({
+              userId,
+              character: character || { id: hintedCharId },
+              sessionId,
+              query: content,
+              profile: mindProfile,
+              historyTexts: history.map((m) => String(m.content ?? "")).filter(Boolean),
+            });
+          },
+          "",
+        )
+      : hintedCharId && isMemoryCoreEnabled()
       ? optionalChatContext(
           "memory_core",
           async () => {
@@ -2878,9 +2925,7 @@ router.post("/messages", async (req, res) => {
       // no longer includes either; a failed read must not become an empty chat.
       loadCharacters(userId, characterIds),
       memoriesPromise,
-      readRecentStoreMessages(userId, sessionId, chatContextMessageLimit(), {
-        skipMigrate: Boolean(sessionData.messages_migrated),
-      }),
+      recentMessagesPromise,
       memoriesPromise.then((rows) => {
         const adapted = adaptMemories(rows);
         // Local companion_memories + stored vectors only. Remote supermemory
@@ -3123,12 +3168,33 @@ router.post("/messages", async (req, res) => {
       : null,
   });
   const resolvedCorrections = await correctionsPromise;
-  const messages = telemetry.measureSync("prompt_build_ms", () =>
-    composeCompanionChatMessages({
+  // Mind knowledge was recalled for the hinted companion; a different
+  // speaker this turn falls back to no long-term block rather than borrow it.
+  const mindKnowledge =
+    mindProfile && (!activeCharacterId || activeCharacterId === hintedCharId) ? memoryCoreContext : "";
+  const mindTurnNote = mindProfile
+    ? antiRepetitionNote(recentAssistantReplies(promptRecentMessages))
+    : "";
+  const messages = telemetry.measureSync("prompt_build_ms", () => {
+    const composed = composeCompanionChatMessages({
+      ...(mindProfile
+        ? {
+            mind: {
+              promptTokens: mindProfile.promptTokens,
+              historyExchanges: mindProfile.historyExchanges,
+              minHistoryExchanges: mindProfile.minHistoryExchanges,
+              historyMessageChars: mindProfile.historyMessageChars,
+              memoryTopK: mindProfile.memoryTopK,
+            },
+            mindTurnNote,
+          }
+        : {}),
       clientContext: body.system_prompt,
       repositoryKnowledge,
       pdfContext: [pdfContext, webSearchContext].filter(Boolean).join("\n\n") || pdfContext,
-      memoryCoreContext: [memoryCoreContext, resolvedCorrections].filter(Boolean).join("\n\n"),
+      memoryCoreContext: [mindProfile ? mindKnowledge : memoryCoreContext, resolvedCorrections]
+        .filter(Boolean)
+        .join("\n\n"),
       photoNote,
       characters: adaptedChars,
       activeCharacter: activeChar,
@@ -3157,8 +3223,16 @@ router.post("/messages", async (req, res) => {
       intimacyTurnResult: intimacyResult,
       operatorModel,
       userDisplayName,
-    }),
-  );
+    });
+    return mindProfile ? shapeMessagesForModel(composed, mindProfile) : composed;
+  });
+  if (mindProfile) {
+    mindTurn = {
+      profile: mindProfile,
+      userName: userDisplayName || undefined,
+      companionName: activeChar?.name ? String(activeChar.name) : undefined,
+    };
+  }
 
   const routed = routeModel(content, {
     deepMode: Boolean(body.deep_mode),
@@ -3527,20 +3601,28 @@ router.post("/messages", async (req, res) => {
     } else {
       sse.setPhase("waking");
       let completion;
-      try {
-        completion = await createChatStreamWithFailover({
-          tier: routed.tier,
-          model: routed.model,
-          maxTokens: replyMaxTokens,
-          messages,
-          temperature: COMPANION_CHAT_TEMPERATURE,
-          signal: generateSignal,
-        });
-      } finally {
-        // Headers are in. The open timer must not cut a slow prefill once
-        // bytes are flowing. Disconnect grace still aborts an abandoned slot.
-        open.cancel();
-      }
+      // Chat mind: per-family sampling, and a second open on the next
+      // provider when the first stream dies before any text is shown.
+      const openMainStream = async (excludeProviders: LlmProviderId[]) => {
+        try {
+          return await createChatStreamWithFailover({
+            tier: routed.tier,
+            model: routed.model,
+            maxTokens: replyMaxTokens,
+            messages,
+            temperature: mindProfile ? mindProfile.sampling.temperature : COMPANION_CHAT_TEMPERATURE,
+            ...(mindProfile
+              ? { sampling: mindProfile.sampling, ...(excludeProviders.length ? { excludeProviders } : {}) }
+              : {}),
+            signal: generateSignal,
+          });
+        } finally {
+          // Headers are in. The open timer must not cut a slow prefill once
+          // bytes are flowing. Disconnect grace still aborts an abandoned slot.
+          open.cancel();
+        }
+      };
+      completion = await openMainStream([]);
       sse.setPhase("generating");
       usedModel = completion.model;
       usedTier = completion.tier;
@@ -3558,7 +3640,52 @@ router.post("/messages", async (req, res) => {
       let flushed = false;
       let suppressFourthWall = false;
       let cutReason: "repeat" | "stock" | "role_swap" | null = null;
-      const streamed = await consumeLlmStream(completion.stream, {
+      const personaGuard =
+        mindProfile && !localHost
+          ? createPersonaStreamGuard({ companionName: activeChar?.name, userName: userDisplayName })
+          : null;
+      let mindShown = false;
+      const streamed = personaGuard
+        ? await (async () => {
+            const firstOpen = completion;
+            const run = await consumeWithMidstreamFallback({
+              open: async (exclude) =>
+                exclude.length ? await openMainStream(exclude as LlmProviderId[]) : firstOpen,
+              consume: (opened) =>
+                consumeLlmStream(opened.stream, {
+                  ...consumeOpts,
+                  onDelta: (delta) => {
+                    // Template tokens, a "Name:" label, scaffolding lines and
+                    // a run-on into the user's turn never reach the bubble.
+                    const safe = personaGuard.push(delta);
+                    if (safe) {
+                      mindShown = true;
+                      emitDelta(safe);
+                    }
+                  },
+                  stopWhen: () => personaGuard.stopped,
+                }),
+              emittedVisible: () => mindShown,
+              hasAlternative: (excluded) => hasAlternativeProvider(excluded),
+              onFallback: (from, error) =>
+                logger.warn(
+                  { error, turnId, from },
+                  "Chat mind: stream failed before any text; reopening on the next provider",
+                ),
+            });
+            if (run.opened !== firstOpen) {
+              completion = run.opened;
+              usedModel = completion.model;
+              usedTier = completion.tier;
+              usedProvider = completion.provider;
+              usedBrand = completion.brand;
+              failedOver = true;
+            }
+            const tail = personaGuard.finish();
+            if (tail) emitDelta(tail);
+            return run.result;
+          })()
+        : await consumeLlmStream(completion.stream, {
         ...consumeOpts,
         onDelta: (delta) => {
           if (!localHost) {
@@ -3617,6 +3744,13 @@ router.post("/messages", async (req, res) => {
         finishReason: streamed.finishReason,
         stoppedEarly: streamed.stoppedEarly,
       });
+      if (personaGuard) {
+        fullResponse =
+          sanitizeCompanionReply(fullResponse, {
+            companionName: activeChar?.name,
+            userName: userDisplayName,
+          }) || fullResponse;
+      }
       if (localHost && !flushed && !cutReason && held && !fullResponse) {
         fullResponse = held;
       }
@@ -3636,7 +3770,11 @@ router.post("/messages", async (req, res) => {
           (cutReason === "repeat" ? matchingRepeatedReply(held, priorReplies) : null);
       const repeated =
         !crisisTurn &&
-        (Boolean(copiedReply) || isRepeatedReply(fullResponse, priorReplies));
+        (Boolean(copiedReply) ||
+          isRepeatedReply(fullResponse, priorReplies) ||
+          // Chat mind: a reply that mostly restates a recent one is a loop
+          // even when the wording shifted.
+          (Boolean(personaGuard) && echoesRecentReply(fullResponse, priorReplies.slice(-4), 0.85)));
       const stockLine =
         !crisisTurn &&
         (cutReason === "stock" || replyIsStock(fullResponse) || replyIsStock(held));
@@ -4142,6 +4280,27 @@ router.post("/messages", async (req, res) => {
         source: "chat",
       }).catch((e) => logger.warn({ error: e, turnId }, "memory_events turn append failed"));
     }
+    // Chat mind learning (facts + rolling summary) runs on the background
+    // model after the reply is saved; it never delays the stream.
+    let mindLearning: Promise<void> = Promise.resolve();
+    if (mindTurn && activeCharacterId && isMemoryCoreEnabled() && !replyCutOff && fullResponse.trim()) {
+      mindLearning = runMindPostTurn(
+        {
+          userId,
+          characterId: activeCharacterId,
+          sessionId,
+          turnId,
+          userMessage: String(content || ""),
+          companionReply: fullResponse,
+          userName: mindTurn.userName,
+          companionName: mindTurn.companionName,
+          profile: mindTurn.profile,
+          loadRecentMessages: (limit) =>
+            readRecentStoreMessages(userId, sessionId, limit, { skipMigrate: true }),
+        },
+        (msg, meta) => logger.info(meta, msg),
+      ).catch((e) => logger.warn({ error: e, turnId }, "Chat mind post-turn failed"));
+    }
     try {
       const hiddenLife = body.metadata?.hidden_sequences as
         | { learned_life?: unknown[] }
@@ -4169,6 +4328,8 @@ router.post("/messages", async (req, res) => {
         "Chat relationship/evolution post-processing failed",
       );
     }
+    // Keep the Worker alive (waitUntil) until the mind has learned this turn.
+    await mindLearning;
     } finally {
       releaseBackground();
     }
