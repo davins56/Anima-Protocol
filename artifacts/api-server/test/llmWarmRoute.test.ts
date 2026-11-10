@@ -11,6 +11,10 @@ vi.mock("@clerk/express", () => ({
 
 import llmWarmRouter from "../src/routes/llmWarm";
 import { resetLocalLlmWarmForTests } from "../src/lib/localLlmWarm";
+import {
+  beginCompanionLlmTurn,
+  resetCompanionLlmTurnForTests,
+} from "../src/lib/sidecarLlm";
 
 const realFetch = globalThis.fetch.bind(globalThis);
 let server: Server;
@@ -33,7 +37,10 @@ afterAll(async () => {
 
 afterEach(() => {
   resetLocalLlmWarmForTests();
-  ollamaFetch.mockClear();
+  resetCompanionLlmTurnForTests();
+  ollamaFetch.mockReset();
+  ollamaFetch.mockImplementation(async () => new Response("{}", { status: 200 }));
+  delete process.env.ANIMA_CHAT_BRAIN;
   vi.unstubAllGlobals();
   delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
   delete process.env.ANIMA_LOCAL_LLM_API_KEY;
@@ -114,5 +121,50 @@ describe("POST /llm/warm", () => {
       resting: false,
     });
     expect(ollamaFetch).toHaveBeenCalledTimes(1);
+  });
+  it("does not report resting when a chat turn preempts the warm", async () => {
+    installFetchSplit();
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    let end: (() => void) | null = null;
+    ollamaFetch.mockImplementationOnce(
+      (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
+            { once: true },
+          );
+          // A companion turn starts while the preload is loading weights.
+          end = beginCompanionLlmTurn("user_123");
+        }),
+    );
+    const response = await fetch(`${baseUrl}/llm/warm`, {
+      method: "POST",
+      headers: { "x-test-user": "user_123" },
+    });
+    (end as (() => void) | null)?.();
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      warmed: false,
+      skipped: "busy",
+      resting: false,
+    });
+  });
+
+  it("is a no-op on the Cloudflare brain", async () => {
+    installFetchSplit();
+    process.env.ANIMA_CHAT_BRAIN = "cloudflare";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    const response = await fetch(`${baseUrl}/llm/warm`, {
+      method: "POST",
+      headers: { "x-test-user": "user_123" },
+    });
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      warmed: false,
+      skipped: "unconfigured",
+      resting: false,
+    });
+    expect(ollamaFetch).not.toHaveBeenCalled();
   });
 });

@@ -158,8 +158,12 @@ export const LOCAL_LLM_JOBS: Record<LocalLlmJobId, LocalLlmJobPolicy> = {
   "llm-warm": {
     priority: "background",
     whenActive: "skip",
-    budget: "short",
-    notes: "Weight warm-up. Skipped so it cannot sit in front of a reply.",
+    // Caller budget: the warm keeps its own timeout (22s app-open / 45s hint)
+    // because a cold anima-chat load is ~15–18s and the 12s background wall
+    // cut it mid-load. A chat turn still yields it at once (slot + abort).
+    budget: "caller",
+    notes:
+      "Weight warm-up (num_predict 1). Skipped while a turn is open; aborted when one starts. Own timeout, no 12s wall.",
   },
   sidecar: {
     priority: "background",

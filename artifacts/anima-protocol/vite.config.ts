@@ -5,6 +5,7 @@ import path from "path";
 import { VitePWA } from "vite-plugin-pwa";
 import { config as loadEnv } from "dotenv";
 import { sanitizeClerkPublishableKey } from "./src/lib/clerkProxy.js";
+import { isCacheFirstImageUrl } from "./src/lib/pwaImageCache.js";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
 loadEnv({ path: path.join(repoRoot, ".env") });
@@ -131,7 +132,11 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
-            urlPattern: /^https?:\/\/.*\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/i,
+            // Stable, unsigned image files only. /api/* (photo files, vessel
+            // snapshot and model 302s), signed Supabase Storage URLs and any
+            // token / signature query are left unrouted, so the browser
+            // fetches them straight from the network. See pwaImageCache.js.
+            urlPattern: isCacheFirstImageUrl,
             handler: "CacheFirst",
             options: {
               cacheName: "images-cache",

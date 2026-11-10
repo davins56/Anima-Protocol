@@ -29,7 +29,7 @@ import {
   localLlmBaseUrl,
   normalizeApiKey,
 } from "./openaiClient";
-import { companionLlmTurnOpen, localCallSignal } from "./sidecarLlm";
+import { backgroundLlmSignal, companionLlmTurnOpen } from "./sidecarLlm";
 
 /**
  * Value operators can set on `ANIMA_OLLAMA_KEEP_ALIVE` when they want the
@@ -244,16 +244,24 @@ async function warmOnce(
 
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const signals = [timeoutSignal];
-  if (slot && "signal" in slot && slot.signal) signals.push(slot.signal);
-  const background = localCallSignal();
-  if (background) signals.push(background);
+  const slotSignal = slot && "signal" in slot && slot.signal ? slot.signal : null;
+  if (slotSignal) signals.push(slotSignal);
+  // Always the background signal (not `localCallSignal`, which drops it when
+  // a turn is already open): `beginCompanionLlmTurn` aborts it, so a turn that
+  // starts mid-warm never waits behind this generate on the same Ollama slot.
+  const background = backgroundLlmSignal();
+  signals.push(background);
   const signal = combineAbortSignals(...signals);
+  /** A chat turn took the model (same-isolate abort or slot yield). */
+  const preempted = () =>
+    !timeoutSignal.aborted && (background.aborted || Boolean(slotSignal?.aborted));
 
   try {
     // Last check before the bytes leave. The slot flag is not a substitute
     // for the chat_turns ledger on another isolate.
     const { localChatActivityActive } = await import("./localLlmPriority");
     if (await localChatActivityActive()) return "busy";
+    if (companionLlmTurnOpen() || preempted()) return "busy";
     const response = await fetchImpl(url, {
       method: "POST",
       headers,
@@ -266,6 +274,8 @@ async function warmOnce(
     lastSuccessfulWarmAt = Date.now();
     return true;
   } catch {
+    // Yielded to a chat turn: not a host failure. No backoff, no "resting".
+    if (preempted()) return "busy";
     // Host down, path not exposed, or still loading — the chat generate owns the error.
     return false;
   } finally {

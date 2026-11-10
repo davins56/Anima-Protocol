@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetLocalLlmSlotForTests } from "../src/lib/localLlmSlot";
+import { localLlmJobLimits } from "../src/lib/localLlmPriority";
+import {
+  beginCompanionLlmTurn,
+  resetCompanionLlmTurnForTests,
+} from "../src/lib/sidecarLlm";
 import {
   APP_OPEN_LLM_WARM_COOLDOWN_MS,
   APP_OPEN_LLM_WARM_FAILURE_BACKOFF_MS,
@@ -20,6 +25,7 @@ describe("localLlmWarm", () => {
     process.env = { ...SAVED };
     resetLocalLlmWarmForTests();
     resetLocalLlmSlotForTests();
+    resetCompanionLlmTurnForTests();
   });
 
   it("omits keep_alive unless ANIMA_OLLAMA_KEEP_ALIVE is set", () => {
@@ -246,6 +252,85 @@ describe("localLlmWarm", () => {
       workerGlobal,
     );
     expect(result).toEqual({ ok: true, warmed: false, skipped: "unconfigured" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+  describe("app-open warm vs a companion turn", () => {
+    function abortableFetch() {
+      let seen: AbortSignal | undefined;
+      const fetchImpl = vi.fn(
+        (_url: string, init?: RequestInit) =>
+          new Promise<Response>((resolve, reject) => {
+            seen = init?.signal ?? undefined;
+            if (!seen) return;
+            seen.addEventListener(
+              "abort",
+              () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
+              { once: true },
+            );
+            void resolve;
+          }),
+      );
+      return { fetchImpl, signal: () => seen };
+    }
+
+    it("skips without touching the host while a turn is open", async () => {
+      process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+      const end = beginCompanionLlmTurn("user_1");
+      const fetchImpl = vi.fn(async () => new Response("{}", { status: 200 }));
+      const result = await warmLocalLlmForAppOpen(
+        process.env,
+        fetchImpl as unknown as typeof fetch,
+        workerGlobal,
+      );
+      end();
+      expect(result).toEqual({ ok: true, warmed: false, skipped: "busy" });
+      expect(fetchImpl).not.toHaveBeenCalled();
+    });
+
+    it("aborts an in-flight warm when a turn starts and reports busy, not a failure", async () => {
+      process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+      const { fetchImpl, signal } = abortableFetch();
+      const warm = warmLocalLlmForAppOpen(
+        process.env,
+        fetchImpl as unknown as typeof fetch,
+        workerGlobal,
+      );
+      await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+      expect(signal()?.aborted).toBe(false);
+
+      // The turn does not await the warm: starting it aborts the generate now.
+      const end = beginCompanionLlmTurn("user_1");
+      expect(signal()?.aborted).toBe(true);
+      await expect(warm).resolves.toEqual({ ok: true, warmed: false, skipped: "busy" });
+      end();
+
+      // A yield is not a host failure: no 60s failure backoff afterwards.
+      const ok = vi.fn(async () => new Response("{}", { status: 200 }));
+      await expect(
+        warmLocalLlmForAppOpen(process.env, ok as unknown as typeof fetch, workerGlobal),
+      ).resolves.toEqual({ ok: true, warmed: true });
+      expect(ok).toHaveBeenCalledTimes(1);
+    });
+
+    it("gives the warm its own timeout instead of the 12s background wall", () => {
+      // A cold anima-chat load is ~15–18s; the slot wall must not cut it.
+      expect(localLlmJobLimits("llm-warm").wallMs).toBeNull();
+      expect(APP_OPEN_LLM_WARM_TIMEOUT_MS).toBeGreaterThan(12_000);
+    });
+  });
+
+  it("never calls a model host on the Cloudflare brain, even with leftover local vars", async () => {
+    process.env.ANIMA_CHAT_BRAIN = "cloudflare";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    const fetchImpl = vi.fn(async () => new Response("{}", { status: 200 }));
+    const result = await warmLocalLlmForAppOpen(
+      process.env,
+      fetchImpl as unknown as typeof fetch,
+      workerGlobal,
+    );
+    expect(result).toEqual({ ok: true, warmed: false, skipped: "unconfigured" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    hintLocalLlmWarm(process.env, fetchImpl as unknown as typeof fetch);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
