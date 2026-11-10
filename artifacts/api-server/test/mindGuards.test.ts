@@ -7,7 +7,17 @@ import {
 } from "../src/lib/mind/personaGuard";
 import { CONTINUE_PLACEHOLDER, shapeMessagesForModel } from "../src/lib/mind/templates";
 import { consumeWithMidstreamFallback } from "../src/lib/mind/streamFallback";
-import { mindProfileFor, modelFamily, samplingFor } from "../src/lib/mind/profile";
+import {
+  REASONING_RESERVE_TOKENS,
+  REPLY_RESERVE_TOKENS,
+  TOKEN_ESTIMATE_HEADROOM,
+  UNKNOWN_MODEL_CONTEXT_TOKENS,
+  maxPromptTokensFor,
+  mindProfileFor,
+  modelContextTokens,
+  modelFamily,
+  samplingFor,
+} from "../src/lib/mind/profile";
 
 const opts = { companionName: "Ava", userName: "Sam" };
 
@@ -172,14 +182,55 @@ describe("chat mind profile", () => {
 
   it("sizes hosted prompts and clamps env overrides", () => {
     const p = mindProfileFor("workersai", "@cf/meta/llama-3.3-70b-instruct-fp8-fast", {})!;
-    expect(p.promptTokens).toBe(6000);
+    expect(p.promptTokens).toBe(12000);
+    expect(p.knowledgeTokens).toBe(Math.floor(12000 * 0.22));
     expect(p.historyExchanges).toBe(16);
     expect(p.strictAlternation).toBe(false);
     expect(p.sampling.temperature).toBeGreaterThan(0.65);
-    const big = mindProfileFor("openrouter", "mistral", { ANIMA_MIND_PROMPT_TOKENS: "999999", ANIMA_MIND_HISTORY_EXCHANGES: "2" })!;
-    expect(big.promptTokens).toBe(20000);
+    const big = mindProfileFor("openrouter", "mistralai/mistral-small-3.1-24b-instruct", {
+      ANIMA_MIND_PROMPT_TOKENS: "999999",
+      ANIMA_MIND_HISTORY_EXCHANGES: "2",
+    })!;
+    expect(big.promptTokens).toBe(100000);
     expect(big.historyExchanges).toBe(4);
     expect(big.strictAlternation).toBe(true);
     expect(samplingFor("llama", { ANIMA_MIND_TEMPERATURE: "0.5" }).temperature).toBe(0.5);
+  });
+});
+
+describe("chat mind context-window clamp", () => {
+  const LLAMA70 = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+
+  it("knows the production models and is conservative about unknown ones", () => {
+    expect(modelContextTokens(LLAMA70, {})).toBe(24000);
+    expect(modelContextTokens("@cf/meta/llama-3.1-8b-instruct", {})).toBe(7968);
+    expect(modelContextTokens("@cf/meta/llama-3.1-8b-instruct-fast", {})).toBe(128000);
+    expect(modelContextTokens("venice/uncensored:free", {})).toBe(32768);
+    expect(modelContextTokens("mystery-model", {})).toBe(UNKNOWN_MODEL_CONTEXT_TOKENS);
+    expect(modelContextTokens("mystery-model", { ANIMA_MIND_CONTEXT_TOKENS: "65536" })).toBe(65536);
+  });
+
+  it("leaves room for the reply and estimate error", () => {
+    expect(maxPromptTokensFor(LLAMA70, {})).toBe(Math.floor((24000 - REPLY_RESERVE_TOKENS) * TOKEN_ESTIMATE_HEADROOM));
+    // Reasoning models keep a bigger reserve for their thinking.
+    expect(maxPromptTokensFor("@cf/deepseek-ai/deepseek-r1-distill-qwen-32b", {})).toBe(
+      Math.floor((80000 - REASONING_RESERVE_TOKENS) * TOKEN_ESTIMATE_HEADROOM),
+    );
+    for (const m of [LLAMA70, "@cf/meta/llama-3.1-8b-instruct", "mystery-model"]) {
+      const budget = maxPromptTokensFor(m, {});
+      expect(budget + REPLY_RESERVE_TOKENS).toBeLessThan(modelContextTokens(m, {}));
+    }
+  });
+
+  it("clamps the 12k default to small models and to the smallest fallback", () => {
+    const small = mindProfileFor("workersai", "@cf/meta/llama-3.1-8b-instruct", {})!;
+    expect(small.promptTokens).toBe(maxPromptTokensFor("@cf/meta/llama-3.1-8b-instruct", {}));
+    expect(small.promptTokens).toBeLessThan(7968 - REPLY_RESERVE_TOKENS);
+    const withFallback = mindProfileFor("workersai", LLAMA70, {}, ["mystery-model"])!;
+    expect(withFallback.promptTokens).toBe(maxPromptTokensFor("mystery-model", {}));
+    const roomyFallback = mindProfileFor("workersai", LLAMA70, {}, ["minimax/minimax-m2.7:free"])!;
+    expect(roomyFallback.promptTokens).toBe(12000);
+    const askedTooMuch = mindProfileFor("workersai", LLAMA70, { ANIMA_MIND_PROMPT_TOKENS: "50000" })!;
+    expect(askedTooMuch.promptTokens).toBe(maxPromptTokensFor(LLAMA70, {}));
   });
 });

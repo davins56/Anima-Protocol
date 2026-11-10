@@ -15,6 +15,8 @@ import { describe, expect, it } from "vitest";
 import { composeCompanionChatMessages, type LlmChatMessage } from "../src/lib/promptBuilder";
 import {
   createPersonaStreamGuard,
+  factScopeForTurn,
+  maxPromptTokensFor,
   formatKnowledgeBlock,
   knowledgeCandidates,
   mindProfileFor,
@@ -188,7 +190,8 @@ describe(`chat mind eval (${LIVE ? `LIVE Workers AI ${MODEL}` : "MOCK model — 
       importance: 0.5,
       replaces: null,
     }));
-    const history = chatter(0, 40, "long");
+    // 40 exchanges of ~1,500-char messages: far more than 12k tokens.
+    const history = chatter(0, 40, "long").map((t) => ({ ...t, content: `${t.content} ${"so much to say here ".repeat(75)}` }));
     const mind = buildPrompt({ history, content: "hey", facts, summary: "x ".repeat(3000), mind: true });
     const tokens = Math.ceil(promptText(mind).length / 4);
     expect(tokens).toBeLessThanOrEqual(profile.promptTokens + 200);
@@ -205,11 +208,51 @@ describe(`chat mind eval (${LIVE ? `LIVE Workers AI ${MODEL}` : "MOCK model — 
     report.push({ scenario: "mistral/gemma template", legacy: "mid-list system turn", mind: "one system, strict alternation" });
   });
 
+  it("shares a fact learned by another companion, but not a therapy-turn fact", async () => {
+    // In-memory stand-in for memory_events, filtered with the same rule the
+    // loadUserFacts SQL uses: same user, and (scope = user OR same companion).
+    const store = [
+      { userId: "u1", characterId: "kai", scope: factScopeForTurn({ mode: "standard" }), fact: "Sam is learning to play the cello." },
+      { userId: "u1", characterId: "kai", scope: factScopeForTurn({ mode: "therapy" }), fact: "Sam is grieving their grandmother." },
+      { userId: "u2", characterId: "ava", scope: "user" as const, fact: "Riley lives on a houseboat." },
+    ];
+    const visible = (userId: string, characterId: string) =>
+      store
+        .filter((r) => r.userId === userId && (r.scope === "user" || r.characterId === characterId))
+        .map((r, i) => ({ id: `f${i}`, fact: r.fact, category: "other" as const, importance: 0.7 }));
+    const content = "Guess what I practiced today?";
+    const mind = buildPrompt({ history: chatter(0, 3, "day"), content, facts: visible("u1", "ava"), mind: true });
+    const text = promptText(mind);
+    expect(text).toContain("cello");
+    expect(text).not.toContain("grandmother");
+    expect(text).not.toContain("houseboat");
+    const r = await reply(mind, /cello/);
+    expect(r).toMatch(/cello/i);
+    report.push({
+      scenario: "fact told to another companion (Kai → Ava)",
+      legacy: "not available",
+      mind: `shared; therapy fact + other user's facts excluded; reply: "${r.slice(0, 80)}"`,
+    });
+  });
+
+  it("clamps the 12k budget to each model's context window", () => {
+    const small = mindProfileFor("workersai", "@cf/meta/llama-3.1-8b-instruct", {}) as MindProfile;
+    const fallback = mindProfileFor("workersai", MODEL, {}, ["unknown/fallback-model"]) as MindProfile;
+    expect(profile.promptTokens).toBe(Math.min(12_000, maxPromptTokensFor(MODEL, {})));
+    expect(small.promptTokens).toBeLessThan(7_968 - 1_024);
+    expect(fallback.promptTokens).toBe(maxPromptTokensFor("unknown/fallback-model", {}));
+    report.push({
+      scenario: "context-window clamp",
+      legacy: "fixed 1,240",
+      mind: `${MODEL}: ${profile.promptTokens}; llama-3.1-8b: ${small.promptTokens}; unknown fallback: ${fallback.promptTokens}`,
+    });
+  });
+
   it("prints the report", () => {
     console.log(
       `\nCHAT MIND EVAL — ${LIVE ? `live Workers AI (${MODEL})` : "MOCK model (no CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN)"}\n` +
         report.map((r) => `- ${r.scenario}\n    legacy: ${r.legacy}\n    mind:   ${r.mind}`).join("\n"),
     );
-    expect(report.length).toBe(5);
+    expect(report.length).toBe(7);
   });
 });

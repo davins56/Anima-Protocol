@@ -41,7 +41,8 @@ Per turn, before the stream (inside the existing 1.2s optional-context budget):
    in when there is no vector score; facts get a small floor). Near-duplicates
    and moments already visible in history are dropped. The block is packed to
    22% of the prompt budget, with the summary first (capped at 40% of that).
-3. **Prompt** (`promptBuilder.ts`, `mind` option): 6,000-token budget, the
+3. **Prompt** (`promptBuilder.ts`, `mind` option): 12,000-token budget
+   (clamped per model, see below), the
    last **16 exchanges verbatim** (1,600 chars per message), persona fields up
    to 1,600 chars, up to 8 companion memories. When space is short it drops
    PDFs → lore → repository text → **oldest exchanges** (never below 4) →
@@ -73,8 +74,10 @@ with `ctx.waitUntil`, on the background model `ANIMA_WORKERS_AI_BACKGROUND_MODEL
 9. **Fact extraction** (`userFacts.ts`, `postTurn.ts`): one JSON-only call
    per turn (skipped for lines under 4 words). It stores up to 6 durable
    facts as `memory_events` `note` rows with `payload.kind = "user_fact"`. An
-   updated fact appends a `retraction` for the old one (the existing forget
-   mechanism). Facts are **per companion**.
+   updated fact (an explicit `replaces`, or the same statement with flipped
+   polarity, e.g. "is not allergic") appends a `retraction` for the old one,
+   which is the existing forget mechanism. Facts are **shared across the
+   user's companions** (see below).
 10. **Rolling summary** (`rollingSummary.ts`): once 12 or more messages have
     aged out of the 16-exchange window, the next call merges them into a
     summary of 180 words or less, stored as a `note` with
@@ -83,26 +86,93 @@ with `ctx.waitUntil`, on the background model `ANIMA_WORKERS_AI_BACKGROUND_MODEL
 Time to first token is unchanged in shape: the extra reads run in parallel
 with the existing context loads, and all learning happens after `done`.
 
+## Shared user facts (privacy)
+
+What a user tells one companion about **themselves** (name, pets, job, city,
+preferences, plans, boundaries) is known to **all of that user's companions**.
+Facts are never shared across users: every read and write is keyed by
+`user_id`, and the unique `(user_id, dedupe_key)` constraint keys shared
+facts as `fact:user:<hash>`, so a fact told to two companions is one row.
+
+- **Shared** (`payload.scope = "user"`): ordinary turns.
+- **Private to the companion** (`payload.scope = "companion"`, key
+  `fact:<characterId>:<hash>`): facts learned in **therapy** mode or during
+  **adult** turns stay with the companion they were told to. A private turn
+  can add a private fact, but it never retracts a shared one.
+- **Stays per companion:** recalled moments (`turn` events and other
+  memory_events), the rolling conversation summary, and the identity anchor.
+- **Bookkeeping:** each fact still carries the `character_id` of the
+  companion that learned it, plus `payload.learned_from_character_id`.
+  Forgetting a fact (a `retraction`) removes it for every companion.
+- **No migration:** this uses the existing `memory_events` columns and
+  indexes. The read filters on `user_id` (the leading column of the existing
+  indexes) plus `event_type` and `payload->>'kind'`.
+
+## Prompt budget and context windows
+
+The default budget is **12,000 tokens**. Each turn's budget is clamped so the
+prompt fits **every model the turn might use**: the primary model and any
+failover/fallback model in the chain, because the same messages are replayed
+on fallback.
+
+`fit = (context window − reply reserve) × 0.85`
+
+- The reply reserve is 1,024 tokens (the companion reply cap), or 4,096 for
+  reasoning models (R1) that think before answering.
+- The 0.85 factor leaves room for the ~4 chars/token estimate running low on
+  names, emoji and non-English text.
+
+| Model | Context | Prompt budget |
+|---|---|---|
+| `@cf/meta/llama-3.3-70b-instruct-fp8-fast` (default) | 24,000 | 12,000 (the fit is ~19,500) |
+| `@cf/meta/llama-3.1-8b-instruct` | 7,968 | ~5,900 |
+| `@cf/deepseek-ai/deepseek-r1-distill-qwen-32b` | 80,000 | 12,000 |
+| Venice / dolphin-mistral-24b (OpenRouter) | 32,768 | 12,000 |
+| Unknown model | 8,192 (assumed) | ~6,100 |
+
+The table lives in `profile.ts` (`MODEL_CONTEXT_WINDOWS`). For a model not in
+the table, set `ANIMA_MIND_CONTEXT_TOKENS` to its real window. Inside the
+budget, the trim order in step 3 decides what goes first. History never drops
+below 4 exchanges.
+
 ## Settings
 
 | Var | Default | Meaning |
 |---|---|---|
 | `ANIMA_CHAT_MIND` | `on` | `off` returns hosted chat to the legacy packing. |
-| `ANIMA_MIND_PROMPT_TOKENS` | `6000` | Prompt budget (1,500–20,000). Llama 3.3 fp8-fast has about 24k. |
+| `ANIMA_MIND_PROMPT_TOKENS` | `12000` | Requested prompt budget (1,500–100,000), always clamped to the smallest context window in the chain. |
+| `ANIMA_MIND_CONTEXT_TOKENS` | per model | Override the assumed context window (for a model not in the table). |
 | `ANIMA_MIND_HISTORY_EXCHANGES` | `16` | Verbatim exchanges replayed (4–40). |
 | `ANIMA_MIND_TEMPERATURE` | per family | Override the sampling temperature. |
 
 All of these are plain `vars`; none are secrets. `ANIMA_MEMORY_CORE=off` also
 turns off mind knowledge and learning.
 
-## Cost
+## Cost (background learning is on by default)
 
-Each user turn with 4 or more words adds one small background completion
-(fact extraction). About every 6 exchanges, it also adds one summary
-completion. Both run on the 8B background model, so this is roughly 2× the
-neurons of the old background work and small next to the 70B reply. Set
-`ANIMA_WORKERS_AI_BACKGROUND=false` to stop all background model calls (the
-mind then only reads).
+After each reply, the mind makes background calls on the 8B background model
+(`ANIMA_WORKERS_AI_BACKGROUND_MODEL`):
+
+- **Fact extraction:** one call per user turn of 4+ words. Roughly 1–1.5k
+  input tokens and up to 320 output tokens.
+- **Rolling summary:** one call about every 6 exchanges, once 12 messages
+  have aged out of the window. Up to ~3k input tokens and up to 420 output
+  tokens.
+
+The reply itself is a 70B call with up to 12k prompt tokens, which is
+several times the cost of these 8B calls. Background learning roughly doubles
+the background (8B) neurons per turn and adds a modest share on top of the
+reply. On **Workers AI Free (10,000 neurons/day)** that is noticeable. Use
+Workers Paid for real traffic.
+
+**Switches:**
+
+- `ANIMA_WORKERS_AI_BACKGROUND=false` stops **all** background model calls:
+  fact extraction, summaries, and the existing evolution / consolidation /
+  dream jobs. The mind keeps reading facts and summaries it already has.
+- `ANIMA_MIND_PROMPT_TOKENS=6000` halves the prompt size, and with it most
+  of the reply cost.
+- `ANIMA_CHAT_MIND=off` restores the legacy prompt entirely.
 
 ## Checks
 
@@ -116,4 +186,6 @@ pnpm run eval:mind                              # scripted multi-turn eval
 `CLOUDFLARE_API_TOKEN` are set. With both set, the reply-level checks call
 Workers AI with the production model and sampling. It compares legacy and
 mind prompts on fact recall 40 exchanges back, a detail 12 exchanges back,
-summary carry-over, the budget on a long chat, and strict-template shape.
+summary carry-over, the budget on a long chat, strict-template shape,
+cross-companion fact sharing (with therapy facts and other users excluded),
+and the per-model context clamp.
