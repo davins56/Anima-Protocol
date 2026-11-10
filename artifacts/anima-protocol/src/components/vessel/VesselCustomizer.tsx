@@ -16,6 +16,8 @@ import {
   type VesselConfig,
 } from "@/lib/vessel/vesselConfig";
 import { applyVesselText } from "@/lib/vessel/vesselText";
+import type { VesselRecord } from "@/lib/vessel/vesselApi";
+import VesselModelUpload from "./VesselModelUpload";
 
 const FORM_KEYS = Object.keys(SERENITY_FORMS) as SerenityForm[];
 
@@ -24,6 +26,10 @@ type Props = {
   onChange: (v: VesselConfig) => void;
   /** Gets the typed description that produced a change, so it can be stored as the save note. */
   onTextApplied?: (text: string) => void;
+  /** Companion id; enables the VRM/GLB model upload section. */
+  characterId?: string;
+  /** Called with the new vessel version after a model upload completes. */
+  onModelUploaded?: (vessel: VesselRecord) => void;
 };
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -105,10 +111,18 @@ function Describe({ value, onApply }: { value: VesselConfig; onApply: (next: Ves
   );
 }
 
-export default function VesselCustomizer({ value: v, onChange, onTextApplied }: Props) {
+export default function VesselCustomizer({ value: v, onChange, onTextApplied, characterId, onModelUploaded }: Props) {
   const set = (patch: Partial<VesselConfig>) => onChange(parseVesselConfig({ ...v, ...patch }));
   return (
     <div className="space-y-5">
+      <Section title="Model">
+        <VesselModelUpload
+          characterId={characterId}
+          model={v.model}
+          onUploaded={(vessel) => (onModelUploaded ? onModelUploaded(vessel) : onChange(vessel.config))}
+          onUseProcedural={() => onChange(parseVesselConfig({ ...v, model: { kind: "procedural" } }))}
+        />
+      </Section>
       <Section title="Type it">
         <Describe
           value={v}

@@ -80,7 +80,7 @@ export default function VesselStudio() {
     <div className="flex-1 min-h-0 flex flex-col md:flex-row">
       <div className="relative flex-1 min-h-[50vh] md:min-h-0 bg-black/40">
         <Suspense fallback={<div className="absolute inset-0 grid place-items-center font-mono text-xs text-primary/60">Loading vessel…</div>}>
-          <VesselCanvas ref={canvas} config={config} expression={expression} shift={shift} mode="full" hd={hd} className="absolute inset-0" />
+          <VesselCanvas ref={canvas} config={config} expression={expression} shift={shift} mood={mood} intensity={70} mode="full" hd={hd} className="absolute inset-0" />
         </Suspense>
         {characterId && (
           <div className="absolute bottom-2 left-2 pointer-events-none">
@@ -118,7 +118,17 @@ export default function VesselStudio() {
         <p className="font-mono text-xs text-primary tracking-widest uppercase">
           Vessel {name ? `· ${name}` : ""} {version ? `· v${version}` : "· unsaved"}
         </p>
-        <VesselCustomizer value={config} onChange={setConfig} onTextApplied={(text) => setNote(text.slice(0, 200))} />
+        <VesselCustomizer
+          value={config}
+          onChange={setConfig}
+          onTextApplied={(text) => setNote(text.slice(0, 200))}
+          characterId={characterId || undefined}
+          onModelUploaded={(vessel) => {
+            setConfig(vessel.config);
+            setVersion(vessel.version);
+            setStatus(`Model uploaded · vessel v${vessel.version}`);
+          }}
+        />
         <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} placeholder="What changed? (stored in memory)" className="w-full bg-transparent border border-border px-2 py-2 text-sm" />
         <label className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
           <input type="checkbox" checked={withSnapshot} onChange={(e) => setWithSnapshot(e.target.checked)} /> Save a snapshot as photo reference
