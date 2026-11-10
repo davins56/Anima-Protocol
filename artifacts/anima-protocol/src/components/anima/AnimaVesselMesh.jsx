@@ -1,4 +1,4 @@
-import { useRef, useMemo, Suspense } from "react";
+import { useRef, useMemo, Suspense, createContext, useContext } from "react";
 import { useFrame } from "@react-three/fiber";
 import { MeshTransmissionMaterial, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
@@ -13,6 +13,9 @@ import {
   applyAscendedArtifacts,
   vesselRenderPlan,
 } from "@/lib/hiddenSequences";
+
+/** prefers-reduced-motion: freeze wing flap, halo spin, bob, core spin and breathing. */
+const StillContext = createContext(false);
 
 function CrystalMaterial({
   color,
@@ -169,9 +172,10 @@ function CrystalWing({ side = 1, color, accent, hd, layers = 4, flapAmount = 0, 
 }
 
 function VesselWings({ color, accent, hd, layers, expression }) {
-  const flap = useRef(0);
+  const still = useContext(StillContext);
+  const flap = useRef(0.5);
   useFrame((state) => {
-    flap.current = 0.5 + Math.sin(state.clock.elapsedTime * 1.8) * 0.36;
+    flap.current = still ? 0.5 : 0.5 + Math.sin(state.clock.elapsedTime * 1.8) * 0.36;
   });
   return (
     <group>
@@ -283,8 +287,10 @@ function ProceduralBody({
 }) {
   const core = useRef(null);
   const torso = useRef(null);
+  const still = useContext(StillContext);
 
   useFrame((state) => {
+    if (still) return;
     const t = state.clock.elapsedTime;
     if (core.current) {
       core.current.rotation.x = t * 0.35;
@@ -529,6 +535,8 @@ export default function AnimaVesselMesh({
   speaking = false,
   /** Uploaded models keep the crystal wings unless turned off. */
   wingsOnModel = true,
+  /** prefers-reduced-motion: a still pose (no flap, halo spin, bob or breathing). */
+  still = false,
 }) {
   const root = useRef(null);
   const halo = useRef(null);
@@ -544,7 +552,7 @@ export default function AnimaVesselMesh({
   const hd = quality.vesselHd ?? Boolean(hdProp);
   const wingLayers = quality.vesselFacets ?? (hd ? 5 : 3);
   const hairCount = quality.vesselHair ?? (hd ? 16 : 10);
-  const breathOn = breathing && (quality.vesselBreath !== false);
+  const breathOn = !still && breathing && (quality.vesselBreath !== false);
   const plan = useMemo(() => {
     const applied = applyAscendedArtifacts(layers || model?.vessel_layers, sequences || model?.sequences);
     return vesselRenderPlan(applied, quality);
@@ -568,8 +576,9 @@ export default function AnimaVesselMesh({
   const bodySeg = hd ? 24 : 14;
   const expr = Math.max(0, Math.min(1, Number(shift ? shift.expression : expression) || 0));
 
-  useFrame((state, dt) => {
-    const t = state.clock.elapsedTime;
+  useFrame((state, delta) => {
+    const t = still ? 0 : state.clock.elapsedTime;
+    const dt = still ? 0 : delta;
     const phase = wPhaseScale({ xw: t * 0.42, yw: t * 0.26, zw: t * 0.17 });
     const wPulse = 1 + (phase - 0.85) * 0.07;
 
@@ -588,6 +597,7 @@ export default function AnimaVesselMesh({
   });
 
   return (
+    <StillContext.Provider value={still}>
     <group ref={root}>
       <pointLight color={color} intensity={(hd ? 2.4 : 1.25) * glow} distance={hd ? 7 : 3.5} position={[0, 0.9, 0.4]} />
       {shift && <VesselAura shift={shift} budget={quality.name === "low" ? 24 : hd ? 96 : 48} />}
@@ -701,6 +711,7 @@ export default function AnimaVesselMesh({
         />
       )}
     </group>
+    </StillContext.Provider>
   );
 }
 

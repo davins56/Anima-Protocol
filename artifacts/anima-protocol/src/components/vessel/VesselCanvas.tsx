@@ -1,9 +1,16 @@
 /**
  * Performance-aware host for VesselModel.
  * - portrait: tiny, dpr 1, demand frameloop ticked at ~12fps while visible
- * - full: adaptive DPR via PerformanceMonitor, HD toggle, pause when offscreen/hidden
+ * - full: frameloop="demand" by default. It renders continuously only while
+ *   the user drags, the companion speaks, a clip plays, or a pulse (emotion
+ *   shift, mood change, model load, pointer move) is running; at rest a gentle
+ *   idle tick (breathing, blink) keeps it alive at IDLE_FPS, and under
+ *   prefers-reduced-motion it holds a single static frame. Adaptive DPR via
+ *   PerformanceMonitor only while the loop is running; paused offscreen/hidden.
+ * - snapshot: renders and reads the frame in the same task, so the drawing
+ *   buffer never needs preserveDrawingBuffer.
  */
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, PerformanceMonitor } from "@react-three/drei";
 import type { WebGLRenderer } from "three";
@@ -12,6 +19,18 @@ import VesselModel from "./VesselModel";
 import type { VesselConfig } from "@/lib/vessel/vesselConfig";
 import type { Expression } from "@/lib/vessel/emotion";
 import type { ArkitFaceWeights } from "@/lib/vessel/arkitFace";
+import { useFrameloopGate } from "@/hooks/useFrameloopGate";
+import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
+import type { FrameloopGate } from "@/lib/vessel/frameloopGate";
+import { RenderDemandContext, type RenderDemand } from "./renderDemand";
+import { detectRendererCapabilities, selectRendererQuality } from "@/lib/rendererQuality";
+
+/** Idle (nothing moving but breathing/blink) render rate for full mode. */
+export const IDLE_FPS = 15;
+/** How long a prop change (emotion tick, mood, morph override) keeps the loop running. */
+export const CHANGE_PULSE_MS = 1200;
+const POINTER_PULSE_MS = 800;
+const LOAD_PULSE_MS = 1000;
 
 export type VesselCanvasHandle = { snapshot: (type?: string, quality?: number) => string | null };
 
@@ -72,6 +91,16 @@ function GlGrabber({ onGl }: { onGl: (gl: WebGLRenderer, render: () => void) => 
   return null;
 }
 
+/** Wakes the demand loop whenever the gate flips (and once on mount / model load). */
+function DemandBridge({ gate }: { gate: FrameloopGate }) {
+  const invalidate = useThree((s) => s.invalidate);
+  useEffect(() => {
+    invalidate();
+    return gate.subscribe(() => invalidate());
+  }, [gate, invalidate]);
+  return null;
+}
+
 const VesselCanvas = forwardRef<VesselCanvasHandle, Props>(function VesselCanvas(
   { config, expression, mode = "full", hd = false, className, shift = null, mood, intensity, speaking = false, focus = "body", faceOverride = null },
   ref,
@@ -83,46 +112,94 @@ const VesselCanvas = forwardRef<VesselCanvasHandle, Props>(function VesselCanvas
   const onGl = useCallback((gl: WebGLRenderer, render: () => void) => {
     glRef.current = { gl, render };
   }, []);
-  const maxDpr = typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, hd ? 2 : 1.5) : 1;
+  // Same device tiers as Presence / NetBattle: the ceiling caps DPR and antialiasing.
+  const tier = useMemo(() => selectRendererQuality(detectRendererCapabilities()), []);
+  const maxDpr = typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, hd ? 2 : 1.5, tier.dpr[1]) : 1;
   const [dpr, setDpr] = useState(mode === "portrait" ? 1 : Math.min(1.25, maxDpr));
   const portrait = mode === "portrait";
   const head = !portrait && focus === "head";
+  const reduced = usePrefersReducedMotion();
+  const { gate, frameloop, active } = useFrameloopGate(visible);
+  const demand = useMemo<RenderDemand>(
+    () => ({
+      pulse: (ms) => gate.pulse(reduced ? Math.min(ms, 120) : ms),
+      hold: (key) => (reduced ? gate.pulse(120) : gate.hold(key)),
+      release: (key) => gate.release(key),
+    }),
+    [gate, reduced],
+  );
+
+  // Emotion-shift ticks, mood/expression changes, morph overrides and config edits
+  // animate for a moment (eased weights, aura); render through it, then rest.
+  useEffect(() => {
+    if (!portrait) demand.pulse(CHANGE_PULSE_MS);
+  }, [portrait, demand, shift, expression, mood, intensity, faceOverride, config]);
+  // Live speech (jaw / visemes) keeps the loop running for its whole duration.
+  useEffect(() => {
+    if (portrait || !speaking) return;
+    demand.hold("speaking");
+    return () => demand.release("speaking");
+  }, [portrait, speaking, demand]);
 
   useImperativeHandle(ref, () => ({
     snapshot: (type = "image/jpeg", quality = 0.9) => {
       const g = glRef.current;
       if (!g) return null;
+      // Same task as the render: the buffer is still intact without preserveDrawingBuffer.
       g.render();
       return g.gl.domElement.toDataURL(type, quality);
     },
   }));
 
   return (
-    <div ref={host} className={className}>
+    <div
+      ref={host}
+      className={className}
+      data-frameloop={portrait ? (visible ? "demand" : "never") : frameloop}
+      onPointerMove={portrait || reduced ? undefined : () => gate.pulse(POINTER_PULSE_MS)}
+    >
       <Canvas
         dpr={dpr}
-        frameloop={!visible ? "never" : portrait ? "demand" : "always"}
+        frameloop={portrait ? (visible ? "demand" : "never") : frameloop}
         camera={{ position: portrait ? [0, 1.55, 0.75] : head ? [0, 1.6, 0.7] : [0, 1.2, 2.6], fov: portrait ? 30 : head ? 30 : 40 }}
-        gl={{ antialias: !portrait && hd, powerPreference: "low-power", preserveDrawingBuffer: !portrait, alpha: true }}
+        gl={{ antialias: !portrait && hd && tier.antialias, powerPreference: "low-power", preserveDrawingBuffer: false, alpha: true }}
       >
+        <RenderDemandContext.Provider value={demand}>
         <ambientLight intensity={0.6} />
         <directionalLight position={[1.5, 3, 2]} intensity={1.1} />
         <pointLight position={[-1.5, 1.6, 1]} intensity={0.6} color={config.effects.color} />
-        <VesselModel config={config} expression={expression} hd={hd && !portrait} track={!portrait} shift={shift} mood={mood} intensity={intensity} speaking={speaking} faceOverride={faceOverride} />
+        <VesselModel config={config} expression={expression} hd={hd && !portrait} track={!portrait} shift={shift} mood={mood} intensity={intensity} speaking={speaking} faceOverride={faceOverride} reducedMotion={reduced} onLoaded={() => demand.pulse(LOAD_PULSE_MS)} />
         {portrait ? (
           <Ticker fps={speaking && config.model.kind === "vrm" ? 24 : 12} active={visible} />
         ) : (
           <>
-            <PerformanceMonitor
-              onIncline={() => setDpr((d) => Math.min(maxDpr, d + 0.25))}
-              onDecline={() => setDpr((d) => Math.max(0.75, d - 0.25))}
-              flipflops={3}
-              onFallback={() => setDpr(0.75)}
+            {/* fps sampling is only meaningful while the loop runs continuously */}
+            {active && (
+              <PerformanceMonitor
+                onIncline={() => setDpr((d) => Math.min(maxDpr, d + 0.25))}
+                onDecline={() => setDpr((d) => Math.max(0.75, d - 0.25))}
+                flipflops={3}
+                onFallback={() => setDpr(0.75)}
+              />
+            )}
+            <OrbitControls
+              target={head ? [0, 1.6, 0] : [0, 1.1, 0]}
+              enablePan={false}
+              minDistance={head ? 0.35 : 1}
+              maxDistance={4}
+              enableDamping={!reduced}
+              onStart={() => gate.hold("drag")}
+              onEnd={() => {
+                gate.release("drag");
+                if (!reduced) gate.pulse(POINTER_PULSE_MS); // damping settle
+              }}
             />
-            <OrbitControls target={head ? [0, 1.6, 0] : [0, 1.1, 0]} enablePan={false} minDistance={head ? 0.35 : 1} maxDistance={4} />
+            <DemandBridge gate={gate} />
+            <Ticker fps={IDLE_FPS} active={visible && !active && !reduced} />
             <GlGrabber onGl={onGl} />
           </>
         )}
+        </RenderDemandContext.Provider>
       </Canvas>
     </div>
   );

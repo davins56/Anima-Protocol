@@ -8,6 +8,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import VesselCustomizer from "@/components/vessel/VesselCustomizer";
 import VoiceIdentityPanel from "@/components/voice/VoiceIdentityPanel";
 import type { VesselCanvasHandle } from "@/components/vessel/VesselCanvas";
+import { primeVesselSnapshot } from "@/lib/vessel/vesselSnapshot";
 import { defaultVesselFor, type VesselConfig } from "@/lib/vessel/vesselConfig";
 import { expressionFor } from "@/lib/vessel/emotion";
 import { moodToEmotion } from "@/lib/vessel/emotionState";
@@ -67,6 +68,8 @@ export default function VesselStudio() {
       let snapshot = null;
       const dataUrl = withSnapshot ? canvas.current?.snapshot("image/jpeg", 0.85) : null;
       if (dataUrl) snapshot = await uploadVesselSnapshot(characterId, dataUrl).catch(() => null);
+      // The chat header shows this render as a 2D portrait; seed it so it appears without a refetch.
+      if (snapshot && dataUrl) primeVesselSnapshot(characterId, snapshot.snapshot_path, dataUrl);
       const out = await saveVessel({ characterId, name, config, changeNote: note, snapshot });
       setVersion(out.vessel.version);
       setNote("");

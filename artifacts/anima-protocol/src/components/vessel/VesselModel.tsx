@@ -3,7 +3,7 @@
  * Driven by VesselConfig + Expression; animates breathing, head tracking and
  * emotion. `hologram` renders an additive translucent projection (resonance layer).
  */
-import { Suspense, useMemo, useRef, useState, Component, type ReactNode } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, Component, type ReactNode } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
@@ -17,6 +17,9 @@ import UploadedVessel from "./UploadedVessel";
 import { isApiModelUrl, modelCacheKey } from "@/lib/vessel/vesselModelAsset";
 import type { ArkitFaceWeights } from "@/lib/vessel/arkitFace";
 import { useArkitFace } from "./useArkitFace";
+import { useVesselMaterial } from "@/lib/vessel/materialCache";
+import { createRefCache } from "@/lib/vessel/refCache";
+import { VRMUtils } from "@pixiv/three-vrm";
 
 /** Calm flame shift for a saved `effects.aura: "flame"` vessel when no live emotion drives it. */
 function useStaticFlameShift(config: VesselConfig, active: boolean): VesselShift | null {
@@ -48,6 +51,10 @@ type Props = {
   audioLevel?: (() => number | null | undefined) | null;
   /** Dev/lab: pin ARKit face morph weights on plain GLB vessels. */
   faceOverride?: ArkitFaceWeights | null;
+  /** prefers-reduced-motion: no breathing/blink/drift; eased values snap to target. */
+  reducedMotion?: boolean;
+  /** An external model finished loading (demand-frameloop hosts render it in). */
+  onLoaded?: () => void;
 };
 
 const BODY: Record<string, { w: number; hip: number; h: number }> = {
@@ -59,25 +66,7 @@ const BODY: Record<string, { w: number; hip: number; h: number }> = {
 };
 
 function useMat(color: string, hologram: boolean, emissive?: string, emissiveIntensity = 0) {
-  return useMemo(() => {
-    if (hologram) {
-      return new THREE.MeshBasicMaterial({
-        color,
-        transparent: true,
-        opacity: 0.35,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      });
-    }
-    return new THREE.MeshStandardMaterial({
-      color,
-      flatShading: true,
-      roughness: 0.7,
-      metalness: 0.05,
-      emissive: emissive ? new THREE.Color(emissive) : new THREE.Color(0),
-      emissiveIntensity,
-    });
-  }, [color, hologram, emissive, emissiveIntensity]);
+  return useVesselMaterial({ color, hologram, emissive, emissiveIntensity });
 }
 
 function Hair({ style, mat, seg }: { style: string; mat: THREE.Material; seg: number }) {
@@ -145,7 +134,7 @@ function Hair({ style, mat, seg }: { style: string; mat: THREE.Material; seg: nu
   }
 }
 
-function Aura({ config, hologram }: { config: VesselConfig; hologram: boolean }) {
+function Aura({ config, hologram, still = false }: { config: VesselConfig; hologram: boolean; still?: boolean }) {
   const { aura, color, glow } = config.effects;
   const count = config.effects.particles;
   const points = useRef<THREE.Points>(null);
@@ -162,13 +151,15 @@ function Aura({ config, hologram }: { config: VesselConfig; hologram: boolean })
     g.setAttribute("position", new THREE.BufferAttribute(p, 3));
     return g;
   }, [count]);
+  useEffect(() => () => geo.dispose(), [geo]);
   useFrame((_, dt) => {
-    if (points.current) points.current.rotation.y += dt * (aura === "glitch" ? 1.5 : 0.25);
+    if (points.current && !still) points.current.rotation.y += dt * (aura === "glitch" ? 1.5 : 0.25);
   });
   const emissive = useMemo(
     () => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.25 + glow * 0.5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
     [color, glow],
   );
+  useEffect(() => () => emissive.dispose(), [emissive]);
   return (
     <group>
       {count > 0 && aura !== "none" && (
@@ -191,7 +182,7 @@ function Aura({ config, hologram }: { config: VesselConfig; hologram: boolean })
   );
 }
 
-function ProceduralVessel({ config, expression: exprProp, hd = false, hologram = false, track = true, onFrame, shift = null }: Props) {
+function ProceduralVessel({ config, expression: exprProp, hd = false, hologram = false, track = true, onFrame, shift = null, reducedMotion = false }: Props) {
   const expression = shift ? shift.face : exprProp;
   const flameShift = useStaticFlameShift(config, !shift && !hologram);
   const seg = hd ? 20 : 8;
@@ -213,21 +204,23 @@ function ProceduralVessel({ config, expression: exprProp, hd = false, hologram =
   const dark = useMat("#1f1a1a", hologram);
 
   useFrame(({ clock }) => {
+    const still = reducedMotion;
     const t = clock.elapsedTime;
     const e = expression;
-    const breathe = Math.sin(t * (1.2 + e.energy * 0.8)) * (0.012 + e.energy * 0.006);
+    const breathe = still ? 0 : Math.sin(t * (1.2 + e.energy * 0.8)) * (0.012 + e.energy * 0.006);
     if (torso.current) torso.current.scale.set(1 + breathe * 0.6, 1 + breathe, 1 + breathe);
     if (head.current) {
-      const tx = track ? pointer.x * 0.45 : Math.sin(t * 0.3) * 0.15;
-      const ty = track ? -pointer.y * 0.25 : 0;
-      head.current.rotation.y += (tx - head.current.rotation.y) * 0.08;
-      head.current.rotation.x += (ty - head.current.rotation.x) * 0.08;
-      head.current.rotation.z += (e.tilt - head.current.rotation.z) * 0.05;
+      const tx = still ? 0 : track ? pointer.x * 0.45 : Math.sin(t * 0.3) * 0.15;
+      const ty = still ? 0 : track ? -pointer.y * 0.25 : 0;
+      const k = still ? 1 : 0.08;
+      head.current.rotation.y += (tx - head.current.rotation.y) * k;
+      head.current.rotation.x += (ty - head.current.rotation.x) * k;
+      head.current.rotation.z += (e.tilt - head.current.rotation.z) * (still ? 1 : 0.05);
       head.current.position.y = 1.58 + breathe * 0.5;
     }
     if (mouth.current) {
       mouth.current.rotation.z = e.smile >= 0 ? Math.PI : 0;
-      mouth.current.scale.y += (0.4 + Math.abs(e.smile) * 0.8 - mouth.current.scale.y) * 0.1;
+      mouth.current.scale.y += (0.4 + Math.abs(e.smile) * 0.8 - mouth.current.scale.y) * (still ? 1 : 0.1);
       mouth.current.position.y = e.smile >= 0 ? -0.045 : -0.06;
     }
     const browY = 0.055 + e.brow * 0.012;
@@ -238,10 +231,10 @@ function ProceduralVessel({ config, expression: exprProp, hd = false, hologram =
       browR.current.rotation.z = e.brow * 0.25;
     }
     if (eyes.current) {
-      const blink = Math.sin(t * 0.9) > 0.985 ? 0.1 : 1;
+      const blink = !still && Math.sin(t * 0.9) > 0.985 ? 0.1 : 1;
       eyes.current.scale.y = Math.max(0.1, e.eyeOpen * blink);
     }
-    if (root.current && config.effects.aura === "glitch") {
+    if (root.current && config.effects.aura === "glitch" && !still) {
       root.current.position.x = Math.random() < 0.04 ? (Math.random() - 0.5) * 0.04 : 0;
     }
     onFrame?.();
@@ -341,21 +334,51 @@ function ProceduralVessel({ config, expression: exprProp, hd = false, hologram =
             </mesh>
           ))}
       </group>
-      <Aura config={config} hologram={hologram} />
+      <Aura config={config} hologram={hologram} still={reducedMotion} />
       {(shift || flameShift) && !hologram && <VesselAura shift={(shift || flameShift)!} budget={hd ? 72 : track ? 40 : 0} />}
     </group>
   );
 }
 
-function GltfVessel({ url, expression, speaking, audioLevel, faceOverride }: { url: string } & Pick<Props, "expression" | "speaking" | "audioLevel" | "faceOverride">) {
+function GltfVessel({ url, expression, speaking, audioLevel, faceOverride, onLoaded }: { url: string } & Pick<Props, "expression" | "speaking" | "audioLevel" | "faceOverride" | "onLoaded">) {
   // External (allowlisted https or dev blob:) plain glTF/GLB asset slot. Uploaded
   // models and every VRM go through <UploadedVessel> instead. ARKit-named face
   // morphs (photo-to-vessel heads) blink, smile and open the jaw with speech.
   const { scene } = useGLTF(url);
   const cloned = useMemo(() => scene.clone(true), [scene]);
+  // The clone shares geometry/materials with the loader cache; drop it from the
+  // graph on unmount. One-off dev/blob: assets (photo-to-vessel lab) are released
+  // from useGLTF's cache and GPU-disposed once nothing renders them.
+  useEffect(() => {
+    const transient = isTransientModelUrl(url);
+    if (transient) {
+      transientGltfs.get(url, () => scene);
+      transientGltfs.retain(url);
+    }
+    return () => {
+      cloned.removeFromParent();
+      cloned.clear();
+      if (transient) transientGltfs.release(url);
+    };
+  }, [cloned, scene, url]);
   useArkitFace(cloned, { expression, speaking, audioLevel, override: faceOverride });
+  const loaded = useRef(onLoaded);
+  loaded.current = onLoaded;
+  useEffect(() => {
+    loaded.current?.();
+  }, [cloned]);
   return <primitive object={cloned} />;
 }
+
+/** blob:/data: model URLs are one-off (lab, local previews): never keep them cached. */
+export function isTransientModelUrl(url: string): boolean {
+  return /^(blob|data):/i.test(url);
+}
+
+const transientGltfs = createRefCache<THREE.Object3D>((scene, url) => {
+  useGLTF.clear(url);
+  VRMUtils.deepDispose(scene);
+});
 
 class AssetBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
@@ -393,7 +416,10 @@ export default function VesselModel(props: Props) {
           track={props.track !== false}
           onFrame={props.onFrame}
           fallback={procedural}
-          onLoaded={() => setLoadedKey(modelCacheKey(model))}
+          onLoaded={() => {
+            setLoadedKey(modelCacheKey(model));
+            props.onLoaded?.();
+          }}
           faceOverride={props.faceOverride}
         />
         {props.shift && loadedKey === modelCacheKey(model) && <VesselAura shift={props.shift} budget={props.hd ? 72 : props.track !== false ? 40 : 0} />}
@@ -409,6 +435,7 @@ export default function VesselModel(props: Props) {
           speaking={props.speaking}
           audioLevel={props.audioLevel}
           faceOverride={props.faceOverride}
+          onLoaded={props.onLoaded}
         />
       </Suspense>
     </AssetBoundary>
