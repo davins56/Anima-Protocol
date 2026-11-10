@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from "react";
 import { trackFirstReplyReceived } from "@/lib/funnelEvents";
 import MoodWhyPanel from "@/components/chat/MoodWhyPanel";
 import { buildRatingPayload } from "@/lib/replyRatings";
@@ -224,6 +224,11 @@ import { useNativeBridge } from "@/hooks/useNativeBridge";
 import InteractiveCalendarWidget from "@/components/calendar/InteractiveCalendarWidget";
 import { useChatSession } from "@/hooks/useChatSession";
 import { stitchLiveMessages, useChatStreaming } from "@/hooks/useChatStreaming";
+import { useStickToBottom } from "@/hooks/useStickToBottom";
+import { useStableCallback } from "@/hooks/useStableCallback";
+import { settleMessages } from "@/lib/settledMessages";
+import { mergeOlderMessages, OLDER_MESSAGES_PAGE } from "@/lib/olderMessages";
+import JumpToLatestChip from "@/components/chat/JumpToLatestChip";
 import {
   assignTurnMessageIds,
   createChatTurnId,
@@ -694,6 +699,9 @@ export default function Chat() {
   }, [sessionId, sessionLoadNonce]);
 
   const lastMessageCountRef = useRef(0);
+  const lastMessageRef = useRef(null);
+  const lastScrolledSessionRef = useRef(null);
+  const stick = useStickToBottom(scrollContainerRef, activeSession?.id);
   useEffect(() => {
     const messages = activeSession?.messages || [];
     const currentCount = messages.length;
@@ -703,20 +711,80 @@ export default function Chat() {
       last?.is_streaming === true ||
       last?.character_name === "__typing__" ||
       last?.character_name === "__thinking__";
-    // Scroll on new messages, a held follow-up, and while a reply is streaming in.
-    if (currentCount > lastMessageCountRef.current || isLiveBubble || heldText) {
-      const behavior = last?.is_streaming ? "auto" : "smooth";
-      requestAnimationFrame(() => {
-        const container = scrollContainerRef.current;
-        if (container) {
-          container.scrollTo({ top: container.scrollHeight, behavior });
-        } else {
-          messagesEndRef.current?.scrollIntoView({ behavior });
-        }
-      });
+    const openedThread = lastScrolledSessionRef.current !== (activeSession?.id || null);
+    // Older history was prepended above (same last row, more rows): the list
+    // keeps the reader's place, so do not jump to the bottom.
+    const prepended = !openedThread && currentCount > lastMessageCountRef.current && last === lastMessageRef.current;
+    const userJustSent = currentCount > lastMessageCountRef.current && last?.role === "user";
+    // Scroll on new messages, a held follow-up, and while a reply is streaming in,
+    // but only while the reader is following the bottom of the thread. Opening a
+    // thread or sending a message always lands at the bottom.
+    if (!prepended && (openedThread || currentCount > lastMessageCountRef.current || isLiveBubble || heldText)) {
+      if (openedThread || userJustSent) stick.follow();
+      if (openedThread || userJustSent || stick.followingRef.current) {
+        const behavior = openedThread || last?.is_streaming ? "auto" : "smooth";
+        requestAnimationFrame(() => {
+          if (scrollContainerRef.current) {
+            stick.scrollToBottom(behavior);
+          } else {
+            messagesEndRef.current?.scrollIntoView({ behavior });
+          }
+        });
+      } else {
+        stick.markUnseen();
+      }
     }
+    lastScrolledSessionRef.current = activeSession?.id || null;
     lastMessageCountRef.current = currentCount;
+    lastMessageRef.current = last || null;
+    // stick's callbacks are stable; followingRef is read at run time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSession?.messages, activeSession?.id, gateSnap]);
+
+  // "Previous messages" past the opened page: read the next older page from
+  // the store (GET /messages?before_seq=) and prepend it to this thread.
+  const loadOlderMessages = useCallback(async (beforeSeq) => {
+    const sid = openSessionIdRef.current;
+    if (!sid || typeof beforeSeq !== "number") return { fetched: 0, exhausted: true };
+    const older = await animaClient.messages.list(sid, {
+      limit: OLDER_MESSAGES_PAGE,
+      beforeSeq,
+      timeoutMs: STORE_LIST_TIMEOUT_MS,
+    });
+    const rows = Array.isArray(older) ? older : [];
+    if (openSessionIdRef.current !== sid) return { fetched: 0, exhausted: false };
+    setActiveSession((prev) => {
+      if (!prev || prev.id !== sid) return prev;
+      const merged = mergeOlderMessages(prev.messages, rows);
+      return merged === prev.messages ? prev : { ...prev, messages: merged };
+    });
+    return { fetched: rows.length, exhausted: rows.length < OLDER_MESSAGES_PAGE };
+  }, [setActiveSession]);
+
+  // Per-token isolation: while a reply streams in, only the thread's last
+  // bubble should re-render. The Story Feed reads a thread without in-flight
+  // rows (stable until a reply lands), and memoized children get handlers
+  // with a stable identity.
+  const settledMessagesRef = useRef(null);
+  const settledMessages = settleMessages(activeSession?.messages, settledMessagesRef.current);
+  settledMessagesRef.current = settledMessages;
+  const widgetSessionId = activeSession?.id;
+  const widgetCharacterId = activeSession?.character_id;
+  const widgetMode = activeSession?.mode;
+  const widgetGroupIds = activeSession?.group_character_ids;
+  const widgetSession = useMemo(
+    () =>
+      widgetSessionId
+        ? {
+            id: widgetSessionId,
+            character_id: widgetCharacterId,
+            mode: widgetMode,
+            group_character_ids: widgetGroupIds,
+            messages: settledMessages,
+          }
+        : null,
+    [widgetSessionId, widgetCharacterId, widgetMode, widgetGroupIds, settledMessages],
+  );
 
   // Send a follow-up that was held while this conversation was replying.
   // Runs after paint so the next turn sees the reply that just landed.
@@ -3704,6 +3772,14 @@ Return JSON:
     };
   handleSendMessageRef.current = handleSendMessage;
 
+  // Stable-identity handlers for memoized children (Story Feed, composer).
+  const stableSendMessage = useStableCallback(handleSendMessage);
+  const stableComposerSend = useStableCallback(handleComposerSend);
+  const stableAnalyzeNow = useStableCallback(analyzeNow);
+  const stableApplyEvent = useStableCallback(handleApplyEvent);
+  const stableLoadInventory = useStableCallback(loadInventory);
+  const bumpPdfRevision = useCallback(() => setPdfRevision((n) => n + 1), []);
+
   useEffect(() => {
     if (!activeSession?.id || composerBusy) return;
     if (hiddenThread.spokeFirst.current) return;
@@ -3898,7 +3974,7 @@ Return JSON:
             <div ref={scrollContainerRef} className={`flex-1 overflow-y-auto p-2 sm:p-4 md:p-6 space-y-2 sm:space-y-4 min-h-0 relative ${presenceCast.length > 0 ? "lg:pr-56 xl:pr-64" : ""}`} data-no-swipe data-scroll-preserve style={{ WebkitOverflowScrolling: 'touch' }}>
               <GoToTopButton containerRef={scrollContainerRef} />
               <ChatWidgetsArea
-                activeSession={activeSession}
+                activeSession={widgetSession}
                 characters={characters}
                 narrativeArcs={narrativeArcs}
                 arcsLoading={arcsLoading}
@@ -3920,10 +3996,10 @@ Return JSON:
                 loadingAtmosphere={loadingAtmosphere}
                 generatedContent={generatedContent}
                 worldEvent={worldEvent}
-                analyzeNow={analyzeNow}
-                handleSendMessage={handleSendMessage}
-                handleApplyEvent={handleApplyEvent}
-                loadInventory={loadInventory}
+                analyzeNow={stableAnalyzeNow}
+                handleSendMessage={stableSendMessage}
+                handleApplyEvent={stableApplyEvent}
+                loadInventory={stableLoadInventory}
                 setCharacterEvolutions={setCharacterEvolutions}
                 setActiveSession={setActiveSession}
                 setPulseHeadlines={setPulseHeadlines}
@@ -3988,6 +4064,8 @@ Return JSON:
                 characters={characters}
                 characterMemories={characterMemories}
                 loreLinks={loreLinks}
+                onLoadOlder={loadOlderMessages}
+                scrollContainerRef={scrollContainerRef}
                 onRewindToMessage={handleRewindToMessage}
                 onSpeak={speakMessage}
                 onEditMessage={handleEditMessage}
@@ -4056,6 +4134,11 @@ Return JSON:
               {heldForThread ? (
                 <HeldOutgoingBubble text={heldForThread.text} onCancel={cancelHeldOutgoing} />
               ) : null}
+              <JumpToLatestChip
+                visible={stick.hasUnseen}
+                streaming={composerBusy}
+                onJump={stick.jumpToLatest}
+              />
               <div ref={messagesEndRef} className="mb-4 lg:mb-2" />
             </div>
             {/*
@@ -4214,13 +4297,13 @@ Return JSON:
                 />
                 <ChatInput
                   key={activeSession.id}
-                  onSend={handleComposerSend}
+                  onSend={stableComposerSend}
                   isLoading={composerBusy}
                   composeWhileBusy
                   disabled={false}
                   allowEmpty={activeSession?.mode === "group" || activeSession?.mode === "solo"}
                   sessionId={activeSession.id}
-                  onPdfStored={() => setPdfRevision((n) => n + 1)}
+                  onPdfStored={bumpPdfRevision}
                   restoreDraft={
                     composerRestore?.sessionId === activeSession.id ? composerRestore : null
                   }

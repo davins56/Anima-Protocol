@@ -8,13 +8,15 @@ import { useEffect, useMemo, useRef } from "react";
 import type { MutableRefObject } from "react";
 import { animaStandPoint, approachPoint } from "./collision";
 import { areaBounds, pathEndpoints, zoneHalfExtents, zoneShape, type Area, type Vec2, type WorldAnima } from "./layout";
-import type { PlayerTelemetry } from "./CyberworldScene";
+import type { PlayerTelemetry, SceneNode } from "./CyberworldScene";
 
 type Props = {
   area: Area;
   animas: readonly WorldAnima[];
   telemetry: MutableRefObject<PlayerTelemetry>;
   nearAnimaId: string | null;
+  /** Exploration nodes; revealed ones show as small rarity dots. */
+  nodes?: readonly SceneNode[];
   onPick: (point: Vec2, label: string) => void;
   className?: string;
 };
@@ -27,7 +29,7 @@ function hexPoints(cx: number, cz: number, r: number): string {
   }).join(" ");
 }
 
-export default function Minimap({ area, animas, telemetry, nearAnimaId, onPick, className = "" }: Props) {
+export default function Minimap({ area, animas, telemetry, nearAnimaId, nodes = [], onPick, className = "" }: Props) {
   const player = useRef<SVGGElement>(null);
   const b = useMemo(() => {
     const raw = areaBounds(area, 2.5);
@@ -135,6 +137,14 @@ export default function Minimap({ area, animas, telemetry, nearAnimaId, onPick, 
             </g>
           );
         })}
+        {nodes
+          .filter((n) => n.revealed)
+          .map((n) => (
+            <g key={n.id} className="cursor-pointer" onClick={() => onPick(n.position, "data node")} role="button" aria-label="Walk to data node">
+              <rect x={n.position[0] - unit * 1.6} y={n.position[1] - unit * 1.6} width={unit * 3.2} height={unit * 3.2} fill={n.color} transform={`rotate(45 ${n.position[0]} ${n.position[1]})`} />
+              <circle cx={n.position[0]} cy={n.position[1]} r={unit * 6} fill="transparent" />
+            </g>
+          ))}
         <g ref={player} pointerEvents="none">
           <circle r={unit * 4.5} fill="#FACC15" fillOpacity={0.15} />
           <polygon points={`0,${unit * 4} ${-unit * 2.6},${-unit * 2.6} 0,${-unit * 1.2} ${unit * 2.6},${-unit * 2.6}`} fill="#FACC15" />

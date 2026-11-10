@@ -14,7 +14,7 @@ import PdfFileChip from "@/components/pdf/PdfFileChip";
 import { openPdfDocument } from "@/api/pdfDocuments";
 import { toast } from "sonner";
 import { renderItalicText } from "./renderItalicText";
-import { useState, useEffect } from "react";
+import { memo, useState, useEffect } from "react";
 import { animaClient } from "@/api/animaClient";
 import { useMemoryHighlight } from "@/hooks/useMemoryHighlight";
 import { useLoreDetection } from "@/hooks/useLoreDetection";
@@ -23,7 +23,7 @@ import ReplyRating from "./ReplyRating";
 
 const renderMessageWithActions = (content) => renderItalicText(content);
 
-export default function MessageBubble({ message, onRewind, canRewind, onSpeak, character, characterMemories = [], characterEmotion = 'neutral', characterEmotionIntensity = 5, sessionId = null, onEditMessage, onDeleteMessage, onRegenerateMessage, messageLoreLinks = [], onAvatarClick, onTeach, onRate, showEdit = false, showRetry = false, actionsDisabled = false }) {
+function MessageBubble({ message, onRewind, canRewind, onSpeak, character, characterMemories = [], characterEmotion = 'neutral', characterEmotionIntensity = 5, sessionId = null, onEditMessage, onDeleteMessage, onRegenerateMessage, messageLoreLinks = [], onAvatarClick, onTeach, onRate, showEdit = false, showRetry = false, actionsDisabled = false }) {
   const [loreEntries, setLoreEntries] = useState([]);
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(message.content || "");
@@ -390,3 +390,7 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
     </div>
   );
 }
+
+// Memoized: settled bubbles keep stable props (see MessageList), so a reply
+// streaming into the last bubble no longer re-renders the whole thread.
+export default memo(MessageBubble);

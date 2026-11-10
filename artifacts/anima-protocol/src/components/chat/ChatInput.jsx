@@ -1,4 +1,4 @@
-import { useState, useRef, useLayoutEffect, useEffect } from "react";
+import { memo, useState, useRef, useLayoutEffect, useEffect } from "react";
 import { mergeDraftIntoComposer } from "@/lib/heldChatSend";
 import { Send, Zap, Paperclip, Loader, FileText } from "lucide-react";
 import { toast } from "sonner";
@@ -18,7 +18,7 @@ function isInItalicContext(text) {
   return !!starMatches;
 }
 
-export default function ChatInput({
+function ChatInput({
   onSend,
   isLoading,
   disabled,
@@ -393,3 +393,7 @@ export default function ChatInput({
     </div>
   );
 }
+
+// Memoized so a streaming reply (which re-renders Chat on every token) does
+// not re-render this subtree; Chat passes stable handlers and a settled thread.
+export default memo(ChatInput);
