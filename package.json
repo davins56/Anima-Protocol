@@ -57,7 +57,7 @@
     "wrangler": "4.141.0"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.118.0",
+    "@supabase/supabase-js": "^2.119.0",
     "@types/node": "catalog:",
     "dotenv": "^18.0.9",
     "drizzle-orm": "catalog:",
