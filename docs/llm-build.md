@@ -207,7 +207,7 @@ pnpm llm:eval
 Point production at the new tag only after eval looks right:
 
 - CPU Ollama + named tunnel: [`scripts/llm/public-v1/`](../scripts/llm/public-v1/README.md)
-- Always-on: [`deploy/ollama-fly/`](../deploy/ollama-fly/README.md)
+- Or no host at all: Workers AI LoRA via `ANIMA_WORKERS_AI_LORA` ([`docs/chat-brain.md`](./chat-brain.md))
 - GPU vLLM: [`scripts/llm/docker-compose.vllm.yml`](../scripts/llm/docker-compose.vllm.yml)
 
 Then `ANIMA_LOCAL_LLM_BASE_URL=https://<host>/v1` on the Worker. Never

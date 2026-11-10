@@ -101,6 +101,16 @@
     // secret). Binding the same name in secrets_store_secrets fails wrangler
     // deploy: "Bindings must have unique names".
     "ANIMA_LLM_PROVIDER": "custom",
+    // Chat brain runs entirely inside this Worker: Workers AI (AI binding
+    // below) for chat AND background memory jobs, Hyperdrive Postgres for
+    // identity + memory. No Fly.io app, DigitalOcean droplet, VPS or tunnel.
+    // The ANIMA_LOCAL_LLM_* Secrets Store bindings below are ignored while
+    // this is "cloudflare"; set "self-hosted" to go back to that host.
+    // Optional vars: ANIMA_WORKERS_AI_MODEL (@cf/… model id),
+    // ANIMA_WORKERS_AI_LORA (fine-tune name/id), ANIMA_WORKERS_AI_BACKGROUND
+    // ("false" keeps background jobs off to save free-plan neurons).
+    // See docs/chat-brain.md.
+    "ANIMA_CHAT_BRAIN": "cloudflare",
     "ANIMA_LOCAL_LLM_BACKEND": "ollama",
     "ANIMA_OLLAMA_MODEL_STANDARD": "anima-chat",
     // Temporary until Workers Paid / quota recovers. Hop after Workers AI 4006
