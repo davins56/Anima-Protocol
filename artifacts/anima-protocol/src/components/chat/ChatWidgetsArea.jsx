@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import ChoiceGenerator from "./ChoiceGenerator";
@@ -25,7 +25,7 @@ import NarrativeImpactDashboard from "@/components/dashboard/NarrativeImpactDash
 import { animaClient } from "@/api/animaClient";
 import { appendAmbientMessage } from "@/lib/appendAmbientMessage";
 
-export default function ChatWidgetsArea({
+function ChatWidgetsArea({
   activeSession,
   characters,
   narrativeArcs,
@@ -305,3 +305,7 @@ export default function ChatWidgetsArea({
     </div>
   );
 }
+
+// Memoized so a streaming reply (which re-renders Chat on every token) does
+// not re-render this subtree; Chat passes stable handlers and a settled thread.
+export default memo(ChatWidgetsArea);
