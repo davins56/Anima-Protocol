@@ -6,7 +6,7 @@
  */
 import { getPool } from "@workspace/db";
 import { appendMemoryEvent } from "../memoryCore/memoryCore";
-import { jaccard, normalizeText, shortHash, tokenSet } from "./textSim";
+import { isNegated, jaccard, normalizeText, shortHash, tokenSet } from "./textSim";
 
 export const USER_FACT_KIND = "user_fact";
 
@@ -18,6 +18,8 @@ export type UserFact = {
   occurredAt?: string;
   /** Existing fact this one replaces (e.g. a move to a new city). */
   replaces?: string | null;
+  /** Stored facts only: shared with all of the user's companions, or private. */
+  scope?: "user" | "companion";
 };
 
 export const FACT_CATEGORIES = [
@@ -130,7 +132,7 @@ export function parseExtractedFacts(raw: string): UserFact[] {
     const cat = String(rec.category || "other").toLowerCase() as FactCategory;
     const importance = Number(rec.importance);
     const replaces = typeof rec.replaces === "string" && rec.replaces.trim() ? rec.replaces.trim() : null;
-    if (out.some((f) => jaccard(tokenSet(f.fact), tokenSet(fact)) >= SAME_FACT_JACCARD)) continue;
+    if (out.some((f) => sameFact(f.fact, fact))) continue;
     out.push({
       fact,
       category: (FACT_CATEGORIES as readonly string[]).includes(cat) ? cat : "other",
@@ -142,18 +144,37 @@ export function parseExtractedFacts(raw: string): UserFact[] {
   return out;
 }
 
-/** Facts that are new (not a near-duplicate of a known one). */
+/** Same wording and same polarity ("allergic" vs "not allergic" differ). */
+export function sameFact(a: string, b: string): boolean {
+  if (normalizeText(a) === normalizeText(b)) return true;
+  if (isNegated(a) !== isNegated(b)) return false;
+  return jaccard(tokenSet(a), tokenSet(b)) >= SAME_FACT_JACCARD;
+}
+
+/**
+ * Facts worth storing: anything that corrects a known fact (explicit
+ * `replaces`, or the same statement with flipped polarity) is resolved first
+ * and kept; the rest must not be a near-duplicate of a known fact.
+ */
 export function newFactsOnly(candidates: UserFact[], known: UserFact[]): UserFact[] {
-  const knownSets = known.map((k) => tokenSet(k.fact));
   return candidates.filter((c) => {
-    const s = tokenSet(c.fact);
-    return !knownSets.some((k) => jaccard(k, s) >= SAME_FACT_JACCARD);
+    const replaced = findReplacedFact(c, known);
+    if (replaced && normalizeText(replaced.fact) !== normalizeText(c.fact)) return true;
+    return !known.some((k) => sameFact(k.fact, c.fact));
   });
 }
 
 /** Known fact a candidate's `replaces` points at (exact or near match). */
 export function findReplacedFact(candidate: UserFact, known: UserFact[]): UserFact | null {
-  if (!candidate.replaces) return null;
+  if (!candidate.replaces) {
+    // An unflagged correction: same statement, opposite polarity.
+    const flipped = known.find(
+      (k) =>
+        isNegated(k.fact) !== isNegated(candidate.fact) &&
+        jaccard(tokenSet(k.fact), tokenSet(candidate.fact)) >= SAME_FACT_JACCARD,
+    );
+    return flipped ?? null;
+  }
   const target = normalizeText(candidate.replaces);
   const exact = known.find((k) => normalizeText(k.fact) === target);
   if (exact) return exact;
@@ -170,11 +191,33 @@ export function findReplacedFact(candidate: UserFact, known: UserFact[]): UserFa
   return bestScore >= 0.6 ? best : null;
 }
 
-export function factDedupeKey(characterId: string, fact: string): string {
-  return `fact:${characterId}:${shortHash(normalizeText(fact))}`;
+/**
+ * Who may read a learned fact. `user`: every companion of the same user
+ * (never another user — every query is keyed by user_id). `companion`: only
+ * the companion it was told to (therapy / adult turns stay private).
+ */
+export type FactScope = "user" | "companion";
+
+/**
+ * Dedupe key. memory_events is unique on (user_id, dedupe_key), so a shared
+ * fact told to two companions is stored once per user; a private one once
+ * per companion.
+ */
+export function factDedupeKey(characterId: string, fact: string, scope: FactScope = "user"): string {
+  const hash = shortHash(normalizeText(fact));
+  return scope === "user" ? `fact:user:${hash}` : `fact:${characterId}:${hash}`;
 }
 
-/** Latest non-retracted user facts for this user + companion. */
+/** Turns whose facts stay with the companion they were told to. */
+export function factScopeForTurn(args: { mode?: string | null; therapy?: boolean; adult?: boolean }): FactScope {
+  if (args.therapy || args.adult || args.mode === "therapy") return "companion";
+  return "user";
+}
+
+/**
+ * Latest non-retracted facts this companion may use: the user's shared facts
+ * (learned by any of their companions) plus its own private ones.
+ */
 export async function loadUserFacts(userId: string, characterId: string, limit = 40): Promise<UserFact[]> {
   const { rows } = await getPool().query<{
     id: string;
@@ -185,8 +228,9 @@ export async function loadUserFacts(userId: string, characterId: string, limit =
   }>(
     `SELECT e.id, e.content, e.payload, e.emotional_weight, e.occurred_at
        FROM memory_events e
-      WHERE e.user_id = $1 AND e.character_id = $2
+      WHERE e.user_id = $1
         AND e.event_type = 'note' AND e.payload ->> 'kind' = $3
+        AND (COALESCE(e.payload ->> 'scope', 'user') = 'user' OR e.character_id = $2)
         AND NOT EXISTS (
           SELECT 1 FROM memory_events r
            WHERE r.event_type = 'retraction' AND r.user_id = e.user_id
@@ -201,6 +245,7 @@ export async function loadUserFacts(userId: string, characterId: string, limit =
     category: (String(r.payload?.category || "other") as FactCategory),
     importance: Number(r.emotional_weight) || 0.5,
     occurredAt: new Date(r.occurred_at).toISOString(),
+    scope: r.payload?.scope === "companion" ? "companion" : "user",
   }));
 }
 
@@ -212,19 +257,31 @@ export async function storeUserFacts(args: {
   turnId?: string | null;
   facts: UserFact[];
   known: UserFact[];
+  scope?: FactScope;
 }): Promise<number> {
+  const scope: FactScope = args.scope ?? "user";
   let stored = 0;
   for (const f of newFactsOnly(args.facts, args.known)) {
-    const replaced = findReplacedFact(f, args.known);
+    const match = findReplacedFact(f, args.known);
+    // A private (therapy / adult) turn may not rewrite what the user's other
+    // companions know; it only adds a private fact.
+    const replaced = match && !(scope === "companion" && match.scope !== "companion") ? match : null;
     const id = await appendMemoryEvent({
       userId: args.userId,
       characterId: args.characterId,
       eventType: "note",
       content: f.fact,
-      payload: { kind: USER_FACT_KIND, category: f.category, turn_id: args.turnId ?? null, replaces_event_id: replaced?.id ?? null },
+      payload: {
+        kind: USER_FACT_KIND,
+        scope,
+        category: f.category,
+        turn_id: args.turnId ?? null,
+        learned_from_character_id: args.characterId,
+        replaces_event_id: replaced?.id ?? null,
+      },
       emotionalWeight: f.importance,
       conversationId: args.sessionId,
-      dedupeKey: factDedupeKey(args.characterId, f.fact),
+      dedupeKey: factDedupeKey(args.characterId, f.fact, scope),
       source: "mind",
     });
     if (!id) continue;

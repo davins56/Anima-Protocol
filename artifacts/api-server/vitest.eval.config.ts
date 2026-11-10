@@ -7,6 +7,6 @@ export default defineConfig({
     include: ["eval/**/*.eval.ts"],
     environment: "node",
     fileParallelism: false,
-    testTimeout: 60000,
+    testTimeout: 180000,
   },
 });

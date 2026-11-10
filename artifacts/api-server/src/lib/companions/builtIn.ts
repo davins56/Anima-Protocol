@@ -52,3 +52,17 @@ export function builtInIdentityLock(name: unknown): string {
       return "";
   }
 }
+
+/**
+ * Pre-installed roster characters (Korra, Tony Stark, ...) are seeded with
+ * stable ids `seed_<universe>-<name>` by
+ * artifacts/anima-protocol/src/lib/seedCharacters.js (seedId), or carry
+ * `is_starter: true`. Everything else, including the user's own Anima
+ * (Serenity/Aeland/Scarlet), was created by or for the user.
+ */
+export function isPreinstalledCharacter(character: unknown): boolean {
+  if (!character || typeof character !== "object") return false;
+  const c = character as { id?: unknown; is_starter?: unknown; isStarter?: unknown };
+  if (c.is_starter === true || c.isStarter === true) return true;
+  return /^seed_/i.test(String(c.id ?? "").trim());
+}

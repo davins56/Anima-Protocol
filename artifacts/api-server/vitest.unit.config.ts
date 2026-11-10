@@ -35,6 +35,7 @@ export default defineConfig({
       "test/mindFactsSummary.test.ts",
       "test/mindGuards.test.ts",
       "test/mindPrompt.test.ts",
+      "test/mindSharedFacts.test.ts",
     ],
     environment: "node",
     fileParallelism: false,
