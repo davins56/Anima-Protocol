@@ -17,6 +17,9 @@ import UploadedVessel from "./UploadedVessel";
 import { isApiModelUrl, modelCacheKey } from "@/lib/vessel/vesselModelAsset";
 import type { ArkitFaceWeights } from "@/lib/vessel/arkitFace";
 import { useArkitFace } from "./useArkitFace";
+import { useVesselMaterial } from "@/lib/vessel/materialCache";
+import { createRefCache } from "@/lib/vessel/refCache";
+import { VRMUtils } from "@pixiv/three-vrm";
 
 /** Calm flame shift for a saved `effects.aura: "flame"` vessel when no live emotion drives it. */
 function useStaticFlameShift(config: VesselConfig, active: boolean): VesselShift | null {
@@ -63,25 +66,7 @@ const BODY: Record<string, { w: number; hip: number; h: number }> = {
 };
 
 function useMat(color: string, hologram: boolean, emissive?: string, emissiveIntensity = 0) {
-  return useMemo(() => {
-    if (hologram) {
-      return new THREE.MeshBasicMaterial({
-        color,
-        transparent: true,
-        opacity: 0.35,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      });
-    }
-    return new THREE.MeshStandardMaterial({
-      color,
-      flatShading: true,
-      roughness: 0.7,
-      metalness: 0.05,
-      emissive: emissive ? new THREE.Color(emissive) : new THREE.Color(0),
-      emissiveIntensity,
-    });
-  }, [color, hologram, emissive, emissiveIntensity]);
+  return useVesselMaterial({ color, hologram, emissive, emissiveIntensity });
 }
 
 function Hair({ style, mat, seg }: { style: string; mat: THREE.Material; seg: number }) {
@@ -166,6 +151,7 @@ function Aura({ config, hologram, still = false }: { config: VesselConfig; holog
     g.setAttribute("position", new THREE.BufferAttribute(p, 3));
     return g;
   }, [count]);
+  useEffect(() => () => geo.dispose(), [geo]);
   useFrame((_, dt) => {
     if (points.current && !still) points.current.rotation.y += dt * (aura === "glitch" ? 1.5 : 0.25);
   });
@@ -173,6 +159,7 @@ function Aura({ config, hologram, still = false }: { config: VesselConfig; holog
     () => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.25 + glow * 0.5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
     [color, glow],
   );
+  useEffect(() => () => emissive.dispose(), [emissive]);
   return (
     <group>
       {count > 0 && aura !== "none" && (
@@ -359,6 +346,21 @@ function GltfVessel({ url, expression, speaking, audioLevel, faceOverride, onLoa
   // morphs (photo-to-vessel heads) blink, smile and open the jaw with speech.
   const { scene } = useGLTF(url);
   const cloned = useMemo(() => scene.clone(true), [scene]);
+  // The clone shares geometry/materials with the loader cache; drop it from the
+  // graph on unmount. One-off dev/blob: assets (photo-to-vessel lab) are released
+  // from useGLTF's cache and GPU-disposed once nothing renders them.
+  useEffect(() => {
+    const transient = isTransientModelUrl(url);
+    if (transient) {
+      transientGltfs.get(url, () => scene);
+      transientGltfs.retain(url);
+    }
+    return () => {
+      cloned.removeFromParent();
+      cloned.clear();
+      if (transient) transientGltfs.release(url);
+    };
+  }, [cloned, scene, url]);
   useArkitFace(cloned, { expression, speaking, audioLevel, override: faceOverride });
   const loaded = useRef(onLoaded);
   loaded.current = onLoaded;
@@ -367,6 +369,16 @@ function GltfVessel({ url, expression, speaking, audioLevel, faceOverride, onLoa
   }, [cloned]);
   return <primitive object={cloned} />;
 }
+
+/** blob:/data: model URLs are one-off (lab, local previews): never keep them cached. */
+export function isTransientModelUrl(url: string): boolean {
+  return /^(blob|data):/i.test(url);
+}
+
+const transientGltfs = createRefCache<THREE.Object3D>((scene, url) => {
+  useGLTF.clear(url);
+  VRMUtils.deepDispose(scene);
+});
 
 class AssetBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
