@@ -18,6 +18,7 @@ import {
   WORKERS_AI_BACKGROUND_MODEL,
   WORKERS_AI_CHAT_MODEL,
   completeWorkersAi,
+  streamWorkersAi,
   workersAiBackgroundModel,
   workersAiChatModel,
   workersAiLora,
@@ -145,6 +146,41 @@ describe("ANIMA_CHAT_BRAIN", () => {
 });
 
 describe("Workers AI model config", () => {
+  it("defaults chat to Llama 3.3 70B fp8-fast", () => {
+    expect(WORKERS_AI_CHAT_MODEL).toBe("@cf/meta/llama-3.3-70b-instruct-fp8-fast");
+  });
+
+  it("passes a plain Llama reply through untouched (no <think> to strip)", async () => {
+    bindAi("Of course. I'm right here.");
+    await expect(
+      completeWorkersAi({ messages: [{ role: "user", content: "stay?" }], maxTokens: 64 }),
+    ).resolves.toBe("Of course. I'm right here.");
+    expect(calls[0]?.model).toBe("@cf/meta/llama-3.3-70b-instruct-fp8-fast");
+  });
+
+  it("streams Llama SSE chunks ({response}) as visible text", async () => {
+    const encoder = new TextEncoder();
+    setAiBinding({
+      run: async () =>
+        new ReadableStream<Uint8Array>({
+          start(c) {
+            c.enqueue(encoder.encode('data: {"response":"Hello"}\n\n'));
+            c.enqueue(encoder.encode('data: {"response":" there."}\n\n'));
+            c.enqueue(encoder.encode('data: {"response":"","usage":{"total_tokens":9}}\n\n'));
+            c.enqueue(encoder.encode("data: [DONE]\n\n"));
+            c.close();
+          },
+        }),
+    });
+    const stream = await streamWorkersAi({
+      messages: [{ role: "user", content: "hi" }],
+      maxTokens: 32,
+    });
+    let text = "";
+    for await (const chunk of stream) text += chunk.choices[0]?.delta?.content ?? "";
+    expect(text).toBe("Hello there.");
+  });
+
   it("uses ANIMA_WORKERS_AI_MODEL when it is a Workers AI id", () => {
     expect(workersAiChatModel({})).toBe(WORKERS_AI_CHAT_MODEL);
     expect(

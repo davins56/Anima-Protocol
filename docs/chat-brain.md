@@ -38,7 +38,7 @@ UI points at Fly.io or a droplet.
 | Var | Default | Meaning |
 |-----|---------|---------|
 | `ANIMA_CHAT_BRAIN` | `cloudflare` (committed) | `cloudflare`: chat + background jobs on Workers AI; every `ANIMA_LOCAL_LLM_*` value is ignored. `self-hosted` / unset: old behaviour, prefer `ANIMA_LOCAL_LLM_BASE_URL`. |
-| `ANIMA_WORKERS_AI_MODEL` | `@cf/deepseek-ai/deepseek-r1-distill-qwen-32b` | Chat model id (`@cf/…` or `@hf/…`). A non-reasoning model such as `@cf/meta/llama-3.3-70b-instruct-fp8-fast` replies faster. |
+| `ANIMA_WORKERS_AI_MODEL` | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | Chat model id (`@cf/…` or `@hf/…`). Llama 3.3 70B is non-reasoning, so replies start streaming quickly. A reasoning model such as `@cf/deepseek-ai/deepseek-r1-distill-qwen-32b` still works — its `<think>` output is stripped. |
 | `ANIMA_WORKERS_AI_LORA` | unset | Workers AI LoRA fine-tune name/id applied to the chat model — the hosted version of the `anima-chat` fine-tune. The base model must be LoRA-capable (see Cloudflare "Workers AI fine-tunes"). |
 | `ANIMA_WORKERS_AI_BACKGROUND_MODEL` | `@cf/meta/llama-3.1-8b-instruct` | Model for background brain jobs. |
 | `ANIMA_WORKERS_AI_BACKGROUND` | on | `false` keeps background jobs off Workers AI (saves free-plan neurons for chat). |

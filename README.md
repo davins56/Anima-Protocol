@@ -329,7 +329,7 @@ The frontend can be deployed independently when configured with the required Vit
 
 ### Chat brain (Cloudflare, no Fly.io / DigitalOcean)
 
-Production chat runs entirely inside the Cloudflare Worker: Clerk auth → identity + memory from Postgres (Hyperdrive) → prompt → **Workers AI** (streamed) → turn appended to the `memory_events` stream. `ANIMA_CHAT_BRAIN=cloudflare` is committed in `wrangler.jsonc`, so no model host is needed. No new secrets: it uses the existing `AI` and `HYPERDRIVE` bindings plus the Clerk / `DATABASE_URL` Secrets Store entries. Optional vars: `ANIMA_WORKERS_AI_MODEL`, `ANIMA_WORKERS_AI_LORA`, `ANIMA_WORKERS_AI_BACKGROUND_MODEL`, `ANIMA_WORKERS_AI_BACKGROUND`. Workers AI Free caps at 10k neurons/day; use Workers Paid for real traffic. Details and checks: [`docs/chat-brain.md`](docs/chat-brain.md).
+Production chat runs entirely inside the Cloudflare Worker: Clerk auth → identity + memory from Postgres (Hyperdrive) → prompt → **Workers AI** (streamed) → turn appended to the `memory_events` stream. `ANIMA_CHAT_BRAIN=cloudflare` is committed in `wrangler.jsonc`, so no model host is needed. No new secrets: it uses the existing `AI` and `HYPERDRIVE` bindings plus the Clerk / `DATABASE_URL` Secrets Store entries. Optional vars: `ANIMA_WORKERS_AI_MODEL` (default `@cf/meta/llama-3.3-70b-instruct-fp8-fast`), `ANIMA_WORKERS_AI_LORA`, `ANIMA_WORKERS_AI_BACKGROUND_MODEL`, `ANIMA_WORKERS_AI_BACKGROUND`. Workers AI Free caps at 10k neurons/day; use Workers Paid for real traffic. Details and checks: [`docs/chat-brain.md`](docs/chat-brain.md).
 
 Production deployment documentation is available in `docs/`, including the Vercel API migration and custom LLM deployment guides.
 

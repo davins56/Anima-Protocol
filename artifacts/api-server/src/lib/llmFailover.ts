@@ -607,7 +607,7 @@ export function getProviderChain(): LlmProviderId[] {
  * customOnly that is never OpenRouter, so the turn returns ai_timeout /
  * connection instead of silently calling cloud.
  *
- * Workers AI → OpenRouter on hoppable DeepSeek failures, especially error
+ * Workers AI → OpenRouter on hoppable Workers AI failures, especially error
  * 4006 / daily free neuron allocation, when fallback is on and no custom
  * host is configured.
  *
@@ -1624,7 +1624,7 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
     }
     if (isCloudRunRuntime() && !hasWorkersAiBinding()) {
       noteParts.push(
-        "Cloud Run staging has no Workers AI binding (DeepSeek via deepseek-gateway) and no Hyperdrive. " +
+        "Cloud Run staging has no Workers AI binding (AI Gateway deepseek-gateway) and no Hyperdrive. " +
           "Chat stays fail-closed rather than switching to OpenRouter, Claude, or MiniMax. " +
           "Production chat remains the Cloudflare Worker.",
       );
@@ -1690,7 +1690,7 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
     if (chain.includes("openrouter")) {
       const openRouterRole =
         chain[0] === "workersai"
-          ? " (temporary fallback after Workers AI / DeepSeek, including neuron quota 4006)."
+          ? " (temporary fallback after Workers AI, including neuron quota 4006)."
           : chain[0] === "local"
             ? " (fallback after local connection failure)."
             : chain[0] === "minimax"

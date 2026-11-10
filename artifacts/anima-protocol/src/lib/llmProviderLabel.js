@@ -124,7 +124,7 @@ export const CONFIGURED_LLM_PROVIDERS = [
     id: "workersai",
     label: "Cloudflare brain (Workers AI)",
     env: "AI",
-    note: "Default when ANIMA_CHAT_BRAIN=cloudflare (or no usable ANIMA_LOCAL_LLM_BASE_URL is set). Runs on the Worker's own AI binding via AI Gateway deepseek-gateway — no Fly.io, droplet, or tunnel. Model: ANIMA_WORKERS_AI_MODEL (default DeepSeek R1 distill).",
+    note: "Default when ANIMA_CHAT_BRAIN=cloudflare (or no usable ANIMA_LOCAL_LLM_BASE_URL is set). Runs on the Worker's own AI binding via AI Gateway deepseek-gateway — no Fly.io, droplet, or tunnel. Model: ANIMA_WORKERS_AI_MODEL (default Llama 3.3 70B, @cf/meta/llama-3.3-70b-instruct-fp8-fast).",
   },
   {
     id: "minimax",
