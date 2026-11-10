@@ -3810,6 +3810,7 @@ Return JSON:
               activeSession={activeSession}
               characters={characters}
               currentMood={currentMood}
+              companionSpeaking={isCompanionSpeaking}
               moodIntensity={companionAffect?.intensity}
               characterEmotions={characterEmotions}
               inventoryItems={inventoryItems}
