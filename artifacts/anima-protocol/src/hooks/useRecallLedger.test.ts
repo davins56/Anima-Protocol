@@ -71,3 +71,9 @@ describe("recall ledger client", () => {
     expect(err.code).toBe("invalid_response");
   });
 });
+
+  it("accepts turn_linkage partial and full without depending on the unapproved migration", () => {
+    expect(RecallLedgerPageSchema.safeParse({ ...example, meta: { ...example.meta, turn_linkage: "partial" } }).success).toBe(true);
+    expect(RecallLedgerPageSchema.safeParse({ ...example, meta: { ...example.meta, turn_linkage: "full" } }).success).toBe(true);
+    expect(RecallLedgerPageSchema.safeParse({ ...example, batches: [{ ...example.batches[0], turn_id: "turn_later" }] }).success).toBe(true);
+  });

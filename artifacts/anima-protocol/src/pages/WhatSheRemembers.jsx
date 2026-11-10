@@ -3,11 +3,14 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ChevronLeft, Lock } from "lucide-react";
 import { animaApi } from "@/api/animaApi";
 import {
+  findMemoryForHighlight,
   memoryEmptyLine,
+  MEMORY_HIGHLIGHT_MISSING,
   memoryScreenTitle,
   presentMemoryReview,
   safeMemoryReturn,
 } from "@/lib/whatSheRemembers";
+import { prefersReducedMotion } from "@/lib/recallLedgerDisplay";
 
 const SECTIONS = [
   {
@@ -42,6 +45,8 @@ export default function WhatSheRemembers() {
   const navigate = useNavigate();
   const companionName = searchParams.get("name")?.trim() || "";
   const returnTo = safeMemoryReturn(searchParams.get("from")) || "/chat";
+  const highlightId = searchParams.get("memory")?.trim() || "";
+  const highlightPreview = searchParams.get("q")?.trim() || "";
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -50,7 +55,10 @@ export default function WhatSheRemembers() {
   const [draft, setDraft] = useState("");
   const [confirmId, setConfirmId] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const [focusedId, setFocusedId] = useState(null);
+  const [highlightMissing, setHighlightMissing] = useState(false);
   const requestTicket = useRef(0);
+  const itemRefs = useRef(new Map());
 
   useEffect(() => {
     const ticket = ++requestTicket.current;
@@ -59,6 +67,8 @@ export default function WhatSheRemembers() {
     setDraft("");
     setConfirmId(null);
     setBusyId(null);
+    setFocusedId(null);
+    setHighlightMissing(false);
     setLoading(true);
     setError("");
     animaApi.chat
@@ -75,6 +85,26 @@ export default function WhatSheRemembers() {
         if (ticket === requestTicket.current) setLoading(false);
       });
   }, [characterId]);
+
+  useEffect(() => {
+    if (loading || error || (!highlightId && !highlightPreview)) {
+      return;
+    }
+    const match = findMemoryForHighlight(review, { memoryId: highlightId, preview: highlightPreview });
+    if (!match) {
+      setHighlightMissing(true);
+      setFocusedId(null);
+      return;
+    }
+    setHighlightMissing(false);
+    setFocusedId(match.fact_id);
+    const canForget = match.editable === true && match.protected !== true && match.section !== "core" && match.memory_class !== "core";
+    if (canForget) setConfirmId(match.fact_id);
+    const node = itemRefs.current.get(match.fact_id);
+    if (node && typeof node.scrollIntoView === "function") {
+      node.scrollIntoView({ block: "center", behavior: prefersReducedMotion() ? "auto" : "smooth" });
+    }
+  }, [loading, error, review, highlightId, highlightPreview]);
 
   const title = memoryScreenTitle(companionName);
   const shown = review || { about_you: [], companion: [], core: [] };
@@ -173,6 +203,12 @@ export default function WhatSheRemembers() {
           </p>
         )}
 
+        {highlightMissing && !loading && (
+          <p role="status" data-testid="memory-highlight-missing" className="text-base leading-relaxed text-cyan-100/70">
+            {MEMORY_HIGHLIGHT_MISSING}
+          </p>
+        )}
+
         {loading ? (
           <p className="text-base text-cyan-100/60">Opening what she remembers…</p>
         ) : total === 0 && !error ? (
@@ -200,7 +236,17 @@ export default function WhatSheRemembers() {
                       return (
                         <li
                           key={item.fact_id}
-                          className="rounded-xl border border-cyan-300/20 bg-cyan-950/40 p-4 space-y-3"
+                          ref={(node) => {
+                            if (node) itemRefs.current.set(item.fact_id, node);
+                            else itemRefs.current.delete(item.fact_id);
+                          }}
+                          data-memory-id={item.fact_id}
+                          data-highlighted={focusedId === item.fact_id ? "true" : undefined}
+                          className={`rounded-xl border bg-cyan-950/40 p-4 space-y-3 ${
+                            focusedId === item.fact_id
+                              ? "border-amber-200/80 ring-2 ring-amber-200/40"
+                              : "border-cyan-300/20"
+                          }`}
                         >
                           <div className="flex flex-wrap items-center gap-2 text-sm text-cyan-100/70">
                             <span>{item.kind_label}</span>
