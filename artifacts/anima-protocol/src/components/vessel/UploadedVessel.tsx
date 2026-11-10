@@ -26,6 +26,8 @@ import {
   type VrmWeights,
 } from "@/lib/vessel/vrmExpressions";
 import { availableVisemes, speechOpenness, visemeWeights } from "@/lib/vessel/vrmVisemes";
+import type { ArkitFaceWeights } from "@/lib/vessel/arkitFace";
+import { useArkitFace } from "./useArkitFace";
 
 export type UploadedVesselProps = {
   model: VesselModelMeta;
@@ -44,6 +46,8 @@ export type UploadedVesselProps = {
   onLoaded?: (asset: ParsedVesselAsset) => void;
   /** Shown while loading and on any failure (usually the procedural vessel). */
   fallback: ReactNode;
+  /** Dev/lab: pin ARKit face morph weights (plain GLBs). */
+  faceOverride?: ArkitFaceWeights | null;
 };
 
 class AssetBoundary extends Component<{ fallback: ReactNode; children: ReactNode; onError?: (e: unknown) => void }, { failed: boolean }> {
@@ -90,7 +94,7 @@ function tintScene(scene: THREE.Object3D, color: string, hd: boolean) {
   });
 }
 
-function LoadedVessel({ model, expression, mood, intensity, speaking = false, audioLevel, track = true, tint, onFrame, onLoaded, fallback, cacheKey }: UploadedVesselProps & { cacheKey: string }) {
+function LoadedVessel({ model, expression, mood, intensity, speaking = false, audioLevel, track = true, tint, onFrame, onLoaded, fallback, cacheKey, faceOverride }: UploadedVesselProps & { cacheKey: string }) {
   const bytes = use(loadVesselModelBytes(model.url!, cacheKey));
   const [asset, setAsset] = useState<ParsedVesselAsset | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -149,6 +153,8 @@ function LoadedVessel({ model, expression, mood, intensity, speaking = false, au
   const mouthWeights = useRef<VrmWeights>({});
   const driven = useRef(new Set<string>());
   const blinker = useMemo(() => createBlinker(), []);
+  // Plain GLBs with ARKit-named morphs (photo-to-vessel heads): blink, smile, jaw ← speech.
+  useArkitFace(asset && !asset.vrm ? asset.scene : null, { expression, speaking, audioLevel, override: faceOverride });
 
   useFrame(({ clock }, delta) => {
     if (!asset) return;

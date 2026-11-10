@@ -15,6 +15,8 @@ import { traitsFor } from "@/lib/vessel/vesselTraits";
 import VesselAura from "./VesselAura";
 import UploadedVessel from "./UploadedVessel";
 import { isApiModelUrl, modelCacheKey } from "@/lib/vessel/vesselModelAsset";
+import type { ArkitFaceWeights } from "@/lib/vessel/arkitFace";
+import { useArkitFace } from "./useArkitFace";
 
 /** Calm flame shift for a saved `effects.aura: "flame"` vessel when no live emotion drives it. */
 function useStaticFlameShift(config: VesselConfig, active: boolean): VesselShift | null {
@@ -44,6 +46,8 @@ type Props = {
   speaking?: boolean;
   /** Optional live voice level 0..1 (read every frame). */
   audioLevel?: (() => number | null | undefined) | null;
+  /** Dev/lab: pin ARKit face morph weights on plain GLB vessels. */
+  faceOverride?: ArkitFaceWeights | null;
 };
 
 const BODY: Record<string, { w: number; hip: number; h: number }> = {
@@ -343,11 +347,13 @@ function ProceduralVessel({ config, expression: exprProp, hd = false, hologram =
   );
 }
 
-function GltfVessel({ url }: { url: string }) {
-  // External (allowlisted https) plain glTF/GLB asset slot. Uploaded models and
-  // every VRM go through <UploadedVessel> instead.
+function GltfVessel({ url, expression, speaking, audioLevel, faceOverride }: { url: string } & Pick<Props, "expression" | "speaking" | "audioLevel" | "faceOverride">) {
+  // External (allowlisted https or dev blob:) plain glTF/GLB asset slot. Uploaded
+  // models and every VRM go through <UploadedVessel> instead. ARKit-named face
+  // morphs (photo-to-vessel heads) blink, smile and open the jaw with speech.
   const { scene } = useGLTF(url);
   const cloned = useMemo(() => scene.clone(true), [scene]);
+  useArkitFace(cloned, { expression, speaking, audioLevel, override: faceOverride });
   return <primitive object={cloned} />;
 }
 
@@ -388,6 +394,7 @@ export default function VesselModel(props: Props) {
           onFrame={props.onFrame}
           fallback={procedural}
           onLoaded={() => setLoadedKey(modelCacheKey(model))}
+          faceOverride={props.faceOverride}
         />
         {props.shift && loadedKey === modelCacheKey(model) && <VesselAura shift={props.shift} budget={props.hd ? 72 : props.track !== false ? 40 : 0} />}
       </group>
@@ -396,7 +403,13 @@ export default function VesselModel(props: Props) {
   return (
     <AssetBoundary key={url} fallback={procedural}>
       <Suspense fallback={procedural}>
-        <GltfVessel url={url} />
+        <GltfVessel
+          url={url}
+          expression={props.shift ? props.shift.face : props.expression}
+          speaking={props.speaking}
+          audioLevel={props.audioLevel}
+          faceOverride={props.faceOverride}
+        />
       </Suspense>
     </AssetBoundary>
   );

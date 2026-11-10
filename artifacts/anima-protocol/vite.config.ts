@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
+import fs from "fs";
 import { VitePWA } from "vite-plugin-pwa";
 import { config as loadEnv } from "dotenv";
 import { sanitizeClerkPublishableKey } from "./src/lib/clerkProxy.js";
@@ -98,6 +99,19 @@ export default defineConfig({
   },
   plugins: [
     react({ jsxRuntime: "automatic" }),
+    // public/mediapipe/ (24 MB, gitignored, dev-only photo-to-vessel lab assets) never ships
+    // unless the lab is explicitly built in with VITE_VESSEL_LAB=1.
+    {
+      name: "anima-drop-dev-mediapipe",
+      apply: "build",
+      closeBundle: {
+        order: "pre",
+        handler() {
+          if (process.env.VITE_VESSEL_LAB === "1") return;
+          fs.rmSync(path.resolve(import.meta.dirname, "dist/public/mediapipe"), { recursive: true, force: true });
+        },
+      },
+    },
     tailwindcss({ optimize: false }),
     // Replit-only: Clerk load failures are handled in-app (guest landing fallback).
     ...(runtimeErrorOverlay ? [runtimeErrorOverlay()] : []),
