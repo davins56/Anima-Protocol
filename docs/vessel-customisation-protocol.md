@@ -9,13 +9,13 @@ introduces a second 3D stack, a second schema, or a second store.
 
 ## 1. The record
 
-`VesselConfig`, schema 1 — [`vesselConfig.ts`](../artifacts/anima-protocol/src/lib/vessel/vesselConfig.ts),
+`VesselConfig`, schema 2 — [`vesselConfig.ts`](../artifacts/anima-protocol/src/lib/vessel/vesselConfig.ts),
 mirrored field-for-field by the whitelist sanitiser in
 [`vesselStore.ts`](../artifacts/api-server/src/lib/vessel/vesselStore.ts).
 
 | Field | Type | Allowed |
 | --- | --- | --- |
-| `schema` | literal | `1` |
+| `schema` | literal | `2` (schema `1` is still accepted and upgraded) |
 | `base` | enum | `serenity`, `linda`, `aeland`, `scarlet`, `custom` (legacy `aelindra`/`aelynd`/`aelyndra` read as `aeland`) |
 | `bodyType` | enum | `slender`, `athletic`, `curvy`, `petite`, `tall` |
 | `height` | number | `0.85`–`1.15` |
@@ -32,7 +32,7 @@ mirrored field-for-field by the whitelist sanitiser in
 | `effects.glow` | number | `0`–`1` |
 | `effects.particles` | integer | `0`–`400` |
 | `effects.color` | hex | `#rrggbb` |
-| `model` | object | `kind` `procedural` \| `gltf` \| `vrm`, optional `url` (https or `/`, ≤ 500) |
+| `model` | object | `kind` `procedural` \| `gltf` \| `vrm`; `url` is `/api/vessel/:id/model` or an allow-listed https `.vrm`/`.glb`; optional metadata (`format`, `path`, `bucket`, `byteSize`, `expressions`, `visemes`, `humanoid`, `animationCount`). Uploads: `docs/vessel-model-uploads.md` |
 
 The record is descriptive data, never code. The renderer branches on it, not on the companion's
 name, so a new preset is a row of numbers rather than a new component.

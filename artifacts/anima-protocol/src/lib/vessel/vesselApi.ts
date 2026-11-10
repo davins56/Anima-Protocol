@@ -95,3 +95,51 @@ export async function saveVessel(args: {
 export function vesselSnapshotUrl(characterId: string): string {
   return apiUrl(`/vessel/${encodeURIComponent(characterId)}/snapshot`);
 }
+
+/** Same-origin URL that 302s to a short-lived signed download of the current VRM/GLB. */
+export function vesselModelUrl(characterId: string): string {
+  return apiUrl(`/vessel/${encodeURIComponent(characterId)}/model`);
+}
+
+export type VesselModelUploadSign = {
+  bucket: string;
+  path: string;
+  uploadUrl: string;
+  token: string;
+  expiresIn: number;
+  maxBytes: number;
+  contentType: string;
+};
+
+/** Ask the API for a direct-to-storage signed upload URL. Do not POST the file to the Worker. */
+export async function signVesselModel(
+  characterId: string,
+  args: { byteSize: number; filename?: string; ext?: "vrm" | "glb" },
+): Promise<VesselModelUploadSign> {
+  const res = await fetch(apiUrl(`/vessel/${encodeURIComponent(characterId)}/model/sign`), {
+    method: "POST",
+    headers: { ...(await authHeaders()), "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(args),
+  });
+  return (await json(res)) as VesselModelUploadSign;
+}
+
+/** After the client PUTs the file to uploadUrl, inspect it and write a new vessel version. */
+export async function completeVesselModel(
+  characterId: string,
+  args: { path: string },
+): Promise<{ vessel: VesselRecord; identity_version: number; model: VesselConfig["model"] }> {
+  const res = await fetch(apiUrl(`/vessel/${encodeURIComponent(characterId)}/model/complete`), {
+    method: "POST",
+    headers: { ...(await authHeaders()), "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(args),
+  });
+  const out = await json(res);
+  if (out.vessel) {
+    cache.set(characterId, { at: Date.now(), value: { ...out.vessel, config: parseVesselConfig(out.vessel.config) } });
+    listeners.forEach((fn) => fn(characterId));
+  }
+  return out;
+}

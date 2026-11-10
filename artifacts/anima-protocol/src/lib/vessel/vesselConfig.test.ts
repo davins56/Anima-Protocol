@@ -25,3 +25,24 @@ describe("Serenity vessel forms", () => {
     expect(serenityFormOf({ ...angelic, effects: { ...angelic.effects, aura: "halo" } })).toBe("humanoid");
   });
 });
+
+describe("VesselConfig schema 2", () => {
+  it("upgrades a schema 1 record and keeps a same-origin model url", () => {
+    const v = parseVesselConfig({
+      schema: 1,
+      base: "serenity",
+      model: { kind: "vrm", url: "/api/vessel/serenity/model", expressions: ["happy", "aa"], visemes: ["aa"] },
+    });
+    expect(v.schema).toBe(2);
+    expect(v.model.kind).toBe("vrm");
+    expect(v.model.url).toBe("/api/vessel/serenity/model");
+    expect(v.model.expressions).toEqual(["happy", "aa"]);
+    expect(v.model.visemes).toEqual(["aa"]);
+  });
+
+  it("rejects an http model url at the schema boundary", () => {
+    expect(
+      VesselConfigSchema.safeParse({ model: { kind: "vrm", url: "http://cdn.example.com/a.vrm" } }).success,
+    ).toBe(false);
+  });
+});

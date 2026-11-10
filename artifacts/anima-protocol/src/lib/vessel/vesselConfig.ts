@@ -23,7 +23,8 @@ const vesselBase = z.preprocess(
 );
 
 export const VesselConfigSchema = z.object({
-  schema: z.literal(1).default(1),
+  // Schema 2 is current; schema 1 rows (and omitted schema) are upgraded on parse.
+  schema: z.preprocess((v) => (v === 1 || v === undefined || v === null ? 2 : v), z.literal(2)).default(2),
   base: vesselBase.default("custom"),
   bodyType: z.enum(BODY_TYPES).default("slender"),
   height: z.number().min(0.85).max(1.15).default(1),
@@ -47,9 +48,30 @@ export const VesselConfigSchema = z.object({
       color: hex.default("#00e5ff"),
     })
     .default({ aura: "none", glow: 0.3, particles: 60, color: "#00e5ff" }),
-  /** Asset slot: procedural placeholder by default; glTF/VRM when a licensed model URL is set. */
+  /** Asset slot: procedural placeholder by default; VRM/GLB when a licensed model is uploaded. */
   model: z
-    .object({ kind: z.enum(["procedural", "gltf", "vrm"]).default("procedural"), url: z.string().max(500).optional() })
+    .object({
+      kind: z.enum(["procedural", "gltf", "vrm"]).default("procedural"),
+      url: z
+        .string()
+        .max(500)
+        .optional()
+        .refine(
+          (u) =>
+            u === undefined ||
+            /^\/api\/vessel\/[^/?#\s]{1,120}\/model$/.test(u) ||
+            /^https:\/\/[^/]+\/.*\.(vrm|glb)$/i.test(u),
+          "model.url must be a same-origin /api/vessel/:id/model path or an https .vrm/.glb URL",
+        ),
+      bucket: z.string().max(80).optional(),
+      path: z.string().max(240).optional(),
+      format: z.enum(["vrm", "glb"]).optional(),
+      byteSize: z.number().int().positive().max(50 * 1024 * 1024).optional(),
+      expressions: z.array(z.string().max(40)).max(64).optional(),
+      visemes: z.array(z.enum(["aa", "ih", "ou", "ee", "oh"])).max(5).optional(),
+      humanoid: z.boolean().optional(),
+      animationCount: z.number().int().min(0).max(256).optional(),
+    })
     .default({ kind: "procedural" }),
 });
 
