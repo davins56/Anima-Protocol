@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildUserProfileContext,
+  getDynamicLength,
   getDynamicLengthGuide,
 } from "./chatPromptContext";
 
@@ -37,3 +38,22 @@ describe("chat prompt context", () => {
     ).toMatch(/calls for depth/i);
   });
 });
+
+  it("returns short/long length keys used by the Serenity side-reply", () => {
+    expect(
+      getDynamicLength({
+        messages: [],
+        emotions: {},
+        messageCount: 0,
+        lastUserMessage: "tell me a joke lol",
+      }),
+    ).toBe("short");
+    expect(
+      getDynamicLength({
+        messages: [],
+        emotions: {},
+        messageCount: 0,
+        lastUserMessage: "explain the meaning of your backstory",
+      }),
+    ).toBe("long");
+  });
