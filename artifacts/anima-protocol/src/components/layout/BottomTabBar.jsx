@@ -41,6 +41,7 @@ const ALL_MODULES = [
   { label: "Echo Keys", path: "/echo-keys", icon: "🔑" },
   { label: "Characters", path: "/characters", icon: "👥" },
   { label: "Customise Anima", path: "/customise-anima?tab=look", icon: "✦" },
+  { label: "Vessel Studio", path: "/vessel", icon: "◈" },
   { label: "Check-In", path: "/check-in", icon: "✚" },
   { label: "Therapy Mode", path: "/therapy", icon: "♡" },
   { label: "Reflect Log", path: "/reflection-log", icon: "📝" },

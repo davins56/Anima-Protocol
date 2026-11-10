@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  Brain, BookOpen, Calendar, ChevronRight, ImagePlus, KeyRound, MessageSquare,
+  Box, Brain, BookOpen, Calendar, ChevronRight, ImagePlus, KeyRound, MessageSquare,
   Plus, Settings, Sparkles, Stars, Swords, UserCircle, Users, Wand2, X,
 } from "lucide-react";
 import { formatResonance, resonanceMood, getPathMeta } from "@/lib/soulprint";
@@ -69,6 +69,7 @@ const PEOPLE_LINKS = [
   { icon: Plus, label: "Create companion", desc: "An empty place for someone new", path: "/characters?create=1" },
   { icon: Sparkles, label: "Companion generator", desc: "Wake someone from a prompt", path: "/companion-generator" },
   { icon: UserCircle, label: "Animas", desc: "Your assigned presence", path: "/animas" },
+  { icon: Box, label: "Vessel studio", desc: "Shape their 3D body", path: "/vessel" },
 ];
 
 const WORLD_LINKS = [

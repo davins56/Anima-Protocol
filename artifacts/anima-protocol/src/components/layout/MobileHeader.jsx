@@ -12,6 +12,7 @@ const ROUTE_TITLES = {
   "/animas": "Animas",
   "/customise-anima": "Customise Anima",
   "/customize": "Customization",
+  "/vessel": "Vessel Studio",
   "/meditation": "Sacred Space",
   "/therapy": "Therapy Mode",
   "/settings": "Settings",
