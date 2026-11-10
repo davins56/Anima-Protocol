@@ -66,9 +66,19 @@ export default function BottomTabBar() {
   const { isSteward } = useModelTutor();
   const modules = exploreModules(ALL_MODULES, { isSteward });
   const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState("");
+  const filterText = filter.trim().toLowerCase();
+  const shownModules = filterText
+    ? modules.filter(({ label }) => label.toLowerCase().includes(filterText))
+    : modules;
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [mostRecentSessionId, setMostRecentSessionId] = useState(null);
   const tabBarRef = useRef(null);
+
+  // A fresh filter each time Explore opens.
+  useEffect(() => {
+    if (!open) setFilter("");
+  }, [open]);
 
   useLayoutEffect(() => {
     const root = document.documentElement;
@@ -202,16 +212,42 @@ export default function BottomTabBar() {
             >
               <div className="flex items-center justify-between px-5 py-3 border-b border-primary/10">
                 <span className="font-mono text-[11px] tracking-[0.3em] text-primary/80 uppercase">// Explore</span>
-                <button onClick={() => setOpen(false)} className="text-primary/40 hover:text-primary transition-colors">
+                <button onClick={() => setOpen(false)} aria-label="Close Explore" className="text-primary/40 hover:text-primary transition-colors">
                   <X className="w-4 h-4" />
                 </button>
+              </div>
+              <div className="px-4 py-2 border-b border-primary/10">
+                <input
+                  type="search"
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                  placeholder="Filter pages…"
+                  aria-label="Filter Explore pages"
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  enterKeyHint="go"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && shownModules.length === 1 && !shownModules[0].signOut) {
+                      navigate(shownModules[0].path);
+                      setOpen(false);
+                    }
+                  }}
+                  data-testid="explore-filter"
+                  className="w-full bg-black/60 border border-primary/20 text-primary/80 placeholder-primary/25 font-mono text-base sm:text-xs px-3 py-2 focus:outline-none focus:border-primary/50"
+                />
               </div>
               <div 
                 className="grid grid-cols-3 gap-px bg-primary/5 p-px" 
                 style={{ paddingBottom: "calc(80px + env(safe-area-inset-bottom, 0px))" }}
                 data-no-swipe
               >
-                {modules.map(({ label, path, icon, signOut }) => {
+                {shownModules.length === 0 && (
+                  <p className="col-span-3 bg-[#090912] py-6 text-center font-mono text-[10px] tracking-widest uppercase text-primary/40">
+                    No pages match “{filter.trim()}”
+                  </p>
+                )}
+                {shownModules.map(({ label, path, icon, signOut }) => {
                   const isActive = isTabActive(path, location.pathname);
                   return (
                     <button
