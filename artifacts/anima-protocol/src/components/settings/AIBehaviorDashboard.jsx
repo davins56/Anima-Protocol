@@ -283,6 +283,7 @@ export default function AIBehaviorDashboard({ characterId, characterName }) {
                 min="0"
                 max="100"
                 step="5"
+                aria-label={slider.label}
                 value={slider.value}
                 onChange={(e) =>
                   updateValue(slider.id, parseInt(e.target.value))

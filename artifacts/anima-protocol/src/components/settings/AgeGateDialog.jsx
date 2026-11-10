@@ -46,6 +46,7 @@ export default function AgeGateDialog({ onCancel, onAttested, api = animaApi }) 
           <span className="font-mono text-[10px] text-primary/60 uppercase tracking-widest">Date of birth</span>
           <input
             type="date"
+            autoComplete="bday"
             data-testid="age-gate-dob"
             value={dob}
             onChange={(e) => setDob(e.target.value)}

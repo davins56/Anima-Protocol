@@ -177,6 +177,7 @@ export default function AIBehaviorCustomizer({ characterId, onSave }) {
                 min="0"
                 max="100"
                 step="1"
+                aria-label={slider.label}
                 value={config[slider.id]}
                 onChange={(e) =>
                   updateSlider(slider.id, parseInt(e.target.value))
