@@ -316,3 +316,6 @@ export async function retractMemory(userId: string, characterId: string, eventId
     { embed: false },
   );
 }
+
+// Read-only "why she said that" ledger over memory_recalls (docs/recall-ledger.md).
+export * from "./recallLedger";

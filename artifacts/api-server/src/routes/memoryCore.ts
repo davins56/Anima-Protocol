@@ -2,6 +2,7 @@
  * Persistent memory core API (append-only).
  *
  *   GET  /api/memory-core/:characterId/health
+ *   GET  /api/memory-core/:characterId/recalls     ?limit=&cursor=&session_id=  (read-only recall ledger, docs/recall-ledger.md)
  *   POST /api/memory-core/:characterId/bootstrap   { sessionId?, query?, limit? }
  *   POST /api/memory-core/:characterId/events      { event_type, content, payload?, emotional_weight?, conversation_id?, message_id? }
  *   POST /api/memory-core/:characterId/identity    { name, personality_matrix?, voice?, core_traits?, relationships?, backstory?, change_note? }
@@ -15,10 +16,14 @@ import { rateLimit } from "../lib/rateLimit";
 import {
   appendIdentityVersion,
   appendMemoryEvent,
+  characterOwnedBy,
+  clampLedgerLimit,
   currentIdentity,
   isMissingMemorySchema,
+  listRecallLedger,
   memoryHealth,
   recallMemories,
+  RecallLedgerCursorError,
   retractMemory,
 } from "../lib/memoryCore/memoryCore";
 
@@ -54,6 +59,52 @@ router.get("/:characterId/health", async (req, res) => {
     res.json({ health: await memoryHealth(userId, String(req.params.characterId)) });
   } catch (err) {
     fail(res, err);
+  }
+});
+
+/**
+ * "Why she said that" recall ledger (docs/recall-ledger.md). Owner-only and
+ * read-only: a character that isn't the caller's returns 404, the same as one
+ * that doesn't exist. Never recalls, embeds or snapshots.
+ */
+router.get("/:characterId/recalls", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const characterId = String(req.params.characterId || "");
+  const notFound = () => res.status(404).json({ error: "Companion not found", code: "companion_not_found" });
+  if (!characterId || characterId.length > 120) return void notFound();
+  const q = req.query as Record<string, unknown>;
+  const session = q.session_id;
+  if (session !== undefined && (typeof session !== "string" || !session || session.length > 200)) {
+    res.status(400).json({ error: "session_id must be a non-empty string (max 200 chars)", code: "invalid_session_id" });
+    return;
+  }
+  const cursor = q.cursor;
+  if (cursor !== undefined && typeof cursor !== "string") {
+    res.status(400).json({ error: "Invalid cursor", code: "invalid_cursor" });
+    return;
+  }
+  try {
+    if (!(await characterOwnedBy(userId, characterId))) return void notFound();
+    const page = await listRecallLedger({
+      userId,
+      characterId,
+      limit: clampLedgerLimit(q.limit),
+      cursor: cursor || null,
+      sessionId: typeof session === "string" ? session : null,
+    });
+    res.json(page);
+  } catch (err) {
+    if (err instanceof RecallLedgerCursorError) {
+      res.status(400).json({ error: "Invalid cursor", code: "invalid_cursor" });
+      return;
+    }
+    if (isMissingMemorySchema(err)) {
+      res.status(503).json({ error: "Memory core is not migrated yet.", code: "memory_schema_missing" });
+      return;
+    }
+    res.status(500).json({ error: "Recall ledger request failed.", code: "server_error" });
   }
 });
 
