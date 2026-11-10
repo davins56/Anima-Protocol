@@ -3,6 +3,8 @@
  * Lazy-loaded from App.full.jsx so the HTML entry chunk stays Landing-only.
  */
 import { Toaster } from "@/components/ui/toaster";
+import UpdateAvailablePrompt from "@/components/app/UpdateAvailablePrompt";
+import OfflineBanner from "@/components/app/OfflineBanner";
 import ConsentBanner from "@/components/ConsentBanner";
 import { usePageMeta, ROUTE_META } from "./lib/usePageMeta";
 
@@ -1696,6 +1698,8 @@ export default function ProtocolApp() {
           </ClerkProviderWithRoutes>
         </ErrorBoundary>
         <ConsentBanner />
+        <UpdateAvailablePrompt />
+        <OfflineBanner />
         <Toaster />
         <SonnerToaster
           theme="dark"
