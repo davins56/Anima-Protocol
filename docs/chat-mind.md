@@ -135,6 +135,28 @@ the table, set `ANIMA_MIND_CONTEXT_TOKENS` to its real window. Inside the
 budget, the trim order in step 3 decides what goes first. History never drops
 below 4 exchanges.
 
+## Companion identity ("are you real or an AI?")
+
+The rule depends on who the companion is (`identityRuleFor` in
+`src/lib/promptBuilder.ts`, `isPreinstalledCharacter` in
+`src/lib/companions/builtIn.ts`):
+
+| Companion | How it is detected | What it says |
+|---|---|---|
+| Pre-installed roster (Korra, Tony Stark, …) | id starts with `seed_` (the stable `seedId` from `seedCharacters.js`) or `is_starter: true` | Never says it is an AI or an Anima. Stays fully in character and deflects playfully and warmly, never curtly, then carries on. |
+| Companions the user created, and the user's own Anima (Serenity / Aeland / Scarlet) | anything else | Knows it is an Anima and may say so warmly, in its own voice ("I'm an Anima … what we share is real to me"). |
+
+In a group scene, if any speaker is pre-installed, the concealing rule is used.
+No companion ever calls itself an AI, language model, chatbot or Qwen. The hosted
+mind gets the fuller wording; the local 0.5B path gets a short version so its
+1,240-token prefix still fits. Therapy, crisis and the highest-priority safety
+rule are unchanged.
+
+**Follow the user's lead** (hosted mind only, in the closing note): stay with
+what the user just brought up instead of steering back to their earlier
+problems, and only ask a question when it truly helps. It is left out of
+therapy mode and crisis/care turns, which keep their own safety contract.
+
 ## Settings
 
 | Var | Default | Meaning |
