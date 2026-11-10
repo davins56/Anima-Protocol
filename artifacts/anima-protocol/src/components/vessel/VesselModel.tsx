@@ -3,7 +3,7 @@
  * Driven by VesselConfig + Expression; animates breathing, head tracking and
  * emotion. `hologram` renders an additive translucent projection (resonance layer).
  */
-import { Suspense, useMemo, useRef, Component, type ReactNode } from "react";
+import { Suspense, useMemo, useRef, useState, Component, type ReactNode } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
@@ -13,6 +13,8 @@ import { computeVesselShift, type VesselShift } from "@/lib/vessel/emotionShift"
 import { NEUTRAL_EMOTION } from "@/lib/vessel/emotionState";
 import { traitsFor } from "@/lib/vessel/vesselTraits";
 import VesselAura from "./VesselAura";
+import UploadedVessel from "./UploadedVessel";
+import { isApiModelUrl, modelCacheKey } from "@/lib/vessel/vesselModelAsset";
 
 /** Calm flame shift for a saved `effects.aura: "flame"` vessel when no live emotion drives it. */
 function useStaticFlameShift(config: VesselConfig, active: boolean): VesselShift | null {
@@ -35,6 +37,13 @@ type Props = {
   onFrame?: () => void;
   /** Emotion vessel-shift; overrides the face weights and adds the companion aura. */
   shift?: VesselShift | null;
+  /** Chat mood key + intensity: drives VRM expression presets directly when given. */
+  mood?: string | null;
+  intensity?: number;
+  /** Companion voice is playing: drives VRM visemes (lip-sync). */
+  speaking?: boolean;
+  /** Optional live voice level 0..1 (read every frame). */
+  audioLevel?: (() => number | null | undefined) | null;
 };
 
 const BODY: Record<string, { w: number; hip: number; h: number }> = {
@@ -335,8 +344,8 @@ function ProceduralVessel({ config, expression: exprProp, hd = false, hologram =
 }
 
 function GltfVessel({ url }: { url: string }) {
-  // Asset slot for licensed glTF/VRM models. VRM humanoid/expressions need
-  // @pixiv/three-vrm (TODO); for now VRM files render as static glTF.
+  // External (allowlisted https) plain glTF/GLB asset slot. Uploaded models and
+  // every VRM go through <UploadedVessel> instead.
   const { scene } = useGLTF(url);
   const cloned = useMemo(() => scene.clone(true), [scene]);
   return <primitive object={cloned} />;
@@ -352,12 +361,40 @@ class AssetBoundary extends Component<{ fallback: ReactNode; children: ReactNode
   }
 }
 
+/** True when the model must be loaded through the VRM runtime / authenticated API route. */
+export function usesUploadedRuntime(model: VesselConfig["model"]): boolean {
+  return Boolean(model?.url) && (model.kind === "vrm" || isApiModelUrl(model.url));
+}
+
 export default function VesselModel(props: Props) {
+  const [loadedKey, setLoadedKey] = useState("");
   const procedural = <ProceduralVessel {...props} />;
-  const { kind, url } = props.config.model;
+  const { model } = props.config;
+  const { kind, url } = model;
   if (kind === "procedural" || !url) return procedural;
+  if (usesUploadedRuntime(model)) {
+    // Owner-only route: other stewards' vessels (resonance holograms) can't load it.
+    if (props.hologram) return procedural;
+    return (
+      <group>
+        <UploadedVessel
+          model={model}
+          expression={props.shift ? props.shift.face : props.expression}
+          mood={props.mood}
+          intensity={props.intensity}
+          speaking={props.speaking}
+          audioLevel={props.audioLevel}
+          track={props.track !== false}
+          onFrame={props.onFrame}
+          fallback={procedural}
+          onLoaded={() => setLoadedKey(modelCacheKey(model))}
+        />
+        {props.shift && loadedKey === modelCacheKey(model) && <VesselAura shift={props.shift} budget={props.hd ? 72 : props.track !== false ? 40 : 0} />}
+      </group>
+    );
+  }
   return (
-    <AssetBoundary fallback={procedural}>
+    <AssetBoundary key={url} fallback={procedural}>
       <Suspense fallback={procedural}>
         <GltfVessel url={url} />
       </Suspense>

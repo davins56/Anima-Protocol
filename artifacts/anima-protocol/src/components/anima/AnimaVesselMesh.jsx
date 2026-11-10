@@ -5,6 +5,8 @@ import * as THREE from "three";
 import useFaceTexture from "@/hooks/useFaceTexture";
 import TesseractLattice from "@/components/battle/TesseractLattice";
 import VesselAura from "@/components/vessel/VesselAura";
+import UploadedVessel from "@/components/vessel/UploadedVessel";
+import { isApiModelUrl } from "@/lib/vessel/vesselModelAsset";
 import { wPhaseScale } from "@/lib/tesseract4d";
 import { RENDERER_QUALITY } from "@/lib/rendererQuality";
 import {
@@ -521,6 +523,12 @@ export default function AnimaVesselMesh({
   sequences,
   /** Optional emotion vessel-shift (lib/vessel/emotionShift). Additive: omitted = previous behaviour. */
   shift = null,
+  /** Uploaded VRM only: chat mood key / intensity for expression presets, and lip-sync. */
+  mood = null,
+  intensity = 5,
+  speaking = false,
+  /** Uploaded models keep the crystal wings unless turned off. */
+  wingsOnModel = true,
 }) {
   const root = useRef(null);
   const halo = useRef(null);
@@ -548,6 +556,13 @@ export default function AnimaVesselMesh({
   const glow = shift ? shift.glow : 1;
   const faceMap = useFaceTexture(model?.texture_url);
   const resolvedGltf = gltfUrl || model?.gltf_url || model?.body_url || null;
+  // Uploaded companion models (schema-2 vessel: VRM, or a GLB behind the
+  // owner-only /api/vessel/:id/model route) need the authenticated VRM runtime.
+  const uploaded = !gltfUrl && model?.vessel_model?.url && (model.vessel_model.kind === "vrm" || isApiModelUrl(model.vessel_model.url))
+    ? model.vessel_model
+    : !gltfUrl && model?.vrm_url
+      ? { kind: "vrm", url: model.vrm_url }
+      : null;
   const dim = 0.55 + Math.max(0, Math.min(1, hpRatio)) * 0.45;
   const headSeg = hd ? 48 : 24;
   const bodySeg = hd ? 24 : 14;
@@ -590,7 +605,45 @@ export default function AnimaVesselMesh({
         </mesh>
       )}
 
-      {resolvedGltf ? (
+      {uploaded ? (
+        <>
+          <UploadedVessel
+            model={uploaded}
+            expression={shift ? shift.face : null}
+            mood={shift ? null : mood}
+            intensity={intensity}
+            speaking={speaking}
+            track={false}
+            tint={{ color, hd }}
+            fallback={
+              <ProceduralBody
+              color={color}
+              accent={accent}
+              gold={gold}
+              hd={hd}
+              faceMap={faceMap}
+              bodySeg={bodySeg}
+              headSeg={headSeg}
+              expression={expr}
+              breathScale={breathOn ? 1 : 0}
+              hairCount={hairCount}
+              wingLayers={wingLayers}
+              showLattice={(hd || showLattice) && plan.showLattice}
+              plan={plan}
+            />
+            }
+          />
+          {plan.showWings !== false && wingsOnModel && (
+            <VesselWings
+              color={plan.wingBoost ? "#c4b5fd" : color}
+              accent={plan.wingBoost ? "#fbcfe8" : accent}
+              hd={hd}
+              layers={wingLayers + plan.wingBoost}
+              expression={expr + plan.wingBoost * 0.2}
+            />
+          )}
+        </>
+      ) : resolvedGltf ? (
         <Suspense
           fallback={
             <ProceduralBody
