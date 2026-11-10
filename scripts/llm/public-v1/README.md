@@ -2,7 +2,7 @@
 
 Expose a **local Ollama** `anima-chat` brain as a public OpenAI-compatible URL the Cloudflare Worker can call. This is **not GPU vLLM** (Ministral 8B still needs `scripts/llm/docker-compose.vllm.yml` on a GPU host).
 
-The Worker at `anima-protocol.com` cannot reach `localhost` (Cloudflare error 1003). Fly (`deploy/ollama-fly/`) is the always-on production path. This directory is the **named-tunnel** path when Ollama is already running on a CPU box.
+The Worker at `anima-protocol.com` cannot reach `localhost` (Cloudflare error 1003). Production defaults to the Cloudflare brain (`ANIMA_CHAT_BRAIN=cloudflare`, [`docs/chat-brain.md`](../../../docs/chat-brain.md)). This directory is the **named-tunnel** path when Ollama is already running on a CPU box.
 
 ## What you get
 
@@ -41,7 +41,7 @@ curl -sS https://llm.anima-protocol.com/v1/models \
 
 ## Worker wiring (Secrets Store, then binding)
 
-Do **not** put `ANIMA_LOCAL_LLM_BASE_URL` in `wrangler.jsonc` `vars`. Ordered runbook is in [`deploy/ollama-fly/README.md`](../../../deploy/ollama-fly/README.md).
+Do **not** put `ANIMA_LOCAL_LLM_BASE_URL` in `wrangler.jsonc` `vars`. Set `ANIMA_CHAT_BRAIN=self-hosted` in `wrangler.jsonc` `vars` to use it.
 
 | Name | Value |
 |------|--------|
@@ -55,7 +55,7 @@ curl -sS 'https://anima-protocol.com/api/healthz/llm?probe=1'
 # want: preferred=local, host=llm.anima-protocol.com, probeOk=true
 ```
 
-The tunnel dies when the origin box / `cloudflared` stops. For a warm production host, use Fly.
+The tunnel dies when the origin box / `cloudflared` stops. For an always-on production brain, use `ANIMA_CHAT_BRAIN=cloudflare`.
 
 ## keep_alive
 

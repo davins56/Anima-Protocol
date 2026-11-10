@@ -747,7 +747,7 @@ export default function Settings() {
               <SectionTitle>LLM Providers</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5 space-y-3">
                 <p className="text-[9px] font-mono text-primary/30 leading-relaxed">
-                  Chat stays on the self-hosted Anima LLM when ANIMA_LOCAL_LLM_BASE_URL is set (customOnly). OpenRouter does not hop after that host, even if ANIMA_OPENROUTER_FALLBACK is on. MiniMax and Deepshi are not in the companion chat chain.
+                  With ANIMA_CHAT_BRAIN=cloudflare, chat and background memory jobs run on Cloudflare Workers AI inside the Worker — no Fly.io or droplet. Otherwise chat prefers a self-hosted Anima LLM when ANIMA_LOCAL_LLM_BASE_URL is set (customOnly). MiniMax and Deepshi are not in the companion chat chain.
                 </p>
                 {CONFIGURED_LLM_PROVIDERS.map((provider) => (
                   <div

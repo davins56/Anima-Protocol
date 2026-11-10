@@ -356,51 +356,20 @@ nothing else about this code path changes.
 
 ### Exact fix — "The model \`anima-chat\` does not exist…" / cloud host misconfig
 
-If `/api/healthz/llm` shows `localEndpoint.host=api.openai.com` (or Groq/Gemini/etc.) with `model=anima-chat`, Vercel is pointed at a **cloud chat API**, not a self-hosted Anima LLM. OpenAI has no model named `anima-chat`, so every chat turn 404s. Chat never uses ChatGPT/Gemini/Groq — set `ANIMA_LOCAL_LLM_BASE_URL` to your **Ollama/vLLM** HTTPS URL instead (steps below). Healthy response: `status=ok`, `localEndpoint.isCloudFlagship=false`, `host` is your tunnel/Fly/Render hostname.
+If `/api/healthz/llm` shows `localEndpoint.host=api.openai.com` (or Groq/Gemini/etc.) with `model=anima-chat`, Vercel is pointed at a **cloud chat API**, not a self-hosted Anima LLM. OpenAI has no model named `anima-chat`, so every chat turn 404s. Chat never uses ChatGPT/Gemini/Groq — set `ANIMA_LOCAL_LLM_BASE_URL` to your **Ollama/vLLM** HTTPS URL instead (steps below). Healthy response: `status=ok`, `localEndpoint.isCloudFlagship=false`, `host` is your tunnel hostname.
 
 ### Exact fix — 401 / "Anima LLM authentication failed…"
 
 `/api/healthz/llm?probe=1` shows `probeOk=false`, `errorKind: "auth"`,
-`status: 401`. The host is up, but the bearer Vercel sends does **not** match
-Fly `PROXY_AUTH_TOKEN`.
+`status: 401`. The self-hosted host is up, but the bearer the Worker sends does
+**not** match the proxy token on that host. Set the same value as
+`ANIMA_LOCAL_LLM_API_KEY` and as the host's `PROXY_AUTH_TOKEN`, then redeploy.
 
-1. Reset the Fly secret and keep the value:
-   ```bash
-   cd deploy/ollama-fly
-   NEW_TOKEN=$(openssl rand -hex 32)
-   fly secrets set PROXY_AUTH_TOKEN=$NEW_TOKEN -a anima-chat-llm
-   printf '%s\n' "$NEW_TOKEN"
-   ```
-2. Set **the same value** on Vercel Production as `ANIMA_LOCAL_LLM_API_KEY`
-   (with `ANIMA_LOCAL_LLM_BASE_URL=https://anima-chat-llm.fly.dev/v1`).
-3. Redeploy Vercel **without build cache**.
-4. Confirm:
-   ```bash
-   curl -sS https://anima-chat-llm.fly.dev/v1/models \
-     -H "Authorization: Bearer $NEW_TOKEN" | jq '.data[].id'
-   curl -s 'https://www.anima-protocol.com/api/healthz/llm?probe=1' \
-     | jq '{probeOk, probes}'
-   # expect probeOk=true
-   ```
+Or skip the self-hosted host entirely: `ANIMA_CHAT_BRAIN=cloudflare` runs chat
+on Workers AI inside the Worker (see [`docs/chat-brain.md`](./chat-brain.md)).
 
-Unauthenticated calls to the Fly host should return **401** (proves the proxy
-is locked). A matching bearer must list `anima-chat` under `/v1/models`.
-
-### Exact fix — empty-body 403 with a *correct* bearer
-
-Wrong bearer → **401**. Correct bearer → request reaches Ollama, which then
-returns empty-body **403** if the reverse proxy forwards the public
-`Host: *.fly.dev` header. Ollama only accepts loopback Host.
-
-Fix is in [`deploy/ollama-fly/Caddyfile`](../deploy/ollama-fly/Caddyfile)
-(`header_up Host 127.0.0.1:11434`). Redeploy the Fly app:
-
-```bash
-cd deploy/ollama-fly
-fly deploy -a anima-chat-llm
-curl -sS https://anima-chat-llm.fly.dev/v1/models \
-  -H "Authorization: Bearer $NEW_TOKEN" | jq '.data[].id'
-```
+The Fly.io pack (`deploy/ollama-fly/`) was removed — production does not use
+Fly.io or a DigitalOcean droplet.
 
 ### Exact fix — "Anima custom LLM is not configured…" / "No chat LLM configured"
 
@@ -452,7 +421,7 @@ curl -s https://www.anima-protocol.com/api/healthz/llm | jq '.openrouter'
 **Self-hosted (preferred long-term):**
 
 1. **Host an OpenAI-compatible server** (Ollama or vLLM) reachable over **public HTTPS** — it has to be always-on, since Vercel can't reach `localhost` or a laptop that's asleep.
-   - **Ready-made:** [`deploy/ollama-fly/`](../deploy/ollama-fly/README.md) — `fly deploy` builds the `anima-chat` model into an image and serves it behind an authenticated reverse proxy, with a public `https://<app>.fly.dev` URL out of the box. Start here unless you already have a host.
+   - **No host at all (production default):** `ANIMA_CHAT_BRAIN=cloudflare` — chat runs on Workers AI inside the Worker. See [`docs/chat-brain.md`](./chat-brain.md).
    - **Named Cloudflare Tunnel (CPU Ollama, not vLLM):** [`scripts/llm/public-v1/`](../scripts/llm/public-v1/README.md) — bearer proxy + `cloudflared` so a box already running `anima-chat` is reachable as `https://llm.anima-protocol.com/v1`. Worker secrets: `ANIMA_LOCAL_LLM_BASE_URL` + `ANIMA_LOCAL_LLM_API_KEY`. Do not commit token files. A catch-all Worker route `*.anima-protocol.com/*` will swallow this hostname — narrow it (e.g. `www.anima-protocol.com/*`).
    - **One-paste VPS:** [`scripts/llm/cloud-init-vps.sh`](../scripts/llm/cloud-init-vps.sh) (`pnpm llm:vps-init`) — installs Ollama + `anima-chat` + a Cloudflare quick tunnel as systemd services on any fresh Debian/Ubuntu box. See [`docs/llm-deploy.md`](./llm-deploy.md).
    - **Local uncensored:** `ollama pull dolphin-mistral && ollama create anima-uncensored -f scripts/llm/Modelfile.anima-uncensored` then set `ANIMA_OLLAMA_MODEL_STANDARD=anima-uncensored`.

@@ -12,7 +12,7 @@ export function llmProviderShortLabel(provider) {
   if (provider === "minimax") return "MiniMax";
   if (provider === "deepshi") return "Deepshi";
   if (provider === "openrouter") return "Venice";
-  if (provider === "workersai") return "DeepSeek";
+  if (provider === "workersai") return "Workers AI";
   return null;
 }
 
@@ -27,7 +27,7 @@ export function llmDisplayLabel(provider, brand) {
   if (brand === "minimax" || provider === "minimax") return "MiniMax";
   if (brand === "deepshi" || provider === "deepshi") return "Deepshi";
   if (brand === "openrouter" || provider === "openrouter") return "Venice";
-  if (brand === "workersai" || provider === "workersai") return "DeepSeek";
+  if (brand === "workersai" || provider === "workersai") return "Workers AI";
   return llmProviderShortLabel(provider);
 }
 
@@ -49,7 +49,7 @@ export function llmProviderTitle(provider) {
     return "Last reply from Deepshi";
   }
   if (provider === "workersai") {
-    return "Last reply from DeepSeek via Cloudflare Workers AI";
+    return "Last reply from the Cloudflare brain (Workers AI)";
   }
   return "Last reply LLM";
 }
@@ -76,7 +76,7 @@ export function llmDisplayTitle(provider, brand) {
     return "Venice Uncensored (Dolphin Mistral 24B) via OpenRouter — open-weight uncensored chat";
   }
   if (brand === "workersai" || provider === "workersai") {
-    return "DeepSeek R1 distill via Cloudflare Workers AI (AI Gateway)";
+    return "Anima brain on Cloudflare Workers AI (AI Gateway) — no self-hosted model host";
   }
   return llmProviderTitle(provider);
 }
@@ -122,9 +122,9 @@ export function llmDisplayBadgeClass(provider, brand) {
 export const CONFIGURED_LLM_PROVIDERS = [
   {
     id: "workersai",
-    label: "DeepSeek (Workers AI)",
+    label: "Cloudflare brain (Workers AI)",
     env: "AI",
-    note: "Used only when no usable ANIMA_LOCAL_LLM_BASE_URL is set. Cloudflare Workers AI DeepSeek R1 distill via AI Gateway deepseek-gateway.",
+    note: "Default when ANIMA_CHAT_BRAIN=cloudflare (or no usable ANIMA_LOCAL_LLM_BASE_URL is set). Runs on the Worker's own AI binding via AI Gateway deepseek-gateway — no Fly.io, droplet, or tunnel. Model: ANIMA_WORKERS_AI_MODEL (default DeepSeek R1 distill).",
   },
   {
     id: "minimax",
@@ -142,7 +142,7 @@ export const CONFIGURED_LLM_PROVIDERS = [
     id: "local",
     label: "Anima LLM",
     env: "ANIMA_LOCAL_LLM_BASE_URL",
-    note: "Self-hosted open weights (Ollama/vLLM) — used for chat when ANIMA_LOCAL_LLM_BASE_URL is set. customOnly is fail-closed: OpenRouter does not hop after this host, even if ANIMA_OPENROUTER_FALLBACK=true.",
+    note: "Optional self-hosted open weights (Ollama/vLLM) — used for chat when ANIMA_LOCAL_LLM_BASE_URL is set and ANIMA_CHAT_BRAIN is not cloudflare. customOnly is fail-closed: OpenRouter does not hop after this host, even if ANIMA_OPENROUTER_FALLBACK=true.",
   },
   {
     id: "openrouter",

@@ -7,6 +7,42 @@ import { visibleAssistantReply } from "./visibleAssistantReply";
 export const WORKERS_AI_CHAT_MODEL =
   "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b";
 
+/**
+ * Chat model the Cloudflare brain runs. `ANIMA_WORKERS_AI_MODEL` overrides
+ * the DeepSeek default with any Workers AI text-generation model id
+ * (must start with `@cf/` or `@hf/`; anything else falls back to the default
+ * so a typo cannot send companion text somewhere unexpected).
+ */
+export function workersAiChatModel(env: NodeJS.ProcessEnv = process.env): string {
+  const raw = (env.ANIMA_WORKERS_AI_MODEL || "").trim();
+  if (raw && /^@(cf|hf)\//.test(raw)) return raw;
+  return WORKERS_AI_CHAT_MODEL;
+}
+
+/**
+ * Small non-reasoning model for background brain jobs (scene director,
+ * evolution, consolidation, dreams, journal). Their token budgets are tiny,
+ * which a reasoning model would spend inside <think>. Override with
+ * `ANIMA_WORKERS_AI_BACKGROUND_MODEL`.
+ */
+export const WORKERS_AI_BACKGROUND_MODEL = "@cf/meta/llama-3.1-8b-instruct";
+
+export function workersAiBackgroundModel(env: NodeJS.ProcessEnv = process.env): string {
+  const raw = (env.ANIMA_WORKERS_AI_BACKGROUND_MODEL || "").trim();
+  if (raw && /^@(cf|hf)\//.test(raw)) return raw;
+  return WORKERS_AI_BACKGROUND_MODEL;
+}
+
+/**
+ * Optional Workers AI LoRA fine-tune (name or id) applied on top of the chat
+ * model — the hosted equivalent of the self-hosted `anima-chat` tag. Only
+ * LoRA-capable base models accept it; see docs/chat-brain.md.
+ */
+export function workersAiLora(env: NodeJS.ProcessEnv = process.env): string | null {
+  const raw = (env.ANIMA_WORKERS_AI_LORA || "").trim();
+  return raw || null;
+}
+
 /** wrangler.jsonc `ai.gateway.id` — documented here so healthz stays secret-free. */
 export const WORKERS_AI_GATEWAY_ID = "deepseek-gateway";
 
@@ -254,7 +290,7 @@ function workersAiChunk(
     id: "workersai",
     object: "chat.completion.chunk",
     created: Math.floor(Date.now() / 1000),
-    model: WORKERS_AI_CHAT_MODEL,
+    model: workersAiChatModel(),
     choices: [
       {
         index: 0,
@@ -456,12 +492,17 @@ function runOptions(
     messages: ChatCompletionMessageParam[];
     maxTokens: number;
     temperature?: number;
+    model?: string;
   },
   stream: boolean,
 ): Record<string, unknown> {
+  // The LoRA is trained against the chat model; never attach it to a
+  // different (background) base model.
+  const lora = !opts.model || opts.model === workersAiChatModel() ? workersAiLora() : null;
   return {
     messages: workersAiMessages(opts.messages),
     max_tokens: opts.maxTokens,
+    ...(lora ? { lora } : {}),
     ...(stream ? { stream: true } : {}),
     ...(typeof opts.temperature === "number"
       ? { temperature: opts.temperature }
@@ -473,10 +514,12 @@ export async function completeWorkersAi(opts: {
   messages: ChatCompletionMessageParam[];
   maxTokens: number;
   temperature?: number;
+  /** Defaults to workersAiChatModel(). */
+  model?: string;
 }): Promise<string> {
   const binding = requireWorkersAiBinding();
   const response = await binding.run(
-    WORKERS_AI_CHAT_MODEL,
+    opts.model || workersAiChatModel(),
     runOptions(opts, false),
   );
   const text = extractWorkersAiText(response);
@@ -527,7 +570,7 @@ export async function streamWorkersAi(opts: {
   const binding = requireWorkersAiBinding();
   try {
     const response = await binding.run(
-      WORKERS_AI_CHAT_MODEL,
+      workersAiChatModel(),
       runOptions(opts, true),
     );
     // Fail at stream-open so llmFailover can hop (e.g. 4006 neuron quota)
