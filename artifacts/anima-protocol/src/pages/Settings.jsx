@@ -604,10 +604,15 @@ export default function Settings() {
 
               <SectionTitle>Display Name</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5">
-                <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-2">
+                <label htmlFor="settings-display-name" className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-2">
                   Name shown in chat
                 </label>
                 <input
+                  id="settings-display-name"
+                  name="display_name"
+                  autoComplete="nickname"
+                  autoCapitalize="words"
+                  enterKeyHint="done"
                   value={prefs.display_name}
                   onChange={(e) => setPref("display_name", e.target.value)}
                   placeholder="Enter your display name..."
@@ -775,12 +780,13 @@ export default function Settings() {
                 {/* Creativity */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase">
+                    <label htmlFor="settings-ai-creativity" className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase">
                       Creativity / Temperature
                     </label>
                     <span className="font-mono text-xs text-primary">{prefs.ai_creativity.toFixed(1)}</span>
                   </div>
                   <input
+                    id="settings-ai-creativity"
                     type="range" min="0" max="1" step="0.1"
                     value={prefs.ai_creativity}
                     onChange={(e) => setPref("ai_creativity", parseFloat(e.target.value))}
@@ -821,12 +827,13 @@ export default function Settings() {
                 {/* Context Window */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase">
+                    <label htmlFor="settings-context-window" className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase">
                       Conversation Memory (messages)
                     </label>
                     <span className="font-mono text-xs text-primary">{prefs.context_window}</span>
                   </div>
                   <input
+                    id="settings-context-window"
                     type="range" min="4" max="30" step="2"
                     value={prefs.context_window}
                     onChange={(e) => setPref("context_window", parseInt(e.target.value))}
@@ -1060,6 +1067,12 @@ export default function Settings() {
                       </div>
                     )}
                     <input
+                      type="url"
+                      inputMode="url"
+                      autoComplete="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      aria-label="Custom background image URL"
                       value={prefs.chat_bg_image}
                       onChange={(e) => setPref("chat_bg_image", e.target.value)}
                       placeholder="Or paste image URL..."
