@@ -3,13 +3,17 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat/completio
 import { aiBinding } from "./aiBinding";
 import { visibleAssistantReply } from "./visibleAssistantReply";
 
-/** Production chat model — DeepSeek R1 distill via Workers AI + AI Gateway. */
-export const WORKERS_AI_CHAT_MODEL =
-  "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b";
+/**
+ * Production chat model — Llama 3.3 70B (fp8, fast) via Workers AI + AI
+ * Gateway. Non-reasoning, so replies stream without a `<think>` preamble.
+ * The `<think>` stripping in visibleAssistantReply stays as a no-op for this
+ * model and still covers a reasoning model set via ANIMA_WORKERS_AI_MODEL.
+ */
+export const WORKERS_AI_CHAT_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 
 /**
  * Chat model the Cloudflare brain runs. `ANIMA_WORKERS_AI_MODEL` overrides
- * the DeepSeek default with any Workers AI text-generation model id
+ * the Llama 3.3 default with any Workers AI text-generation model id
  * (must start with `@cf/` or `@hf/`; anything else falls back to the default
  * so a typo cannot send companion text somewhere unexpected).
  */
@@ -56,7 +60,7 @@ export const WORKERS_AI_FREE_QUOTA_HINT =
   "Workers AI daily free quota exhausted — enable Workers Paid or temporarily allow OpenRouter failover";
 
 export const WORKERS_AI_USER_HINT =
-  "DeepSeek on Workers AI failed to reply. Confirm the AI binding uses @cf/deepseek-ai/deepseek-r1-distill-qwen-32b via AI Gateway deepseek-gateway, then retry.";
+  `Workers AI chat failed to reply. Confirm the AI binding serves ${WORKERS_AI_CHAT_MODEL} (or ANIMA_WORKERS_AI_MODEL) via AI Gateway deepseek-gateway, then retry.`;
 
 const WORKERS_AI_FREE_QUOTA_RE =
   /\b4006\b|10[, ]?000 neurons|daily free (?:allocation|quota)|used up your daily free/i;
@@ -72,7 +76,7 @@ export function hasWorkersAiBinding(): boolean {
   return typeof aiBinding?.run === "function";
 }
 
-/** Isolate-local: after 4006, later turns skip DeepSeek and hop OpenRouter immediately. */
+/** Isolate-local: after 4006, later turns skip Workers AI and hop OpenRouter immediately. */
 let workersAiQuotaExhaustedThisIsolate = false;
 
 export function markWorkersAiQuotaExhausted(): void {
@@ -175,8 +179,8 @@ export function formatWorkersAiError(err: unknown): string {
         : "";
   if (!detail) return WORKERS_AI_USER_HINT;
   if (isWorkersAiFreeQuotaError(detail)) return WORKERS_AI_FREE_QUOTA_HINT;
-  if (/deepseek on workers ai/i.test(detail)) return detail;
-  return `DeepSeek on Workers AI failed: ${detail}`;
+  if (/(?:deepseek on|^) ?workers ai(?: chat)? failed/i.test(detail)) return detail;
+  return `Workers AI chat failed: ${detail}`;
 }
 
 function withWorkersAiErrorCode(code: unknown, message: string): string {
@@ -529,7 +533,7 @@ export async function completeWorkersAi(opts: {
     visibleAssistantReply(reasoning, { allowThinkFallback: true }).trim();
   if (visible) return visible;
   throw new WorkersAiRequestError(
-    "DeepSeek on Workers AI returned an empty reply. Please try again.",
+    "Workers AI chat returned an empty reply. Please try again.",
   );
 }
 

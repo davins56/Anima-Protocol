@@ -462,7 +462,7 @@ describe("Cloudflare wrangler config", () => {
     expect(workerSource).not.toMatch(/console\.log\(["']AI BINDING/);
     const source = readFileSync(path.join(repoRoot, "wrangler.jsonc"), "utf8");
     expect(source).toMatch(/self-hosted Anima LLM \(anima-chat\)/);
-    expect(source).toMatch(/Workers AI DeepSeek is only/);
+    expect(source).toMatch(/Workers AI \(Llama 3\.3 70B\) is only/);
     expect(source).toMatch(/deepseek-gateway/);
   });
 
