@@ -225,6 +225,7 @@ import InteractiveCalendarWidget from "@/components/calendar/InteractiveCalendar
 import { useChatSession } from "@/hooks/useChatSession";
 import { stitchLiveMessages, useChatStreaming } from "@/hooks/useChatStreaming";
 import { useStickToBottom } from "@/hooks/useStickToBottom";
+import { beginReply } from "@/lib/replyActivity";
 import { useStableCallback } from "@/hooks/useStableCallback";
 import { settleMessages } from "@/lib/settledMessages";
 import { mergeOlderMessages, OLDER_MESSAGES_PAGE } from "@/lib/olderMessages";
@@ -307,6 +308,12 @@ export default function Chat() {
   const [awaitingCompanion, setAwaitingCompanion] = useState(false);
   const awaitingSessionRef = useRef(null);
   const composerBusy = isLoading || awaitingCompanion;
+  // Tell the service-worker update prompt a reply is in flight so it never
+  // reloads the page mid-stream.
+  useEffect(() => {
+    if (!composerBusy) return undefined;
+    return beginReply();
+  }, [composerBusy]);
   const [sessionLoad, setSessionLoad] = useState({ status: "idle" });
   const [sessionLoadNonce, setSessionLoadNonce] = useState(0);
   const sessionLoadGenRef = useRef(0);
