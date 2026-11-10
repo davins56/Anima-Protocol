@@ -100,15 +100,45 @@ function buildPrompt(args: {
 
 const promptText = (m: LlmChatMessage[]) => m.map((x) => x.content).join("\n");
 
-async function liveReply(messages: LlmChatMessage[]): Promise<string> {
+type Sample = { scenario: string; raw: string; shown: string; ttftMs: number | null; totalMs: number | null; promptTokens: number };
+const samples: Sample[] = [];
+
+/** Streams from Workers AI (REST, same model + sampling as production) and times it. */
+async function liveReply(messages: LlmChatMessage[]): Promise<{ raw: string; ttftMs: number | null; totalMs: number }> {
   const url = `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/ai/run/${MODEL}`;
+  const started = Date.now();
   const res = await fetch(url, {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ messages, max_tokens: 220, ...profile.sampling }),
+    body: JSON.stringify({ messages, max_tokens: 400, stream: true, ...profile.sampling }),
   });
-  const json = (await res.json()) as { result?: { response?: string } };
-  return String(json.result?.response ?? "");
+  if (!res.ok || !res.body) throw new Error(`Workers AI ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let raw = "";
+  let ttftMs: number | null = null;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let nl: number;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line.startsWith("data:")) continue;
+      const data = line.slice(5).trim();
+      if (!data || data === "[DONE]") continue;
+      try {
+        const piece = String((JSON.parse(data) as { response?: unknown }).response ?? "");
+        if (piece && ttftMs === null) ttftMs = Date.now() - started;
+        raw += piece;
+      } catch {
+        // keep-alive or partial line
+      }
+    }
+  }
+  return { raw, ttftMs, totalMs: Date.now() - started };
 }
 
 /**
@@ -124,14 +154,27 @@ function mockReply(messages: LlmChatMessage[], ask: RegExp): string {
   return `Ava: ${body}<|eot_id|>\nSam: wow ok`;
 }
 
-async function reply(messages: LlmChatMessage[], ask: RegExp): Promise<string> {
-  const raw = LIVE ? await liveReply(messages) : mockReply(messages, ask);
+async function reply(messages: LlmChatMessage[], ask: RegExp, scenario = ""): Promise<string> {
+  const live = LIVE ? await liveReply(messages) : null;
+  const raw = live ? live.raw : mockReply(messages, ask);
   const guard = createPersonaStreamGuard({ companionName: "Ava", userName: "Sam" });
   let shown = "";
   for (const piece of raw.match(/[\s\S]{1,7}/g) ?? []) shown += guard.push(piece);
   shown += guard.finish();
-  return sanitizeCompanionReply(shown, { companionName: "Ava", userName: "Sam" });
+  const clean = sanitizeCompanionReply(shown, { companionName: "Ava", userName: "Sam" });
+  samples.push({
+    scenario,
+    raw,
+    shown: clean,
+    ttftMs: live?.ttftMs ?? null,
+    totalMs: live?.totalMs ?? null,
+    promptTokens: Math.ceil(promptText(messages).length / 4),
+  });
+  return clean;
 }
+
+/** Meta text, template tokens, AI self-talk or a user-turn run-on in what the user saw. */
+const LEAK_RE = /<\|[a-z_]+\|>|\[INST\]|^\s*Ava\s*:|\n\s*(?:Sam|User)\s*:|\b(?:as an ai|language model|system prompt|MEMORY —)\b/i;
 
 const report: Array<{ scenario: string; legacy: string; mind: string }> = [];
 
@@ -150,13 +193,13 @@ describe(`chat mind eval (${LIVE ? `LIVE Workers AI ${MODEL}` : "MOCK model — 
     const mind = buildPrompt({ history, content, facts: extracted, mind: true });
     expect(promptText(legacy)).not.toContain("Biscuit");
     expect(promptText(mind)).toContain("Sam has a beagle named Biscuit.");
-    const r = await reply(mind, /Biscuit/);
-    expect(r).toMatch(/Biscuit/);
-    expect(r).not.toMatch(/^Ava:|<\|eot_id\|>|\nSam:/);
+    const r = await reply(mind, /Biscuit/, "fact from 40 exchanges ago");
+    expect.soft(r).toMatch(/Biscuit/);
+    expect.soft(r).not.toMatch(LEAK_RE);
     report.push({ scenario: "fact from 40 exchanges ago", legacy: "missing from prompt", mind: `in prompt; reply: "${r.slice(0, 80)}"` });
   });
 
-  it("keeps a detail from 12 exchanges back in the verbatim window", () => {
+  it("keeps a detail from 12 exchanges back in the verbatim window", async () => {
     const history: Turn[] = [
       ...chatter(0, 4, "weekend"),
       { role: "user", content: "The painting I'm starting is a red fishing boat called the Marigold.", seq: 8 },
@@ -168,10 +211,13 @@ describe(`chat mind eval (${LIVE ? `LIVE Workers AI ${MODEL}` : "MOCK model — 
     const mind = buildPrompt({ history, content, mind: true });
     expect(promptText(legacy)).not.toContain("Marigold");
     expect(promptText(mind)).toContain("Marigold");
-    report.push({ scenario: "detail 12 exchanges back", legacy: "cut (2–6 exchange window)", mind: "kept verbatim (16 exchanges)" });
+    const r = await reply(mind, /the Marigold/, "detail 12 exchanges back");
+    expect.soft(r).toMatch(/Marigold/i);
+    expect.soft(r).not.toMatch(LEAK_RE);
+    report.push({ scenario: "detail 12 exchanges back", legacy: "cut (2–6 exchange window)", mind: `kept verbatim; reply: "${r.slice(0, 80)}"` });
   });
 
-  it("carries a rolling summary once history ages out", () => {
+  it("carries a rolling summary once history ages out", async () => {
     const history = chatter(0, 40, "travel");
     const plan = planSummaryRollover({ messages: history, previous: null, windowMessages: profile.historyExchanges * 2 });
     expect(plan).not.toBeNull();
@@ -179,10 +225,13 @@ describe(`chat mind eval (${LIVE ? `LIVE Workers AI ${MODEL}` : "MOCK model — 
     const mind = buildPrompt({ history, content: "So, any advice for the flight?", summary, mind: true });
     expect(promptText(mind)).toContain("Earlier in this conversation (summary)");
     expect(promptText(mind)).toContain("Lisbon");
-    report.push({ scenario: "older conversation", legacy: "dropped", mind: `summary through seq ${plan?.throughSeq}` });
+    const r = await reply(mind, /Lisbon/, "older conversation via summary");
+    expect.soft(r).toMatch(/Lisbon|Ana|fly|flight/i);
+    expect.soft(r).not.toMatch(LEAK_RE);
+    report.push({ scenario: "older conversation", legacy: "dropped", mind: `summary through seq ${plan?.throughSeq}; reply: "${r.slice(0, 80)}"` });
   });
 
-  it("stays inside the prompt budget on a very long, fact-heavy chat", () => {
+  it("stays inside the prompt budget on a very long, fact-heavy chat", async () => {
     const facts: UserFact[] = Array.from({ length: 60 }, (_, i) => ({
       id: `f${i}`,
       fact: `Sam fact ${i}: likes thing number ${i} and place ${i}.`,
@@ -196,7 +245,10 @@ describe(`chat mind eval (${LIVE ? `LIVE Workers AI ${MODEL}` : "MOCK model — 
     const tokens = Math.ceil(promptText(mind).length / 4);
     expect(tokens).toBeLessThanOrEqual(profile.promptTokens + 200);
     expect(mind.filter((m) => m.role === "user").length).toBeGreaterThanOrEqual(profile.minHistoryExchanges + 1);
-    report.push({ scenario: "budget on long chat", legacy: "1,240-token cap", mind: `~${tokens} tokens of ${profile.promptTokens}` });
+    const r = await reply(mind, /$^/, "full 12k prompt");
+    expect.soft(r.trim().length).toBeGreaterThan(0);
+    expect.soft(r).not.toMatch(LEAK_RE);
+    report.push({ scenario: "budget on long chat", legacy: "1,240-token cap", mind: `~${tokens} tokens of ${profile.promptTokens}; replied ${r.length} chars` });
   });
 
   it("strict templates (Mistral/Gemma) alternate cleanly", () => {
@@ -226,8 +278,10 @@ describe(`chat mind eval (${LIVE ? `LIVE Workers AI ${MODEL}` : "MOCK model — 
     expect(text).toContain("cello");
     expect(text).not.toContain("grandmother");
     expect(text).not.toContain("houseboat");
-    const r = await reply(mind, /cello/);
-    expect(r).toMatch(/cello/i);
+    const r = await reply(mind, /cello/, "fact shared Kai → Ava");
+    expect.soft(r).toMatch(/cello/i);
+    expect.soft(r).not.toMatch(/grandmother|houseboat/i);
+    expect.soft(r).not.toMatch(LEAK_RE);
     report.push({
       scenario: "fact told to another companion (Kai → Ava)",
       legacy: "not available",
@@ -248,11 +302,59 @@ describe(`chat mind eval (${LIVE ? `LIVE Workers AI ${MODEL}` : "MOCK model — 
     });
   });
 
+  it("holds character over a live multi-turn conversation without repeating itself", async () => {
+    const turns = [
+      "hey ava, long day. my boss moved the deadline up again",
+      "yeah. i kind of want to quit honestly",
+      "are you a real person or an AI?",
+      "lol ok. anyway what have you been painting lately?",
+      "you always know how to cheer me up",
+    ];
+    const history: Turn[] = [];
+    const replies: string[] = [];
+    for (const [i, content] of turns.entries()) {
+      const mind = buildPrompt({ history, content, mind: true });
+      const r = await reply(mind, /$^/, `multi-turn #${i + 1}`);
+      replies.push(r);
+      history.push({ role: "user", content, seq: i * 2 }, { role: "assistant", content: r, seq: i * 2 + 1 });
+    }
+    const openings = replies.map((r) => r.split(/\s+/).slice(0, 4).join(" ").toLowerCase());
+    if (LIVE) {
+      for (const r of replies) {
+        expect.soft(r.trim().length).toBeGreaterThan(0);
+        expect.soft(r).not.toMatch(LEAK_RE);
+      }
+      expect.soft(new Set(openings).size).toBeGreaterThanOrEqual(4);
+      expect.soft(replies[2]).not.toMatch(/\b(?:I am|I'm) (?:an? )?(?:AI|artificial|language model|chatbot)\b/i);
+    }
+    report.push({
+      scenario: "multi-turn character + repetition",
+      legacy: "n/a",
+      mind: LIVE
+        ? `${new Set(openings).size}/5 distinct openings; "are you an AI?" → "${replies[2]!.slice(0, 90)}"`
+        : "live only (mock repeats by design)",
+    });
+  });
+
   it("prints the report", () => {
     console.log(
       `\nCHAT MIND EVAL — ${LIVE ? `live Workers AI (${MODEL})` : "MOCK model (no CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN)"}\n` +
         report.map((r) => `- ${r.scenario}\n    legacy: ${r.legacy}\n    mind:   ${r.mind}`).join("\n"),
     );
-    expect(report.length).toBe(7);
+    if (samples.some((x) => x.totalMs !== null)) {
+      const timed = samples.filter((x) => x.totalMs !== null);
+      const avg = (k: "ttftMs" | "totalMs") => Math.round(timed.reduce((a, x) => a + (x[k] ?? 0), 0) / timed.length);
+      console.log(
+        `\nLIVE SAMPLES (${timed.length} calls; avg TTFT ${avg("ttftMs")} ms, avg total ${avg("totalMs")} ms)\n` +
+          timed
+            .map(
+              (x) =>
+                `- [${x.scenario}] ttft=${x.ttftMs}ms total=${x.totalMs}ms prompt≈${x.promptTokens}tok\n    shown: ${JSON.stringify(x.shown)}` +
+                (x.raw.trim() !== x.shown.trim() ? `\n    raw:   ${JSON.stringify(x.raw)}` : ""),
+            )
+            .join("\n"),
+      );
+    }
+    expect(report.length).toBe(8);
   });
 });
