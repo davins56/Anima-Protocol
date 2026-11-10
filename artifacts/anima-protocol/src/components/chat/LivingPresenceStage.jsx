@@ -204,12 +204,30 @@ function StageAura({ hue, sat }) {
       a: 0.15 + Math.random() * 0.4,
     }));
 
+    let reduced = false;
+    try {
+      reduced = Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches);
+    } catch {
+      reduced = false;
+    }
     const resize = () => {
       canvas.width = canvas.clientWidth;
       canvas.height = canvas.clientHeight;
+      if (reduced) draw();
     };
     resize();
     window.addEventListener("resize", resize);
+
+    function draw() {
+      const { width, height } = canvas;
+      ctx.clearRect(0, 0, width, height);
+      for (const p of particles) {
+        ctx.beginPath();
+        ctx.fillStyle = `hsla(${hue}, ${sat}%, 70%, ${p.a})`;
+        ctx.arc(p.x * width, p.y * height, p.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
 
     const tick = () => {
       if (!running) return;
@@ -227,7 +245,8 @@ function StageAura({ hue, sat }) {
         raf = requestAnimationFrame(tick);
       }
     };
-    if (typeof requestAnimationFrame === "function") {
+    // Reduced motion: one static frame, no drifting particles.
+    if (!reduced && typeof requestAnimationFrame === "function") {
       raf = requestAnimationFrame(tick);
     }
 

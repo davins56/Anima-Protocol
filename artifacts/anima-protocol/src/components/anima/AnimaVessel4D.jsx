@@ -13,8 +13,9 @@ import * as THREE from "three";
 import TesseractLattice from "@/components/battle/TesseractLattice";
 import AnimaVesselMesh from "@/components/anima/AnimaVesselMesh";
 import { useRendererQuality } from "@/hooks/useRendererQuality";
+import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 
-function VesselStage({ model, autoRotate, quality, expression, layers, sequences, shift }) {
+function VesselStage({ model, autoRotate, quality, expression, layers, sequences, shift, still = false }) {
   const color = model?.color || "#67e8f9";
   const accent = model?.accent || "#c4b5fd";
 
@@ -33,9 +34,9 @@ function VesselStage({ model, autoRotate, quality, expression, layers, sequences
         factor={2.5}
         saturation={0.25}
         fade
-        speed={0.5}
+        speed={still ? 0 : 0.5}
       />
-      {quality.sparkles > 0 && (
+      {quality.sparkles > 0 && !still && (
         <Sparkles
           count={quality.sparkles}
           scale={[3.8, 5.2, 3.8]}
@@ -45,7 +46,7 @@ function VesselStage({ model, autoRotate, quality, expression, layers, sequences
           opacity={0.72}
         />
       )}
-      {quality.tesseracts >= 1 && (
+      {quality.tesseracts >= 1 && !still && (
         <TesseractLattice
           color={color}
           scale={2.05}
@@ -54,7 +55,7 @@ function VesselStage({ model, autoRotate, quality, expression, layers, sequences
           position={[0, 0.85, 0]}
         />
       )}
-      <Float speed={1.15} rotationIntensity={0.14} floatIntensity={0.24}>
+      <Float speed={still ? 0 : 1.15} rotationIntensity={still ? 0 : 0.14} floatIntensity={still ? 0 : 0.24}>
         <group position={[0, -0.35, 0]} scale={1.05}>
           <AnimaVesselMesh
             model={model}
@@ -67,6 +68,7 @@ function VesselStage({ model, autoRotate, quality, expression, layers, sequences
             layers={layers}
             sequences={sequences}
             shift={shift}
+            still={still}
           />
         </group>
       </Float>
@@ -86,9 +88,9 @@ function VesselStage({ model, autoRotate, quality, expression, layers, sequences
         minPolarAngle={0.3}
         maxPolarAngle={Math.PI / 1.55}
         target={[0, 0.75, 0]}
-        autoRotate={autoRotate && quality.animateCamera}
+        autoRotate={autoRotate && quality.animateCamera && !still}
         autoRotateSpeed={0.48}
-        enableDamping
+        enableDamping={!still}
         dampingFactor={0.08}
       />
       {quality.postprocessing && (
@@ -119,6 +121,9 @@ export default function AnimaVessel4D({
   shift = null,
 }) {
   const { quality, handleDecline, handleIncline } = useRendererQuality();
+  // Reduced motion: no auto-rotate / flap / halo / float, and the canvas renders
+  // only on demand (orbit drags, prop changes), i.e. a static frame at rest.
+  const still = usePrefersReducedMotion();
   const dpr = dprMax != null ? [1, dprMax] : quality.dpr;
 
   const style = useMemo(
@@ -132,8 +137,10 @@ export default function AnimaVessel4D({
       style={{ width: "100%", height: "100%", position: "relative" }}
       data-sovereign-presence
       data-quality={quality.name}
+      data-frameloop={still ? "demand" : "always"}
     >
       <Canvas
+        frameloop={still ? "demand" : "always"}
         camera={{ position: [0.65, 1.55, 2.85], fov: 32, near: 0.08, far: 45 }}
         gl={{
           alpha: false,
@@ -157,6 +164,7 @@ export default function AnimaVessel4D({
             layers={layers}
             sequences={sequences}
             shift={shift}
+            still={still}
           />
         </PerformanceMonitor>
       </Canvas>

@@ -23,6 +23,7 @@ import { useFrameloopGate } from "@/hooks/useFrameloopGate";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import type { FrameloopGate } from "@/lib/vessel/frameloopGate";
 import { RenderDemandContext, type RenderDemand } from "./renderDemand";
+import { detectRendererCapabilities, selectRendererQuality } from "@/lib/rendererQuality";
 
 /** Idle (nothing moving but breathing/blink) render rate for full mode. */
 export const IDLE_FPS = 15;
@@ -111,7 +112,9 @@ const VesselCanvas = forwardRef<VesselCanvasHandle, Props>(function VesselCanvas
   const onGl = useCallback((gl: WebGLRenderer, render: () => void) => {
     glRef.current = { gl, render };
   }, []);
-  const maxDpr = typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, hd ? 2 : 1.5) : 1;
+  // Same device tiers as Presence / NetBattle: the ceiling caps DPR and antialiasing.
+  const tier = useMemo(() => selectRendererQuality(detectRendererCapabilities()), []);
+  const maxDpr = typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, hd ? 2 : 1.5, tier.dpr[1]) : 1;
   const [dpr, setDpr] = useState(mode === "portrait" ? 1 : Math.min(1.25, maxDpr));
   const portrait = mode === "portrait";
   const head = !portrait && focus === "head";
@@ -159,7 +162,7 @@ const VesselCanvas = forwardRef<VesselCanvasHandle, Props>(function VesselCanvas
         dpr={dpr}
         frameloop={portrait ? (visible ? "demand" : "never") : frameloop}
         camera={{ position: portrait ? [0, 1.55, 0.75] : head ? [0, 1.6, 0.7] : [0, 1.2, 2.6], fov: portrait ? 30 : head ? 30 : 40 }}
-        gl={{ antialias: !portrait && hd, powerPreference: "low-power", preserveDrawingBuffer: false, alpha: true }}
+        gl={{ antialias: !portrait && hd && tier.antialias, powerPreference: "low-power", preserveDrawingBuffer: false, alpha: true }}
       >
         <RenderDemandContext.Provider value={demand}>
         <ambientLight intensity={0.6} />
