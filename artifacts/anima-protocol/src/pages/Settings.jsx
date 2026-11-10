@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { lazy, Suspense, useState, useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useUser } from "@clerk/react";
 import { animaClient, exportData } from "@/api/animaClient";
@@ -28,22 +28,30 @@ import {
 } from "@/components/ui/select";
 import { BACKGROUND_THEMES } from "@/components/chat/ChatBackground.jsx";
 import { Upload, BookOpen, GraduationCap } from "lucide-react";
-import ModelTutorPanel from "@/components/tutor/ModelTutorPanel";
 import OwnModelConsent from "@/components/tutor/OwnModelConsent";
 import { useModelTutor } from "@/hooks/useModelTutor";
-import UserContextSettings from "@/components/anima/UserContextSettings";
-import DeviceScanPanel from "@/components/anima/DeviceScanPanel";
-import KnowledgeGraphViewer from "@/components/anima/KnowledgeGraphViewer";
 import { entityLabel, parseBackup, summarizeEntities } from "@/lib/restoreBackup";
 import { performRestoreFlow } from "@/lib/restoreHandlers";
 import { repairStarterCharacters } from "@/lib/seedCharacters";
-import ProactiveMessageSettings from "@/components/settings/ProactiveMessageSettings";
-import AppearanceStudio from "@/components/settings/AppearanceStudio";
-import AnimaForge from "@/components/settings/AnimaForge";
-import ForgeProfiles from "@/components/settings/ForgeProfiles";
 
 import { CONFIGURED_LLM_PROVIDERS } from "@/lib/llmProviderLabel";
 import { toast } from "sonner";
+
+// Heavier Settings sections load when their tab opens, not with the page.
+const UserContextSettings = lazy(() => import("@/components/anima/UserContextSettings"));
+const DeviceScanPanel = lazy(() => import("@/components/anima/DeviceScanPanel"));
+const KnowledgeGraphViewer = lazy(() => import("@/components/anima/KnowledgeGraphViewer"));
+const ModelTutorPanel = lazy(() => import("@/components/tutor/ModelTutorPanel"));
+const ProactiveMessageSettings = lazy(() => import("@/components/settings/ProactiveMessageSettings"));
+const AppearanceStudio = lazy(() => import("@/components/settings/AppearanceStudio"));
+const AnimaForge = lazy(() => import("@/components/settings/AnimaForge"));
+const ForgeProfiles = lazy(() => import("@/components/settings/ForgeProfiles"));
+
+function SectionSkeleton() {
+  return (
+    <div role="status" aria-label="Loading section" className="h-24 border border-primary/10 bg-primary/5 animate-pulse" />
+  );
+}
 import AgeGateDialog from "@/components/settings/AgeGateDialog";
 import {
   formatChatBackgroundUploadError,
@@ -740,9 +748,9 @@ export default function Settings() {
           {/* ── BACKGROUND CONTEXT ── */}
           {section === SECTION.BACKGROUND && (
             <div className="space-y-4">
-              <UserContextSettings />
+              <Suspense fallback={<SectionSkeleton />}><UserContextSettings /></Suspense>
               <SectionTitle>Knowledge Graph</SectionTitle>
-              <KnowledgeGraphViewer />
+              <Suspense fallback={<SectionSkeleton />}><KnowledgeGraphViewer /></Suspense>
             </div>
           )}
 
@@ -933,9 +941,9 @@ export default function Settings() {
           {section === SECTION.INTERFACE && (
             <div className="space-y-4">
               <SectionTitle>Interface Preferences</SectionTitle>
-              <AppearanceStudio />
-              <AnimaForge />
-              <ForgeProfiles />
+              <Suspense fallback={<SectionSkeleton />}><AppearanceStudio /></Suspense>
+              <Suspense fallback={<SectionSkeleton />}><AnimaForge /></Suspense>
+              <Suspense fallback={<SectionSkeleton />}><ForgeProfiles /></Suspense>
 
               <div className="border border-primary/15 bg-black/40 p-5 space-y-0 divide-y divide-primary/10">
                 <TogglePref
@@ -983,7 +991,7 @@ export default function Settings() {
                 </div>
 
                 <SectionTitle>Notifications</SectionTitle>
-                <ProactiveMessageSettings />
+                <Suspense fallback={<SectionSkeleton />}><ProactiveMessageSettings /></Suspense>
 
                 <SectionTitle>Theme</SectionTitle>
                 <div className="border border-primary/15 bg-black/40 p-5">
@@ -1096,7 +1104,7 @@ export default function Settings() {
                 Teach the model you trained. Every correction fine-tunes it, and it keeps each
                 version so a bad lesson can be undone.
               </p>
-              <ModelTutorPanel />
+              <Suspense fallback={<SectionSkeleton />}><ModelTutorPanel /></Suspense>
             </div>
           )}
 
@@ -1129,7 +1137,7 @@ export default function Settings() {
               </div>
 
               <SectionTitle>Anima device scan</SectionTitle>
-              <DeviceScanPanel anima={anima} />
+              <Suspense fallback={<SectionSkeleton />}><DeviceScanPanel anima={anima} /></Suspense>
 
               <div className="border border-primary/15 bg-black/40 p-5">
                 <div className="flex items-start justify-between gap-4">

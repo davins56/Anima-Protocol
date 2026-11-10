@@ -105,6 +105,7 @@ import InAppBrowserWarning from "@/components/InAppBrowserWarning";
 import TapTargetValidator from "@/components/mobile/TapTargetValidator";
 
 import { PageLoader } from "./app/PageLoader";
+import NavigationFocus from "./components/layout/RouteFocus";
 import { ChatSkeleton } from "./app/ChatSkeleton";
 
 // ── Clerk auth wiring ─────────────────────────────────────────────────────
@@ -942,6 +943,7 @@ const AuthenticatedApp = () => {
         <AIDisclaimerModal onAccept={() => setDisclaimerAccepted(true)} />
       )}
       {showChrome && disclaimerAccepted && <TutorialOverlay />}
+      {showChrome && <NavigationFocus />}
       {showChrome && <MobileHeader />}
       {/* The shell (keyboard avoidance, error boundary, Suspense) stays
           mounted across navigations. Only the route panel fades in, ~100ms,
