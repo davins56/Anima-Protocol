@@ -79,16 +79,18 @@ export function rankKnowledge(candidates: KnowledgeCandidate[], opts: RankOption
     .filter((c) => String(c.text || "").trim())
     .map((c) => ({ ...c, score: scoreCandidate(c, opts) }))
     .sort((a, b) => b.score - a.score);
-  const kept: Array<RankedKnowledge & { tokens: Set<string> }> = [];
+  const kept: RankedKnowledge[] = [];
+  const keptTokens: Array<Set<string>> = [];
   for (const c of scored) {
     const tokens = tokenSet(c.text);
-    if (kept.some((k) => jaccard(k.tokens, tokens) >= DUPLICATE_JACCARD)) continue;
+    if (keptTokens.some((k) => jaccard(k, tokens) >= DUPLICATE_JACCARD)) continue;
     // A moment already on screen is wasted budget. Facts stay: they are the
     // stable record even when the user just said it.
     if (c.kind === "moment" && history.some((h) => containment(tokens, h) >= HISTORY_CONTAINMENT)) continue;
-    kept.push({ ...c, tokens });
+    kept.push(c);
+    keptTokens.push(tokens);
   }
-  return kept.map(({ tokens: _tokens, ...rest }) => rest);
+  return kept;
 }
 
 export type PackedKnowledge = {
