@@ -180,6 +180,8 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
               characterId={primaryChar.id}
               characterName={primaryChar.name}
               refreshKey={Math.floor((session?.messages?.length || 0) / 4)}
+              sessionId={session?.id}
+              returnTo={session?.id ? `/chat/${session.id}` : "/chat"}
             />
           )}
           {session?.therapy_mode && (

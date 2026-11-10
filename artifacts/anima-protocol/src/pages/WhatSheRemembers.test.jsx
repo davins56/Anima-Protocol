@@ -296,3 +296,34 @@ describe("WhatSheRemembers identity proposals", () => {
     expect(screen.queryByTestId("proposal-actions")).toBeNull();
   });
 });
+
+describe("What she remembers highlight from the recall ledger", () => {
+  it("scrolls to a matching memory and opens the existing forget confirm", async () => {
+    animaApi.chat.companionMemory.mockResolvedValue({ review });
+    render(
+      <MemoryRouter initialEntries={["/what-she-remembers/natasha?name=Natasha&memory=her-key"]}>
+        <Routes>
+          <Route path="/what-she-remembers/:characterId" element={<WhatSheRemembers />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    const item = await screen.findByText("Natasha kept the key.");
+    const row = item.closest("[data-memory-id]");
+    expect(row?.getAttribute("data-memory-id")).toBe("her-key");
+    await waitFor(() => expect(row?.getAttribute("data-highlighted")).toBe("true"));
+    expect(screen.getByText("Forget this memory? It leaves what she remembers. It does not change her personality.")).toBeTruthy();
+  });
+
+  it("explains when a recalled memory is not in this list", async () => {
+    animaApi.chat.companionMemory.mockResolvedValue({ review });
+    render(
+      <MemoryRouter initialEntries={["/what-she-remembers/natasha?name=Natasha&memory=evt-missing"]}>
+        <Routes>
+          <Route path="/what-she-remembers/:characterId" element={<WhatSheRemembers />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByTestId("memory-highlight-missing")).toBeTruthy();
+    expect(screen.queryByText("Forget this memory? It leaves what she remembers. It does not change her personality.")).toBeNull();
+  });
+});
