@@ -16,7 +16,13 @@ import {
   storeSessionSummary,
   type SummaryMessage,
 } from "./rollingSummary";
-import { buildFactExtractionMessages, loadUserFacts, parseExtractedFacts, storeUserFacts } from "./userFacts";
+import {
+  buildFactExtractionMessages,
+  loadUserFacts,
+  parseExtractedFacts,
+  storeUserFacts,
+  type FactScope,
+} from "./userFacts";
 
 export type MindPostTurnInput = {
   userId: string;
@@ -28,6 +34,11 @@ export type MindPostTurnInput = {
   userName?: string;
   companionName?: string;
   profile: MindProfile;
+  /**
+   * `user` (default): learned facts are shared with all of this user's
+   * companions. `companion`: kept private to this one (therapy / adult).
+   */
+  factScope?: FactScope;
   /** Loads the recent tail of this session (ascending). */
   loadRecentMessages: (limit: number) => Promise<Array<{ seq?: unknown; role?: unknown; content?: unknown }>>;
 };
@@ -71,6 +82,7 @@ export async function extractAndStoreFacts(input: MindPostTurnInput): Promise<nu
     turnId: input.turnId,
     facts,
     known,
+    scope: input.factScope ?? "user",
   });
 }
 

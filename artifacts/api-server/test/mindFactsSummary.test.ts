@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   extractJsonPayload,
   factDedupeKey,
+  factScopeForTurn,
   findReplacedFact,
   newFactsOnly,
   parseExtractedFacts,
@@ -68,9 +69,40 @@ describe("chat mind fact extraction parsing", () => {
     expect(findReplacedFact({ ...cand, replaces: "something unrelated entirely" }, known)).toBeNull();
   });
 
-  it("keys facts per companion and ignores case/punctuation", () => {
+  it("keys shared facts once per user and private facts per companion", () => {
     expect(factDedupeKey("c1", "Sam likes tea.")).toBe(factDedupeKey("c1", "sam likes TEA"));
-    expect(factDedupeKey("c1", "Sam likes tea.")).not.toBe(factDedupeKey("c2", "Sam likes tea."));
+    // Shared (default): the same fact told to two companions is one row.
+    expect(factDedupeKey("c1", "Sam likes tea.")).toBe(factDedupeKey("c2", "Sam likes tea."));
+    expect(factDedupeKey("c1", "Sam likes tea.")).toMatch(/^fact:user:/);
+    expect(factDedupeKey("c1", "Sam likes tea.", "companion")).not.toBe(factDedupeKey("c2", "Sam likes tea.", "companion"));
+    expect(factDedupeKey("c1", "Sam likes tea.", "companion")).not.toBe(factDedupeKey("c1", "Sam likes tea.", "user"));
+  });
+
+  it("keeps a correction that flips a known fact's meaning", () => {
+    const known: UserFact[] = [{ id: "k1", fact: "Sam is allergic to peanuts.", category: "health", importance: 0.9 }];
+    const explicit: UserFact = { fact: "Sam is not allergic to peanuts.", category: "health", importance: 0.9, replaces: "Sam is allergic to peanuts." };
+    const implicit: UserFact = { fact: "Sam isn't allergic to peanuts.", category: "health", importance: 0.9 };
+    expect(newFactsOnly([explicit], known)).toEqual([explicit]);
+    expect(findReplacedFact(explicit, known)?.id).toBe("k1");
+    expect(newFactsOnly([implicit], known)).toEqual([implicit]);
+    expect(findReplacedFact(implicit, known)?.id).toBe("k1");
+    // A plain repeat is still a duplicate.
+    expect(newFactsOnly([{ fact: "Sam is allergic to peanuts", category: "health", importance: 0.9 }], known)).toEqual([]);
+  });
+
+  it("gives distinct keys to distinct facts in non-Latin scripts", () => {
+    expect(factDedupeKey("c1", "小明住在北京。")).not.toBe(factDedupeKey("c1", "小明喜欢游泳。"));
+    expect(factDedupeKey("c1", "Саша живёт в Москве.")).not.toBe(factDedupeKey("c1", "Саша любит плавать."));
+    expect(factDedupeKey("c1", "小明住在北京。")).toBe(factDedupeKey("c1", "小明住在北京"));
+    const parsed = parseExtractedFacts(JSON.stringify({ facts: [{ fact: "小明住在北京。" }, { fact: "小明喜欢游泳。" }] }));
+    expect(parsed).toHaveLength(2);
+  });
+
+  it("keeps therapy and adult turns private to the companion", () => {
+    expect(factScopeForTurn({ mode: "standard" })).toBe("user");
+    expect(factScopeForTurn({ mode: "therapy" })).toBe("companion");
+    expect(factScopeForTurn({ mode: "standard", therapy: true })).toBe("companion");
+    expect(factScopeForTurn({ mode: "standard", adult: true })).toBe("companion");
   });
 
   it("skips extraction for tiny user lines", () => {
