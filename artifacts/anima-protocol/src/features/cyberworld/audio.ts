@@ -214,6 +214,18 @@ export class CyberworldAudio {
     this.tone(1320, 0.05, 0.02, "square");
   }
 
+  /** Sonar ping for Scan. */
+  scan() {
+    this.tone(520, 0.5, 0.035, "sine", 1560);
+    setTimeout(() => this.tone(1560, 0.25, 0.015, "sine"), 220);
+  }
+
+  /** Arpeggio when hacking a node open; brighter for rarer finds (0–4). */
+  collect(tier = 0) {
+    const base = [523.25, 587.33, 659.25, 783.99, 880][Math.max(0, Math.min(4, tier))];
+    [1, 1.25, 1.5, 2].slice(0, 2 + Math.min(2, tier)).forEach((m, i) => setTimeout(() => this.tone(base * m, 0.12, 0.025, "square"), i * 60));
+  }
+
   /** Rising sweep + whoosh when jumping through a portal. */
   portal() {
     this.tone(180, 0.6, 0.04, "sawtooth", 1400);

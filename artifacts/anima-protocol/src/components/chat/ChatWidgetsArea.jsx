@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, memo, Suspense, useState } from "react";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
@@ -15,7 +15,7 @@ function StoryFeedSkeleton() {
   );
 }
 
-export default function ChatWidgetsArea(props) {
+function ChatWidgetsArea(props) {
   const [collapsed, setCollapsed] = useState(true);
   // Warm the feed chunk when the reader reaches for the toggle.
   const warm = () => {
@@ -76,3 +76,7 @@ export default function ChatWidgetsArea(props) {
     </div>
   );
 }
+
+// Memoized so a streaming reply (which re-renders Chat on every token) does
+// not re-render this subtree; Chat passes stable handlers and a settled thread.
+export default memo(ChatWidgetsArea);

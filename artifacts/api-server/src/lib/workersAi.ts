@@ -3,13 +3,17 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat/completio
 import { aiBinding } from "./aiBinding";
 import { visibleAssistantReply } from "./visibleAssistantReply";
 
-/** Production chat model — DeepSeek R1 distill via Workers AI + AI Gateway. */
-export const WORKERS_AI_CHAT_MODEL =
-  "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b";
+/**
+ * Production chat model — Llama 3.3 70B (fp8, fast) via Workers AI + AI
+ * Gateway. Non-reasoning, so replies stream without a `<think>` preamble.
+ * The `<think>` stripping in visibleAssistantReply stays as a no-op for this
+ * model and still covers a reasoning model set via ANIMA_WORKERS_AI_MODEL.
+ */
+export const WORKERS_AI_CHAT_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 
 /**
  * Chat model the Cloudflare brain runs. `ANIMA_WORKERS_AI_MODEL` overrides
- * the DeepSeek default with any Workers AI text-generation model id
+ * the Llama 3.3 default with any Workers AI text-generation model id
  * (must start with `@cf/` or `@hf/`; anything else falls back to the default
  * so a typo cannot send companion text somewhere unexpected).
  */
@@ -56,7 +60,7 @@ export const WORKERS_AI_FREE_QUOTA_HINT =
   "Workers AI daily free quota exhausted — enable Workers Paid or temporarily allow OpenRouter failover";
 
 export const WORKERS_AI_USER_HINT =
-  "DeepSeek on Workers AI failed to reply. Confirm the AI binding uses @cf/deepseek-ai/deepseek-r1-distill-qwen-32b via AI Gateway deepseek-gateway, then retry.";
+  `Workers AI chat failed to reply. Confirm the AI binding serves ${WORKERS_AI_CHAT_MODEL} (or ANIMA_WORKERS_AI_MODEL) via AI Gateway deepseek-gateway, then retry.`;
 
 const WORKERS_AI_FREE_QUOTA_RE =
   /\b4006\b|10[, ]?000 neurons|daily free (?:allocation|quota)|used up your daily free/i;
@@ -72,7 +76,7 @@ export function hasWorkersAiBinding(): boolean {
   return typeof aiBinding?.run === "function";
 }
 
-/** Isolate-local: after 4006, later turns skip DeepSeek and hop OpenRouter immediately. */
+/** Isolate-local: after 4006, later turns skip Workers AI and hop OpenRouter immediately. */
 let workersAiQuotaExhaustedThisIsolate = false;
 
 export function markWorkersAiQuotaExhausted(): void {
@@ -175,8 +179,8 @@ export function formatWorkersAiError(err: unknown): string {
         : "";
   if (!detail) return WORKERS_AI_USER_HINT;
   if (isWorkersAiFreeQuotaError(detail)) return WORKERS_AI_FREE_QUOTA_HINT;
-  if (/deepseek on workers ai/i.test(detail)) return detail;
-  return `DeepSeek on Workers AI failed: ${detail}`;
+  if (/(?:deepseek on|^) ?workers ai(?: chat)? failed/i.test(detail)) return detail;
+  return `Workers AI chat failed: ${detail}`;
 }
 
 function withWorkersAiErrorCode(code: unknown, message: string): string {
@@ -487,12 +491,44 @@ function requireWorkersAiBinding() {
   return aiBinding;
 }
 
+/** Extra sampling knobs the chat mind tunes per model family. */
+export type WorkersAiSampling = {
+  top_p?: number;
+  top_k?: number;
+  repetition_penalty?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
+};
+
+const SAMPLING_RANGES: Record<keyof WorkersAiSampling, [number, number]> = {
+  top_p: [0, 2],
+  top_k: [1, 50],
+  repetition_penalty: [0, 2],
+  frequency_penalty: [-2, 2],
+  presence_penalty: [-2, 2],
+};
+
+/** Only finite, in-range values reach the binding (it rejects the rest). */
+export function workersAiSamplingOptions(sampling?: WorkersAiSampling | null): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!sampling) return out;
+  for (const key of Object.keys(SAMPLING_RANGES) as Array<keyof WorkersAiSampling>) {
+    const v = sampling[key];
+    const [lo, hi] = SAMPLING_RANGES[key];
+    if (typeof v === "number" && Number.isFinite(v) && v >= lo && v <= hi) {
+      out[key] = key === "top_k" ? Math.round(v) : v;
+    }
+  }
+  return out;
+}
+
 function runOptions(
   opts: {
     messages: ChatCompletionMessageParam[];
     maxTokens: number;
     temperature?: number;
     model?: string;
+    sampling?: WorkersAiSampling | null;
   },
   stream: boolean,
 ): Record<string, unknown> {
@@ -507,6 +543,7 @@ function runOptions(
     ...(typeof opts.temperature === "number"
       ? { temperature: opts.temperature }
       : {}),
+    ...workersAiSamplingOptions(opts.sampling),
   };
 }
 
@@ -514,6 +551,7 @@ export async function completeWorkersAi(opts: {
   messages: ChatCompletionMessageParam[];
   maxTokens: number;
   temperature?: number;
+  sampling?: WorkersAiSampling | null;
   /** Defaults to workersAiChatModel(). */
   model?: string;
 }): Promise<string> {
@@ -529,7 +567,7 @@ export async function completeWorkersAi(opts: {
     visibleAssistantReply(reasoning, { allowThinkFallback: true }).trim();
   if (visible) return visible;
   throw new WorkersAiRequestError(
-    "DeepSeek on Workers AI returned an empty reply. Please try again.",
+    "Workers AI chat returned an empty reply. Please try again.",
   );
 }
 
@@ -539,6 +577,7 @@ async function* withEmptyStreamFallback(
     messages: ChatCompletionMessageParam[];
     maxTokens: number;
     temperature?: number;
+    sampling?: WorkersAiSampling | null;
   },
 ): AsyncGenerator<OpenAI.Chat.Completions.ChatCompletionChunk> {
   let content = "";
@@ -566,6 +605,7 @@ export async function streamWorkersAi(opts: {
   messages: ChatCompletionMessageParam[];
   maxTokens: number;
   temperature?: number;
+  sampling?: WorkersAiSampling | null;
 }): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
   const binding = requireWorkersAiBinding();
   try {
