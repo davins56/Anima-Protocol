@@ -61,69 +61,57 @@ import {
 import { track } from "@/lib/analytics";
 import Sidebar from "@/components/layout/Sidebar";
 import WelcomeScreen from "@/components/chat/WelcomeScreen";
-import MessageBubble from "@/components/chat/MessageBubble";
+import { ChatSkeleton } from "@/app/ChatSkeleton";
 import ChatInput from "@/components/chat/ChatInput";
 import ChatPdfBar from "@/components/pdf/ChatPdfBar";
 import WebSearchToggle from "@/components/chat/WebSearchToggle";
 import { parseSearchCommand, prepareSearchTurn } from "@/lib/webSearch";
-import NewSessionModal from "@/components/chat/NewSessionModal";
-import { Menu, X } from "lucide-react";
 import ChatBackground, { BACKGROUND_THEMES } from "@/components/chat/ChatBackground.jsx";
 import { detectMood } from "@/lib/moodDetector";
-import TTSControls from "@/components/chat/TTSControls";
 import { useTTS } from "@/hooks/useTTS";
 import { useElevenLabsTTS } from "@/hooks/useElevenLabsTTS";
 import { useEmotionalTTS } from "@/hooks/useEmotionalTTS";
 import { useEmotionalTheming } from "@/hooks/useEmotionalTheming";
 import { motion, AnimatePresence } from "framer-motion";
-import InventoryDrawer from "@/components/chat/InventoryDrawer";
 import CharacterBioSheet from "@/components/character/CharacterBioSheet";
-import TeachDialog from "@/components/tutor/TeachDialog";
 import { useModelTutor } from "@/hooks/useModelTutor";
 import { buildTeachTarget } from "@/lib/modelTutor";
-import SystemAlert from "@/components/chat/SystemAlert";
-import CalendarDisplay from "@/components/chat/CalendarDisplay";
 
-import ChapterRecap from "@/components/chat/ChapterRecap";
-import SessionRecapModal from "@/components/session/SessionRecapModal";
-import NarrativeSuggestions from "@/components/chat/NarrativeSuggestions";
-import EmotionIndicator from "@/components/chat/EmotionIndicator";
 
 import NarrativeChoicesPanel from "@/components/chat/NarrativeChoicesPanel";
 import { useSessionRecap } from "@/hooks/useSessionRecap";
-import DailySummaryModal from "@/components/chat/DailySummaryModal";
 import { useDailyCompilation } from "@/hooks/useDailyCompilation";
 import { useSerenityDebug } from "@/hooks/useSerenityDebug";
 import { maybeHandleProtocolUpgrade, launchMentalLineUpgrade, shouldAttemptProtocolUpgrade } from "@/lib/serenityProtocolUpgrade";
 import { maybeHandleDeviceScan, shouldAttemptDeviceScan, DEVICE_SCAN_PROMPT } from "@/lib/animaDeviceScan";
 import { useAuth } from "@/lib/AuthContext";
 import { pickGroupSpeaker } from "@/lib/pickGroupSpeaker";
-import { useQuestDetectionEngine } from "@/hooks/useQuestDetectionEngine";
-import AIInsightsPanel from "@/components/insights/AIInsightsPanel";
 import { useAIInsights } from "@/hooks/useAIInsights";
-import WorldEvolutionStatus from "@/components/world/WorldEvolutionStatus";
-import WorldPulseFeed from "@/components/world/WorldPulseFeed";
-import AtmosphericDescription from "@/components/world/AtmosphericDescription";
 import { useEmotionalSoundscape } from "@/hooks/useEmotionalSoundscape";
-import EmotionalSoundscapeControl from "@/components/audio/EmotionalSoundscapeControl";
-import { Package, Brain } from "lucide-react";
-import MentalLine from "@/components/chat/MentalLine";
-import SessionEditModal from "@/components/chat/SessionEditModal";
 import ChatInputControls from "@/components/chat/ChatInputControls";
-import DataExportModal from "@/components/export/DataExportModal";
-import CharacterEvolutionPanel from "@/components/chat/CharacterEvolutionPanel";
-import GroupDynamicsPanel from "@/components/group/GroupDynamicsPanel";
-import WorldStateMonitor from "@/components/world/WorldStateMonitor";
 import ResponseSuggestions from "@/components/chat/ResponseSuggestions";
 import QuickActionChips from "@/components/chat/QuickActionChips";
-import NarrativeArcPanel from "@/components/narrative/NarrativeArcPanel";
-import RelationshipEvolutionMap from "@/components/network/RelationshipEvolutionMap";
-import DynamicPortrait from "@/components/chat/DynamicPortrait";
-import LivingPresence from "@/components/chat/LivingPresence";
-import LivingPresenceStage from "@/components/chat/LivingPresenceStage";
+// Modals and drawers load on first open (see DeferredMount), not with Chat.
+const SessionRecapModal = lazy(() => import("@/components/session/SessionRecapModal"));
+const DataExportModal = lazy(() => import("@/components/export/DataExportModal"));
+const TeachDialog = lazy(() => import("@/components/tutor/TeachDialog"));
+const SessionEditModal = lazy(() => import("@/components/chat/SessionEditModal"));
+const VoiceChatMode = lazy(() => import("@/components/chat/VoiceChatMode"));
+const ExportArchiveModal = lazy(() => import("@/components/chat/ExportArchiveModal"));
+const CreateBranchModal = lazy(() => import("@/components/world/CreateBranchModal"));
+const ImageGenerationModal = lazy(() => import("@/components/chat/ImageGenerationModal"));
+const DailySummaryModal = lazy(() => import("@/components/chat/DailySummaryModal"));
+const MentalLine = lazy(() => import("@/components/chat/MentalLine"));
+const NewSessionModal = lazy(() => import("@/components/chat/NewSessionModal"));
+const InventoryDrawer = lazy(() => import("@/components/chat/InventoryDrawer"));
+import DeferredMount from "@/components/common/DeferredMount";
+// Presence rail and full-screen stage load only when a cast is on screen /
+// the stage is opened, not with the Chat chunk.
+const LivingPresence = lazy(() => import("@/components/chat/LivingPresence"));
+const LivingPresenceStage = lazy(() => import("@/components/chat/LivingPresenceStage"));
 import ResonanceField from "@/components/chat/ResonanceField";
 import { resolvePresenceCast, highlightedCastId, lastSpokenLine } from "@/lib/livingPresence";
-import { useResonance, resonancePromptGuidance } from "@/hooks/useResonance";
+import { useResonance } from "@/hooks/useResonance";
 import {
   characterEmotionFromAffect,
   parseCompanionAffectSnapshot,
@@ -134,22 +122,15 @@ import { toast } from "sonner";
 import { useVesselContext } from "@/hooks/useVesselContext";
 import { useHiddenSequencesThread } from "@/hooks/useHiddenSequencesThread";
 import JackInOfferChip from "@/components/chat/JackInOfferChip";
-import VoiceChatMode from "@/components/chat/VoiceChatMode";
 import VoiceInputPanel from "@/components/chat/VoiceInputPanel";
-import ImageGenerationModal from "@/components/chat/ImageGenerationModal";
 // Identity-locked photo studio — lazy so the chat bundle stays lean on iPad.
 const InlinePhotoComposer = lazy(() => import("@/components/photo/InlinePhotoComposer"));
 const VoiceLauncher = lazy(() => import("@/components/voice/VoiceLauncher"));
 const PHOTO_STUDIO_ENABLED = String(import.meta.env.VITE_PHOTO_STUDIO ?? "on").toLowerCase() !== "off";
-import CreateBranchModal from "@/components/world/CreateBranchModal";
-import LocationDialogueHints from "@/components/chat/LocationDialogueHints";
-import ChoiceGenerator from "@/components/chat/ChoiceGenerator";
 
 import { useAutoQuestManager } from "@/components/quests/AutoQuestManager";
 import QuestDetectionMessage from "@/components/chat/QuestDetectionMessage";
 import CharacterPresencePanel from "@/components/chat/CharacterPresencePanel";
-import CharacterQuickChat from "@/components/chat/CharacterQuickChat";
-import SessionToolsDropdown from "@/components/chat/SessionToolsDropdown";
 import { getCompanionModePrompt, getMultiAspectPrompt, getAspectName, ASPECT_META } from "@/lib/companionModePrompts";
 import {
   isTherapySession,
@@ -232,18 +213,15 @@ import {
 } from "@/lib/userRegion";
 import MessageList from "@/components/chat/MessageList";
 import MemoryRecallPanel from "@/components/memory/MemoryRecallPanel";
-import ChatToolbar from "@/components/chat/ChatToolbar";
 import ChatToolbarSection from "@/components/chat/ChatToolbarSection";
 import ChatWidgetsArea from "@/components/chat/ChatWidgetsArea";
 import IntimacyDock from "@/components/intimacy/IntimacyDock";
-import ExportArchiveModal from "@/components/chat/ExportArchiveModal";
 import { useLoreKeywordScanning } from "@/hooks/useLoreKeywordScanning";
 import NarrativeDivergencePanel from "@/components/narrative/NarrativeDivergencePanel";
 import { useDivergentPaths } from "@/hooks/useDivergentPaths";
 import GoToTopButton from "@/components/chat/GoToTopButton";
 import { useNativeBridge } from "@/hooks/useNativeBridge";
 import InteractiveCalendarWidget from "@/components/calendar/InteractiveCalendarWidget";
-import SpeakToAnimaButton from "@/components/anima/SpeakToAnimaButton";
 import { useChatSession } from "@/hooks/useChatSession";
 import { stitchLiveMessages, useChatStreaming } from "@/hooks/useChatStreaming";
 import {
@@ -4253,16 +4231,7 @@ Return JSON:
             </div>
           </div>
         ) : sessionId && sessionLoad.status === "loading" ? (
-          <div
-            className="flex-1 flex flex-col items-center justify-center gap-3"
-            role="status"
-            aria-live="polite"
-          >
-            <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
-            <p className="font-mono text-[9px] text-primary/40 tracking-widest uppercase">
-              Opening conversation...
-            </p>
-          </div>
+          <ChatSkeleton label="Opening conversation..." header={false} />
         ) : sessionId && sessionLoad.status === "missing" ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
             <p className="font-mono text-sm text-primary/70">
@@ -4315,12 +4284,14 @@ Return JSON:
       </main>
 
       {showInventory && activeSession?.character_id && (
-        <InventoryDrawer
-          characterId={activeSession.character_id}
-          characterName={characters.find(c => c.id === activeSession.character_id)?.name || "Character"}
-          recentMessages={activeSession?.messages?.slice(-10) || []}
-          onClose={() => { setShowInventory(false); loadInventory(activeSession.character_id); }}
-        />
+        <Suspense fallback={null}>
+          <InventoryDrawer
+            characterId={activeSession.character_id}
+            characterName={characters.find(c => c.id === activeSession.character_id)?.name || "Character"}
+            recentMessages={activeSession?.messages?.slice(-10) || []}
+            onClose={() => { setShowInventory(false); loadInventory(activeSession.character_id); }}
+          />
+        </Suspense>
       )}
 
       <CharacterBioSheet
@@ -4329,127 +4300,149 @@ Return JSON:
         onClose={() => setBioCharacter(null)}
       />
 
-      <TeachDialog target={teachTarget} onClose={() => setTeachTarget(null)} />
+      <DeferredMount when={teachTarget}>
+        <TeachDialog target={teachTarget} onClose={() => setTeachTarget(null)} />
+      </DeferredMount>
 
-      <DataExportModal
-        isOpen={showExportModal}
-        onClose={() => setShowExportModal(false)}
-        session={activeSession}
-      />
+      <DeferredMount when={showExportModal}>
+        <DataExportModal
+          isOpen={showExportModal}
+          onClose={() => setShowExportModal(false)}
+          session={activeSession}
+        />
+      </DeferredMount>
 
-      <DailySummaryModal
-        summary={summary}
-        dayInfo={calendar ? { season: calendar.current_season, day_of_season: calendar.day_of_season } : null}
-        isOpen={showSummary}
-        onClose={closeSummary}
-      />
+      <DeferredMount when={showSummary}>
+        <DailySummaryModal
+          summary={summary}
+          dayInfo={calendar ? { season: calendar.current_season, day_of_season: calendar.day_of_season } : null}
+          isOpen={showSummary}
+          onClose={closeSummary}
+        />
+      </DeferredMount>
 
       {showModal && (
-        <NewSessionModal
-          mode={mode}
-          onClose={() => setShowModal(false)}
-          onCreate={handleCreateSession}
-        />
+        <Suspense fallback={null}>
+          <NewSessionModal
+            mode={mode}
+            onClose={() => setShowModal(false)}
+            onCreate={handleCreateSession}
+          />
+        </Suspense>
       )}
 
-      <SessionRecapModal
-        isOpen={showRecap}
-        sessionId={recapSessionId}
-        onClose={closeRecap}
-      />
+      <DeferredMount when={showRecap}>
+        <SessionRecapModal
+          isOpen={showRecap}
+          sessionId={recapSessionId}
+          onClose={closeRecap}
+        />
+      </DeferredMount>
 
-      <MentalLine
-        isOpen={showMentalLine}
-        onClose={() => setShowMentalLine(false)}
-        onSendThought={handleMentalLineThought}
-        serenity={serenity}
-        loading={mentalLineLoading}
-      />
+      <DeferredMount when={showMentalLine}>
+        <MentalLine
+          isOpen={showMentalLine}
+          onClose={() => setShowMentalLine(false)}
+          onSendThought={handleMentalLineThought}
+          serenity={serenity}
+          loading={mentalLineLoading}
+        />
+      </DeferredMount>
 
-      <SessionEditModal
-        isOpen={showEditModal}
-        onClose={() => setShowEditModal(false)}
-        session={activeSession}
-        onSave={handleSaveSettings}
-        saving={savingSettings}
-      />
+      <DeferredMount when={showEditModal}>
+        <SessionEditModal
+          isOpen={showEditModal}
+          onClose={() => setShowEditModal(false)}
+          session={activeSession}
+          onSave={handleSaveSettings}
+          saving={savingSettings}
+        />
+      </DeferredMount>
 
-      <VoiceChatMode
-        isOpen={voiceChatOpen}
-        onClose={() => setVoiceChatOpen(false)}
-        character={activeSession?.character_id ? characters.find((c) => c.id === activeSession.character_id) : null}
-        onUserMessage={async (text, speakCallback) => {
-          await handleSendMessage(text);
-          // Wait a moment for the response to be generated, then speak it
-          if (speakCallback && activeSession?.character_id) {
-            setTimeout(() => {
-              const activeChar = characters.find((c) => c.id === activeSession.character_id);
-              const lastMsg = activeSession?.messages?.[activeSession.messages.length - 1];
-              if (lastMsg && lastMsg.role === "assistant" && activeChar) {
-                speakCallback(lastMsg.content, activeChar.name);
-              }
-            }, 500);
-          }
-        }}
-        isLoading={composerBusy}
-      />
-
-      <CreateBranchModal
-        isOpen={showCreateBranch}
-        onClose={() => setShowCreateBranch(false)}
-        onCreateBranch={handleCreateBranch}
-        loading={creatingBranch}
-      />
-
-      <ImageGenerationModal
-        isOpen={showImageGen}
-        onClose={() => setShowImageGen(false)}
-        characterName={
-          activeSession?.mode === "solo"
-            ? characters.find((c) => c.id === activeSession.character_id)?.name
-            : "Serenity"
-        }
-        onImageGenerated={async (url, promptText) => {
-          if (!activeSession?.id || !url) return;
-          const speaker =
-            (activeSession.mode === "solo" &&
-              characters.find((c) => c.id === activeSession.character_id)) ||
-            serenity;
-          let persisted = url;
-          if (typeof url === "string" && url.startsWith("data:")) {
-            try {
-              persisted = await uploadDataUrl(url);
-            } catch {
-              persisted = url;
+      <DeferredMount when={voiceChatOpen}>
+        <VoiceChatMode
+          isOpen={voiceChatOpen}
+          onClose={() => setVoiceChatOpen(false)}
+          character={activeSession?.character_id ? characters.find((c) => c.id === activeSession.character_id) : null}
+          onUserMessage={async (text, speakCallback) => {
+            await handleSendMessage(text);
+            // Wait a moment for the response to be generated, then speak it
+            if (speakCallback && activeSession?.character_id) {
+              setTimeout(() => {
+                const activeChar = characters.find((c) => c.id === activeSession.character_id);
+                const lastMsg = activeSession?.messages?.[activeSession.messages.length - 1];
+                if (lastMsg && lastMsg.role === "assistant" && activeChar) {
+                  speakCallback(lastMsg.content, activeChar.name);
+                }
+              }, 500);
             }
-          }
-          await appendAmbientMessage({
-            appendMessage: animaClient.messages.append,
-            sessionId: activeSession.id,
-            message: {
-              role: "assistant",
-              content: promptText
-                ? `*shares a vision: ${String(promptText).slice(0, 180)}*`
-                : "*shares an image*",
-              character_name: speaker?.name || "Serenity",
-              attachments: [{ type: "image", url: persisted, name: "Generated scene" }],
-              timestamp: new Date().toISOString(),
-            },
-            setActiveSession,
-          });
-          track("image_generated", {
-            source: "modal",
-            is_anima: Boolean(speaker?._isAnima),
-            session_mode: activeSession.mode || "solo",
-          });
-        }}
-      />
+          }}
+          isLoading={composerBusy}
+        />
+      </DeferredMount>
 
-      <ExportArchiveModal
-        isOpen={showExportArchive}
-        onClose={() => setShowExportArchive(false)}
-        session={activeSession}
-      />
+      <DeferredMount when={showCreateBranch}>
+        <CreateBranchModal
+          isOpen={showCreateBranch}
+          onClose={() => setShowCreateBranch(false)}
+          onCreateBranch={handleCreateBranch}
+          loading={creatingBranch}
+        />
+      </DeferredMount>
+
+      <DeferredMount when={showImageGen}>
+        <ImageGenerationModal
+          isOpen={showImageGen}
+          onClose={() => setShowImageGen(false)}
+          characterName={
+            activeSession?.mode === "solo"
+              ? characters.find((c) => c.id === activeSession.character_id)?.name
+              : "Serenity"
+          }
+          onImageGenerated={async (url, promptText) => {
+            if (!activeSession?.id || !url) return;
+            const speaker =
+              (activeSession.mode === "solo" &&
+                characters.find((c) => c.id === activeSession.character_id)) ||
+              serenity;
+            let persisted = url;
+            if (typeof url === "string" && url.startsWith("data:")) {
+              try {
+                persisted = await uploadDataUrl(url);
+              } catch {
+                persisted = url;
+              }
+            }
+            await appendAmbientMessage({
+              appendMessage: animaClient.messages.append,
+              sessionId: activeSession.id,
+              message: {
+                role: "assistant",
+                content: promptText
+                  ? `*shares a vision: ${String(promptText).slice(0, 180)}*`
+                  : "*shares an image*",
+                character_name: speaker?.name || "Serenity",
+                attachments: [{ type: "image", url: persisted, name: "Generated scene" }],
+                timestamp: new Date().toISOString(),
+              },
+              setActiveSession,
+            });
+            track("image_generated", {
+              source: "modal",
+              is_anima: Boolean(speaker?._isAnima),
+              session_mode: activeSession.mode || "solo",
+            });
+          }}
+        />
+      </DeferredMount>
+
+      <DeferredMount when={showExportArchive}>
+        <ExportArchiveModal
+          isOpen={showExportArchive}
+          onClose={() => setShowExportArchive(false)}
+          session={activeSession}
+        />
+      </DeferredMount>
 
       <VoiceInputPanel
         isOpen={showVoiceInput}
@@ -4484,6 +4477,7 @@ Return JSON:
           className="hidden lg:flex absolute right-0 top-0 h-full flex-col items-center justify-center gap-3 pr-2 py-6 pointer-events-none z-30"
         >
           <div className="pointer-events-auto flex flex-col items-center gap-2 max-h-full overflow-y-auto">
+            <Suspense fallback={null}>
             {presenceCast.slice(0, 4).map((character) => {
               const em = characterEmotions[character.id] || {};
               const isLead = character.id === (presenceLeadId || presenceCast[0]?.id);
@@ -4502,6 +4496,7 @@ Return JSON:
                 />
               );
             })}
+            </Suspense>
             <button
               type="button"
               onClick={openPresenceStage}
@@ -4524,6 +4519,8 @@ Return JSON:
         </button>
       )}
 
+      {immersive ? (
+        <Suspense fallback={null}>
       <LivingPresenceStage
         open={Boolean(immersive)}
         onClose={() => setImmersive(false)}
@@ -4536,6 +4533,8 @@ Return JSON:
         onSend={(text) => handleSendMessage(text)}
         isLoading={turnControlsLocked}
       />
+        </Suspense>
+      ) : null}
     </div>
   );
 }
