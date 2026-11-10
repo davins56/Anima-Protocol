@@ -47,7 +47,8 @@ export const RecallLedgerPageSchema = z.object({
   meta: z.object({
     limit: z.number().int(),
     max_limit: z.number().int(),
-    turn_linkage: z.enum(["none", "turn_id"]),
+    /** "none" today. "partial" / "full" (or legacy "turn_id") if a later approved migration lands. */
+    turn_linkage: z.enum(["none", "partial", "full", "turn_id"]),
     grouping: z.string(),
   }),
 });
@@ -129,6 +130,7 @@ export function useRecallLedger(
 ) {
   const [batches, setBatches] = useState<RecallLedgerBatch[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
+  const [meta, setMeta] = useState<RecallLedgerPage["meta"] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<RecallLedgerError | null>(null);
   const gen = useRef(0);
@@ -144,6 +146,7 @@ export function useRecallLedger(
         if (mine !== gen.current) return;
         setBatches((prev) => (replace ? page.batches : [...prev, ...page.batches]));
         setCursor(page.next_cursor);
+        setMeta(page.meta);
       } catch (err) {
         if (mine !== gen.current) return;
         setError(err instanceof RecallLedgerError ? err : new RecallLedgerError("network_error", 0));
@@ -157,6 +160,7 @@ export function useRecallLedger(
   useEffect(() => {
     setBatches([]);
     setCursor(null);
+    setMeta(null);
     if (characterId) void loadPage(null, true);
     return () => {
       gen.current += 1;
@@ -169,5 +173,5 @@ export function useRecallLedger(
 
   const refresh = useCallback(() => loadPage(null, true), [loadPage]);
 
-  return { batches, hasMore: Boolean(cursor), loading, error, loadMore, refresh };
+  return { batches, hasMore: Boolean(cursor), loading, error, loadMore, refresh, meta };
 }

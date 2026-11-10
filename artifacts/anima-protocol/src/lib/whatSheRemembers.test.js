@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  findMemoryForHighlight,
   memoryEmptyLine,
   memoryScreenTitle,
   presentMemoryReview,
@@ -20,6 +21,20 @@ describe("what she remembers paths", () => {
     expect(safeMemoryReturn("https://evil.test")).toBeNull();
     expect(safeMemoryReturn("//evil.test")).toBeNull();
   });
+  it("carries a memory highlight and preview on the path", () => {
+    expect(
+      whatSheRemembersPath({
+        characterId: "natasha",
+        companionName: "Natasha",
+        returnTo: "/chat/sess-1",
+        memoryId: "evt-1",
+        preview: "Natasha kept the key.",
+      }),
+    ).toBe(
+      "/what-she-remembers/natasha?name=Natasha&from=%2Fchat%2Fsess-1&memory=evt-1&q=Natasha+kept+the+key.",
+    );
+  });
+
 
   it("names the menu entry from the companion in a solo or group chat", () => {
     expect(
@@ -105,5 +120,31 @@ describe("presentMemoryReview", () => {
     expect(protectedMoment.core).toEqual([]);
     expect(memoryScreenTitle("Natasha")).toBe("What Natasha remembers");
     expect(memoryEmptyLine("Natasha")).toBe("Natasha hasn't remembered anything yet.");
+  });
+});
+
+describe("findMemoryForHighlight", () => {
+  const review = {
+    about_you: [],
+    companion: [
+      {
+        fact_id: "her-key",
+        event_id: "evt-99",
+        text: "Natasha kept the key.",
+        section: "companion",
+        about: "companion",
+        memory_class: "episodic",
+        editable: true,
+        protected: false,
+      },
+    ],
+    core: [],
+  };
+
+  it("matches by fact id, event id, or preview text", () => {
+    expect(findMemoryForHighlight(review, { memoryId: "her-key" }).fact_id).toBe("her-key");
+    expect(findMemoryForHighlight(review, { memoryId: "evt-99" }).fact_id).toBe("her-key");
+    expect(findMemoryForHighlight(review, { preview: "Natasha kept the key." }).fact_id).toBe("her-key");
+    expect(findMemoryForHighlight(review, { memoryId: "missing", preview: "no such sentence here" })).toBeNull();
   });
 });
