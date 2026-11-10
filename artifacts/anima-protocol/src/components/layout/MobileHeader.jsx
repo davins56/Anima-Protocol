@@ -24,6 +24,7 @@ const ROUTE_TITLES = {
   "/energy-fragments": "Energy Fragments",
   "/echo-keys": "Echo Keys",
   "/net-battle": "NetBattle",
+  "/cyberworld": "Cyberworld",
   "/worldmap": "World Map",
   "/storyboard": "Storyboard",
   "/reflections": "Reflections",
