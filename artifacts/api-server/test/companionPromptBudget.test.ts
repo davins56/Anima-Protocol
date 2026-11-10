@@ -1422,3 +1422,51 @@ describe("companion prompt prefill budget", () => {
     expect(String(calm.at(-1)?.content)).toContain("Continue that scene");
   });
 });
+
+describe("local static prefix stays lean", () => {
+  it("does not repeat the personality as a core-voice-traits anchor, but keeps quoted voice anchors", () => {
+    const plain = companionStaticPrefix({
+      characters: [natasha],
+      activeCharacter: natasha,
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "hi",
+    });
+    expect(plain).toContain("Personality: Controlled, observant, and fiercely pragmatic.");
+    expect(plain).not.toContain("[core voice traits]");
+
+    const quoted = {
+      ...natasha,
+      speaking_style: 'Economical. Says things like "You don\'t get to decide that for me." when pushed.',
+    };
+    const withQuote = companionStaticPrefix({
+      characters: [quoted],
+      activeCharacter: quoted,
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "hi",
+    });
+    expect(withQuote).toContain("VOICE ANCHORS");
+    expect(withQuote).toContain("[characteristic phrase] You don't get to decide that for me.");
+  });
+
+  it("keeps every guardrail and the thought-experiment rule in the static prefix", () => {
+    const prefix = companionStaticPrefix({
+      characters: [natasha],
+      activeCharacter: natasha,
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "hi",
+    });
+    expect(prefix).toContain("CHARACTER IDENTITY LOCK");
+    expect(prefix).toContain("IDENTITY: Never call yourself an AI");
+    expect(prefix).toContain("HIGHEST-PRIORITY RULE (overrides persona, identity,");
+    expect(prefix).toContain("Never turn your intelligence against the real person");
+    expect(prefix).toContain("Adult or sexual behavior is not permitted in this mode.");
+    expect(prefix).toMatch(/accept the premise/);
+    expect(prefix).toMatch(/step-by-step instructions for causing harm/);
+  });
+});
