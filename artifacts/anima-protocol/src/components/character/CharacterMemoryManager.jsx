@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { animaClient } from "@/api/animaClient";
 import { Loader, Plus, X, Edit2, Trash2, Brain, Zap } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -20,6 +20,10 @@ import { useConfirm } from "@/lib/ConfirmDialog";
 
 export default function CharacterMemoryManager({ characterId, characterName }) {
   const confirm = useConfirm();
+  const requestVersion = useRef(0);
+  // Tracks which companion this panel currently shows, so late responses
+  // from a previous companion (loads or post-mutation refreshes) are dropped.
+  const activeCharacterId = useRef(characterId);
   const [memories, setMemories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState(null);
@@ -34,35 +38,53 @@ export default function CharacterMemoryManager({ characterId, characterName }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    // Invalidate requests from the previous companion when switching profiles.
+    activeCharacterId.current = characterId;
     if (characterId) {
-      loadMemories();
+      void loadMemories(characterId, { reset: true });
+    } else {
+      requestVersion.current += 1;
+      setMemories([]);
+      setLoading(false);
     }
+    return () => {
+      requestVersion.current += 1;
+    };
   }, [characterId]);
 
-  const loadMemories = async () => {
+  const loadMemories = async (targetId = characterId, { reset = false } = {}) => {
+    // A refresh started by a mutation on a companion we've since left must not
+    // claim the latest version and paint that companion's memories here.
+    if (!targetId || targetId !== activeCharacterId.current) return;
+    const version = ++requestVersion.current;
     setLoading(true);
     setError("");
+    // Only blank the list when switching companions, not on refresh after edits.
+    if (reset) setMemories([]);
     try {
       const data = await animaClient.entities.CharacterMemory.filter(
-        { character_id: characterId },
+        { character_id: targetId },
         "-created_date",
         100
       );
-      setMemories(data || []);
+      if (version === requestVersion.current) setMemories(data || []);
     } catch (err) {
-      console.error("Error loading memories:", err);
-      setError("Could not load memories. Please retry.");
+      if (version === requestVersion.current) {
+        console.error("Error loading memories:", err);
+        setError("Could not load memories. Please retry.");
+      }
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
   };
 
   const handleAddMemory = async () => {
     if (!characterId || !newMemory.trim()) return;
+    const targetId = characterId;
     setError("");
     try {
       await animaClient.entities.CharacterMemory.create({
-        character_id: characterId,
+        character_id: targetId,
         fact: newMemory.trim(),
         category: newTags.length > 0 ? newTags[0] : "personal",
         tags: newTags,
@@ -70,7 +92,7 @@ export default function CharacterMemoryManager({ characterId, characterName }) {
       setNewMemory("");
       setNewTags([]);
       setShowAdd(false);
-      await loadMemories();
+      await loadMemories(targetId);
     } catch (err) {
       console.error("Error adding memory:", err);
       setError("Memory could not be saved. Please retry.");
@@ -79,6 +101,7 @@ export default function CharacterMemoryManager({ characterId, characterName }) {
 
   const handleEditMemory = async (id) => {
     if (!editText.trim()) return;
+    const targetId = characterId;
     setError("");
     try {
       await animaClient.entities.CharacterMemory.update(id, {
@@ -86,7 +109,7 @@ export default function CharacterMemoryManager({ characterId, characterName }) {
         tags: editTags,
       });
       setEditingId(null);
-      await loadMemories();
+      await loadMemories(targetId);
     } catch (err) {
       console.error("Error editing memory:", err);
       setError("Memory could not be updated. Please retry.");
@@ -100,10 +123,11 @@ export default function CharacterMemoryManager({ characterId, characterName }) {
       confirmLabel: "Delete",
     });
     if (!ok) return;
+    const targetId = characterId;
     setError("");
     try {
       await animaClient.entities.CharacterMemory.delete(id);
-      await loadMemories();
+      await loadMemories(targetId);
     } catch (err) {
       console.error("Error deleting memory:", err);
       setError("Memory could not be deleted. Please retry.");
