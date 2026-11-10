@@ -42,6 +42,7 @@ export default function ChatToolbar({
   onShowExport,
   onAvatarClick,
   llmProvider,
+  companionSpeaking = false,
   onOpenStage,
   onOpenHistory,
 }) {
@@ -83,6 +84,7 @@ export default function ChatToolbar({
             onToggleDeepMode={onToggleDeepMode}
             onAvatarClick={onAvatarClick}
             llmProvider={llmProvider}
+            speaking={companionSpeaking}
           />
         </div>
 

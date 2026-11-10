@@ -174,3 +174,22 @@ JSON parse, the 50 MB cap, and Storage's own object metadata.
    routes will 503 `vessel_schema_missing`.
 
 5. Do not deploy from this branch until it is reviewed and merged.
+
+## Frontend implementation (feature/vessel-model-uploads-frontend)
+
+| Piece | Path |
+| --- | --- |
+| Fetch bytes via the API route, re-fetch on expired signed URL, short byte cache | `src/lib/vessel/vesselModelAsset.ts` |
+| GLTFLoader + `VRMLoaderPlugin`, `VRMUtils` optimise / `rotateVRM0` / `deepDispose` | `src/lib/vessel/vrmRuntime.ts` |
+| Mood → VRM presets, auto-blink, easing | `src/lib/vessel/vrmExpressions.ts` |
+| `getVisemeOpenness` / voice level → `aa ih ou ee oh` | `src/lib/vessel/vrmVisemes.ts` |
+| R3F renderer (Suspense + error boundary, procedural fallback) | `src/components/vessel/UploadedVessel.tsx` |
+| Validate → sign → PUT (XHR progress) → complete | `src/lib/vessel/vesselModelUpload.ts`, `src/components/vessel/VesselModelUpload.tsx` |
+
+Paths are relative to `artifacts/anima-protocol/`. The browser requests
+`apiUrl('/vessel/:id/model')` with the Clerk bearer and `credentials:
+"same-origin"`, follows the 302, and reads the bytes immediately; the signed
+URL is never stored. A 400/401/403 on that request is treated as an expired
+signed URL (or token) and retried once through the API. The signed hop is a
+cross-origin GET without credentials, so bucket CORS only needs the app
+origin (no `Access-Control-Allow-Credentials`).

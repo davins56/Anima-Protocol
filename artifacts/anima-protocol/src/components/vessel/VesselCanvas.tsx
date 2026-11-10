@@ -21,6 +21,11 @@ type Props = {
   hd?: boolean;
   className?: string;
   shift?: VesselShift | null;
+  /** Chat mood + intensity for VRM expression presets (uploaded VRM vessels). */
+  mood?: string | null;
+  intensity?: number;
+  /** Companion voice is playing: VRM lip-sync. */
+  speaking?: boolean;
 };
 
 function useVisible(ref: React.RefObject<HTMLElement | null>) {
@@ -61,7 +66,7 @@ function GlGrabber({ onGl }: { onGl: (gl: WebGLRenderer, render: () => void) => 
 }
 
 const VesselCanvas = forwardRef<VesselCanvasHandle, Props>(function VesselCanvas(
-  { config, expression, mode = "full", hd = false, className, shift = null },
+  { config, expression, mode = "full", hd = false, className, shift = null, mood, intensity, speaking = false },
   ref,
 ) {
   const host = useRef<HTMLDivElement>(null);
@@ -91,9 +96,9 @@ const VesselCanvas = forwardRef<VesselCanvasHandle, Props>(function VesselCanvas
         <ambientLight intensity={0.6} />
         <directionalLight position={[1.5, 3, 2]} intensity={1.1} />
         <pointLight position={[-1.5, 1.6, 1]} intensity={0.6} color={config.effects.color} />
-        <VesselModel config={config} expression={expression} hd={hd && !portrait} track={!portrait} shift={shift} />
+        <VesselModel config={config} expression={expression} hd={hd && !portrait} track={!portrait} shift={shift} mood={mood} intensity={intensity} speaking={speaking} />
         {portrait ? (
-          <Ticker fps={12} active={visible} />
+          <Ticker fps={speaking && config.model.kind === "vrm" ? 24 : 12} active={visible} />
         ) : (
           <>
             <PerformanceMonitor
