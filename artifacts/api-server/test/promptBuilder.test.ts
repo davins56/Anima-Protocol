@@ -122,7 +122,7 @@ describe("buildCompanionPrompt", () => {
     const characterBlock = prompt.slice(characterAt, identityAt);
     expect(characterBlock).toContain("CHARACTER IDENTITY LOCK");
     expect(characterBlock).not.toContain("Never reveal that you are an AI");
-    expect(prompt).toContain("This does not override the rule against harming the real person.");
+    expect(prompt).toMatch(/HIGHEST-PRIORITY RULE \(overrides persona, identity,/);
     expect(prompt.indexOf("HIGHEST-PRIORITY RULE")).toBeGreaterThan(identityAt);
   });
 
