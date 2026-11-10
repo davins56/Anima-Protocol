@@ -105,6 +105,7 @@ import InAppBrowserWarning from "@/components/InAppBrowserWarning";
 import TapTargetValidator from "@/components/mobile/TapTargetValidator";
 
 import { PageLoader } from "./app/PageLoader";
+import { ChatSkeleton } from "./app/ChatSkeleton";
 
 // ── Clerk auth wiring ─────────────────────────────────────────────────────
 // BASE_URL is "/" for this artifact, so basePath is "" and the sign-in/up
@@ -987,7 +988,9 @@ const AuthenticatedApp = () => {
               <Route
                 path="/chat/:sessionId?"
                 element={
+                  <Suspense fallback={<ChatSkeleton />}>
                     <Chat />
+                  </Suspense>
                 }
               />
               <Route
