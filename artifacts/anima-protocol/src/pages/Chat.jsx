@@ -242,9 +242,11 @@ import {
   buildLoreContext,
   buildMemoryContext,
   buildUserProfileContext,
+  getDynamicLength,
   getDynamicLengthGuide,
   getRelationshipContext,
 } from "@/lib/chatPromptContext";
+import { mindLabel } from "@/lib/mindLabel";
 import { chatHistoryForLlm, crisisCardFromPayload, messagesForModel } from "@/lib/aiCompanionNotice";
 import { useAiCompanionNotice } from "@/hooks/useAiCompanionNotice";
 import SystemDisclosure from "@/components/chat/SystemDisclosure";
@@ -3104,7 +3106,12 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           };
           return `\nRELATIONSHIP: Tier "${rel.tier}" (score ${rel.score}/100). ${tierGuides[rel.tier] || ""}\n`;
         })();
-        const serenityLength = getDynamicLength(finalMessages, characterEmotions, user?.settings?.ai_response_length, finalMessages.length || 0);
+        const serenityLength = getDynamicLength({
+          messages: finalMessages,
+          emotions: characterEmotions,
+          userPreference: user?.settings?.ai_response_length,
+          messageCount: finalMessages.length || 0,
+        });
         const serenityLengthGuide = serenityLength === "short" 
           ? "Keep your response brief (1 sentence max)." 
           : serenityLength === "long" 

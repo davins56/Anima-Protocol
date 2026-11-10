@@ -108,7 +108,7 @@ function topicDepth(message) {
   return "neutral";
 }
 
-export function getDynamicLengthGuide({
+export function getDynamicLength({
   messages,
   emotions,
   userPreference,
@@ -142,7 +142,11 @@ export function getDynamicLengthGuide({
   ) {
     length = "short";
   }
+  return length;
+}
 
+export function getDynamicLengthGuide(opts) {
+  const length = getDynamicLength(opts);
   if (length === "short") {
     return "Reply in 1-2 short sentences. Talk like a real person texting — casual, natural, no big paragraphs.";
   }
