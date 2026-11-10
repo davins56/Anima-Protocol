@@ -69,6 +69,7 @@ import {
   openStreamAbort,
 } from "./chatTimeouts";
 import { usableLocalLlmBackupBaseUrl } from "./localLlmBackup";
+import { isCloudflareChatBrain } from "./chatBrain";
 import { localChatKeepAliveFields } from "./localLlmWarm";
 import { companionLlmTurnOpen, localCallSignal } from "./sidecarLlm";
 import {
@@ -89,7 +90,8 @@ import {
   markWorkersAiQuotaExhausted,
   streamWorkersAi,
   workersAiHttpFailure,
-  WORKERS_AI_CHAT_MODEL,
+  workersAiBackgroundModel,
+  workersAiChatModel,
   WORKERS_AI_FREE_PLAN_NEURONS_PER_DAY,
   WORKERS_AI_FREE_QUOTA_CODE,
   WORKERS_AI_FREE_QUOTA_HINT,
@@ -240,6 +242,13 @@ export interface LlmRoutingStatus {
   };
   /** Ordered provider chain for this process. */
   chain: LlmProviderId[];
+  /**
+   * ANIMA_CHAT_BRAIN: "cloudflare" runs chat + background jobs on Workers AI
+   * with no self-hosted host; "self-hosted" prefers ANIMA_LOCAL_LLM_BASE_URL.
+   */
+  brain: "cloudflare" | "self-hosted";
+  /** Chain background brain jobs use (empty = they are skipped). */
+  backgroundChain: LlmProviderId[];
   /**
    * True when chat is fail-closed to the self-hosted Anima LLM. OpenRouter
    * must not take over even if a key and ANIMA_OPENROUTER_FALLBACK are set
@@ -520,7 +529,24 @@ function localUsable(): boolean {
  * so the call fails closed instead of hopping to Workers AI or OpenRouter.
  */
 export function localOnlyProviderChain(): LlmProviderId[] {
-  return localUsable() ? ["local"] : [];
+  if (localUsable()) return ["local"];
+  // Cloudflare brain: background jobs (evolution, consolidation, dreams,
+  // journal, resting mode, proactive) run on the Worker's own Workers AI
+  // binding — still first-party infra, never OpenRouter or a cloud flagship.
+  if (cloudflareBrainBackgroundEnabled() && hasWorkersAiBinding()) {
+    return ["workersai"];
+  }
+  return [];
+}
+
+/**
+ * Background jobs follow the Cloudflare brain unless the operator turns them
+ * off (`ANIMA_WORKERS_AI_BACKGROUND=false`) to save free-plan neurons for chat.
+ */
+export function cloudflareBrainBackgroundEnabled(): boolean {
+  if (!isCloudflareChatBrain()) return false;
+  const raw = (process.env.ANIMA_WORKERS_AI_BACKGROUND || "").trim().toLowerCase();
+  return !(raw === "0" || raw === "false" || raw === "no" || raw === "off");
 }
 
 /**
@@ -809,14 +835,13 @@ function summarizeError(err: unknown): string {
 
 /**
  * Shared operator hint when the self-hosted LLM rejects the bearer token.
- * Fly's Caddy proxy (`deploy/ollama-fly`) returns 401; some edges/proxies
+ * A Caddy / tunnel proxy in front of Ollama returns 401; some edges/proxies
  * surface the same failure as 403 with an empty body.
  */
 export const LOCAL_LLM_AUTH_FIX_HINT =
   "ANIMA_LOCAL_LLM_API_KEY on the Cloudflare Worker (Secrets Store binding in wrangler.jsonc) " +
-  "or Vercel must exactly match PROXY_AUTH_TOKEN on the LLM host " +
-  "(for Fly: `fly secrets set PROXY_AUTH_TOKEN=… -a anima-chat-llm`, then set the same value " +
-  "as ANIMA_LOCAL_LLM_API_KEY and redeploy). See deploy/ollama-fly/README.md.";
+  "or Vercel must exactly match PROXY_AUTH_TOKEN on the LLM host, then redeploy. " +
+  "To drop the self-hosted host entirely, set ANIMA_CHAT_BRAIN=cloudflare (docs/chat-brain.md).";
 
 /**
  * Shared operator hint when the Worker / Vercel cannot open a TCP/TLS session
@@ -1352,9 +1377,6 @@ function configuredLocalModelLabel(): string {
 function localHostDownSuffix(include: boolean): string {
   if (!include) return "";
   const host = summarizeLocalLlmBaseUrl().host ?? "the self-hosted Anima LLM";
-  if (host === "anima-chat-llm.fly.dev") {
-    return ` The primary LLM host (${host}) is also unreachable — run \`fly apps restart anima-chat-llm\`.`;
-  }
   return ` The primary LLM host (${host}) is also unreachable — check that the host is running and reachable from the Cloudflare Worker.`;
 }
 
@@ -1610,12 +1632,14 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
   } else {
     if (chain.includes("workersai")) {
       noteParts.push(
-        `Cloudflare Workers AI model=${WORKERS_AI_CHAT_MODEL} via AI Gateway ${WORKERS_AI_GATEWAY_ID} ` +
-          "(used only because no usable ANIMA_LOCAL_LLM_BASE_URL is set).",
+        `Cloudflare Workers AI model=${workersAiChatModel()} via AI Gateway ${WORKERS_AI_GATEWAY_ID} ` +
+          (isCloudflareChatBrain()
+            ? "(ANIMA_CHAT_BRAIN=cloudflare — no self-hosted model host)."
+            : "(used because no usable ANIMA_LOCAL_LLM_BASE_URL is set)."),
       );
       noteParts.push(
         `Free Workers AI is ${WORKERS_AI_FREE_PLAN_NEURONS_PER_DAY} neurons/day (error ${WORKERS_AI_FREE_QUOTA_CODE} when exhausted). ` +
-          "Point chat at the self-hosted Anima LLM (anima-chat) instead of DeepSeek.",
+          "Enable Workers Paid for steady chat volume.",
       );
       if (openRouterFallback && !chain.includes("openrouter")) {
         noteParts.push(
@@ -1717,13 +1741,15 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
     },
     workersai: {
       configured: hasWorkersAiBinding(),
-      model: WORKERS_AI_CHAT_MODEL,
+      model: workersAiChatModel(),
       gateway: WORKERS_AI_GATEWAY_ID,
       quotaCode: WORKERS_AI_FREE_QUOTA_CODE,
       freePlanNeuronsPerDay: WORKERS_AI_FREE_PLAN_NEURONS_PER_DAY,
       quotaHint: WORKERS_AI_FREE_QUOTA_HINT,
     },
     chain,
+    brain: isCloudflareChatBrain() ? "cloudflare" : "self-hosted",
+    backgroundChain: localOnlyProviderChain(),
     customOnly,
     openRouterFallback,
     note: noteParts.join(" "),
@@ -1837,8 +1863,8 @@ async function probeOneProvider(
         provider: "workersai",
         configured: true,
         ok: true,
-        model: WORKERS_AI_CHAT_MODEL,
-        configuredModel: WORKERS_AI_CHAT_MODEL,
+        model: workersAiChatModel(),
+        configuredModel: workersAiChatModel(),
         latencyMs: Date.now() - started,
       };
     } catch (err) {
@@ -1856,8 +1882,8 @@ async function probeOneProvider(
         status: Number.isFinite(status) ? status : undefined,
         errorKind: auth ? "auth" : connection ? "connection" : quota ? "quota" : "other",
         message: formatWorkersAiError(err),
-        model: WORKERS_AI_CHAT_MODEL,
-        configuredModel: WORKERS_AI_CHAT_MODEL,
+        model: workersAiChatModel(),
+        configuredModel: workersAiChatModel(),
         latencyMs: Date.now() - started,
       };
     }
@@ -2580,7 +2606,7 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
           stream,
           provider: "workersai",
           brand: "workersai",
-          model: WORKERS_AI_CHAT_MODEL,
+          model: workersAiChatModel(),
           tier: req.tier,
           failedOver: false,
         };
@@ -2668,16 +2694,19 @@ export async function createChatCompletionWithFailover(
           throw new WorkersAiRequestError(WORKERS_AI_FREE_QUOTA_HINT);
         }
         triedWorkersAi = true;
+        // Background brain jobs (localOnly) use the small background model.
+        const model = req.localOnly ? workersAiBackgroundModel() : workersAiChatModel();
         const content = await completeWorkersAi({
           messages: req.messages,
           maxTokens: req.maxTokens,
           temperature: req.temperature,
+          model,
         });
         return {
           content,
           provider: "workersai",
           brand: "workersai",
-          model: WORKERS_AI_CHAT_MODEL,
+          model,
           tier: req.tier,
           failedOver: false,
           toolCalls: null,

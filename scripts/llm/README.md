@@ -91,7 +91,7 @@ export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:8000/v1
 Run SFT/DPO only on a CUDA box (`pnpm llm:gpu-check` first). Full walkthrough:
 [`docs/llm-build.md`](../../docs/llm-build.md).
 
-Registry/CLI: [`lib/llm/README.md`](../../lib/llm/README.md) · Production host: [`deploy/ollama-fly/README.md`](../../deploy/ollama-fly/README.md).
+Registry/CLI: [`lib/llm/README.md`](../../lib/llm/README.md) · Production brain: [`docs/chat-brain.md`](../../docs/chat-brain.md) (Workers AI, no model host).
 
 ## Production (always-on, public HTTPS)
 
@@ -101,12 +101,10 @@ and will not invent `http://localhost:11434/v1`. Set
 `ANIMA_LOCAL_LLM_BASE_URL` to a public HTTPS `…/v1` URL, or bind
 `OPENROUTER_API_KEY` so chat can use OpenRouter.
 
-For a real self-hosted deployment, see
-[`deploy/ollama-fly/`](../../deploy/ollama-fly/README.md): one `fly deploy`
-gets you the same `anima-chat` model behind an authenticated, always-on
-public URL, ready to plug into the Worker as `ANIMA_LOCAL_LLM_BASE_URL`.
+Production does not need a model host: `ANIMA_CHAT_BRAIN=cloudflare` runs
+chat on Workers AI (see [`docs/chat-brain.md`](../../docs/chat-brain.md)).
 
-If Ollama is already running on a CPU host (no GPU / not Fly),
+If Ollama is already running on a CPU host and you want it instead,
 [`public-v1/`](./public-v1/README.md) puts a bearer proxy and a **named**
 Cloudflare Tunnel in front of it (`https://llm.anima-protocol.com/v1`).
 That is still Ollama `anima-chat`, not vLLM. Do not commit `proxy-token` or
