@@ -89,7 +89,7 @@ export default function SimArena() {
     <div className="relative flex-1 min-h-0 flex flex-col bg-black text-foreground">
       <div className="relative flex-1 min-h-[52vh]">
         <Suspense fallback={<div className="absolute inset-0 grid place-items-center font-mono text-xs text-cyan-300/60">Compiling arena…</div>}>
-          <SimArena3D state={state} fx={fx} model={model} previewW={previewW} shift={shift} />
+          <SimArena3D state={state} fx={fx} model={model} previewW={previewW} shift={shift} paused={presence} />
         </Suspense>
         {/* visual noise = 1 − clarity */}
         <div

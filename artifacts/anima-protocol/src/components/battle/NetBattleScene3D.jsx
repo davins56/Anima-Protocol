@@ -243,10 +243,12 @@ function BattleScene({ state, models, onPanelClick, quality, vesselLayers, seque
   );
 }
 
-export default function NetBattleScene3D({ state, models, onPanelClick, vesselLayers, sequences }) {
+/** `paused`: a full-screen 3D overlay (4D vessel inspect) is open — stop rendering underneath it. */
+export default function NetBattleScene3D({ state, models, onPanelClick, vesselLayers, sequences, paused = false }) {
   const { quality, handleDecline, handleIncline } = useRendererQuality();
   return (
     <Canvas
+      frameloop={paused ? "never" : "always"}
       camera={{ position: [0, 5.85, 7.55], fov: 34, near: 0.1, far: 50 }}
       gl={{ alpha: false, antialias: quality.antialias, powerPreference: "high-performance" }}
       dpr={quality.dpr}

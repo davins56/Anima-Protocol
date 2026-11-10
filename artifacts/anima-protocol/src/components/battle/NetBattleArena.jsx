@@ -385,6 +385,7 @@ export default function NetBattleArena({
                   onPanelClick={onPanelClick}
                   vesselLayers={vesselLayers}
                   sequences={sequences}
+                  paused={inspectVessel}
                 />
               </div>
             </Suspense>
