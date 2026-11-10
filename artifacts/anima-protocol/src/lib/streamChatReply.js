@@ -180,7 +180,7 @@ export function isChatTurnCollisionError(error) {
   );
 }
 
-/** 409 / turn_in_flight means the first generate is still on the droplet. */
+/** 409 / turn_in_flight means the first generate for this turn is still running. */
 export function isTurnStillRunningError(error) {
   if (!error) return false;
   if (error.code === "turn_in_flight" || error.status === 409) return true;

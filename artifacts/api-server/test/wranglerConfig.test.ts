@@ -182,6 +182,8 @@ describe("Cloudflare wrangler config", () => {
     expect(vars.ANIMA_LOCAL_LLM_BACKEND).toBe("ollama");
     expect(vars.ANIMA_OLLAMA_MODEL_STANDARD).toBe("anima-chat");
     expect(vars.ANIMA_LLM_PROVIDER).toBe("custom");
+    // Chat brain lives in the Worker (Workers AI), not on Fly.io / a droplet.
+    expect(vars.ANIMA_CHAT_BRAIN).toBe("cloudflare");
     expect(vars.ANIMA_OPENROUTER_FREE).toBe("true");
     expect(vars.ANIMA_OPENROUTER_FALLBACK).toBe("true");
     // Public tunnel URL stays out of committed vars. Bind it only via
@@ -192,6 +194,7 @@ describe("Cloudflare wrangler config", () => {
     expect(vars).not.toHaveProperty("MINIMAX_API_KEY");
     expect(Object.keys(vars).sort()).toEqual(
       [
+        "ANIMA_CHAT_BRAIN",
         "ANIMA_LLM_PROVIDER",
         "ANIMA_LOCAL_LLM_BACKEND",
         "ANIMA_OLLAMA_MODEL_STANDARD",
