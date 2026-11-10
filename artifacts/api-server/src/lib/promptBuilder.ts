@@ -99,6 +99,23 @@ export interface MsgData {
   [key: string]: unknown;
 }
 
+/** Prompt sizing the chat mind applies for hosted models. */
+export type MindPromptOptions = {
+  /** Token budget the whole prompt packs against. */
+  promptTokens: number;
+  /** Most recent exchanges replayed verbatim. */
+  historyExchanges: number;
+  /** Floor kept when trimming for space. */
+  minHistoryExchanges: number;
+  /** Per-message cap for replayed history. */
+  historyMessageChars: number;
+  /** companion_memories items surfaced per turn. */
+  memoryTopK: number;
+};
+
+/** Personality / backstory caps when a hosted model has room. */
+const MIND_CHARACTER_FIELD_MAX = 1_600;
+
 export interface PromptBuilderParams {
   /**
    * Legacy client-provided scene context. It is input to, never an override of,
@@ -211,6 +228,18 @@ export interface PromptBuilderParams {
    * from memory_events). Joined into the memory section; trimmed with it.
    */
   memoryCoreContext?: string | null;
+
+  /**
+   * Chat-mind budget for hosted models (Workers AI / OpenRouter). Unset on
+   * the self-hosted path, which keeps the tight 0.5B-model packing.
+   */
+  mind?: MindPromptOptions | null;
+
+  /**
+   * One-turn steer appended to the answer-last note (e.g. "don't open the
+   * way your last replies did"). Only used with `mind`.
+   */
+  mindTurnNote?: string | null;
 
   /**
    * Short note that this turn includes a photo. The text model cannot see
@@ -909,9 +938,12 @@ function unseenPhotoHistoryNote(msg: MsgData): string {
   return sharedPhotoPromptNote({ count });
 }
 
-function normalizeRecentMessages(recentMessages: MsgData[] = []): SeqHistoryMessage[] {
+function normalizeRecentMessages(
+  recentMessages: MsgData[] = [],
+  maxCharsOverride?: number,
+): SeqHistoryMessage[] {
   const out: SeqHistoryMessage[] = [];
-  const maxChars = llmChatHistoryMaxChars();
+  const maxChars = maxCharsOverride ?? llmChatHistoryMaxChars();
   for (const msg of recentMessages) {
     if (isLlmExcludedDisclosure(msg)) continue;
     const text = String(msg.content ?? "").trim();
@@ -1277,7 +1309,9 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
   );
 
   const charDef = mainChar
-    ? buildCharacterDefinition(withAcceptedIdentity(mainChar, memories), BUDGET.characterDef)
+    ? params.mind
+      ? buildCharacterDefinition(withAcceptedIdentity(mainChar, memories), BUDGET.characterDef * 2, MIND_CHARACTER_FIELD_MAX)
+      : buildCharacterDefinition(withAcceptedIdentity(mainChar, memories), BUDGET.characterDef)
     : mode === "group"
       ? ""
       : characters.length > 0
@@ -1465,7 +1499,9 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
     buildMemorySummaryBlock(speakerMemories, characterNames),
     formatMemoriesForPrompt(
       retrieveRelevantMemories(speakerMemories, {
-        topK: Math.min(memConfig.topK, COMPANION_MEMORY_TOP_K),
+        topK: params.mind
+          ? Math.max(memConfig.topK, params.mind.memoryTopK)
+          : Math.min(memConfig.topK, COMPANION_MEMORY_TOP_K),
         contextHint: content,
         preferTypes: memConfig.preferTypes,
       }),
@@ -1740,6 +1776,39 @@ export function keepStableHistoryBlock(history: LlmChatMessage[]): LlmChatMessag
   return rows.slice(startIndex).map(({ role, content }) => ({ role, content }));
 }
 
+/**
+ * Chat mind: the most recent `exchanges` exchanges, verbatim. Hosted models
+ * do not reuse a KV prefix across requests, so the window can slide by one
+ * every turn instead of jumping in blocks.
+ */
+export function mindHistoryTail(history: LlmChatMessage[], exchanges: number): LlmChatMessage[] {
+  const want = Math.max(1, exchanges);
+  let users = 0;
+  // Fewer than `want` user turns: keep everything (including a greeting).
+  let start = 0;
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i]?.role !== "user") continue;
+    users += 1;
+    if (users === want) {
+      start = i;
+      break;
+    }
+  }
+  return history.slice(start).map(({ role, content }) => ({ role, content }));
+}
+
+/** Drop the oldest exchange (user turn + replies) while above `floor`. */
+export function trimOldestExchange(history: LlmChatMessage[], floor: number): LlmChatMessage[] {
+  const users = history.filter((m) => m.role === "user").length;
+  if (users <= Math.max(1, floor)) return history;
+  let i = 0;
+  // A leading assistant line (greeting) goes with the first exchange.
+  while (i < history.length && history[i]?.role !== "user") i += 1;
+  i += 1;
+  while (i < history.length && history[i]?.role !== "user") i += 1;
+  return history.slice(i);
+}
+
 function cutHistoryToMinExchanges(history: LlmChatMessage[]): LlmChatMessage[] {
   const keep = trailingHistoryMessages(history, LOCAL_HISTORY_MIN_EXCHANGES);
   if (keep <= 0) return [];
@@ -1908,9 +1977,14 @@ export function composeCompanionChatMessages(
   const userTurn = String(params.content ?? "").trim() || CONTINUE_USER_TURN;
   const photoNote = String(params.photoNote || "").trim();
   const modelUserTurn = photoNote ? `${userTurn}\n\n${photoNote}` : userTurn;
-  let history = keepStableHistoryBlock(
-    normalizeRecentMessages(omitRetriedUserTurn(params.recentMessages, userTurn)),
+  const mind = params.mind ?? null;
+  const normalizedHistory = normalizeRecentMessages(
+    omitRetriedUserTurn(params.recentMessages, userTurn),
+    mind?.historyMessageChars,
   );
+  let history = mind
+    ? mindHistoryTail(normalizedHistory, mind.historyExchanges)
+    : keepStableHistoryBlock(normalizedHistory);
   const careTurn =
     Boolean(params.companionCrisis) ||
     (params.modePolicy?.name === "therapy" || params.mode === "therapy"
@@ -1922,8 +1996,10 @@ export function composeCompanionChatMessages(
     careTurn,
     isQuestionTurn(params.content),
   );
+  const mindNote = mind ? String(params.mindTurnNote || "").trim() : "";
+  const closingNote = mindNote ? `${answerLast} ${mindNote}` : answerLast;
   let moodText = sections.moodText;
-  const budget = localPromptTokenBudget();
+  const budget = mind ? mind.promptTokens : localPromptTokenBudget();
 
   const render = (): LlmChatMessage[] => {
     const firsthand = firsthandKnowledgeNote([loreText, pdfText]);
@@ -1968,7 +2044,7 @@ export function composeCompanionChatMessages(
       history[history.length - 1]?.role === "user" &&
       history[history.length - 1]?.content === userTurn;
     messages.push(...(historyEndsWithTurn ? history.slice(0, -1) : history));
-    messages.push({ role: "system", content: answerLast });
+    messages.push({ role: "system", content: closingNote });
     messages.push({ role: "user", content: modelUserTurn });
     rememberCompanionLocalLayout(messages, {
       staticText: sections.staticText,
@@ -1983,6 +2059,8 @@ export function composeCompanionChatMessages(
     const hosted = estimateLocalPromptTokens(
       messages.map((message) => message.content).join("\n"),
     );
+    // Hosted models never see the Ollama-folded layout.
+    if (mind) return hosted;
     const local = estimateLocalPromptTokens(
       messagesForLocalOllama(messages)
         .map((message) => message.content)
@@ -2070,6 +2148,24 @@ export function composeCompanionChatMessages(
     if (!over()) return;
     tightenAroundFeeling();
   };
+
+  if (mind) {
+    // Hosted: conversation flow outranks reference text. Shed documents,
+    // then the oldest exchanges down to the floor, then mood detail, and
+    // memory only as the very last resort.
+    if (over()) pdfText = "";
+    if (over()) loreText = "";
+    if (over()) repositoryText = "";
+    while (over()) {
+      const next = trimOldestExchange(history, mind.minHistoryExchanges);
+      if (next.length === history.length) break;
+      history = next;
+    }
+    if (over()) sceneText = "";
+    if (over()) shrinkMoodToFit();
+    if (over()) memoryText = "";
+    return render();
+  }
 
   if (over()) pdfText = "";
   if (over()) loreText = "";
@@ -2188,7 +2284,10 @@ function withAcceptedIdentity(character: CharacterData, memories: CompanionMemor
 function buildCharacterDefinition(
   character: CharacterData,
   maxChars: number,
+  fieldMax?: number,
 ): string {
+  const personalityMax = fieldMax ?? CHARACTER_PERSONALITY_MAX;
+  const backstoryMax = fieldMax ?? CHARACTER_BACKSTORY_MAX;
   const parts: string[] = [];
   const name = canonicalCompanionName(String(character.name || "").trim());
 
@@ -2237,14 +2336,14 @@ function buildCharacterDefinition(
 
   if (character.personality) {
     parts.push(
-      `Personality: ${truncate(stripOutOfWorldLabels(character.personality), Math.min(CHARACTER_PERSONALITY_MAX, maxChars / 3))}`,
+      `Personality: ${truncate(stripOutOfWorldLabels(character.personality), Math.min(personalityMax, maxChars / 3))}`,
     );
   }
   if (character.backstory) {
     // A speakable label ("My own past:") is the line the 0.5B model paraphrases
     // back as its reply. Keep the facts, and mark them as notes.
     parts.push(
-      `Private past (do not recite): ${truncate(stripOutOfWorldLabels(character.backstory), Math.min(CHARACTER_BACKSTORY_MAX, maxChars / 3))}`,
+      `Private past (do not recite): ${truncate(stripOutOfWorldLabels(character.backstory), Math.min(backstoryMax, maxChars / 3))}`,
     );
   }
   // A stored "TODO" placeholder is not a voice: named companions fall back to

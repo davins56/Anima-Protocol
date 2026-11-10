@@ -61,6 +61,7 @@ The repo root **`.env`** is gitignored. Both **`anima-protocol`** (Vite) and **`
 | `ANIMA_OPENROUTER_FREE` | API — set `true` to skip Venice and use `minimax/minimax-m2.7:free` |
 | `ANIMA_CHAT_BRAIN` | API — `cloudflare` (committed in `wrangler.jsonc`): chat + background brain jobs run on Workers AI inside the Worker; `ANIMA_LOCAL_LLM_*` ignored. `self-hosted`/unset: prefer `ANIMA_LOCAL_LLM_BASE_URL`. See `docs/chat-brain.md` |
 | `ANIMA_WORKERS_AI_MODEL` / `ANIMA_WORKERS_AI_LORA` / `ANIMA_WORKERS_AI_BACKGROUND` | API — Cloudflare brain model id (`@cf/…`, default DeepSeek R1 distill), optional LoRA fine-tune, and `false` to keep background jobs off Workers AI |
+| `ANIMA_CHAT_MIND` / `ANIMA_MIND_PROMPT_TOKENS` / `ANIMA_MIND_HISTORY_EXCHANGES` / `ANIMA_MIND_TEMPERATURE` | API — chat mind for hosted models (default `on`, 6000 tokens, 16 exchanges, per-family temperature). Durable user facts + rolling summary live in `memory_events` notes; no migration. `off` restores legacy packing. See `docs/chat-mind.md` |
 | `ANIMA_LOCAL_LLM_BASE_URL` | API — optional self-hosted public HTTPS OpenAI-compatible `…/v1` URL (only when `ANIMA_CHAT_BRAIN` is not `cloudflare`). Never localhost on the Worker. No Fly.io / DigitalOcean pack ships in this repo |
 | `ANIMA_LOCAL_LLM_API_KEY` | API — bearer token; must match the self-hosted proxy's `PROXY_AUTH_TOKEN` |
 | `ANIMA_LOCAL_LLM_BACKEND` | API — `ollama` (default) or `vllm` (any OpenAI-compatible `/v1` host, including your own trained model via `server/server.py`; see `docs/custom-llm.md`) |

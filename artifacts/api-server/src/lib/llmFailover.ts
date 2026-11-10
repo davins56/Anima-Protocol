@@ -89,6 +89,8 @@ import {
   isWorkersAiQuotaExhaustedThisIsolate,
   markWorkersAiQuotaExhausted,
   streamWorkersAi,
+  workersAiSamplingOptions,
+  type WorkersAiSampling,
   workersAiHttpFailure,
   workersAiBackgroundModel,
   workersAiChatModel,
@@ -289,6 +291,13 @@ export interface ChatStreamRequest {
   maxTokens: number;
   messages: ChatCompletionMessageParam[];
   temperature?: number;
+  /**
+   * Chat-mind sampling (top_p, penalties). Sent to Workers AI and
+   * OpenRouter only when set; the legacy path leaves it unset.
+   */
+  sampling?: WorkersAiSampling | null;
+  /** Skip these providers (mid-stream fallback after one already died). */
+  excludeProviders?: LlmProviderId[];
   /** Cancel the in-flight stream open (e.g. a caller-side timeout). */
   signal?: AbortSignal;
   /**
@@ -2217,6 +2226,19 @@ async function ensureChatStreamOpens<T>(
   return replay();
 }
 
+/**
+ * OpenRouter takes the same knobs (OpenAI fields plus top_k /
+ * repetition_penalty as provider passthrough). Only the chat mind sets
+ * `sampling`; without it the request is unchanged.
+ */
+export function openRouterSamplingFields(req: Pick<ChatStreamRequest, "temperature" | "sampling">): Record<string, number> {
+  if (!req.sampling) return {};
+  return {
+    ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
+    ...workersAiSamplingOptions(req.sampling),
+  };
+}
+
 async function runOpenRouterStream(
   req: ChatStreamRequest,
   failedOver: boolean,
@@ -2233,6 +2255,7 @@ async function runOpenRouterStream(
           max_tokens: Math.min(req.maxTokens, m.maxTokens),
           messages: req.messages,
           stream: true,
+          ...openRouterSamplingFields(req),
         },
         {
           ...(req.signal ? { signal: req.signal } : {}),
@@ -2579,7 +2602,9 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
   if (cloudFlagshipMisconfigured() && !hasWorkersAiBinding() && !req.localOnly) {
     throw new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }
-  const chain = req.localOnly ? localOnlyProviderChain() : getProviderChain();
+  const fullChain = req.localOnly ? localOnlyProviderChain() : getProviderChain();
+  const excluded = new Set(req.excludeProviders ?? []);
+  const chain = excluded.size ? fullChain.filter((p) => !excluded.has(p)) : fullChain;
   if (!chain.length) throw noProviderConfiguredError();
 
   let lastErr: unknown;
@@ -2601,6 +2626,7 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
           messages: req.messages,
           maxTokens: req.maxTokens,
           temperature: req.temperature,
+          ...(req.sampling ? { sampling: req.sampling } : {}),
         });
         return {
           stream,

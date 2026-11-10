@@ -487,12 +487,44 @@ function requireWorkersAiBinding() {
   return aiBinding;
 }
 
+/** Extra sampling knobs the chat mind tunes per model family. */
+export type WorkersAiSampling = {
+  top_p?: number;
+  top_k?: number;
+  repetition_penalty?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
+};
+
+const SAMPLING_RANGES: Record<keyof WorkersAiSampling, [number, number]> = {
+  top_p: [0, 2],
+  top_k: [1, 50],
+  repetition_penalty: [0, 2],
+  frequency_penalty: [-2, 2],
+  presence_penalty: [-2, 2],
+};
+
+/** Only finite, in-range values reach the binding (it rejects the rest). */
+export function workersAiSamplingOptions(sampling?: WorkersAiSampling | null): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!sampling) return out;
+  for (const key of Object.keys(SAMPLING_RANGES) as Array<keyof WorkersAiSampling>) {
+    const v = sampling[key];
+    const [lo, hi] = SAMPLING_RANGES[key];
+    if (typeof v === "number" && Number.isFinite(v) && v >= lo && v <= hi) {
+      out[key] = key === "top_k" ? Math.round(v) : v;
+    }
+  }
+  return out;
+}
+
 function runOptions(
   opts: {
     messages: ChatCompletionMessageParam[];
     maxTokens: number;
     temperature?: number;
     model?: string;
+    sampling?: WorkersAiSampling | null;
   },
   stream: boolean,
 ): Record<string, unknown> {
@@ -507,6 +539,7 @@ function runOptions(
     ...(typeof opts.temperature === "number"
       ? { temperature: opts.temperature }
       : {}),
+    ...workersAiSamplingOptions(opts.sampling),
   };
 }
 
@@ -514,6 +547,7 @@ export async function completeWorkersAi(opts: {
   messages: ChatCompletionMessageParam[];
   maxTokens: number;
   temperature?: number;
+  sampling?: WorkersAiSampling | null;
   /** Defaults to workersAiChatModel(). */
   model?: string;
 }): Promise<string> {
@@ -539,6 +573,7 @@ async function* withEmptyStreamFallback(
     messages: ChatCompletionMessageParam[];
     maxTokens: number;
     temperature?: number;
+    sampling?: WorkersAiSampling | null;
   },
 ): AsyncGenerator<OpenAI.Chat.Completions.ChatCompletionChunk> {
   let content = "";
@@ -566,6 +601,7 @@ export async function streamWorkersAi(opts: {
   messages: ChatCompletionMessageParam[];
   maxTokens: number;
   temperature?: number;
+  sampling?: WorkersAiSampling | null;
 }): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
   const binding = requireWorkersAiBinding();
   try {
