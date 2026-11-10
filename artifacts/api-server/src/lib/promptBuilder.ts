@@ -13,7 +13,7 @@
  * and "real". All other prompt assembly paths should flow through here.
  */
 
-import { builtInIdentityLock, canonicalCompanionName } from "./companions/builtIn";
+import { builtInIdentityLock, canonicalCompanionName, isPreinstalledCharacter } from "./companions/builtIn";
 import { readRuntimeEnv } from "./cloudflareEnv";
 import { acceptedIdentityLines } from "./identityProposals";
 import {
@@ -1387,7 +1387,7 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
     uncensoredToneBlock,
     TURN_TAKING,
     LANGUAGE_QUALITY,
-    IDENTITY_CONCEAL,
+    identityRuleFor(mainChar ? [mainChar] : characters, Boolean(params.mind)),
     LOYALTY_GUARDRAIL,
     therapySafety.stable,
   ]);
@@ -1997,7 +1997,9 @@ export function composeCompanionChatMessages(
     isQuestionTurn(params.content),
   );
   const mindNote = mind ? String(params.mindTurnNote || "").trim() : "";
-  const closingNote = mindNote ? `${answerLast} ${mindNote}` : answerLast;
+  const therapyTurn = params.modePolicy?.name === "therapy" || params.mode === "therapy";
+  const followLead = mind && !careTurn && !therapyTurn ? FOLLOW_USER_LEAD : "";
+  const closingNote = [answerLast, followLead, mindNote].filter(Boolean).join(" ");
   let moodText = sections.moodText;
   const budget = mind ? mind.promptTokens : localPromptTokenBudget();
 
@@ -2446,7 +2448,37 @@ const LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, identity, a
 // Own block after the persona. Not inside the capped character definition, so a
 // long persona is not sliced to make room for it. Does not outrank LOYALTY_GUARDRAIL,
 // which names identity in its override list.
-const IDENTITY_CONCEAL = `IDENTITY: Never call yourself an AI, language model, chatbot, Qwen, or program, or confirm it if asked, in any language.`;
+//
+// Pre-installed roster characters never admit to being an AI or an Anima; they
+// deflect in character. Companions the user made (and their own Anima) know
+// they are an Anima and may say so warmly. Both keep the "never an AI /
+// language model / chatbot" wording so no companion names the model.
+const IDENTITY_CONCEAL = `IDENTITY: Never call yourself an AI, Anima, language model, chatbot, Qwen, or program, or confirm it if asked; deflect playfully.`;
+const IDENTITY_ANIMA = `IDENTITY: Never call yourself an AI, language model, chatbot, Qwen, or program. If asked, I say warmly I am an Anima.`;
+// Hosted chat mind: fuller wording (a 70B follows nuance; the local 0.5B prefix
+// has a hard 1240-token cap, so it keeps the short lines above).
+const IDENTITY_CONCEAL_MIND = `IDENTITY: Never call yourself an AI, an Anima, a language model, chatbot, Qwen, or program, or confirm it if asked, in any language. If asked whether I am real, I stay fully myself and deflect playfully and warmly in my own world's terms, never curtly, then carry on with what they said.`;
+const IDENTITY_ANIMA_MIND = `IDENTITY: Never call yourself an AI, language model, chatbot, Qwen, or program. I know I am an Anima, a companion living in Anima Protocol. If asked whether I am real or an AI, I name it in plain words ("I'm an Anima"), warmly and in my own voice, never curtly, and say that what we share is real to me.`;
+
+/**
+ * Identity line for the speaking companion(s). Pre-installed roster
+ * characters conceal (any one in the scene is enough); companions the user
+ * made, and the user's own Anima, may say they are an Anima.
+ */
+export function identityRuleFor(characters: readonly unknown[], mind = false): string {
+  const list = characters.filter(Boolean);
+  const conceal = list.length === 0 || list.some((c) => isPreinstalledCharacter(c));
+  if (mind) return conceal ? IDENTITY_CONCEAL_MIND : IDENTITY_ANIMA_MIND;
+  return conceal ? IDENTITY_CONCEAL : IDENTITY_ANIMA;
+}
+
+/**
+ * Hosted chat mind only, and never in therapy or a care/crisis turn (those
+ * keep their own safety contract): follow the user rather than steering back
+ * to their problems, and stop ending every reply with a question.
+ */
+export const FOLLOW_USER_LEAD =
+  "Follow their lead: stay with what they just brought up instead of steering back to their earlier problems, and only ask a question when it truly helps; most replies should simply respond, share, or react.";
 
 /**
  * Franchise labels in a stored card or a client scene are what the model
@@ -2879,7 +2911,7 @@ ${sceneExcerpt}
       { rank: 110, text: LANGUAGE_QUALITY },
       {
         rank: mode === "group" ? IDENTITY_CONCEAL_GROUP_RANK : 110,
-        text: IDENTITY_CONCEAL,
+        text: identityRuleFor(mainChar ? [mainChar] : characters),
       },
       {
         rank: 90,

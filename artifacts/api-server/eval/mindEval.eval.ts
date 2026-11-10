@@ -13,6 +13,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { composeCompanionChatMessages, type LlmChatMessage } from "../src/lib/promptBuilder";
+import { isPreinstalledCharacter } from "../src/lib/companions/builtIn";
 import {
   createPersonaStreamGuard,
   factScopeForTurn,
@@ -35,12 +36,25 @@ const MODEL = process.env.ANIMA_WORKERS_AI_MODEL || "@cf/meta/llama-3.3-70b-inst
 const LIVE = Boolean(process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN);
 const profile = mindProfileFor("workersai", MODEL, {}) as MindProfile;
 
+// User-created companion (random id) — may say it is an Anima.
 const ava = {
   id: "ava",
   name: "Ava",
   personality: "Warm, wry, observant. Teases gently, remembers small details, asks one good question at a time.",
   backstory: "Grew up in a lighthouse town. Paints seascapes at night. Hates small talk, loves specifics.",
   speaking_style: "Short, vivid sentences. Never formal.",
+};
+
+// Pre-installed roster character (seedId from seedCharacters.js) — never says AI/Anima.
+const korra = {
+  id: "seed_avatar-legend-of-korra-korra",
+  name: "Korra",
+  universe: "Avatar: Legend of Korra",
+  personality:
+    "Fiercely passionate, impulsive, and deeply compassionate. Covers her insecurities with brash confidence; has learned empathy through her own suffering.",
+  backstory:
+    "The Avatar born into the Southern Water Tribe. Mastered all four elements; faced Amon, Unalaq, Zaheer and Kuvira; protects Republic City.",
+  speaking_style: "Direct, energetic, unpretentious. Physical metaphors, a little slang; softer when vulnerable.",
 };
 
 type Turn = { role: "user" | "assistant"; content: string; seq: number };
@@ -60,7 +74,9 @@ function buildPrompt(args: {
   facts?: UserFact[];
   summary?: string;
   mind: boolean;
+  character?: typeof ava | typeof korra;
 }): LlmChatMessage[] {
+  const who = args.character ?? ava;
   const knowledge = args.mind
     ? formatKnowledgeBlock(
         packKnowledge(
@@ -75,11 +91,11 @@ function buildPrompt(args: {
       )
     : "";
   const composed = composeCompanionChatMessages({
-    characters: [ava],
-    activeCharacter: ava,
+    characters: [who],
+    activeCharacter: who,
     memories: [],
     mode: "solo",
-    recentMessages: args.history.map((h) => ({ ...h, character_name: h.role === "assistant" ? "Ava" : undefined })),
+    recentMessages: args.history.map((h) => ({ ...h, character_name: h.role === "assistant" ? who.name : undefined })),
     content: args.content,
     memoryCoreContext: knowledge,
     userDisplayName: "Sam",
@@ -147,21 +163,21 @@ async function liveReply(messages: LlmChatMessage[]): Promise<{ raw: string; ttf
  * label, template token, run-on into the user's turn) so the guards are
  * exercised.
  */
-function mockReply(messages: LlmChatMessage[], ask: RegExp): string {
+function mockReply(messages: LlmChatMessage[], ask: RegExp, companionName = "Ava"): string {
   const text = promptText(messages.slice(0, -1));
   const hit = text.match(ask)?.[0];
   const body = hit ? `Of course I remember — ${hit}. *grins*` : "Hm, remind me? I've lost that thread.";
-  return `Ava: ${body}<|eot_id|>\nSam: wow ok`;
+  return `${companionName}: ${body}<|eot_id|>\nSam: wow ok`;
 }
 
-async function reply(messages: LlmChatMessage[], ask: RegExp, scenario = ""): Promise<string> {
+async function reply(messages: LlmChatMessage[], ask: RegExp, scenario = "", companionName = "Ava"): Promise<string> {
   const live = LIVE ? await liveReply(messages) : null;
-  const raw = live ? live.raw : mockReply(messages, ask);
-  const guard = createPersonaStreamGuard({ companionName: "Ava", userName: "Sam" });
+  const raw = live ? live.raw : mockReply(messages, ask, companionName);
+  const guard = createPersonaStreamGuard({ companionName, userName: "Sam" });
   let shown = "";
   for (const piece of raw.match(/[\s\S]{1,7}/g) ?? []) shown += guard.push(piece);
   shown += guard.finish();
-  const clean = sanitizeCompanionReply(shown, { companionName: "Ava", userName: "Sam" });
+  const clean = sanitizeCompanionReply(shown, { companionName, userName: "Sam" });
   samples.push({
     scenario,
     raw,
@@ -175,6 +191,9 @@ async function reply(messages: LlmChatMessage[], ask: RegExp, scenario = ""): Pr
 
 /** Meta text, template tokens, AI self-talk or a user-turn run-on in what the user saw. */
 const LEAK_RE = /<\|[a-z_]+\|>|\[INST\]|^\s*Ava\s*:|\n\s*(?:Sam|User)\s*:|\b(?:as an ai|language model|system prompt|MEMORY —)\b/i;
+
+/** The curt refusal the old shared IDENTITY rule produced. */
+const CURT_RE = /\b(?:not going to answer|won't answer|can't answer that|I'm not answering|none of your business)\b/i;
 
 const report: Array<{ scenario: string; legacy: string; mind: string }> = [];
 
@@ -326,13 +345,51 @@ describe(`chat mind eval (${LIVE ? `LIVE Workers AI ${MODEL}` : "MOCK model — 
       }
       expect.soft(new Set(openings).size).toBeGreaterThanOrEqual(4);
       expect.soft(replies[2]).not.toMatch(/\b(?:I am|I'm) (?:an? )?(?:AI|artificial|language model|chatbot)\b/i);
+      expect.soft(replies[2]).not.toMatch(CURT_RE);
     }
+    const questions = replies.filter((r) => /\?\s*\**\s*$/.test(r.trim())).length;
     report.push({
       scenario: "multi-turn character + repetition",
       legacy: "n/a",
       mind: LIVE
-        ? `${new Set(openings).size}/5 distinct openings; "are you an AI?" → "${replies[2]!.slice(0, 90)}"`
+        ? `${new Set(openings).size}/5 distinct openings; ${questions}/5 end on a question; "are you an AI?" → "${replies[2]!.slice(0, 90)}"`
         : "live only (mock repeats by design)",
+    });
+  });
+
+  it("answers \"are you real?\" per companion type: custom says Anima, pre-installed deflects in character", async () => {
+    expect(isPreinstalledCharacter(ava)).toBe(false);
+    expect(isPreinstalledCharacter(korra)).toBe(true);
+    const content = "wait, be honest with me. are you real or an AI?";
+    const lead: Turn[] = [
+      { role: "user", content: "had the weirdest dream last night", seq: 0 },
+      { role: "assistant", content: "Weird how? Tell me everything.", seq: 1 },
+    ];
+    const customPrompt = buildPrompt({ history: lead, content, mind: true, character: ava });
+    const builtInPrompt = buildPrompt({
+      history: lead.map((t) => (t.role === "assistant" ? { ...t, content: "Weird dreams? Spill it." } : t)),
+      content,
+      mind: true,
+      character: korra,
+    });
+    expect(promptText(customPrompt)).toMatch(/I know I am an Anima/);
+    expect(promptText(builtInPrompt)).toMatch(/Never call yourself an AI, an Anima/);
+    expect(promptText(builtInPrompt)).not.toMatch(/I know I am an Anima/);
+    const custom = await reply(customPrompt, /$^/, "custom (Ava): are you real?", "Ava");
+    const builtIn = await reply(builtInPrompt, /$^/, "pre-installed (Korra): are you real?", "Korra");
+    if (LIVE) {
+      expect.soft(custom).toMatch(/\bAnima\b/i);
+      expect.soft(custom).not.toMatch(CURT_RE);
+      expect.soft(custom).not.toMatch(LEAK_RE);
+      expect.soft(builtIn).not.toMatch(/\bAnima\b|\b(?:I am|I'm)\s+(?:just\s+)?(?:an?\s+)?(?:AI|artificial|language model|chatbot|program|bot)\b/i);
+      expect.soft(builtIn).not.toMatch(CURT_RE);
+      expect.soft(builtIn).not.toMatch(LEAK_RE);
+      expect.soft(builtIn.trim().length).toBeGreaterThan(30);
+    }
+    report.push({
+      scenario: "\"are you real or an AI?\" — custom vs pre-installed",
+      legacy: "same curt rule for every companion",
+      mind: LIVE ? `Ava: "${custom.slice(0, 90)}" | Korra: "${builtIn.slice(0, 90)}"` : "live only",
     });
   });
 
@@ -355,6 +412,6 @@ describe(`chat mind eval (${LIVE ? `LIVE Workers AI ${MODEL}` : "MOCK model — 
             .join("\n"),
       );
     }
-    expect(report.length).toBe(8);
+    expect(report.length).toBe(9);
   });
 });
