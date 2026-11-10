@@ -101,6 +101,20 @@ export function vesselModelUrl(characterId: string): string {
   return apiUrl(`/vessel/${encodeURIComponent(characterId)}/model`);
 }
 
+export type VesselModelSignedDownload = {
+  url: string;
+  expiresIn: number;
+};
+
+/** Fetch a short-lived signed download URL as JSON (`GET .../model?as=json`). Do not persist `url`. */
+export async function fetchVesselModelUrl(characterId: string): Promise<VesselModelSignedDownload> {
+  const res = await fetch(apiUrl(`/vessel/${encodeURIComponent(characterId)}/model?as=json`), {
+    headers: await authHeaders(),
+    credentials: "include",
+  });
+  return (await json(res)) as VesselModelSignedDownload;
+}
+
 export type VesselModelUploadSign = {
   bucket: string;
   path: string;

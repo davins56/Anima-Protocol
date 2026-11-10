@@ -6,6 +6,7 @@
  *   POST /api/vessel/:characterId/model/sign     { byteSize, filename|ext } → signed upload URL
  *   POST /api/vessel/:characterId/model/complete { path } → inspect + new vessel version
  *   GET  /api/vessel/:characterId/model      302 → signed download of the current model
+ *        ?as=json                            200 { url, expiresIn } instead of the 302
  */
 import { Router, type Request, type Response } from "express";
 import { getAuth } from "@clerk/express";
@@ -38,6 +39,7 @@ import {
   deleteObject,
   getObjectMetadata,
   hasModelStorage,
+  MODEL_SIGNED_DOWNLOAD_TTL_S,
   readObjectRange,
   signedDownloadUrl,
 } from "../lib/vessel/modelStorage";
@@ -262,23 +264,33 @@ router.post("/:characterId/model/complete", async (req, res) => {
   }
 });
 
+async function ownedModelStoragePath(userId: string, characterId: string): Promise<string> {
+  await requireOwnedCharacter(userId, characterId);
+  const v = await currentVessel(userId, characterId);
+  const model = (v?.config?.model && typeof v.config.model === "object" ? v.config.model : {}) as Record<string, unknown>;
+  const path = typeof model.path === "string" ? model.path : "";
+  if (!path) {
+    throw Object.assign(new Error("No model"), { status: 404, code: "model_not_found" });
+  }
+  // Sign only a path that still belongs to this user and character.
+  return assertOwnedModelPath(path, userId, characterId).path;
+}
+
 router.get("/:characterId/model", async (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
   const characterId = String(req.params.characterId);
+  const asJson = String(req.query.as || "") === "json";
   try {
-    await requireOwnedCharacter(userId, characterId);
-    const v = await currentVessel(userId, characterId);
-    const model = (v?.config?.model && typeof v.config.model === "object" ? v.config.model : {}) as Record<string, unknown>;
-    const path = typeof model.path === "string" ? model.path : "";
-    if (!path) {
-      res.status(404).json({ error: "No model", code: "model_not_found" });
+    const path = await ownedModelStoragePath(userId, characterId);
+    const url = await signedDownloadUrl(path);
+    if (asJson) {
+      res.setHeader("Cache-Control", "no-store");
+      res.status(200).json({ url, expiresIn: MODEL_SIGNED_DOWNLOAD_TTL_S });
       return;
     }
-    // Sign only a path that still belongs to this user and character.
-    const checked = assertOwnedModelPath(path, userId, characterId);
     res.setHeader("Cache-Control", "private, no-store");
-    res.redirect(302, await signedDownloadUrl(checked.path));
+    res.redirect(302, url);
   } catch (err) {
     fail(res, err);
   }

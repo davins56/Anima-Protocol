@@ -82,12 +82,27 @@ The API, using the service role and without buffering the whole file:
 
 ### `GET /api/vessel/:characterId/model`
 
-Owner only. 302 to a short-lived signed download URL for the current vessel's
-object. `Cache-Control: private, no-store`. There is no model when
-`config.model.path` is missing (404).
+Owner only. Default: 302 to a short-lived signed download URL for the current
+vessel's object. `Cache-Control: private, no-store`. There is no model when
+`config.model.path` is missing (404 JSON `{ error, code }`).
 
-Client helpers: `signVesselModel`, `completeVesselModel`, `vesselModelUrl`
-in `vesselApi.ts`.
+With `?as=json`, the same auth, lookup, and signing run, but the response is
+200 JSON instead of a redirect:
+
+```json
+{ "url": "https://…/storage/v1/object/sign/character-models/…?token=…", "expiresIn": 3600 }
+```
+
+- `url` — short-lived signed download URL. Do not persist it; fetch a new one
+  when it expires or when loading the model.
+- `expiresIn` — lifetime in seconds (currently 3600).
+- `Cache-Control: no-store`.
+- Errors stay JSON: 401 unauthenticated, 404 if the caller does not own the
+  character or no model is stored, 403 if the stored path is outside the
+  owner's prefix.
+
+Client helpers: `signVesselModel`, `completeVesselModel`, `vesselModelUrl`,
+`fetchVesselModelUrl` in `vesselApi.ts`.
 
 ## VesselConfig schema 2 — `model` object
 
@@ -115,8 +130,10 @@ JSON parse, the 50 MB cap, and Storage's own object metadata.
 ## Frontend contract (Anima 3D Visual)
 
 1. Load the mesh from `GET /api/vessel/:characterId/model` (credentials
-   included) or from `vesselModelUrl(characterId)`. Follow the 302. Do not
-   persist the signed URL.
+   included) or from `vesselModelUrl(characterId)`, and follow the 302. Or call
+   `fetchVesselModelUrl(characterId)` (`GET .../model?as=json`) and use
+   `{ url, expiresIn }`. Do not persist the signed URL; request a new one when
+   it expires.
 2. Read expression and viseme *names* from `vessel.config.model` (schema 2).
    The backend does not retarget or play them.
 3. VRM expressions and visemes (`aa`, `ih`, `ou`, `ee`, `oh`) are expected to
