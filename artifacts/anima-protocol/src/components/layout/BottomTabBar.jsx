@@ -19,6 +19,7 @@ const ALL_MODULES = [
   { label: "Codespace", path: "/codespace", icon: "⌨" },
   { label: "Repo Workspace", path: "/repo-codespace", icon: "🖥" },
   { label: "NetBattle", path: "/net-battle", icon: "⚔" },
+  { label: "Cyberworld", path: "/cyberworld", icon: "⌗" },
   { label: "Settings", path: "/settings", icon: "⚙" },
   { label: "Storyboard", path: "/storyboard", icon: "📋" },
   { label: "Narrative", path: "/narrative", icon: "📊" },

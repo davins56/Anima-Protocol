@@ -1230,8 +1230,12 @@ async function writeTurnMoodFromMetadata(turn: ChatTurn): Promise<void> {
   if (!selfState || Object.keys(selfState).length === 0) return;
   const characterIds = asStringArray(metadata.character_ids);
   if (characterIds.length === 0) return;
+  // SEC-005b: mood is the speaker's own felt state. Write it to the resolved
+  // speaker only; with no resolved speaker, write it to no one.
+  const speakerId = metadata.active_character_id ? String(metadata.active_character_id) : "";
+  if (!speakerId || !characterIds.includes(speakerId)) return;
   const now = new Date();
-  for (const characterId of characterIds) {
+  for (const characterId of [speakerId]) {
     const wrote = await withTransientDbRetry(() =>
       db.transaction(async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${turn.id}`}))`);
@@ -1367,6 +1371,11 @@ async function applyRelationshipPostProcess(params: {
   companionAffect?: CompanionAffect | null;
   /** The model stream dropped. Do not read the half-reply for mood or memory. */
   replyCutOff?: boolean;
+  /**
+   * SEC-005b: the speaker whose mood and synchro may be written. Defaults to
+   * activeCharacterId; the commit path passes only a speaker recorded on the turn.
+   */
+  affectSpeakerId?: string | null;
 }): Promise<void> {
   const {
     userId,
@@ -1383,6 +1392,10 @@ async function applyRelationshipPostProcess(params: {
     companionAffect,
     replyCutOff = false,
   } = params;
+  const requestedSpeakerId =
+    params.affectSpeakerId !== undefined ? params.affectSpeakerId : activeCharacterId;
+  const affectSpeakerId =
+    requestedSpeakerId && characterIds.includes(requestedSpeakerId) ? requestedSpeakerId : null;
   const companionText = replyCutOff ? "" : assistantContent;
   if (characterIds.length > 0) {
     const historySummary = replyCutOff
@@ -1532,9 +1545,14 @@ async function applyRelationshipPostProcess(params: {
       );
       const current =
         (existing?.emotionalState as Record<string, unknown> | null) ?? null;
+      // SEC-005b: mood and synchro values go to the resolved speaker only.
+      // Everyone else gets `{}`, which keeps their own synchro but still
+      // writes this turn's relationshipTurnId stamp exactly as before. The
+      // saved-moment stamp is unchanged.
+      const isSpeaker = cid === affectSpeakerId;
       const next = emotionalStateWithTurnBond(current, turnId, {
-        synchro: evolved ? serializeSynchroState(evolved) : null,
-        selfState: evolvedAffect ? serializeCompanionAffect(evolvedAffect) : null,
+        synchro: evolved ? (isSpeaker ? serializeSynchroState(evolved) : {}) : null,
+        selfState: evolvedAffect && isSpeaker ? serializeCompanionAffect(evolvedAffect) : null,
         saveMoment:
           Boolean(evolved) &&
           !replyCutOff &&
@@ -1617,6 +1635,11 @@ async function applyRelationshipPostProcessFromTurn(turn: ChatTurn): Promise<voi
     synchroState,
     companionAffect,
     replyCutOff: isCutOffReply(metadata),
+    // SEC-005b: activeCharacterId above falls back to characterIds[0]; mood
+    // and synchro must not. No speaker recorded on the turn, no such write.
+    affectSpeakerId: metadata.active_character_id
+      ? String(metadata.active_character_id)
+      : null,
   });
 }
 
