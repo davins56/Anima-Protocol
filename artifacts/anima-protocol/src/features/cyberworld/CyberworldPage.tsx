@@ -18,6 +18,12 @@ import Minimap from "./Minimap";
 import { useCyberworldAnimas } from "./useCyberworldAnimas";
 import { useCyberworldAudio } from "./useCyberworldAudio";
 import type { MoveInput, PlayerTelemetry, SceneCommands } from "./CyberworldScene";
+import { ACTIONS, type ActionId } from "./explore/actions";
+import { biomeTint, BIOMES } from "./explore/biomes";
+import { companionLine, systemLine } from "./explore/companion";
+import { ActionBar, InspectCard, LocationExplainer, LogPanel, RegionChip, SpeechBubble } from "./explore/ExploreHud";
+import { useExploration } from "./explore/useExploration";
+import { useRegionContext } from "./explore/useRegionContext";
 
 const CyberworldScene = lazy(() => import("./CyberworldScene"));
 
@@ -52,6 +58,18 @@ export default function CyberworldPage() {
   const commands = useRef<SceneCommands>({ walkTo: null });
   const webgl = useMemo(() => hasWebGL(), []);
   const { muted, toggleMuted, sfx } = useCyberworldAudio();
+
+  // ── Exploration: real-world region → daily data nodes, actions, progress.
+  const { region, status: regionStatus, choice, enableLocation, chooseTimezone } = useRegionContext();
+  const [companionId, setCompanionId] = useState<string | null>(null);
+  const companion = useMemo(() => animas.find((a) => a.id === companionId) ?? null, [animas, companionId]);
+  const explore = useExploration({ area, region, telemetry, commands, hasCompanion: animas.length > 0 });
+  const [explainerOpen, setExplainerOpen] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
+  const [bubble, setBubble] = useState<{ text: string; speaker?: string; color: string } | null>(null);
+  const pendingScan = useRef(false);
+  const tint = useMemo(() => biomeTint(region.biome, region.timeOfDay), [region.biome, region.timeOfDay]);
+  const { state: exploreState, scan, collect, inspect, closeInspect, jack } = explore;
 
   const near: WorldAnima | null = useMemo(() => animas.find((a) => a.id === nearId) ?? null, [animas, nearId]);
   const nearZone = near ? area.zones.find((z) => z.id === homeZoneId(near.id)) : null;
@@ -105,6 +123,105 @@ export default function CyberworldPage() {
     [busy, navigate],
   );
 
+  // Feedback for each explore event: sound + companion (or system) line.
+  useEffect(() => {
+    const ev = exploreState.last;
+    if (!ev) return;
+    if (ev.type === "scan") sfx.scan();
+    else if (ev.type === "collect") sfx.collect(explore.rarityTier[ev.loot.rarity]);
+    else sfx.blip();
+    const said = companion ? companionLine(companion.name, ev, region) : null;
+    const text = said ?? systemLine(ev);
+    if (text) setBubble({ text, speaker: said && companion ? companion.name : undefined, color: said ? companion?.color || "#F472B6" : BIOMES[region.biome].accent });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exploreState.last]);
+
+  useEffect(() => {
+    if (!bubble) return;
+    const t = setTimeout(() => setBubble(null), 3800);
+    return () => clearTimeout(t);
+  }, [bubble]);
+
+  const finishExplainer = useCallback(
+    (pick: "geo" | "timezone" | null) => {
+      if (pick === "geo") enableLocation();
+      else if (pick === "timezone") chooseTimezone();
+      setExplainerOpen(false);
+      if (pendingScan.current) {
+        pendingScan.current = false;
+        scan();
+      }
+    },
+    [enableLocation, chooseTimezone, scan],
+  );
+
+  const runAction = useCallback(
+    (id: ActionId) => {
+      const av = explore.availability[id];
+      if (!av.enabled) return;
+      switch (id) {
+        case "scan":
+          if (choice === null && !pendingScan.current && regionStatus === "timezone") {
+            // First scan: explain real-world sync before anything asks for location.
+            pendingScan.current = true;
+            setExplainerOpen(true);
+            return;
+          }
+          scan();
+          break;
+        case "collect":
+          collect();
+          break;
+        case "inspect":
+          inspect();
+          break;
+        case "jack":
+          sfx.blip();
+          jack();
+          break;
+        case "accompany": {
+          sfx.blip();
+          if (companionId) {
+            setBubble({ text: `${companion?.name ?? "Your Anima"} heads home.`, color: "#F472B6" });
+            setCompanionId(null);
+          } else {
+            const pick = near ?? animas[0];
+            if (!pick) return;
+            setCompanionId(pick.id);
+            setBubble({ text: `I'm with you. Let's see what the ${BIOMES[region.biome].label} hides.`, speaker: pick.name, color: pick.color || "#F472B6" });
+          }
+          break;
+        }
+        case "log":
+          sfx.blip();
+          setLogOpen((o) => !o);
+          break;
+      }
+    },
+    [explore.availability, choice, regionStatus, scan, collect, inspect, jack, sfx, companionId, companion, near, animas, region.biome],
+  );
+
+  // Keyboard shortcuts for the action bar (WASD stays movement).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (e.repeat || (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable))) return;
+      if (e.code === "Escape") {
+        setLogOpen(false);
+        closeInspect();
+        if (explainerOpen) finishExplainer(null);
+        return;
+      }
+      if (explainerOpen) return;
+      const a = ACTIONS.find((x) => x.code === e.code);
+      if (!a || (logOpen && a.id !== "log")) return;
+      e.preventDefault();
+      runAction(a.id);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [runAction, logOpen, explainerOpen, finishExplainer, closeInspect]);
+
   const press = (v: MoveInput) => () => {
     touchMove.current = v;
   };
@@ -129,6 +246,10 @@ export default function CyberworldPage() {
                 onStep={onStep}
                 nearAnimaId={nearId}
                 onNearChange={setNearId}
+                tint={tint}
+                nodes={explore.sceneNodes}
+                scanPulseAt={exploreState.last?.type === "scan" ? exploreState.last.at : 0}
+                companion={companion}
               />
             </Suspense>
           </WebGLFallback>
@@ -163,6 +284,7 @@ export default function CyberworldPage() {
           animas={animas}
           telemetry={telemetry}
           nearAnimaId={nearId}
+          nodes={explore.sceneNodes}
           onPick={onPick}
           className="absolute right-2 top-11 w-[112px] sm:w-[176px]"
         />
@@ -173,15 +295,57 @@ export default function CyberworldPage() {
           </p>
         )}
 
-        <p className="pointer-events-none absolute bottom-2 left-2 hidden font-mono text-[10px] uppercase tracking-widest text-cyan-300/60 sm:block">
-          WASD / arrows to move · click floor or map to walk · drag to orbit · walk into a gate to travel
-        </p>
+        <div className="pointer-events-none absolute left-2 top-11 flex max-w-[calc(100%-136px)] flex-col items-start gap-1 sm:max-w-xs">
+          <RegionChip region={region} status={regionStatus} onClick={() => setExplainerOpen(true)} />
+          <p className="hidden font-mono text-[9px] uppercase tracking-widest text-cyan-300/50 sm:block">
+            WASD move · click floor/map to walk · drag orbit · gates travel
+          </p>
+        </div>
+
+        <SpeechBubble
+          text={bubble?.text ?? null}
+          speaker={bubble?.speaker}
+          color={bubble?.color ?? "#00EAFF"}
+          className="absolute left-2 right-[124px] top-[5.5rem] sm:bottom-[4.75rem] sm:left-1/2 sm:right-auto sm:top-auto sm:max-w-md sm:-translate-x-1/2"
+        />
+
+        <InspectCard
+          lootId={exploreState.inspecting}
+          progress={exploreState.progress}
+          onClose={closeInspect}
+          className="absolute bottom-[108px] left-3 right-[172px] z-10 sm:bottom-auto sm:left-2 sm:right-auto sm:top-28 sm:w-72"
+        />
+
+        <ActionBar
+          availability={explore.availability}
+          onAction={runAction}
+          accompanying={!!companionId}
+          className="absolute bottom-3 left-3 sm:left-1/2 sm:-translate-x-1/2"
+        />
+
+        <LogPanel
+          open={logOpen}
+          progress={exploreState.progress}
+          region={region}
+          onClose={() => setLogOpen(false)}
+          onInspect={(id) => {
+            setLogOpen(false);
+            inspect(id);
+          }}
+        />
+        <LocationExplainer
+          open={explainerOpen}
+          status={regionStatus}
+          onGeo={() => finishExplainer("geo")}
+          onTimezone={() => finishExplainer("timezone")}
+          onClose={() => finishExplainer(null)}
+        />
 
         {near && nearZone && (
           <div
             role="dialog"
             aria-label={`${near.name} homepage`}
-            className="absolute bottom-3 left-3 right-[172px] border bg-black/80 p-3 font-mono backdrop-blur-sm sm:bottom-auto sm:left-1/2 sm:right-auto sm:top-12 sm:w-[320px] sm:-translate-x-1/2"
+            className="absolute bottom-[108px] left-3 right-[172px] border bg-black/80 p-3 font-mono backdrop-blur-sm sm:bottom-auto sm:left-1/2 sm:right-auto sm:top-12 sm:w-[320px] sm:-translate-x-1/2"
             style={{ borderColor: nearZone.color, boxShadow: `0 0 18px ${nearZone.color}55` }}
           >
             <p className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">Homepage</p>
