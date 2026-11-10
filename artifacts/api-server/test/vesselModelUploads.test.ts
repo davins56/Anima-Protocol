@@ -6,6 +6,7 @@ import type { Server } from "node:http";
 import { getPool } from "@workspace/db";
 import { buildGlb, glbBytes, PLAIN_GLB, vrmBytes } from "./glbFixture";
 import { MODEL_MAX_BYTES } from "../src/lib/vessel/modelInspect";
+import { MODEL_SIGNED_DOWNLOAD_TTL_S } from "../src/lib/vessel/modelStorage";
 
 const objects = new Map<string, Uint8Array>();
 const deleted: string[] = [];
@@ -416,5 +417,44 @@ describe("POST /vessel/:id/model/complete and GET model", () => {
     expect(complete.status).toBe(400);
     expect(complete.json.error).toMatch(/VRM/);
     expect(deleted).toContain(path);
+  });
+
+  it("GET ?as=json returns a signed url and expiresIn with Cache-Control no-store", async () => {
+    const owner = user("json");
+    const other = user("json_other");
+    const characterId = `${PREFIX}char_json`;
+    await seedCharacter(owner, characterId);
+    const path = await signPath(owner, characterId, "vrm");
+    objects.set(path, vrmBytes());
+    const complete = await call(owner, "POST", `/vessel/${characterId}/model/complete`, { path });
+    expect(complete.status).toBe(201);
+
+    const jsonGet = await call(owner, "GET", `/vessel/${characterId}/model?as=json`);
+    expect(jsonGet.status).toBe(200);
+    expect(jsonGet.location).toBeNull();
+    expect(jsonGet.json).toEqual({
+      url: `https://storage.test/download/${path}?sig=1`,
+      expiresIn: MODEL_SIGNED_DOWNLOAD_TTL_S,
+    });
+    expect(jsonGet.headers.get("cache-control")).toBe("no-store");
+
+    const defaultGet = await call(owner, "GET", `/vessel/${characterId}/model`);
+    expect(defaultGet.status).toBe(302);
+    expect(defaultGet.location).toBe(`https://storage.test/download/${path}?sig=1`);
+
+    const stolen = await call(other, "GET", `/vessel/${characterId}/model?as=json`);
+    expect(stolen.status).toBe(404);
+    expect(stolen.json).toMatchObject({ error: expect.any(String) });
+    expect(stolen.location).toBeNull();
+  });
+
+  it("GET ?as=json returns 404 JSON when the companion has no model", async () => {
+    const owner = user("nomodel");
+    const characterId = `${PREFIX}char_nomodel`;
+    await seedCharacter(owner, characterId);
+    const res = await call(owner, "GET", `/vessel/${characterId}/model?as=json`);
+    expect(res.status).toBe(404);
+    expect(res.json).toEqual({ error: "No model", code: "model_not_found" });
+    expect(res.location).toBeNull();
   });
 });

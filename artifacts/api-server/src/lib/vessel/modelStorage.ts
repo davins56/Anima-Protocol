@@ -10,7 +10,7 @@ import { MODEL_MAX_BYTES, type ModelExt } from "./modelInspect";
 
 export const MODEL_BUCKET = () => process.env.SUPABASE_MODEL_BUCKET?.trim() || "character-models";
 const SIGNED_UPLOAD_TTL_S = 10 * 60;
-const SIGNED_DOWNLOAD_TTL_S = 60 * 60;
+export const MODEL_SIGNED_DOWNLOAD_TTL_S = 60 * 60;
 
 function supabaseUrl(): string | null {
   const raw = process.env.SUPABASE_URL?.trim();
@@ -173,7 +173,7 @@ export async function signedDownloadUrl(path: string): Promise<string> {
   const res = await fetch(`${base}/storage/v1/object/sign/${bucket}/${path}`, {
     method: "POST",
     headers: { ...authHeaders(), "Content-Type": "application/json" },
-    body: JSON.stringify({ expiresIn: SIGNED_DOWNLOAD_TTL_S }),
+    body: JSON.stringify({ expiresIn: MODEL_SIGNED_DOWNLOAD_TTL_S }),
   });
   if (!res.ok) await storageError(res, "Could not sign model download URL");
   const body = (await res.json()) as { signedURL?: string; signedUrl?: string };
