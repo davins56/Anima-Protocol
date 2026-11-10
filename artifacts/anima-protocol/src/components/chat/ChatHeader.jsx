@@ -12,7 +12,7 @@ import {
   llmDisplayTitle,
 } from "@/lib/llmProviderLabel";
 
-export default function ChatHeader({ session, characters, mood, moodIntensity, characterEmotions, onToggleDeepMode, onAvatarClick, llmProvider, llmBrand }) {
+export default function ChatHeader({ session, characters, mood, moodIntensity, characterEmotions, onToggleDeepMode, onAvatarClick, llmProvider, llmBrand, speaking = false }) {
   const navigate = useNavigate();
   const [summarizing, setSummarizing] = useState(false);
   const [summarized, setSummarized] = useState(false);
@@ -118,6 +118,7 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
             name={primaryChar.name}
             mood={primaryEmotion?.emotion}
             intensity={primaryEmotion?.intensity}
+            speaking={speaking}
             fallback={
               primaryChar.avatar_url ? (
                 <img src={primaryChar.avatar_url} alt={primaryChar.name} className="w-full h-full object-cover" />
