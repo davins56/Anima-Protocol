@@ -3,7 +3,7 @@
  * - portrait: tiny, dpr 1, demand frameloop ticked at ~12fps while visible
  * - full: adaptive DPR via PerformanceMonitor, HD toggle, pause when offscreen/hidden
  */
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, PerformanceMonitor } from "@react-three/drei";
 import type { WebGLRenderer } from "three";
@@ -11,6 +11,7 @@ import type { VesselShift } from "@/lib/vessel/emotionShift";
 import VesselModel from "./VesselModel";
 import type { VesselConfig } from "@/lib/vessel/vesselConfig";
 import type { Expression } from "@/lib/vessel/emotion";
+import type { ArkitFaceWeights } from "@/lib/vessel/arkitFace";
 
 export type VesselCanvasHandle = { snapshot: (type?: string, quality?: number) => string | null };
 
@@ -26,6 +27,10 @@ type Props = {
   intensity?: number;
   /** Companion voice is playing: VRM lip-sync. */
   speaking?: boolean;
+  /** Full mode framing: whole body (default) or a head close-up (face work). Read at mount. */
+  focus?: "body" | "head";
+  /** Dev/lab: pin ARKit face morph weights on plain GLB vessels. */
+  faceOverride?: ArkitFaceWeights | null;
 };
 
 function useVisible(ref: React.RefObject<HTMLElement | null>) {
@@ -61,20 +66,27 @@ function Ticker({ fps, active }: { fps: number; active: boolean }) {
 
 function GlGrabber({ onGl }: { onGl: (gl: WebGLRenderer, render: () => void) => void }) {
   const { gl, scene, camera } = useThree();
-  useEffect(() => onGl(gl, () => gl.render(scene, camera)), [gl, scene, camera, onGl]);
+  useEffect(() => {
+    onGl(gl, () => gl.render(scene, camera));
+  }, [gl, scene, camera, onGl]);
   return null;
 }
 
 const VesselCanvas = forwardRef<VesselCanvasHandle, Props>(function VesselCanvas(
-  { config, expression, mode = "full", hd = false, className, shift = null, mood, intensity, speaking = false },
+  { config, expression, mode = "full", hd = false, className, shift = null, mood, intensity, speaking = false, focus = "body", faceOverride = null },
   ref,
 ) {
   const host = useRef<HTMLDivElement>(null);
   const visible = useVisible(host);
   const glRef = useRef<{ gl: WebGLRenderer; render: () => void } | null>(null);
+  // Stable + returns nothing: an effect that returns the assignment's object makes React call it as a cleanup and crash.
+  const onGl = useCallback((gl: WebGLRenderer, render: () => void) => {
+    glRef.current = { gl, render };
+  }, []);
   const maxDpr = typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, hd ? 2 : 1.5) : 1;
   const [dpr, setDpr] = useState(mode === "portrait" ? 1 : Math.min(1.25, maxDpr));
   const portrait = mode === "portrait";
+  const head = !portrait && focus === "head";
 
   useImperativeHandle(ref, () => ({
     snapshot: (type = "image/jpeg", quality = 0.9) => {
@@ -90,13 +102,13 @@ const VesselCanvas = forwardRef<VesselCanvasHandle, Props>(function VesselCanvas
       <Canvas
         dpr={dpr}
         frameloop={!visible ? "never" : portrait ? "demand" : "always"}
-        camera={{ position: portrait ? [0, 1.55, 0.75] : [0, 1.2, 2.6], fov: portrait ? 30 : 40 }}
+        camera={{ position: portrait ? [0, 1.55, 0.75] : head ? [0, 1.6, 0.7] : [0, 1.2, 2.6], fov: portrait ? 30 : head ? 30 : 40 }}
         gl={{ antialias: !portrait && hd, powerPreference: "low-power", preserveDrawingBuffer: !portrait, alpha: true }}
       >
         <ambientLight intensity={0.6} />
         <directionalLight position={[1.5, 3, 2]} intensity={1.1} />
         <pointLight position={[-1.5, 1.6, 1]} intensity={0.6} color={config.effects.color} />
-        <VesselModel config={config} expression={expression} hd={hd && !portrait} track={!portrait} shift={shift} mood={mood} intensity={intensity} speaking={speaking} />
+        <VesselModel config={config} expression={expression} hd={hd && !portrait} track={!portrait} shift={shift} mood={mood} intensity={intensity} speaking={speaking} faceOverride={faceOverride} />
         {portrait ? (
           <Ticker fps={speaking && config.model.kind === "vrm" ? 24 : 12} active={visible} />
         ) : (
@@ -107,8 +119,8 @@ const VesselCanvas = forwardRef<VesselCanvasHandle, Props>(function VesselCanvas
               flipflops={3}
               onFallback={() => setDpr(0.75)}
             />
-            <OrbitControls target={[0, 1.1, 0]} enablePan={false} minDistance={1} maxDistance={4} />
-            <GlGrabber onGl={(gl, render) => (glRef.current = { gl, render })} />
+            <OrbitControls target={head ? [0, 1.6, 0] : [0, 1.1, 0]} enablePan={false} minDistance={head ? 0.35 : 1} maxDistance={4} />
+            <GlGrabber onGl={onGl} />
           </>
         )}
       </Canvas>

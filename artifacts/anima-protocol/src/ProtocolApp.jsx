@@ -97,6 +97,9 @@ const Therapy = lazy(() => import("./pages/Therapy"));
 const CompanionGenerator = lazy(() => import("./pages/CompanionGenerator"));
 const OnboardingFlow = lazy(() => import("./pages/OnboardingFlow"));
 const ExtraPage = lazy(() => import("./app/extraPages"));
+// Dev-only photo-to-vessel lab; compiled out of production unless VITE_VESSEL_LAB=1.
+const VESSEL_LAB = import.meta.env.DEV || import.meta.env.VITE_VESSEL_LAB === "1";
+const VesselLab = VESSEL_LAB ? lazy(() => import("./pages/VesselLab")) : null;
 
 import { Navigate } from "react-router-dom";
 import AIDisclaimerModal from "@/components/legal/AIDisclaimerModal";
@@ -914,6 +917,8 @@ const AuthenticatedApp = () => {
   const pathname = location.pathname;
   const isPublicPath =
     pathname === "/" ||
+    // Dev lab is fully on-device (no API calls), so it doesn't need a session.
+    (VESSEL_LAB && pathname === "/vessel/lab") ||
     PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));
 
   // While Clerk boots, render public routes (especially `/` → title screen)
@@ -1013,6 +1018,7 @@ const AuthenticatedApp = () => {
                     <ExtraPage name="VesselStudio" />
                 }
               />
+              {VesselLab && <Route path="/vessel/lab" element={<VesselLab />} />}
               <Route
                 path="/net-battle"
                 element={
