@@ -32,6 +32,9 @@ export type MoveInput = { x: number; z: number };
 /** Live player state the scene writes every frame (read by the minimap HUD). */
 export type PlayerTelemetry = { x: number; z: number; heading: number; moving: boolean };
 
+export type SceneTint = { accent: string; gridCell: string; gridSection: string; fog: string; light: number };
+export type SceneNode = { id: string; position: Vec2; color: string; revealed: boolean; big: boolean };
+
 /** One-shot commands from the HUD into the scene (consumed on the next frame). */
 export type SceneCommands = { walkTo: Vec2 | null };
 
@@ -44,6 +47,14 @@ type SceneProps = {
   commands: MutableRefObject<SceneCommands>;
   onPortal: (portal: Portal) => void;
   onStep?: () => void;
+  /** Real-world biome/time tint for grid, fog and light (exploration). */
+  tint?: SceneTint | null;
+  /** Data nodes for the exploration loop; only revealed ones render. */
+  nodes?: readonly SceneNode[];
+  /** performance.now() of the last Scan, drives the scan pulse ring. */
+  scanPulseAt?: number;
+  /** Anima walking with the player (hidden from their homepage meanwhile). */
+  companion?: WorldAnima | null;
   /** Live on-screen joystick / d-pad vector, camera-relative (x right, z forward). */
   touchMove: MutableRefObject<MoveInput>;
   nearAnimaId: string | null;
@@ -437,6 +448,103 @@ function PlayerNavi({ group }: { group: RefObject<THREE.Group | null> }) {
   );
 }
 
+/* ── Exploration ──────────────────────────────────────────────────────── */
+
+function DataNodeMesh({ node }: { node: SceneNode }) {
+  const g = useRef<THREE.Group>(null);
+  const appear = useRef(0);
+  useFrame(({ clock }, dt) => {
+    const el = g.current;
+    if (!el) return;
+    appear.current = Math.min(1, appear.current + dt * 2.5);
+    const t = clock.elapsedTime + node.position[0];
+    el.rotation.y += dt * 1.4;
+    el.position.y = 0.9 + Math.sin(t * 2) * 0.12;
+    el.scale.setScalar(appear.current * (node.big ? 1.35 : 1));
+  });
+  return (
+    <group position={[node.position[0], 0, node.position[1]]}>
+      <group ref={g} scale={0}>
+        <mesh>
+          <octahedronGeometry args={[0.28, 0]} />
+          <meshStandardMaterial color={node.color} emissive={node.color} emissiveIntensity={1.3} flatShading toneMapped={false} />
+        </mesh>
+        <mesh scale={1.6}>
+          <octahedronGeometry args={[0.28, 0]} />
+          <meshBasicMaterial color={node.color} wireframe transparent opacity={0.5} toneMapped={false} />
+        </mesh>
+      </group>
+      <mesh position={[0, 1.6, 0]}>
+        <cylinderGeometry args={[0.02, 0.02, 3.2, 4, 1, true]} />
+        <meshBasicMaterial color={node.color} transparent opacity={0.35} toneMapped={false} depthWrite={false} />
+      </mesh>
+      <mesh position={[0, 0.04, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.35, 0.45, 6]} />
+        <meshBasicMaterial color={node.color} transparent opacity={0.8} toneMapped={false} />
+      </mesh>
+    </group>
+  );
+}
+
+const SCAN_PULSE_MS = 1100;
+
+/** Expanding ring from the player after a Scan. */
+function ScanPulse({ at, telemetry, color }: { at: number; telemetry: MutableRefObject<PlayerTelemetry>; color: string }) {
+  const ring = useRef<THREE.Mesh>(null);
+  useFrame(() => {
+    const m = ring.current;
+    if (!m) return;
+    const k = (performance.now() - at) / SCAN_PULSE_MS;
+    m.visible = at > 0 && k >= 0 && k < 1;
+    if (!m.visible) return;
+    m.position.set(telemetry.current.x, 0.08, telemetry.current.z);
+    m.scale.setScalar(0.5 + k * 9);
+    (m.material as THREE.MeshBasicMaterial).opacity = 0.9 * (1 - k);
+  });
+  return (
+    <mesh ref={ring} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
+      <ringGeometry args={[0.92, 1, 48]} />
+      <meshBasicMaterial color={color} transparent opacity={0.8} toneMapped={false} depthWrite={false} />
+    </mesh>
+  );
+}
+
+/** Accompanying Anima: trails behind the player's shoulder. */
+function Follower({ anima, telemetry, quality }: { anima: WorldAnima; telemetry: MutableRefObject<PlayerTelemetry>; quality: ReturnType<typeof useRendererQuality>["quality"] }) {
+  const g = useRef<THREE.Group>(null);
+  const { vessel } = useCharacterVessel(anima.mock ? null : anima.id);
+  const model = useMemo(() => {
+    const m = vesselToBattleModel(vessel?.config, anima.name);
+    return vessel ? m : { ...m, color: anima.color || "#00EAFF" };
+  }, [vessel, anima.name, anima.color]);
+  const target = useMemo(() => new THREE.Vector3(), []);
+  const ready = useRef(false);
+  useFrame((_, dt) => {
+    const el = g.current;
+    if (!el) return;
+    const t = telemetry.current;
+    // Behind-left of the player, relative to their heading.
+    const h = t.heading;
+    target.set(t.x - Math.sin(h) * 1.3 - Math.cos(h) * 0.9, 0, t.z - Math.cos(h) * 1.3 + Math.sin(h) * 0.9);
+    if (!ready.current) {
+      el.position.copy(target);
+      ready.current = true;
+    }
+    el.position.lerp(target, 1 - Math.pow(0.02, dt));
+    el.rotation.y = h;
+  });
+  return (
+    <group ref={g}>
+      <group scale={0.95}>
+        <Suspense fallback={null}>
+          <SerenityFigure model={model} anchored quality={quality} expression={0.4} />
+        </Suspense>
+      </group>
+      <NameTag text={anima.name} color={model.color} position={[0, 2.1, 0]} bright={false} height={0.32} />
+    </group>
+  );
+}
+
 /* ── Controller ───────────────────────────────────────────────────────── */
 
 const KEY_DIRS: Record<string, MoveInput> = {
@@ -478,7 +586,7 @@ function useHeldKeys() {
 
 const CAMERA_OFFSET: readonly [number, number, number] = [0, 10, 14];
 
-function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, onStep, nearAnimaId, onNearChange, quality }: SceneProps & { quality: ReturnType<typeof useRendererQuality>["quality"] }) {
+function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, onStep, nearAnimaId, onNearChange, quality, tint, nodes, scanPulseAt = 0, companion }: SceneProps & { quality: ReturnType<typeof useRendererQuality>["quality"] }) {
   const player = useRef<THREE.Group>(null);
   const pos = useRef<Vec2>(spawn);
   const route = useRef<Vec2[]>([]);
@@ -598,21 +706,21 @@ function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, 
 
   return (
     <>
-      <color attach="background" args={[BG]} />
-      <fog attach="fog" args={[BG, 30, 70]} />
-      <ambientLight intensity={0.35} />
-      <directionalLight position={[8, 14, 6]} intensity={0.6} color="#bfe9ff" />
-      <pointLight position={[0, 6, 0]} intensity={30} distance={30} color={area.theme.accent} />
+      <color attach="background" args={[tint?.fog ?? BG]} />
+      <fog attach="fog" args={[tint?.fog ?? BG, 30, 70]} />
+      <ambientLight intensity={0.35 * (tint?.light ?? 1)} />
+      <directionalLight position={[8, 14, 6]} intensity={0.6 * (tint?.light ?? 1)} color="#bfe9ff" />
+      <pointLight position={[0, 6, 0]} intensity={30} distance={30} color={tint?.accent ?? area.theme.accent} />
       <Stars radius={80} depth={30} count={quality.stars} factor={3} fade speed={0.4} />
       <Grid
         position={[0, -3, 0]}
         args={[200, 200]}
         cellSize={1}
         cellThickness={0.5}
-        cellColor={area.theme.gridCell}
+        cellColor={area.kind === "hub" && tint ? tint.gridCell : area.theme.gridCell}
         sectionSize={6}
         sectionThickness={1}
-        sectionColor={area.theme.gridSection}
+        sectionColor={area.kind === "hub" && tint ? tint.gridSection : area.theme.gridSection}
         fadeDistance={70}
         fadeStrength={1.5}
         infiniteGrid
@@ -627,11 +735,12 @@ function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, 
         return <Walkway key={path.id} a={a} b={b} width={path.width} color={path.color || to?.color || CYAN} onFloorClick={onFloorClick} />;
       })}
       {area.zones.map((zone) => (
-        <Platform key={zone.id} zone={zone} onFloorClick={onFloorClick} />
+        // The hub plaza takes on the real-world biome tint; homes keep their Anima colours.
+        <Platform key={zone.id} zone={zone.kind === "hub" && tint ? { ...zone, color: tint.accent } : zone} onFloorClick={onFloorClick} />
       ))}
       {area.zones.map((zone) => {
         const anima = zone.animaId ? animas.find((a) => a.id === zone.animaId) : null;
-        return anima ? <Resident key={zone.id} zone={zone} anima={anima} near={anima.id === nearAnimaId} quality={quality} /> : null;
+        return anima && anima.id !== companion?.id ? <Resident key={zone.id} zone={zone} anima={anima} near={anima.id === nearAnimaId} quality={quality} /> : null;
       })}
       {area.portals.map((portal) => (
         <PortalGate key={portal.id} portal={portal} />
@@ -639,6 +748,10 @@ function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, 
       {area.decor.map((item) => (
         <Decor key={item.id} item={item} />
       ))}
+
+      {nodes?.filter((n) => n.revealed).map((n) => <DataNodeMesh key={n.id} node={n} />)}
+      <ScanPulse at={scanPulseAt} telemetry={telemetry} color={tint?.accent ?? area.theme.accent} />
+      {companion && <Follower anima={companion} telemetry={telemetry} quality={quality} />}
 
       <PlayerNavi group={player} />
       <mesh ref={marker} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
