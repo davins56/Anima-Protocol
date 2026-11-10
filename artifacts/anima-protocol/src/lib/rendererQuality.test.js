@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   RENDERER_QUALITY,
   lowerRendererQuality,
@@ -49,5 +49,23 @@ describe("renderer quality tiers", () => {
     expect(
       raiseRendererQuality(RENDERER_QUALITY.medium, RENDERER_QUALITY.medium),
     ).toBe(RENDERER_QUALITY.medium);
+  });
+});
+
+describe("detectRendererCapabilities probe", () => {
+  it("probes WebGL2 once per window and releases the probe context", async () => {
+    const { detectRendererCapabilities } = await import("./rendererQuality");
+    const loseContext = vi.fn();
+    const getContext = vi.fn(() => ({ getExtension: () => ({ loseContext }) }));
+    const source = {
+      navigator: {},
+      devicePixelRatio: 2,
+      matchMedia: () => ({ matches: false }),
+      document: { createElement: () => ({ getContext }) },
+    };
+    expect(detectRendererCapabilities(source).webgl2).toBe(true);
+    expect(detectRendererCapabilities(source).webgl2).toBe(true);
+    expect(getContext).toHaveBeenCalledTimes(1);
+    expect(loseContext).toHaveBeenCalledTimes(1);
   });
 });
