@@ -180,7 +180,7 @@ export const LLM_LOCAL_FAILOVER_ATTEMPT_MS = 12_000;
 
 /**
  * After the upstream stream is open, wait this long for first activity.
- * DeepSeek R1 on Workers AI often buffers `<think>` before the first SSE
+ * A reasoning model (e.g. DeepSeek R1 via ANIMA_WORKERS_AI_MODEL) can buffer `<think>` before the first SSE
  * byte; 35s was aborting signed-in `/openai` sends that `/api/ai/chat`
  * (unauth, non-stream) still completed.
  */
