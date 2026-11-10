@@ -29,7 +29,7 @@ import {
 import EmailCodeSignIn from "@/components/auth/EmailCodeSignIn";
 import { dark } from "@clerk/themes";
 import { Suspense, lazy, useRef, useEffect, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { useSwipeGestures } from "@/hooks/useSwipeGestures";
 import useViewportHeight from "@/hooks/useViewportHeight";
 import { initializeColorScheme } from "@/lib/colorScheme";
@@ -766,6 +766,7 @@ const AuthenticatedApp = () => {
   const navigationStack = useRef(["/"]);
   const appContainerRef = useRef(null);
   useKeyboardAvoidance(appContainerRef);
+  const reduceMotion = useReducedMotion();
 
   // Initialize color scheme on mount
   useEffect(() => {
@@ -927,6 +928,7 @@ const AuthenticatedApp = () => {
     return <Navigate to="/" replace />;
   }
 
+  const routeSection = pathname.split("/")[1] || "home";
   const showChrome =
     isAuthenticated &&
     !pathname.startsWith("/sign-in") &&
@@ -940,14 +942,13 @@ const AuthenticatedApp = () => {
       )}
       {showChrome && disclaimerAccepted && <TutorialOverlay />}
       {showChrome && <MobileHeader />}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={location.pathname.split("/")[1] || "home"}
+      {/* The shell (keyboard avoidance, error boundary, Suspense) stays
+          mounted across navigations. Only the route panel fades in, ~100ms,
+          with no exit wait — the old mode="wait" x-slide held every
+          navigation ~180ms and unmounted the whole tree. Skipped entirely
+          under prefers-reduced-motion. */}
+        <div
           ref={appContainerRef}
-          initial={{ x: 20, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          exit={{ x: -20, opacity: 0 }}
-          transition={{ duration: 0.18, ease: "easeInOut" }}
           className="app-shell-main flex-1 min-h-0 flex flex-col"
           style={{
             paddingBottom:
@@ -956,7 +957,13 @@ const AuthenticatedApp = () => {
         >
           <ErrorBoundary resetKey={location.pathname}>
             <Suspense fallback={<PageLoader />}>
-            <div className="app-shell-route flex min-h-0 min-w-0 flex-1 flex-col">
+            <motion.div
+              key={routeSection}
+              initial={reduceMotion ? false : { opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: reduceMotion ? 0 : 0.1, ease: "easeOut" }}
+              className="app-shell-route flex min-h-0 min-w-0 flex-1 flex-col"
+            >
             <Routes location={location}>
               {/* Root: signed-out -> Landing, signed-in -> MainHome */}
               <Route path="/" element={<HomeGate />} />
@@ -1649,11 +1656,10 @@ const AuthenticatedApp = () => {
               />
               <Route path="*" element={<PageNotFound />} />
             </Routes>
-            </div>
+            </motion.div>
             </Suspense>
           </ErrorBoundary>
-        </motion.div>
-      </AnimatePresence>
+        </div>
       {showChrome && !isHomeFloor && <BottomTabBar />}
     </>
   );
