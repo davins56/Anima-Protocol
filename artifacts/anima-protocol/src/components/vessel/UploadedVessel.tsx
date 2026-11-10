@@ -28,6 +28,7 @@ import {
 import { availableVisemes, speechOpenness, visemeWeights } from "@/lib/vessel/vrmVisemes";
 import type { ArkitFaceWeights } from "@/lib/vessel/arkitFace";
 import { useArkitFace } from "./useArkitFace";
+import { useRenderDemand } from "./renderDemand";
 
 export type UploadedVesselProps = {
   model: VesselModelMeta;
@@ -99,6 +100,7 @@ function LoadedVessel({ model, expression, mood, intensity, speaking = false, au
   const [asset, setAsset] = useState<ParsedVesselAsset | null>(null);
   const [error, setError] = useState<unknown>(null);
   const camera = useThree((s) => s.camera);
+  const invalidate = useThree((s) => s.invalidate);
 
   useEffect(() => {
     let live = true;
@@ -139,9 +141,16 @@ function LoadedVessel({ model, expression, mood, intensity, speaking = false, au
     m.clipAction(asset.animations[0]).play();
     return m;
   }, [asset]);
-  useEffect(() => () => {
-    mixer?.stopAllAction();
-  }, [mixer]);
+  // A playing clip needs every frame; tell demand-frameloop hosts to keep running.
+  const demand = useRenderDemand();
+  useEffect(() => {
+    if (!mixer) return;
+    demand.hold("vessel-clip");
+    return () => {
+      demand.release("vessel-clip");
+      mixer.stopAllAction();
+    };
+  }, [mixer, demand]);
 
   const presets = useMemo(() => drivable(availableVrmPresets(model.expressions), asset?.expressionNames ?? []), [model.expressions, asset]);
   const visemes = useMemo(() => {
@@ -170,6 +179,8 @@ function LoadedVessel({ model, expression, mood, intensity, speaking = false, au
         mouthWeights.current = easeWeights(mouthWeights.current, visemeWeights(tMs, open, visemes), dt, 0.05);
         const frame: Record<string, number> = { ...moodWeights.current, ...mouthWeights.current };
         if (presets.has("blink")) frame.blink = blinker.update(dt, moodWeights.current.happy ?? 0);
+        // Demand-frameloop hosts: render a blink / speech through at full rate.
+        if ((frame.blink ?? 0) > 0 || speaking) invalidate();
         for (const name of driven.current) if (!(name in frame)) frame[name] = 0;
         for (const [name, w] of Object.entries(frame)) {
           em.setValue(name, w);
