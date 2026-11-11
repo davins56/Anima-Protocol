@@ -48,9 +48,37 @@ export function xaiTtsBody(voice: SavedVoice, text: string, defaultVoiceId: stri
   return body;
 }
 
-/** Which provider will speak, given configured keys. */
-export function pickVoiceProvider(keys: { xai: boolean; elevenlabs: boolean }): "xai" | "elevenlabs" | null {
-  if (keys.xai) return "xai";
-  if (keys.elevenlabs) return "elevenlabs";
-  return null;
+export type VoiceClipProvider = "local" | "xai" | "elevenlabs";
+export type CloudVoiceOptIn = "xai" | "elevenlabs" | null;
+
+/**
+ * The request's explicit cloud opt-in (`cloud_opt_in` on /api/media/voice-clip).
+ * Anything else means none: cloud voices are off by default.
+ */
+export function parseCloudOptIn(raw: unknown): CloudVoiceOptIn {
+  return raw === "xai" || raw === "elevenlabs" ? raw : null;
+}
+
+/**
+ * Who may speak, in order. The home box first; a cloud provider only when the
+ * steward opted into that exact provider and its key exists. There is no
+ * automatic xAI -> ElevenLabs cascade any more.
+ */
+export function voiceProviderPlan(
+  keys: { local: boolean; xai: boolean; elevenlabs: boolean },
+  optIn: CloudVoiceOptIn = null,
+): VoiceClipProvider[] {
+  const plan: VoiceClipProvider[] = [];
+  if (keys.local) plan.push("local");
+  if (optIn === "xai" && keys.xai) plan.push("xai");
+  if (optIn === "elevenlabs" && keys.elevenlabs) plan.push("elevenlabs");
+  return plan;
+}
+
+/** First provider in the plan, or null (callers fail closed with voice_offline). */
+export function pickVoiceProvider(
+  keys: { local?: boolean; xai: boolean; elevenlabs: boolean },
+  optIn: CloudVoiceOptIn = null,
+): VoiceClipProvider | null {
+  return voiceProviderPlan({ local: Boolean(keys.local), xai: keys.xai, elevenlabs: keys.elevenlabs }, optIn)[0] ?? null;
 }

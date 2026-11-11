@@ -1,17 +1,28 @@
 /**
- * Voice notes, runtime half. Speaks short text in the Anima's saved voice
- * (character_voice → xAI /v1/tts, builtin or cloned), falling back to
- * ElevenLabs when only that key is set, and stores the MP3 in the uploads
- * blob table so the chat bubble can play it from
+ * Voice notes, runtime half. Speaks short text on the steward's home box
+ * (Kokoro-FastAPI, her `kokoro_voice_id`, docs/voice-local.md) and stores the
+ * MP3 in the uploads blob table so the chat bubble can play it from
  * /api/storage/objects/uploads/:id.
  *
- * Like the realtime voice agent, this sends text to a third-party voice API;
- * only the words being spoken are sent, never memories or the persona.
+ * Cloud voices are opt-in per request (`cloudOptIn`, off by default): xAI in
+ * her saved character_voice, or ElevenLabs. When opted in they are tried only
+ * if the box cannot speak; when not, a down box is a 503 voice_offline with
+ * cloudFallback:false. Only the words being spoken are ever sent to a cloud
+ * voice, never memories or the persona.
  */
 import { storeUploadedAudio, UPLOADS_PATH_PREFIX } from "../imageUploads";
-import { currentVoice, DEFAULT_VOICE_ID } from "../voice/voiceStore";
+import { unavailableBody, type LocalVoiceReason } from "../voice/localContract";
+import { kokoroVoiceFor, localVoiceEnabled, LocalVoiceUnavailable, synthesizeKokoroClip } from "../voice/localVoiceClient";
+import { currentVoice, DEFAULT_VOICE_ID, loadCharacterRecord } from "../voice/voiceStore";
 import { XAI_API_BASE, xaiKey } from "../voice/xaiVoiceClient";
-import { cleanSpokenText, pickVoiceProvider, xaiTtsBody } from "./voiceClipCore";
+import {
+  cleanSpokenText,
+  pickVoiceProvider,
+  voiceProviderPlan,
+  xaiTtsBody,
+  type CloudVoiceOptIn,
+  type VoiceClipProvider,
+} from "./voiceClipCore";
 
 const TTS_TIMEOUT_MS = 30_000;
 const ELEVENLABS_DEFAULT_VOICE = "21m00Tcm4TlvDq8ikWAM";
@@ -20,12 +31,25 @@ export type VoiceClip = {
   url: string;
   contentType: string;
   byteSize: number;
-  provider: "xai" | "elevenlabs";
+  provider: VoiceClipProvider;
   transcript: string;
 };
 
-export function voiceClipProvider(env: NodeJS.ProcessEnv = process.env): "xai" | "elevenlabs" | null {
-  return pickVoiceProvider({ xai: Boolean(xaiKey(env)), elevenlabs: Boolean(String(env.ELEVENLABS_API_KEY || "").trim()) });
+export function voiceClipKeys(env: NodeJS.ProcessEnv = process.env): { local: boolean; xai: boolean; elevenlabs: boolean } {
+  return {
+    local: localVoiceEnabled(env),
+    xai: Boolean(xaiKey(env)),
+    elevenlabs: Boolean(String(env.ELEVENLABS_API_KEY || "").trim()),
+  };
+}
+
+/**
+ * Who would speak a voice note with no opt-in: "local" when the home box is
+ * configured, else null. Server-initiated notes (outreach) never use a cloud
+ * voice because there is no steward request carrying an opt-in.
+ */
+export function voiceClipProvider(env: NodeJS.ProcessEnv = process.env, optIn: CloudVoiceOptIn = null): VoiceClipProvider | null {
+  return pickVoiceProvider(voiceClipKeys(env), optIn);
 }
 
 /** Aborts when the caller's signal does, or after `ms`. */
@@ -42,8 +66,19 @@ export function withTimeout(parent: AbortSignal | undefined, ms: number): AbortS
   return controller.signal;
 }
 
-function statusError(message: string, status: number): Error {
-  return Object.assign(new Error(message), { status });
+function statusError(message: string, status: number, extra: Record<string, unknown> = {}): Error {
+  return Object.assign(new Error(message), { status, ...extra });
+}
+
+function offlineError(reason: LocalVoiceReason): Error {
+  const body = unavailableBody(reason);
+  return statusError(body.error, 503, { code: body.code, reason: body.reason, cloudFallback: false });
+}
+
+async function speakWithLocal(userId: string, characterId: string, text: string, signal: AbortSignal): Promise<Response> {
+  const character = await loadCharacterRecord(userId, characterId).catch(() => null);
+  const clip = await synthesizeKokoroClip(text, kokoroVoiceFor(character), signal);
+  return new Response(clip.bytes as BodyInit, { status: 200, headers: { "content-type": clip.contentType } });
 }
 
 async function speakWithXai(userId: string, characterId: string, text: string, signal: AbortSignal): Promise<Response> {
@@ -71,17 +106,37 @@ export async function synthesizeVoiceClip(args: {
   characterId: string;
   text: string;
   signal?: AbortSignal;
+  /** Explicit, per-request cloud opt-in. Default null: home box only. */
+  cloudOptIn?: CloudVoiceOptIn;
 }): Promise<VoiceClip> {
   const transcript = cleanSpokenText(args.text);
   if (!transcript) throw statusError("Nothing to say.", 400);
-  const provider = voiceClipProvider();
-  if (!provider) throw statusError("No voice provider is configured.", 503);
+  const plan = voiceProviderPlan(voiceClipKeys(), args.cloudOptIn ?? null);
+  if (!plan.length) throw offlineError(localVoiceEnabled() ? "box_unreachable" : "disabled_by_user");
 
   const signal = withTimeout(args.signal, TTS_TIMEOUT_MS);
-  const res =
-    provider === "xai"
-      ? await speakWithXai(args.userId, args.characterId, transcript, signal)
-      : await speakWithElevenLabs(transcript, signal);
+  let res: Response | null = null;
+  let provider: VoiceClipProvider = plan[0];
+  for (let i = 0; i < plan.length; i++) {
+    provider = plan[i];
+    if (provider === "local") {
+      try {
+        res = await speakWithLocal(args.userId, args.characterId, transcript, signal);
+        break;
+      } catch (err) {
+        const reason: LocalVoiceReason = err instanceof LocalVoiceUnavailable ? err.reason : "box_unreachable";
+        // Only a provider the steward opted into may follow.
+        if (i === plan.length - 1) throw offlineError(reason);
+        continue;
+      }
+    }
+    res =
+      provider === "xai"
+        ? await speakWithXai(args.userId, args.characterId, transcript, signal)
+        : await speakWithElevenLabs(transcript, signal);
+    break;
+  }
+  if (!res) throw offlineError("box_unreachable");
   if (!res.ok) {
     const detail = (await res.text().catch(() => "")).slice(0, 200);
     throw statusError(`Voice provider ${provider} returned ${res.status}${detail ? `: ${detail}` : ""}`, 502);
