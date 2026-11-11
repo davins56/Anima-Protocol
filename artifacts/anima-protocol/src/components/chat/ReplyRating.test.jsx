@@ -73,6 +73,7 @@ describe("buildRatingPayload", () => {
     expect(buildRatingPayload({ session: { id: "s1" }, messages, index: 2, rating: -1, note: " Too vague. " }).note).toBe("Too vague.");
     expect(buildRatingPayload({ session: { id: "s1" }, messages, index: 2, rating: 1, note: "x" }).note).toBeUndefined();
   });
+
   it("resolves character_id when the reply row has none (corrections are keyed on it)", () => {
     // Chat replies are stored without character_id; the server looks up
     // corrections by character_id, so a null id means she never learns.

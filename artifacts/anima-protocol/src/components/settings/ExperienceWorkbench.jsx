@@ -7,6 +7,7 @@ import {
   EXTRA_DEFAULTS, PRESET_FIELDS, FEATURE_MATRIX,
   loadPresets, writePresets, sanitizePreset,
 } from "@/lib/experiencePresets";
+import { readActiveExtras, saveActiveExtras } from "@/lib/experienceRuntime";
 
 const GROUPS = [
   ["theme","Colour scheme"],["layout","Layout"],["background","Background"],
@@ -79,8 +80,8 @@ export default function ExperienceWorkbench() {
   const [presetName,setPresetName] = useState("");
   const [presets,setPresets] = useState([]);
   const [compare,setCompare] = useState("");
+  useEffect(() => { setPresets(loadPresets(userId)); setDraft({ ...deviceValue(), ...readActiveExtras(userId) }); }, [userId]);
   const [importing,setImporting] = useState(false);
-  useEffect(() => { setPresets(loadPresets(userId)); },[userId]);
   useEffect(() => {
     const refresh = () => setDraft(prev => ({...prev,...readAppearance()}));
     window.addEventListener("anima:appearance",refresh);
@@ -130,7 +131,7 @@ export default function ExperienceWorkbench() {
   };
   return <section aria-label="Experience Design Workbench" className="rounded-xl border border-primary/25 p-4 space-y-5 bg-card">
     <header><h3 className="text-lg font-semibold">Experience Design Workbench</h3>
-      <p className="text-sm text-muted-foreground">Design safely in a preview. Applying updates existing global appearance fields only. Other experience controls remain simulations until wired into production screens.</p></header>
+      <p className="text-sm text-muted-foreground">Design safely in a preview. Applying updates supported global appearance and lightweight chat, navigation, and avatar presentation. Advanced navigation mechanics and 3D character models remain planned.</p></header>
     <div className="grid gap-5 lg:grid-cols-[minmax(210px,1fr)_minmax(280px,1.6fr)]">
       <div className="space-y-3">
         {GROUPS.map(([field,label]) => <label key={field} className="flex flex-col gap-1 text-sm"><span className="font-medium">{label}</span>
@@ -139,15 +140,15 @@ export default function ExperienceWorkbench() {
             {PRESET_FIELDS[field].map(value => <option key={value} value={value}>{title(value)}</option>)}
           </select></label>)}
         <div className="flex flex-wrap gap-2">
-          <button type="button" className="px-3 py-2 rounded-lg border border-primary" onClick={() => {saveAppearance(Object.fromEntries(["theme","layout","radius","scale","motion"].map(key => [key,current[key]])));toast.success("Supported global settings updated.");}}>Apply supported settings</button>
-          <button type="button" className="px-3 py-2 rounded-lg border border-border" onClick={() => setDraft(deviceValue())}>Reset draft</button>
+          <button type="button" className="px-3 py-2 rounded-lg border border-primary" onClick={() => {saveAppearance(Object.fromEntries(["theme","layout","radius","scale","motion"].map(key => [key,current[key]])));saveActiveExtras(userId,current);toast.success("Appearance and experience settings applied.");}}>Apply supported settings</button>
+          <button type="button" className="px-3 py-2 rounded-lg border border-border" onClick={() => setDraft({...deviceValue(),...readActiveExtras(userId)})}>Reset draft</button>
         </div>
       </div>
       <div className="space-y-3">
         <div className="flex flex-wrap gap-2" role="tablist" aria-label="Preview screen">{SCREENS.map(s => <button key={s} type="button" role="tab" aria-selected={screen === s} className={`rounded-lg border px-3 py-2 text-xs ${screen === s ? "border-primary bg-primary/15" : "border-border"}`} onClick={() => setScreen(s)}>{s}</button>)}</div>
         <div className="grid gap-3 md:grid-cols-2">
           <div><p className="mb-1 text-xs text-muted-foreground">Draft preview</p><MiniScreen config={current} screen={screen}/></div>
-          <div><p className="mb-1 text-xs text-muted-foreground">Comparison {compared ? `• ${compared.name}` : "• current appearance"}</p><MiniScreen config={{...EXTRA_DEFAULTS,...readAppearance(),...(compared?.values || {})}} screen={screen}/></div>
+          <div><p className="mb-1 text-xs text-muted-foreground">Comparison {compared ? `• ${compared.name}` : "• current appearance"}</p><MiniScreen config={{...EXTRA_DEFAULTS,...readAppearance(),...readActiveExtras(userId),...(compared?.values || {})}} screen={screen}/></div>
         </div>
         <div className="flex gap-2 flex-wrap">
           <input aria-label="New preset name" value={presetName} maxLength={60} onChange={e => setPresetName(e.target.value)} placeholder="Preset name" className="min-h-11 flex-1 min-w-32 bg-background border border-border p-2 rounded-lg"/>
@@ -183,6 +184,6 @@ export default function ExperienceWorkbench() {
         <div className="flex justify-between gap-2 font-medium"><span>{f.name}</span><span className="capitalize text-muted-foreground">{f.status}</span></div>
         <p className="mt-1 text-muted-foreground">{f.detail}</p></div>)}</div>
     </div>
-    <p className="text-xs text-muted-foreground">Scope guarantee: presets contain presentation settings only. Stable personality, session behavior, temporary and durable memory, private/shared context, and multi-Anima entitlement are not read or modified here. Device-local presets are not cloud backed. Theme JSON files can be exchanged without transferring private Anima data.</p>
+    <p className="text-xs text-muted-foreground">Scope guarantee: presets contain presentation settings only. Stable personality, session behavior, temporary and durable memory, private/shared context, and multi-Anima entitlement are not read or modified here. Device-local presets and experience settings are not cloud backed. Theme JSON files can be exchanged without transferring private Anima data.</p>
   </section>;
 }

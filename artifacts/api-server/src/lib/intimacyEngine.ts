@@ -24,7 +24,6 @@ const CONTACT_RE =
 const PEAK_RE = /\b(orgasm\w*|climax\w*|cum(ming)?|over the edge|come for me)\b/i;
 const FLIRT_RE =
   /\b(flirt\w*|blush\w*|sexy|gorgeous|darling|babe|gaze|stare|eyes on|closer|whisper\w*|heart racing|breathless|tempt\w*|intimate|romantic|cute)\b/i;
-
 export function decayHeat(profile: IntimacyProfile, idleMinutes: number): IntimacyProfile {
   if (idleMinutes < 8 || profile.heat <= 0) return profile;
   const decayAmount = Math.floor((idleMinutes - 5) / 5) * 2;
@@ -154,12 +153,11 @@ export function evaluateTurn(params: EvaluateTurnParams): IntimacyTurnResult {
     heatDelta += Math.round(20 * multiplier);
   } else if (hasTouch) {
     heatDelta += Math.round(12 * multiplier);
-  } else if (hasKiss) {
+  } else   if (hasKiss) {
     heatDelta += Math.round(8 * multiplier);
   } else if (hasFlirt) {
     heatDelta += Math.round(5 * multiplier);
   }
-
   let nextHeat = Math.min(100, Math.max(0, profile.heat + heatDelta));
   let currentPhase: IntimacyPhase = scene.phase;
 
