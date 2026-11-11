@@ -30,6 +30,7 @@ import { cyberspaceBattlePromptBlock } from "@/lib/energyFragments";
 import { echoKeyPromptBlock } from "@/lib/echoKeys";
 import {
   imageGenerationTagInstruction,
+  serverPhotoFromPayload,
   stripImageTags,
   parseImagePrompts,
   userRequestedImage,
@@ -2499,7 +2500,9 @@ ${lewdityGuide}`;
             vesselContext,
             lengthGuide,
             imageInstruction: [
-              imageGenerationTagInstruction(),
+              // Server-side companion photos own solo photo requests
+              // (lib/companionPhotos); the [IMAGE:] tag path is the fallback.
+              soloMediaCaps.chat_photos ? "" : imageGenerationTagInstruction(),
               soloMediaCaps.voice_clip ? voiceClipTagInstruction() : "",
             ]
               .filter(Boolean)
@@ -2820,10 +2823,26 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // Companions (onboard Serenity and user-created Animas) may also emit
       // [IMAGE: ...] so this turn can attach a generated still.
       const eventTagRegex = /\[(EMOTION|LOCATION):([^\]]+)\]/gi;
-      const wantsImage = replyCutOff.reply_interrupted
-        ? userRequestedImage(content)
-        : parseImagePrompts(result).length > 0 || userRequestedImage(content);
-      let replyImageAttachments = [];
+      // Solo photos are generated on the server and arrive on `done`
+      // (photo + attachments). The client pipeline below is only the
+      // fallback for group scenes and deployments without server photos.
+      const serverPhoto = serverPhotoFromPayload(resultPayload);
+      const serverPhotosOn =
+        activeSession.mode === "solo" && (await fetchMediaCapabilities()).chat_photos;
+      const wantsImage =
+        !serverPhoto.handled &&
+        !serverPhotosOn &&
+        (replyCutOff.reply_interrupted
+          ? userRequestedImage(content)
+          : parseImagePrompts(result).length > 0 || userRequestedImage(content));
+      let replyImageAttachments = serverPhoto.attachments;
+      if (serverPhoto.attachments.length) {
+        track("image_generated", {
+          source: "companion_photo",
+          is_anima: Boolean(activeChar?._isAnima),
+          session_mode: activeSession.mode || "solo",
+        });
+      }
       if (wantsImage) {
         const imageProgressText =
           stripVoiceTags(stripImageTags(result.replace(eventTagRegex, ""))).trim() || result;

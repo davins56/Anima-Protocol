@@ -203,6 +203,12 @@ Workers Paid for real traffic.
   of the reply cost.
 - `ANIMA_CHAT_MIND=off` restores the legacy prompt entirely.
 
+## Photos
+
+When asked, a companion can send a generated photo with its reply (solo chats,
+Workers AI FLUX, existing adult and age gates, per-user limits). See
+[`companion-photos.md`](companion-photos.md).
+
 ## Checks
 
 ```bash

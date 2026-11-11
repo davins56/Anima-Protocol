@@ -17,6 +17,7 @@ import {
 } from "./lib/workerApiGuard";
 import { apexRedirectForWww } from "./lib/wwwHostRedirect";
 import { setAiBinding } from "./lib/aiBinding";
+import { setAssetsBinding } from "./lib/assetsBinding";
 import {
   clearWorkerWaitUntil,
   registerWorkerWaitUntil,
@@ -69,6 +70,7 @@ export default {
 
     if (isWorkerApiPath(url.pathname)) {
       setAiBinding(env.AI);
+      setAssetsBinding(env.ASSETS);
       const backgroundToken = crypto.randomUUID();
       registerWorkerWaitUntil(backgroundToken, (promise) => ctx.waitUntil(promise));
       const headers = new Headers(request.headers);

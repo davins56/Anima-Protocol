@@ -2,7 +2,8 @@
  * /api/media — an Anima's own photos and voice notes (switch `media`,
  * ANIMA_KERNEL_MEDIA). See ANIMA_KERNEL.md §14.
  *
- * GET  /capabilities  what this deployment can send (no secrets, no flag names)
+ * GET  /capabilities  what this deployment can send (no secrets, no flag names);
+ *                     `chat_photos`: companions generate requested photos in solo chat
  * POST /voice-clip    { characterId, text, cloud_opt_in? } → { url, transcript, … }
  *
  * Voice notes are spoken on the home box (Kokoro). `cloud_opt_in` ("xai" |
@@ -19,6 +20,7 @@ import { isKernelFeatureEnabled } from "../lib/kernelFeatures";
 import { parseCloudOptIn } from "../lib/media/voiceClipCore";
 import { synthesizeVoiceClip, voiceClipKeys } from "../lib/media/voiceClip";
 import { rateLimit } from "../lib/rateLimit";
+import { companionPhotosAvailable } from "../lib/companionPhotos";
 
 const router = Router();
 router.use(rateLimit);
@@ -38,6 +40,10 @@ router.get("/capabilities", (req, res) => {
     voice_clip_local: enabled && keys.local,
     voice_clip_cloud: { xai: enabled && keys.xai, elevenlabs: enabled && keys.elevenlabs },
     cloud_default: false,
+    // Solo chat photos are generated server-side on Workers AI
+    // (lib/companionPhotos). Not behind the Kernel `media` switch; its own
+    // kill switch is ANIMA_COMPANION_PHOTOS=off.
+    chat_photos: companionPhotosAvailable(),
   });
 });
 

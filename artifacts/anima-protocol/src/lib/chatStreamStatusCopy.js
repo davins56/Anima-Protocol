@@ -16,6 +16,7 @@ export function chatStreamStatusCopy(event) {
   if (!event?.status) return null;
   if (event.status === "waiting") return HELD_SEND_NOTE;
   if (event.status === "thinking") return "thinking...";
+  if (event.status === "photo") return "sending a photo…";
   if (event.status === "ensemble") {
     const minds = Array.isArray(event.minds)
       ? event.minds.filter(Boolean).join(", ")
