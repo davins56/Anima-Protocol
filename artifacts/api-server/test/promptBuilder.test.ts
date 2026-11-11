@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import type { MsgData } from "../src/lib/promptBuilder";
+import { DIALOGUE_PATTERN_NOTE } from "../src/lib/dialogueVariety";
 import {
   buildCompanionPrompt,
   buildGroupCompanionPrompt,
@@ -1107,8 +1109,113 @@ describe("composeCompanionChatMessages", () => {
         },
       ],
       "hello",
+      { replyAction: "retry" },
     );
     expect(kept.map((message) => message.content)).toEqual(["I was thinking of you."]);
+  });
+
+  describe("retry scoping", () => {
+    const thread = (): MsgData[] => [
+      { id: "t1:user", role: "user", content: "hi" },
+      { id: "t1:assistant", role: "assistant", content: "first answer" },
+      { id: "t2:user", role: "user", content: "hi" },
+      { id: "t2:assistant", role: "assistant", content: "second answer" },
+    ];
+    const texts = (m: MsgData[]) => m.map((x) => x.content);
+
+    it("keeps every prior exchange for an ordinary repeated message", () => {
+      expect(omitRetriedUserTurn(thread(), "hi")).toHaveLength(4);
+      const messages = composeCompanionChatMessages({
+        characters: [character],
+        activeCharacter: character,
+        memories: [],
+        recentMessages: thread(),
+        mode: "solo",
+        content: "hi",
+      });
+      const text = messages.map((m) => m.content).join("\n");
+      expect(text).toContain("first answer");
+      expect(text).toContain("second answer");
+    });
+
+    it("keeps dialogue guidance history on ordinary repeats", () => {
+      const history: MsgData[] = [
+        { id: "t1:user", role: "user", content: "hi" },
+        { id: "t1:assistant", role: "assistant", content: "How are you?" },
+        { id: "t2:user", role: "user", content: "hi" },
+        { id: "t2:assistant", role: "assistant", content: "What else is new?" },
+      ];
+      const prompt = (replyAction?: "retry") =>
+        composePrompt({
+          characters: [character],
+          activeCharacter: character,
+          memories: [],
+          recentMessages: history,
+          mode: "solo",
+          content: "hi",
+          replyAction,
+        });
+      expect(prompt()).toContain(DIALOGUE_PATTERN_NOTE);
+      expect(prompt("retry")).not.toContain(DIALOGUE_PATTERN_NOTE);
+    });
+
+    it("removes only the replaced turn when its id is known", () => {
+      const history: MsgData[] = [
+        ...thread(),
+        { id: "t3:user", role: "user", content: "hi" },
+      ];
+      const kept = omitRetriedUserTurn(history, "hi", {
+        replyAction: "retry",
+        replacingTurnId: "t2",
+      });
+      expect(texts(kept)).toEqual(["hi", "first answer"]);
+    });
+
+    it("retry without a turn id drops only the latest matching exchange", () => {
+      const kept = omitRetriedUserTurn(thread(), "hi", { replyAction: "retry" });
+      expect(texts(kept)).toEqual(["hi", "first answer"]);
+    });
+
+    it("edit keeps unrelated history that shares the old text", () => {
+      const kept = omitRetriedUserTurn(thread(), "hi there", {
+        replyAction: "edit",
+        replacingTurnId: "t2",
+      });
+      expect(texts(kept)).toEqual(["hi", "first answer"]);
+    });
+
+    it("keeps group speaker attribution on untouched turns", () => {
+      const history: MsgData[] = [
+        { id: "a:user", role: "user", content: "hi" },
+        { id: "a:assistant", role: "assistant", content: "Hello", character_name: "Aria" },
+        { id: "a:assistant:1", role: "assistant", content: "Hey", character_name: "Bo" },
+        { id: "b:user", role: "user", content: "hi" },
+        { id: "b:assistant", role: "assistant", content: "Again", character_name: "Aria" },
+      ];
+      const kept = omitRetriedUserTurn(history, "hi", {
+        replyAction: "retry",
+        replacingTurnId: "b",
+      });
+      expect(kept).toEqual(history.slice(0, 3));
+    });
+
+    it("dedups a long message before history truncation", () => {
+      const long = "x".repeat(LLM_CHAT_HISTORY_MAX_CHARS * 3);
+      const history: MsgData[] = [
+        { id: "l1:user", role: "user", content: long },
+        { id: "l1:assistant", role: "assistant", content: "old" },
+      ];
+      const messages = composeCompanionChatMessages({
+        characters: [character],
+        activeCharacter: character,
+        memories: [],
+        recentMessages: history,
+        mode: "solo",
+        content: long,
+        replyAction: "retry",
+      });
+      expect(messages.some((m) => m.content === "old")).toBe(false);
+    });
   });
 
   it("omits inlined history from composePrompt when asked", () => {

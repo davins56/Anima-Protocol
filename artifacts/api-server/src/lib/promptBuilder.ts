@@ -37,6 +37,7 @@ import {
   type SynchroState,
   synchroToMemoryConfig,
   synchroToPromptGuidance,
+  SYNCHRO_LEVEL_LABELS,
 } from "./synchroEngine";
 import {
   type CompanionAffect,
@@ -157,8 +158,10 @@ export interface PromptBuilderParams {
   mode: string;
   /** The latest user message content */
   content: string;
-  /** Whether this turn replaces an earlier companion reply. */
+  /** Set only for an explicit retry/edit; ordinary repeats keep all history. */
   replyAction?: "retry" | "edit" | null;
+  /** Turn id the retry/edit replaces, when known. */
+  replacingTurnId?: string | null;
   /**
    * Signed-in display name. Used only by the answer-last instruction.
    * When empty, the operator-model identity name is the next fallback.
@@ -673,43 +676,79 @@ function messageTurnKey(message: MsgData): string | null {
   return messageTurnId(message) || null;
 }
 
+export type RetryScope = {
+  replyAction?: "retry" | "edit" | null;
+  /** Turn being replaced; when known it is the only turn dropped. */
+  replacingTurnId?: string | null;
+};
+
 /**
- * Drop an earlier copy of this user line and the assistant reply that belongs
- * to it. A retry must not show the model the same question twice, with a
- * stale answer between the copies. The caller appends the newest user line
- * once, at the end.
+ * Drop the user line and reply that an explicit retry/edit supersedes. An
+ * ordinary repeated message keeps every earlier exchange. When the replaced
+ * turn id is known only that turn goes (plus a trailing copy of the line the
+ * caller re-appends); otherwise the most recent matching line is the target,
+ * never older identical ones. The caller appends the newest user line once.
  */
 export function omitRetriedUserTurn(
   recentMessages: MsgData[] = [],
   userTurn: string,
+  scope: RetryScope = {},
 ): MsgData[] {
+  if (!scope.replyAction) return recentMessages;
   const needle = userTurn.trim();
-  if (!needle || needle === CONTINUE_USER_TURN) return recentMessages;
-  const droppedTurns = new Set<string>();
-  for (const message of recentMessages) {
-    if (message.role !== "user") continue;
-    if (String(message.content ?? "").trim() !== needle) continue;
-    const key = messageTurnKey(message);
-    if (key) droppedTurns.add(key);
+  const isSameLine = (message: MsgData) =>
+    message.role === "user" && String(message.content ?? "").trim() === needle;
+  const dropIndexes = new Set<number>();
+  const replacing = String(scope.replacingTurnId ?? "").trim();
+  const hasReplyAfter = (index: number) => {
+    for (let i = index + 1; i < recentMessages.length; i++) {
+      if (recentMessages[i]!.role === "user") return false;
+      if (recentMessages[i]!.role === "assistant") return true;
+    }
+    return false;
+  };
+  if (replacing) {
+    recentMessages.forEach((message, index) => {
+      if (messageTurnKey(message) === replacing) dropIndexes.add(index);
+    });
+    if (needle && needle !== CONTINUE_USER_TURN) {
+      const last = recentMessages.length - 1;
+      for (let i = last; i >= 0 && recentMessages[i]!.role !== "assistant"; i--) {
+        if (isSameLine(recentMessages[i]!)) dropIndexes.add(i);
+      }
+    }
+  } else if (needle && needle !== CONTINUE_USER_TURN) {
+    const matches: number[] = [];
+    recentMessages.forEach((message, index) => {
+      if (isSameLine(message)) matches.push(index);
+    });
+    const latest = matches[matches.length - 1];
+    if (latest != null) {
+      dropIndexes.add(latest);
+      // The newest copy is the retry itself; the one before it is what it replaces.
+      if (!hasReplyAfter(latest) && matches.length > 1) {
+        dropIndexes.add(matches[matches.length - 2]!);
+      }
+    }
   }
+  if (dropIndexes.size === 0) return recentMessages;
   const kept: MsgData[] = [];
   let skippingTail = false;
-  for (const message of recentMessages) {
+  recentMessages.forEach((message, index) => {
     const key = messageTurnKey(message);
-    const isDuplicateUser =
-      message.role === "user" && String(message.content ?? "").trim() === needle;
-    if (isDuplicateUser || (key && droppedTurns.has(key))) {
+    const sameTurnAsDropped =
+      key != null && [...dropIndexes].some((i) => messageTurnKey(recentMessages[i]!) === key);
+    if (dropIndexes.has(index) || (replacing && sameTurnAsDropped)) {
       // Her whole reply follows that line: later bubbles, events, and a
-      // group turn's extra speakers. Stopping after one bubble left the
-      // rest in the prompt.
+      // group turn's extra speakers.
       skippingTail = true;
-      continue;
+      return;
     }
     if (skippingTail) {
       if (message.role === "user") {
         skippingTail = false;
         kept.push(message);
-        continue;
+        return;
       }
       const metadata = message.metadata;
       const source =
@@ -717,11 +756,15 @@ export function omitRetriedUserTurn(
           ? (metadata as { source?: unknown }).source
           : "";
       if (source === "proactive_push") kept.push(message);
-      continue;
+      return;
     }
     kept.push(message);
-  }
+  });
   return kept;
+}
+
+function retryScopeOf(params: PromptBuilderParams): RetryScope {
+  return { replyAction: params.replyAction, replacingTurnId: params.replacingTurnId };
 }
 
 /** Last N store turns replayed as chat messages (not the full 24-row load). */
@@ -1457,6 +1500,7 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
         params.intimacyProfile,
         params.intimacyScene || undefined,
         params.intimacyTurnResult || undefined,
+        params.synchroState ? SYNCHRO_LEVEL_LABELS[params.synchroState.level] : null,
       )
     : "";
   // Operator context is untrimmable on the local path (it rides inside mood).
@@ -1845,7 +1889,7 @@ function dialogueNoteFor(params: PromptBuilderParams): string {
   const speaker = params.activeCharacter ||
     (params.mode === "group" && params.characters.length !== 1 ? undefined : params.characters[0]);
   return dialogueTurnNote({
-    messages: omitRetriedUserTurn(params.recentMessages, params.content).filter((message) => !isLlmExcludedDisclosure(message)),
+    messages: omitRetriedUserTurn(params.recentMessages, params.content, retryScopeOf(params)).filter((message) => !isLlmExcludedDisclosure(message)),
     speaker,
     group: params.mode === "group" || params.isCrossover === true || params.characters.length > 1,
     careOrTherapy: Boolean(params.companionCrisis) || params.mode === "therapy" || params.modePolicy?.name === "therapy",
@@ -2004,16 +2048,21 @@ export function composeCompanionChatMessages(
   const photoNote = String(params.photoNote || "").trim();
   const modelUserTurn = photoNote ? `${userTurn}\n\n${photoNote}` : userTurn;
   const mind = params.mind ?? null;
-  const recentMessages = params.replyAction
-    ? omitRetriedUserTurn(params.recentMessages, userTurn)
-    : params.recentMessages;
+  const recentMessages = omitRetriedUserTurn(
+    params.recentMessages,
+    userTurn,
+    retryScopeOf(params),
+  );
   const lastRecentMessage = recentMessages[recentMessages.length - 1];
   const historyWithoutCurrentTurn =
     lastRecentMessage?.role === "user" &&
     String(lastRecentMessage.content ?? "").trim() === userTurn
       ? recentMessages.slice(0, -1)
       : recentMessages;
-  const normalizedHistory = normalizeRecentMessages(historyWithoutCurrentTurn, mind?.historyMessageChars);
+  const normalizedHistory = normalizeRecentMessages(
+    historyWithoutCurrentTurn,
+    mind?.historyMessageChars,
+  );
   let history = mind
     ? mindHistoryTail(normalizedHistory, mind.historyExchanges)
     : keepStableHistoryBlock(normalizedHistory);
@@ -2873,6 +2922,7 @@ ${sceneExcerpt}
       params.intimacyProfile,
       params.intimacyScene || undefined,
       params.intimacyTurnResult || undefined,
+      params.synchroState ? SYNCHRO_LEVEL_LABELS[params.synchroState.level] : null,
     );
   }
 

@@ -26,10 +26,8 @@ vi.mock("../src/lib/homeWorld", () => ({
 }));
 
 vi.mock("web-push", () => ({
-  default: {
-    sendNotification: mocks.sendNotification,
-    setVapidDetails: mocks.setVapidDetails,
-  },
+  sendNotification: mocks.sendNotification,
+  setVapidDetails: mocks.setVapidDetails,
 }));
 
 import { runProactiveMessageBatch } from "../src/lib/proactiveMessages";

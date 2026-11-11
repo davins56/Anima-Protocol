@@ -16,6 +16,7 @@ export default defineConfig({
       "test/llmWarmRoute.test.ts",
       "test/llmFailover.test.ts",
       "test/wranglerConfig.test.ts",
+      "test/webPushImport.test.ts",
       "test/localLlmLive.test.ts",
       "test/localModelCatalog.test.ts",
       "test/modelRouter.test.ts",
@@ -33,9 +34,12 @@ export default defineConfig({
       "test/voiceFingerprint.test.ts",
       // Chat mind: pure ranking / parsing / guards / prompt sizing.
       "test/mindRecall.test.ts",
+      // Sacred Space reward math (pure; the DB path is covered by sacredSpaceRoute.test.ts).
+      "test/sacredSpaceResonance.test.ts",
       "test/mindFactsSummary.test.ts",
       "test/mindGuards.test.ts",
       "test/mindPrompt.test.ts",
+      "test/sacredSpaceMemory.test.ts",
       "test/mindSharedFacts.test.ts",
       "test/mindIdentity.test.ts",
       // Long replies: hosted output room, Workers AI cap detection, clean ends.

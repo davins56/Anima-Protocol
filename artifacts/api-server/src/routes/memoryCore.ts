@@ -6,6 +6,11 @@
  *   POST /api/memory-core/:characterId/events      { event_type, content, payload?, emotional_weight?, conversation_id?, message_id? }
  *   POST /api/memory-core/:characterId/identity    { name, personality_matrix?, voice?, core_traits?, relationships?, backstory?, change_note? }
  *   POST /api/memory-core/:characterId/retract     { event_id, reason? }   (appends a retraction; nothing is deleted)
+ *   POST /api/memory-core/:characterId/sacred-space                     { session_id, ritual_focus?, transcript?, reflection?, significance?, retention_days? }
+ *   GET  /api/memory-core/:characterId/sacred-space
+ *   POST /api/memory-core/:characterId/sacred-space/:eventId/share      { to_character_id }   (explicit user authorization)
+ *   POST /api/memory-core/:characterId/sacred-space/:eventId/unshare    { to_character_id }
+ *   POST /api/memory-core/:characterId/sacred-space/:eventId/forget     (retracts the experience and its shared copies)
  *
  * There is intentionally no DELETE / PUT route.
  */
@@ -22,6 +27,14 @@ import {
   retractMemory,
 } from "../lib/memoryCore/memoryCore";
 import { characterOwnedBy } from "../lib/memoryCore/characterOwnedBy";
+import {
+  forgetSacredSpaceExperience,
+  loadSacredSpaceExperiences,
+  pgSacredSpaceStore,
+  recordSacredSpaceExperience,
+  shareSacredSpaceExperience,
+  unshareSacredSpaceExperience,
+} from "../lib/mind/sacredSpace";
 
 const router = Router();
 router.use(rateLimit);
@@ -152,6 +165,114 @@ router.post("/:characterId/retract", async (req, res) => {
   try {
     const id = await retractMemory(userId, String(req.params.characterId), eventId, String(req.body?.reason || "").slice(0, 300));
     res.status(201).json({ id });
+  } catch (err) {
+    fail(res, err);
+  }
+});
+
+/** Owner gate shared by the Sacred Space routes; 404s anything not the user's own companion. */
+async function ownedCharacter(req: Request, res: Response, userId: string, id: string): Promise<boolean> {
+  if (id && id.length <= 120 && (await characterOwnedBy(userId, id))) return true;
+  res.status(404).json({ error: "Companion not found", code: "companion_not_found" });
+  return false;
+}
+
+router.post("/:characterId/sacred-space", async (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const characterId = String(req.params.characterId || "");
+  const b = (req.body || {}) as Record<string, any>;
+  try {
+    if (!(await ownedCharacter(req, res, userId, characterId))) return;
+    const transcript = Array.isArray(b.transcript)
+      ? b.transcript
+          .slice(-80)
+          .map((t: any) => ({ role: String(t?.role || ""), content: String(t?.content || "").slice(0, 2000) }))
+      : [];
+    const out = await recordSacredSpaceExperience(pgSacredSpaceStore, {
+      userId,
+      characterId,
+      characterName: typeof b.character_name === "string" ? b.character_name : undefined,
+      sessionId: String(b.session_id || ""),
+      ritualFocus: typeof b.ritual_focus === "string" ? b.ritual_focus : undefined,
+      transcript,
+      reflection: typeof b.reflection === "string" ? b.reflection : undefined,
+      significance: typeof b.significance === "number" ? b.significance : null,
+      retentionDays: typeof b.retention_days === "number" ? b.retention_days : null,
+    });
+    if (!out) {
+      res.status(400).json({ error: "session_id is required" });
+      return;
+    }
+    res.status(out.duplicate ? 200 : 201).json(out);
+  } catch (err) {
+    fail(res, err);
+  }
+});
+
+router.get("/:characterId/sacred-space", async (req, res) => {
+  res.setHeader("Cache-Control", "private, no-store");
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const characterId = String(req.params.characterId || "");
+  try {
+    if (!(await ownedCharacter(req, res, userId, characterId))) return;
+    res.json({ experiences: await loadSacredSpaceExperiences(pgSacredSpaceStore, userId, characterId, 20) });
+  } catch (err) {
+    fail(res, err);
+  }
+});
+
+router.post("/:characterId/sacred-space/:eventId/share", async (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const fromCharacterId = String(req.params.characterId || "");
+  const toCharacterId = String(req.body?.to_character_id || "");
+  try {
+    if (!(await ownedCharacter(req, res, userId, fromCharacterId))) return;
+    if (!(await ownedCharacter(req, res, userId, toCharacterId))) return;
+    const id = await shareSacredSpaceExperience(pgSacredSpaceStore, {
+      userId,
+      eventId: String(req.params.eventId),
+      fromCharacterId,
+      toCharacterId,
+    });
+    res.status(id ? 201 : 200).json({ id, shared: Boolean(id) });
+  } catch (err) {
+    fail(res, err);
+  }
+});
+
+router.post("/:characterId/sacred-space/:eventId/unshare", async (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const characterId = String(req.params.characterId || "");
+  try {
+    if (!(await ownedCharacter(req, res, userId, characterId))) return;
+    const retracted = await unshareSacredSpaceExperience(pgSacredSpaceStore, {
+      userId,
+      eventId: String(req.params.eventId),
+      fromCharacterId: characterId,
+      toCharacterId: String(req.body?.to_character_id || ""),
+    });
+    res.json({ retracted });
+  } catch (err) {
+    fail(res, err);
+  }
+});
+
+router.post("/:characterId/sacred-space/:eventId/forget", async (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const characterId = String(req.params.characterId || "");
+  try {
+    if (!(await ownedCharacter(req, res, userId, characterId))) return;
+    const retracted = await forgetSacredSpaceExperience(pgSacredSpaceStore, {
+      userId,
+      eventId: String(req.params.eventId),
+      characterId,
+    });
+    res.json({ retracted });
   } catch (err) {
     fail(res, err);
   }
