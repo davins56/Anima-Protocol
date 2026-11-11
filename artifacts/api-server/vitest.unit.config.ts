@@ -36,6 +36,9 @@ export default defineConfig({
       "test/mindGuards.test.ts",
       "test/mindPrompt.test.ts",
       "test/mindSharedFacts.test.ts",
+      "test/mindIdentity.test.ts",
+      // Long replies: hosted output room, Workers AI cap detection, clean ends.
+      "test/replyCutoff.test.ts",
     ],
     environment: "node",
     fileParallelism: false,

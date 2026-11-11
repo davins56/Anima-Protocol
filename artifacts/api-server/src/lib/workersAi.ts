@@ -308,6 +308,62 @@ function workersAiChunk(
   };
 }
 
+/**
+ * Workers AI streams never send `finish_reason`; the last events carry
+ * `usage` instead. Surface it so a reply that hit `max_tokens` can be told
+ * apart from one the model finished.
+ */
+function workersAiUsage(parsed: unknown): { completion_tokens: number } | null {
+  if (!parsed || typeof parsed !== "object") return null;
+  const usage = (parsed as { usage?: unknown }).usage;
+  if (!usage || typeof usage !== "object") return null;
+  const completion = Number((usage as { completion_tokens?: unknown }).completion_tokens);
+  return Number.isFinite(completion) && completion > 0 ? { completion_tokens: completion } : null;
+}
+
+function workersAiUsageChunk(usage: { completion_tokens: number }): OpenAI.Chat.Completions.ChatCompletionChunk {
+  return {
+    id: "workersai",
+    object: "chat.completion.chunk",
+    created: Math.floor(Date.now() / 1000),
+    model: workersAiChatModel(),
+    choices: [],
+    usage: { completion_tokens: usage.completion_tokens, prompt_tokens: 0, total_tokens: usage.completion_tokens },
+  };
+}
+
+/**
+ * Rewrite the closing `finish_reason` to `"length"` when the reply used the
+ * whole `max_tokens` budget (from the reported usage, or, if none was
+ * reported, a conservative 4-chars-per-token estimate of the text). Without
+ * this every Workers AI reply looked finished and a capped one was shown
+ * cut off mid-word instead of being settled on a sentence end.
+ */
+export async function* markWorkersAiLengthFinish(
+  stream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>,
+  maxTokens: number,
+): AsyncGenerator<OpenAI.Chat.Completions.ChatCompletionChunk> {
+  let completionTokens = 0;
+  let chars = 0;
+  const capped = () =>
+    Number.isFinite(maxTokens) && maxTokens > 0 &&
+    (completionTokens > 0 ? completionTokens >= maxTokens : Math.ceil(chars / 4) >= maxTokens);
+  for await (const chunk of stream) {
+    const reported = Number(chunk.usage?.completion_tokens);
+    if (Number.isFinite(reported) && reported > completionTokens) completionTokens = reported;
+    const choice = chunk.choices?.[0];
+    if (!choice) continue;
+    const delta = choice.delta as { content?: unknown; reasoning?: unknown } | undefined;
+    if (typeof delta?.content === "string") chars += delta.content.length;
+    if (typeof delta?.reasoning === "string") chars += delta.reasoning.length;
+    if (choice.finish_reason === "stop" && capped()) {
+      yield { ...chunk, choices: [{ ...choice, finish_reason: "length" }] };
+      continue;
+    }
+    yield chunk;
+  }
+}
+
 function isReadableByteStream(value: unknown): value is ReadableStream<Uint8Array> {
   return typeof ReadableStream !== "undefined" && value instanceof ReadableStream;
 }
@@ -339,6 +395,8 @@ function* emitParsedSseLine(
     const text = extractWorkersAiText(parsed);
     const reasoning = text ? "" : extractWorkersAiReasoning(parsed);
     if (text || reasoning) yield workersAiChunk(text, false, reasoning);
+    const usage = workersAiUsage(parsed);
+    if (usage) yield workersAiUsageChunk(usage);
   } catch (err) {
     // 4006 / Workers AI error objects must not become "content" — that hid
     // the failure from llmFailover after stream-open already succeeded.
@@ -631,7 +689,7 @@ export async function streamWorkersAi(opts: {
       throw new WorkersAiRequestError(formatWorkersAiError(errorMessage));
     }
     return await ensureWorkersAiStreamOpens(
-      withEmptyStreamFallback(iterateWorkersAiStream(response), opts),
+      markWorkersAiLengthFinish(withEmptyStreamFallback(iterateWorkersAiStream(response), opts), opts.maxTokens),
     );
   } catch (err) {
     if (err instanceof WorkersAiRequestError) throw err;

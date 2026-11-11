@@ -64,6 +64,7 @@ import { getOpenWeightChatModel, resolveModelSpec } from "@workspace/llm";
 import { LlmStreamTimeoutError } from "./consumeLlmStream";
 import {
   combineAbortSignals,
+  hostedReplyMaxTokens,
   LLM_LOCAL_FAILOVER_ATTEMPT_MS,
   LLM_LOCAL_FIRST_TOKEN_MS,
   openStreamAbort,
@@ -305,6 +306,17 @@ export interface ChatStreamRequest {
    * routes leave this unset so they keep `getProviderChain()`.
    */
   localOnly?: boolean;
+  /**
+   * A user-facing companion reply. Hosted providers then get at least the
+   * companion reply room (`hostedReplyMaxTokens`), so a cap sized for the
+   * local 0.5B model cannot cut a hosted reply mid-sentence. Local keeps
+   * `maxTokens` as given.
+   */
+  companionReply?: boolean;
+}
+
+function hostedTokens(req: ChatStreamRequest, model: string): number {
+  return req.companionReply ? hostedReplyMaxTokens(req.maxTokens, model) : req.maxTokens;
 }
 
 /**
@@ -2252,7 +2264,7 @@ async function runOpenRouterStream(
       const raw = await client.chat.completions.create(
         {
           model: m.model,
-          max_tokens: Math.min(req.maxTokens, m.maxTokens),
+          max_tokens: Math.min(hostedTokens(req, m.model), m.maxTokens),
           messages: req.messages,
           stream: true,
           ...openRouterSamplingFields(req),
@@ -2285,7 +2297,7 @@ async function runMinimaxStream(
   const stream = await client.chat.completions.create(
     {
       model: resolved.model,
-      max_tokens: Math.min(req.maxTokens, resolved.maxTokens),
+      max_tokens: Math.min(hostedTokens(req, resolved.model), resolved.maxTokens),
       messages: req.messages,
       stream: true,
     },
@@ -2311,7 +2323,7 @@ async function runDeepshiStream(
   const stream = await client.chat.completions.create(
     {
       model: resolved.model,
-      max_tokens: Math.min(req.maxTokens, resolved.maxTokens),
+      max_tokens: Math.min(hostedTokens(req, resolved.model), resolved.maxTokens),
       messages: req.messages,
       stream: true,
     },
@@ -2624,7 +2636,7 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
         triedWorkersAi = true;
         const stream = await streamWorkersAi({
           messages: req.messages,
-          maxTokens: req.maxTokens,
+          maxTokens: hostedTokens(req, workersAiChatModel()),
           temperature: req.temperature,
           ...(req.sampling ? { sampling: req.sampling } : {}),
         });
