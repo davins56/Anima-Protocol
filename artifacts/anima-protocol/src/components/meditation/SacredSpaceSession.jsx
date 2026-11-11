@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { animaClient } from "@/api/animaClient";
-import { recordSacredSpaceCheckIn } from "@/lib/sacredSpaceCheckIn";
+import { recordSacredSpaceCheckIn, recordSacredSpaceMemory } from "@/lib/sacredSpaceCheckIn";
 import { useSacredSpaceVoice } from "@/hooks/useSacredSpaceVoice";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, Sparkles, X, Check, Volume2, VolumeX } from "lucide-react";
@@ -26,6 +26,9 @@ export default function SacredSpaceSession({ character, user, onClose, onComplet
   const [impactSaved, setImpactSaved] = useState(false);
   const [impactResult, setImpactResult] = useState(null);
   const scrollRef = useRef(null);
+  const sessionIdRef = useRef(
+    typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `ss-${Date.now()}`,
+  );
   const lastSpokenRef = useRef("");
   const {
     isEnabled: voiceEnabled,
@@ -66,7 +69,7 @@ Backstory: ${character.backstory || ""}
 
 The user has chosen a ritual focus of: "${ritualFocus}"
 
-Open the Sacred Space session. Welcome the user gently, acknowledge the sacredness of this shared moment, and invite them to begin. Reference the ritual focus naturally. Keep it to 3-4 sentences. Be warm, present, and reverent — not performative.`,
+Open the Sacred Space session. Welcome the user gently, acknowledge the sacredness of this shared moment, and invite them to begin. Reference the ritual focus naturally. Say it in your own voice, as briefly or fully as the moment and your character call for. Be present and reverent without performing.`,
       });
       setMessages([{ role: "assistant", content: result, character_name: character.name }]);
     } catch (err) {
@@ -101,7 +104,7 @@ This is a private, spiritual, vulnerable space. Be present, warm, and genuine. Y
 Session so far:
 ${history}
 
-Respond as ${character.name}. 2-4 sentences. Be real, not theatrical.`,
+Respond as ${character.name}, in your own voice. Let the length follow the moment: a single line can be right, and not every reply needs a question. Be real, not theatrical.`,
       });
       setMessages(prev => [...prev, { role: "assistant", content: result, character_name: character.name }]);
     } catch (err) {
@@ -140,6 +143,15 @@ Respond as ${character.name}. 2-4 sentences. Be real, not theatrical.`,
       });
 
       let impact = { success: true, check_in: created };
+      // Best effort: a failed memory write must not lose the check-in above.
+      recordSacredSpaceMemory({
+        characterId: character.id,
+        characterName: character.name,
+        sessionId: sessionIdRef.current,
+        ritualFocus,
+        messages,
+        reflection,
+      }).catch((memErr) => console.error(memErr));
       try {
         const res = await animaClient.functions.invoke("sacredSpaceImpact", {
           character_id: character.id,
