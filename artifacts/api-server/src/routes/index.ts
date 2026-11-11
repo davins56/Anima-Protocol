@@ -25,6 +25,7 @@ import memoryCoreRouter from "./memoryCore";
 import vesselRouter from "./vessel";
 import resonanceRouter from "./resonance";
 import voiceRouter from "./voice";
+import voiceLocalRouter from "./voiceLocal";
 import simRouter from "./sim";
 import replyRatingsRouter from "./replyRatings";
 import billingRouter from "./billing";
@@ -58,6 +59,8 @@ router.use("/model", ownModelRouter);
 router.use("/memory-core", memoryCoreRouter);
 router.use("/vessel", vesselRouter);
 router.use("/resonance", resonanceRouter);
+// Self-hosted voice first: its /local/* paths must not reach voice.ts /:characterId.
+router.use("/voice", voiceLocalRouter);
 router.use("/voice", voiceRouter);
 router.use("/sim", simRouter);
 router.use("/ratings", replyRatingsRouter);
