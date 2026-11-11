@@ -7,7 +7,7 @@ import {
   pushTitleFor,
   type OutreachMediaInput,
 } from "../src/lib/media/outreachMediaCore";
-import { cleanSpokenText, pickVoiceProvider, xaiTtsBody } from "../src/lib/media/voiceClipCore";
+import { cleanSpokenText, parseCloudOptIn, pickVoiceProvider, voiceProviderPlan, xaiTtsBody } from "../src/lib/media/voiceClipCore";
 
 const cfg = outreachMediaConfig({});
 
@@ -105,10 +105,21 @@ describe("voice clips: spoken text", () => {
 });
 
 describe("voice clips: provider", () => {
-  it("uses her saved voice on xAI, ElevenLabs as fallback", () => {
-    expect(pickVoiceProvider({ xai: true, elevenlabs: true })).toBe("xai");
-    expect(pickVoiceProvider({ xai: false, elevenlabs: true })).toBe("elevenlabs");
+  it("home box first; no cloud voice without an explicit opt-in (no xAI -> ElevenLabs cascade)", () => {
+    expect(pickVoiceProvider({ local: true, xai: true, elevenlabs: true })).toBe("local");
+    expect(pickVoiceProvider({ xai: true, elevenlabs: true })).toBeNull();
+    expect(pickVoiceProvider({ xai: false, elevenlabs: true })).toBeNull();
     expect(pickVoiceProvider({ xai: false, elevenlabs: false })).toBeNull();
+  });
+
+  it("an opt-in names exactly one cloud provider, used only when its key exists", () => {
+    expect(voiceProviderPlan({ local: true, xai: true, elevenlabs: true }, "xai")).toEqual(["local", "xai"]);
+    expect(voiceProviderPlan({ local: false, xai: true, elevenlabs: true }, "elevenlabs")).toEqual(["elevenlabs"]);
+    expect(voiceProviderPlan({ local: false, xai: false, elevenlabs: true }, "xai")).toEqual([]);
+    expect(pickVoiceProvider({ xai: true, elevenlabs: true }, "xai")).toBe("xai");
+    expect(parseCloudOptIn("elevenlabs")).toBe("elevenlabs");
+    expect(parseCloudOptIn(true)).toBeNull();
+    expect(parseCloudOptIn("XAI")).toBeNull();
   });
 
   it("sends her cloned voice and settings to xAI", () => {
