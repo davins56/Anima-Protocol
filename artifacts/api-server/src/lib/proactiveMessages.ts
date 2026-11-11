@@ -1,4 +1,4 @@
-import webpush, { type PushSubscription as WebPushSubscription } from "web-push";
+import { sendNotification, setVapidDetails, type PushSubscription as WebPushSubscription } from "web-push";
 import { dueThread, extractOpenThreads, threadFollowUpInstruction } from "./agencyThreads";
 import { isKernelFeatureEnabled } from "./kernelFeatures";
 import { recordAgencyOutcome, runAgencyTick } from "./kernel/agencyRuntime";
@@ -116,7 +116,7 @@ function configureWebPush(): boolean {
   const publicKey = vapidPublicKey();
   const privateKey = process.env.VAPID_PRIVATE_KEY?.trim();
   if (!publicKey || !privateKey) return false;
-  webpush.setVapidDetails(
+  setVapidDetails(
     process.env.VAPID_SUBJECT?.trim() || "mailto:support@anima-protocol.com",
     publicKey,
     privateKey,
@@ -550,7 +550,7 @@ async function deliverPush(
         },
       };
       try {
-        await webpush.sendNotification(target, payload, { TTL: 60 * 60 * 12 });
+        await sendNotification(target, payload, { TTL: 60 * 60 * 12 });
         delivered += 1;
       } catch (err) {
         const statusCode =
