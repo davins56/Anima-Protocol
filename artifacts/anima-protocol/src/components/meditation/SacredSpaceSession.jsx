@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { animaClient } from "@/api/animaClient";
-import { recordSacredSpaceCheckIn } from "@/lib/sacredSpaceCheckIn";
+import { recordSacredSpaceCheckIn, recordSacredSpaceMemory } from "@/lib/sacredSpaceCheckIn";
 import { completeSacredSpace, newSacredSessionId } from "@/lib/synchroClient";
 import { useSacredSpaceVoice } from "@/hooks/useSacredSpaceVoice";
 import { motion, AnimatePresence } from "framer-motion";
@@ -68,7 +69,7 @@ Backstory: ${character.backstory || ""}
 
 The user has chosen a ritual focus of: "${ritualFocus}"
 
-Open the Sacred Space session. Welcome the user gently, acknowledge the sacredness of this shared moment, and invite them to begin. Reference the ritual focus naturally. Keep it to 3-4 sentences. Be warm, present, and reverent — not performative.`,
+Open the Sacred Space session. Welcome the user gently, acknowledge the sacredness of this shared moment, and invite them to begin. Reference the ritual focus naturally. Say it in your own voice, as briefly or fully as the moment and your character call for. Be present and reverent without performing.`,
       });
       setMessages([{ role: "assistant", content: result, character_name: character.name }]);
     } catch (err) {
@@ -103,7 +104,7 @@ This is a private, spiritual, vulnerable space. Be present, warm, and genuine. Y
 Session so far:
 ${history}
 
-Respond as ${character.name}. 2-4 sentences. Be real, not theatrical.`,
+Respond as ${character.name}, in your own voice. Let the length follow the moment: a single line can be right, and not every reply needs a question. Be real, not theatrical.`,
       });
       setMessages(prev => [...prev, { role: "assistant", content: result, character_name: character.name }]);
     } catch (err) {
@@ -125,6 +126,7 @@ Respond as ${character.name}. 2-4 sentences. Be real, not theatrical.`,
   const saveImpact = async () => {
     if (savingImpact) return;
     setSavingImpact(true);
+    if (!sessionIdRef.current) sessionIdRef.current = newSacredSessionId("sacred-session");
     try {
       const transcript = messages.map(m =>
         `${m.role === "user" ? "User" : m.character_name}: ${m.content}`
@@ -142,6 +144,15 @@ Respond as ${character.name}. 2-4 sentences. Be real, not theatrical.`,
       });
 
       let impact = { success: true, check_in: created };
+      // Best effort: a failed memory write must not lose the check-in above.
+      recordSacredSpaceMemory({
+        characterId: character.id,
+        characterName: character.name,
+        sessionId: sessionIdRef.current,
+        ritualFocus,
+        messages,
+        reflection,
+      }).catch((memErr) => console.error(memErr));
       try {
         const res = await animaClient.functions.invoke("sacredSpaceImpact", {
           character_id: character.id,
@@ -161,8 +172,6 @@ Respond as ${character.name}. 2-4 sentences. Be real, not theatrical.`,
         console.error(impactErr);
       }
 
-      // Stable id per session: a retry after a failure cannot award twice.
-      if (!sessionIdRef.current) sessionIdRef.current = newSacredSessionId("sacred-session");
       const resonance = await completeSacredSpace({
         characterId: character.id,
         sessionId: sessionIdRef.current,
@@ -184,10 +193,10 @@ Respond as ${character.name}. 2-4 sentences. Be real, not theatrical.`,
 
   const accentColor = focusConfig.color;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex flex-col"
-      style={{ background: "linear-gradient(160deg, #0d0520 0%, #12052e 50%, #0a0a1a 100%)" }}
+      className="fixed inset-0 z-[200] flex flex-col"
+      style={{ paddingTop: "env(safe-area-inset-top)", background: "linear-gradient(160deg, #0d0520 0%, #12052e 50%, #0a0a1a 100%)" }}
     >
       {/* Ambient glow */}
       <div className="absolute inset-0 pointer-events-none">
@@ -450,6 +459,7 @@ Respond as ${character.name}. 2-4 sentences. Be real, not theatrical.`,
           </div>
         </>
       )}
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -46,6 +46,7 @@ import {
   shouldClearLocalSession,
 } from '@/lib/clerkIdentity';
 import { scheduleSessionLlmWarm } from '@/lib/warmLocalLlm';
+import { syncProfileColorScheme } from '@/lib/colorScheme';
 import {
   disableProactivePush,
   getProactiveMessagePreferences,
@@ -292,6 +293,7 @@ export const AuthProvider = ({ children }) => {
             }
 
             if (!cancelled) {
+              syncProfileColorScheme(profile?.settings?.theme_mode);
               // Store profile can arrive with empty email/full_name — keep Clerk.
               setUser(mergeAccountIdentity(identity, profile));
               setAuthError(null);
