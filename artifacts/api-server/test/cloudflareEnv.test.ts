@@ -107,6 +107,14 @@ describe("mirrorCloudflareBindings", () => {
   });
 });
 
+describe("self-hosted voice env names", () => {
+  it("mirrors the home-box voice bindings into process.env", () => {
+    expect(CLOUDFLARE_RUNTIME_ENV_NAMES).toEqual(
+      expect.arrayContaining(["ANIMA_LOCAL_VOICE_BASE_URL", "ANIMA_LOCAL_VOICE_API_KEY", "ANIMA_LOCAL_VOICE"]),
+    );
+  });
+});
+
 function withWipedProcessSecrets(run: () => void | Promise<void>) {
   const saved = {
     DATABASE_URL: process.env.DATABASE_URL,

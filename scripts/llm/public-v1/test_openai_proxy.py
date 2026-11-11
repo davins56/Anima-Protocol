@@ -6,6 +6,8 @@ import http.client
 import importlib.util
 import json
 import os
+import select
+import socket
 import threading
 import time
 import unittest
@@ -317,6 +319,187 @@ class ProxyListTests(unittest.TestCase):
             upstream.shutdown()
             listen.server_close()
             upstream.server_close()
+
+
+class _FakeVoice(BaseHTTPRequestHandler):
+    """Kokoro-FastAPI / speaches stand-in: records requests, streams NDJSON and holds."""
+
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, fmt: str, *args: object) -> None:
+        return
+
+    def _record(self) -> bytes:
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length) if length else b""
+        self.server.requests.append(  # type: ignore[attr-defined]
+            {"method": self.command, "path": self.path, "headers": dict(self.headers.items()), "len": len(raw)}
+        )
+        return raw
+
+    def do_GET(self) -> None:  # noqa: N802
+        self._record()
+        body = b'{"status":"healthy"}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self) -> None:  # noqa: N802
+        self._record()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(b'{"audio":"AAAA","timestamps":[{"word":"Hi","start_time":0,"end_time":0.2}]}\n')
+        self.wfile.flush()
+        # Hold like a long synthesis; notice when the proxy hangs up on us.
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if self.server.release.is_set():  # type: ignore[attr-defined]
+                try:
+                    self.wfile.write(b'{"audio":"BBBB","timestamps":[]}\n')
+                    self.wfile.flush()
+                except OSError:
+                    pass
+                return
+            readable, _, _ = select.select([self.connection], [], [], 0.05)
+            if readable:
+                try:
+                    if self.connection.recv(1, socket.MSG_PEEK) == b"":
+                        self.server.closed.set()  # type: ignore[attr-defined]
+                        return
+                except OSError:
+                    self.server.closed.set()  # type: ignore[attr-defined]
+                    return
+
+
+class ProxyVoiceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.servers: list[ThreadingHTTPServer] = []
+        self.tts = self._fake()
+        self.stt = self._fake()
+        self.saved = (proxy.TOKEN, proxy.VOICE_TTS_UPSTREAM, proxy.VOICE_STT_UPSTREAM)
+        proxy.TOKEN = "test-token"
+        proxy.VOICE_TTS_UPSTREAM = f"127.0.0.1:{self.tts.server_address[1]}"
+        proxy.VOICE_STT_UPSTREAM = f"127.0.0.1:{self.stt.server_address[1]}"
+        self.listen = ThreadingHTTPServer(("127.0.0.1", 0), proxy.Handler)
+        threading.Thread(target=self.listen.serve_forever, daemon=True).start()
+        self.servers.append(self.listen)
+        self.host, self.port = self.listen.server_address
+
+    def tearDown(self) -> None:
+        proxy.TOKEN, proxy.VOICE_TTS_UPSTREAM, proxy.VOICE_STT_UPSTREAM = self.saved
+        for srv in (self.tts, self.stt):
+            srv.release.set()  # type: ignore[attr-defined]
+        for srv in self.servers:
+            srv.shutdown()
+            srv.server_close()
+
+    def _fake(self) -> ThreadingHTTPServer:
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), _FakeVoice)
+        srv.requests = []  # type: ignore[attr-defined]
+        srv.release = threading.Event()  # type: ignore[attr-defined]
+        srv.closed = threading.Event()  # type: ignore[attr-defined]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.servers.append(srv)
+        return srv
+
+    def _request(self, method: str, path: str, body: bytes = b"", auth: bool = True, headers: dict | None = None):
+        conn = http.client.HTTPConnection(self.host, self.port, timeout=5)
+        h = {"Content-Length": str(len(body))}
+        if auth:
+            h["Authorization"] = "Bearer test-token"
+        h.update(headers or {})
+        conn.request(method, path, body=body or None, headers=h)
+        conn.raw_sock = conn.sock  # type: ignore[attr-defined]  # http.client detaches it on Connection: close
+        return conn, conn.getresponse()
+
+    def test_tts_streams_with_prefix_stripped_and_no_bearer_forwarded(self) -> None:
+        body = json.dumps({"input": "Hi", "stream": True, "response_format": "pcm"}).encode()
+        conn, resp = self._request("POST", "/tts/dev/captioned_speech", body, headers={"Content-Type": "application/json"})
+        self.assertEqual(resp.status, 200)
+        started = time.monotonic()
+        first = resp.fp.readline()
+        self.assertLess(time.monotonic() - started, 1.0)
+        self.assertIn(b"AAAA", first)
+        self.tts.release.set()  # type: ignore[attr-defined]
+        self.assertIn(b"BBBB", resp.read())
+        conn.close()
+        req = self.tts.requests[0]  # type: ignore[attr-defined]
+        self.assertEqual((req["method"], req["path"], req["len"]), ("POST", "/dev/captioned_speech", len(body)))
+        self.assertNotIn("Authorization", req["headers"])
+        self.assertEqual(self.stt.requests, [])  # type: ignore[attr-defined]
+
+    def test_client_disconnect_closes_the_tts_upstream(self) -> None:
+        conn, resp = self._request("POST", "/tts/dev/captioned_speech", b'{"input":"Hi"}')
+        self.assertIn(b"AAAA", resp.fp.readline())
+        conn.raw_sock.shutdown(socket.SHUT_RDWR)  # type: ignore[attr-defined]
+        resp.close()
+        conn.close()
+        self.assertTrue(self.tts.closed.wait(3))  # type: ignore[attr-defined]
+
+    def test_stt_upload_and_health_reach_speaches(self) -> None:
+        audio = b"RIFF" + b"\x00" * 64000
+        conn, resp = self._request("POST", "/stt/v1/audio/transcriptions", audio, headers={"Content-Type": "multipart/form-data; boundary=x"})
+        self.assertEqual(resp.status, 200)
+        self.stt.release.set()  # type: ignore[attr-defined]
+        resp.read()
+        conn.close()
+        conn, resp = self._request("GET", "/stt/health")
+        self.assertEqual((resp.status, resp.read()), (200, b'{"status":"healthy"}'))
+        conn.close()
+        paths = [(r["path"], r["len"]) for r in self.stt.requests]  # type: ignore[attr-defined]
+        self.assertEqual(paths, [("/v1/audio/transcriptions", len(audio)), ("/health", 0)])
+
+    def test_voice_routes_need_the_bearer(self) -> None:
+        for method, path in (("GET", "/tts/health"), ("POST", "/stt/v1/audio/transcriptions")):
+            conn, resp = self._request(method, path, auth=False)
+            self.assertEqual(resp.status, 401)
+            resp.read()
+            conn.close()
+        self.assertEqual(self.tts.requests + self.stt.requests, [])  # type: ignore[attr-defined]
+
+    def test_only_the_used_routes_are_open(self) -> None:
+        closed = [
+            ("POST", "/stt/v1/models/Systran/faster-whisper-large-v3"),
+            ("GET", "/stt/v1/models"),
+            ("DELETE", "/stt/v1/models/x"),
+            ("GET", "/tts/v1/models"),
+            ("GET", "/tts/web/"),
+            ("GET", "/tts/dev/captioned_speech"),
+            ("POST", "/tts/../v1/chat/completions"),
+            ("GET", "/tts"),
+        ]
+        for method, path in closed:
+            conn, resp = self._request(method, path)
+            self.assertEqual(resp.status, 404 if method in ("GET", "POST") else 501, path)
+            resp.read()
+            conn.close()
+        self.assertEqual(self.tts.requests + self.stt.requests, [])  # type: ignore[attr-defined]
+        self.assertIsNone(proxy.voice_route("POST", "/stt/v1/models/x"))
+        self.assertEqual(proxy.voice_route("GET", "/tts/v1/audio/voices"), (proxy.VOICE_TTS_UPSTREAM, "/v1/audio/voices"))
+
+    def test_oversized_upload_is_refused_before_upstream(self) -> None:
+        # Headers only: the proxy must answer 413 without reading the body.
+        conn = http.client.HTTPConnection(self.host, self.port, timeout=5)
+        conn.putrequest("POST", "/stt/v1/audio/transcriptions")
+        conn.putheader("Authorization", "Bearer test-token")
+        conn.putheader("Content-Length", str(proxy.VOICE_MAX_BODY_BYTES + 1))
+        conn.endheaders()
+        resp = conn.getresponse()
+        self.assertEqual(resp.status, 413)
+        resp.read()
+        conn.close()
+        self.assertEqual(self.stt.requests, [])  # type: ignore[attr-defined]
+
+    def test_box_service_down_is_a_json_502(self) -> None:
+        proxy.VOICE_TTS_UPSTREAM = "127.0.0.1:1"
+        conn, resp = self._request("GET", "/tts/health")
+        self.assertEqual(resp.status, 502)
+        self.assertIn(b"voice upstream unreachable", resp.read())
+        conn.close()
 
 
 if __name__ == "__main__":
