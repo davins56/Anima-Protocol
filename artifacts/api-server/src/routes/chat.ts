@@ -177,7 +177,11 @@ import {
   chatErrorCode,
   replySurvivesDatabaseTimeout,
 } from "../lib/chatTelemetry";
-import { streamErrorMessage } from "../lib/chatStreamError";
+import {
+  emptyReplyError,
+  isEmptyReplyError,
+  streamErrorMessage,
+} from "../lib/chatStreamError";
 import { optionalChatContext, optionalChatContextTimeoutMs } from "../lib/optionalChatContext";
 import { buildMemoryCoreContext, isMemoryCoreEnabled } from "../lib/memoryCore/sessionContext";
 import { buildCorrectionsContext } from "../lib/corrections/corrections";
@@ -3610,7 +3614,7 @@ router.post("/messages", async (req, res) => {
         signal: generateSignal,
       });
       if (!drafts.length) {
-        throw new Error("The companion returned an empty reply. Please try again.");
+        throw emptyReplyError();
       }
       ensembleMinds = drafts.map((d) => d.label);
 
@@ -4070,7 +4074,7 @@ router.post("/messages", async (req, res) => {
     // (thinking/typing cleared, no visible reply). Fail loudly instead.
     // Unclosed / think-only DeepSeek R1 output is recovered by finalizeAssistantReply.
     if (!String(fullResponse).trim()) {
-      throw new Error("The companion returned an empty reply. Please try again.");
+      throw emptyReplyError();
     }
 
     streamSucceeded = true;
@@ -4302,6 +4306,7 @@ router.post("/messages", async (req, res) => {
       flight.fail(err);
       writeSse(res, {
         error: streamErrorMessage(err),
+        ...(isEmptyReplyError(err) ? { code: "empty_reply", turn_id: turnId } : {}),
         ...(crisisResourceCard ? { crisis_resource: crisisResourceCard } : {}),
       });
       closePipeline("failed", {

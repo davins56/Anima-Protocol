@@ -136,6 +136,44 @@ describe("streamChatReply", () => {
     ).rejects.toThrow("boom");
   });
 
+  it("carries the server error code and turn id onto the thrown error", async () => {
+    let caught;
+    try {
+      await streamChatReply(
+        fromEvents([
+          {
+            error: "The companion returned an empty reply. Please try again.",
+            code: "empty_reply",
+            turn_id: "turn_1",
+          },
+        ]),
+      );
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught?.code).toBe("empty_reply");
+    expect(caught?.turnId).toBe("turn_1");
+  });
+
+  it("throws empty_reply when done arrives with no visible text", async () => {
+    let caught;
+    try {
+      await streamChatReply(fromEvents([{ done: true, visible: "", turn_id: "turn_2" }]));
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught?.message).toMatch(/empty reply/i);
+    expect(caught?.code).toBe("empty_reply");
+    expect(caught?.turnId).toBe("turn_2");
+    expect(caught?.chatClientTrace).toBeTruthy();
+  });
+
+  it("throws empty_reply when the stream closes with no content and no done", async () => {
+    await expect(
+      streamChatReply(fromEvents([{ status: "thinking" }])),
+    ).rejects.toMatchObject({ code: "empty_reply" });
+  });
+
   it("attaches partialContent when an error arrives after tokens", async () => {
     let caught;
     try {
