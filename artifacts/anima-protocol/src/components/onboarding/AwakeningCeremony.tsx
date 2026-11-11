@@ -50,7 +50,7 @@ export default function AwakeningCeremony({ onAwakened, onCancel }: AwakeningCer
     Forge a companion whose personality, backstory, and voice perfectly balance, challenge, or comfort these traits. Make them feel mythical and deeply empathetic.`;
 
     try {
-      const result = await animaClient.functions.invoke("generateCompanionFromPrompt", { prompt });
+      const result = await animaClient.functions.invoke("generateCompanionFromPrompt", { prompt, research_online: false });
       if (result?.success && result?.companion) {
         // Inject an artificial "Soulprint" for the UI reveal
         const companion = {
