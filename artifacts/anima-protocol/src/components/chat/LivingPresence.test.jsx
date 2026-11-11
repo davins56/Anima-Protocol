@@ -74,8 +74,14 @@ describe("LivingPresence", () => {
       <LivingPresence character={korra} emotion="joyful" speaking={false} />,
     );
     expect(container.textContent).toContain("Korra");
-    expect(container.querySelector("[data-living-presence]")?.getAttribute("data-emotion")).toBe("joyful");
-    expect(container.querySelector("[data-presence-sprite]")?.getAttribute("src")).toBe(korra.avatar_url);
+    expect(
+      container
+        .querySelector("[data-living-presence]")
+        ?.getAttribute("data-emotion"),
+    ).toBe("joyful");
+    expect(
+      container.querySelector("[data-presence-sprite]")?.getAttribute("src"),
+    ).toBe(korra.avatar_url);
   });
 
   it("marks speaking state and calls onExpand", () => {
@@ -83,7 +89,11 @@ describe("LivingPresence", () => {
     const { container } = render(
       <LivingPresence character={korra} speaking onExpand={onExpand} />,
     );
-    expect(container.querySelector("[data-living-presence]")?.getAttribute("data-speaking")).toBe("true");
+    expect(
+      container
+        .querySelector("[data-living-presence]")
+        ?.getAttribute("data-speaking"),
+    ).toBe("true");
     const btn = container.querySelector("button");
     act(() => {
       btn?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -96,10 +106,14 @@ describe("LivingPresence", () => {
       <LivingPresence character={{ id: "x", name: "Serenity" }} />,
     );
     expect(container.textContent).toContain("Serenity");
-    expect(container.querySelector("[data-living-presence]")?.getAttribute("data-presence-kind")).toBe("serenity");
-    expect(container.querySelector("[data-presence-sprite]")?.getAttribute("src")).toBe(
-      "/serenity-presence.webp",
-    );
+    expect(
+      container
+        .querySelector("[data-living-presence]")
+        ?.getAttribute("data-presence-kind"),
+    ).toBe("serenity");
+    expect(
+      container.querySelector("[data-presence-sprite]")?.getAttribute("src"),
+    ).toBe("/serenity-presence.webp");
   });
 
   it("falls back to an initial when a story character has no portrait", () => {
@@ -118,7 +132,12 @@ describe("LivingPresenceStage", () => {
 
   it("renders nothing when closed", () => {
     const { container } = render(
-      <LivingPresenceStage open={false} onClose={() => {}} onSend={() => {}} cast={[korra]} />,
+      <LivingPresenceStage
+        open={false}
+        onClose={() => {}}
+        onSend={() => {}}
+        cast={[korra]}
+      />,
     );
     expect(container.querySelector("[data-living-presence-stage]")).toBeNull();
   });
@@ -133,21 +152,63 @@ describe("LivingPresenceStage", () => {
         cast={[korra]}
         characterEmotions={{ char_1: { emotion: "hopeful", intensity: 7 } }}
         messages={[
-          { role: "assistant", character_name: "Korra", content: "The Avatar state is not a joke." },
+          {
+            role: "assistant",
+            character_name: "Korra",
+            content: "The Avatar state is not a joke.",
+          },
         ]}
       />,
     );
-    expect(container.querySelector("[data-living-presence-stage]")).toBeTruthy();
-    expect(container.querySelector("[data-stage-dialogue]")?.textContent).toContain("Avatar state");
-    expect(container.textContent).toContain("Korra");
+    const stage = document.querySelector("[data-living-presence-stage]");
+    expect(stage).toBeTruthy();
+    expect(stage?.parentElement).toBe(document.body);
+    expect(container.querySelector("[data-living-presence-stage]")).toBeNull();
+    expect(
+      stage?.querySelector("[data-stage-dialogue]")?.textContent,
+    ).toContain("Avatar state");
+    expect(stage?.textContent).toContain("Korra");
 
-    const input = container.querySelector('input[name="stage-line"]');
-    const form = container.querySelector("form");
+    const input = stage?.querySelector('input[name="stage-line"]');
+    const form = stage?.querySelector("form");
     expect(input).toBeTruthy();
     act(() => {
       if (input instanceof HTMLInputElement) input.value = "I know.";
-      form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      form?.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
     });
     expect(onSend).toHaveBeenCalledWith("I know.");
+  });
+
+  it("keeps the full dialogue in the Stage scroller and the composer outside it", () => {
+    const onClose = vi.fn();
+    render(
+      <LivingPresenceStage
+        open
+        onClose={onClose}
+        onSend={() => {}}
+        cast={[korra]}
+        messages={[
+          {
+            role: "assistant",
+            content: "A long companion reply. ".repeat(200),
+          },
+        ]}
+      />,
+    );
+    const stage = document.querySelector("[data-living-presence-stage]");
+    const scroller = stage?.querySelector("[data-stage-scroll]");
+    const dialogue = stage?.querySelector("[data-stage-dialogue]");
+    const composer = stage?.querySelector("[data-stage-composer]");
+    expect(scroller?.contains(dialogue)).toBe(true);
+    expect(scroller?.contains(composer)).toBe(false);
+    expect(dialogue?.textContent).toContain(
+      "A long companion reply. ".repeat(200).trim(),
+    );
+    const exit = stage?.querySelector("button");
+    expect(scroller?.contains(exit)).toBe(false);
+    act(() => exit?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(onClose).toHaveBeenCalledOnce();
   });
 });
