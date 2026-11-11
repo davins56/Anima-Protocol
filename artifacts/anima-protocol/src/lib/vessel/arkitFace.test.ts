@@ -15,6 +15,18 @@ describe("arkitFace", () => {
     expect(arkitFaceWeights({ blink: NaN, openness: 5 }).jawOpen).toBeCloseTo(0.7);
   });
 
+  it("rounds the lips for ou/oh visemes and maps brow / frown", () => {
+    const o = arkitFaceWeights({ blink: 0, openness: 1, round: 1 });
+    expect(o.mouthFunnel).toBeCloseTo(0.7);
+    expect(o.mouthPucker).toBeGreaterThan(0);
+    expect(o.jawOpen).toBeLessThan(0.7);
+    expect(arkitFaceWeights({ blink: 0, openness: 0, round: 1 }).mouthFunnel).toBe(0);
+    const hostile = arkitFaceWeights({ blink: 0, openness: 0, expression: expressionFor("hostile", 100) });
+    expect(hostile.browDownLeft).toBeGreaterThan(0.3);
+    expect(hostile.mouthFrownLeft).toBeGreaterThan(0.2);
+    expect(hostile.browInnerUp).toBe(0);
+  });
+
   it("finds ARKit-morphed meshes and writes influences", () => {
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(9), 3));

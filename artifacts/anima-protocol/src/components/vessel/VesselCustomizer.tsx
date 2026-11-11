@@ -18,6 +18,7 @@ import {
 import { applyVesselText } from "@/lib/vessel/vesselText";
 import type { VesselRecord } from "@/lib/vessel/vesselApi";
 import VesselModelUpload from "./VesselModelUpload";
+import { LIFELIKE_BASES, hasLifelikeBase, isLifelikeModel, withLifelikeBase } from "@/lib/vessel/lifelikeBase";
 
 const FORM_KEYS = Object.keys(SERENITY_FORMS) as SerenityForm[];
 
@@ -123,6 +124,29 @@ export default function VesselCustomizer({ value: v, onChange, onTextApplied, ch
           onUseProcedural={() => onChange(parseVesselConfig({ ...v, model: { kind: "procedural" } }))}
         />
       </Section>
+      {hasLifelikeBase(v.base) && (
+        <Section title="Body">
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={() => onChange(parseVesselConfig({ ...v, model: { kind: "procedural" } }))}
+              className={`px-2.5 py-1.5 min-h-[36px] border font-mono text-[11px] ${!isLifelikeModel(v.model) ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground"}`}
+            >
+              Stylised
+            </button>
+            <button
+              type="button"
+              onClick={() => hasLifelikeBase(v.base) && onChange(withLifelikeBase(v, v.base))}
+              className={`px-2.5 py-1.5 min-h-[36px] border font-mono text-[11px] ${isLifelikeModel(v.model) ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground"}`}
+            >
+              {LIFELIKE_BASES[v.base].label} (beta)
+            </button>
+          </div>
+          {isLifelikeModel(v.model) && (
+            <p className="font-mono text-[10px] text-muted-foreground">High-detail body, ~20 MB, loads only here and in the expanded presence view. Use HD for full skin and eye shading.</p>
+          )}
+        </Section>
+      )}
       <Section title="Type it">
         <Describe
           value={v}
