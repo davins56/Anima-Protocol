@@ -5,6 +5,11 @@
 # generic OpenAI-compatible backend) and point ANIMA_LOCAL_LLM_BASE_URL at
 # this server's /v1. See docs/custom-llm.md, "Your own trained model".
 #
+# It also speaks Ollama's native API (/api/chat, /api/generate, /api/tags,
+# /api/ps, /api/show, /api/version), so ANIMA_LOCAL_LLM_BACKEND=ollama works
+# against it too, with Ollama's sampler options and Modelfile defaults
+# (server/Modelfile; see sampling.py and modelfile.py).
+#
 # Run (binds 127.0.0.1 only):
 #   python server/server.py
 # Test:
@@ -19,14 +24,15 @@
 #   ANIMA_SERVER_TOKEN=... ANIMA_HOST=0.0.0.0 python server/server.py
 # Clients then send Authorization: Bearer <token>.
 
+import hashlib
 import hmac
 import json
 import logging
-import math
 import os
 import sys
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -42,9 +48,12 @@ for _rel in ("training/phase1", "training/phase2"):
         sys.path.insert(0, _p)
 
 import _paths  # noqa: F401
+import modelfile as modelfile_lib
 import modeling
+import sampling
 import sft
 from learning import LessonError, LiveModel
+from modelfile import Modelfile
 
 ROOT = Path(__file__).resolve().parents[1]
 log = logging.getLogger("anima.server")
@@ -56,21 +65,20 @@ log = logging.getLogger("anima.server")
 # the window can hold rather than rejected; these caps only bound the work.
 MAX_REQUEST_MESSAGES = 512
 MAX_CONTEXT_MESSAGES = 64
-MAX_CONTENT_CHARS = 16000
-MAX_NEW_TOKENS = 768
-DEFAULT_MAX_TOKENS = 384
 # A 5 MiB chat body is rejected (see the model-server suite). Lesson sync
 # can carry the whole taught set, so it gets a larger cap.
 MAX_BODY_BYTES = 4 * 1024 * 1024
 MAX_SYNC_BODY_BYTES = 32 * 1024 * 1024
 MAX_MESSAGES = 512
 MAX_WAIT_SECONDS = 120
-# A run-on sentence longer than this streams at a word boundary instead of
-# waiting for its full stop.
-STREAM_FLUSH_CHARS = 160
+# Ollama reports a model loaded with keep_alive -1 as expiring at this time.
+NEVER_EXPIRES = "2318-11-11T00:00:00Z"
 
 device = "cpu"
 live: LiveModel | None = None
+modelfile = Modelfile()
+started_at = time.time()
+last_warm_ns = 0
 
 
 def checkpoint_path() -> str:
@@ -93,6 +101,24 @@ def model_id() -> str:
 
 def learning_enabled() -> bool:
     return os.environ.get("ANIMA_LEARNING", "on").strip().lower() not in {"0", "off", "false", "no"}
+
+
+def warmup_enabled() -> bool:
+    return os.environ.get("ANIMA_WARMUP", "on").strip().lower() not in {"0", "off", "false", "no"}
+
+
+def model_names() -> list[str]:
+    """The served name plus ANIMA_MODEL_ALIASES (comma separated).
+
+    The api-server checks its ANIMA_OLLAMA_MODEL_STANDARD against /api/tags;
+    an alias lets that existing tag (e.g. anima-chat) find this model.
+    """
+    names = [model_id()]
+    for alias in os.environ.get("ANIMA_MODEL_ALIASES", "").split(","):
+        alias = alias.strip()
+        if alias and alias not in names:
+            names.append(alias)
+    return names
 
 
 def server_token() -> str:
@@ -123,171 +149,99 @@ def _bind_serving_model() -> None:
 
 
 def load_runtime():
-    global live, device
+    global live, device, modelfile
+    modelfile = modelfile_lib.load()
     sft.init_tokenizer(os.environ.get("ANIMA_TOK_DIR", "").strip() or None)
     path = checkpoint_path()
     if not os.path.isfile(path):
         raise SystemExit(f"checkpoint not found: {path} (set ANIMA_CKPT or train phase 3)")
     device = "cuda" if torch.cuda.is_available() else "cpu"
     live = LiveModel(path, live_dir(), device=device)
-    _serve_live_weights()
-    n_params = sum(p.numel() for p in live.model.parameters()) / 1e6
+    model = _serving_model()
+    n_params = sum(p.numel() for p in model.parameters()) / 1e6
     print(f"Anima serving: {n_params:.1f}M params on {device}")
+    if warmup_enabled():
+        _warm()
 
 
-def _serve_live_weights() -> None:
-    """Point generation at the weights currently being served.
+def _serving_model():
+    """The weights being served now.
 
     Learning swaps in a new module; a snapshot taken at startup would keep
-    answering with the weights from before the lesson.
+    answering with the weights from before the lesson. A reply holds on to
+    the module it started with, so a lesson landing mid-stream cannot change
+    the weights under it.
     """
     if live is None:
         raise HTTPException(status_code=503, detail="model is not loaded")
     sft.model = live.model
     sft.cfg = live.cfg
+    return live.model
 
 
 # --------------------- Conversation encoding ---------------------
-# Same layout as SFT/DPO. sft.prompt_for_reply fits the history to the window
-# on message boundaries and opens the <|anima|> turn; sampling uses the
-# complete-thought rules (min length, repetition penalty, sentence stop).
+# Same layout as SFT/DPO: <|endoftext|> <|user|> … <|anima|> …. The prompt
+# is fitted on message boundaries (modeling.fit_chat_prompt): the newest turn
+# first, then the system prompt, then older history, the way Ollama trims a
+# full window. Sampling lives in sampling.py; streaming and non-streaming
+# replies share one generator, so a seed gives the same text either way.
 
-def _message_text(content) -> str:
-    """Text of an OpenAI message: a string, or the text parts of a content
-    array. Image parts are dropped; this model reads text only."""
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts = []
-        for part in content:
-            if isinstance(part, dict) and part.get("type") in ("text", "input_text"):
-                text = part.get("text")
-                if isinstance(text, str):
-                    parts.append(text)
-        return "\n".join(parts)
-    return ""
+def _prepare_messages(messages) -> list[dict]:
+    """Request messages plus the Modelfile's SYSTEM and MESSAGE defaults.
 
-
-def _api_messages(messages):
-    mapped = []
-    for m in messages[-MAX_CONTEXT_MESSAGES:]:
-        text = _message_text(m.get("content"))
-        if not text.strip():
-            continue  # e.g. an assistant tool-call turn with content: null
-        if m.get("role") in ("anima", "assistant"):
-            role = "anima"
-        else:
-            # user, system, tool, and unknown roles stay context, not an Anima turn
-            role = "user"
-        mapped.append({"role": role, "content": text[-MAX_CONTENT_CHARS:]})
-    return mapped
-
-
-def _temperature(value: float) -> float:
-    try:
-        value = float(value)
-    except (TypeError, ValueError):
-        return 1e-5
-    if not math.isfinite(value):
-        return 1e-5
-    return min(max(value, 1e-5), 2.0)
-
-
-def _sampling(max_tokens=DEFAULT_MAX_TOKENS, temperature=0.8, top_k=40,
-              repetition_penalty=1.15, min_tokens=8):
-    return {
-        "max_new_tokens": max(1, min(int(max_tokens), MAX_NEW_TOKENS)),
-        "temperature": _temperature(temperature),
-        "top_k": top_k,
-        "repetition_penalty": repetition_penalty,
-        "min_new_tokens": min_tokens,
-    }
-
-
-def _sentence_end(text: str) -> int:
-    """Index just past the last sentence end, as sft.trim_to_sentence finds it."""
-    best = 0
-    for end in sft.SENTENCE_END:
-        idx = text.rfind(end)
-        if idx >= 0:
-            best = max(best, idx + len(end))
-    return best
-
-
-def stream_reply(prompt_ids, max_new_tokens, temperature, top_k, **kw):
-    """Yield reply text as it is sampled; the return value is the finish_reason.
-
-    Text goes out a sentence at a time so the result matches the
-    non-streaming reply: a length-capped reply is still cut back to its last
-    finished sentence, and that cut only ever falls on text not yet sent. A
-    run-on sentence past STREAM_FLUSH_CHARS goes out at a word boundary so
-    the client is never left waiting on one long silence.
+    Like Ollama, the Modelfile SYSTEM only applies when the request has no
+    system message of its own, and MESSAGE turns go before the conversation.
     """
-    steps = sft.iter_tokens(prompt_ids, max_new_tokens, temperature, top_k, **kw)
-    tokens, sent = [], ""
-    while True:
-        try:
-            tokens.append(next(steps))
-        except StopIteration as done:
-            finish_reason = done.value
-            break
-        text = sft.tok.decode(tokens).lstrip()
-        cut = _sentence_end(text)
-        if cut <= len(sent) and len(text) - len(sent) > STREAM_FLUSH_CHARS:
-            cut = text.rfind(" ", len(sent) + 1)
-        if cut > len(sent) and text.startswith(sent):
-            yield text[len(sent):cut]
-            sent = text[:cut]
-    final = sft.tok.decode(tokens).strip()
-    if finish_reason == "length":
-        final = sft.trim_to_sentence(final)
-    if len(final) > len(sent) and final.startswith(sent):
-        yield final[len(sent):]
-    return finish_reason
+    msgs = [m for m in modeling.normalize_messages(messages) if m["content"].strip()]
+    dialogue = [m for m in msgs if m["role"] != "system"][-MAX_CONTEXT_MESSAGES:]
+    system = [m for m in msgs if m["role"] == "system"]
+    if not dialogue:
+        raise HTTPException(status_code=400, detail="messages carry no text for this model to read")
+    if not system and modelfile.system:
+        system = [{"role": "system", "content": modelfile.system}]
+    examples = modeling.normalize_messages(modelfile.messages)
+    return [*system, *examples, *dialogue]
 
 
-def _stream_model_reply(model, prompt_ids, max_tokens, temperature, top_k):
-    """Yield reply text from the weights being served. Return value is finish_reason.
-
-    Stops on the model's end-of-turn token, matching modeling.generate_text,
-    so a streamed reply is the same text as the non-streaming one.
-    """
-    count = 0
-
-    def counted():
-        nonlocal count
-        for token in modeling.iter_reply_tokens(model, prompt_ids, max_tokens, temperature, top_k):
-            count += 1
-            yield token
-
-    yield from modeling.iter_text_deltas(counted())
-    return "length" if count >= max(int(max_tokens), 0) else "stop"
+def _options(overrides: dict | None) -> sampling.SamplingOptions:
+    """Built-in defaults, then Modelfile PARAMETERs, then the request."""
+    return sampling.merge_options(
+        sampling.merge_options(sampling.SamplingOptions(), modelfile.parameters),
+        overrides,
+    )
 
 
-def _sse_chunks(deltas, completion_id: str, created: int, model_name: str):
-    """OpenAI chat.completion.chunk events, ending with data: [DONE]."""
-    def event(delta, finish_reason=None):
-        chunk = {
-            "id": completion_id,
-            "object": "chat.completion.chunk",
-            "created": created,
-            "model": model_name,
-            "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
-        }
-        return f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+class _Turn:
+    """One reply: the weights, the fitted prompt and the sampler it uses."""
 
-    # The role chunk goes out before any sampling so the client sees the
-    # stream open right away.
-    yield event({"role": "assistant", "content": ""})
-    while True:
-        try:
-            text = next(deltas)
-        except StopIteration as done:
-            finish_reason = done.value or "stop"
-            break
-        yield event({"content": text})
-    yield event({}, finish_reason)
-    yield "data: [DONE]\n\n"
+    def __init__(self, messages, overrides: dict | None):
+        self.model = _serving_model()
+        self.options = _options(overrides)
+        window = sampling.context_window(self.model, self.options)
+        self.fit = modeling.fit_chat_prompt(
+            _prepare_messages(messages),
+            modeling.prompt_budget(window, self.options.num_predict),
+        )
+        self.stats = sampling.ReplyStats()
+
+    def pieces(self):
+        return sampling.reply_pieces(self.model, self.fit.ids, self.options, self.stats)
+
+    def text(self) -> str:
+        return "".join(self.pieces())
+
+
+def _openai_overrides(req) -> dict:
+    """OpenAI fields (plus the usual top_k / min_p extensions) as options."""
+    fields = req.model_dump(exclude_none=True)
+    out = {k: fields[k] for k in (
+        "temperature", "top_p", "top_k", "min_p", "repetition_penalty", "repeat_penalty",
+        "repeat_last_n", "presence_penalty", "frequency_penalty", "seed", "stop", "min_tokens",
+    ) if k in fields}
+    budget = req.max_tokens or req.max_completion_tokens
+    if budget:
+        out["num_predict"] = budget
+    return out
 
 
 # --------------------- API ---------------------
@@ -303,7 +257,7 @@ class LimitBodyMiddleware:
             await self.app(scope, receive, send)
             return
         path = scope.get("path", "")
-        if not path.startswith("/v1/"):
+        if not path.startswith(("/v1/", "/api/")):
             await self.app(scope, receive, send)
             return
         limit = self.sync_max_bytes if path == "/v1/lessons/sync" else self.max_bytes
@@ -356,6 +310,8 @@ def require_token(authorization: str | None = Header(default=None)):
 
 
 class Msg(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     role: str = Field(max_length=32)
     # A string, OpenAI content parts, or null (assistant tool-call turns).
     content: str | list[dict[str, Any]] | None = None
@@ -363,18 +319,30 @@ class Msg(BaseModel):
 # ----------------------------- Chat -----------------------------
 
 class ChatRequest(BaseModel):
+    """OpenAI chat completions. Unset fields fall back to the Modelfile."""
+
+    model_config = ConfigDict(extra="ignore")
+
     model: str = Field(default="anima", max_length=128)
     messages: list[Msg] = Field(min_length=1, max_length=MAX_REQUEST_MESSAGES)
-    temperature: float = Field(default=0.8, ge=0.0, le=2.0)
-    # Clamped to MAX_NEW_TOKENS rather than rejected: OpenAI clients send
-    # whatever budget they would give a hosted model.
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    top_p: float | None = Field(default=None, ge=0.0, le=1.0)
+    top_k: int | None = Field(default=None, ge=0)
+    min_p: float | None = Field(default=None, ge=0.0, le=1.0)
+    # Clamped to the sampler's ceiling rather than rejected: OpenAI clients
+    # send whatever budget they would give a hosted model.
     max_tokens: int | None = Field(default=None, ge=1)
     max_completion_tokens: int | None = Field(default=None, ge=1)
-    repetition_penalty: float = Field(default=1.15, ge=1.0, le=2.0)
+    repetition_penalty: float | None = Field(default=None, ge=0.0, le=2.0)
+    repeat_last_n: int | None = Field(default=None, ge=-1)
+    presence_penalty: float | None = Field(default=None, ge=-2.0, le=2.0)
+    frequency_penalty: float | None = Field(default=None, ge=-2.0, le=2.0)
+    seed: int | None = None
+    stop: str | list[str] | None = None
     # 0 lets the model end on its stop token. A higher floor is for callers
     # that want to block one-word fragments; the default must not force a
     # short taught reply to keep talking past its stop.
-    min_tokens: int = Field(default=0, ge=0, le=128)
+    min_tokens: int | None = Field(default=None, ge=0, le=128)
     stream: bool = False
 
 
@@ -387,83 +355,55 @@ class ChatResponse(BaseModel):
     usage: dict[str, int]
 
 
-def _sse(payload: dict) -> str:
-    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-
-
-def _stream_chat(model, prompt_ids, max_tokens, temperature, name):
-    cid = "chatcmpl-" + uuid.uuid4().hex[:12]
-    created = int(time.time())
-
-    def chunk(delta, finish=None):
-        return _sse({
-            "id": cid,
+def _openai_sse(pieces, completion_id: str, created: int, model_name: str):
+    """OpenAI chat.completion.chunk events, ending with data: [DONE]."""
+    def event(delta, finish_reason=None):
+        chunk = {
+            "id": completion_id,
             "object": "chat.completion.chunk",
             "created": created,
-            "model": name,
-            "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
-        })
+            "model": model_name,
+            "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
+        }
+        return f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
 
-    yield chunk({"role": "assistant", "content": ""})
-    count = 0
-
-    def counted():
-        nonlocal count
-        for t in modeling.iter_reply_tokens(model, prompt_ids, max_tokens, temperature):
-            count += 1
-            yield t
-
-    for delta in modeling.iter_text_deltas(counted()):
-        yield chunk({"content": delta})
-    yield chunk({}, "length" if count >= max_tokens else "stop")
+    # The role chunk goes out before any sampling so the client sees the
+    # stream open right away.
+    yield event({"role": "assistant", "content": ""})
+    while True:
+        try:
+            text = next(pieces)
+        except StopIteration as done:
+            finish_reason = (done.value.finish_reason if done.value else None) or "stop"
+            break
+        yield event({"content": text})
+    yield event({}, finish_reason)
     yield "data: [DONE]\n\n"
 
 
 @app.get("/v1/models")
 def list_models(_auth: None = Depends(require_token)):
-    return {"object": "list", "data": [{"id": model_id(), "object": "model", "owned_by": "anima"}]}
+    return {
+        "object": "list",
+        "data": [{"id": name, "object": "model", "owned_by": "anima"} for name in model_names()],
+    }
 
 
 @app.post("/v1/chat/completions")
 def chat(req: ChatRequest, _auth: None = Depends(require_token)):
-    _serve_live_weights()
-    messages = _api_messages([m.model_dump() for m in req.messages])
-    if not messages:
-        raise HTTPException(status_code=400, detail="messages carry no text for this model to read")
-    sampling = _sampling(
-        max_tokens=req.max_tokens or req.max_completion_tokens or DEFAULT_MAX_TOKENS,
-        temperature=req.temperature,
-        repetition_penalty=req.repetition_penalty,
-        min_tokens=req.min_tokens,
-    )
-    completion_id = "chatcmpl-" + uuid.uuid4().hex[:12]
-    created = int(time.time())
     # Fit the prompt before the 200 goes out so a bad request still gets
     # a real status code instead of a broken stream.
-    prompt_ids = sft.prompt_for_reply(messages, sampling["max_new_tokens"])
-    # Same stop rule as learning (modeling.generate_text): a taught reply can
-    # end as soon as the model closes the turn. The complete-thought minimum
-    # would pad a short correction.
+    turn = _Turn([m.model_dump() for m in req.messages], _openai_overrides(req))
+    completion_id = "chatcmpl-" + uuid.uuid4().hex[:12]
+    created = int(time.time())
     if req.stream:
         return StreamingResponse(
-            _sse_chunks(
-                _stream_model_reply(
-                    live.model,
-                    prompt_ids,
-                    sampling["max_new_tokens"],
-                    sampling["temperature"],
-                    sampling["top_k"],
-                ),
-                completion_id,
-                created,
-                req.model,
-            ),
+            _openai_sse(turn.pieces(), completion_id, created, req.model),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
-    prompt_ids = sft.prompt_for_reply(messages, sampling["max_new_tokens"])
-    reply, finish_reason = sft.generate_reply(messages, **sampling)
-    completion_tokens = len(sft.tok.encode(reply).ids) if reply else 0
+    reply = turn.text()
+    stats = turn.stats
     return ChatResponse(
         id=completion_id,
         created=created,
@@ -471,14 +411,240 @@ def chat(req: ChatRequest, _auth: None = Depends(require_token)):
         choices=[{
             "index": 0,
             "message": {"role": "assistant", "content": reply},
-            "finish_reason": finish_reason,
+            "finish_reason": stats.finish_reason,
         }],
         usage={
-            "prompt_tokens": len(prompt_ids),
-            "completion_tokens": completion_tokens,
-            "total_tokens": len(prompt_ids) + completion_tokens,
+            "prompt_tokens": stats.prompt_tokens,
+            "completion_tokens": stats.completion_tokens,
+            "total_tokens": stats.prompt_tokens + stats.completion_tokens,
         },
     )
+
+
+# ------------------------- Ollama-native API -------------------------
+# /api/chat, /api/generate, /api/tags, /api/ps, /api/show and /api/version,
+# so the api-server's Ollama adapter (ANIMA_LOCAL_LLM_BACKEND=ollama), its
+# health probes and its app-open warm-up work against this model unchanged.
+# Responses follow Ollama: newline-delimited JSON when streaming (the
+# default), durations in nanoseconds, and an empty prompt loads the model.
+
+class OllamaMessage(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    role: str = Field(max_length=32)
+    content: str | None = ""
+    # images, tool_calls and thinking are accepted and ignored: this model
+    # reads text only.
+
+
+class OllamaChatIn(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    model: str = Field(default="", max_length=128)
+    messages: list[OllamaMessage] = Field(default_factory=list, max_length=MAX_REQUEST_MESSAGES)
+    stream: bool = True
+    options: dict[str, Any] | None = None
+    # Accepted for compatibility. The weights stay resident for the life of
+    # the process, so there is nothing to unload.
+    keep_alive: str | int | float | None = None
+
+
+class OllamaGenerateIn(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    model: str = Field(default="", max_length=128)
+    prompt: str = ""
+    system: str | None = None
+    stream: bool = True
+    options: dict[str, Any] | None = None
+    keep_alive: str | int | float | None = None
+
+
+class OllamaShowIn(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    model: str = Field(default="", max_length=128)
+    name: str = Field(default="", max_length=128)
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _ollama_name(requested: str) -> str:
+    return requested.strip() or model_id()
+
+
+def _warm() -> int:
+    global last_warm_ns
+    last_warm_ns = sampling.warm(_serving_model())
+    return last_warm_ns
+
+
+def _done_fields(turn: _Turn, total_ns: int) -> dict:
+    stats = turn.stats
+    return {
+        "done": True,
+        "done_reason": stats.finish_reason,
+        "total_duration": total_ns,
+        "load_duration": 0,
+        "prompt_eval_count": stats.prompt_tokens,
+        "prompt_eval_duration": stats.prompt_ns,
+        "eval_count": stats.completion_tokens,
+        "eval_duration": stats.eval_ns,
+    }
+
+
+def _ndjson(payloads):
+    for payload in payloads:
+        yield json.dumps(payload, ensure_ascii=False) + "\n"
+
+
+def _ollama_reply(turn: _Turn, name: str, stream: bool, shape):
+    """Stream or return one reply. `shape(text)` is the per-chunk body."""
+    started = time.perf_counter_ns()
+    if not stream:
+        text = turn.text()
+        return {"model": name, "created_at": _now_iso(), **shape(text),
+                **_done_fields(turn, time.perf_counter_ns() - started)}
+
+    def events():
+        try:
+            for piece in turn.pieces():
+                yield {"model": name, "created_at": _now_iso(), **shape(piece), "done": False}
+        except Exception as exc:  # the 200 already went out; say why in-band
+            log.exception("ollama stream failed")
+            yield {"error": str(exc) or exc.__class__.__name__}
+            return
+        yield {"model": name, "created_at": _now_iso(), **shape(""),
+               **_done_fields(turn, time.perf_counter_ns() - started)}
+
+    return StreamingResponse(_ndjson(events()), media_type="application/x-ndjson")
+
+
+def _load_reply(name: str, shape) -> dict:
+    """Ollama's answer to an empty request: the model is loaded and warm."""
+    warm_ns = _warm()
+    return {"model": name, "created_at": _now_iso(), **shape(""),
+            "done": True, "done_reason": "load", "total_duration": warm_ns, "load_duration": warm_ns}
+
+
+@app.post("/api/chat")
+def ollama_chat(req: OllamaChatIn, _auth: None = Depends(require_token)):
+    name = _ollama_name(req.model)
+
+    def shape(text):
+        return {"message": {"role": "assistant", "content": text}}
+
+    if not req.messages:
+        return _load_reply(name, shape)
+    turn = _Turn([m.model_dump() for m in req.messages], req.options)
+    return _ollama_reply(turn, name, req.stream, shape)
+
+
+@app.post("/api/generate")
+def ollama_generate(req: OllamaGenerateIn, _auth: None = Depends(require_token)):
+    name = _ollama_name(req.model)
+
+    def shape(text):
+        return {"response": text}
+
+    if not req.prompt.strip():
+        return _load_reply(name, shape)
+    messages = [{"role": "user", "content": req.prompt}]
+    if req.system:
+        messages.insert(0, {"role": "system", "content": req.system})
+    turn = _Turn(messages, req.options)
+    return _ollama_reply(turn, name, req.stream, shape)
+
+
+def _checkpoint_bytes() -> int:
+    try:
+        return os.path.getsize(checkpoint_path())
+    except OSError:
+        return 0
+
+
+def _details() -> dict:
+    model = _serving_model()
+    params = sum(p.numel() for p in model.parameters())
+    return {
+        "format": "pytorch",
+        "family": "anima-gpt",
+        "families": ["anima-gpt"],
+        "parameter_size": f"{params / 1e6:.1f}M",
+        "quantization_level": "F32",
+    }
+
+
+def _digest() -> str:
+    version = live.version if live else 0
+    return hashlib.sha256(f"{checkpoint_path()}:{version}".encode()).hexdigest()
+
+
+def _model_entries(extra: dict | None = None) -> list[dict]:
+    try:
+        modified = datetime.fromtimestamp(os.path.getmtime(checkpoint_path()), timezone.utc)
+    except OSError:
+        modified = datetime.fromtimestamp(started_at, timezone.utc)
+    details, size, digest = _details(), _checkpoint_bytes(), _digest()
+    return [{
+        "name": f"{name}:latest" if ":" not in name else name,
+        "model": f"{name}:latest" if ":" not in name else name,
+        "modified_at": modified.isoformat().replace("+00:00", "Z"),
+        "size": size,
+        "digest": digest,
+        "details": {"parent_model": "", **details},
+        **(extra or {}),
+    } for name in model_names()]
+
+
+@app.get("/api/version")
+def ollama_version():
+    version = live.version if live else 0
+    return {"version": f"anima-own-{version}"}
+
+
+@app.get("/api/tags")
+def ollama_tags(_auth: None = Depends(require_token)):
+    return {"models": _model_entries()}
+
+
+@app.get("/api/ps")
+def ollama_ps(_auth: None = Depends(require_token)):
+    # The weights are loaded once at startup and never evicted.
+    vram = _checkpoint_bytes() if device == "cuda" else 0
+    return {"models": _model_entries({"expires_at": NEVER_EXPIRES, "size_vram": vram})}
+
+
+@app.post("/api/show")
+def ollama_show(req: OllamaShowIn, _auth: None = Depends(require_token)):
+    model = _serving_model()
+    cfg = model.cfg
+    options = _options(None)
+    parameters = modelfile.parameter_lines() or "\n".join(
+        f"{k:<20}{getattr(options, k)}" for k in
+        ("temperature", "top_k", "top_p", "min_p", "repeat_penalty", "repeat_last_n", "num_predict")
+    )
+    source = modelfile.source or f"FROM {checkpoint_path()}\n"
+    return {
+        "modelfile": source,
+        "parameters": parameters,
+        "template": modelfile.template or "<|endoftext|><|user|>{{ .Prompt }}<|endoftext|><|anima|>",
+        "system": modelfile.system or "",
+        "details": {"parent_model": "", **_details()},
+        "model_info": {
+            "general.architecture": "anima-gpt",
+            "general.parameter_count": sum(p.numel() for p in model.parameters()),
+            "anima-gpt.context_length": int(cfg.block_size),
+            "anima-gpt.embedding_length": int(cfg.n_embd),
+            "anima-gpt.block_count": int(cfg.n_layer),
+            "anima-gpt.attention.head_count": int(cfg.n_head),
+            "anima-gpt.vocab_size": int(cfg.vocab_size),
+        },
+        "capabilities": ["completion"],
+        "modified_at": _model_entries()[0]["modified_at"],
+    }
 
 
 # ----------------------------- Lessons -----------------------------
@@ -593,7 +759,13 @@ def rollback(req: WaitIn | None = None, _auth: None = Depends(require_token)):
 
 @app.get("/health")
 def health():
-    return {"ok": live is not None, "version": live.version if live else None, "device": device}
+    return {
+        "ok": live is not None,
+        "version": live.version if live else None,
+        "device": device,
+        "warm_ms": round(last_warm_ns / 1e6, 2) if last_warm_ns else None,
+        "modelfile": modelfile.path,
+    }
 
 
 if __name__ == "__main__":

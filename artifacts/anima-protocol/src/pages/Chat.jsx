@@ -401,6 +401,8 @@ export default function Chat() {
   replyActionsDisabledRef.current = replyActionsDisabled;
   /** Same user line while the self-hosted model is still generating. */
   const lateTurnRef = useRef(null);
+  /** Bumped on every send. Background bubbles from an older turn are dropped. */
+  const sendSeqRef = useRef(0);
   /** Background check after the browser abort. Retry does not wait on it. */
   const lateReplyWatchRef = useRef(null);
   const supersededTurnIdsRef = useRef(new Set());
@@ -1760,6 +1762,7 @@ export default function Chat() {
               userContent: turn.user_content,
               assistantContent: text,
               characterName: turn.active_character_name,
+              createdAt: turn.created_at,
               ...cutOffReplyFields(turn),
             }),
           };
@@ -2054,6 +2057,7 @@ export default function Chat() {
       return;
     }
 
+    const sendSeq = ++sendSeqRef.current;
     const attachments = messageData.attachments || [];
     const pdfAttachments = attachments.filter((item) => item?.type === "pdf");
     const imageAttachments = attachments.filter((item) => item?.type === "image");
@@ -2246,6 +2250,7 @@ export default function Chat() {
           if (protocolUpgrade.message?.content) {
             speakMessage(protocolUpgrade.message.content, "Serenity");
           }
+          lateTurnRef.current = null;
           settleTurn("reply_finished");
           return;
         }
@@ -2272,6 +2277,7 @@ export default function Chat() {
               deviceScan.message.character_name || "Anima",
             );
           }
+          lateTurnRef.current = null;
           settleTurn("reply_finished");
           return;
         }
@@ -3261,6 +3267,8 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         }).then(async (serenityResult) => {
           const raw = String(serenityResult || "");
           if (!raw.trim()) return;
+          // The user already sent a newer line; this answers an old one.
+          if (sendSeqRef.current !== sendSeq) return;
           let attachments = [];
           try {
             const resolved = await resolveChatImageAttachments({
@@ -3281,6 +3289,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           } catch {
             /* Serenity still speaks even if the still fails */
           }
+          if (sendSeqRef.current !== sendSeq) return;
           const serenityMsg = {
             role: "assistant",
             content: stripImageTags(raw.replace(/\[(EMOTION|LOCATION):[^\]]+\]/gi, "")).trim(),
@@ -3354,7 +3363,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             session_context: activeSession.opening_scene,
             last_speaker_id: activeChar?.id,
           }).then((res) => {
-            if (res?.data?.interactions?.length > 0) {
+            if (res?.data?.interactions?.length > 0 && sendSeqRef.current === sendSeq) {
               const interaction = res.data.interactions[0];
               const interactionMsg = {
                 role: "assistant",
