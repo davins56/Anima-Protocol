@@ -1,6 +1,8 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import MessageBubble from "./MessageBubble";
 import SystemDisclosure from "./SystemDisclosure";
+import NarratorBubble from "./NarratorBubble";
+import { isNarratorMessage } from "@/lib/storyNarrator";
 import { parseGroupResponse } from "@/lib/parseGroupResponse";
 import { lastReplyActionIndexes } from "@/lib/chatReplyActions";
 import { mayHaveOlderMessages, oldestSeq } from "@/lib/olderMessages";
@@ -121,6 +123,17 @@ export default function MessageList({ messages, session, characters, characterMe
                 ? "resting-notice"
                 : "ai-companion-notice"
           }
+        />,
+      );
+      continue;
+    }
+    if (isNarratorMessage(msg)) {
+      elements.push(
+        <NarratorBubble
+          key={`narration-${i}`}
+          message={msg}
+          onDelete={onDeleteMessage ? cb(`delete:${i}`, (l) => () => l.current.onDeleteMessage?.(i)) : undefined}
+          actionsDisabled={actionsDisabled}
         />,
       );
       continue;

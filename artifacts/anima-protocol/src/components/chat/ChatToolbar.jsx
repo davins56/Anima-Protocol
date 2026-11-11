@@ -36,6 +36,8 @@ export default function ChatToolbar({
   onShowImageGen,
   onShowEditModal,
   onToggleDeepMode,
+  onToggleStoryMode,
+  storyModeOn,
   onOpenRecap,
   onSelectBranch,
   onCreateBranch,
@@ -81,6 +83,8 @@ export default function ChatToolbar({
             moodIntensity={moodIntensity}
             characterEmotions={characterEmotions}
             onToggleDeepMode={onToggleDeepMode}
+            onToggleStoryMode={onToggleStoryMode}
+            storyModeOn={storyModeOn}
             onAvatarClick={onAvatarClick}
             llmProvider={llmProvider}
           />

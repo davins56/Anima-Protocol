@@ -26,6 +26,13 @@ import {
   settleDeferredSync,
 } from "@/lib/chatSyncHandlers";
 import { appendAmbientMessage } from "@/lib/appendAmbientMessage";
+import {
+  NARRATOR_RESPONSE_SCHEMA,
+  buildNarratorPrompt,
+  narratorMessageFromResult,
+  narratorConsultation,
+  storyModeEnabled,
+} from "@/lib/storyNarrator";
 import { cyberspaceBattlePromptBlock } from "@/lib/energyFragments";
 import { echoKeyPromptBlock } from "@/lib/echoKeys";
 import {
@@ -444,6 +451,7 @@ export default function Chat() {
   const [showImageGen, setShowImageGen] = useState(false);
   const [showPhotoStudio, setShowPhotoStudio] = useState(false);
   const [analyzingNarrative, setAnalyzingNarrative] = useState(false);
+  const narratorBusyRef = useRef(null);
   const [characterEvolutions, setCharacterEvolutions] = useState({});
   const [characterEmotions, setCharacterEmotions] = useState({}); // keyed by character_id: {emotion, intensity, trigger}
   const [worldEvent, setWorldEvent] = useState(null); // current system event
@@ -1510,6 +1518,21 @@ export default function Chat() {
   // onto the most capable (heavy) model tier instead of the cost-saving
   // auto-routed tier. Persisted on the session so it survives reloads and
   // syncs across devices. Optimistic toggle with rollback on failure.
+  // Per-conversation story mode: the Narrator adds a scene update when the
+  // conversation calls for one. On by default; never offered in therapy.
+  const handleToggleStoryMode = async () => {
+    if (!activeSession?.id) return;
+    const next = !storyModeEnabled(activeSession);
+    setActiveSession((prev) => ({ ...prev, story_mode: next }));
+    try {
+      await animaClient.entities.ChatSession.update(activeSession.id, { story_mode: next });
+      track("story_mode_toggled", { session_mode: activeSession.mode || "solo", is_enabled: next });
+    } catch (err) {
+      console.error("Error toggling story mode:", err);
+      setActiveSession((prev) => ({ ...prev, story_mode: !next }));
+    }
+  };
+
   const handleToggleDeepMode = async () => {
     if (!activeSession?.id) return;
     const next = !activeSession.deep_mode;
@@ -3044,6 +3067,51 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // side effects. A second pass would double-count affect. A cut-off
       // reply is not sent into these jobs — the half-reply is not a memory.
       if (!skipAffect && !replyCutOff.reply_interrupted) {
+      // Story mode — the Narrator's mind reads the log after each exchange and
+      // decides whether the story needs a scene update now (after one exchange
+      // or ten). Local scene cues only decide when to ask. Never in therapy.
+      const narratorCheck = storyModeEnabled(activeSession, { therapy: therapyActive })
+        ? narratorConsultation(finalMessages)
+        : null;
+      if (narratorCheck?.consult && narratorBusyRef.current !== sendSessionId) {
+        narratorBusyRef.current = sendSessionId;
+        const castNames =
+          activeSession.mode === "group"
+            ? characters
+                .filter((c) => (activeSession.group_character_ids || []).includes(c.id))
+                .map((c) => c.name)
+            : [activeChar?.name || charName];
+        animaClient.integrations.Core.InvokeLLM({
+          sidecar: true,
+          max_tokens: 360,
+          prompt: buildNarratorPrompt({
+            messages: finalMessages,
+            characterNames: castNames,
+            userName: user?.full_name || "",
+            openingScene: activeSession.opening_scene || "",
+            allowMature: adultMode,
+            consultation: narratorCheck,
+          }),
+          response_json_schema: NARRATOR_RESPONSE_SCHEMA,
+        })
+          .then((res) => {
+            const narratorMsg = narratorMessageFromResult(res);
+            if (!narratorMsg) return null;
+            return appendAmbientMessage({
+              appendMessage: animaClient.messages.append,
+              sessionId: sendSessionId,
+              message: narratorMsg,
+              setActiveSession,
+            });
+          })
+          .catch(() => {
+            // Narration is ambient; a failed beat never interrupts the chat.
+          })
+          .finally(() => {
+            if (narratorBusyRef.current === sendSessionId) narratorBusyRef.current = null;
+          });
+      }
+
       // Update calendar based on elapsed real-world time (every 10 messages)
       if (finalMessages.length % 10 === 0) {
         animaClient.functions.invoke("updateSeasonalContext", {
@@ -3945,6 +4013,16 @@ Return JSON:
               }
               onShowEditModal={() => setShowEditModal(true)}
               onToggleDeepMode={handleToggleDeepMode}
+              onToggleStoryMode={
+                isTherapySession(
+                  activeSession,
+                  authUser,
+                  characters.find((c) => c.id === activeSession?.character_id),
+                )
+                  ? undefined
+                  : handleToggleStoryMode
+              }
+              storyModeOn={storyModeEnabled(activeSession)}
               onOpenRecap={() => openRecap(activeSession.id)}
               onSelectBranch={handleSelectBranch}
               onCreateBranch={() => setShowCreateBranch(true)}
