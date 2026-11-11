@@ -3,6 +3,9 @@ import {
   finalizeAssistantReply,
 } from "./visibleAssistantReply";
 
+const EMPTY_REPLY_MESSAGE =
+  "The companion returned an empty reply. Please try again.";
+
 function rememberChatClientTrace(err, trace) {
   if (!err || typeof err !== "object") return;
   if (Object.prototype.hasOwnProperty.call(err, "chatClientTrace")) return;
@@ -112,6 +115,8 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus 
       if (event?.error) {
         serverError = true;
         const err = new Error(event.error);
+        if (event.code) err.code = event.code;
+        if (event.turn_id) err.turnId = event.turn_id;
         if (content) err.partialContent = content;
         if (crisisResource) err.crisisResource = crisisResource;
         if (event.resting === true) {
@@ -159,6 +164,16 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus 
     content,
   );
   if (content && onDelta) onDelta(content);
+
+  // A stream that finished (or closed without `done`) with nothing visible
+  // must fail loudly so the caller toasts instead of leaving a blank turn.
+  if (!String(content || "").trim()) {
+    const err = new Error(EMPTY_REPLY_MESSAGE);
+    err.code = "empty_reply";
+    if (doneEvent?.turn_id) err.turnId = doneEvent.turn_id;
+    rememberChatClientTrace(err, currentTrace());
+    throw err;
+  }
 
   return {
     ...(doneEvent || {}),
