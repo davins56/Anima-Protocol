@@ -280,6 +280,7 @@ All new events must follow these conventions.
 | `device_scan_completed` | Anima finishes a permission-gated scan of this device for leftover / junk data | `flag_count`, `has_folder_grant`, `is_anima` | `src/lib/animaDeviceScan.js`, `src/components/anima/DeviceScanPanel.jsx` |
 | `echo_key_discovered` | Operator finds, synthesises, or evolves an Echo Key in story mode | `source` (`virtual` / `field` / `synthesis` / `evolution`), `site`, `tier`, `is_outdoor` | `src/components/echoKeys/EchoStoryMode.jsx`, `src/pages/NetBattle.jsx` |
 | `model_lesson_taught` | Steward saves a correction for their own model from a chat reply (fires after the lesson is saved) | `has_note`, `is_drafted`, `is_own_model_reply`, `is_trainer_started` | `src/components/tutor/TeachDialog.jsx` |
+| `story_mode_toggled` | User turns the story-mode Narrator on or off for a chat (fires after the session update succeeds; never offered in therapy) | `session_mode`, `is_enabled` | `src/pages/Chat.jsx` |
 
 > **Activation funnel:** `sign_up_completed` → `onboarding_completed` → `message_sent` → `first_reply_received` → `subscription_upgrade_started`. See `docs/analytics-funnel.md`.
 
