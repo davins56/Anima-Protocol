@@ -223,18 +223,64 @@ export ANIMA_VLLM_MODEL_LIGHT=anima ANIMA_VLLM_MODEL_STANDARD=anima ANIMA_VLLM_M
 `"preferred":"local"`, `"brand":"anima"`, `"chain":["local"]`, and a passing
 probe on model `anima`.
 
-How the server handles a companion request:
+### Or point the api-server's Ollama adapter at it
 
-- It streams `chat.completion.chunk` events a sentence at a time. A
-  length-capped reply is still cut back to its last finished sentence, so
-  the streamed text matches the non-streaming reply.
-- It keeps the newest turns that fit the 1024-token window. The long
-  companion system prompt is usually the first thing dropped. A final message
-  that overflows on its own keeps its tail.
+The server also speaks Ollama's native API (`/api/chat`, `/api/generate`,
+`/api/tags`, `/api/ps`, `/api/show`, `/api/version`). With the Ollama backend
+the api-server sends per-request sampling, `num_ctx`, and its app-open
+warm-up, and `/api/healthz/llm` checks the model with `/api/ps` and
+`/api/tags` instead of a generate:
+
+```bash
+export ANIMA_LOCAL_LLM_BACKEND=ollama
+export ANIMA_LOCAL_LLM_BASE_URL=http://127.0.0.1:8000/v1   # /v1 is stripped for /api/*
+export ANIMA_LOCAL_LLM_API_KEY=<same value as ANIMA_SERVER_TOKEN>
+export ANIMA_OLLAMA_MODEL_STANDARD=anima-own              # or set ANIMA_MODEL_ALIASES on the server
+```
+
+`ANIMA_MODEL_ALIASES=anima-chat` on the model server lists it under that
+name too, so an api-server already configured for `anima-chat` finds it
+without a config change.
+
+### How the server handles a companion request
+
+- **Sampling, the Ollama way.** Each request can set `temperature`,
+  `top_k`, `top_p`, `min_p`, `repeat_penalty` with `repeat_last_n`,
+  `presence_penalty`, `frequency_penalty`, `seed`, `stop`, `num_predict` and
+  `num_ctx`: as Ollama `options` on `/api/*`, or as the usual OpenAI fields on
+  `/v1` (`repetition_penalty`, `top_k` and `min_p` as extensions). They are
+  applied in llama.cpp's order (penalties, temperature, top_k, top_p, min_p).
+  A `seed` reproduces a reply without touching the global RNG. A `stop`
+  string ends the reply and is never streamed. Penalties never touch turn
+  markers, so a reply can still end. `sampling.py` holds the sampler.
+- **Modelfile defaults.** `server/Modelfile` uses Ollama's format
+  (`PARAMETER`, `SYSTEM`, `MESSAGE`; `FROM` and `TEMPLATE` are informational).
+  Request options override it, and it overrides the built-in defaults. The
+  shipped file adds `min_p 0.05`, which trims the long tail of unlikely
+  tokens on a small model. Like Ollama, `SYSTEM` only applies when a request
+  has no system message, and `MESSAGE` turns go ahead of the conversation.
+  `ANIMA_MODELFILE=<path>` picks another file; `ANIMA_MODELFILE=off` uses the
+  built-ins.
+- **Context window.** The prompt is fitted on message boundaries the way
+  Ollama trims a full window: the newest turn first (its tail, if it alone
+  overflows), then each system message that fits whole, then older history,
+  newest first. `num_ctx` can shrink the window; larger values (the
+  api-server sends 8192) are capped at the model's `block_size`. Usage and
+  `prompt_eval_count` report what went in.
+- **Warm-up.** One forward pass runs at startup (`ANIMA_WARMUP=off` skips
+  it). An empty `/api/chat` or `/api/generate`, Ollama's preload request,
+  runs it again and answers `done_reason: "load"`. The weights stay resident
+  for the life of the process, so `keep_alive` is accepted but has nothing
+  to unload, and `/api/ps` reports the model as never expiring.
+- **Streaming.** Replies go out a sentence at a time: SSE chunks on `/v1`,
+  newline-delimited JSON on `/api/*` (Ollama's default is to stream). Both
+  come from the same generator as the non-streaming reply, so with the same
+  seed the two are identical. A length-capped reply is still cut back to its
+  last finished sentence.
 - It reads text only. Image parts are ignored, tool-call turns with no text
   are skipped, and `tools` are accepted but never called.
-- It clamps `max_tokens` to 768 instead of rejecting larger values. The
-  api-server already sends 200 or fewer.
+- It clamps `max_tokens` / `num_predict` to 768 instead of rejecting larger
+  values.
 
 **Production (Worker).** The Worker cannot reach localhost. Expose the server
 over public HTTPS with the same tunnel used for Ollama in
@@ -250,8 +296,9 @@ over public HTTPS with the same tunnel used for Ollama in
 Do step 2 only once the new host answers. Until then production stays on
 `anima-chat`.
 
-Tests: `python3 server/test_server.py` builds a tiny random-weight model, so it
-needs no trained checkpoint (requires `torch`, `tokenizers`, `fastapi`,
+Tests: `python -m unittest discover -s server/tests -v` (what CI runs) and
+`python3 server/test_server.py` build a tiny random-weight model, so they
+need no trained checkpoint (requires `torch`, `tokenizers`, `fastapi`,
 `httpx`).
 
 At about 34M parameters this model is a research and preview voice (see
