@@ -7,6 +7,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const uploadFileMock = vi.hoisted(() => vi.fn());
 const updateMeMock = vi.hoisted(() => vi.fn());
 const meMock = vi.hoisted(() => vi.fn());
+const refreshMeMock = vi.hoisted(() => vi.fn());
 const listMock = vi.hoisted(() => vi.fn());
 const toastErrorMock = vi.hoisted(() => vi.fn());
 const authState = vi.hoisted(() => ({
@@ -82,6 +83,7 @@ vi.mock("@/api/animaClient", () => ({
   animaClient: {
     auth: {
       me: meMock,
+      refreshMe: refreshMeMock,
       updateMe: updateMeMock,
     },
     entities: {
@@ -174,6 +176,7 @@ describe("Settings custom chat background upload", () => {
     uploadFileMock.mockReset();
     updateMeMock.mockReset();
     meMock.mockReset();
+    refreshMeMock.mockReset();
     listMock.mockReset();
     toastErrorMock.mockReset();
     authState.isAuthenticated = true;
@@ -191,6 +194,7 @@ describe("Settings custom chat background upload", () => {
     });
     listMock.mockResolvedValue([]);
     updateMeMock.mockResolvedValue({});
+    refreshMeMock.mockImplementation(async () => updateMeMock.mock.calls.at(-1)?.[0]);
     loadCompanionsMock.mockReset().mockResolvedValue({
       rows: [],
       me: null,
@@ -202,6 +206,9 @@ describe("Settings custom chat background upload", () => {
 
   afterEach(() => {
     document.body.innerHTML = "";
+    localStorage.clear();
+    document.documentElement.removeAttribute("data-appearance-theme");
+    document.documentElement.classList.remove("dark", "light");
   });
 
   it("saves creative freedom independently of adult mode and restores it", async () => {
@@ -232,7 +239,7 @@ describe("Settings custom chat background upload", () => {
     await act(async () => restored.root.unmount());
   });
 
-  it("uploads an image, shows the storage preview, and persists settings", async () => {
+  it("uploads an image into the draft and persists it on save", async () => {
     uploadFileMock.mockResolvedValue({
       file_url: "/api/storage/objects/uploads/bg-ok",
     });
@@ -258,13 +265,84 @@ describe("Settings custom chat background upload", () => {
     });
 
     expect(uploadFileMock).toHaveBeenCalledWith({ file });
-    expect(updateMeMock).toHaveBeenCalled();
+    expect(updateMeMock).not.toHaveBeenCalled();
+    const saveButton = Array.from(container.querySelectorAll("button")).find((b) => /save changes/i.test(b.textContent));
+    await act(async () => saveButton.click());
     const saved = updateMeMock.mock.calls[0][0];
     expect(saved.settings.chat_bg_image).toBe("/api/storage/objects/uploads/bg-ok");
     expect(saved.settings.chat_bg_theme).toBe("custom");
     const preview = container.querySelector('img[alt="bg preview"]');
     expect(preview?.getAttribute("src")).toBe("/api/storage/objects/uploads/bg-ok");
     expect(container.textContent).not.toMatch(/Uploading\.\.\./);
+  });
+
+  it("previews themes and saves verified values while leaving an active preset explicit", async () => {
+    localStorage.setItem("anima-appearance-v1", JSON.stringify({ theme: "nebula" }));
+    document.documentElement.dataset.appearanceTheme = "nebula";
+    const { container, root } = renderPage();
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    await openCustomBackground(container);
+    const button = (text) => Array.from(container.querySelectorAll("button")).findLast((b) => b.textContent.trim() === text);
+    await act(async () => button("Light").click());
+    expect(document.documentElement.dataset.appearanceTheme).toBe("original");
+    expect(document.documentElement.classList.contains("light")).toBe(true);
+    await act(async () => button("Dark").click());
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    await act(async () => button("Light").click());
+    for (const [label, theme] of [["Matrix", "matrix"], ["Nebula", "nebula"], ["Grid", "grid"], ["Default", "default"]]) {
+      await act(async () => button(label).click());
+      expect(container.querySelector('[role="img"]')?.getAttribute("aria-label")).toBe(`${theme} chat background preview`);
+    }
+    await act(async () => button("Grid").click());
+    await act(async () => button("Save Changes").click());
+    expect(refreshMeMock).toHaveBeenCalled();
+    expect(updateMeMock.mock.calls.at(-1)[0].settings).toMatchObject({ theme_mode: "light", chat_bg_theme: "grid" });
+    expect(JSON.parse(localStorage.getItem("anima-appearance-v1")).theme).toBe("original");
+    expect(localStorage.getItem("app-color-scheme")).toBe("light");
+    expect(container.textContent).toContain("Saved!");
+    await act(async () => root.unmount());
+  });
+
+  it("keeps the draft on failure, prevents duplicate saves, and rejects mismatched readback", async () => {
+    let finish;
+    updateMeMock.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const { container, root } = renderPage();
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    await openCustomBackground(container);
+    const button = (text) => Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === text);
+    await act(async () => button("Matrix").click());
+    await act(async () => { button("Save Changes").click(); });
+    expect(button("Saving...").disabled).toBe(true);
+    await act(async () => button("Saving...").click());
+    expect(updateMeMock).toHaveBeenCalledTimes(1);
+    refreshMeMock.mockResolvedValue({ settings: { chat_bg_theme: "default" } });
+    await act(async () => { finish({}); await Promise.resolve(); await Promise.resolve(); });
+    expect(container.querySelector('[role="alert"]').textContent).toMatch(/could not be verified/i);
+    expect(container.textContent).not.toContain("Saved!");
+    expect(button("Matrix").getAttribute("aria-pressed")).toBe("true");
+    updateMeMock.mockRejectedValue(new Error("Write failed"));
+    await act(async () => button("Save Changes").click());
+    expect(container.querySelector('[role="alert"]').textContent).toMatch(/write failed/i);
+    expect(button("Matrix").getAttribute("aria-pressed")).toBe("true");
+    await act(async () => root.unmount());
+  });
+
+  it("preserves edits made while an image is uploading", async () => {
+    let finishUpload;
+    uploadFileMock.mockImplementation(() => new Promise((resolve) => { finishUpload = resolve; }));
+    const { container, root } = renderPage();
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    await openCustomBackground(container);
+    const input = container.querySelector('input[type="file"][accept="image/*"]');
+    Object.defineProperty(input, "files", { configurable: true, value: [new File(["x"], "bg.png", { type: "image/png" })] });
+    await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+    const light = Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Light");
+    await act(async () => light.click());
+    await act(async () => { finishUpload({ file_url: "/api/storage/objects/uploads/bg" }); await Promise.resolve(); });
+    const save = Array.from(container.querySelectorAll("button")).find((b) => b.textContent.trim() === "Save Changes");
+    await act(async () => save.click());
+    expect(updateMeMock.mock.calls.at(-1)[0].settings).toMatchObject({ theme_mode: "light", chat_bg_theme: "custom", chat_bg_image: "/api/storage/objects/uploads/bg" });
+    await act(async () => root.unmount());
   });
 
   it("shows a visible error and unsticks Uploading... when upload fails", async () => {

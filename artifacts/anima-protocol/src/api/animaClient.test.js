@@ -907,6 +907,18 @@ describe("auth.updateMe profile persist", () => {
       message: "Database connection reset",
     });
   });
+
+  it("refreshMe bypasses the profile cache and propagates read errors", async () => {
+    animaClient.auth.clearSession();
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce(Response.json({ settings: { theme_mode: "dark" } }))
+      .mockResolvedValueOnce(Response.json({ settings: { theme_mode: "light" } }))
+      .mockResolvedValueOnce(Response.json({ error: "Profile unavailable" }, { status: 503 }));
+    expect((await animaClient.auth.me()).settings.theme_mode).toBe("dark");
+    expect((await animaClient.auth.refreshMe()).settings.theme_mode).toBe("light");
+    await expect(animaClient.auth.refreshMe()).rejects.toThrow("Profile unavailable");
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+  });
 });
 
 describe("functions.invoke timeout", () => {
