@@ -14,6 +14,11 @@
 import { describe, expect, it } from "vitest";
 import { composeCompanionChatMessages, type LlmChatMessage } from "../src/lib/promptBuilder";
 import { isPreinstalledCharacter } from "../src/lib/companions/builtIn";
+import { setAiBinding } from "../src/lib/aiBinding";
+import { streamWorkersAi } from "../src/lib/workersAi";
+import { consumeLlmStream } from "../src/lib/consumeLlmStream";
+import { hostedReplyMaxTokens, SHORT_REPLY_MAX_TOKENS } from "../src/lib/chatTimeouts";
+import { finalizeAssistantReply, settleCappedReply } from "../src/lib/visibleAssistantReply";
 import {
   createPersonaStreamGuard,
   factScopeForTurn,
@@ -393,6 +398,72 @@ describe(`chat mind eval (${LIVE ? `LIVE Workers AI ${MODEL}` : "MOCK model — 
     });
   });
 
+  it("lets a long reply finish in a 113-message chat, and ends a capped one on a sentence", async () => {
+    // Production stream path: Workers AI binding → streamWorkersAi (cap
+    // detection) → consumeLlmStream → settleCappedReply. Live, the binding
+    // is a REST shim; the mock streams a reply and reports its usage.
+    setAiBinding({
+      run: async (model, opts) => {
+        if (LIVE) {
+          const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/ai/run/${model}`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`, "Content-Type": "application/json" },
+            body: JSON.stringify(opts),
+          });
+          if (!r.ok || !r.body) throw new Error(`Workers AI ${r.status}`);
+          return r.body;
+        }
+        const max = Number(opts.max_tokens);
+        const words = "I see us building a quiet harbor here, one shared evening at a time. ".repeat(40).split(" ");
+        const text = words.slice(0, Math.floor(Math.min(max, 400) * 0.75)).join(" ") + (max >= 400 ? " That is what I hope." : "");
+        const enc = new TextEncoder();
+        return new ReadableStream({
+          start(c) {
+            c.enqueue(enc.encode(`data: ${JSON.stringify({ response: text })}\n\n`));
+            c.enqueue(enc.encode(`data: ${JSON.stringify({ usage: { completion_tokens: Math.min(max, 400) } })}\n\n`));
+            c.close();
+          },
+        });
+      },
+    });
+    // 56 exchanges + this turn ≈ the reported 113-message chat.
+    const history = chatter(0, 56, "the world we are building");
+    const content = "Tell me properly, in a few paragraphs: how do you envision our interactions within this virtual world as it grows?";
+    const prompt = buildPrompt({ history, content, mind: true });
+    const run = async (maxTokens: number) => {
+      const started = Date.now();
+      const stream = await streamWorkersAi({ messages: prompt as never, maxTokens, sampling: profile.sampling });
+      const res = await consumeLlmStream(stream as never, { totalMs: 170_000, firstChunkMs: 60_000 });
+      const raw = finalizeAssistantReply(res.content);
+      const shown = settleCappedReply(raw, res);
+      return { raw, shown, finish: res.finishReason, ms: Date.now() - started };
+    };
+    const room = hostedReplyMaxTokens(SHORT_REPLY_MAX_TOKENS, MODEL);
+    const full = await run(room);
+    const capped = await run(SHORT_REPLY_MAX_TOKENS);
+    const endsClean = /[.!?…"”*)\]]\s*$/;
+    expect(room).toBeGreaterThanOrEqual(1024);
+    expect.soft(full.shown).toMatch(endsClean);
+    expect.soft(full.shown.split(/\s+/).length).toBeGreaterThan(100);
+    expect.soft(capped.finish).toBe("length");
+    expect.soft(capped.shown).toMatch(endsClean);
+    for (const [label, r] of [["long reply (room " + room + ")", full], ["capped at " + SHORT_REPLY_MAX_TOKENS, capped]] as const) {
+      samples.push({
+        scenario: label,
+        raw: r.raw,
+        shown: r.shown,
+        ttftMs: null,
+        totalMs: LIVE ? r.ms : null,
+        promptTokens: Math.ceil(promptText(prompt).length / 4),
+      });
+    }
+    report.push({
+      scenario: "long reply in a 113-message chat",
+      legacy: "Workers AI cap never detected → mid-word cut",
+      mind: `room ${room}: ${full.shown.split(/\s+/).length} words, finish=${full.finish}, ends "${full.shown.slice(-40)}" | cap ${SHORT_REPLY_MAX_TOKENS}: finish=${capped.finish}, ends "${capped.shown.slice(-40)}"`,
+    });
+  });
+
   it("prints the report", () => {
     console.log(
       `\nCHAT MIND EVAL — ${LIVE ? `live Workers AI (${MODEL})` : "MOCK model (no CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN)"}\n` +
@@ -400,7 +471,10 @@ describe(`chat mind eval (${LIVE ? `LIVE Workers AI ${MODEL}` : "MOCK model — 
     );
     if (samples.some((x) => x.totalMs !== null)) {
       const timed = samples.filter((x) => x.totalMs !== null);
-      const avg = (k: "ttftMs" | "totalMs") => Math.round(timed.reduce((a, x) => a + (x[k] ?? 0), 0) / timed.length);
+      const avg = (k: "ttftMs" | "totalMs") => {
+        const xs = timed.filter((x) => x[k] !== null);
+        return xs.length ? Math.round(xs.reduce((a, x) => a + (x[k] ?? 0), 0) / xs.length) : 0;
+      };
       console.log(
         `\nLIVE SAMPLES (${timed.length} calls; avg TTFT ${avg("ttftMs")} ms, avg total ${avg("totalMs")} ms)\n` +
           timed
@@ -412,6 +486,6 @@ describe(`chat mind eval (${LIVE ? `LIVE Workers AI ${MODEL}` : "MOCK model — 
             .join("\n"),
       );
     }
-    expect(report.length).toBe(9);
+    expect(report.length).toBe(10);
   });
 });

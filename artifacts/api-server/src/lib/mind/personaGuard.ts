@@ -153,6 +153,18 @@ export function antiRepetitionNote(replies: string[]): string {
   );
 }
 
+/**
+ * Length preference for a hosted reply. The hosted cap is no longer the
+ * length control (it only ever cut a reply mid-sentence), so Short / Long
+ * are said in the closing note instead. Medium (the default) adds nothing.
+ */
+export function replyLengthNote(preference: string | null | undefined): string {
+  const p = String(preference || "").trim().toLowerCase();
+  if (p === "short") return "Keep this reply short: one or two sentences, and finish the last one.";
+  if (p === "long") return "You can take more room this time: a fuller reply of a few paragraphs, ending on a finished sentence.";
+  return "";
+}
+
 /** True when a reply mostly restates one of the recent replies. */
 export function echoesRecentReply(reply: string, recent: string[], threshold = 0.75): boolean {
   const r = tokenSet(reply);
