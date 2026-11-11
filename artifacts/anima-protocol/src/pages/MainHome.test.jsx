@@ -84,10 +84,12 @@ function renderHome() {
 describe("MainHome floor", () => {
   afterEach(() => {
     cleanup();
+    localStorage.clear();
   });
 
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     mocks.presence.dream = null;
     mocks.presence.echo = null;
     mocks.whenBootstrapReady.mockResolvedValue(undefined);
@@ -141,6 +143,26 @@ describe("MainHome floor", () => {
     expect(tiles).not.toMatch(/Dream/);
     expect(tiles).not.toMatch(/Echo/);
     expect(tiles).not.toMatch(/Waiting/);
+  });
+
+  it("shows how long she waited using the last real activity, not just a stale last_visit after a recent visit", async () => {
+    const now = Date.now();
+    mocks.me.mockResolvedValue({ id: "user_abc", email: "operator@example.com", selected_mode: "serenity" });
+    mocks.listAnimas.mockResolvedValue([
+      {
+        id: "a1",
+        name: "Lumen",
+        last_visit: new Date(now - 10 * 60 * 60 * 1000).toISOString(),
+      },
+    ]);
+    localStorage.setItem(
+      "anima:user-activity:v1:user_abc",
+      JSON.stringify({ lastActivityMs: now - 3 * 60 * 60 * 1000, visitAbsence: null }),
+    );
+    renderHome();
+    await waitFor(() => {
+      expect(document.querySelector("[data-home-waiting]")?.textContent).toMatch(/I waited 3 hours/);
+    });
   });
 
   it("does not put six mode tiles on the home floor", async () => {

@@ -5,6 +5,7 @@
 import { Toaster } from "@/components/ui/toaster";
 import UpdateAvailablePrompt from "@/components/app/UpdateAvailablePrompt";
 import OfflineBanner from "@/components/app/OfflineBanner";
+import UserActivitySync from "@/components/app/UserActivitySync";
 import ConsentBanner from "@/components/ConsentBanner";
 import { usePageMeta, ROUTE_META } from "./lib/usePageMeta";
 
@@ -1688,6 +1689,7 @@ export default function ProtocolApp() {
         <ErrorBoundary resetKey={window.location?.pathname || "init"}>
           <ClerkProviderWithRoutes>
             <AuthProvider>
+              <UserActivitySync />
               <ConfirmProvider>
                 <InAppBrowserWarning />
                 <TapTargetValidator />
