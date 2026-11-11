@@ -119,6 +119,74 @@ def fit_prompt(messages, budget: int) -> list[int]:
     return ids
 
 
+@dataclass
+class PromptFit:
+    """A chat prompt fitted to the window, and what had to be left out."""
+    ids: list[int]
+    messages_kept: int
+    messages_dropped: int
+    system_kept: bool
+    truncated: bool
+
+
+def fit_chat_prompt(messages, budget: int) -> PromptFit:
+    """Like fit_prompt, but the system prompt outranks older history.
+
+    This is how Ollama treats a context window that is too small: the system
+    message stays and the oldest turns go first. Priority is the newest turn
+    (what the reply answers, its tail if it alone is too long), then each
+    system message that fits whole, then older dialogue, newest first.
+    """
+    sft.init_tokenizer()
+    msgs = [m for m in normalize_messages(messages) if m["content"].strip()]
+    room = max(int(budget), MIN_PROMPT_TOKENS) - 2  # leading eot + trailing <|anima|>
+    dialogue = [m for m in msgs if m["role"] != "system"]
+    system = [m for m in msgs if m["role"] == "system"]
+
+    newest = []
+    truncated = False
+    if dialogue:
+        text_ids = sft.encode_text(dialogue[-1]["content"])
+        turn = _turn(dialogue[-1]["role"], text_ids)
+        if len(turn) > room:
+            keep = max(room - 2, 0)
+            turn = _turn(dialogue[-1]["role"], text_ids[-keep:] if keep else [])
+            truncated = True
+        newest = turn
+        room -= len(turn)
+
+    system_kept = []
+    for m in system:
+        turn = _turn("user", sft.encode_text(m["content"]))
+        if len(turn) <= room:
+            system_kept.append(turn)
+            room -= len(turn)
+
+    older = []  # newest first
+    for m in reversed(dialogue[:-1]):
+        turn = _turn(m["role"], sft.encode_text(m["content"]))
+        if len(turn) > room:
+            break
+        older.append(turn)
+        room -= len(turn)
+
+    ids = [sft.eot_id]
+    for turn in system_kept:
+        ids.extend(turn)
+    for turn in reversed(older):
+        ids.extend(turn)
+    ids.extend(newest)
+    ids.append(sft.role_ids["anima"])
+    kept = len(older) + (1 if newest else 0) + len(system_kept)
+    return PromptFit(
+        ids=ids,
+        messages_kept=kept,
+        messages_dropped=len(msgs) - kept,
+        system_kept=bool(system) and len(system_kept) == len(system),
+        truncated=truncated or kept < len(msgs),
+    )
+
+
 # --------------------------- lessons ---------------------------
 
 @dataclass
