@@ -1,6 +1,8 @@
 /**
- * R3F view of the cyberworld: neon hex platforms (hub + homepages), glowing
- * data-path walkways, floating panels, the player's navi and resident Animas.
+ * R3F view of the cyberworld, styled as an isometric voxel city: every zone
+ * is the neon rooftop of a window-lit tower block (./voxel), walkways are
+ * chunky sky-bridges, and a diorama camera looks down from a high 45° angle
+ * over a purple/orange skyline.
  *
  * Reuse: residents render through BattleFigures3D.SerenityFigure →
  * AnimaVesselMesh fed by each companion's saved vessel (lib/sim/vesselModel),
@@ -9,21 +11,24 @@
  */
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, type ComponentRef, type MutableRefObject, type RefObject } from "react";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
-import { Grid, OrbitControls, PerformanceMonitor, Stars } from "@react-three/drei";
+import { OrbitControls, PerformanceMonitor, Stars } from "@react-three/drei";
 import { Bloom, EffectComposer } from "@react-three/postprocessing";
 import * as THREE from "three";
 import { SerenityFigure } from "@/components/battle/BattleFigures3D";
 import { useCharacterVessel } from "@/hooks/useCharacterVessel";
 import { useRendererQuality } from "@/hooks/useRendererQuality";
 import { vesselToBattleModel } from "@/lib/sim/vesselModel";
-import { ANIMA_COLORS } from "@/styles/anima-tokens";
 import { animaStandPoint, isWalkable, nearestAnima, planRoute, resolveMove, stepToward } from "./collision";
 import { portalAt } from "./areas";
 import { footstepInterval } from "./audio";
-import { pathEndpoints, zoneEdgeDistance, zoneHalfExtents, zoneShape, type Area, type AreaDecor, type Portal, type Vec2, type WorldAnima, type Zone } from "./layout";
+import { pathEndpoints, zoneEdgeDistance, type Area, type AreaDecor, type Portal, type Vec2, type WorldAnima, type Zone } from "./layout";
+import { NEON, roofZone } from "./voxel/voxel";
+import { STREET_Y, VoxelCity } from "./voxel/VoxelCity";
 
-const BG = ANIMA_COLORS["color/bg/canvas"];
-const CYAN = ANIMA_COLORS["color/accent/protocol"];
+/** Night-city palette from the voxel reference: deep indigo sky, violet haze, orange/pink/cyan neon. */
+export const SKY = "#0B0820";
+const HAZE = "#2A1A55";
+const CYAN = NEON.cyan;
 const PLAYER_SPEED = 6; // units / second
 const PLATFORM_Y = 0;
 
@@ -47,7 +52,7 @@ type SceneProps = {
   commands: MutableRefObject<SceneCommands>;
   onPortal: (portal: Portal) => void;
   onStep?: () => void;
-  /** Real-world biome/time tint for grid, fog and light (exploration). */
+  /** Real-world biome/time tint for the plaza neon, haze and light (exploration). */
   tint?: SceneTint | null;
   /** Data nodes for the exploration loop; only revealed ones render. */
   nodes?: readonly SceneNode[];
@@ -61,127 +66,69 @@ type SceneProps = {
   onNearChange: (animaId: string | null) => void;
 };
 
-/* ── Materials / textures ─────────────────────────────────────────────── */
+type Quality = ReturnType<typeof useRendererQuality>["quality"];
 
-function useGridTexture(color: string) {
-  return useMemo(() => {
-    const size = 128;
-    const c = document.createElement("canvas");
-    c.width = c.height = size;
-    const g = c.getContext("2d");
-    if (g) {
-      g.fillStyle = "#04121a";
-      g.fillRect(0, 0, size, size);
-      g.strokeStyle = color;
-      g.globalAlpha = 0.85;
-      g.lineWidth = 3;
-      g.strokeRect(0, 0, size, size);
-      g.globalAlpha = 0.3;
-      g.lineWidth = 1;
-      g.beginPath();
-      g.moveTo(size / 2, 0);
-      g.lineTo(size / 2, size);
-      g.moveTo(0, size / 2);
-      g.lineTo(size, size / 2);
-      g.stroke();
-    }
-    const tex = new THREE.CanvasTexture(c);
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.anisotropy = 4;
-    return tex;
-  }, [color]);
-}
+/* ── Voxel helpers ────────────────────────────────────────────────────── */
 
-/* ── World geometry ───────────────────────────────────────────────────── */
+/** A single box; `glow` boxes are unlit neon (bloom picks them up). */
+/** One shared unit cube for every small voxel prop (scaled per mesh). */
+const UNIT_BOX = new THREE.BoxGeometry(1, 1, 1);
 
-function Platform({ zone, onFloorClick }: { zone: Zone; onFloorClick: (e: ThreeEvent<MouseEvent>) => void }) {
-  const base = useGridTexture(zone.color);
-  const [hx, hz] = zoneHalfExtents(zone);
-  const tex = useMemo(() => {
-    const t = base.clone();
-    t.needsUpdate = true;
-    t.repeat.set(hx * 1.2, hz * 1.2);
-    return t;
-  }, [base, hx, hz]);
-  const ring = useRef<THREE.Mesh>(null);
-  useFrame(({ clock }) => {
-    if (ring.current) (ring.current.material as THREE.MeshBasicMaterial).opacity = 0.65 + Math.sin(clock.elapsedTime * 2 + zone.center[0]) * 0.25;
-  });
-  const [x, z] = zone.center;
-  if (zoneShape(zone) === "rect") return <RectPlatform zone={zone} tex={tex} onFloorClick={onFloorClick} />;
-  // 6 radial segments = hex platform; collision uses the inscribed circle.
-  const r = zone.radius / Math.cos(Math.PI / 6);
+function Vox({ p, s, color, glow, opacity }: { p: [number, number, number]; s: [number, number, number]; color: string; glow?: boolean; opacity?: number }) {
   return (
-    <group position={[x, PLATFORM_Y, z]}>
-      <mesh position={[0, -0.25, 0]} rotation={[0, Math.PI / 6, 0]} onClick={onFloorClick}>
-        <cylinderGeometry args={[r, r * 0.92, 0.5, 6]} />
-        <meshStandardMaterial color="#061923" emissive={zone.color} emissiveMap={tex} emissiveIntensity={0.55} map={tex} roughness={0.6} metalness={0.2} />
-      </mesh>
-      <mesh ref={ring} position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, Math.PI / 6]}>
-        <ringGeometry args={[r * 0.94, r, 6]} />
-        <meshBasicMaterial color={zone.color} transparent opacity={0.8} toneMapped={false} />
-      </mesh>
-      {zone.kind === "hub" && <HubCore color={zone.color} />}
-      {zone.kind === "home" && <HomeArch zone={zone} />}
-    </group>
+    <mesh position={p} scale={s} geometry={UNIT_BOX}>
+      {glow ? (
+        <meshBasicMaterial color={color} toneMapped={false} transparent={opacity != null} opacity={opacity ?? 1} depthWrite={opacity == null} />
+      ) : (
+        <meshStandardMaterial color={color} roughness={0.7} metalness={0.1} />
+      )}
+    </mesh>
   );
 }
 
-/** Rectangular "page section" platform for site areas. */
-function RectPlatform({ zone, tex, onFloorClick }: { zone: Zone; tex: THREE.Texture; onFloorClick: (e: ThreeEvent<MouseEvent>) => void }) {
-  const [hx, hz] = zoneHalfExtents(zone);
-  const edges = useMemo(() => new THREE.EdgesGeometry(new THREE.PlaneGeometry(hx * 2, hz * 2)), [hx, hz]);
-  return (
-    <group position={[zone.center[0], PLATFORM_Y, zone.center[1]]}>
-      <mesh position={[0, -0.25, 0]} onClick={onFloorClick}>
-        <boxGeometry args={[hx * 2, 0.5, hz * 2]} />
-        <meshStandardMaterial color="#061923" emissive={zone.color} emissiveMap={tex} emissiveIntensity={0.5} map={tex} roughness={0.6} metalness={0.2} />
-      </mesh>
-      <lineSegments geometry={edges} position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <lineBasicMaterial color={zone.color} toneMapped={false} />
-      </lineSegments>
-    </group>
-  );
-}
+/* ── World pieces ─────────────────────────────────────────────────────── */
 
-/** Walk-in gate to another area: a standing ring, a swirling floor disc and a label. */
+/** Walk-in gate to another area: a chunky voxel frame with a glowing pane and a pulsing pad. */
 function PortalGate({ portal }: { portal: Portal }) {
-  const ring = useRef<THREE.Mesh>(null);
-  const disc = useRef<THREE.Mesh>(null);
-  useFrame(({ clock }, dt) => {
-    if (ring.current) ring.current.rotation.z += dt * 0.8;
-    if (disc.current) {
-      disc.current.rotation.z -= dt * 1.6;
-      (disc.current.material as THREE.MeshBasicMaterial).opacity = 0.35 + Math.sin(clock.elapsedTime * 3) * 0.15;
-    }
+  const pane = useRef<THREE.Mesh>(null);
+  const pad = useRef<THREE.Mesh>(null);
+  useFrame(({ clock }) => {
+    const k = 0.5 + Math.sin(clock.elapsedTime * 3) * 0.5;
+    if (pane.current) (pane.current.material as THREE.MeshBasicMaterial).opacity = 0.22 + k * 0.2;
+    if (pad.current) (pad.current.material as THREE.MeshBasicMaterial).opacity = 0.35 + k * 0.4;
   });
   const [x, z] = portal.position;
   const r = portal.radius;
   // Face the gate toward the area origin so it reads from the default camera.
   const yaw = Math.atan2(-x, -z);
+  const w = r * 2 + 0.6;
+  const h = r * 2 + 1.2;
   return (
     <group position={[x, PLATFORM_Y, z]}>
       <group rotation={[0, yaw, 0]}>
-        <mesh ref={ring} position={[0, r + 0.5, 0]}>
-          <torusGeometry args={[r + 0.25, 0.07, 8, 6]} />
-          <meshBasicMaterial color={portal.color} toneMapped={false} />
-        </mesh>
-        <mesh position={[0, r + 0.5, 0]}>
-          <circleGeometry args={[r + 0.2, 6]} />
-          <meshBasicMaterial color={portal.color} transparent opacity={0.18} side={THREE.DoubleSide} toneMapped={false} depthWrite={false} />
+        {[-1, 1].map((sd) => (
+          <group key={sd}>
+            <Vox p={[(sd * w) / 2, h / 2, 0]} s={[0.35, h, 0.35]} color="#241C46" />
+            <Vox p={[(sd * w) / 2 - sd * 0.19, h / 2, 0]} s={[0.05, h * 0.9, 0.37]} color={portal.color} glow />
+          </group>
+        ))}
+        <Vox p={[0, h + 0.17, 0]} s={[w + 0.35, 0.35, 0.35]} color="#241C46" />
+        <Vox p={[0, h - 0.03, 0]} s={[w - 0.3, 0.06, 0.37]} color={portal.color} glow />
+        <mesh ref={pane} position={[0, h / 2, 0]}>
+          <boxGeometry args={[w - 0.35, h - 0.1, 0.04]} />
+          <meshBasicMaterial color={portal.color} transparent opacity={0.3} toneMapped={false} depthWrite={false} />
         </mesh>
       </group>
-      <mesh ref={disc} position={[0, 0.04, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[r * 0.3, r, 6, 1]} />
-        <meshBasicMaterial color={portal.color} transparent opacity={0.4} toneMapped={false} depthWrite={false} />
+      <mesh ref={pad} position={[0, 0.02, 0]}>
+        <boxGeometry args={[r * 2, 0.03, r * 2]} />
+        <meshBasicMaterial color={portal.color} transparent opacity={0.5} toneMapped={false} depthWrite={false} />
       </mesh>
-      <NameTag text={`→ ${portal.label}`} color={portal.color} position={[0, r * 2 + 1.1, 0]} bright />
+      <NameTag text={`→ ${portal.label}`} color={portal.color} position={[0, h + 1.1, 0]} bright />
     </group>
   );
 }
 
-/** Generic data-driven set dressing (see AreaDecor). */
+/** Generic data-driven set dressing (see AreaDecor): billboards and voxel screen slabs. */
 function Decor({ item }: { item: AreaDecor }) {
   if (item.kind === "billboard") {
     return <NameTag text={item.text} color={item.color} position={[...item.position]} bright height={item.height} />;
@@ -190,114 +137,94 @@ function Decor({ item }: { item: AreaDecor }) {
   const lines = item.lines ?? 0;
   return (
     <group position={[...item.position]} rotation={[0, item.yaw ?? 0, 0]}>
-      <mesh>
-        <planeGeometry args={[w, h]} />
-        <meshBasicMaterial color={item.color} transparent opacity={0.14} side={THREE.DoubleSide} toneMapped={false} depthWrite={false} />
-      </mesh>
-      <lineSegments>
-        <edgesGeometry args={[new THREE.PlaneGeometry(w, h)]} />
-        <lineBasicMaterial color={item.color} toneMapped={false} />
-      </lineSegments>
+      <Vox p={[0, 0, -0.08]} s={[w + 0.2, h + 0.2, 0.14]} color="#1A1530" />
+      <Vox p={[0, 0, 0]} s={[w, h, 0.03]} color={item.color} glow opacity={0.22} />
+      <Vox p={[0, h / 2 + 0.05, 0.01]} s={[w + 0.2, 0.08, 0.06]} color={item.color} glow />
       {Array.from({ length: lines }, (_, i) => (
-        <mesh key={i} position={[-w * 0.08, h * 0.3 - (i * h * 0.6) / Math.max(1, lines - 1), 0.01]}>
-          <planeGeometry args={[w * (0.7 - i * 0.12), h * 0.07]} />
-          <meshBasicMaterial color={item.color} transparent opacity={0.7} toneMapped={false} />
-        </mesh>
+        <Vox key={i} p={[-w * 0.08, h * 0.3 - (i * h * 0.6) / Math.max(1, lines - 1), 0.03]} s={[w * (0.7 - i * 0.12), h * 0.08, 0.02]} color={item.color} glow />
       ))}
     </group>
   );
 }
 
+/** Plaza centrepiece: a floating voxel data core over a light beam (kept above head height so routes through the centre stay clear). */
 function HubCore({ color }: { color: string }) {
   const core = useRef<THREE.Group>(null);
-  useFrame((_, dt) => {
-    if (core.current) core.current.rotation.y += dt * 0.4;
+  useFrame(({ clock }, dt) => {
+    if (!core.current) return;
+    core.current.rotation.y += dt * 0.5;
+    core.current.position.y = 3.4 + Math.sin(clock.elapsedTime * 1.2) * 0.12;
   });
+  const cubes = useMemo(() => {
+    const out: [number, number, number][] = [];
+    for (let x = -1; x <= 1; x++) for (let y = -1; y <= 1; y++) for (let z = -1; z <= 1; z++) if (Math.abs(x) + Math.abs(y) + Math.abs(z) <= 1) out.push([x * 0.42, y * 0.42, z * 0.42]);
+    return out;
+  }, []);
   return (
     <group>
-      <mesh position={[0, 0.06, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[1.6, 1.9, 32]} />
-        <meshBasicMaterial color={color} toneMapped={false} />
-      </mesh>
-      <group ref={core} position={[0, 3.2, 0]}>
-        <mesh>
-          <octahedronGeometry args={[0.9, 0]} />
-          <meshStandardMaterial color={color} emissive={color} emissiveIntensity={1.4} wireframe toneMapped={false} />
-        </mesh>
-        <mesh scale={0.55}>
-          <icosahedronGeometry args={[0.9, 0]} />
-          <meshStandardMaterial color="#e0fbff" emissive={color} emissiveIntensity={0.9} flatShading toneMapped={false} />
+      <group ref={core} position={[0, 3.4, 0]}>
+        {cubes.map((p, i) => (
+          <Vox key={i} p={p} s={[0.4, 0.4, 0.4]} color={i === 0 ? "#FFFFFF" : color} glow />
+        ))}
+        <mesh scale={1.9}>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshBasicMaterial color={color} wireframe transparent opacity={0.45} toneMapped={false} />
         </mesh>
       </group>
-      <mesh position={[0, 1.6, 0]}>
-        <cylinderGeometry args={[0.04, 0.04, 3.2, 6]} />
-        <meshBasicMaterial color={color} transparent opacity={0.6} toneMapped={false} />
-      </mesh>
+      <Vox p={[0, 2.4, 0]} s={[0.08, 1.6, 0.08]} color={color} glow opacity={0.5} />
       {[0, 1, 2, 3, 4, 5].map((i) => (
-        <FloatingPanel key={i} angle={(i / 6) * Math.PI * 2} radius={4.4} y={2.2} color={i % 2 ? "#8B5CF6" : color} />
+        <HoloScreen key={i} angle={(i / 6) * Math.PI * 2 + Math.PI / 6} radius={4.4} y={2.5} color={i % 2 ? NEON.violet : i === 2 ? NEON.orange : color} />
       ))}
     </group>
   );
 }
 
-function FloatingPanel({ angle, radius, y, color }: { angle: number; radius: number; y: number; color: string }) {
+function HoloScreen({ angle, radius, y, color }: { angle: number; radius: number; y: number; color: string }) {
   const ref = useRef<THREE.Group>(null);
   useFrame(({ clock }) => {
-    if (ref.current) ref.current.position.y = y + Math.sin(clock.elapsedTime * 1.3 + angle * 3) * 0.18;
+    if (ref.current) ref.current.position.y = y + Math.sin(clock.elapsedTime * 1.3 + angle * 3) * 0.12;
   });
   return (
     <group ref={ref} position={[Math.cos(angle) * radius, y, Math.sin(angle) * radius]} rotation={[0, -angle + Math.PI / 2, 0]}>
-      <mesh>
-        <planeGeometry args={[1.5, 0.9]} />
-        <meshBasicMaterial color={color} transparent opacity={0.12} side={THREE.DoubleSide} toneMapped={false} />
-      </mesh>
-      <lineSegments>
-        <edgesGeometry args={[new THREE.PlaneGeometry(1.5, 0.9)]} />
-        <lineBasicMaterial color={color} toneMapped={false} />
-      </lineSegments>
+      <Vox p={[0, 0, 0]} s={[1.4, 0.8, 0.04]} color={color} glow opacity={0.18} />
       {[0.22, 0.05, -0.12].map((ly, i) => (
-        <mesh key={ly} position={[-0.25 + i * 0.08, ly, 0.01]}>
-          <planeGeometry args={[0.8 - i * 0.2, 0.05]} />
-          <meshBasicMaterial color={color} transparent opacity={0.7} toneMapped={false} />
-        </mesh>
+        <Vox key={ly} p={[-0.25 + i * 0.08, ly, 0.03]} s={[0.8 - i * 0.2, 0.07, 0.02]} color={color} glow />
       ))}
+      <Vox p={[0, -0.44, 0]} s={[1.5, 0.08, 0.08]} color={color} glow />
     </group>
   );
 }
 
-/** Gate + nameplate at the outer edge of a homepage. */
-function HomeArch({ zone }: { zone: Zone }) {
+/** Homepage sign: two voxel posts and a neon lintel at the outer rim, behind the resident. */
+function HomeSign({ zone }: { zone: Zone }) {
   const len = Math.hypot(zone.center[0], zone.center[1]) || 1;
   const out: Vec2 = [zone.center[0] / len, zone.center[1] / len];
   const d = zone.radius * 0.82;
   const yaw = Math.atan2(out[0], out[1]);
   return (
-    <group position={[out[0] * d, 0, out[1] * d]} rotation={[0, yaw, 0]}>
-      {[-1.2, 1.2].map((px) => (
-        <mesh key={px} position={[px, 1.1, 0]}>
-          <boxGeometry args={[0.12, 2.2, 0.12]} />
-          <meshBasicMaterial color={zone.color} toneMapped={false} />
-        </mesh>
+    <group position={[zone.center[0] + out[0] * d, 0, zone.center[1] + out[1] * d]} rotation={[0, yaw, 0]}>
+      {[-1.3, 1.3].map((px) => (
+        <Vox key={px} p={[px, 1.2, 0]} s={[0.3, 2.4, 0.3]} color="#241C46" />
       ))}
-      <mesh position={[0, 2.25, 0]}>
-        <boxGeometry args={[2.52, 0.12, 0.12]} />
-        <meshBasicMaterial color={zone.color} toneMapped={false} />
-      </mesh>
-      <mesh position={[0, 1.1, 0]}>
-        <planeGeometry args={[2.3, 2.1]} />
-        <meshBasicMaterial color={zone.color} transparent opacity={0.08} side={THREE.DoubleSide} toneMapped={false} />
-      </mesh>
+      <Vox p={[0, 2.5, 0]} s={[2.9, 0.3, 0.3]} color="#241C46" />
+      <Vox p={[0, 2.5, 0.16]} s={[2.6, 0.12, 0.02]} color={zone.color} glow />
+      <Vox p={[0, 1.2, 0]} s={[2.3, 2.2, 0.04]} color={zone.color} glow opacity={0.1} />
+      {[-1.3, 1.3].map((px) => (
+        <Vox key={`l${px}`} p={[px, 1.2, 0.16]} s={[0.06, 2.2, 0.02]} color={zone.color} glow />
+      ))}
     </group>
   );
 }
 
+/** Sky-bridge between rooftops: thick deck, posts, neon rails and data pulses. */
 function Walkway({ a, b, width, color, onFloorClick }: { a: Vec2; b: Vec2; width: number; color: string; onFloorClick: (e: ThreeEvent<MouseEvent>) => void }) {
   const dx = b[0] - a[0];
   const dz = b[1] - a[1];
   const length = Math.hypot(dx, dz);
   const yaw = Math.atan2(dx, dz);
   const pulses = useRef<THREE.Group>(null);
-  const count = Math.max(2, Math.round(length / 5));
+  const count = Math.max(2, Math.round(length / 4));
+  const posts = Math.max(2, Math.floor(length / 1.5));
   useFrame(({ clock }) => {
     const g = pulses.current;
     if (!g) return;
@@ -308,21 +235,25 @@ function Walkway({ a, b, width, color, onFloorClick }: { a: Vec2; b: Vec2; width
   });
   return (
     <group position={[(a[0] + b[0]) / 2, PLATFORM_Y, (a[1] + b[1]) / 2]} rotation={[0, yaw, 0]}>
-      <mesh position={[0, -0.12, 0]} onClick={onFloorClick}>
-        <boxGeometry args={[width, 0.2, length]} />
-        <meshStandardMaterial color="#04141c" emissive={color} emissiveIntensity={0.08} roughness={0.7} />
+      <mesh position={[0, -0.3, 0]} onClick={onFloorClick}>
+        <boxGeometry args={[width + 0.3, 0.6, length]} />
+        <meshStandardMaterial color="#2A2250" roughness={0.75} />
       </mesh>
+      {/* Under-truss so bridges read as solid voxel spans from the high camera. */}
+      <Vox p={[0, -0.85, 0]} s={[width * 0.5, 0.5, length]} color="#151028" />
       {[-1, 1].map((s) => (
-        <mesh key={s} position={[(s * width) / 2, 0.01, 0]}>
-          <boxGeometry args={[0.07, 0.06, length]} />
-          <meshBasicMaterial color={color} toneMapped={false} />
-        </mesh>
+        <group key={s}>
+          {Array.from({ length: posts }, (_, i) => (
+            <Vox key={i} p={[(s * (width + 0.2)) / 2, 0.2, -length / 2 + ((i + 0.5) * length) / posts]} s={[0.14, 0.4, 0.14]} color="#241C46" />
+          ))}
+          <Vox p={[(s * (width + 0.2)) / 2, 0.43, 0]} s={[0.1, 0.06, length]} color={color} glow />
+        </group>
       ))}
       <group ref={pulses}>
         {Array.from({ length: count }, (_, i) => (
-          <mesh key={i} position={[0, 0.03, 0]}>
-            <boxGeometry args={[width * 0.5, 0.03, 0.5]} />
-            <meshBasicMaterial color={color} transparent opacity={0.75} toneMapped={false} />
+          <mesh key={i} position={[0, 0.02, 0]}>
+            <boxGeometry args={[width * 0.45, 0.03, 0.45]} />
+            <meshBasicMaterial color={color} transparent opacity={0.8} toneMapped={false} />
           </mesh>
         ))}
       </group>
@@ -330,14 +261,14 @@ function Walkway({ a, b, width, color, onFloorClick }: { a: Vec2; b: Vec2; width
   );
 }
 
-/** Visually start/stop a walkway at the platform rims (collision still uses centre-to-centre). */
+/** Visually start/stop a walkway at the rooftop rims (collision still uses centre-to-centre). */
 function trimToEdges(a: Vec2, b: Vec2, za: Zone | undefined, zb: Zone | undefined): [Vec2, Vec2] {
   const dx = b[0] - a[0];
   const dz = b[1] - a[1];
   const len = Math.hypot(dx, dz) || 1;
   const ux = dx / len, uz = dz / len;
-  const ra = za ? zoneEdgeDistance(za, ux, uz) - 0.4 : 0;
-  const rb = zb ? zoneEdgeDistance(zb, -ux, -uz) - 0.4 : 0;
+  const ra = za ? zoneEdgeDistance(roofZone(za), ux, uz) - 0.6 : 0;
+  const rb = zb ? zoneEdgeDistance(roofZone(zb), -ux, -uz) - 0.6 : 0;
   return [
     [a[0] + ux * Math.max(0, ra), a[1] + uz * Math.max(0, ra)],
     [b[0] - ux * Math.max(0, rb), b[1] - uz * Math.max(0, rb)],
@@ -345,50 +276,54 @@ function trimToEdges(a: Vec2, b: Vec2, za: Zone | undefined, zb: Zone | undefine
 }
 
 /**
- * Billboarded nameplate drawn to a CanvasTexture: no DOM overlay roots and no
- * runtime font download (drei Text fetches one), so it works offline too.
+ * Billboarded pixel-font nameplate drawn to a small CanvasTexture and scaled
+ * up with nearest filtering, so labels look like the voxel signage. No DOM
+ * overlay roots and no font download, so it works offline too.
  */
-function NameTag({ text, color, position, bright, height = 0.42 }: { text: string; color: string; position: [number, number, number]; bright: boolean; height?: number }) {
+function NameTag({ text, color, position, bright, height = 0.46 }: { text: string; color: string; position: [number, number, number]; bright: boolean; height?: number }) {
   const { texture, aspect } = useMemo(() => {
     const c = document.createElement("canvas");
     const g = c.getContext("2d");
-    const font = "600 40px ui-monospace, SFMono-Regular, Menlo, monospace";
+    const font = "bold 11px ui-monospace, SFMono-Regular, Menlo, monospace";
     const label = text.toUpperCase();
-    let w = 320;
+    let w = 80;
     if (g) {
       g.font = font;
-      w = Math.ceil(g.measureText(label).width) + 48;
+      w = Math.ceil(g.measureText(label).width) + 14;
     }
     c.width = w;
-    c.height = 64;
+    c.height = 18;
     if (g) {
-      g.fillStyle = "rgba(4,10,16,0.82)";
+      g.imageSmoothingEnabled = false;
+      g.fillStyle = "rgba(10,7,26,0.9)";
       g.fillRect(0, 0, c.width, c.height);
-      g.strokeStyle = color;
-      g.lineWidth = 4;
-      g.strokeRect(2, 2, c.width - 4, c.height - 4);
-      g.font = font;
       g.fillStyle = color;
+      // Corner brackets instead of a full frame: reads as a HUD/pixel sign.
+      for (const [x, y, ww, hh] of [[0, 0, 4, 1], [0, 0, 1, 4], [w - 4, 0, 4, 1], [w - 1, 0, 1, 4], [0, 17, 4, 1], [0, 14, 1, 4], [w - 4, 17, 4, 1], [w - 1, 14, 1, 4]]) g.fillRect(x, y, ww, hh);
+      g.font = font;
       g.textAlign = "center";
       g.textBaseline = "middle";
-      g.fillText(label, c.width / 2, c.height / 2 + 2);
+      g.fillText(label, c.width / 2, c.height / 2 + 1);
     }
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
+    t.magFilter = THREE.NearestFilter;
+    t.minFilter = THREE.NearestFilter;
+    t.generateMipmaps = false;
     return { texture: t, aspect: c.width / c.height };
   }, [text, color]);
   useEffect(() => () => texture.dispose(), [texture]);
   const h = height;
   return (
     <sprite position={position} scale={[h * aspect, h, 1]}>
-      <spriteMaterial map={texture} transparent opacity={bright ? 1 : 0.8} toneMapped={false} depthWrite={false} />
+      <spriteMaterial map={texture} transparent opacity={bright ? 1 : 0.85} toneMapped={false} depthWrite={false} />
     </sprite>
   );
 }
 
 /* ── Characters ───────────────────────────────────────────────────────── */
 
-function Resident({ zone, anima, near, quality }: { zone: Zone; anima: WorldAnima; near: boolean; quality: ReturnType<typeof useRendererQuality>["quality"] }) {
+function Resident({ zone, anima, near, quality }: { zone: Zone; anima: WorldAnima; near: boolean; quality: Quality }) {
   const { vessel } = useCharacterVessel(anima.mock ? null : anima.id);
   const model = useMemo(() => {
     const m = vesselToBattleModel(vessel?.config, anima.name);
@@ -405,51 +340,43 @@ function Resident({ zone, anima, near, quality }: { zone: Zone; anima: WorldAnim
           <SerenityFigure model={model} anchored quality={quality} expression={near ? 0.6 : 0.15} />
         </Suspense>
       </group>
-      <mesh position={[0, 0.04, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[0.7, 0.85, 32]} />
-        <meshBasicMaterial color={zone.color} transparent opacity={near ? 1 : 0.45} toneMapped={false} />
-      </mesh>
-      <NameTag text={zone.label} color={zone.color} position={[0, 2.55, 0]} bright={near} />
+      {/* Voxel stand pad. */}
+      <Vox p={[0, 0.06, 0]} s={[1.6, 0.12, 1.6]} color="#2E2560" />
+      <Vox p={[0, 0.125, 0]} s={[1.5, 0.02, 1.5]} color={zone.color} glow opacity={near ? 0.9 : 0.4} />
+      <NameTag text={zone.label} color={zone.color} position={[0, 2.75, 0]} bright={near} height={0.55} />
     </group>
   );
 }
 
-/** The player's own navi: low-poly, protocol cyan, faces its walk direction. */
+/** The player's own navi: a little voxel figure in protocol blue, faces its walk direction. */
 function PlayerNavi({ group }: { group: RefObject<THREE.Group | null> }) {
   const body = useRef<THREE.Group>(null);
   useFrame(({ clock }) => {
-    if (body.current) body.current.position.y = Math.sin(clock.elapsedTime * 3) * 0.05;
+    if (body.current) body.current.position.y = Math.abs(Math.sin(clock.elapsedTime * 3)) * 0.06;
   });
   return (
     <group ref={group}>
       <group ref={body}>
-        <mesh position={[0, 0.75, 0]}>
-          <capsuleGeometry args={[0.28, 0.6, 4, 8]} />
-          <meshStandardMaterial color="#0b3a78" emissive="#1d4ed8" emissiveIntensity={0.5} flatShading />
-        </mesh>
-        <mesh position={[0, 1.5, 0]}>
-          <icosahedronGeometry args={[0.3, 0]} />
-          <meshStandardMaterial color="#1e40af" emissive="#2563eb" emissiveIntensity={0.5} flatShading />
-        </mesh>
-        <mesh position={[0, 1.52, 0.22]}>
-          <boxGeometry args={[0.34, 0.09, 0.1]} />
-          <meshBasicMaterial color={CYAN} toneMapped={false} />
-        </mesh>
-        <mesh position={[0, 0.85, 0.27]}>
-          <octahedronGeometry args={[0.1, 0]} />
-          <meshBasicMaterial color="#FACC15" toneMapped={false} />
-        </mesh>
+        {[-0.15, 0.15].map((x) => (
+          <Vox key={x} p={[x, 0.3, 0]} s={[0.22, 0.6, 0.26]} color="#0B2F6B" />
+        ))}
+        <Vox p={[0, 0.92, 0]} s={[0.62, 0.66, 0.4]} color="#1D4ED8" />
+        {[-0.4, 0.4].map((x) => (
+          <Vox key={`a${x}`} p={[x, 0.9, 0]} s={[0.18, 0.56, 0.22]} color="#1E40AF" />
+        ))}
+        <Vox p={[0, 1.5, 0]} s={[0.56, 0.5, 0.5]} color="#1E3A8A" />
+        <Vox p={[0, 1.52, 0.26]} s={[0.46, 0.12, 0.04]} color={CYAN} glow />
+        <Vox p={[0, 0.95, 0.21]} s={[0.16, 0.16, 0.04]} color="#FACC15" glow />
+        <Vox p={[0, 1.8, 0]} s={[0.12, 0.14, 0.12]} color={CYAN} glow />
       </group>
-      <mesh position={[0, 0.03, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[0.45, 24]} />
-        <meshBasicMaterial color={CYAN} transparent opacity={0.35} toneMapped={false} />
-      </mesh>
+      <Vox p={[0, 0.015, 0]} s={[0.9, 0.02, 0.9]} color={CYAN} glow opacity={0.3} />
     </group>
   );
 }
 
 /* ── Exploration ──────────────────────────────────────────────────────── */
 
+/** Data node: a spinning voxel diamond with an orbiting bit, a beam and a floor pad. */
 function DataNodeMesh({ node }: { node: SceneNode }) {
   const g = useRef<THREE.Group>(null);
   const appear = useRef(0);
@@ -459,29 +386,23 @@ function DataNodeMesh({ node }: { node: SceneNode }) {
     appear.current = Math.min(1, appear.current + dt * 2.5);
     const t = clock.elapsedTime + node.position[0];
     el.rotation.y += dt * 1.4;
-    el.position.y = 0.9 + Math.sin(t * 2) * 0.12;
+    el.position.y = 0.95 + Math.sin(t * 2) * 0.12;
     el.scale.setScalar(appear.current * (node.big ? 1.35 : 1));
   });
   return (
     <group position={[node.position[0], 0, node.position[1]]}>
       <group ref={g} scale={0}>
-        <mesh>
-          <octahedronGeometry args={[0.28, 0]} />
-          <meshStandardMaterial color={node.color} emissive={node.color} emissiveIntensity={1.3} flatShading toneMapped={false} />
-        </mesh>
-        <mesh scale={1.6}>
-          <octahedronGeometry args={[0.28, 0]} />
+        <group rotation={[Math.PI / 4, 0, Math.PI / 4]}>
+          <Vox p={[0, 0, 0]} s={[0.34, 0.34, 0.34]} color={node.color} glow />
+        </group>
+        <Vox p={[0.45, 0.15, 0]} s={[0.1, 0.1, 0.1]} color="#FFFFFF" glow />
+        <mesh scale={0.62}>
+          <boxGeometry args={[1, 1, 1]} />
           <meshBasicMaterial color={node.color} wireframe transparent opacity={0.5} toneMapped={false} />
         </mesh>
       </group>
-      <mesh position={[0, 1.6, 0]}>
-        <cylinderGeometry args={[0.02, 0.02, 3.2, 4, 1, true]} />
-        <meshBasicMaterial color={node.color} transparent opacity={0.35} toneMapped={false} depthWrite={false} />
-      </mesh>
-      <mesh position={[0, 0.04, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[0.35, 0.45, 6]} />
-        <meshBasicMaterial color={node.color} transparent opacity={0.8} toneMapped={false} />
-      </mesh>
+      <Vox p={[0, 1.8, 0]} s={[0.05, 3.6, 0.05]} color={node.color} glow opacity={0.35} />
+      <Vox p={[0, 0.015, 0]} s={[0.8, 0.02, 0.8]} color={node.color} glow opacity={0.7} />
     </group>
   );
 }
@@ -502,15 +423,16 @@ function ScanPulse({ at, telemetry, color }: { at: number; telemetry: MutableRef
     (m.material as THREE.MeshBasicMaterial).opacity = 0.9 * (1 - k);
   });
   return (
-    <mesh ref={ring} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
-      <ringGeometry args={[0.92, 1, 48]} />
+    <mesh ref={ring} rotation={[-Math.PI / 2, 0, Math.PI / 4]} visible={false}>
+      {/* 4 segments = a square sonar ring, in keeping with the voxel grid. */}
+      <ringGeometry args={[0.92, 1, 4]} />
       <meshBasicMaterial color={color} transparent opacity={0.8} toneMapped={false} depthWrite={false} />
     </mesh>
   );
 }
 
 /** Accompanying Anima: trails behind the player's shoulder. */
-function Follower({ anima, telemetry, quality }: { anima: WorldAnima; telemetry: MutableRefObject<PlayerTelemetry>; quality: ReturnType<typeof useRendererQuality>["quality"] }) {
+function Follower({ anima, telemetry, quality }: { anima: WorldAnima; telemetry: MutableRefObject<PlayerTelemetry>; quality: Quality }) {
   const g = useRef<THREE.Group>(null);
   const { vessel } = useCharacterVessel(anima.mock ? null : anima.id);
   const model = useMemo(() => {
@@ -584,9 +506,14 @@ function useHeldKeys() {
   return held;
 }
 
-const CAMERA_OFFSET: readonly [number, number, number] = [0, 10, 14];
 
-function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, onStep, nearAnimaId, onNearChange, quality, tint, nodes, scanPulseAt = 0, companion }: SceneProps & { quality: ReturnType<typeof useRendererQuality>["quality"] }) {
+/** Diorama camera: high, 45° off-axis, narrow FOV so the city reads near-isometric. */
+const CAMERA_OFFSET: readonly [number, number, number] = [17, 22, 17];
+const CAMERA_FOV = 34;
+
+const SKYLINE_COUNT: Record<string, number> = { low: 60, medium: 120, high: 170 };
+
+function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, onStep, nearAnimaId, onNearChange, quality, tint, nodes, scanPulseAt = 0, companion }: SceneProps & { quality: Quality }) {
   const player = useRef<THREE.Group>(null);
   const pos = useRef<Vec2>(spawn);
   const route = useRef<Vec2[]>([]);
@@ -600,6 +527,12 @@ function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, 
   const { camera } = useThree();
   const zonesById = useMemo(() => new Map(area.zones.map((z) => [z.id, z])), [area]);
   const tmpForward = useMemo(() => new THREE.Vector3(), []);
+  const hubAccent = tint?.accent ?? null;
+  // The hub plaza takes on the real-world biome tint; homes keep their Anima colours.
+  const accentFor = useMemo(() => (z: Zone) => (z.kind === "hub" && hubAccent ? hubAccent : z.color), [hubAccent]);
+  const light = tint?.light ?? 1;
+  // Night/dusk tints darken the haze a touch; the city keeps its violet glow.
+  const haze = useMemo(() => new THREE.Color(HAZE).lerp(new THREE.Color(tint?.fog ?? SKY), 0.35).getStyle(), [tint?.fog]);
 
   // (Re)spawn: this component is keyed per area visit, so mount = arrival.
   useLayoutEffect(() => {
@@ -610,7 +543,6 @@ function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, 
     camera.lookAt(spawn[0], 1, spawn[1]);
     telemetry.current = { x: spawn[0], z: spawn[1], heading: Math.PI, moving: false };
   }, [area, spawn, camera, telemetry]);
-
   const walkTo = (p: Vec2) => {
     route.current = planRoute(area, pos.current, p);
   };
@@ -706,26 +638,22 @@ function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, 
 
   return (
     <>
-      <color attach="background" args={[tint?.fog ?? BG]} />
-      <fog attach="fog" args={[tint?.fog ?? BG, 30, 70]} />
-      <ambientLight intensity={0.35 * (tint?.light ?? 1)} />
-      <directionalLight position={[8, 14, 6]} intensity={0.6 * (tint?.light ?? 1)} color="#bfe9ff" />
-      <pointLight position={[0, 6, 0]} intensity={30} distance={30} color={tint?.accent ?? area.theme.accent} />
-      <Stars radius={80} depth={30} count={quality.stars} factor={3} fade speed={0.4} />
-      <Grid
-        position={[0, -3, 0]}
-        args={[200, 200]}
-        cellSize={1}
-        cellThickness={0.5}
-        cellColor={area.kind === "hub" && tint ? tint.gridCell : area.theme.gridCell}
-        sectionSize={6}
-        sectionThickness={1}
-        sectionColor={area.kind === "hub" && tint ? tint.gridSection : area.theme.gridSection}
-        fadeDistance={70}
-        fadeStrength={1.5}
-        infiniteGrid
-      />
+      <color attach="background" args={[SKY]} />
+      <fog attach="fog" args={[haze, 40, 130]} />
+      <hemisphereLight args={["#8C7CFF", "#FF8A4C", 1.1 * light]} />
+      <ambientLight intensity={0.35 * light} color="#8B7BFF" />
+      {/* Warm key from one side, cool rim from the other: the orange/violet split of the reference. */}
+      <directionalLight position={[-12, 22, 8]} intensity={1.4 * light} color="#FFB27A" />
+      <directionalLight position={[14, 10, -12]} intensity={0.55 * light} color="#5CC8FF" />
+      <pointLight position={[0, 5, 0]} intensity={28} distance={22} color={hubAccent ?? area.theme.accent} />
+      <Stars radius={140} depth={40} count={Math.round(quality.stars * 0.6)} factor={3} fade speed={0.3} />
+      {/* Street-level haze floor: hides tower bases so they can stay short. */}
+      <mesh position={[0, STREET_Y, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[600, 600]} />
+        <meshBasicMaterial color={haze} />
+      </mesh>
 
+      <VoxelCity area={area} accentFor={accentFor} skylineCount={SKYLINE_COUNT[quality.name] ?? 140} onFloorClick={onFloorClick} />
       {area.paths.map((path) => {
         const ends = pathEndpoints(area, path);
         if (!ends) return null;
@@ -734,10 +662,15 @@ function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, 
         const [a, b] = trimToEdges(ends[0], ends[1], from, to);
         return <Walkway key={path.id} a={a} b={b} width={path.width} color={path.color || to?.color || CYAN} onFloorClick={onFloorClick} />;
       })}
-      {area.zones.map((zone) => (
-        // The hub plaza takes on the real-world biome tint; homes keep their Anima colours.
-        <Platform key={zone.id} zone={zone.kind === "hub" && tint ? { ...zone, color: tint.accent } : zone} onFloorClick={onFloorClick} />
-      ))}
+      {area.zones.map((zone) =>
+        zone.kind === "hub" ? (
+          <group key={zone.id} position={[zone.center[0], PLATFORM_Y, zone.center[1]]}>
+            <HubCore color={accentFor(zone)} />
+          </group>
+        ) : zone.kind === "home" ? (
+          <HomeSign key={zone.id} zone={zone} />
+        ) : null,
+      )}
       {area.zones.map((zone) => {
         const anima = zone.animaId ? animas.find((a) => a.id === zone.animaId) : null;
         return anima && anima.id !== companion?.id ? <Resident key={zone.id} zone={zone} anima={anima} near={anima.id === nearAnimaId} quality={quality} /> : null;
@@ -754,8 +687,8 @@ function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, 
       {companion && <Follower anima={companion} telemetry={telemetry} quality={quality} />}
 
       <PlayerNavi group={player} />
-      <mesh ref={marker} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
-        <ringGeometry args={[0.25, 0.38, 24]} />
+      <mesh ref={marker} visible={false}>
+        <boxGeometry args={[0.6, 0.04, 0.6]} />
         <meshBasicMaterial color="#FACC15" toneMapped={false} />
       </mesh>
 
@@ -763,17 +696,17 @@ function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, 
         ref={controls}
         makeDefault
         enablePan={false}
-        minDistance={5}
-        maxDistance={26}
-        minPolarAngle={0.35}
-        maxPolarAngle={1.25}
+        minDistance={12}
+        maxDistance={50}
+        minPolarAngle={0.55}
+        maxPolarAngle={1.08}
         enableDamping
         dampingFactor={0.12}
       />
 
       {quality.postprocessing && (
         <EffectComposer enableNormalPass={false} multisampling={0}>
-          <Bloom intensity={0.9} luminanceThreshold={0.25} luminanceSmoothing={0.3} mipmapBlur />
+          <Bloom intensity={1.05} luminanceThreshold={0.32} luminanceSmoothing={0.25} mipmapBlur />
         </EffectComposer>
       )}
     </>
@@ -785,13 +718,13 @@ export default function CyberworldScene(props: SceneProps) {
   const [sx, sz] = props.spawn;
   return (
     <Canvas
-      camera={{ position: [sx + CAMERA_OFFSET[0], CAMERA_OFFSET[1], sz + CAMERA_OFFSET[2]], fov: 45, near: 0.1, far: 200 }}
+      camera={{ position: [sx + CAMERA_OFFSET[0], CAMERA_OFFSET[1], sz + CAMERA_OFFSET[2]], fov: CAMERA_FOV, near: 0.5, far: 320 }}
       gl={{ alpha: false, antialias: quality.antialias, powerPreference: "high-performance", preserveDrawingBuffer: false }}
       dpr={quality.dpr as [number, number]}
-      style={{ width: "100%", height: "100%", display: "block", background: BG, touchAction: "none" }}
+      style={{ width: "100%", height: "100%", display: "block", background: SKY, touchAction: "none" }}
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
-        gl.toneMappingExposure = 1.1;
+        gl.toneMappingExposure = 1.15;
       }}
     >
       <PerformanceMonitor flipflops={3} onDecline={handleDecline} onIncline={handleIncline}>
