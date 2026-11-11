@@ -996,7 +996,7 @@ describe("composeCompanionChatMessages", () => {
     );
   });
 
-  it("keeps the newest user message last and drops a retried question plus its stale answer", () => {
+  it.each(["retry", "edit"] as const)("keeps the newest user message last for %s and drops its stale answer", (replyAction) => {
     const question = "What is the tide today?";
     const messages = composeCompanionChatMessages({
       characters: [character],
@@ -1015,7 +1015,7 @@ describe("composeCompanionChatMessages", () => {
       ],
       mode: "solo",
       content: question,
-      replyAction: "retry",
+      replyAction,
     });
 
     const conversation = messages.filter((message) => message.role !== "system");
@@ -1052,6 +1052,49 @@ describe("composeCompanionChatMessages", () => {
     expect(conversation.some((message) => message.content === "The garden is quiet.")).toBe(false);
     expect(conversation.some((message) => message.content === "The harbor is not.")).toBe(false);
     expect(conversation.some((message) => message.content === "A bell rings.")).toBe(false);
+  });
+
+  it("keeps previous exchanges when the user repeats a question on a normal turn", () => {
+    const question = "What is the tide today?";
+    const messages = composeCompanionChatMessages({
+      characters: [character],
+      activeCharacter: character,
+      memories: [],
+      recentMessages: [
+        { role: "user", content: question },
+        { role: "assistant", content: "The tide is low." },
+        { role: "user", content: question },
+      ],
+      mode: "solo",
+      content: question,
+    });
+    expect(messages.filter((message) => message.role !== "system")).toEqual([
+      { role: "user", content: question },
+      { role: "assistant", content: "The tide is low." },
+      { role: "user", content: question },
+    ]);
+  });
+
+  it("removes a trailing current turn before history truncation", () => {
+    const question = "What is the tide today? ".repeat(100);
+    const messages = composeCompanionChatMessages({
+      characters: [character],
+      activeCharacter: character,
+      memories: [],
+      recentMessages: [{ role: "user", content: question }],
+      mode: "solo",
+      content: question,
+      mind: {
+        promptTokens: 12000,
+        historyExchanges: 16,
+        minHistoryExchanges: 4,
+        historyMessageChars: 400,
+        memoryTopK: 8,
+      },
+    });
+    expect(messages.filter((message) => message.role === "user")).toEqual([
+      { role: "user", content: question.trim() },
+    ]);
   });
 
   it("keeps a proactive check-in that is not part of the retried reply", () => {
