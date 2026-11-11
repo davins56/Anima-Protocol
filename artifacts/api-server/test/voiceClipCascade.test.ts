@@ -28,6 +28,7 @@ vi.mock("../src/lib/voice/voiceStore", () => ({
 
 import mediaRouter from "../src/routes/media";
 import { resetLocalVoiceProbeForTests } from "../src/lib/voice/localVoiceClient";
+import { resetAiBindingForTests, setAiBinding } from "../src/lib/aiBinding";
 
 const BOX = "http://home-box.test";
 const realFetch = globalThis.fetch;
@@ -167,10 +168,33 @@ describe("voice-clip cascade (V5)", () => {
   it("capabilities: voice_clip needs the home box; cloud keys are reported only as opt-in options", async () => {
     delete process.env.ANIMA_LOCAL_VOICE_BASE_URL;
     let body = await (await realFetch(`${baseUrl}/media/capabilities`, { headers: { "x-test-user": "user_a" } })).json();
-    expect(body).toEqual({ voice_clip: false, voice_clip_local: false, voice_clip_cloud: { xai: true, elevenlabs: true }, cloud_default: false });
+    // chat_photos (companion photos, lib/companionPhotos) is false here: no Workers AI binding.
+    expect(body).toEqual({
+      voice_clip: false,
+      voice_clip_local: false,
+      voice_clip_cloud: { xai: true, elevenlabs: true },
+      cloud_default: false,
+      chat_photos: false,
+    });
     process.env.ANIMA_LOCAL_VOICE_BASE_URL = BOX;
     body = await (await realFetch(`${baseUrl}/media/capabilities`, { headers: { "x-test-user": "user_a" } })).json();
     expect(body.voice_clip).toBe(true);
     expect(calls).toEqual([]);
+  });
+
+  it("capabilities: chat_photos follows the Workers AI binding and the kill switch", async () => {
+    const get = async () =>
+      (await (await realFetch(`${baseUrl}/media/capabilities`, { headers: { "x-test-user": "user_a" } })).json()) as {
+        chat_photos: boolean;
+      };
+    try {
+      setAiBinding({ run: vi.fn() } as never);
+      expect((await get()).chat_photos).toBe(true);
+      process.env.ANIMA_COMPANION_PHOTOS = "off";
+      expect((await get()).chat_photos).toBe(false);
+    } finally {
+      delete process.env.ANIMA_COMPANION_PHOTOS;
+      resetAiBindingForTests();
+    }
   });
 });
