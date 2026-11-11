@@ -250,13 +250,20 @@ describe("owner-only 404s", () => {
     expect(await a.json()).toEqual(await b.json());
     expect(box.calls.filter((c) => c.includes("captioned"))).toEqual([]);
   });
-  it("stop is owner-only too", async () => {
+  it("transcribe and stop are owner-only too", async () => {
+    const t = await fetch(`${baseUrl}/voice/${CHAR}/transcribe`, {
+      method: "POST",
+      headers: { "x-test-user": BOB, "Content-Type": "audio/pcm;rate=16000" },
+      body: Buffer.alloc(3200),
+    });
+    expect(t.status).toBe(404);
     const s = await fetch(`${baseUrl}/voice/${CHAR}/speak/vs_x_y/stop`, {
       method: "POST",
       headers: { "x-test-user": BOB, "Content-Type": "application/json" },
       body: "{}",
     });
     expect(s.status).toBe(404);
+    expect(box.calls.filter((c) => c.includes("transcriptions"))).toEqual([]);
   });
   it("a stream id minted for another user is a 404 even on your own companion", async () => {
     box.mode.kokoro = "hold";
@@ -404,6 +411,59 @@ describe("stop / barge-in", () => {
     await readUntil(res, (e) => e.event === "audio");
     ctrl.abort();
     await vi.waitFor(() => expect(box.kokoroAborted).toBe(true), { timeout: 3000 });
+  });
+});
+
+// ---- transcribe ------------------------------------------------------------
+describe("POST /transcribe (push-to-talk)", () => {
+  const post = (body: BodyInit, type: string, user = ALICE) =>
+    fetch(`${baseUrl}/voice/${CHAR}/transcribe`, { method: "POST", headers: { "x-test-user": user, "Content-Type": type }, body });
+
+  it("transcribes 16 kHz PCM16 on the box", async () => {
+    const res = await post(Buffer.alloc(32000), "audio/pcm;rate=16000");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ final: true, text: "I had a rough day", language: "en", durationMs: 1480, words: [{ w: "I", startMs: 120, endMs: 220 }] });
+    expect(box.sttBytes).toBeGreaterThan(32000); // WAV-wrapped upload
+  });
+  it("accepts a 16 kHz mono WAV and the JSON base64 fallback", async () => {
+    const wav = Buffer.concat([Buffer.from(wavHeader(3200)), Buffer.alloc(3200)]);
+    expect((await post(wav, "audio/wav")).status).toBe(200);
+    const json = await fetch(`${baseUrl}/voice/${CHAR}/transcribe`, {
+      method: "POST",
+      headers: { "x-test-user": ALICE, "Content-Type": "application/json" },
+      body: JSON.stringify({ audioBase64: Buffer.alloc(3200).toString("base64"), contentType: "audio/pcm;rate=16000" }),
+    });
+    expect(json.status).toBe(200);
+  });
+  it("rejects more than 60 s (413) without calling the box", async () => {
+    const res = await post(Buffer.alloc(STT_MAX_PCM_BYTES + 2), "audio/pcm;rate=16000");
+    expect(res.status).toBe(413);
+    expect((await res.json()).code).toBe("voice_audio_too_long");
+    expect(box.calls.filter((c) => c.includes("transcriptions"))).toEqual([]);
+  });
+  it("rejects bodies over the 2 MB cap (413)", async () => {
+    const res = await post(Buffer.alloc(STT_MAX_BODY_BYTES + 1024), "audio/pcm;rate=16000");
+    expect(res.status).toBe(413);
+    expect((await res.json()).code).toBe("voice_audio_too_large");
+  });
+  it("rejects the wrong rate, odd byte counts and empty audio (400)", async () => {
+    expect((await post(Buffer.alloc(3200), "audio/pcm;rate=48000")).status).toBe(400);
+    expect((await post(Buffer.alloc(3201), "audio/pcm;rate=16000")).status).toBe(400);
+    const wav48 = Buffer.concat([Buffer.from(wavHeader(3200, 48000)), Buffer.alloc(3200)]);
+    expect((await post(wav48, "audio/wav")).status).toBe(400);
+    expect((await post(Buffer.alloc(0), "audio/pcm;rate=16000")).status).toBe(400);
+  });
+  it("box down → 503 voice_offline, no cloud STT", async () => {
+    process.env.ANIMA_LOCAL_VOICE_BASE_URL = "http://127.0.0.1:1";
+    const res = await post(Buffer.alloc(3200), "audio/pcm;rate=16000");
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({ code: "voice_offline", reason: "box_unreachable", cloudFallback: false });
+  });
+  it("STT server down while TTS is up → 503", async () => {
+    box.mode.stt = "down";
+    const res = await post(Buffer.alloc(3200), "audio/pcm;rate=16000");
+    expect(res.status).toBe(503);
+    expect((await res.json()).cloudFallback).toBe(false);
   });
 });
 

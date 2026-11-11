@@ -343,4 +343,130 @@ router.post("/:characterId/speak/:streamId/stop", rateLimit, async (req, res) =>
   });
 });
 
+// ---- push-to-talk STT ----------------------------------------------------
+
+const rawAudio = express.raw({
+  type: ["audio/*", "application/octet-stream"],
+  limit: STT_MAX_BODY_BYTES,
+});
+
+function readRaw(req: Request, res: Response, next: () => void) {
+  rawAudio(req, res, (err?: unknown) => {
+    if (err) {
+      const e = err as { type?: string; status?: number };
+      if (e?.type === "entity.too.large" || e?.status === 413) {
+        res.status(413).json({ error: `Audio is too large (max ${STT_MAX_SECONDS} s).`, code: "voice_audio_too_large" });
+        return;
+      }
+      res.status(400).json({ error: "Could not read audio.", code: "voice_audio_invalid" });
+      return;
+    }
+    next();
+  });
+}
+
+type ParsedAudio = { ok: true; wav: Uint8Array; seconds: number } | { ok: false; status: number; code: string; error: string };
+
+export function wavHeader(pcmBytes: number, rate = STT_SAMPLE_RATE): Uint8Array {
+  const b = new Uint8Array(44);
+  const dv = new DataView(b.buffer);
+  const w = (o: number, s: string) => [...s].forEach((c, i) => (b[o + i] = c.charCodeAt(0)));
+  w(0, "RIFF");
+  dv.setUint32(4, 36 + pcmBytes, true);
+  w(8, "WAVE");
+  w(12, "fmt ");
+  dv.setUint32(16, 16, true);
+  dv.setUint16(20, 1, true);
+  dv.setUint16(22, 1, true);
+  dv.setUint32(24, rate, true);
+  dv.setUint32(28, rate * 2, true);
+  dv.setUint16(32, 2, true);
+  dv.setUint16(34, 16, true);
+  w(36, "data");
+  dv.setUint32(40, pcmBytes, true);
+  return b;
+}
+
+/**
+ * Accepts `audio/pcm;rate=16000` (raw s16le mono) or a PCM16 mono 16 kHz WAV.
+ * (audio/L16 is big-endian by RFC 2586, so it is deliberately not used.)
+ */
+export function parsePushToTalkAudio(contentType: string, bytes: Uint8Array): ParsedAudio {
+  const type = contentType.split(";")[0].trim().toLowerCase();
+  const tooLong = (): ParsedAudio => ({ ok: false, status: 413, code: "voice_audio_too_long", error: `Push-to-talk audio must be ≤ ${STT_MAX_SECONDS} s.` });
+  const bad = (error: string): ParsedAudio => ({ ok: false, status: 400, code: "voice_audio_invalid", error });
+  if (!bytes.length) return bad("No audio.");
+  if (type === "audio/pcm" || type === "application/octet-stream") {
+    const rate = /rate=(\d+)/i.exec(contentType)?.[1];
+    if (rate && Number(rate) !== STT_SAMPLE_RATE) return bad("Send 16 kHz mono PCM16.");
+    if (bytes.length % 2) return bad("PCM16 needs an even byte count.");
+    if (bytes.length > STT_MAX_PCM_BYTES) return tooLong();
+    const wav = new Uint8Array(44 + bytes.length);
+    wav.set(wavHeader(bytes.length));
+    wav.set(bytes, 44);
+    return { ok: true, wav, seconds: bytes.length / 2 / STT_SAMPLE_RATE };
+  }
+  if (type === "audio/wav" || type === "audio/x-wav" || type === "audio/wave") {
+    if (bytes.length < 44) return bad("Not a WAV file.");
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const tag = (o: number) => String.fromCharCode(bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]);
+    if (tag(0) !== "RIFF" || tag(8) !== "WAVE") return bad("Not a WAV file.");
+    let off = 12;
+    let fmt: { format: number; channels: number; rate: number; bits: number } | null = null;
+    while (off + 8 <= bytes.length) {
+      const id = tag(off);
+      const size = dv.getUint32(off + 4, true);
+      if (id === "fmt " && off + 24 <= bytes.length) {
+        fmt = { format: dv.getUint16(off + 8, true), channels: dv.getUint16(off + 10, true), rate: dv.getUint32(off + 12, true), bits: dv.getUint16(off + 22, true) };
+      }
+      if (id === "data") {
+        if (!fmt || fmt.format !== 1 || fmt.channels !== 1 || fmt.rate !== STT_SAMPLE_RATE || fmt.bits !== 16) return bad("Send 16 kHz mono PCM16.");
+        const dataBytes = Math.min(size, bytes.length - off - 8);
+        if (dataBytes > STT_MAX_PCM_BYTES) return tooLong();
+        return { ok: true, wav: bytes, seconds: dataBytes / 2 / STT_SAMPLE_RATE };
+      }
+      off += 8 + size + (size % 2);
+    }
+    return bad("WAV has no audio data.");
+  }
+  return bad("Send audio/pcm;rate=16000 or a 16 kHz mono PCM16 WAV.");
+}
+
+router.post("/:characterId/transcribe", rateLimit, sttLimit, readRaw, async (req, res) => {
+  const userId = uid(req, res);
+  if (!userId) return;
+  if (!(await ownedCharacter(req, res, userId))) return;
+  let contentType = String(req.headers["content-type"] || "");
+  let bytes: Uint8Array;
+  if (Buffer.isBuffer(req.body)) {
+    bytes = new Uint8Array(req.body);
+  } else {
+    // JSON fallback: { audioBase64, contentType } for clients that can't send a raw body.
+    const b = (req.body || {}) as Record<string, unknown>;
+    const b64 = typeof b.audioBase64 === "string" ? b.audioBase64 : "";
+    if (b64.length > Math.ceil(STT_MAX_BODY_BYTES / 3) * 4) {
+      res.status(413).json({ error: `Audio is too large (max ${STT_MAX_SECONDS} s).`, code: "voice_audio_too_large" });
+      return;
+    }
+    bytes = new Uint8Array(Buffer.from(b64, "base64"));
+    contentType = typeof b.contentType === "string" ? b.contentType : "audio/pcm;rate=16000";
+  }
+  const parsed = parsePushToTalkAudio(contentType, bytes);
+  if (!parsed.ok) {
+    res.status(parsed.status).json({ error: parsed.error, code: parsed.code });
+    return;
+  }
+  const status = await localVoiceStatus();
+  if (status.state === "disabled") return unavailable(res, "disabled_by_user");
+  if (status.state === "offline" || !status.stt.ok) return unavailable(res, status.reason ?? "box_unreachable");
+  try {
+    const t = await transcribeOnBox(parsed.wav);
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ final: true, text: t.text, language: t.language, durationMs: t.durationMs || Math.round(parsed.seconds * 1000), words: t.words });
+  } catch (err) {
+    if (err instanceof LocalVoiceUnavailable) return unavailable(res, err.reason);
+    res.status(502).json({ error: "Transcription failed.", code: "voice_stt_failed", cloudFallback: false });
+  }
+});
+
 export default router;
