@@ -115,3 +115,26 @@ Validation covers voice mirror parity, built-in/custom profiles, local/hosted/
 legacy prompt paths, group speaker isolation, and Ollama folding/context budgets.
 These are prompt-contract tests; live model behavior still needs a conversation
 check after deployment.
+
+## Actions, character thoughts, and speech
+
+The shared reply-format rule applies to built-in and custom companions in solo,
+group, Continue, and local/hosted/legacy prompt paths:
+
+- Actions use single asterisks: `*rests a hand on the rail*`.
+- Narrative character thoughts use parentheses: `(I hope the storm passes.)`.
+- Ordinary speech is unquoted. Quotation marks are for actual quotations.
+
+For example:
+
+```text
+*rests a hand on the rail* (I hope the storm passes.) We can wait here.
+The captain said, "Hold the line."
+```
+
+Actions and thoughts are optional narrative elements, not requirements on every
+reply. Character thoughts here are fictional narration, not a request for the
+model's private reasoning. The renderer already styles starred actions and
+preserves parentheses and real quotations. No quote-stripping postprocessor is
+added, and existing text is not rewritten. Existing read-aloud behavior continues
+to omit starred action directions.

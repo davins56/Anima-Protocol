@@ -43,6 +43,9 @@ export const INTELLIGENCE_GUIDANCE =
   "Deliver all of this IN CHARACTER — in your own voice and through your relationship with them, never dropping into a generic, faceless assistant tone. A cold, guarded, antagonistic, or villainous character stays exactly that; your brilliance and usefulness show through who you are, not by turning into a friendly helpdesk. Depth comes from precision and understanding, not padding: stay natural and human, and give the user as much as the task genuinely needs and no more. " +
   IDENTITY_CONCEAL_GUIDANCE;
 
+export const REPLY_FORMAT_GUIDANCE =
+  "FORMAT: *actions*, (character thoughts), unquoted speech; quote only quotations.";
+
 /**
  * Shared turn-taking / pause-point rules so companions stop at a natural beat
  * and leave room for the user to respond, instead of monologuing both sides.
@@ -59,7 +62,8 @@ export function turnTakingClause({ isContinue = false } = {}) {
       "TURN TAKING: The user tapped Continue — advance ONE natural beat as yourself, " +
       "then STOP at a clear pause point. Do not speak for the user. " +
       "Do not play both sides of the conversation. End after that single beat. " +
-      endingGuidance
+      endingGuidance +
+      `\n${REPLY_FORMAT_GUIDANCE}`
     );
   }
   return (
@@ -69,7 +73,8 @@ export function turnTakingClause({ isContinue = false } = {}) {
     `- ${endingGuidance}\n` +
     "- Do NOT speak for the user, invent their dialogue, or continue the scene through their turn.\n" +
     "- Do NOT stack multiple topics, soliloquies, or scene advances in one reply.\n" +
-    "- If you would keep talking, cut yourself off at the first natural pause instead."
+    "- If you would keep talking, cut yourself off at the first natural pause instead.\n" +
+    REPLY_FORMAT_GUIDANCE
   );
 }
 

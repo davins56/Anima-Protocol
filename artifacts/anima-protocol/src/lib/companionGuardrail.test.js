@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   INTELLIGENCE_GUIDANCE,
   THOUGHT_EXPERIMENT_GUIDANCE,
+  REPLY_FORMAT_GUIDANCE,
   loyaltyGuardrailClause,
   turnTakingClause,
 } from "./companionGuardrail";
@@ -32,6 +33,13 @@ describe("turnTakingClause", () => {
     expect(clause).toMatch(/Ask a specific question only when clarification or the moment genuinely needs it/i);
     expect(clause).not.toContain("unfinished action");
     expect(clause).toMatch(/Do not speak for the user/i);
+  });
+
+  it.each([false, true])("keeps actions separate from unquoted speech (Continue: %s)", (isContinue) => {
+    expect(turnTakingClause({ isContinue })).toContain(REPLY_FORMAT_GUIDANCE);
+    expect(REPLY_FORMAT_GUIDANCE).toContain("*actions*");
+    expect(REPLY_FORMAT_GUIDANCE).toContain("(character thoughts)");
+    expect(REPLY_FORMAT_GUIDANCE).toContain("unquoted speech; quote only quotations");
   });
 });
 
