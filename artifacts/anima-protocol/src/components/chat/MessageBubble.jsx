@@ -38,6 +38,12 @@ function MessageBubble({ message, onRewind, canRewind, onSpeak, character, chara
   const pdfFiles = (message.attachments || []).filter((a) => a.type === "pdf");
   // Identity-locked studio photos carry photo_id so they can be refined inline.
   const studioPhotos = (message.attachments || []).filter((a) => a.type === "image" && a.photo_id);
+  // A photo the companion sent on request (server lib/companionPhotos) shows
+  // as one larger picture in its own shape, not a square thumbnail.
+  const companionPhoto =
+    images.length === 1
+      ? (message.attachments || []).find((a) => a.type === "image" && a.source === "companion_photo")
+      : null;
 
   const handleEditSave = () => {
     const next = editText.trim();
@@ -215,7 +221,39 @@ function MessageBubble({ message, onRewind, canRewind, onSpeak, character, chara
             </div>
            )}
 
-           {images.length > 0 && (
+           {isStreaming && message.photo_pending && images.length === 0 && (
+            <div
+              data-testid="companion-photo-pending"
+              className="mt-2 flex w-48 sm:w-56 aspect-[3/4] items-center justify-center border border-primary/20 bg-primary/5 hud-corner animate-pulse"
+            >
+              <span className="font-mono text-[9px] tracking-widest text-primary/50">sending a photo…</span>
+            </div>
+           )}
+
+           {companionPhoto ? (
+            <button
+              type="button"
+              data-testid="companion-photo"
+              onClick={() => {
+                setLightboxIndex(0);
+                setLightboxOpen(true);
+              }}
+              aria-label="View photo full size"
+              className="mt-2 block w-48 sm:w-64 overflow-hidden border border-primary/20 hud-corner hover:border-primary/50 transition-all"
+            >
+              <img
+                src={companionPhoto.url}
+                alt={companionPhoto.description || `Photo from ${message.character_name || "your companion"}`}
+                loading="lazy"
+                className="w-full h-auto object-cover"
+                style={
+                  companionPhoto.width && companionPhoto.height
+                    ? { aspectRatio: `${companionPhoto.width} / ${companionPhoto.height}` }
+                    : undefined
+                }
+              />
+            </button>
+           ) : images.length > 0 && (
             <div className="mt-2 grid grid-cols-2 gap-1 sm:grid-cols-3">
               {images.map((img, idx) => (
                 <button

@@ -938,6 +938,23 @@ function unseenPhotoHistoryNote(msg: MsgData): string {
   return sharedPhotoPromptNote({ count });
 }
 
+/**
+ * A companion photo sent with an earlier reply (lib/companionPhotos), so she
+ * remembers what she showed. Bracketed `[note …]` so the persona guard drops
+ * it if the model ever echoes the pattern.
+ */
+export function sentPhotoHistoryNote(msg: MsgData): string {
+  if (msg.role !== "assistant" || !Array.isArray(msg.attachments)) return "";
+  for (const item of msg.attachments) {
+    if (!item || typeof item !== "object") continue;
+    const a = item as { type?: unknown; source?: unknown; description?: unknown };
+    if (a.type !== "image" || a.source !== "companion_photo") continue;
+    const what = String(a.description || "").replace(/[\[\]]/g, "").replace(/\s+/g, " ").trim().slice(0, 240);
+    return `[note: I sent a photo with this message${what ? `: ${what}` : ""}]`;
+  }
+  return "";
+}
+
 function normalizeRecentMessages(
   recentMessages: MsgData[] = [],
   maxCharsOverride?: number,
@@ -948,9 +965,11 @@ function normalizeRecentMessages(
     if (isLlmExcludedDisclosure(msg)) continue;
     const text = String(msg.content ?? "").trim();
     if (!text) continue;
-    const photoNote = unseenPhotoHistoryNote(msg);
+    const photoNote = unseenPhotoHistoryNote(msg) || sentPhotoHistoryNote(msg);
     const withPhoto =
-      photoNote && !text.includes("cannot see the image") ? `${text}\n\n${photoNote}` : text;
+      photoNote && !text.includes("cannot see the image") && !text.includes("[note: I sent a photo")
+        ? `${text}\n\n${photoNote}`
+        : text;
     const name = String(msg.character_name || msg.characterName || "");
     if (name === "__thinking__" || name === "__typing__") continue;
     const role =

@@ -115,6 +115,11 @@ export function useChatStreaming(setActiveSession) {
   const createStreamUi = useCallback(
     ({ sessionId, updatedMessages, characterName, timestamp, onDelta, turnId, omitTurnIds, omitMessageIds }) => {
       let paintedTokens = false;
+      // Server said a companion photo is on its way (SSE status "photo").
+      // Sticky for this send: every later paint keeps the placeholder until
+      // the final message (with the image attachment) replaces the bubble.
+      let photoPending = false;
+      let lastAccumulated = "";
       const resolveTurnId = () => (typeof turnId === "function" ? turnId() : turnId);
       const resolveOmit = (value) => (typeof value === "function" ? value() : value);
 
@@ -142,6 +147,7 @@ export function useChatStreaming(setActiveSession) {
 
       const showStreamingPartial = (accumulated) => {
         paintedTokens = true;
+        lastAccumulated = accumulated;
         onDelta?.(accumulated);
         replaceTransient({
           role: "assistant",
@@ -149,10 +155,33 @@ export function useChatStreaming(setActiveSession) {
           character_name: characterName,
           timestamp,
           is_streaming: true,
+          ...(photoPending ? { photo_pending: true } : {}),
         });
       };
 
       const showStatus = (event) => {
+        if (event?.status === "photo") {
+          photoPending = true;
+          if (paintedTokens) {
+            replaceTransient({
+              role: "assistant",
+              content: lastAccumulated,
+              character_name: characterName,
+              timestamp,
+              is_streaming: true,
+              photo_pending: true,
+            });
+          } else {
+            replaceTransient({
+              role: "assistant",
+              content: chatStreamStatusCopy(event) || "...",
+              character_name: "__typing__",
+              timestamp,
+              photo_pending: true,
+            });
+          }
+          return;
+        }
         if (paintedTokens && event?.status === "progress") return;
         if (event?.status === "thinking") {
           replaceTransient({

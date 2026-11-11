@@ -174,3 +174,39 @@ export async function resolveChatImageAttachments({
   }
   return { attachments, source: attachments.length ? source : null };
 }
+
+/**
+ * Companion photo the server generated for this reply (done payload
+ * `photo` + `attachments`, see api-server lib/companionPhotos). `handled`
+ * means the server owned the photo request this turn — sent, declined in
+ * character, or failed with an in-character line — so the client must not
+ * generate one of its own.
+ */
+export function serverPhotoFromPayload(payload) {
+  const photo = payload && typeof payload.photo === "object" && payload.photo ? payload.photo : null;
+  const raw = Array.isArray(payload?.attachments) ? payload.attachments : [];
+  const attachments = raw
+    .filter(
+      (a) =>
+        a &&
+        a.type === "image" &&
+        typeof a.url === "string" &&
+        (a.url.startsWith("/api/storage/") || /^https:\/\//i.test(a.url)),
+    )
+    .slice(0, 2)
+    .map((a) => ({
+      type: "image",
+      url: a.url,
+      name: typeof a.name === "string" ? a.name : "Photo",
+      source: "companion_photo",
+      ...(typeof a.character_id === "string" ? { character_id: a.character_id } : {}),
+      ...(typeof a.description === "string" ? { description: a.description.slice(0, 400) } : {}),
+      ...(Number.isFinite(a.width) ? { width: a.width } : {}),
+      ...(Number.isFinite(a.height) ? { height: a.height } : {}),
+    }));
+  return {
+    handled: Boolean(photo && photo.status && photo.status !== "pending"),
+    status: photo?.status || null,
+    attachments,
+  };
+}
