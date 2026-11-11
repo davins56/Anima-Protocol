@@ -1236,6 +1236,34 @@ async function replaceMessages(sessionId, messages, opts) {
   return res.json();
 }
 
+// Delete ONE message row by id (trash can). Resolves { deleted, id, seq } or
+// { deleted: false, missing: true } when the row is already gone. Never sends
+// the history, so it stays fast on long chats.
+async function removeMessage(sessionId, messageId) {
+  const params = new URLSearchParams({ session_id: String(sessionId || '') });
+  const res = await storeFetch(
+    `/messages/${encodeURIComponent(String(messageId || ''))}?${params.toString()}`,
+    { method: 'DELETE' },
+  );
+  if (res.status === 404) return { deleted: false, missing: true, id: messageId };
+  if (!res.ok) await throwErr(res);
+  bumpVersion('ChatMessage');
+  bumpVersion('ChatSession');
+  return res.json();
+}
+
+// Undo for removeMessage: put the row back with its original id and seq.
+async function restoreMessage(sessionId, message) {
+  const res = await storeFetch('/messages/restore', {
+    method: 'POST',
+    body: JSON.stringify({ session_id: sessionId, message: message || {} }),
+  });
+  if (!res.ok) await throwErr(res);
+  bumpVersion('ChatMessage');
+  bumpVersion('ChatSession');
+  return res.json();
+}
+
 // Batch-fetch messages for many sessions in one request: { [id]: message[] }.
 async function messagesBySessions(ids) {
   const list = Array.isArray(ids) ? ids.filter(Boolean) : [];
@@ -1715,6 +1743,8 @@ export const animaClient = {
     list: (sessionId, opts) => listMessages(sessionId, opts),
     append: (sessionId, message) => appendMessage(sessionId, message),
     replace: (sessionId, messages) => replaceMessages(sessionId, messages),
+    remove: (sessionId, messageId) => removeMessage(sessionId, messageId),
+    restore: (sessionId, message) => restoreMessage(sessionId, message),
     bySessions: (ids) => messagesBySessions(ids),
     counts: (ids) => messageCountsBySessions(ids),
   },
