@@ -82,6 +82,23 @@ function companionMemoryOrDbMessage(err: unknown): string {
   return GENERIC_COMPANION_FAILURE;
 }
 
+export const EMPTY_REPLY_MESSAGE =
+  "The companion returned an empty reply. Please try again.";
+export const EMPTY_REPLY_CODE = "empty_reply";
+
+/** A clean completion with no visible text. Tagged so the SSE error carries a code. */
+export function emptyReplyError(): Error & { code: string } {
+  return Object.assign(new Error(EMPTY_REPLY_MESSAGE), { code: EMPTY_REPLY_CODE });
+}
+
+export function isEmptyReplyError(err: unknown): boolean {
+  return (
+    !!err &&
+    typeof err === "object" &&
+    (err as { code?: unknown }).code === EMPTY_REPLY_CODE
+  );
+}
+
 /**
  * Map a failed `/chat/messages` stream into HUD-safe copy.
  * Drizzle "Failed query" wrappers (SQL + bind params) must never reach the
