@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from "react";
 import { trackFirstReplyReceived } from "@/lib/funnelEvents";
 import MoodWhyPanel from "@/components/chat/MoodWhyPanel";
-import { buildRatingPayload } from "@/lib/replyRatings";
+import { buildRatingPayload, messageRatingId } from "@/lib/replyRatings";
 import { isRestingError, restingNotice, withRestingNotice } from "@/lib/restingMode";
 import { useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
@@ -4045,7 +4045,15 @@ Return JSON:
             {activeSession?.mode === "solo" && activeSession?.character_id && (
               <div className="px-3 py-1 flex items-center justify-between bg-black/40 border-b border-primary/10">
                 <ResonanceField value={resonance.value} label={resonance.label} />
+<<<<<<< HEAD
                 <IntimacyDock characterId={activeSession.character_id} conversationId={activeSession.id} />
+=======
+                <IntimacyDock
+                  characterId={activeSession.character_id}
+                  conversationId={activeSession.id}
+                  refreshKey={isLoading ? null : activeSession.messages?.length || 0}
+                />
+>>>>>>> origin/main
               </div>
             )}
             {isTherapySession(
@@ -4224,13 +4232,34 @@ Return JSON:
                   const payload = buildRatingPayload({
                     session: activeSession,
                     messages: activeSession.messages,
+<<<<<<< HEAD
+=======
+                    characters,
+>>>>>>> origin/main
                     index,
                     rating,
                     betterReply,
                     note: extra?.note,
                   });
+<<<<<<< HEAD
                   if (!payload) return;
                   await animaApi.ratings.rate(payload);
+=======
+                  if (!payload) throw new Error("This reply can't be rated.");
+                  await animaApi.ratings.rate(payload);
+                  // Keep the pressed thumb when the list re-renders or pages.
+                  setActiveSession((prev) => {
+                    if (!prev || prev.id !== payload.session_id) return prev;
+                    const list = Array.isArray(prev.messages) ? prev.messages : [];
+                    const at = list.findIndex(
+                      (m, i) => m?.role === "assistant" && messageRatingId(m, prev.id, i) === payload.message_id,
+                    );
+                    if (at < 0) return prev;
+                    const messages = list.slice();
+                    messages[at] = { ...messages[at], my_rating: rating };
+                    return { ...prev, messages };
+                  });
+>>>>>>> origin/main
                   // "Correct her": re-render this reply in her voice, guided by the correction.
                   if (extra?.rerender && rating === -1 && (payload.better_reply || payload.note)) {
                     await regenerateMessageFlow(index, {

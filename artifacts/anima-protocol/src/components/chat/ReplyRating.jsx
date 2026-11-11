@@ -7,6 +7,13 @@ import { ThumbsDown, ThumbsUp } from "lucide-react";
  * "Correct her" (save and re-render the reply with the correction) or "Save only".
  * `onRate(rating, betterReply?, { note, rerender }?)` returns a promise.
  */
+function ratingErrorText(err) {
+  if (err?.status === 401) return "Sign in again to rate replies.";
+  if (err?.status === 429) return "Too many ratings — try again in a minute.";
+  if (err?.code === "ratings_schema_missing") return "Ratings aren't set up on the server yet.";
+  return "Couldn't save that rating — try again.";
+}
+
 export default function ReplyRating({ onRate, initial = 0, disabled = false }) {
   const [rating, setRating] = useState(initial);
   const [askBetter, setAskBetter] = useState(false);
@@ -14,17 +21,21 @@ export default function ReplyRating({ onRate, initial = 0, disabled = false }) {
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
 
   const send = async (next, betterReply, extra) => {
     if (saving || disabled) return;
     const prev = rating;
     setRating(next);
     setSaving(true);
+    setError("");
     try {
       await (extra ? onRate(next, betterReply, extra) : onRate(next, betterReply));
       setSaved(Boolean(betterReply || extra?.note));
-    } catch {
+    } catch (err) {
       setRating(prev);
+      setSaved(false);
+      setError(ratingErrorText(err));
     } finally {
       setSaving(false);
     }
@@ -67,6 +78,11 @@ export default function ReplyRating({ onRate, initial = 0, disabled = false }) {
           <ThumbsDown className="w-3.5 h-3.5" />
         </button>
         {saved && <span className="text-[10px] font-mono text-primary/40">Thanks — saved</span>}
+        {error && (
+          <span role="alert" className="text-[10px] font-mono text-rose-300/80">
+            {error}
+          </span>
+        )}
       </div>
       {askBetter && rating === -1 && (
         <div className="flex flex-col gap-1">

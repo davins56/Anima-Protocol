@@ -229,19 +229,21 @@ const clerkAppearance = {
 };
 
 function ExperienceRuntimeSync() {
-  const {user, isLoaded} = useUser();
+  const { user, isLoaded } = useUser();
   const userId = isLoaded ? user?.id || null : null;
+
   useEffect(() => {
     if (!isLoaded) return;
     const sync = () => applyActiveExtras(userId);
     sync();
-    window.addEventListener("storage",sync);
-    window.addEventListener(EXTRAS_EVENT,sync);
+    window.addEventListener("storage", sync);
+    window.addEventListener(EXTRAS_EVENT, sync);
     return () => {
-      window.removeEventListener("storage",sync);
-      window.removeEventListener(EXTRAS_EVENT,sync);
+      window.removeEventListener("storage", sync);
+      window.removeEventListener(EXTRAS_EVENT, sync);
     };
-  },[isLoaded,userId]);
+  }, [isLoaded, userId]);
+
   return null;
 }
 
@@ -1709,7 +1711,10 @@ export default function ProtocolApp() {
           <ClerkProviderWithRoutes>
             <AuthProvider>
               <UserActivitySync />
+<<<<<<< HEAD
               <ExperienceRuntimeSync />
+=======
+>>>>>>> origin/main
               <ConfirmProvider>
                 <InAppBrowserWarning />
                 <TapTargetValidator />
