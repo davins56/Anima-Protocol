@@ -93,7 +93,7 @@ export function stripSpeechMarkup(text) {
 export function normalizeForSpeech(text) {
   return stripSpeechMarkup(text)
     .replace(/https?:\/\/\S+/gi, "")
-    .replace(/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\u{FE0F}\u{200D}]/gu, "")
+    .replace(/\p{Extended_Pictographic}|[\u{1F1E6}-\u{1F1FF}]|\u{FE0F}|\u{200D}/gu, "")
     .replace(/\.{3,}/g, "…")
     .replace(/…+/g, "…")
     .replace(/\s*&\s*/g, " and ")
