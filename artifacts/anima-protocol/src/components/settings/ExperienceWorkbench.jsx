@@ -112,7 +112,7 @@ export default function ExperienceWorkbench() {
             {PRESET_FIELDS[field].map(value => <option key={value} value={value}>{title(value)}</option>)}
           </select></label>)}
         <div className="flex flex-wrap gap-2">
-          <button type="button" className="px-3 py-2 rounded-lg border border-primary" onClick={() => {saveAppearance(sanitizePreset(current));toast.success("Global appearance updated.");}}>Apply supported settings</button>
+          <button type="button" className="px-3 py-2 rounded-lg border border-primary" onClick={() => {saveAppearance(Object.fromEntries(["theme","layout","radius","scale","motion"].map(key => [key,current[key]])));toast.success("Supported global settings updated.");}}>Apply supported settings</button>
           <button type="button" className="px-3 py-2 rounded-lg border border-border" onClick={() => setDraft(deviceValue())}>Reset draft</button>
         </div>
       </div>
