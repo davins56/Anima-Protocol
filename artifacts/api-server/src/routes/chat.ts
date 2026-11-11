@@ -188,6 +188,7 @@ import {
   type FactScope,
   type MindProfile,
   antiRepetitionNote,
+  replyLengthNote,
   buildMindKnowledge,
   consumeWithMidstreamFallback,
   createPersonaStreamGuard,
@@ -3179,8 +3180,15 @@ router.post("/messages", async (req, res) => {
   // speaker this turn falls back to no long-term block rather than borrow it.
   const mindKnowledge =
     mindProfile && (!activeCharacterId || activeCharacterId === hintedCharId) ? memoryCoreContext : "";
+  // Hosted replies always get full output room (`hostedReplyMaxTokens`), so
+  // Settings → Short is a prompt instruction there instead of a 90-token cut.
   const mindTurnNote = mindProfile
-    ? antiRepetitionNote(recentAssistantReplies(promptRecentMessages))
+    ? [
+        antiRepetitionNote(recentAssistantReplies(promptRecentMessages)),
+        replyLengthNote(String(body.metadata?.response_length ?? profileSettings.ai_response_length ?? "")),
+      ]
+        .filter(Boolean)
+        .join(" ")
     : "";
   const messages = telemetry.measureSync("prompt_build_ms", () => {
     const composed = composeCompanionChatMessages({
@@ -3427,6 +3435,7 @@ router.post("/messages", async (req, res) => {
           tier: routed.tier,
           model: routed.model,
           maxTokens,
+          companionReply: true,
           messages: appendFinalUserReminder(messages, reminder),
           temperature: COMPANION_CHAT_TEMPERATURE,
           signal: combineAbortSignals(retryOpen.signal, abandoned.signal, replacedController.signal),
@@ -3619,6 +3628,8 @@ router.post("/messages", async (req, res) => {
             tier: routed.tier,
             model: routed.model,
             maxTokens: replyMaxTokens,
+            // Hosted providers get full reply room; the small caps are for the local model.
+            companionReply: true,
             messages,
             temperature: mindProfile ? mindProfile.sampling.temperature : COMPANION_CHAT_TEMPERATURE,
             ...(mindProfile
