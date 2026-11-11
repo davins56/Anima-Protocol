@@ -18,6 +18,7 @@ vi.mock("@/hooks/useSacredSpaceVoice", () => ({
 
 const invokeLLM = vi.fn();
 const recordSacredSpaceCheckIn = vi.fn();
+const recordSacredSpaceMemory = vi.fn(() => Promise.resolve({}));
 
 vi.mock("@/api/animaClient", () => ({
   animaClient: {
@@ -28,6 +29,7 @@ vi.mock("@/api/animaClient", () => ({
 
 vi.mock("@/lib/sacredSpaceCheckIn", () => ({
   recordSacredSpaceCheckIn: (...args) => recordSacredSpaceCheckIn(...args),
+  recordSacredSpaceMemory: (...args) => recordSacredSpaceMemory(...args),
 }));
 
 import SacredSpaceSession from "./SacredSpaceSession";

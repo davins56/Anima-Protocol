@@ -203,6 +203,7 @@ import {
   type FactScope,
   type MindProfile,
   antiRepetitionNote,
+  dialoguePlanNote,
   replyLengthNote,
   buildMindKnowledge,
   consumeWithMidstreamFallback,
@@ -3256,6 +3257,14 @@ router.post("/messages", async (req, res) => {
   const mindTurnNote = mindProfile
     ? [
         antiRepetitionNote(recentAssistantReplies(promptRecentMessages)),
+        dialoguePlanNote({
+          userText: content,
+          recentReplies: recentAssistantReplies(promptRecentMessages),
+          mode,
+          character: activeChar,
+          hasMemory: Boolean(mindKnowledge),
+          hasMood: Boolean(companionAffect),
+        }),
         replyLengthNote(String(body.metadata?.response_length ?? profileSettings.ai_response_length ?? "")),
         companionPhotoNote,
       ]
