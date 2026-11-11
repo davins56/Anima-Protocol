@@ -107,6 +107,11 @@ export const CLOUDFLARE_RUNTIME_ENV_NAMES = [
   "STRIPE_VOICE_MINUTES_PER_PACK",
   "STRIPE_DEEP_MODE_DAYS",
   "BILLING_APP_ORIGIN",
+  // ElevenLabs TTS + Sacred Space voice agent. Classic Worker secret
+  // (`wrangler secret put ELEVENLABS_API_KEY`); voice/agent ids are optional.
+  "ELEVENLABS_API_KEY",
+  "ELEVENLABS_VOICE_ID",
+  "ELEVENLABS_AGENT_ID",
   // Public app origin for background jobs (Anima media photo signing).
   "ANIMA_APP_ORIGIN",
   // Forward Kernel roadmap kill switches. Unset is off. See kernelFeatures.ts.
