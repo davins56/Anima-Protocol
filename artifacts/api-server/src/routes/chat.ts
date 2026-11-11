@@ -1279,6 +1279,9 @@ async function writeTurnMoodFromMetadata(turn: ChatTurn): Promise<void> {
     const wrote = await withTransientDbRetry(() =>
       db.transaction(async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${turn.id}`}))`);
+        // Same per-companion lock as Sacred Space awards: neither write may
+        // replace the other's emotional_state.
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`${turn.userId}:${characterId}`}))`);
         const [latestMoodTurn] = await tx
           .select({ metadata: chatTurns.metadata })
           .from(chatTurns)
@@ -1566,60 +1569,64 @@ async function applyRelationshipPostProcess(params: {
     }
     const now = new Date();
     for (const cid of characterIds) {
-      const [existing] = await withTransientDbRetry(() =>
-        db
-          .select({
-            summary: companionMemories.summary,
-            facts: companionMemories.facts,
-            emotionalState: companionMemories.emotionalState,
-            resonanceNotes: companionMemories.resonanceNotes,
-          })
-          .from(companionMemories)
-          .where(
-            and(
-              eq(companionMemories.userId, userId),
-              eq(companionMemories.characterId, cid),
-            ),
-          )
-          .limit(1),
-      );
-      const current =
-        (existing?.emotionalState as Record<string, unknown> | null) ?? null;
-      // SEC-005b: mood and synchro values go to the resolved speaker only.
-      // Everyone else gets `{}`, which keeps their own synchro but still
-      // writes this turn's relationshipTurnId stamp exactly as before. The
-      // saved-moment stamp is unchanged.
-      const isSpeaker = cid === affectSpeakerId;
-      const next = emotionalStateWithTurnBond(current, turnId, {
-        synchro: evolved ? (isSpeaker ? serializeSynchroState(evolved) : {}) : null,
-        selfState: evolvedAffect && isSpeaker ? serializeCompanionAffect(evolvedAffect) : null,
-        saveMoment:
-          Boolean(evolved) &&
-          !replyCutOff &&
-          !savedMomentsTurnAlreadyWritten(current, turnId),
-      });
-      if (!next.wroteMood && !next.wroteRelationship && !next.wroteSavedMoments) {
-        continue;
-      }
       await withTransientDbRetry(() =>
-        db
-          .insert(companionMemories)
-          .values({
-            userId,
-            characterId: cid,
-            summary: existing?.summary ?? "",
-            facts: Array.isArray(existing?.facts) ? existing.facts : [],
-            emotionalState: next.state,
-            resonanceNotes: existing?.resonanceNotes ?? "",
-            updatedAt: now,
-          })
-          .onConflictDoUpdate({
-            target: [companionMemories.userId, companionMemories.characterId],
-            set: {
+        db.transaction(async (tx) => {
+          // Same per-companion lock as Sacred Space awards, held across the
+          // read and the write so an award cannot land in between and be lost.
+          await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`${userId}:${cid}`}))`);
+          const [existing] = await tx
+            .select({
+              summary: companionMemories.summary,
+              facts: companionMemories.facts,
+              emotionalState: companionMemories.emotionalState,
+              resonanceNotes: companionMemories.resonanceNotes,
+            })
+            .from(companionMemories)
+            .where(
+              and(
+                eq(companionMemories.userId, userId),
+                eq(companionMemories.characterId, cid),
+              ),
+            )
+            .limit(1);
+          const current =
+            (existing?.emotionalState as Record<string, unknown> | null) ?? null;
+          // SEC-005b: mood and synchro values go to the resolved speaker only.
+          // Everyone else gets `{}`, which keeps their own synchro but still
+          // writes this turn's relationshipTurnId stamp exactly as before. The
+          // saved-moment stamp is unchanged.
+          const isSpeaker = cid === affectSpeakerId;
+          const next = emotionalStateWithTurnBond(current, turnId, {
+            synchro: evolved ? (isSpeaker ? serializeSynchroState(evolved) : {}) : null,
+            synchroBaseline: isSpeaker ? evolved?.baselineStrength : null,
+            selfState: evolvedAffect && isSpeaker ? serializeCompanionAffect(evolvedAffect) : null,
+            saveMoment:
+              Boolean(evolved) &&
+              !replyCutOff &&
+              !savedMomentsTurnAlreadyWritten(current, turnId),
+          });
+          if (!next.wroteMood && !next.wroteRelationship && !next.wroteSavedMoments) {
+            return;
+          }
+          await tx
+            .insert(companionMemories)
+            .values({
+              userId,
+              characterId: cid,
+              summary: existing?.summary ?? "",
+              facts: Array.isArray(existing?.facts) ? existing.facts : [],
               emotionalState: next.state,
+              resonanceNotes: existing?.resonanceNotes ?? "",
               updatedAt: now,
-            },
-          }),
+            })
+            .onConflictDoUpdate({
+              target: [companionMemories.userId, companionMemories.characterId],
+              set: {
+                emotionalState: next.state,
+                updatedAt: now,
+              },
+            });
+        }),
       );
     }
   }

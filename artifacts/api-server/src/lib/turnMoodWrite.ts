@@ -6,6 +6,8 @@
  * the stamp and does not evolve mood again.
  */
 
+import { computeSynchroLevel } from "./synchroEngine";
+
 export const MOOD_TURN_ID_KEY = "moodTurnId";
 /** Bond strength for this turn was persisted. A retry must not add it again. */
 export const RELATIONSHIP_TURN_ID_KEY = "relationshipTurnId";
@@ -84,6 +86,12 @@ export function emotionalStateWithTurnBond(
   turnId: string,
   input: {
     synchro?: Record<string, unknown> | null;
+    /**
+     * Strength stored when this turn's synchro was read. When the stored value
+     * has moved since (a Sacred Space award landed mid-turn), this turn's gain
+     * is applied on top of the stored value instead of replacing it.
+     */
+    synchroBaseline?: number | null;
     selfState?: Record<string, unknown> | null;
     /** True once this turn's saved-moment pass has run. */
     saveMoment?: boolean;
@@ -124,6 +132,20 @@ export function emotionalStateWithTurnBond(
     delete synchro[MOOD_TURN_ID_KEY];
     delete synchro[RELATIONSHIP_TURN_ID_KEY];
     delete synchro[SAVED_MOMENTS_TURN_ID_KEY];
+    const stored = state.synchroStrength;
+    if (
+      typeof input.synchroBaseline === "number" &&
+      typeof stored === "number" &&
+      typeof synchro.synchroStrength === "number" &&
+      stored !== input.synchroBaseline
+    ) {
+      const rebased = Math.max(
+        0,
+        Math.min(100, Math.round(synchro.synchroStrength + (stored - input.synchroBaseline))),
+      );
+      synchro.synchroStrength = rebased;
+      synchro.synchroLevel = computeSynchroLevel(rebased);
+    }
     state = {
       ...state,
       ...synchro,

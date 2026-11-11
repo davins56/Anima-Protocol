@@ -1,20 +1,27 @@
 import { useState, useEffect } from "react";
-import { Flame, ShieldAlert, Zap, Heart } from "lucide-react";
+import { ShieldAlert, Heart } from "lucide-react";
 import { fetchIntimacyProfile, patchIntimacyProfile } from "@/lib/intimacyClient";
+import { fetchSynchro } from "@/lib/synchroClient";
+import ConnectionMeters from "./ConnectionMeters";
 
 export default function IntimacyDock({ characterId, conversationId, refreshKey, onProfileUpdate }) {
   const [profile, setProfile] = useState(null);
+  const [synchro, setSynchro] = useState(null);
   const [loading, setLoading] = useState(false);
   const [triggeringSafeword, setTriggeringSafeword] = useState(false);
 
   useEffect(() => {
     if (!characterId) return;
     let active = true;
+    setSynchro(null);
     fetchIntimacyProfile(characterId).then((p) => {
       if (active && p) {
         setProfile(p);
         if (onProfileUpdate) onProfileUpdate(p);
       }
+    });
+    fetchSynchro(characterId).then((s) => {
+      if (active && s) setSynchro(s);
     });
     return () => {
       active = false;
@@ -27,13 +34,17 @@ export default function IntimacyDock({ characterId, conversationId, refreshKey, 
   useEffect(() => {
     if (!characterId || refreshKey == null) return;
     let active = true;
-    const pull = () =>
-      fetchIntimacyProfile(characterId).then((p) => {
+    const pull = () => {
+      fetchSynchro(characterId).then((s) => {
+        if (active && s) setSynchro(s);
+      });
+      return fetchIntimacyProfile(characterId).then((p) => {
         if (active && p) {
           setProfile(p);
           if (onProfileUpdate) onProfileUpdate(p);
         }
       });
+    };
     const t1 = setTimeout(pull, 800);
     const t2 = setTimeout(pull, 3000);
     return () => {
@@ -42,10 +53,10 @@ export default function IntimacyDock({ characterId, conversationId, refreshKey, 
       clearTimeout(t2);
     };
   }, [characterId, refreshKey]);
-  if (!characterId || !profile) return null;
+  if (!characterId || (!profile && !synchro)) return null;
 
   const toggleIntimacy = async () => {
-    if (loading) return;
+    if (loading || !profile) return;
     setLoading(true);
     const nextEnabled = !profile.intimacyEnabled;
     const updated = await patchIntimacyProfile(characterId, { intimacyEnabled: nextEnabled });
@@ -70,64 +81,43 @@ export default function IntimacyDock({ characterId, conversationId, refreshKey, 
     setTriggeringSafeword(false);
   };
 
-  const heat = profile.heat || 0;
-  const isEnabled = profile.intimacyEnabled;
-
-  const heatColor =
-    heat >= 80
-      ? "bg-rose-500 text-rose-300 border-rose-500/50 shadow-rose-500/20"
-      : heat >= 40
-        ? "bg-amber-500 text-amber-300 border-amber-500/50"
-        : heat >= 15
-          ? "bg-yellow-500 text-yellow-300 border-yellow-500/50"
-          : "bg-primary/20 text-primary/60 border-primary/20";
+  const heat = profile?.heat || 0;
+  const isEnabled = Boolean(profile?.intimacyEnabled);
 
   return (
-    <div className="flex items-center gap-3 px-3 py-1.5 bg-black/60 border border-primary/20 hud-corner text-xs font-mono">
-      {/* Toggle button */}
-      <button
-        type="button"
-        onClick={toggleIntimacy}
-        disabled={loading}
-        className={`flex items-center gap-1.5 px-2.5 py-1 border text-[10px] tracking-widest uppercase transition-all ${
-          isEnabled
-            ? "bg-rose-950/40 border-rose-500/50 text-rose-300 hover:bg-rose-900/50"
-            : "bg-primary/5 border-primary/20 text-primary/40 hover:text-primary/70"
-        }`}
-      >
-        <Heart className={`w-3 h-3 ${isEnabled ? "fill-rose-500 text-rose-400" : ""}`} />
-        <span>{isEnabled ? "Pulse On" : "Pulse Off"}</span>
-      </button>
+    <div className="flex w-full flex-col gap-2 border border-primary/20 bg-black/60 px-3 py-1.5 font-mono text-xs hud-corner sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+      <ConnectionMeters synchro={synchro} heat={heat} showHeat={isEnabled} />
 
-      {isEnabled && (
-        <>
-          {/* Heat meter */}
-          <div className="flex items-center gap-2 border-l border-primary/20 pl-3">
-            <Flame className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-            <div className="flex flex-col">
-              <span className="text-[9px] text-primary/40 uppercase tracking-wider">Heat</span>
-              <div className="w-16 h-2 bg-black/80 border border-primary/20 rounded-full overflow-hidden mt-0.5">
-                <div
-                  className={`h-full transition-all duration-500 ${heatColor}`}
-                  style={{ width: `${Math.min(100, Math.max(0, heat))}%` }}
-                />
-              </div>
-            </div>
-            <span className="text-[10px] font-bold text-amber-300 ml-1">{heat}</span>
-          </div>
-
-          {/* Safeword button */}
+      {profile && (
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Toggle button */}
           <button
             type="button"
-            onClick={handleSafeword}
-            disabled={triggeringSafeword}
-            className="flex items-center gap-1 px-2 py-1 bg-red-950/60 border border-red-500/50 text-red-400 hover:bg-red-900/70 text-[9px] uppercase tracking-widest transition-all hud-corner"
-            title={`Trigger Safeword (${profile.safeword || "red"})`}
+            onClick={toggleIntimacy}
+            disabled={loading}
+            className={`flex items-center gap-1.5 px-2.5 py-1 border text-[10px] tracking-widest uppercase transition-all ${
+              isEnabled
+                ? "bg-rose-950/40 border-rose-500/50 text-rose-300 hover:bg-rose-900/50"
+                : "bg-primary/5 border-primary/20 text-primary/40 hover:text-primary/70"
+            }`}
           >
-            <ShieldAlert className="w-3 h-3 text-red-400" />
-            <span>{profile.safeword ? profile.safeword.toUpperCase() : "SAFEWORD"}</span>
+            <Heart className={`w-3 h-3 ${isEnabled ? "fill-rose-500 text-rose-400" : ""}`} />
+            <span>{isEnabled ? "Pulse On" : "Pulse Off"}</span>
           </button>
-        </>
+
+          {isEnabled && (
+            <button
+              type="button"
+              onClick={handleSafeword}
+              disabled={triggeringSafeword}
+              className="flex items-center gap-1 px-2 py-1 bg-red-950/60 border border-red-500/50 text-red-400 hover:bg-red-900/70 text-[9px] uppercase tracking-widest transition-all hud-corner"
+              title={`Trigger Safeword (${profile.safeword || "red"})`}
+            >
+              <ShieldAlert className="w-3 h-3 text-red-400" />
+              <span>{profile.safeword ? profile.safeword.toUpperCase() : "SAFEWORD"}</span>
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

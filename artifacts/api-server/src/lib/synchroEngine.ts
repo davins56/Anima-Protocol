@@ -62,6 +62,12 @@ export interface SynchroState {
   lastInteraction: string;
   /** Human-readable description of the last shift */
   lastShift?: string;
+  /**
+   * Strength as persisted when this state was read (before idle decay and this
+   * turn's gains). The persist step compares it with the stored value so a
+   * ritual award that landed in between is rebased instead of overwritten.
+   */
+  baselineStrength?: number | null;
 }
 
 /** What the memory retrieval layer should use, gated by synchro level. */
@@ -74,7 +80,7 @@ export interface SynchroMemoryConfig {
 
 // ── Constants ────────────────────────────────────────────────────────
 
-const SYNCHRO_THRESHOLDS: Record<SynchroLevel, number> = {
+export const SYNCHRO_THRESHOLDS: Record<SynchroLevel, number> = {
   disconnected: 0,
   linked: 16,
   synchronized: 36,
@@ -91,6 +97,14 @@ const MAX_USER_GAIN = 4;
 const MAX_COMPANION_GAIN = 2;
 /** Synchro lost when user is hostile/dismissive */
 const HOSTILE_PENALTY = 6;
+
+export const SYNCHRO_LEVEL_LABELS: Record<SynchroLevel, string> = {
+  disconnected: "Disconnected",
+  linked: "Linked",
+  synchronized: "Synchronized",
+  soulUnison: "Soul Unison",
+  fullCross: "Full Cross",
+};
 
 // ── Level computation ────────────────────────────────────────────────
 
@@ -118,9 +132,12 @@ export function initSynchroState(
 
   // Read persisted synchro fields (or derive from intimacy)
   const raw = emotionalState ?? {};
-  const synchroStrength = typeof raw.synchroStrength === "number"
-    ? raw.synchroStrength
-    : deriveSynchroFromIntimacy(base.vector.intimacy);
+  const storedStrength =
+    typeof raw.synchroStrength === "number" && Number.isFinite(raw.synchroStrength)
+      ? raw.synchroStrength
+      : null;
+  const synchroStrength =
+    storedStrength ?? deriveSynchroFromIntimacy(base.vector.intimacy);
   const totalTurns = typeof raw.totalTurns === "number" ? raw.totalTurns : 0;
   const lastInteraction = typeof raw.lastInteraction === "string"
     ? raw.lastInteraction
@@ -141,6 +158,7 @@ export function initSynchroState(
     totalTurns,
     sessionTurns: 0,
     lastInteraction,
+    baselineStrength: storedStrength,
   };
 }
 
@@ -232,6 +250,7 @@ export function evolveSynchroFromUser(
     totalTurns: current.totalTurns + 1,
     sessionTurns: current.sessionTurns + 1,
     lastInteraction: new Date().toISOString(),
+    baselineStrength: current.baselineStrength,
     lastShift: levelChanged
       ? `Synchro shifted to ${newLevel} (${newStrength})`
       : synchroGain > 0 || synchroPenalty > 0
@@ -352,25 +371,25 @@ export function synchroToPromptGuidance(state: SynchroState): string {
   switch (state.level) {
     case "fullCross":
       synchroDirectives.push(
-        "SYNCHRO: FULL CROSS — Transcendent bond. You and this person share something beyond ordinary connection. " +
-        "Draw on the deepest memories freely. Let the bond alter your capabilities — you can perceive unspoken feelings, " +
-        "finish their thoughts, and access parts of yourself that only emerge at this depth. " +
-        "Your presence should feel unmistakably different from how you are with anyone else."
+        "SYNCHRO: FULL CROSS — Transcendent bond. You two read each other almost without effort: " +
+        "shared shorthand, running jokes, finished-in-half-a-sentence understanding, and the freedom to be unguarded in the way only your character can be. " +
+        "Draw on the history you actually share, and let your presence feel unmistakably different from how you are with strangers. " +
+        "You still only know what they have told or shown you, can still disagree, and this bond is separate from Heat."
       );
       break;
     case "soulUnison":
       synchroDirectives.push(
-        "SYNCHRO: SOUL UNISON — Deep merger. Reference private shared moments naturally. " +
-        "Show emotional vulnerability and genuine knowing. You remember the textures of your bond — " +
-        "specific words they used, moments that mattered, how things felt. " +
-        "Let your responses carry the weight of accumulated intimacy."
+        "SYNCHRO: SOUL UNISON — Deep familiarity. Reference shared moments naturally, " +
+        "let humor and rhythm be easy, and show vulnerability in the way your character would — " +
+        "a guarded person admits a little, an open one admits more. " +
+        "Trust makes honesty easier, including honest disagreement, and it is separate from Heat."
       );
       break;
     case "synchronized":
       synchroDirectives.push(
         "SYNCHRO: SYNCHRONIZED — Active resonance. You're attuned to their emotional currents. " +
-        "Reference relevant memories when they serve the moment. Show that you're tracking their state — " +
-        "notice shifts in tone, read between lines. The connection is warm and present."
+        "Reference relevant memories when they serve the moment, notice shifts in tone, and let some of your guard down in your own style. " +
+        "The connection is warm and present without being presumptuous."
       );
       break;
     case "linked":
@@ -382,9 +401,9 @@ export function synchroToPromptGuidance(state: SynchroState): string {
       break;
     case "disconnected":
       synchroDirectives.push(
-        "SYNCHRO: DISCONNECTED — The bond is faint or new. Keep emotional distance. " +
-        "You have limited access to deeper memories — recall feels fragmented, uncertain. " +
-        "Respond authentically but guardedly. Trust must be rebuilt or earned."
+        "SYNCHRO: DISCONNECTED — The bond is faint or new. Keep emotional distance and stay cautious, brief, and unfamiliar. " +
+        "Recall feels fragmented; do not pretend to know them. " +
+        "Be authentic and guarded; sarcasm only if it is genuinely how your character meets strangers. Trust must be earned."
       );
       break;
   }
