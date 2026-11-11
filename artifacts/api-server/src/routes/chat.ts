@@ -3306,6 +3306,8 @@ router.post("/messages", async (req, res) => {
       sharedMemory: promptSharedMemory,
       mode,
       content,
+      replyAction,
+      replacingTurnId: discardedReply.turnId || replacedTurnIdOf(body.metadata) || null,
       isCrossover,
       synchroState,
       companionAffect,
