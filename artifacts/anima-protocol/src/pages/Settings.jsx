@@ -90,6 +90,7 @@ const defaultPrefs = {
   chat_bg_theme: "default",
   chat_bg_image: "",
   adult_content_enabled: false,
+  creative_freedom_enabled: false,
   voice_input_enabled: true,
   auto_read_responses: false,
   theme_mode: "dark",
@@ -895,6 +896,16 @@ export default function Settings() {
                     </div>
                     </div>
 
+              <SectionTitle>Conversation Style</SectionTitle>
+              <div className="border border-primary/15 bg-black/40 p-5">
+                <TogglePref
+                  label="Creative freedom"
+                  description="More expressive characters, natural language, and room for dark or unusual fiction. Your boundaries still apply. Separate from adult mode; unavailable in therapy."
+                  value={prefs.creative_freedom_enabled}
+                  onChange={(v) => setPref("creative_freedom_enabled", v)}
+                />
+              </div>
+
               {/* 18+ Adult Content */}
               <SectionTitle>Content Rating</SectionTitle>
               <div className={`border p-5 space-y-3 ${prefs.adult_content_enabled ? "border-rose-500/30 bg-rose-950/20" : "border-primary/15 bg-black/40"}`}>
@@ -905,10 +916,10 @@ export default function Settings() {
                       <p className="font-mono text-xs text-primary/70 tracking-wider uppercase">Adult Content Mode</p>
                     </div>
                     <p className="text-[9px] font-mono text-primary/30 leading-relaxed">
-                      Enables explicit, lewd, and sexual roleplay. Characters escalate when the moment invites it — and hold back during grief, support, or non-intimate beats. By enabling this you confirm you are 18 years of age or older.
+                      Enables mature roleplay for adults after the age check. Follow your pace and boundaries. Available outside therapy, crossover scenes, and Deep mode. Model providers may apply their own content limits.
                     </p>
                     {prefs.adult_content_enabled && (
-                      <p className="text-[9px] font-mono text-rose-400/70 mt-1.5">● Adult mode active — heat when the beat is right</p>
+                      <p className="text-[9px] font-mono text-rose-400/70 mt-1.5">● Adult preference enabled — applies in supported chats</p>
                     )}
                   </div>
                   <button
@@ -1644,6 +1655,10 @@ function TogglePref({ label, description, value, onChange }) {
         <p className="text-[9px] font-mono text-primary/30 mt-0.5">{description}</p>
       </div>
       <button
+        type="button"
+        role="switch"
+        aria-label={label}
+        aria-checked={Boolean(value)}
         onClick={() => onChange(!value)}
         className={`relative w-10 h-5 border transition-all flex-shrink-0 ${
           value ? "bg-primary/20 border-primary/50" : "bg-black/60 border-primary/15"

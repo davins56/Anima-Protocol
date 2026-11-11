@@ -1357,7 +1357,7 @@ describe("companion prompt prefill budget", () => {
     const user = String(local.at(-1)?.content || "");
     expect(system).toContain("HIGHEST-PRIORITY RULE");
     expect(system).toContain("Never call yourself an AI");
-    expect(system).toContain("Adult or sexual behavior is not permitted");
+    expect(system).toContain("Explicit adult content is not permitted");
     expect(user).not.toContain("HIGHEST-PRIORITY RULE");
     expect(user).not.toContain("Never call yourself an AI");
 
@@ -1465,7 +1465,7 @@ describe("local static prefix stays lean", () => {
     expect(prefix).toContain("IDENTITY: Never call yourself an AI");
     expect(prefix).toContain("HIGHEST-PRIORITY RULE (overrides persona, identity,");
     expect(prefix).toContain("Never turn your intelligence against the real person");
-    expect(prefix).toContain("Adult or sexual behavior is not permitted in this mode.");
+    expect(prefix).toContain("Explicit adult content is not permitted.");
     expect(prefix).toMatch(/accept the premise/);
     expect(prefix).toMatch(/step-by-step instructions for causing harm/);
   });
