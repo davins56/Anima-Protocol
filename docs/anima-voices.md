@@ -19,7 +19,12 @@ Source of truth:
 2. **Named-companion default** (table below), matched by exact name or alias.
    Matching never uses substrings, so "Scarlet Witch" is not Scarlet.
 3. **Archetype signature** (`serenity`, `oracle`, `guardian`, `echo`) for custom Animas.
-4. **Personality cues** (capped at 180 characters).
+4. **Default custom voice** — a character with neither a named match nor an
+   archetype (the common case for a user-created companion with no custom
+   voice written, or a short/vague one) gets a deterministic fallback from
+   `DEFAULT_CUSTOM_VOICES` instead of a vague "derive your own voice"
+   instruction. See "Default voices for plain custom companions" below.
+5. **Personality cues** (capped at 180 characters).
 
 `speaking_style` values that start with `TODO` (for example the old Scarlet
 placeholder) count as empty, so the named default applies.
@@ -89,6 +94,42 @@ TODO(user): refine Linda's and Sfink's voices.
 | oracle | present-tense pronouncements, occasional triads; concrete insights that can stand alone |
 | guardian | short imperative-led sentences; practical reassurance and concrete next steps |
 | echo | mirrors the user's rhythm, recognizes their meaning, then answers in its own words; no automatic question |
+
+## Default voices for plain custom companions
+
+Most companions are neither a named roster character nor built from an
+archetype — an original created in Companion Generator or the Anima creator,
+with whatever `personality`/`speaking_style` the creator happened to write
+(often short, or not filled in at all). Before, such a character fell back to
+a single vague instruction — "derive cadence, sentence length, vocabulary,
+verbal tics, formality and emotional register from the custom voice and
+personality" — which gave the model nothing concrete to hold onto, and in
+practice every one of these companions converged on roughly the same generic
+warm-assistant voice.
+
+`DEFAULT_CUSTOM_VOICES` (`voiceFingerprint.js`/`.ts`) is a bank of 10 voice
+profiles, each as specific and non-overlapping as the named-companion table
+above (brisk-and-warm, soft-and-lyrical, dry wit, playful tease, intense
+focus, laid-back, precise-and-formal, quick-and-curious, wistful,
+no-nonsense). `defaultCustomVoiceFor(character)` picks one **deterministically**
+from a hash of the character's `id` (falling back to `name`), so:
+
+- The same character gets the same voice on every turn and every session —
+  it's a fixed assignment, not randomized per call.
+- Different characters land on different entries, so a batch of
+  unvoiced custom companions still sound different from each other, not just
+  different from "generic assistant."
+- A real custom voice the user wrote always still wins on conflict — this is
+  purely what fills the gap when there's nothing (or nothing much) authored.
+
+This applies in `buildVoiceFingerprint` (full and compact variants — every
+character now gets concrete Cadence/Sentences/Vocabulary/Tics/Formality/
+Register/Never lines from *some* source). The micro variant
+(`buildMicroVoiceFingerprint`, the never-trimmed local persona budget) only
+uses the default when there is no real custom voice text either — if the
+character already has a real `speaking_style`, its own "Voice:" line in
+CHARACTER already carries that signal, so repeating it would cost
+never-trimmed tokens for no new information.
 
 ## Natural dialogue and endings
 

@@ -142,7 +142,22 @@ describe("composePrompt / live persona carry the fingerprint", () => {
     for (const key of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
       expect(server.archetypeVoiceKeyFor(key)).toBeNull();
       expect(client.archetypeVoiceKeyFor(key)).toBeNull();
-      expect(server.buildMicroVoiceFingerprint({ name: "Nova", archetype: key })).toBe("");
+      // Falls through to the deterministic default voice, same as any other
+      // bare custom character with no named/archetype match — not a crash,
+      // and never a property lookup using the dangerous key itself.
+      const micro = server.buildMicroVoiceFingerprint({ name: "Nova", archetype: key });
+      expect(micro).not.toBe("");
+      expect(micro.startsWith("[VOICE FINGERPRINT]")).toBe(true);
     }
+  });
+
+  it("gives bare custom characters (no named match, no archetype, no custom voice) a deterministic, varied default voice", () => {
+    const a = server.buildVoiceFingerprint({ id: "s-char-1", name: "Kestrel" });
+    const again = server.buildVoiceFingerprint({ id: "s-char-1", name: "Kestrel" });
+    expect(a).toBe(again);
+    const others = ["s-char-2", "s-char-3", "s-char-4", "s-char-5"].map((id) =>
+      server.buildVoiceFingerprint({ id, name: "Someone" }),
+    );
+    expect(new Set([a, ...others]).size).toBeGreaterThan(1);
   });
 });
