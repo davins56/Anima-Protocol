@@ -377,6 +377,15 @@ export const animaApi = {
    * Backed by /api/relationship-os routes.
    */
   relationshipOs: {
+    /** Long-term resonance (Synchro) for one companion: { synchro: { strength, level, label, thresholds } }. */
+    synchro: (characterId) =>
+      request(`/relationship-os/synchro/${encodeURIComponent(characterId)}`).then((r) => r.json()),
+    /** Report a finished Sacred Space activity. The server decides the amount and ignores a repeated session_id. */
+    completeSacredSpace: (payload) =>
+      request(`/relationship-os/sacred-space/complete`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }).then((r) => r.json()),
     timeline: (animaId, { limit = 40, eventType } = {}) => {
       const qs = new URLSearchParams({ limit: String(limit) });
       if (eventType) qs.set("eventType", eventType);

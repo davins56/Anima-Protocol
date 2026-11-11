@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/api/animaClient", () => ({
+  postApiJson: vi.fn(() => Promise.resolve({ id: "ev-1" })),
   animaClient: {
     entities: {
       CheckIn: {
@@ -15,13 +16,14 @@ vi.mock("@/hooks/useCheckInRitual", () => ({
   setGlobalCheckInContext: vi.fn(),
 }));
 
-import { animaClient } from "@/api/animaClient";
+import { animaClient, postApiJson } from "@/api/animaClient";
 import { setGlobalCheckInContext } from "@/hooks/useCheckInRitual";
 import {
   appearsInCheckInList,
   buildSacredSpaceCheckIn,
   moodFromRitualFocus,
   recordSacredSpaceCheckIn,
+  recordSacredSpaceMemory,
 } from "./sacredSpaceCheckIn";
 
 describe("moodFromRitualFocus", () => {
@@ -175,5 +177,25 @@ describe("check-ins list after a Sacred Space save (failing path)", () => {
     expect(visible.map((row) => row.id)).toEqual(["ci-new", "ci-old"]);
     expect(visible[0].source).toBe("sacred_space");
     expect(visible[0].reflection).toMatch(/settled my chest/);
+  });
+});
+
+describe("recordSacredSpaceMemory", () => {
+  it("posts structured turns scoped to the companion with the session id", async () => {
+    await recordSacredSpaceMemory({
+      characterId: "char 1",
+      characterName: "Serenity",
+      sessionId: "s-1",
+      ritualFocus: "clarity",
+      messages: [{ role: "user", content: "hi", character_name: "x" }],
+      reflection: "calm",
+    });
+    expect(postApiJson).toHaveBeenCalledWith("/memory-core/char%201/sacred-space", {
+      session_id: "s-1",
+      character_name: "Serenity",
+      ritual_focus: "clarity",
+      reflection: "calm",
+      transcript: [{ role: "user", content: "hi" }],
+    });
   });
 });
