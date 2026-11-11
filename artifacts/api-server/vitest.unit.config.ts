@@ -44,6 +44,11 @@ export default defineConfig({
       "test/invokeAsyncScope.test.ts",
       // Deleting a message: what the mind forgets (mocked pool).
       "test/mindForgetMessage.test.ts",
+      "test/chatStyle.test.ts",
+      "test/chatModeRegistry.test.ts",
+      "test/promptBuilder.test.ts",
+      "test/companionPromptBudget.test.ts",
+      "test/safetyGates.test.ts",
     ],
     environment: "node",
     fileParallelism: false,

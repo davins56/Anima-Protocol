@@ -15,6 +15,7 @@
 
 import { builtInIdentityLock, canonicalCompanionName, isPreinstalledCharacter } from "./companions/builtIn";
 import { readRuntimeEnv } from "./cloudflareEnv";
+import { creativeFreedomPrompt } from "./chatStyle";
 import { acceptedIdentityLines } from "./identityProposals";
 import {
   type CompanionMemoryRecord,
@@ -1374,13 +1375,7 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
     groupInstruction = groupTurnInstruction(mainChar.name);
   }
 
-  const uncensoredToneBlock = uncensoredMode
-    ? `UNCENSORED TONE OVERRIDE (style only):
-- Speak with blunt, unvarnished honesty in-character.
-- Allow explicit language and emotionally sharp phrasing *when it serves the moment and the relationship.*
-- Avoid euphemisms and platitudes; respond directly to the user's request.
-- Do NOT remove or weaken the highest-priority rule about never turning intelligence against the real person.`
-    : "";
+  const uncensoredToneBlock = creativeFreedomPrompt(uncensoredMode === true, modePolicy.name === "therapy");
 
   const therapySafety =
     modePolicy.name === "therapy" && therapyAssessment
@@ -2813,16 +2808,7 @@ ${sceneExcerpt}
     groupInstruction = groupTurnInstruction(mainChar.name);
   }
 
-  // 10. Uncensored tone override (style only; safety guardrail stays)
-  let uncensoredToneBlock = "";
-  if (uncensoredMode) {
-    uncensoredToneBlock = `UNCENSORED TONE OVERRIDE (style only):
-- Speak with blunt, unvarnished honesty in-character.
-- Allow explicit language and emotionally sharp phrasing *when it serves the moment and the relationship.*
-- Avoid euphemisms and platitudes; respond directly to the user's request.
-- Do NOT remove or weaken the highest-priority rule about never turning intelligence against the real person.
-`;
-  }
+  const uncensoredToneBlock = creativeFreedomPrompt(uncensoredMode === true, modePolicy.name === "therapy");
 
   // A. Relationship/bond state injection
   let relationshipBlock = "";
@@ -2920,6 +2906,7 @@ ${sceneExcerpt}
       { rank: 82, text: memoryBlock },
       { rank: 58, text: sharedBlock },
       { rank: 110, text: authoritativeModeBlock },
+      { rank: 60, text: uncensoredToneBlock },
       { rank: 110, text: careSafetyBlock },
       { rank: 40, text: intimacyBlock },
       { rank: 30, text: voiceBlock },
