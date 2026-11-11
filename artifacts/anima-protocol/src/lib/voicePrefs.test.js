@@ -99,13 +99,25 @@ describe("voice-note requests carry the opt-in", () => {
   it("voice notes are offered when the box can speak, or a cloud key matches an opt-in", async () => {
     const body = { voice_clip: false, voice_clip_cloud: { xai: true, elevenlabs: false } };
     const fetchImpl = okFetch(body);
-    expect(await fetchMediaCapabilities({ fetchImpl })).toEqual({ voice_clip: false });
+    expect(await fetchMediaCapabilities({ fetchImpl })).toEqual({ voice_clip: false, chat_photos: false });
     setVoicePrefs({ elevenlabs: true });
-    expect(await fetchMediaCapabilities({ fetchImpl })).toEqual({ voice_clip: false });
+    expect(await fetchMediaCapabilities({ fetchImpl })).toEqual({ voice_clip: false, chat_photos: false });
     setVoicePrefs({ xai: true });
-    expect(await fetchMediaCapabilities({ fetchImpl })).toEqual({ voice_clip: true });
+    expect(await fetchMediaCapabilities({ fetchImpl })).toEqual({ voice_clip: true, chat_photos: false });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     resetMediaCapabilitiesForTests();
-    expect(await fetchMediaCapabilities({ fetchImpl: okFetch({ voice_clip: true }), prefs: DEFAULT_VOICE_PREFS })).toEqual({ voice_clip: true });
+    expect(await fetchMediaCapabilities({ fetchImpl: okFetch({ voice_clip: true }), prefs: DEFAULT_VOICE_PREFS })).toEqual({ voice_clip: true, chat_photos: false });
+  });
+
+  it("chat photos are offered only when the server says it generates them", async () => {
+    expect(await fetchMediaCapabilities({ fetchImpl: okFetch({ voice_clip: false, chat_photos: true }) })).toEqual({
+      voice_clip: false,
+      chat_photos: true,
+    });
+    resetMediaCapabilitiesForTests();
+    expect(await fetchMediaCapabilities({ fetchImpl: okFetch({ chat_photos: "yes" }) })).toEqual({
+      voice_clip: false,
+      chat_photos: false,
+    });
   });
 });
