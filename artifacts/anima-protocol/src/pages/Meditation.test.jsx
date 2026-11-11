@@ -22,8 +22,8 @@ const affirmationMocks = vi.hoisted(() => ({
   listCharacter: vi.fn(),
 }));
 
-vi.mock("@/api/base44Client", () => ({
-  base44: {
+vi.mock("@/api/animaClient", () => ({
+  animaClient: {
     auth: { me: affirmationMocks.me, peekMe: affirmationMocks.peekMe },
     entities: {
       Affirmation: {

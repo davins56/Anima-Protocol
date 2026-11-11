@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Plus, X, Edit2, Trash2, ArrowLeft } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -25,12 +25,12 @@ export default function CharacterGroups() {
   }, []);
 
   const loadGroups = async () => {
-    const data = await base44.entities.CharacterGroup.list("-created_date", 100);
+    const data = await animaClient.entities.CharacterGroup.list("-created_date", 100);
     setGroups(data);
   };
 
   const loadCharacters = async () => {
-    const data = await base44.entities.Character.list("-created_date", 100);
+    const data = await animaClient.entities.Character.list("-created_date", 100);
     setCharacters(data);
   };
 
@@ -45,7 +45,7 @@ export default function CharacterGroups() {
   };
 
   const handleDelete = async (id) => {
-    await base44.entities.CharacterGroup.delete(id);
+    await animaClient.entities.CharacterGroup.delete(id);
     await loadGroups();
   };
 
@@ -53,9 +53,9 @@ export default function CharacterGroups() {
     if (!form.name.trim() || form.character_ids.length === 0) return;
     setSaving(true);
     if (editingGroup) {
-      await base44.entities.CharacterGroup.update(editingGroup.id, form);
+      await animaClient.entities.CharacterGroup.update(editingGroup.id, form);
     } else {
-      await base44.entities.CharacterGroup.create(form);
+      await animaClient.entities.CharacterGroup.create(form);
     }
     await loadGroups();
     setShowForm(false);

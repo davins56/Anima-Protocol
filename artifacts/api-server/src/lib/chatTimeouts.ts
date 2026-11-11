@@ -96,6 +96,76 @@ export const LLM_LOCAL_SLOT_HEARTBEAT_MS = 15_000;
 export const LLM_LOCAL_SLOT_POLL_MS = 1_000;
 
 /**
+ * After a chat turn is in flight, or anyone has sent a message this recently,
+ * optional local-model work does not start. One Ollama generate at a time
+ * means a journal or proactive check-in started in this window sits in front
+ * of the next reply. Three minutes covers a pause to type the next message
+ * without parking background work for a whole session.
+ */
+export const ACTIVE_CHAT_QUIET_WINDOW_MS = 3 * 60 * 1000;
+
+/**
+ * Longest a chat turn waits for a background generate that already holds the
+ * slot. The background call is asked to abort immediately; this is the cap
+ * if that abort is late. Well under the 180s chat queue budget.
+ */
+export const LLM_BACKGROUND_YIELD_MS = 8_000;
+
+/**
+ * Wall clock for a background local generate, including prefill. Chat's
+ * producing-token cap is 120s (`LLM_LOCAL_FIRST_TOKEN_MS` + decode slack).
+ * Background work stops much sooner so it cannot occupy the only slot.
+ */
+export const LLM_BACKGROUND_WALL_MS = 12_000;
+
+/**
+ * Lease for a background holder. The holder refreshes it every
+ * `LLM_BACKGROUND_YIELD_POLL_MS`. A dead isolate stops refreshing, so chat
+ * can take the slot without waiting out a chat-length lease.
+ */
+export const LLM_BACKGROUND_SLOT_TTL_MS = 4_000;
+
+/** How often a background holder checks whether chat has asked it to yield. */
+export const LLM_BACKGROUND_YIELD_POLL_MS = 500;
+
+/**
+ * Token cap for short background local generates (proactive, journal, warm,
+ * sidecars, scene-mind). Chat replies use up to `OLLAMA_NUM_PREDICT_CAP`
+ * (200). At ~9 tokens/s on one vCPU, 80 tokens is about nine seconds of
+ * decode and fits inside `LLM_BACKGROUND_WALL_MS`.
+ * Milestone evolution and memory extraction use their own budgets below.
+ */
+export const LLM_BACKGROUND_NUM_PREDICT = 80;
+
+export function capBackgroundNumPredict(requested: number | undefined): number {
+  return capNumPredict(requested, LLM_BACKGROUND_NUM_PREDICT);
+}
+
+/**
+ * Milestone evolution returns a JSON personality delta. 80 tokens truncates
+ * it. 512 tokens is about a minute of decode at ~9 tokens/s; the wall leaves
+ * room for prefill. The call stays preemptible: a chat turn still waits at
+ * most `LLM_BACKGROUND_YIELD_MS`.
+ */
+export const LLM_EVOLUTION_NUM_PREDICT = 512;
+export const LLM_EVOLUTION_WALL_MS = 90_000;
+
+/**
+ * Distilled character-memory extraction returns a short JSON array. 256
+ * tokens is about half a minute of decode. Wall is 60s so prefill fits.
+ */
+export const LLM_MEMORY_EXTRACT_NUM_PREDICT = 256;
+export const LLM_MEMORY_EXTRACT_WALL_MS = 60_000;
+
+export function capNumPredict(requested: number | undefined, ceiling: number): number {
+  const raw =
+    typeof requested === "number" && Number.isFinite(requested) && requested > 0
+      ? Math.floor(requested)
+      : ceiling;
+  return Math.min(Math.max(1, raw), Math.max(1, Math.floor(ceiling)));
+}
+
+/**
  * SSE `/api/chat/messages` open budget when the chain is local-only.
  * Same clock as `LLM_LOCAL_FIRST_TOKEN_MS`: time-to-first-byte, which is
  * CPU prefill when the host withholds headers until the first token.
@@ -110,7 +180,7 @@ export const LLM_LOCAL_FAILOVER_ATTEMPT_MS = 12_000;
 
 /**
  * After the upstream stream is open, wait this long for first activity.
- * DeepSeek R1 on Workers AI often buffers `<think>` before the first SSE
+ * A reasoning model (e.g. DeepSeek R1 via ANIMA_WORKERS_AI_MODEL) can buffer `<think>` before the first SSE
  * byte; 35s was aborting signed-in `/openai` sends that `/api/ai/chat`
  * (unauth, non-stream) still completed.
  */
@@ -236,6 +306,50 @@ export const COMPANION_REPLY_MAX_TOKENS = 1024;
  * model. Medium and long keep the path's existing cap.
  */
 export const SHORT_REPLY_MAX_TOKENS = 90;
+
+/**
+ * Recent messages read into a companion turn's prompt.
+ *
+ * Prefill on the single-CPU local host is the dominant cost before the first
+ * token and scales with prompt length, so this window is a latency knob. It is
+ * deliberately left at 24: `conversationDepth` for model routing is this same
+ * number, and `DEEP_CONVERSATION_DEPTH` is 24 (`lib/modelRouter.ts`), so a
+ * smaller window silently stops deep threads escalating to the heavy tier.
+ * Lower it per deployment only with that trade in mind.
+ */
+export const CHAT_CONTEXT_MESSAGES = 24;
+
+export function chatContextMessageLimit(): number {
+  const raw = Number(process.env.ANIMA_CHAT_CONTEXT_MESSAGES);
+  if (!Number.isFinite(raw) || raw <= 0) return CHAT_CONTEXT_MESSAGES;
+  return Math.min(Math.max(Math.floor(raw), 6), 40);
+}
+
+/**
+ * Reasoning models (DeepSeek R1 and its distills, QwQ) spend their
+ * `<think>` tokens out of the same `max_tokens`. 1,024 left a long chat
+ * ~100 words of visible reply before the cap cut it mid-sentence.
+ */
+export const REASONING_REPLY_MAX_TOKENS = 4096;
+
+export function isReasoningChatModel(model: string | null | undefined): boolean {
+  return /deepseek-r1|r1-distill|\bqwq\b/i.test(String(model || ""));
+}
+
+/**
+ * Output room for a companion reply on a hosted model (Workers AI,
+ * OpenRouter, MiniMax, Deepshi). The small caps (Settings → Short = 90, the
+ * local extra-generation caps) exist for the 0.5B CPU host; on a hosted model
+ * they only cut a reply mid-sentence, so a hosted reply always gets at least
+ * {@link COMPANION_REPLY_MAX_TOKENS}, and a reasoning model gets
+ * {@link REASONING_REPLY_MAX_TOKENS}. Length preference is carried by the
+ * prompt instead. Group / deep-mode budgets above that are kept.
+ */
+export function hostedReplyMaxTokens(requested: number, model: string | null | undefined): number {
+  const asked = Number.isFinite(requested) && requested > 0 ? Math.floor(requested) : 0;
+  const floor = isReasoningChatModel(model) ? REASONING_REPLY_MAX_TOKENS : COMPANION_REPLY_MAX_TOKENS;
+  return Math.max(asked, floor);
+}
 
 export function companionReplyMaxTokens(routedMax: number): number {
   if (!Number.isFinite(routedMax) || routedMax <= 0) {

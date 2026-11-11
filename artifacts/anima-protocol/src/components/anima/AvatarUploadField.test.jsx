@@ -6,8 +6,8 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const uploadFileMock = vi.hoisted(() => vi.fn());
 
-vi.mock("@/api/base44Client", () => ({
-  base44: {
+vi.mock("@/api/animaClient", () => ({
+  animaClient: {
     integrations: {
       Core: {
         UploadFile: uploadFileMock,

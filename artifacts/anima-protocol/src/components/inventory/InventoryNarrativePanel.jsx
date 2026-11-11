@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { BookOpen, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 export default function InventoryNarrativePanel({ characterId, sessionId, recentMessages }) {
   const [narrativeChoices, setNarrativeChoices] = useState([]);
@@ -14,7 +14,7 @@ export default function InventoryNarrativePanel({ characterId, sessionId, recent
     const generateNarrative = async () => {
       setLoading(true);
       try {
-        const result = await base44.functions.invoke('inventoryNarrativeImpact', {
+        const result = await animaClient.functions.invoke('inventoryNarrativeImpact', {
           character_id: characterId,
           session_id: sessionId,
           recent_messages: recentMessages?.slice(-5) || [],

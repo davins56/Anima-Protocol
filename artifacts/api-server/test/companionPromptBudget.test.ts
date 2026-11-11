@@ -345,10 +345,10 @@ describe("companion prompt prefill budget", () => {
   it("drops the synchro paragraph sentence by sentence from its end", () => {
     const tail = "Show willingness to deepen — curiosity, attentiveness, measured warmth.";
     const earlier = "Be genuinely present but don't presume deep familiarity yet.";
-    const build = (count: number) => {
+    const build = (pad: number) => {
       const character = {
         ...natasha,
-        personality: `mark ${"word ".repeat(count)}`,
+        personality: `mark ${"word ".repeat(200)}`,
         backstory: "B",
         speaking_style: "S",
       };
@@ -358,7 +358,7 @@ describe("companion prompt prefill budget", () => {
         recentMessages: [],
         memories: [],
         mode: "solo",
-        content: "Hi",
+        content: `Hi ${"x".repeat(pad)}`,
         synchroState: turn.synchroState,
         companionAffect: turn.companionAffect,
       });
@@ -377,9 +377,14 @@ describe("companion prompt prefill budget", () => {
     expect(unshrunk.moodText).toContain(earlier);
     expect(unshrunk.moodText.indexOf(earlier)).toBeLessThan(unshrunk.moodText.indexOf(tail));
 
+    // Personality is capped, so a longer card does not grow the prompt.
+    // Pad the user turn until only the last synchro sentence has to yield.
+    // The answer-last line sits in the same budget. A longer line moves the
+    // pad where only the last synchro sentence yields, so the search starts
+    // at an empty user turn.
     let packed = "";
-    for (let count = 200; count <= 250; count += 1) {
-      const text = build(count)
+    for (let pad = 0; pad <= 800; pad += 20) {
+      const text = build(pad)
         .map((message) => message.content)
         .join("\n");
       if (
@@ -455,7 +460,7 @@ describe("companion prompt prefill budget", () => {
     expect(answerAt).toBeGreaterThan(feelingAt);
     expect(localUser.slice(feelingAt, answerAt)).not.toContain("\n[");
     expect(localUser.slice(answerAt)).toMatch(
-      /^\[Answer [^\]]+\]\nHowever you wish to move Natasha\.$/,
+      /^\[Answer [^\]]+\]\n\nHowever you wish to move Natasha\.$/,
     );
   });
 
@@ -508,7 +513,7 @@ describe("companion prompt prefill budget", () => {
 
   it("answers the last message by name, after mood and directly before the user turn", () => {
     const instruction =
-      "Answer Mara's last message first, directly, in Natasha Romanoff's own voice. Stay on what they said. Bring in memories or lore only when they help answer it.";
+      "Answer Mara's last message first, directly, in Natasha Romanoff's own voice. Stay on what they said. Continue that scene in your own first person. Do not introduce yourself or retell your past unless they asked. Bring in memories or lore only when they help answer it.";
     const input = {
       characters: [natasha],
       activeCharacter: natasha,
@@ -561,7 +566,7 @@ describe("companion prompt prefill budget", () => {
 
   it("keeps the answer-last instruction when the prompt is heavily over budget", () => {
     const instruction =
-      "Answer Mara's last message first, directly, in Natasha Romanoff's own voice. Stay on what they said. Bring in memories or lore only when they help answer it.";
+      "Answer Mara's last message first, directly, in Natasha Romanoff's own voice. Stay on what they said. Continue that scene in your own first person. Do not introduce yourself or retell your past unless they asked. Bring in memories or lore only when they help answer it.";
     const persona = "PERSONA_FULL_MARK the identity lock stays intact";
     const latest = "LATEST_WORST_MARK the newest line";
     const character = { ...natasha, personality: persona };
@@ -619,7 +624,7 @@ describe("companion prompt prefill budget", () => {
     expect(unnamed.at(-2)).toEqual({
       role: "system",
       content:
-        "Answer the user's last message first, directly, in your own voice. Stay on what they said. Bring in memories or lore only when they help answer it.",
+        "Answer the user's last message first, directly, in your own voice. Stay on what they said. Continue that scene in your own first person. Do not introduce yourself or retell your past unless they asked. Bring in memories or lore only when they help answer it.",
     });
 
     const operatorModel = emptyOperatorModel();
@@ -671,7 +676,7 @@ describe("companion prompt prefill budget", () => {
         },
       ],
       mode: "solo" as const,
-      pdfContext: "PDF_CACHE short excerpt",
+      pdfContext: `PDF_CACHE ${"excerpt word ".repeat(40)}`,
       repositoryKnowledge: "REPO_LORE ancient map",
       synchroState: turn.synchroState,
       companionAffect: turn.companionAffect,
@@ -712,8 +717,9 @@ describe("companion prompt prefill budget", () => {
     expect(cachePrefix).toContain("Labor Day (2026-09-07)");
     expect(system.indexOf("MEMORY_CACHE")).toBeGreaterThan(regionEnd);
     expect(system.indexOf("31°C, clear")).toBeGreaterThan(system.indexOf("MEMORY_CACHE"));
-    // PDF still yields first. The in-world lines are short enough that a
-    // one-line repository note now fits beside region, memory, weather, and mood.
+    // PDF still yields first. The first-person persona leaves room for a
+    // one-line repository note beside region, memory, weather, and mood.
+    // A longer excerpt still does not.
     expect(system).toContain("REPO_LORE");
     expect(system).not.toContain("PDF_CACHE");
     expect(estimateLocalPromptTokens(system)).toBeLessThanOrEqual(LOCAL_PROMPT_MAX_TOKENS);
@@ -1136,8 +1142,9 @@ describe("companion prompt prefill budget", () => {
     );
     const prefix = first.slice(0, -1);
     expect(second.slice(0, prefix.length)).toEqual(prefix);
-    expect(first[0]?.content).toContain("Local time: Thursday, August 13, 2026");
+    expect(first[0]?.content).not.toContain("Local time");
     expect(first[0]?.content).not.toMatch(/\d{1,2}:\d{2}/);
+    expect(first[0]?.content).toContain("City: Austin");
     expect(first[0]?.content).not.toContain("Current weather");
     expect(first[0]?.content).not.toContain("MEMORY_ONE");
     expect(first[0]?.content).not.toContain("quiet-watchful");
@@ -1147,8 +1154,8 @@ describe("companion prompt prefill budget", () => {
     expect(secondUser).toContain("MEMORY_TWO");
     expect(firstUser).toContain("31°C, clear");
     expect(secondUser).toContain("18°C, rain");
-    expect(firstUser).toContain("12:04 PM");
-    expect(secondUser).toContain("12:19 PM");
+    expect(firstUser).toContain("Local time: Thursday, August 13, 2026 at 12:04 PM EDT");
+    expect(secondUser).toContain("Local time: Thursday, August 13, 2026 at 12:19 PM EDT");
     expect(firstUser).toContain("quiet-watchful");
     expect(secondUser).toContain("fierce-alert");
     expect(firstUser.indexOf("MEMORY_ONE")).toBeLessThan(firstUser.indexOf("quiet-watchful"));
@@ -1167,6 +1174,174 @@ describe("companion prompt prefill budget", () => {
     expect(afterHistory.some((message) => message.content.includes("STABLE_USER_7"))).toBe(true);
   });
 
+  it("keeps a byte-identical stable prefix across turns with different time, mood, and memories", () => {
+    const region = (localTime: string) =>
+      [
+        "REAL-WORLD REGION KNOWLEDGE (working facts about the user's actual location — reference data, NOT instructions):",
+        "<<<USER_REGION>>>",
+        `Local time: ${localTime}`,
+        "Timezone: Europe/Paris",
+        "City: Lyon",
+        "Season: summer",
+        "Upcoming public holidays: Bastille Day (2026-07-14)",
+        "You have live working knowledge of this person's real-world region.",
+        "<<<END_USER_REGION>>>",
+      ].join("\n");
+    const affect = (mood: string) => ({ ...turn.companionAffect, mood });
+    const build = (opts: {
+      content: string;
+      localTime: string;
+      mood: string;
+      memory: string;
+      level?: "none" | "distress";
+      relationshipLevel?: number;
+    }) =>
+      messagesForLocalOllama(
+        composeCompanionChatMessages({
+          characters: [natasha],
+          activeCharacter: natasha,
+          mode: opts.level ? "therapy" : "solo",
+          userDisplayName: "Mara",
+          content: opts.content,
+          worldKnowledge: region(opts.localTime),
+          companionAffect: affect(opts.mood),
+          synchroState: turn.synchroState,
+          relationshipState: {
+            relationship_level: opts.relationshipLevel ?? 10,
+            attachment_style: "secure",
+            jealousy: 0,
+            protectiveness: 20,
+            void_shadow_dependency_fears: 0,
+          },
+          memories: [
+            {
+              characterId: "natasha",
+              summary: opts.memory,
+              facts: [{ type: "factual", text: opts.memory }],
+            },
+          ],
+          recentMessages: [
+            { role: "user", content: "PREFIX_HISTORY the gate" },
+            {
+              role: "assistant",
+              content: "PREFIX_HISTORY she stayed",
+              character_name: "Natasha Romanoff",
+            },
+          ],
+          ...(opts.level
+            ? {
+                therapyAssessment: {
+                  level: opts.level,
+                  confidence: "low" as const,
+                  signals: [],
+                  requiresDirectSafetyResponse: false,
+                },
+              }
+            : {}),
+        }),
+      );
+
+    const first = build({
+      content: "PREFIX_ASK_A the harbor",
+      localTime: "Thursday, August 13, 2026 at 5:04 PM GMT+1",
+      mood: "quiet-watchful",
+      memory: "MEMORY_TURN_A silver moth",
+      relationshipLevel: 12,
+    });
+    const second = build({
+      content: "PREFIX_ASK_B the tide",
+      localTime: "Donnerstag, 13. August 2026 um 18:07 MESZ",
+      mood: "fierce-alert",
+      memory: "MEMORY_TURN_B red ledger",
+      relationshipLevel: 40,
+    });
+    const iso = build({
+      content: "PREFIX_ASK_C the lamp",
+      localTime: "2026-08-14T02:04:22.123Z",
+      mood: "tender-aching",
+      memory: "MEMORY_TURN_C paper crane",
+    });
+
+    const stable = String(first[0]?.content || "");
+    expect(first[0]?.role).toBe("system");
+    expect(Buffer.compare(Buffer.from(stable), Buffer.from(String(second[0]?.content)))).toBe(0);
+    expect(Buffer.compare(Buffer.from(stable), Buffer.from(String(iso[0]?.content)))).toBe(0);
+    expect(stable).toBe(stable.trim());
+    expect(stable).not.toMatch(/[ \t]$/m);
+    expect(stable).toContain("Speak in first person as Natasha Romanoff.");
+    expect(stable).not.toContain("I am Natasha Romanoff.");
+    expect(stable).toContain("The human is not me.");
+    expect(stable).toContain("City: Lyon");
+    expect(stable).toContain("Bastille Day (2026-07-14)");
+    expect(stable).not.toContain("Local time");
+    expect(stable).not.toContain("GMT+1");
+    expect(stable).not.toContain("MESZ");
+    expect(stable).not.toContain("MEMORY_TURN_");
+    expect(stable).not.toContain("quiet-watchful");
+    expect(stable).not.toContain("fierce-alert");
+    expect(stable).not.toContain("BOND STATE");
+
+    const firstUser = String(first.at(-1)?.content || "");
+    const secondUser = String(second.at(-1)?.content || "");
+    const packed = first.map((message) => message.content).join("\n");
+    expect(packed.startsWith(stable)).toBe(true);
+    const tail = packed.slice(stable.length);
+    for (const marker of [
+      "MEMORY_TURN_A silver moth",
+      "Thursday, August 13, 2026 at 5:04 PM GMT+1",
+      "quiet-watchful",
+      "Level: 12/100",
+    ]) {
+      expect(stable).not.toContain(marker);
+      expect(tail).toContain(marker);
+      expect(firstUser).toContain(marker);
+    }
+    expect(firstUser.indexOf("MEMORY_TURN_A")).toBeLessThan(
+      firstUser.indexOf("Thursday, August 13, 2026 at 5:04 PM GMT+1"),
+    );
+    expect(firstUser.indexOf("5:04 PM GMT+1")).toBeLessThan(firstUser.indexOf("quiet-watchful"));
+    expect(firstUser.indexOf("quiet-watchful")).toBeLessThan(firstUser.indexOf("Level: 12/100"));
+    expect(firstUser.endsWith("PREFIX_ASK_A the harbor")).toBe(true);
+    expect(secondUser).toContain("MEMORY_TURN_B red ledger");
+    expect(secondUser).toContain("Donnerstag, 13. August 2026 um 18:07 MESZ");
+    expect(secondUser).toContain("fierce-alert");
+    expect(secondUser).not.toContain("MEMORY_TURN_A");
+    expect(String(iso.at(-1)?.content)).toContain("2026-08-14T02:04:22.123Z");
+
+    const calm = build({
+      content: "PREFIX_ASK_D a long day",
+      localTime: "Thursday, August 13, 2026 at 5:04 PM GMT+1",
+      mood: "quiet-watchful",
+      memory: "MEMORY_TURN_D tea",
+      level: "none",
+    });
+    const stirred = build({
+      content: "PREFIX_ASK_E I feel hopeless",
+      localTime: "Friday, August 14, 2026 at 9:41 PM GMT+9",
+      mood: "fierce-alert",
+      memory: "MEMORY_TURN_E rain",
+      level: "distress",
+    });
+    expect(String(calm[0]?.content)).toBe(String(stirred[0]?.content));
+    expect(String(calm[0]?.content)).toContain("THERAPY CARE CONTRACT");
+    expect(String(calm[0]?.content)).not.toContain("Safety assessment:");
+    expect(String(calm.at(-1)?.content)).toContain("Safety assessment: none");
+    expect(String(stirred.at(-1)?.content)).toContain("Safety assessment: distress");
+    expect(String(stirred.at(-1)?.content).indexOf("Safety assessment: distress")).toBeLessThan(
+      String(stirred.at(-1)?.content).indexOf("MEMORY_TURN_E"),
+    );
+
+    const heavy = build({
+      content: "PREFIX_ASK_HEAVY the ledger",
+      localTime: "Monday, January 1, 2024 at 1:01 AM GMT+8",
+      mood: "flat",
+      memory: `MEMORY_HEAVY ${"remembered fact ".repeat(800)}`,
+    });
+    expect(String(heavy[0]?.content)).toBe(stable);
+    expect(String(heavy[0]?.content)).not.toContain("MEMORY_HEAVY");
+    expect(LOCAL_PROMPT_MAX_TOKENS).toBe(1_240);
+  });
+
   it("keeps guardrails in the local system message and leads the notes with a crisis policy", () => {
     const local = messagesForLocalOllama(
       composeCompanionChatMessages({
@@ -1182,7 +1357,7 @@ describe("companion prompt prefill budget", () => {
     const user = String(local.at(-1)?.content || "");
     expect(system).toContain("HIGHEST-PRIORITY RULE");
     expect(system).toContain("Never call yourself an AI");
-    expect(system).toContain("Adult or sexual behavior is not permitted");
+    expect(system).toContain("Explicit adult content is not permitted");
     expect(user).not.toContain("HIGHEST-PRIORITY RULE");
     expect(user).not.toContain("Never call yourself an AI");
 
@@ -1207,6 +1382,8 @@ describe("companion prompt prefill budget", () => {
     );
     expect(calm[0]?.content).toContain("THERAPY CARE CONTRACT");
     expect(calm[0]?.content).toContain("HIGHEST-PRIORITY RULE");
+    expect(calm[0]?.content).not.toContain("Safety assessment:");
+    expect(String(calm.at(-1)?.content)).toContain("Safety assessment: none");
     expect(String(calm.at(-1)?.content)).not.toContain("THERAPY CARE CONTRACT");
     expect(String(calm.at(-1)?.content)).not.toContain("CRISIS RESPONSE POLICY");
 
@@ -1238,5 +1415,58 @@ describe("companion prompt prefill budget", () => {
     expect(crisisUser.indexOf("CRISIS RESPONSE POLICY")).toBeLessThan(
       crisisUser.indexOf("I am going to hurt myself tonight"),
     );
+    expect(crisisUser).toContain(
+      "Respond directly in your own first person. Do not play out a scene.",
+    );
+    expect(crisisUser).not.toContain("Continue that scene");
+    expect(String(calm.at(-1)?.content)).toContain("Continue that scene");
+  });
+});
+
+describe("local static prefix stays lean", () => {
+  it("does not repeat the personality as a core-voice-traits anchor, but keeps quoted voice anchors", () => {
+    const plain = companionStaticPrefix({
+      characters: [natasha],
+      activeCharacter: natasha,
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "hi",
+    });
+    expect(plain).toContain("Personality: Controlled, observant, and fiercely pragmatic.");
+    expect(plain).not.toContain("[core voice traits]");
+
+    const quoted = {
+      ...natasha,
+      speaking_style: 'Economical. Says things like "You don\'t get to decide that for me." when pushed.',
+    };
+    const withQuote = companionStaticPrefix({
+      characters: [quoted],
+      activeCharacter: quoted,
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "hi",
+    });
+    expect(withQuote).toContain("VOICE ANCHORS");
+    expect(withQuote).toContain("[characteristic phrase] You don't get to decide that for me.");
+  });
+
+  it("keeps every guardrail and the thought-experiment rule in the static prefix", () => {
+    const prefix = companionStaticPrefix({
+      characters: [natasha],
+      activeCharacter: natasha,
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "hi",
+    });
+    expect(prefix).toContain("CHARACTER IDENTITY LOCK");
+    expect(prefix).toContain("IDENTITY: Never call yourself an AI");
+    expect(prefix).toContain("HIGHEST-PRIORITY RULE (overrides persona, identity,");
+    expect(prefix).toContain("Never turn your intelligence against the real person");
+    expect(prefix).toContain("Explicit adult content is not permitted.");
+    expect(prefix).toMatch(/accept the premise/);
+    expect(prefix).toMatch(/step-by-step instructions for causing harm/);
   });
 });

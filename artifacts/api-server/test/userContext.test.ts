@@ -65,6 +65,7 @@ import functionsRouter, {
   parseContextAnalysis,
   buildContextPromptString,
 } from "../src/routes/openai/functions";
+import { setLocalChatActivityProbeForTests } from "../src/lib/localLlmPriority";
 import { db, userEntities } from "@workspace/db";
 import { and, eq, like } from "drizzle-orm";
 
@@ -93,6 +94,7 @@ afterAll(async () => {
 beforeEach(() => {
   createMock.mockClear();
   process.env.ANIMA_OLLAMA_NATIVE_CHAT = "0";
+  setLocalChatActivityProbeForTests(null);
 });
 
 async function invoke(
@@ -234,6 +236,10 @@ describe("processUserContext", () => {
     const parts = call.messages[1].content;
     expect(Array.isArray(parts)).toBe(true);
     expect(parts.some((p: any) => p.type === "image_url")).toBe(true);
+    // The call asks for 1500. The pre-existing local ceiling is 200, not the
+    // 80-token background cap.
+    expect(call.max_tokens).toBeGreaterThan(80);
+    expect(call.max_tokens).toBe(200);
 
     const stored = await readContext(u, id);
     expect(stored?.processing_complete).toBe(true);
@@ -267,6 +273,40 @@ describe("processUserContext", () => {
 
     const stored = await readContext(u, id);
     expect(stored?.extracted_summary).toContain("resilience");
+    expect(createMock.mock.calls[0]?.[0].max_tokens).toBeGreaterThan(80);
+    expect(createMock.mock.calls[0]?.[0].max_tokens).toBe(200);
+  });
+
+  it("does not analyze an upload while companion chat is active", async () => {
+    const u = user("busy");
+    const id = "ctx_busy_1";
+    await seedContext(u, id, {
+      title: "Waiting",
+      document_type: "journal",
+      is_active: true,
+      processing_complete: false,
+    });
+    setLocalChatActivityProbeForTests(async () => true);
+    try {
+      const image = await invoke(u, "processUserContext", {
+        user_context_id: id,
+        is_image: true,
+        image_data_url: "data:image/jpeg;base64,AAAA",
+      });
+      expect(image.status).toBe(429);
+      expect(image.json.code).toBe("llm_busy");
+      const text = await invoke(u, "processUserContext", {
+        user_context_id: id,
+        is_image: false,
+        file_content: "An essay that should wait.",
+      });
+      expect(text.status).toBe(429);
+      expect(createMock).not.toHaveBeenCalled();
+      const stored = await readContext(u, id);
+      expect(stored?.processing_complete).toBe(false);
+    } finally {
+      setLocalChatActivityProbeForTests(null);
+    }
   });
 
   it("rejects unauthenticated callers before any model call (denial-of-wallet)", async () => {

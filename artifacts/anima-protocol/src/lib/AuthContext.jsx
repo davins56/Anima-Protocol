@@ -8,13 +8,13 @@ import React, {
 import { useUser, useClerk, useAuth as useClerkAuth } from '@clerk/react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  base44,
+  animaClient,
   setAuthTokenGetter,
   clearAuthTokenGetter,
   startStoreSync,
   stopStoreSync,
   notifyStoreChanged,
-} from '@/api/base44Client';
+} from '@/api/animaClient';
 import {
   identifyUser,
   setProfile,
@@ -55,7 +55,7 @@ import {
 const AuthContext = createContext();
 
 // Bridges Clerk's session into the app's existing auth interface. Identity is
-// owned by Clerk; the server profile record (reached via base44.auth.me())
+// owned by Clerk; the server profile record (reached via animaClient.auth.me())
 // holds the profile and settings data the rest of the app already reads.
 export const AuthProvider = ({ children }) => {
   const { user: clerkUser, isLoaded, isSignedIn } = useUser();
@@ -86,7 +86,7 @@ export const AuthProvider = ({ children }) => {
     });
     setLocalUser(identity);
     setUser(identity);
-    base44.auth.syncIdentity(identity);
+    animaClient.auth.syncIdentity(identity);
     bootstrapUserData(identity.id).catch((err) =>
       console.warn('[Anima] Bootstrap failed:', err)
     );
@@ -115,17 +115,18 @@ export const AuthProvider = ({ children }) => {
     clearAuthTokenGetter();
   }, [getToken, isSignedIn, localUser]);
 
-  // One background preload per tab session so a cold droplet model is already
-  // loading before the first chat send. Not awaited; failures stay silent.
+  // One background preload per tab session so a cold self-hosted model is already
+  // loading before the first chat send (server no-ops on the Cloudflare brain).
+  // Not awaited; failures stay silent.
   useEffect(() => {
     if (!isLoaded || !isSignedIn || !clerkUser) return;
     scheduleSessionLlmWarm();
   }, [isLoaded, isSignedIn, clerkUser?.id]);
 
-  // Sync localUser into base44 if not signed in with Clerk
+  // Sync localUser into animaClient if not signed in with Clerk
   useEffect(() => {
     if (!isSignedIn && localUser) {
-      base44.auth.syncIdentity(localUser);
+      animaClient.auth.syncIdentity(localUser);
       setUser(localUser);
     }
   }, [isSignedIn, localUser]);
@@ -140,7 +141,7 @@ export const AuthProvider = ({ children }) => {
       try {
         await whenBootstrapReady();
         if (cancelled) return;
-        const chars = await base44.entities.Character.list('-created_date', 5);
+        const chars = await animaClient.entities.Character.list('-created_date', 5);
         if (!chars?.length) {
           const { retryStarterSeed } = await import('@/lib/seedCharacters');
           await retryStarterSeed();
@@ -241,7 +242,7 @@ export const AuthProvider = ({ children }) => {
       if (!identity) {
         // Signed-in but Clerk user id not ready — keep existing identity.
       } else {
-        const merged = base44.auth.syncIdentity(identity);
+        const merged = animaClient.auth.syncIdentity(identity);
         // Publish Clerk identity immediately so Settings / me() callers are not
         // blank while the server profile fetch is in flight (or fails).
         if (!cancelled) {
@@ -260,7 +261,7 @@ export const AuthProvider = ({ children }) => {
 
         (async () => {
           try {
-            let profile = await base44.auth.me();
+            let profile = await animaClient.auth.me();
             // A profile with no display_name is a brand-new account on its first
             // load — the only reliable client-side signal we have for sign-up.
             const isNewAccount = !profile.display_name;
@@ -268,7 +269,7 @@ export const AuthProvider = ({ children }) => {
               const preferred =
                 clerkUser.firstName || clerkUser.fullName || clerkUser.username || identity.full_name;
               if (preferred) {
-                profile = await base44.auth.updateMe({ display_name: preferred });
+                profile = await animaClient.auth.updateMe({ display_name: preferred });
               }
             }
 
@@ -311,14 +312,14 @@ export const AuthProvider = ({ children }) => {
         email: '',
         full_name: 'Seeker',
       };
-      base44.auth.syncIdentity(provisional);
+      animaClient.auth.syncIdentity(provisional);
       if (!cancelled) {
         setUser((prev) => mergeAccountIdentity(provisional, prev));
         setAuthError(null);
       }
     } else if (isSignedIn) {
       // Clerk session exists; user object is still hydrating. Do not wipe
-      // base44 identity — that is the Settings-blank-after-Home race.
+      // animaClient identity — that is the Settings-blank-after-Home race.
     } else if (localUser) {
       // Explicit Instant Sandbox — keep the guest identity. Do not clear
       // the token getter; the other effect owns local_* for guests.
@@ -339,7 +340,7 @@ export const AuthProvider = ({ children }) => {
         })
       ) {
         clearAuthTokenGetter();
-        base44.auth.clearSession();
+        animaClient.auth.clearSession();
         setUser(null);
       }
     }
@@ -401,9 +402,9 @@ const logout = useCallback(() => {
         console.warn('Notification unsubscribe warning:', err)
       );
 
-      if (base44?.auth?.logout) {
-        await base44.auth.logout().catch((err) =>
-          console.warn('base44 logout warning:', err)
+      if (animaClient?.auth?.logout) {
+        await animaClient.auth.logout().catch((err) =>
+          console.warn('animaClient logout warning:', err)
         );
       }
 
@@ -443,7 +444,7 @@ const logout = useCallback(() => {
 }, [signOut, resetUser]);
 
   const updateUserData = useCallback(async (data) => {
-    const updated = await base44.auth.updateMyUserData(data);
+    const updated = await animaClient.auth.updateMyUserData(data);
     setUser(updated);
     return updated;
   }, []);

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Loader, Save, Wand2, AlertTriangle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -20,13 +20,13 @@ export default function AIBehaviorDashboard({ characterId, characterName }) {
   const loadConfig = async () => {
     setLoading(true);
     try {
-      const configs = await base44.entities.AIBehaviorConfig.filter({
+      const configs = await animaClient.entities.AIBehaviorConfig.filter({
         character_id: characterId,
       });
       if (configs?.length > 0) {
         setConfig(configs[0]);
       } else {
-        const newConfig = await base44.entities.AIBehaviorConfig.create({
+        const newConfig = await animaClient.entities.AIBehaviorConfig.create({
           character_id: characterId,
           verbosity: 50,
           emotional_intensity: 60,
@@ -45,7 +45,7 @@ export default function AIBehaviorDashboard({ characterId, characterName }) {
     if (!config) return;
     setSaving(true);
     try {
-      await base44.entities.AIBehaviorConfig.update(config.id, {
+      await animaClient.entities.AIBehaviorConfig.update(config.id, {
         verbosity: config.verbosity,
         emotional_intensity: config.emotional_intensity,
         lore_compliance: config.lore_compliance,
@@ -97,7 +97,7 @@ export default function AIBehaviorDashboard({ characterId, characterName }) {
   const handleAutoConfig = async () => {
     setAutoConfiguring(true);
     try {
-      const result = await base44.functions.invoke("analyzeCharacterForBehavior", {
+      const result = await animaClient.functions.invoke("analyzeCharacterForBehavior", {
         character_name: characterName,
       });
 
@@ -283,6 +283,7 @@ export default function AIBehaviorDashboard({ characterId, characterName }) {
                 min="0"
                 max="100"
                 step="5"
+                aria-label={slider.label}
                 value={slider.value}
                 onChange={(e) =>
                   updateValue(slider.id, parseInt(e.target.value))

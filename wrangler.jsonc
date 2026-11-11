@@ -95,12 +95,23 @@
     // navigator.userAgent === "Cloudflare-Workers").
     "ANIMA_RUNTIME": "worker",
     // Production chat prefers the self-hosted Anima LLM (anima-chat) via
-    // Secrets Store ANIMA_LOCAL_LLM_BASE_URL. Workers AI DeepSeek is only
+    // Secrets Store ANIMA_LOCAL_LLM_BASE_URL. Workers AI (Llama 3.3 70B) is only
     // used when that URL is unset/unusable. Do NOT put ANIMA_LOCAL_LLM_BASE_URL
     // in vars. ANIMA_LOCAL_LLM_BACKEND stays in vars only (`ollama` is not
     // secret). Binding the same name in secrets_store_secrets fails wrangler
     // deploy: "Bindings must have unique names".
     "ANIMA_LLM_PROVIDER": "custom",
+    // Chat brain runs entirely inside this Worker: Workers AI (AI binding
+    // below) for chat AND background memory jobs, Hyperdrive Postgres for
+    // identity + memory. No Fly.io app, DigitalOcean droplet, VPS or tunnel.
+    // The ANIMA_LOCAL_LLM_* Secrets Store bindings below are ignored while
+    // this is "cloudflare"; set "self-hosted" to go back to that host.
+    // Optional vars: ANIMA_WORKERS_AI_MODEL (@cf/… model id; default
+    // @cf/meta/llama-3.3-70b-instruct-fp8-fast),
+    // ANIMA_WORKERS_AI_LORA (fine-tune name/id), ANIMA_WORKERS_AI_BACKGROUND
+    // ("false" keeps background jobs off to save free-plan neurons).
+    // See docs/chat-brain.md.
+    "ANIMA_CHAT_BRAIN": "cloudflare",
     "ANIMA_LOCAL_LLM_BACKEND": "ollama",
     "ANIMA_OLLAMA_MODEL_STANDARD": "anima-chat",
     // Temporary until Workers Paid / quota recovers. Hop after Workers AI 4006
@@ -136,7 +147,7 @@
   // MINIMAX_API_KEY`). Do not add it to secrets_store_secrets until that
   // secret_name exists in the store.
   // Custom LLM URL + bearer live in Secrets Store. See wrangler `ai.gateway`
-  // only as the no-host fallback (DeepSeek).
+  // only as the no-host path (Workers AI, Llama 3.3 70B by default).
   "secrets_store_secrets": [
     {
       "binding": "CLERK_SECRET_KEY",
@@ -214,5 +225,12 @@
       "binding": "HYPERDRIVE",
       "id": "bae77549623a4320b10211ca499fdb93"
     }
-  ]
+  ],
+  // Same minute as vercel.json's proactive cron. Drains deferred local-model
+  // jobs (evolution, distilled memory) after the chat quiet window. The
+  // handler does not send proactive pushes.
+  "triggers": {
+    // Quarter-hourly: dream layer (worker.ts DREAM_CRON), inactivity default 30 min.
+    "crons": ["15 * * * *", "0,15,30,45 * * * *"]
+  }
 }

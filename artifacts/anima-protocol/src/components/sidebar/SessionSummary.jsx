@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Sparkles, BookOpen, Heart, Loader, ChevronDown } from "lucide-react";
 
 export default function SessionSummary({ sessionId, characterId }) {
@@ -17,12 +17,12 @@ export default function SessionSummary({ sessionId, characterId }) {
     setLoading(true);
     try {
       const [lore, evolution] = await Promise.all([
-        base44.functions.invoke("extractLore", {
+        animaClient.functions.invoke("extractLore", {
           session_id: sessionId,
           extract_summary: true,
         }).catch(() => ({ data: { facts: [] } })),
         characterId
-          ? base44.functions.invoke("trackCharacterEvolution", {
+          ? animaClient.functions.invoke("trackCharacterEvolution", {
               character_id: characterId,
               session_id: sessionId,
             }).catch(() => ({ data: { current_state: null, changes: [] } }))

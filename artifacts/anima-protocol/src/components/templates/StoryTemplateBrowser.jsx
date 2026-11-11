@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { BookOpen, X } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -14,7 +14,7 @@ export default function StoryTemplateBrowser({ onSelectTemplate, onClose }) {
 
   const loadTemplates = async () => {
     try {
-      const data = await base44.entities.StoryTemplate.filter({ is_active: true }, "-created_date", 50);
+      const data = await animaClient.entities.StoryTemplate.filter({ is_active: true }, "-created_date", 50);
       setTemplates(data || []);
     } catch (err) {
       console.error("Error loading templates:", err);

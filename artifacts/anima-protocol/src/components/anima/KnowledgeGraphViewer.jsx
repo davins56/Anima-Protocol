@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { Network, Loader, RefreshCw, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -18,9 +18,9 @@ export default function KnowledgeGraphViewer() {
   const loadGraph = async () => {
     try {
       setLoading(true);
-      const user = await base44.auth.me();
-      const graphs = await base44.entities.KnowledgeGraph.filter({
-        user_email: user.email,
+      const graphs = await animaClient.entities.KnowledgeGraph.filter({
+        // The store is already scoped to the signed-in user; filtering by the
+        // Clerk email as well only ever matched rows the browser itself wrote.
         is_active: true
       });
       if (graphs?.length > 0) {
@@ -36,7 +36,7 @@ export default function KnowledgeGraphViewer() {
   const handleBuildGraph = async () => {
     setBuildingGraph(true);
     try {
-      const result = await base44.functions.invoke('buildKnowledgeGraph', {});
+      const result = await animaClient.functions.invoke('buildKnowledgeGraph', {});
       if (result?.data?.success) {
         await loadGraph();
       }
@@ -56,7 +56,7 @@ export default function KnowledgeGraphViewer() {
 
     setSearching(true);
     try {
-      const result = await base44.functions.invoke('queryKnowledgeGraph', {
+      const result = await animaClient.functions.invoke('queryKnowledgeGraph', {
         query
       });
       setResults(result?.data?.results || []);

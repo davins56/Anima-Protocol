@@ -14,7 +14,7 @@ There are TWO server endpoints that ingest a backup payload (`{ entities, profil
 
 **Why:** the migration gate exists so first-sign-in bootstrap can't clobber/duplicate; restore is an explicit user action that must work post-migration. Keeping them separate preserves both guarantees.
 
-**How to apply:** client helper is `restoreData(payload, mode)` in `base44Client.js`; Settings shows a merge/replace choice dialog with a second confirm step for replace before calling it. Tests live in `artifacts/api-server/test/store.test.ts`.
+**How to apply:** client helper is `restoreData(payload, mode)` in `animaClient.js`; Settings shows a merge/replace choice dialog with a second confirm step for replace before calling it. Tests live in `artifacts/api-server/test/store.test.ts`.
 
 ## `account_not_empty` is a no-op SUCCESS, not a failure
 

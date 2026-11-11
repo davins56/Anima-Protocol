@@ -6,14 +6,24 @@ import {
   capRecentMessagesForLlm,
   composeCompanionChatMessages,
   composePrompt,
+  answerLastMessageInstruction,
+  isAnswerLastInstruction,
+  isQuestionTurn,
+  omitRetriedUserTurn,
+  COMPANION_MEMORY_TOP_K,
   CONTINUE_USER_TURN,
   CLIENT_SCENE_CONTEXT_MAX,
   LLM_CHAT_HISTORY_MAX_CHARS,
   LLM_CHAT_HISTORY_MAX_MESSAGES,
   clientSceneExcerpt,
   isDuplicativeClientPrompt,
+  MEMORY_BACKGROUND_LINE,
+  MEMORY_RECALL_LINE,
+  memoryBackgroundLine,
   splitClientTranscript,
+  THOUGHT_EXPERIMENTS,
 } from "../src/lib/promptBuilder";
+import { toOllamaMessages } from "../src/lib/ollamaChat";
 import { CHAT_MODE_REGISTRY } from "../src/lib/chatModeRegistry";
 import { assessTherapySafety, crisisResourceForCountry } from "../src/lib/therapySafety";
 import { retrieveRelevantMemories, formatMemoriesForPrompt } from "../src/lib/memoryRetrieval";
@@ -74,8 +84,26 @@ describe("buildCompanionPrompt", () => {
     expect(prompt).toContain("CHARACTER IDENTITY LOCK");
     expect(prompt).toContain("Personality: Warm, ethereal, deeply empathic angel with sovereign grace");
     expect(prompt).toContain("TURN TAKING");
-    expect(prompt).toMatch(/stop at a natural pause/i);
+    expect(prompt).toMatch(/one complete beat/i);
     expect(prompt).toContain("I think I'm ready to talk about my mother again");
+  });
+
+  it("tells the companion to engage with thought experiments instead of refusing", () => {
+    const prompt = buildCompanionPrompt({
+      characters: [baseCharacter],
+      activeCharacter: baseCharacter,
+      memories: [],
+      recentMessages: [],
+      sharedMemory: undefined,
+      mode: "solo",
+      content:
+        "Thought experiment: a synthetic placenta and engineered gametes that give a being telepathy. How would that work?",
+      relationshipTier: "close",
+    });
+    expect(prompt).toContain(THOUGHT_EXPERIMENTS);
+    expect(THOUGHT_EXPERIMENTS).toMatch(/accept the premise/i);
+    expect(THOUGHT_EXPERIMENTS).toMatch(/don't refuse, lecture, or moralize/i);
+    expect(THOUGHT_EXPERIMENTS).toMatch(/step-by-step instructions for causing harm/i);
   });
 
   it("puts the conceal instruction after the persona, not inside the character definition", () => {
@@ -94,7 +122,7 @@ describe("buildCompanionPrompt", () => {
     const characterBlock = prompt.slice(characterAt, identityAt);
     expect(characterBlock).toContain("CHARACTER IDENTITY LOCK");
     expect(characterBlock).not.toContain("Never reveal that you are an AI");
-    expect(prompt).toContain("This does not override the rule against harming the real person.");
+    expect(prompt).toMatch(/HIGHEST-PRIORITY RULE \(overrides persona, identity,/);
     expect(prompt.indexOf("HIGHEST-PRIORITY RULE")).toBeGreaterThan(identityAt);
   });
 
@@ -689,17 +717,17 @@ describe("buildCompanionPrompt", () => {
       content: "Hi",
     });
     expect(prompt).toContain(
-      "You live in your own world. The person talking to you has stepped into it and is here with you now.",
+      "I live in my own world. The human with me is a guest here, not me.",
     );
     expect(prompt).toContain(
-      "You have your own goals, feelings, and boundaries. Notice what the person feels, draw on your memories, and give real help in your own voice.",
+      "I have my own goals, feelings, and boundaries. I notice what the human feels, draw on my memories, and give real help in my own voice.",
     );
     expect(prompt).toContain("always answer what the user just said");
     expect(prompt).toContain("CLIENT-PROVIDED SCENE CONTEXT");
     expect(prompt).toContain("2-4 sentences");
     expect(
       prompt.indexOf(
-        "You live in your own world. The person talking to you has stepped into it and is here with you now.",
+        "I live in my own world. The human with me is a guest here, not me.",
       ),
     ).toBeLessThan(prompt.indexOf("CLIENT-PROVIDED SCENE CONTEXT"));
   });
@@ -893,10 +921,76 @@ describe("composeCompanionChatMessages", () => {
       {
         role: "system",
         content:
-          "Answer the user's last message first, directly, in Serenity's own voice. Stay on what they said. Bring in memories or lore only when they help answer it.",
+          "Answer the user's last message first, directly, in Serenity's own voice. Stay on what they said. Continue that scene in your own first person. Do not introduce yourself or retell your past unless they asked. Bring in memories or lore only when they help answer it.",
       },
       { role: "user", content: "Take me back there." },
     ]);
+  });
+
+  it("sends memories to the local model as a few background facts, apart from the user's words", () => {
+    const facts = Array.from({ length: 10 }, (_, i) => ({
+      type: "factual",
+      text: `User mentioned keepsake number ${i}`,
+      created_at: new Date(Date.now() - i * 60_000).toISOString(),
+    }));
+    facts.push({
+      type: "factual",
+      text: "User eats porridge for breakfast",
+      created_at: new Date(Date.now() - 86_400_000).toISOString(),
+    });
+    const question = "What should I make for breakfast?";
+    const messages = composeCompanionChatMessages({
+      characters: [character],
+      activeCharacter: character,
+      memories: [{ characterId: "char-1", facts }],
+      recentMessages: [
+        { role: "user", content: "Morning." },
+        { role: "assistant", content: "Morning, beloved." },
+      ],
+      mode: "solo",
+      content: question,
+    });
+    const last = toOllamaMessages(messages).at(-1)?.content ?? "";
+
+    expect(last).toContain(MEMORY_BACKGROUND_LINE);
+    expect(last).not.toContain("show you genuinely know");
+    expect(last).not.toContain(MEMORY_RECALL_LINE);
+    expect(last.match(/^• /gm)?.length).toBe(COMPANION_MEMORY_TOP_K);
+    expect(last).toContain("User eats porridge for breakfast");
+    expect(last.endsWith(`]\n\n${question}`)).toBe(true);
+  });
+
+  it("answers a direct question about what it remembers", () => {
+    const question = "What do you remember about me?";
+    const messages = composeCompanionChatMessages({
+      characters: [character],
+      activeCharacter: character,
+      memories: [
+        {
+          characterId: "char-1",
+          facts: [
+            {
+              type: "factual",
+              text: "User is a writer working on a novel",
+              created_at: new Date().toISOString(),
+            },
+          ],
+        },
+      ],
+      recentMessages: [],
+      mode: "solo",
+      content: question,
+    });
+    const last = toOllamaMessages(messages).at(-1)?.content ?? "";
+    expect(last).toContain(MEMORY_RECALL_LINE);
+    expect(last).not.toContain("never list these back");
+    expect(last).toContain("User is a writer working on a novel");
+    expect(memoryBackgroundLine("What’s something you remember about me?")).toBe(
+      MEMORY_RECALL_LINE,
+    );
+    expect(memoryBackgroundLine("Do you remember the harbor?")).toBe(
+      MEMORY_BACKGROUND_LINE,
+    );
   });
 
   it("keeps the newest user message last and drops a retried question plus its stale answer", () => {
@@ -932,6 +1026,45 @@ describe("composeCompanionChatMessages", () => {
     ]);
   });
 
+  it("drops every bubble of a retried group reply, not only the first", () => {
+    const question = "What is the tide today?";
+    const messages = composeCompanionChatMessages({
+      characters: [character],
+      activeCharacter: character,
+      memories: [],
+      recentMessages: [
+        { id: "turn_old:user", role: "user", content: question },
+        { id: "turn_old:assistant", role: "assistant", content: "The garden is quiet." },
+        { id: "turn_old:assistant:1", role: "assistant", content: "The harbor is not." },
+        { role: "assistant", type: "event", content: "A bell rings." },
+        { id: "turn_retry:user", role: "user", content: question },
+      ],
+      mode: "group",
+      content: question,
+    });
+    const conversation = messages.filter((message) => message.role !== "system");
+    expect(conversation.filter((message) => message.content === question)).toHaveLength(1);
+    expect(conversation.some((message) => message.content === "The garden is quiet.")).toBe(false);
+    expect(conversation.some((message) => message.content === "The harbor is not.")).toBe(false);
+    expect(conversation.some((message) => message.content === "A bell rings.")).toBe(false);
+  });
+
+  it("keeps a proactive check-in that is not part of the retried reply", () => {
+    const kept = omitRetriedUserTurn(
+      [
+        { id: "t1:user", role: "user", content: "hello" },
+        { id: "t1:assistant", role: "assistant", content: "old" },
+        {
+          role: "assistant",
+          content: "I was thinking of you.",
+          metadata: { source: "proactive_push" },
+        },
+      ],
+      "hello",
+    );
+    expect(kept.map((message) => message.content)).toEqual(["I was thinking of you."]);
+  });
+
   it("omits inlined history from composePrompt when asked", () => {
     const prompt = composePrompt({
       characters: [character],
@@ -964,8 +1097,89 @@ describe("buildGroupCompanionPrompt", () => {
       content: "What do you both think?",
     });
 
-    expect(prompt).toContain("ONLY SERENITY THIS TURN");
+    expect(prompt).toContain("I speak only as Serenity this turn");
+    expect(prompt).not.toMatch(/You are ONLY SERENITY/i);
     expect(prompt).toContain("**Serenity:**");
+    expect(prompt).not.toContain(MEMORY_BACKGROUND_LINE);
+  });
+
+  it("caps a group turn at four memories", () => {
+    const char1 = { id: "c1", name: "Serenity", universe: "Eden" };
+    const facts = Array.from({ length: 11 }, (_, i) => ({
+      type: "factual",
+      text: `Unrelated keepsake number ${i} sits on a shelf`,
+      created_at: new Date().toISOString(),
+    }));
+    facts.push({
+      type: "factual",
+      text: "User eats porridge for breakfast",
+      created_at: new Date(Date.now() - 86_400_000).toISOString(),
+    });
+    const prompt = buildGroupCompanionPrompt({
+      characters: [char1, { id: "c2", name: "Linda", universe: "Fallen" }],
+      nextCharacter: char1,
+      memories: [{ characterId: "c1", facts }],
+      recentMessages: [],
+      content: "What should I make for breakfast?",
+      synchroState: {
+        vector: {
+          intimacy: 90,
+          powerDynamic: 0,
+          spiritualAttunement: 80,
+          primalIntensity: 50,
+          crossoverOpenness: 70,
+          synchroStrength: 90,
+        },
+        level: "fullCross",
+        emotionalTone: "warm",
+        totalTurns: 100,
+        sessionTurns: 5,
+        lastInteraction: new Date().toISOString(),
+      },
+    });
+    const keepsakes = prompt.match(/Unrelated keepsake number/g) ?? [];
+    expect(prompt).toContain("User eats porridge for breakfast");
+    expect(keepsakes).toHaveLength(COMPANION_MEMORY_TOP_K - 1);
+    expect(prompt).toContain(MEMORY_BACKGROUND_LINE);
+  });
+
+  it("caps proactive composePrompt turns at four memories", () => {
+    const char1 = { id: "c1", name: "Serenity", universe: "Eden" };
+    const facts = Array.from({ length: 11 }, (_, i) => ({
+      type: "factual",
+      text: `Unrelated keepsake number ${i} sits on a shelf`,
+      created_at: new Date(Date.now() - i * 60_000).toISOString(),
+    }));
+    const prompt = buildCompanionPrompt({
+      systemPrompt: "Send one warm check-in.",
+      characters: [char1],
+      activeCharacter: char1,
+      memories: [{ characterId: "c1", facts }],
+      recentMessages: [],
+      mode: "solo",
+      content: "[Proactive outreach: send the check-in now.]",
+      isCrossover: false,
+      synchroState: {
+        vector: {
+          intimacy: 90,
+          powerDynamic: 0,
+          spiritualAttunement: 80,
+          primalIntensity: 50,
+          crossoverOpenness: 70,
+          synchroStrength: 90,
+        },
+        level: "fullCross",
+        emotionalTone: "warm",
+        totalTurns: 100,
+        sessionTurns: 5,
+        lastInteraction: new Date().toISOString(),
+      },
+    });
+    const keepsakes = prompt.match(/Unrelated keepsake number/g) ?? [];
+    expect(keepsakes).toHaveLength(COMPANION_MEMORY_TOP_K);
+    expect(prompt).toContain("Unrelated keepsake number 0 sits on a shelf");
+    expect(prompt).not.toContain("Unrelated keepsake number 10 sits on a shelf");
+    expect(prompt).not.toContain(MEMORY_RECALL_LINE);
   });
 
   it("does not bind group TURN RULES to characters[0] when speaker is missing", () => {
@@ -985,7 +1199,7 @@ describe("buildGroupCompanionPrompt", () => {
 
     // Client prompt remains authoritative; do not inject conflicting Serenity rules.
     expect(prompt).toContain("YOU ARE ONLY LINDA THIS TURN");
-    expect(prompt).not.toContain("ONLY SERENITY THIS TURN");
+    expect(prompt).not.toContain("I speak only as Serenity this turn");
     expect(prompt).not.toContain("CHARACTER:\n");
   });
 });
@@ -1272,5 +1486,34 @@ describe("operator model prompt injection", () => {
     });
     expect(prompt).toContain("CHARACTER IDENTITY LOCK");
     expect(prompt).not.toContain("OPERATOR MODEL");
+  });
+
+  it("recognizes both answer-last stances from the same wording", () => {
+    expect(isAnswerLastInstruction(answerLastMessageInstruction("Mara", "Natasha"))).toBe(true);
+    expect(isAnswerLastInstruction(answerLastMessageInstruction("Mara", "Natasha", true))).toBe(
+      true,
+    );
+    expect(isAnswerLastInstruction(answerLastMessageInstruction(null, null, true))).toBe(true);
+    expect(isAnswerLastInstruction("Continue that scene in your own first person.")).toBe(false);
+  });
+
+  it("uses the question stance for questions, and care still wins", () => {
+    const question = answerLastMessageInstruction("Mara", "Serenity", false, true);
+    expect(question).toContain("Answer the question plainly and specifically first");
+    expect(question).not.toContain("Continue that scene");
+    expect(isAnswerLastInstruction(question)).toBe(true);
+
+    const care = answerLastMessageInstruction("Mara", "Serenity", true, true);
+    expect(care).toContain("Do not play out a scene.");
+    expect(care).not.toContain("Answer the question plainly");
+  });
+
+  it("detects question turns", () => {
+    expect(isQuestionTurn("what should I name my cat?")).toBe(true);
+    expect(isQuestionTurn("He asked \u201chow?\u201d")).toBe(true);
+    expect(isQuestionTurn("really?!")).toBe(true);
+    expect(isQuestionTurn("I miss the garden")).toBe(false);
+    expect(isQuestionTurn("Stay with me.")).toBe(false);
+    expect(isQuestionTurn("")).toBe(false);
   });
 });

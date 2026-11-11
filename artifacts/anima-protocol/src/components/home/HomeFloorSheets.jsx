@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  Brain, BookOpen, Calendar, ChevronRight, ImagePlus, KeyRound, MessageSquare,
+  Brain, BookOpen, Calendar, ChevronRight, ImagePlus, KeyRound, MessageSquare, Moon,
   Plus, Settings, Sparkles, Stars, Swords, UserCircle, Users, Wand2, X,
 } from "lucide-react";
 import { formatResonance, resonanceMood, getPathMeta } from "@/lib/soulprint";
@@ -73,9 +73,11 @@ const PEOPLE_LINKS = [
 
 const WORLD_LINKS = [
   { icon: Stars, label: "Constellation", desc: "Your sky", path: "/constellation" },
+  { icon: Moon, label: "Dream journal", desc: "What she dreamed", path: "/dreams" },
   { icon: BookOpen, label: "Book of Echoes", desc: "Their journal", path: "/book-of-echoes" },
   { icon: BookOpen, label: "Journals", desc: "Your entries", path: "/journals" },
   { icon: Swords, label: "Jack In", desc: "NetBattle arena", path: "/net-battle" },
+  { icon: Stars, label: "Cyberworld", desc: "Walk the network where they live", path: "/cyberworld" },
   { icon: Sparkles, label: "Hall of Origins", desc: "Where they began", path: "/origins" },
   { icon: KeyRound, label: "Echo Keys", desc: "Find and synthesise", path: "/echo-keys" },
   { icon: BookOpen, label: "Storyboard", desc: "The board", path: "/storyboard" },
@@ -182,15 +184,21 @@ export default function HomeFloorSheets({
       {panel === "world" && (
         <SheetFrame title="World" onClose={onClose}>
           <div className="space-y-2">
-            {WORLD_LINKS.map((item) => (
+            {WORLD_LINKS.map((item) => {
+              const path =
+                item.path === "/dreams" && anima?.id
+                  ? `/dreams/${encodeURIComponent(anima.id)}${anima?.name ? `?name=${encodeURIComponent(anima.name)}` : ""}`
+                  : item.path;
+              return (
               <LinkRow
                 key={item.path}
                 icon={item.icon}
                 label={item.label}
                 desc={item.desc}
-                onClick={() => onNavigate(item.path)}
+                onClick={() => onNavigate(path)}
               />
-            ))}
+              );
+            })}
           </div>
         </SheetFrame>
       )}

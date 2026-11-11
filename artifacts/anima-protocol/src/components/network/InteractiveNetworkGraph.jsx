@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { X, Loader, Plus, Minus } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -252,12 +252,12 @@ export default function InteractiveNetworkGraph({
       };
 
       if (relationshipId) {
-        await base44.entities.CharacterRelationship.update(
+        await animaClient.entities.CharacterRelationship.update(
           relationshipId,
           relationshipData
         );
       } else {
-        await base44.entities.CharacterRelationship.create(relationshipData);
+        await animaClient.entities.CharacterRelationship.create(relationshipData);
       }
 
       // Add memory log for both characters
@@ -267,13 +267,13 @@ export default function InteractiveNetworkGraph({
       const memory = `Relationship adjusted: ${notes || "Manual connection established"}`;
 
       await Promise.all([
-        base44.entities.CharacterMemory.create({
+        animaClient.entities.CharacterMemory.create({
           character_id: modalData.fromId,
           fact: `Relationship with ${toChar?.label} changed: ${memory}`,
           category: "relationship",
           tags: ["relationship-change"],
         }),
-        base44.entities.CharacterMemory.create({
+        animaClient.entities.CharacterMemory.create({
           character_id: modalData.toId,
           fact: `Relationship with ${fromChar?.label} changed: ${memory}`,
           category: "relationship",

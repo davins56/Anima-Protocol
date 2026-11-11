@@ -1,4 +1,4 @@
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 
 /**
  * Creates a timeline branch snapshot when a new chat session is created
@@ -13,7 +13,7 @@ export const createTimelineBranch = async (session, characters, mode) => {
           .map(c => c.name)
           .join(", ");
 
-    await base44.entities.WorldSnapshot.create({
+    await animaClient.entities.WorldSnapshot.create({
       session_id: session.id,
       branch_name: `Universe: ${session.title}`,
       decision_point: `New reality forged with ${characterNames}`,
@@ -39,12 +39,12 @@ export const createTimelineBranch = async (session, characters, mode) => {
  */
 export const linkTimelineBranches = async (parentSessionId, childSessionId) => {
   try {
-    const childSnapshot = await base44.entities.WorldSnapshot.filter({
+    const childSnapshot = await animaClient.entities.WorldSnapshot.filter({
       session_id: childSessionId,
     });
 
     if (childSnapshot?.length > 0) {
-      await base44.entities.WorldSnapshot.update(childSnapshot[0].id, {
+      await animaClient.entities.WorldSnapshot.update(childSnapshot[0].id, {
         parent_snapshot_id: parentSessionId,
       });
     }

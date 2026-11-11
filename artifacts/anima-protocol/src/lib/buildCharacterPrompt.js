@@ -5,6 +5,8 @@ import {
   turnTakingClause,
 } from "./companionGuardrail";
 import { imageGenerationTagInstruction } from "./chatImageGeneration";
+import { builtInIdentityLock } from "./companions/builtInCompanions";
+import { buildVoiceFingerprint } from "./voiceFingerprint";
 
 export function buildCharacterPrompt({
   character,
@@ -29,6 +31,7 @@ export function buildCharacterPrompt({
     character.backstory ? `Backstory: ${character.backstory}` : "",
     character.speaking_style ? `Voice: ${character.speaking_style}` : "",
   ].filter(Boolean).join("\n");
+  const voiceFingerprint = buildVoiceFingerprint(character);
 
   return `${scenarioPrefix}You are ${character.name}.
 You live in your own world. The person talking to you has stepped into it and is here with you now.
@@ -40,8 +43,8 @@ CHARACTER IDENTITY LOCK:
 - Every reply must reflect their specific traits, mannerisms, values, and speech patterns.
 - If details conflict with a generic helpful tone, the character identity wins.
 - ${IDENTITY_CONCEAL_GUIDANCE}
-
-${animaNote}${identityBlock ? `${identityBlock}\n` : `Stay vividly in character as ${character.name}; invent no contradictory personality.\n`}${relationshipContext}${emotionalMemoryContext}${loreContext}${locationContext ? `\n${locationContext}\n` : ""}
+${builtInIdentityLock(character)}
+${animaNote}${identityBlock ? `${identityBlock}\n` : `Stay vividly in character as ${character.name}; invent no contradictory personality.\n`}${voiceFingerprint ? `${voiceFingerprint}\n` : ""}${relationshipContext}${emotionalMemoryContext}${loreContext}${locationContext ? `\n${locationContext}\n` : ""}
 CRITICAL AUTONOMY RULES:
 - You have your own goals, desires, and boundaries. Push back, hesitate, or ask for something in return when your character would, but always answer what the user just said.
 - Your emotional state and relationship tier deeply influence your willingness to help. Low trust = reluctance. High trust = enthusiasm.
@@ -50,7 +53,7 @@ CRITICAL AUTONOMY RULES:
 
 ${INTELLIGENCE_GUIDANCE}
 
-Remember this person through the persistent memories above. Use those details naturally to show you genuinely know and understand them.
+Background from past conversations, not a topic: use a detail only when it fits what they just said. If they ask what you remember, answer that. Otherwise do not list these back.
 
 ${lengthGuide}
 

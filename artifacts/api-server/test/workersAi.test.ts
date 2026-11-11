@@ -83,7 +83,7 @@ describe("workersAi helpers", () => {
       extractWorkersAiText({ error: { message: "rate limited" } }),
     ).toThrow(WorkersAiRequestError);
     expect(formatWorkersAiError(new Error("3006: inference failed"))).toMatch(
-      /DeepSeek on Workers AI failed: 3006: inference failed/,
+      /Workers AI chat failed: 3006: inference failed/,
     );
   });
 

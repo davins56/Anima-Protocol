@@ -17,6 +17,7 @@ import {
 } from "./lib/workerApiGuard";
 import { apexRedirectForWww } from "./lib/wwwHostRedirect";
 import { setAiBinding } from "./lib/aiBinding";
+import { setAssetsBinding } from "./lib/assetsBinding";
 import {
   clearWorkerWaitUntil,
   registerWorkerWaitUntil,
@@ -37,6 +38,9 @@ const WORKER_API_PORT = 8080;
 app.listen(WORKER_API_PORT);
 
 const expressHandler = httpServerHandler({ port: WORKER_API_PORT });
+
+/** wrangler.jsonc triggers.crons entry that runs the dream layer. */
+const DREAM_CRON = "0,15,30,45 * * * *";
 
 export default {
   async fetch(
@@ -66,6 +70,7 @@ export default {
 
     if (isWorkerApiPath(url.pathname)) {
       setAiBinding(env.AI);
+      setAssetsBinding(env.ASSETS);
       const backgroundToken = crypto.randomUUID();
       registerWorkerWaitUntil(backgroundToken, (promise) => ctx.waitUntil(promise));
       const headers = new Headers(request.headers);
@@ -82,5 +87,68 @@ export default {
     }
 
     return fetchAssetsRejectingSpaHtml(request, env.ASSETS);
+  },
+
+  /**
+   * Hourly, same minute as the Vercel proactive cron. Drains milestone
+   * evolution and distilled memories that waited out the chat quiet window.
+   * Does not send proactive pushes — that stays on `/api/notifications/proactive/run`.
+   */
+  async scheduled(
+    controller: { cron: string },
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<void> {
+    if (controller?.cron === DREAM_CRON) {
+      // Dream layer: quarter-hourly so the 30-minute inactivity window is honoured.
+      ctx.waitUntil(
+        (async () => {
+          try {
+            await applyCloudflareRequestEnv(env);
+            setAiBinding(env.AI);
+            const { runDreamCycle } = await import("./lib/dreams/dreamLayer");
+            const { logger } = await import("./lib/logger");
+            logger.info(await runDreamCycle(), "Dream layer cycle");
+          } catch (err) {
+            console.error("Dream layer cycle failed", err);
+          }
+          try {
+            // Memory consolidation (ANIMA_KERNEL_MEMORY_CONSOLIDATION, default off):
+            // old episodic events → literal semantic notes. No-op when the switch is off.
+            const { runConsolidationCycle } = await import("./lib/memoryCore/consolidation");
+            const summary = await runConsolidationCycle();
+            if (summary.enabled) {
+              const { logger } = await import("./lib/logger");
+              logger.info(summary, "Memory consolidation cycle");
+            }
+          } catch (err) {
+            console.error("Memory consolidation cycle failed", err);
+          }
+        })(),
+      );
+      return;
+    }
+    ctx.waitUntil(
+      (async () => {
+        try {
+          await applyCloudflareRequestEnv(env);
+          const { drainDeferredLocalLlmJobs } = await import("./lib/deferredLocalLlm");
+          const { logger } = await import("./lib/logger");
+          const summary = await drainDeferredLocalLlmJobs();
+          logger.info(summary, "Deferred local LLM cron drain");
+        } catch (err) {
+          console.error("Deferred local LLM cron drain failed", err);
+        }
+        try {
+          // Memory core: embed events logged without a vector (DB triggers,
+          // offline embedder). Append-only rows only gain their embedding once.
+          setAiBinding(env.AI);
+          const { backfillMemoryEmbeddings } = await import("./lib/memoryCore/memoryCore");
+          await backfillMemoryEmbeddings(64);
+        } catch (err) {
+          console.error("Memory embedding backfill failed", err);
+        }
+      })(),
+    );
   },
 };

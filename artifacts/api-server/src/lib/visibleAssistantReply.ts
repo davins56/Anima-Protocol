@@ -1,6 +1,7 @@
 /**
- * DeepSeek R1 (Workers AI `@cf/deepseek-ai/deepseek-r1-distill-qwen-32b`)
- * wraps chain-of-thought in `<think>…</think>`. Production often returns
+ * Reasoning models such as DeepSeek R1 (Workers AI
+ * `@cf/deepseek-ai/deepseek-r1-distill-qwen-32b`, the pre-Llama default and
+ * still selectable via ANIMA_WORKERS_AI_MODEL) wrap chain-of-thought in `<think>…</think>`. Production often returns
  * unclosed `<think>`-only text with no post-think answer. Waiting for
  * `</think>` hides the only usable tokens and leaves an empty bubble.
  */
@@ -48,6 +49,63 @@ export function finalizeAssistantReply(
 
 const SENTENCE_END_RE = /[.!?…]["'”’)\]*_~]*(?=\s|$)/g;
 const COMPLETE_SENTENCE_RE = /[.!?…]["'”’)\]*_~]*$/;
+const NAMED_HONORIFIC_RE =
+  /\b(?:Mr|Mrs|Ms|Dr|St|Jr|Sr|vs|etc|e\.g|i\.e)$/i;
+const INITIALISM_RE = /(?:[A-Za-z]\.)+[A-Za-z]$/;
+
+/** Index just after the last real sentence end, or -1 when there is none. */
+function lastSentenceEnd(value: string): number {
+  let sentenceEnd = -1;
+  for (const match of value.matchAll(SENTENCE_END_RE)) {
+    const index = match.index ?? 0;
+    const before = value.slice(0, index);
+    const rest = value.slice(index + match[0].length).trim();
+    // "Mr. Smith" and a cut-off "Dr." are not sentence ends.
+    if (NAMED_HONORIFIC_RE.test(before)) continue;
+    // "the U.S. last year" is not a sentence end. "I live in the U.S." is.
+    if (INITIALISM_RE.test(before) && rest) continue;
+    sentenceEnd = index + match[0].length;
+  }
+  return sentenceEnd;
+}
+
+/**
+ * A dropped stream is saved only through the last finished sentence.
+ * A fragment with no sentence end is kept so the turn can still be marked
+ * cut off; callers must not mine that fragment for memory or mood.
+ */
+export function trimToLastFullSentence(text: string): string {
+  const value = String(text ?? "").trimEnd();
+  if (!value) return value;
+  const sentenceEnd = lastSentenceEnd(value);
+  if (sentenceEnd > 0) return value.slice(0, sentenceEnd).trimEnd();
+  return value;
+}
+
+/**
+ * A stall always leaves a partial. A token cap does too when the trim
+ * shortened the text, or when the text never reached a real sentence end.
+ * A reply that already ended on a sentence is left alone.
+ */
+export function keptPartialNeedsCutOff(
+  original: string,
+  settled: string,
+  meta: { timedOut?: boolean; finishReason?: string | null } = {},
+): boolean {
+  const kept = settled.trim();
+  if (!kept) return false;
+  if (meta.timedOut) return true;
+  if (meta.finishReason !== "length") return false;
+  if (kept !== original.trim()) return true;
+  return lastSentenceEnd(kept) !== kept.length;
+}
+
+/** True when a saved turn or message was kept after the model stream dropped. */
+export function isCutOffReply(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== "object") return false;
+  const record = metadata as Record<string, unknown>;
+  return record.reply_interrupted === true || record.cut_off === true;
+}
 
 /**
  * Lone `*action*` spans. Bold `**labels**` are not action lines.
@@ -87,14 +145,11 @@ function scanActionMarkers(value: string): { closeAt: number; unclosed: boolean 
  */
 export function trimToLastCompleteSentence(text: string): string {
   const value = String(text ?? "").trimEnd();
-  if (!value || COMPLETE_SENTENCE_RE.test(value)) return value;
-  let sentenceEnd = -1;
-  for (const match of value.matchAll(SENTENCE_END_RE)) {
-    const index = match.index ?? 0;
-    // "Mr. Smith" is not a sentence end.
-    if (/\b(?:Mr|Mrs|Ms|Dr|St|Jr|Sr|vs|etc|e\.g|i\.e)$/i.test(value.slice(0, index))) continue;
-    sentenceEnd = index + match[0].length;
+  if (!value) return value;
+  if (lastSentenceEnd(value) === value.length && COMPLETE_SENTENCE_RE.test(value)) {
+    return value;
   }
+  const sentenceEnd = lastSentenceEnd(value);
   const action = scanActionMarkers(value);
   const cut = Math.max(sentenceEnd, action.closeAt);
   if (cut > 0) return value.slice(0, cut).trimEnd();
@@ -102,23 +157,48 @@ export function trimToLastCompleteSentence(text: string): string {
   return value;
 }
 
-/** Token-cap and stall cuts share one trim. A stopped-early fragment is left alone. */
+/**
+ * Token-cap and stall cuts keep the last sentence or closed action.
+ * An interrupted stream is cut back to the last full sentence only.
+ * A stopped-early fragment is left alone.
+ */
 export function settleCappedReply(
   text: string,
-  meta: { timedOut?: boolean; finishReason?: string | null; stoppedEarly?: boolean } = {},
+  meta: {
+    timedOut?: boolean;
+    finishReason?: string | null;
+    stoppedEarly?: boolean;
+    interrupted?: boolean;
+  } = {},
 ): string {
-  if (meta.stoppedEarly) return text;
+  if (meta.stoppedEarly && !meta.interrupted) return text;
+  if (meta.interrupted) return trimToLastFullSentence(text);
   if (meta.timedOut || meta.finishReason === "length") {
-    return trimToLastCompleteSentence(text);
+    return endCappedFragment(trimToLastCompleteSentence(text));
   }
   return text;
+}
+
+/**
+ * A capped reply with no finished sentence or closed action to fall back on
+ * ends on a half-written word ("...within this virt"). Drop that last word
+ * and close with an ellipsis so it never stops mid-word.
+ */
+function endCappedFragment(text: string): string {
+  const value = String(text ?? "").trimEnd();
+  if (!value) return value;
+  if (lastSentenceEnd(value) === value.length) return value;
+  if (/[*…"”')\]]$/.test(value)) return value;
+  const lastSpace = value.search(/\s+\S*$/);
+  if (lastSpace <= 0) return value;
+  return `${value.slice(0, lastSpace).replace(/[\s,;:\-–—]+$/, "")}…`;
 }
 
 export function createVisibleReplyFilter() {
   let raw = "";
   let emittedVisible = "";
 
-  // Unclosed `<think>` is the production DeepSeek reply. Surface inner text
+  // Unclosed `<think>` is how DeepSeek R1 often replies. Surface inner text
   // as it arrives — do not wait for a closing tag that never comes.
   const peek = () => visibleAssistantReply(raw, { allowThinkFallback: true });
   const peekAnswer = () =>

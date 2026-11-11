@@ -1,0 +1,998 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  animaClient,
+  clearAuthTokenGetter,
+  clearStoreCache,
+  setAuthTokenGetter,
+  STORE_COMPANION_CREATE_TIMEOUT_MS,
+  STORE_FETCH_TIMEOUT_MS,
+  STORE_LIST_RETRY_LIMIT,
+  STORE_LIST_TIMEOUT_MS,
+  STORE_SESSION_CREATE_TIMEOUT_MS,
+} from "./animaClient";
+import {
+  isStoreDatabaseError,
+  isStoreReadUnavailable,
+} from "@/lib/loadRosterCharacters";
+
+describe("ChatSession store wrapper", () => {
+  beforeEach(() => {
+    setAuthTokenGetter(() => "test-token");
+  });
+
+  afterEach(() => {
+    clearAuthTokenGetter();
+    vi.restoreAllMocks();
+    delete global.fetch;
+  });
+
+  it("stores initial messages via the message replacement endpoint", async () => {
+    const sessionWrites = [];
+    const messageWrites = [];
+    const savedMessages = [
+      {
+        id: "msg-1",
+        role: "assistant",
+        content: "The scene begins.",
+        seq: 1,
+      },
+    ];
+
+    global.fetch = vi.fn(async (url, options = {}) => {
+      const { pathname } = new URL(String(url), "http://localhost");
+      const body = options.body ? JSON.parse(String(options.body)) : {};
+
+      if (pathname === "/api/store/ChatSession") {
+        sessionWrites.push(body);
+        return Response.json({ id: "session-1", title: body.title });
+      }
+
+      if (pathname === "/api/store/messages/replace") {
+        messageWrites.push(body);
+        return Response.json(savedMessages);
+      }
+
+      return Response.json({});
+    });
+
+    const session = await animaClient.entities.ChatSession.create({
+      title: "Init Session",
+      opening_scene: "A neon room hums.",
+      messages: [{ role: "assistant", content: "The scene begins." }],
+    });
+
+    expect(sessionWrites).toEqual([
+      {
+        title: "Init Session",
+        opening_scene: "A neon room hums.",
+        messages_migrated: true,
+      },
+    ]);
+    expect(messageWrites).toEqual([
+      {
+        session_id: "session-1",
+        messages: [{ role: "assistant", content: "The scene begins." }],
+      },
+    ]);
+    expect(session).toEqual({
+      id: "session-1",
+      title: "Init Session",
+      messages: savedMessages,
+    });
+  });
+
+  it("asks replace to keep arrivals and previews the saved tail", async () => {
+    const writes = [];
+    const savedMessages = [
+      { id: "u", role: "user", content: "hi" },
+      { id: "a", role: "assistant", content: "old" },
+      { id: "fresh", role: "user", content: "from another device" },
+    ];
+    global.fetch = vi.fn(async (url, options = {}) => {
+      const { pathname } = new URL(String(url), "http://localhost");
+      const body = options.body ? JSON.parse(String(options.body)) : {};
+      if (pathname === "/api/store/messages/replace") {
+        writes.push(body);
+        return Response.json(savedMessages);
+      }
+      if (pathname === "/api/store/ChatSession/sess-1") {
+        writes.push(body);
+        return Response.json({ id: "sess-1", ...body });
+      }
+      return Response.json({});
+    });
+
+    const saved = await animaClient.entities.ChatSession.update("sess-1", {
+      messages: [
+        { id: "u", role: "user", content: "hi" },
+        { id: "a", role: "assistant", content: "old" },
+      ],
+      keep_arrivals: true,
+    });
+
+    expect(writes[0]).toEqual({
+      session_id: "sess-1",
+      keep_arrivals: true,
+      messages: [
+        { id: "u", role: "user", content: "hi" },
+        { id: "a", role: "assistant", content: "old" },
+      ],
+    });
+    expect(writes[1]).toEqual({ last_message: "from another device" });
+    expect(saved.messages.map((message) => message.id)).toEqual(["u", "a", "fresh"]);
+  });
+
+  it("fails fast when the store fetch timeout signal aborts", async () => {
+    clearStoreCache();
+    const abortErr = Object.assign(new Error("The operation was aborted"), {
+      name: "TimeoutError",
+    });
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => {
+      const controller = new AbortController();
+      controller.abort(abortErr);
+      return controller.signal;
+    });
+
+    global.fetch = vi.fn(async (_url, options = {}) => {
+      if (options.signal?.aborted) {
+        const reason = options.signal.reason || abortErr;
+        throw reason;
+      }
+      return Response.json([]);
+    });
+
+    await expect(animaClient.entities.CheckIn.list()).rejects.toMatchObject({
+      code: "timeout",
+    });
+    expect(timeoutSpy).toHaveBeenCalledWith(STORE_FETCH_TIMEOUT_MS);
+    expect(timeoutSpy).toHaveBeenCalledTimes(STORE_LIST_RETRY_LIMIT + 1);
+    expect(global.fetch).toHaveBeenCalledTimes(STORE_LIST_RETRY_LIMIT + 1);
+    expect(STORE_FETCH_TIMEOUT_MS).toBe(8000);
+    expect(STORE_LIST_RETRY_LIMIT).toBe(1);
+  });
+
+  it("retries a list GET after a client timeout and succeeds", async () => {
+    clearStoreCache();
+    vi.spyOn(AbortSignal, "timeout").mockImplementation(() => {
+      return new AbortController().signal;
+    });
+    let listGets = 0;
+    global.fetch = vi.fn(async () => {
+      listGets += 1;
+      if (listGets === 1) {
+        throw Object.assign(new Error("The operation was aborted"), {
+          name: "TimeoutError",
+        });
+      }
+      return Response.json([{ id: "check-1", note: "warm" }]);
+    });
+
+    await expect(animaClient.entities.CheckIn.list()).resolves.toEqual([
+      { id: "check-1", note: "warm" },
+    ]);
+    expect(listGets).toBe(2);
+  });
+
+  it("does not retry a write after a client timeout", async () => {
+    const abortErr = Object.assign(new Error("The operation was aborted"), {
+      name: "TimeoutError",
+    });
+    vi.spyOn(AbortSignal, "timeout").mockImplementation(() => {
+      return new AbortController().signal;
+    });
+    let creates = 0;
+    global.fetch = vi.fn(async () => {
+      creates += 1;
+      throw abortErr;
+    });
+
+    await expect(animaClient.entities.CheckIn.create({ note: "x" })).rejects.toMatchObject({
+      code: "timeout",
+    });
+    expect(creates).toBe(1);
+  });
+
+  it("retries ChatSession.create after a database connection reset", async () => {
+    let sessionPosts = 0;
+    global.fetch = vi.fn(async (url, options = {}) => {
+      const { pathname } = new URL(String(url), "http://localhost");
+      if (pathname === "/api/store/ChatSession") {
+        sessionPosts += 1;
+        if (sessionPosts === 1) {
+          return Response.json(
+            { error: "Database connection reset", reason: "reset", code: "ECONNRESET" },
+            { status: 503 },
+          );
+        }
+        const body = options.body ? JSON.parse(String(options.body)) : {};
+        return Response.json({ id: "session-2", title: body.title }, { status: 201 });
+      }
+      if (pathname === "/api/store/messages/replace") {
+        return Response.json([]);
+      }
+      return Response.json({});
+    });
+
+    const session = await animaClient.entities.ChatSession.create({
+      title: "Recovered session",
+    });
+
+    expect(sessionPosts).toBe(2);
+    expect(session).toEqual({
+      id: "session-2",
+      title: "Recovered session",
+    });
+  });
+
+  it("does not retry ChatSession.create on a non-reset store error", async () => {
+    let sessionPosts = 0;
+    global.fetch = vi.fn(async (url) => {
+      const { pathname } = new URL(String(url), "http://localhost");
+      if (pathname === "/api/store/ChatSession") {
+        sessionPosts += 1;
+        return Response.json(
+          {
+            error: "Database schema is missing or out of date",
+            reason: "schema",
+          },
+          { status: 503 },
+        );
+      }
+      return Response.json({});
+    });
+
+    await expect(
+      animaClient.entities.ChatSession.create({ title: "Blocked" }),
+    ).rejects.toThrow(/schema is missing/i);
+    expect(sessionPosts).toBe(1);
+  });
+
+  it("does not POST nested messages or call replace for an empty Init payload", async () => {
+    const sessionWrites = [];
+    const messageWrites = [];
+    global.fetch = vi.fn(async (url, options = {}) => {
+      const { pathname } = new URL(String(url), "http://localhost");
+      const body = options.body ? JSON.parse(String(options.body)) : {};
+      if (pathname === "/api/store/ChatSession") {
+        sessionWrites.push(body);
+        return Response.json({ id: "session-solo", title: body.title }, { status: 201 });
+      }
+      if (pathname === "/api/store/messages/replace") {
+        messageWrites.push(body);
+        return Response.json([]);
+      }
+      return Response.json({});
+    });
+
+    const session = await animaClient.entities.ChatSession.create({
+      mode: "solo",
+      character_id: "char-1",
+      title: "T'Challa",
+      opening_scene: "A quiet room.",
+      messages: [],
+    });
+
+    expect(sessionWrites).toEqual([
+      {
+        mode: "solo",
+        character_id: "char-1",
+        title: "T'Challa",
+        opening_scene: "A quiet room.",
+        messages_migrated: true,
+      },
+    ]);
+    expect(sessionWrites[0]).not.toHaveProperty("messages");
+    expect(messageWrites).toEqual([]);
+    expect(session).toEqual({
+      id: "session-solo",
+      title: "T'Challa",
+      messages: [],
+    });
+  });
+
+  it("uses the documented Init create budget and surfaces abort as a timeout", async () => {
+    clearStoreCache();
+    const abortErr = Object.assign(new Error("The operation was aborted"), {
+      name: "TimeoutError",
+    });
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => {
+      const controller = new AbortController();
+      controller.abort(abortErr);
+      return controller.signal;
+    });
+
+    global.fetch = vi.fn(async (_url, options = {}) => {
+      if (options.signal?.aborted) {
+        throw options.signal.reason || abortErr;
+      }
+      return Response.json({ id: "never" });
+    });
+
+    await expect(
+      animaClient.entities.ChatSession.create({ title: "Init Session" }),
+    ).rejects.toMatchObject({ code: "timeout" });
+    expect(timeoutSpy).toHaveBeenCalledWith(STORE_SESSION_CREATE_TIMEOUT_MS);
+    expect(STORE_SESSION_CREATE_TIMEOUT_MS).toBe(20000);
+  });
+
+  it("mints a fresh create budget when retrying a 503 connection reset", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      controller.signal.budgetMs = ms;
+      return controller.signal;
+    });
+    let sessionPosts = 0;
+    const signals = [];
+    global.fetch = vi.fn(async (url, options = {}) => {
+      const { pathname } = new URL(String(url), "http://localhost");
+      if (pathname === "/api/store/ChatSession") {
+        sessionPosts += 1;
+        signals.push(options.signal);
+        if (sessionPosts === 1) {
+          return Response.json(
+            { error: "Database connection reset", reason: "reset", code: "ECONNRESET" },
+            { status: 503 },
+          );
+        }
+        return Response.json({ id: "session-fresh", title: "Recovered" }, { status: 201 });
+      }
+      return Response.json({});
+    });
+
+    const session = await animaClient.entities.ChatSession.create({ title: "Recovered" });
+
+    expect(session.id).toBe("session-fresh");
+    expect(sessionPosts).toBe(2);
+    expect(timeoutSpy).toHaveBeenCalledTimes(2);
+    expect(timeoutSpy).toHaveBeenNthCalledWith(1, STORE_SESSION_CREATE_TIMEOUT_MS);
+    expect(timeoutSpy).toHaveBeenNthCalledWith(2, STORE_SESSION_CREATE_TIMEOUT_MS);
+    expect(signals[0]).not.toBe(signals[1]);
+    expect(STORE_FETCH_TIMEOUT_MS).toBe(8000);
+  });
+
+  it("does not arm the ChatSession create abort until Clerk mint finishes", async () => {
+    clearStoreCache();
+    let token = null;
+    setAuthTokenGetter(() => token);
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      controller.signal.budgetMs = ms;
+      return controller.signal;
+    });
+    let fetchStarted = false;
+    global.fetch = vi.fn(async () => {
+      fetchStarted = true;
+      return Response.json({ id: "sess-1", title: "T'Challa" }, { status: 201 });
+    });
+
+    const pending = animaClient.entities.ChatSession.create({ title: "T'Challa" });
+    await new Promise((r) => setTimeout(r, 40));
+    expect(timeoutSpy).not.toHaveBeenCalled();
+    expect(fetchStarted).toBe(false);
+
+    token = "live-jwt";
+    const session = await pending;
+    expect(session.id).toBe("sess-1");
+    expect(fetchStarted).toBe(true);
+    expect(timeoutSpy).toHaveBeenCalledWith(STORE_SESSION_CREATE_TIMEOUT_MS);
+  });
+
+  it("refreshes auth outside the create abort window on 401 then uses a fresh budget", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      controller.signal.budgetMs = ms;
+      return controller.signal;
+    });
+    const signals = [];
+    let sessionPosts = 0;
+    global.fetch = vi.fn(async (url, options = {}) => {
+      const { pathname } = new URL(String(url), "http://localhost");
+      if (pathname === "/api/store/ChatSession") {
+        sessionPosts += 1;
+        signals.push(options.signal);
+        if (sessionPosts === 1) {
+          return new Response(JSON.stringify({ error: "Unauthorized" }), {
+            status: 401,
+          });
+        }
+        return Response.json({ id: "sess-auth", title: "Recovered" }, { status: 201 });
+      }
+      return Response.json({});
+    });
+
+    const session = await animaClient.entities.ChatSession.create({ title: "Recovered" });
+    expect(session.id).toBe("sess-auth");
+    expect(sessionPosts).toBe(2);
+    expect(timeoutSpy).toHaveBeenCalledTimes(2);
+    expect(signals[0]).not.toBe(signals[1]);
+    expect(timeoutSpy).toHaveBeenNthCalledWith(1, STORE_SESSION_CREATE_TIMEOUT_MS);
+    expect(timeoutSpy).toHaveBeenNthCalledWith(2, STORE_SESSION_CREATE_TIMEOUT_MS);
+  });
+});
+
+describe("Character roster list budget", () => {
+  beforeEach(() => {
+    setAuthTokenGetter(() => "test-token");
+    clearStoreCache();
+  });
+
+  afterEach(() => {
+    clearAuthTokenGetter();
+    vi.restoreAllMocks();
+    delete global.fetch;
+  });
+
+  it("uses the roster list budget, not the 8s write cap", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      controller.signal.budgetMs = ms;
+      return controller.signal;
+    });
+    global.fetch = vi.fn(async () =>
+      Response.json([{ id: "char-1", name: "Korra" }]),
+    );
+
+    const rows = await animaClient.entities.Character.list("-created_date", 10, {
+      _bootstrapInternal: true,
+    });
+    expect(rows).toEqual([{ id: "char-1", name: "Korra" }]);
+    expect(timeoutSpy).toHaveBeenCalledWith(STORE_LIST_TIMEOUT_MS);
+    expect(STORE_LIST_TIMEOUT_MS).toBe(20000);
+    expect(STORE_FETCH_TIMEOUT_MS).toBe(8000);
+  });
+
+  it("uses the long list budget for Affirmation.filter, not the 8s write cap", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      controller.signal.budgetMs = ms;
+      return controller.signal;
+    });
+    global.fetch = vi.fn(async () =>
+      Response.json([{ id: "aff-1", text: "I am here.", category: "healing" }]),
+    );
+
+    const rows = await animaClient.entities.Affirmation.filter({
+      user_email: "operator@example.com",
+      is_active: true,
+    });
+    expect(rows).toEqual([
+      { id: "aff-1", text: "I am here.", category: "healing" },
+    ]);
+    expect(timeoutSpy).toHaveBeenCalledWith(STORE_LIST_TIMEOUT_MS);
+    expect(STORE_LIST_TIMEOUT_MS).toBe(20000);
+    expect(STORE_FETCH_TIMEOUT_MS).toBe(8000);
+  });
+
+  it("uses the long list budget for Affirmation.list as well as filter", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      controller.signal.budgetMs = ms;
+      return controller.signal;
+    });
+    global.fetch = vi.fn(async () =>
+      Response.json([{ id: "aff-2", text: "Listed.", category: "love" }]),
+    );
+
+    const rows = await animaClient.entities.Affirmation.list("-created_date", 20);
+    expect(rows).toEqual([{ id: "aff-2", text: "Listed.", category: "love" }]);
+    expect(timeoutSpy).toHaveBeenCalledWith(STORE_LIST_TIMEOUT_MS);
+  });
+
+  it("sends the provided Bearer on Affirmation.filter without a second mint wait", async () => {
+    let getterCalls = 0;
+    setAuthTokenGetter(() => {
+      getterCalls += 1;
+      return "getter-jwt";
+    });
+    global.fetch = vi.fn(async (_url, options) => {
+      expect(options.headers.Authorization).toBe("Bearer sacred-bearer");
+      return Response.json([
+        { id: "aff-1", text: "Mine", category: "healing" },
+      ]);
+    });
+
+    const rows = await animaClient.entities.Affirmation.filter(
+      { is_active: true },
+      undefined,
+      undefined,
+      { token: "sacred-bearer", waitForAuth: false },
+    );
+    expect(rows).toEqual([{ id: "aff-1", text: "Mine", category: "healing" }]);
+    expect(getterCalls).toBe(0);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Character / Anima store create budget", () => {
+  beforeEach(() => {
+    setAuthTokenGetter(() => "test-token");
+  });
+
+  afterEach(() => {
+    clearAuthTokenGetter();
+    vi.restoreAllMocks();
+    delete global.fetch;
+  });
+
+  it("uses the companion create budget for Character.create", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      controller.signal.budgetMs = ms;
+      return controller.signal;
+    });
+    global.fetch = vi.fn(async () =>
+      Response.json({ id: "char-alyndra", name: "Alyndra" }, { status: 201 }),
+    );
+
+    const created = await animaClient.entities.Character.create({ name: "Alyndra" });
+
+    expect(created.id).toBe("char-alyndra");
+    expect(timeoutSpy).toHaveBeenCalledWith(STORE_COMPANION_CREATE_TIMEOUT_MS);
+    expect(STORE_COMPANION_CREATE_TIMEOUT_MS).toBe(20000);
+    expect(STORE_FETCH_TIMEOUT_MS).toBe(8000);
+  });
+
+  it("uses the companion create budget for Anima.create", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      controller.signal.budgetMs = ms;
+      return controller.signal;
+    });
+    global.fetch = vi.fn(async () =>
+      Response.json({ id: "anima-1", name: "Alyndra" }, { status: 201 }),
+    );
+
+    await animaClient.entities.Anima.create({ name: "Alyndra" });
+    expect(timeoutSpy).toHaveBeenCalledWith(STORE_COMPANION_CREATE_TIMEOUT_MS);
+  });
+});
+
+describe("parseStoreErrorResponse", () => {
+  it("never dumps Cloudflare HTML into the error message", async () => {
+    const { parseStoreErrorResponse, STORE_UNREACHABLE_MESSAGE } =
+      await import("./animaClient");
+    const html = `<!DOCTYPE html> <!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US"> <![endif]-->`;
+    const message = await parseStoreErrorResponse(
+      new Response(html, {
+        status: 500,
+        headers: { "Content-Type": "text/html" },
+      }),
+    );
+    expect(message).toBe(STORE_UNREACHABLE_MESSAGE);
+    expect(message).not.toMatch(/DOCTYPE|lt IE 7|no-js ie6/i);
+  });
+
+  it("keeps JSON store errors", async () => {
+    const { parseStoreErrorResponse } = await import("./animaClient");
+    const message = await parseStoreErrorResponse(
+      Response.json(
+        { error: "Database connection reset", reason: "reset" },
+        { status: 503 },
+      ),
+    );
+    expect(message).toBe("Database connection reset");
+  });
+
+  it("never dumps Cloudflare's www 301 HTML (<center>cloudflare</center>)", async () => {
+    const { parseStoreErrorResponse, STORE_UNREACHABLE_MESSAGE } =
+      await import("./animaClient");
+    const html = `<html>
+<head><title>301 Moved Permanently</title></head>
+<body>
+<center><h1>301 Moved Permanently</h1></center>
+<hr><center>cloudflare</center>
+</body>
+</html>`;
+    const message = await parseStoreErrorResponse(
+      new Response(html, {
+        status: 301,
+        headers: {
+          "Content-Type": "text/html",
+          Location: "https://anima-protocol.com/",
+        },
+      }),
+    );
+    expect(message).toBe(STORE_UNREACHABLE_MESSAGE);
+    expect(message).not.toMatch(/cloudflare|Moved Permanently|DOCTYPE/i);
+  });
+
+  it("explains a plain 404 without treating it as HTML", async () => {
+    const { parseStoreErrorResponse } = await import("./animaClient");
+    const message = await parseStoreErrorResponse(
+      new Response("Cannot GET /api/store/Character", { status: 404 }),
+    );
+    expect(message).toMatch(/not found|not proxied/i);
+    expect(message).not.toMatch(/Cannot GET|DOCTYPE/i);
+  });
+});
+
+describe("Character.list HTML failures", () => {
+  beforeEach(() => {
+    setAuthTokenGetter(() => "test-token");
+    clearStoreCache();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    clearAuthTokenGetter();
+    vi.restoreAllMocks();
+    delete global.fetch;
+  });
+
+  it("throws a clean store error instead of Cloudflare HTML, and does not blame the database", async () => {
+    global.fetch = vi.fn(async () =>
+      new Response(
+        `<!DOCTYPE html> <!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US">`,
+        {
+          status: 500,
+          headers: { "Content-Type": "text/html" },
+        },
+      ),
+    );
+
+    let caught;
+    try {
+      await animaClient.entities.Character.list("-created_date", 100, {
+        _bootstrapInternal: true,
+      });
+    } catch (err) {
+      caught = err;
+    }
+    // The upstream status is preserved now that classification no longer
+    // depends on it being rewritten to 503.
+    expect(caught).toMatchObject({
+      status: 500,
+      transport: true,
+      message: expect.stringMatching(/unreachable/i),
+    });
+    expect(String(caught.message)).not.toMatch(/DOCTYPE|lt IE 7|no-js ie6/i);
+    // A Cloudflare error page tells us nothing about Postgres, so the UI must
+    // not report a database outage...
+    expect(isStoreDatabaseError(caught)).toBe(false);
+    expect(String(caught.message)).not.toMatch(/database/i);
+    // ...but the roster is still unreadable, so the bundled fallback applies.
+    expect(isStoreReadUnavailable(caught)).toBe(true);
+  });
+
+  it("treats a 200 homepage HTML body (www path-dropped redirect) as a store error", async () => {
+    global.fetch = vi.fn(async () =>
+      new Response(`<!doctype html><html lang="en"><title>Anima Protocol</title>`, {
+        status: 200,
+        headers: { "Content-Type": "text/html" },
+      }),
+    );
+
+    await expect(
+      animaClient.entities.CheckIn.list(),
+    ).rejects.toMatchObject({
+      status: 503,
+      message: expect.stringMatching(/unreachable|database/i),
+    });
+  });
+
+  it("waits for a late Clerk mint before listing characters", async () => {
+    let token = null;
+    setAuthTokenGetter(() => token);
+    global.fetch = vi.fn(async () =>
+      Response.json([{ id: "char_custom", name: "Aelynd" }]),
+    );
+
+    const pending = animaClient.entities.Character.list("-created_date", 100, {
+      _bootstrapInternal: true,
+    });
+    await new Promise((r) => setTimeout(r, 40));
+    token = "late-jwt";
+    await expect(pending).resolves.toEqual([
+      { id: "char_custom", name: "Aelynd" },
+    ]);
+    expect(global.fetch).toHaveBeenCalled();
+  });
+
+  it("does not treat a store 401 as an empty Character roster when signed in", async () => {
+    setAuthTokenGetter(() => "stale-jwt");
+    global.fetch = vi.fn(async () =>
+      Response.json({ error: "Unauthorized" }, { status: 401 }),
+    );
+
+    await expect(
+      animaClient.entities.Character.list("-created_date", 100, {
+        _bootstrapInternal: true,
+      }),
+    ).rejects.toMatchObject({
+      status: 401,
+      message: expect.stringMatching(/sign out|sign back in/i),
+    });
+    expect(global.fetch).toHaveBeenCalled();
+    const [, options] = global.fetch.mock.calls[0];
+    expect(options.headers.Authorization).toBe("Bearer stale-jwt");
+  });
+
+  it("returns [] after the auth wait when signed out so Customise Anima can classify", async () => {
+    clearAuthTokenGetter();
+    global.fetch = vi.fn();
+    await expect(
+      animaClient.entities.Character.list("-created_date", 100, {
+        _bootstrapInternal: true,
+      }),
+    ).resolves.toEqual([]);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("unwraps a wrapped Character list so custom rows are not dropped", async () => {
+    global.fetch = vi.fn(async () =>
+      Response.json({
+        items: [{ id: "char_custom", name: "Aelynd" }],
+      }),
+    );
+
+    const rows = await animaClient.entities.Character.list("-created_date", 100, {
+      _bootstrapInternal: true,
+    });
+    expect(rows).toEqual([{ id: "char_custom", name: "Aelynd" }]);
+  });
+});
+
+describe("auth.me Clerk identity", () => {
+  afterEach(() => {
+    animaClient.auth.clearSession();
+    clearAuthTokenGetter();
+    vi.restoreAllMocks();
+    delete global.fetch;
+  });
+
+  it("returns synced Clerk identity when the store token is not ready yet", async () => {
+    clearAuthTokenGetter();
+    animaClient.auth.syncIdentity({
+      id: "user_abc",
+      email: "ada@example.com",
+      full_name: "Ada Lovelace",
+    });
+
+    const me = await animaClient.auth.me();
+    expect(me.id).toBe("user_abc");
+    expect(me.email).toBe("ada@example.com");
+    expect(me.full_name).toBe("Ada Lovelace");
+  });
+
+  it("waits for a registered token getter before fetching the store profile", async () => {
+    let token = null;
+    setAuthTokenGetter(() => token);
+    animaClient.auth.syncIdentity({
+      id: "user_abc",
+      email: "ada@example.com",
+      full_name: "Ada Lovelace",
+    });
+    global.fetch = vi.fn(async (url) => {
+      const { pathname } = new URL(String(url), "http://localhost");
+      if (pathname === "/api/store/profile") {
+        return Response.json({
+          display_name: "Ada",
+          settings: { theme_mode: "dark" },
+        });
+      }
+      return Response.json({});
+    });
+
+    const pending = animaClient.auth.me();
+    await new Promise((r) => setTimeout(r, 80));
+    expect(global.fetch).not.toHaveBeenCalled();
+    token = "live-jwt";
+    const me = await pending;
+    expect(global.fetch).toHaveBeenCalled();
+    expect(me.display_name).toBe("Ada");
+    expect(me.email).toBe("ada@example.com");
+  });
+
+  it("does not cache an empty profile when getToken is missing", async () => {
+    clearAuthTokenGetter();
+    animaClient.auth.clearSession();
+    await animaClient.auth.me();
+
+    setAuthTokenGetter(() => "test-token");
+    global.fetch = vi.fn(async (url) => {
+      const { pathname } = new URL(String(url), "http://localhost");
+      if (pathname === "/api/store/profile") {
+        return Response.json({
+          display_name: "Ada",
+          settings: { theme_mode: "dark" },
+        });
+      }
+      return Response.json({});
+    });
+    animaClient.auth.syncIdentity({
+      id: "user_abc",
+      email: "ada@example.com",
+      full_name: "Ada Lovelace",
+    });
+
+    const me = await animaClient.auth.me();
+    expect(global.fetch).toHaveBeenCalled();
+    expect(me.display_name).toBe("Ada");
+    expect(me.email).toBe("ada@example.com");
+    expect(me.settings).toEqual({ theme_mode: "dark" });
+  });
+
+  it("does not let a later empty syncIdentity wipe a hydrated email", async () => {
+    animaClient.auth.syncIdentity({
+      id: "user_abc",
+      email: "ada@example.com",
+      full_name: "Ada Lovelace",
+    });
+    animaClient.auth.syncIdentity({
+      id: "user_abc",
+      email: "",
+      full_name: "",
+    });
+    const me = await animaClient.auth.me();
+    expect(me.email).toBe("ada@example.com");
+    expect(me.full_name).toBe("Ada Lovelace");
+  });
+
+  it("peekMe returns synced identity without fetching /profile", async () => {
+    setAuthTokenGetter(() => "test-token");
+    global.fetch = vi.fn(async () => Response.json({ display_name: "Ada" }));
+    animaClient.auth.syncIdentity({
+      id: "user_abc",
+      email: "ada@example.com",
+      full_name: "Ada Lovelace",
+    });
+
+    const peeked = animaClient.auth.peekMe();
+    expect(peeked.email).toBe("ada@example.com");
+    expect(peeked.id).toBe("user_abc");
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("uses the long list budget for GET /profile, not the 8s write cap", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      controller.signal.budgetMs = ms;
+      return controller.signal;
+    });
+    setAuthTokenGetter(() => "test-token");
+    animaClient.auth.syncIdentity({
+      id: "user_abc",
+      email: "ada@example.com",
+    });
+    global.fetch = vi.fn(async (url) => {
+      const { pathname } = new URL(String(url), "http://localhost");
+      if (pathname === "/api/store/profile") {
+        return Response.json({ display_name: "Ada" });
+      }
+      return Response.json({});
+    });
+
+    const me = await animaClient.auth.me();
+    expect(me.display_name).toBe("Ada");
+    expect(timeoutSpy).toHaveBeenCalledWith(STORE_LIST_TIMEOUT_MS);
+    expect(STORE_LIST_TIMEOUT_MS).toBe(20000);
+    expect(STORE_FETCH_TIMEOUT_MS).toBe(8000);
+  });
+});
+
+describe("auth.updateMe profile persist", () => {
+  beforeEach(() => {
+    setAuthTokenGetter(() => "test-token");
+    clearStoreCache();
+  });
+
+  afterEach(() => {
+    clearAuthTokenGetter();
+    vi.restoreAllMocks();
+    delete global.fetch;
+  });
+
+  it("throws after a Hyperdrive reset so Settings can show the error", async () => {
+    global.fetch = vi.fn(async (url, options = {}) => {
+      const { pathname } = new URL(String(url), "http://localhost");
+      if (pathname === "/api/store/profile" && options.method === "PUT") {
+        return Response.json(
+          { error: "Database connection reset", reason: "reset", code: "ECONNRESET" },
+          { status: 503 },
+        );
+      }
+      if (pathname === "/api/store/profile") {
+        return Response.json({ display_name: "Ada", settings: {} });
+      }
+      return Response.json({});
+    });
+
+    await expect(
+      animaClient.auth.updateMe({
+        settings: { chat_bg_image: "/api/storage/objects/uploads/bg" },
+      }),
+    ).rejects.toMatchObject({
+      status: 503,
+      reason: "reset",
+      message: "Database connection reset",
+    });
+  });
+});
+
+describe("functions.invoke timeout", () => {
+  beforeEach(() => {
+    setAuthTokenGetter(() => "test-token");
+  });
+
+  afterEach(() => {
+    clearAuthTokenGetter();
+    vi.restoreAllMocks();
+    delete global.fetch;
+  });
+
+  it("aborts the request when the timeout fires", async () => {
+    let signal;
+    global.fetch = vi.fn((_url, options = {}) => {
+      signal = options.signal;
+      return new Promise((_resolve, reject) => {
+        options.signal?.addEventListener("abort", () => {
+          const err = new Error("aborted");
+          err.name = "AbortError";
+          reject(err);
+        });
+      });
+    });
+
+    const result = await animaClient.functions.invoke(
+      "detectLoreKeywords",
+      { content: "hi" },
+      { timeoutMs: 30 },
+    );
+    expect(result).toBeNull();
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it("does not put the sidecar timeout on a foreground invoke", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
+    global.fetch = vi.fn(async () => Response.json({ result: { name: "Nyx" } }));
+    const result = await animaClient.functions.invoke("generateCompanionFromPrompt", {
+      prompt: "a quiet fox",
+    });
+    expect(result).toEqual({ name: "Nyx" });
+    expect(timeoutSpy).not.toHaveBeenCalled();
+  });
+
+  it("bounds a background sidecar at 12 seconds", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation(
+      () => new AbortController().signal,
+    );
+    global.fetch = vi.fn(async () => Response.json({ result: null }));
+    await animaClient.functions.invoke("generateDivergentPaths", { session_id: "s" });
+    expect(timeoutSpy).toHaveBeenCalledWith(12_000);
+  });
+
+  it("aborts a sidecar when AbortSignal.timeout is unavailable", async () => {
+    const original = AbortSignal.timeout;
+    Object.defineProperty(AbortSignal, "timeout", {
+      configurable: true,
+      writable: true,
+      value: undefined,
+    });
+    let signal;
+    global.fetch = vi.fn((_url, options = {}) => {
+      signal = options.signal;
+      return new Promise((_resolve, reject) => {
+        options.signal?.addEventListener("abort", () => {
+          const err = new Error("aborted");
+          err.name = "AbortError";
+          reject(err);
+        });
+      });
+    });
+    try {
+      const result = await animaClient.functions.invoke(
+        "scanAndLinkLoreKeywords",
+        { messages: [] },
+        { timeoutMs: 30 },
+      );
+      expect(result).toBeNull();
+      expect(signal?.aborted).toBe(true);
+    } finally {
+      Object.defineProperty(AbortSignal, "timeout", {
+        configurable: true,
+        writable: true,
+        value: original,
+      });
+    }
+  });
+});

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { useConfirm } from "@/lib/ConfirmDialog";
 import { deleteWithUndo } from "@/lib/undoableDelete";
 import { ChevronLeft, Filter, Loader, Plus } from "lucide-react";
@@ -63,7 +63,7 @@ export default function InventoryPanel() {
   const loadInventory = async () => {
     setLoading(true);
     try {
-      const data = await base44.entities.Inventory.filter(
+      const data = await animaClient.entities.Inventory.filter(
         { character_id: selectedChar },
         "-created_date",
         INVENTORY_LIST_LIMIT
@@ -97,7 +97,7 @@ export default function InventoryPanel() {
   };
 
   const handleEquipToggle = async (itemId, equipped) => {
-    await base44.entities.Inventory.update(itemId, { equipped });
+    await animaClient.entities.Inventory.update(itemId, { equipped });
     setItems(prev =>
       prev.map(i => (i.id === itemId ? { ...i, equipped } : i))
     );

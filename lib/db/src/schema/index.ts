@@ -147,6 +147,32 @@ export const chatTurns = pgTable(
 
 export type ChatTurn = typeof chatTurns.$inferSelect;
 
+/**
+ * Background local-model work that must not be dropped while someone is
+ * chatting (milestone evolution, distilled memories). The proactive cron
+ * drains rows once `chat_turns` shows the quiet window is clear.
+ */
+export const localLlmDeferredJobs = pgTable(
+  "local_llm_deferred_jobs",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    kind: text("kind").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+    attempts: integer("attempts").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    localLlmDeferredKindIdx: index("local_llm_deferred_jobs_kind_idx").on(
+      t.kind,
+      t.createdAt,
+    ),
+  }),
+);
+
+export type LocalLlmDeferredJob = typeof localLlmDeferredJobs.$inferSelect;
+
 export const companionMemories = pgTable(
   "companion_memories",
   {
@@ -209,7 +235,7 @@ export const memoryEmbeddings = pgTable(
 export type MemoryEmbedding = typeof memoryEmbeddings.$inferSelect;
 
 // Generic per-user entity store. One row per (user, entity name, entity id),
-// holding the whole record as JSON. Backs the client's base44 entity CRUD so
+// holding the whole record as JSON. Backs the client's animaClient entity CRUD so
 // that all user progress (characters, chats, journals, inventory, quests, world
 // state, settings, etc.) persists on the server scoped to the Clerk account.
 export const userEntities = pgTable(
@@ -404,8 +430,9 @@ const tsvector = customType<{ data: string }>({
 
 /**
  * PDF text the user shared in a chat or attached to a companion's lore.
- * The original file bytes are not stored. `pdf_chunks.search_vector` is
- * filled at insert time for Postgres full-text retrieval.
+ * Original bytes are in `pdf_file_parts` (512 KiB each) so the chat chip
+ * can open the file. `pdf_chunks.search_vector` is filled at insert time
+ * for Postgres full-text retrieval.
  */
 export const pdfDocuments = pgTable(
   "pdf_documents",
@@ -473,6 +500,31 @@ const bytea = customType<{ data: Buffer }>({
     return "bytea";
   },
 });
+
+/**
+ * Original PDF bytes, 512 KiB per row. Hyperdrive drops a single multi-megabyte
+ * INSERT, so the file is split the same way as own-model weights.
+ */
+export const pdfFileParts = pgTable(
+  "pdf_file_parts",
+  {
+    documentId: text("document_id")
+      .notNull()
+      .references(() => pdfDocuments.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    partIndex: integer("part_index").notNull(),
+    data: bytea("data").notNull(),
+  },
+  (t) => ({
+    pdfFilePartsPk: primaryKey({
+      name: "pdf_file_parts_pk",
+      columns: [t.documentId, t.partIndex],
+    }),
+    pdfFilePartsUserIdx: index("pdf_file_parts_user_idx").on(t.userId, t.documentId),
+  }),
+);
+
+export type PdfFilePart = typeof pdfFileParts.$inferSelect;
 
 /**
  * Own-model weights: one 512 KiB chunk per row. Must match BLOBS_DDL in

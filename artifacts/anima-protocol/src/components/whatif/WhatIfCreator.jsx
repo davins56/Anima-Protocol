@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { motion } from "framer-motion";
 import { GitBranch, Loader, Sparkles, X } from "lucide-react";
 
@@ -17,7 +17,7 @@ export default function WhatIfCreator({ session, snapshots, fromSnapshot, onCrea
     if (!whatIfPrompt.trim()) return;
     setGenerating(true);
     try {
-      const result = await base44.integrations.Core.InvokeLLM({
+      const result = await animaClient.integrations.Core.InvokeLLM({
         prompt: `You are a creative narrative assistant helping design a "what-if" scenario for an interactive story.
 
 Session context: "${session.title || "Story Session"}"
@@ -54,7 +54,7 @@ Respond in JSON with keys: branch_name, decision_point, outcome_summary`,
     setCreating(true);
     setError(null);
     try {
-      await base44.functions.invoke("createWorldBranch", {
+      await animaClient.functions.invoke("createWorldBranch", {
         session_id: session.id,
         branch_name: branchName.trim(),
         decision_point: decisionPoint.trim(),

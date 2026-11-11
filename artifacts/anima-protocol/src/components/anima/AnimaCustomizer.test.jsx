@@ -9,9 +9,9 @@ const generateImageMock = vi.hoisted(() => vi.fn());
 const updateAnimaMock = vi.hoisted(() => vi.fn());
 const updateCharacterMock = vi.hoisted(() => vi.fn());
 
-vi.mock("@/api/base44Client", () => ({
+vi.mock("@/api/animaClient", () => ({
   uploadDataUrl: vi.fn(async (url) => url),
-  base44: {
+  animaClient: {
     integrations: {
       Core: {
         UploadFile: uploadFileMock,

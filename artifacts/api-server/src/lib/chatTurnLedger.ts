@@ -1,4 +1,6 @@
-import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, ne, notInArray, or, sql } from "drizzle-orm";
+import { turnMetadataReplaced } from "./replyReplacement";
+import { ACTIVE_CHAT_QUIET_WINDOW_MS } from "./chatTimeouts";
 import {
   chatTurns,
   db,
@@ -188,9 +190,69 @@ export async function checkpointGeneratedTurn(input: {
         waitingUntil: null,
         updatedAt: new Date(),
       })
-      .where(and(eq(chatTurns.id, input.id), eq(chatTurns.userId, input.userId))),
+      .where(
+        and(
+          eq(chatTurns.id, input.id),
+          eq(chatTurns.userId, input.userId),
+          // A retry already cleared this reply. Do not write it back.
+          sql`coalesce(${chatTurns.metadata}->>'replaced', '') <> 'true'`,
+        ),
+      ),
   );
 }
+
+/**
+ * The user asked for a new reply. Clear this turn so a late checkpoint or
+ * persist cannot put the old text back on the thread or into memory.
+ */
+type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Mark one turn replaced on the caller's transaction, which already holds its lock. */
+export async function markChatTurnReplacedOn(
+  tx: DbTransaction,
+  id: string,
+  userId: string,
+  supersededBy: string,
+): Promise<ChatTurn | null> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${id}`}))`);
+  const [row] = await tx
+    .select()
+    .from(chatTurns)
+    .where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId)))
+    .limit(1);
+  if (!row) return null;
+  const metadata = {
+    ...(row.metadata ?? {}),
+    replaced: true,
+    superseded_by: supersededBy,
+  };
+  const [updated] = await tx
+    .update(chatTurns)
+    .set({
+      metadata,
+      assistantContent: "",
+      status: row.status === "committed" ? row.status : "failed",
+      lastError: "Replaced by a new reply",
+      leaseExpiresAt: null,
+      waitingUntil: null,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId)))
+    .returning();
+  return updated ?? null;
+}
+
+export async function markChatTurnReplaced(
+  id: string,
+  userId: string,
+  supersededBy: string,
+): Promise<ChatTurn | null> {
+  return withTransientDbRetry(() =>
+    db.transaction((tx) => markChatTurnReplacedOn(tx, id, userId, supersededBy)),
+  );
+}
+
+export { turnMetadataReplaced };
 
 export async function markTurnCommitted(
   id: string,
@@ -208,7 +270,13 @@ export async function markTurnCommitted(
         committedAt: now,
         updatedAt: now,
       })
-      .where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId))),
+      .where(
+        and(
+          eq(chatTurns.id, id),
+          eq(chatTurns.userId, userId),
+          sql`coalesce(${chatTurns.metadata}->>'replaced', '') <> 'true'`,
+        ),
+      ),
   );
 }
 
@@ -294,6 +362,49 @@ export async function latestOpenChatTurn(
   return turn ?? null;
 }
 
+export const CONVERSATION_BUSY_CODE = "conversation_busy";
+
+export const CONVERSATION_BUSY_MESSAGE =
+  "The companion is still finishing the last reply. Wait a moment, then try again.";
+
+/**
+ * An earlier turn in this conversation is still generating.
+ * A newer send must not take the single Ollama slot behind it.
+ * A long-expired lease does not count — that row is abandoned.
+ */
+export async function sessionHasOlderPendingChatTurn(
+  userId: string,
+  sessionId: string,
+  turnId: string,
+  createdAt: Date,
+  now = new Date(),
+  ignoreTurnIds: readonly string[] = [],
+): Promise<boolean> {
+  const staleBefore = new Date(now.getTime() - STALE_PENDING_LEASE_MS);
+  const ignore = ignoreTurnIds.map((id) => String(id || "")).filter((id) => id && id !== turnId);
+  const [row] = await withTransientDbRetry(() =>
+    db
+      .select({ id: chatTurns.id })
+      .from(chatTurns)
+      .where(
+        and(
+          eq(chatTurns.userId, userId),
+          eq(chatTurns.sessionId, sessionId),
+          eq(chatTurns.status, "pending"),
+          ne(chatTurns.id, turnId),
+          ...(ignore.length > 0 ? [notInArray(chatTurns.id, ignore)] : []),
+          or(
+            lt(chatTurns.createdAt, createdAt),
+            and(eq(chatTurns.createdAt, createdAt), lt(chatTurns.id, turnId)),
+          ),
+          or(isNull(chatTurns.leaseExpiresAt), gt(chatTurns.leaseExpiresAt, staleBefore)),
+        ),
+      )
+      .limit(1),
+  );
+  return Boolean(row);
+}
+
 /**
  * Another pending turn for this user is waiting on the model. A long-expired
  * lease does not count — that row is abandoned, not queued.
@@ -360,6 +471,7 @@ export async function retryableChatTurns(
         sql`char_length(btrim(${chatTurns.assistantContent})) > 0`,
       ),
     ),
+    sql`coalesce(${chatTurns.metadata}->>'replaced', '') <> 'true'`,
     lt(chatTurns.retryCount, 5),
   ];
   if (latestCommitted?.createdAt) {
@@ -445,6 +557,39 @@ export async function markChatTurnWaiting(
       })
       .where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId))),
   );
+}
+
+/**
+ * Cross-instance signal that the local model should stay with chat.
+ * A pending turn whose lease is not stale is in flight. Any turn created
+ * inside the quiet window means someone just sent a message and may send
+ * another. One Ollama slot, so this is global, not per user.
+ */
+export async function localModelChatIsActive(
+  now = new Date(),
+  windowMs = ACTIVE_CHAT_QUIET_WINDOW_MS,
+): Promise<boolean> {
+  const quietAfter = new Date(now.getTime() - windowMs);
+  const staleBefore = new Date(now.getTime() - STALE_PENDING_LEASE_MS);
+  const [row] = await withTransientDbRetry(() =>
+    db
+      .select({ id: chatTurns.id })
+      .from(chatTurns)
+      .where(
+        or(
+          and(
+            eq(chatTurns.status, "pending"),
+            or(
+              and(isNull(chatTurns.leaseExpiresAt), gt(chatTurns.updatedAt, staleBefore)),
+              gt(chatTurns.leaseExpiresAt, staleBefore),
+            ),
+          ),
+          gt(chatTurns.createdAt, quietAfter),
+        ),
+      )
+      .limit(1),
+  );
+  return Boolean(row);
 }
 
 export async function chatTurnHasRemoteWaiter(

@@ -22,7 +22,7 @@ import { createTestUser, deleteTestUser, type TestUser } from "./clerk-backend";
 // both the "migrated" and "skipped" paths set it to "1".
 const MIGRATION_KEY = "anima_server_migration_v1";
 
-// The exact endpoint bulkImport() posts to (base44Client storeFetch -> /import).
+// The exact endpoint bulkImport() posts to (animaClient storeFetch -> /import).
 // Intercepting it lets us force each migration outcome regardless of server
 // state, so the test never depends on whether the throwaway account is empty.
 const IMPORT_ROUTE = "**/api/store/import";

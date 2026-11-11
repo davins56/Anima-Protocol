@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 /**
  * Hook to trigger the onboarding memory hook on first session.
@@ -18,12 +18,12 @@ export function useOnboardingMemory(activeSession, characters, sessionId) {
   const triggerOnboardingMemory = async () => {
     if (!activeSession?.resonance_answers) return;
 
-    const user = await base44.auth.me();
+    const user = await animaClient.auth.me();
     const character = characters.find(c => c.id === activeSession.character_id);
     if (!character) return;
 
     try {
-      const result = await base44.functions.invoke('generateOnboardingMemory', {
+      const result = await animaClient.functions.invoke('generateOnboardingMemory', {
         resonance_answers: activeSession.resonance_answers,
         character_name: character.name,
         character_id: character.id,
@@ -42,7 +42,7 @@ export function useOnboardingMemory(activeSession, characters, sessionId) {
 
         setTimeout(async () => {
           const updatedMessages = [...(activeSession.messages || []), onboardingMessage];
-          await base44.entities.ChatSession.update(sessionId, {
+          await animaClient.entities.ChatSession.update(sessionId, {
             messages: updatedMessages,
           }).catch(() => {});
         }, 800);

@@ -1,6 +1,6 @@
 // @ts-check
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Lightbulb, ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -21,7 +21,7 @@ export default function QuestHintsPanel({ activeQuests, sessionId }) {
   const generateHints = async () => {
     setLoading(true);
     try {
-      const result = await base44.functions.invoke("generateQuestHints", {
+      const result = await animaClient.functions.invoke("generateQuestHints", {
         quests: activeQuests,
         session_id: sessionId,
       });

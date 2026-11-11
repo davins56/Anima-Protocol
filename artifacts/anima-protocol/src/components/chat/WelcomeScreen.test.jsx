@@ -20,8 +20,8 @@ vi.mock("framer-motion", async () => {
   };
 });
 
-vi.mock("@/api/base44Client", () => ({
-  base44: {
+vi.mock("@/api/animaClient", () => ({
+  animaClient: {
     auth: {
       me: vi.fn().mockResolvedValue({ full_name: "John Doe", email: "john@example.com" }),
       redirectToLogin: vi.fn(),

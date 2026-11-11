@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 
@@ -25,11 +25,11 @@ export default function CytoscapeForceGraph({ sessionId }) {
     setLoading(true);
     try {
       // Get influence scores
-      const influenceRes = await base44.functions.invoke('calculateInfluenceScores', { session_id: sessionId });
+      const influenceRes = await animaClient.functions.invoke('calculateInfluenceScores', { session_id: sessionId });
       setGraphData(influenceRes?.data);
 
       // Get conflict intensity for edges
-      const conflictRes = await base44.functions.invoke('analyzeConflictIntensity', { session_id: sessionId });
+      const conflictRes = await animaClient.functions.invoke('analyzeConflictIntensity', { session_id: sessionId });
       setConflictData(conflictRes?.data || {});
     } catch (err) {
       console.error('Error loading graph data:', err);

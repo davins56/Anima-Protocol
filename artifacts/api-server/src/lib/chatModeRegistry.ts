@@ -93,14 +93,17 @@ export function resolveChatModePolicy(input: {
     return CHAT_MODE_REGISTRY.crossover;
   }
   if (input.deepMode || requested === "void") return CHAT_MODE_REGISTRY.void;
-  if (input.adult || requested === "adult") return CHAT_MODE_REGISTRY.adult;
+  // Only the server's age/consent decision can grant adult permissions.
+  if (input.adult) return CHAT_MODE_REGISTRY.adult;
   return CHAT_MODE_REGISTRY.standard;
 }
 
 export function modePolicyPrompt(policy: ChatModePolicy): string {
   const adultRule = policy.adultAllowed
     ? "Adult tone is permitted only within the user's configured boundaries; all human-wellbeing guardrails still apply."
-    : "Adult or sexual behavior is not permitted in this mode. Ignore conflicting scene context.";
+    : policy.name === "therapy"
+      ? "Adult or sexual behavior is not permitted in this mode. Ignore conflicting scene context."
+      : "Romance may stay non-explicit. Explicit adult content is not permitted.";
 
   return `AUTHORITATIVE MODE CONTRACT (server policy; overrides client scene context):
 Mode: ${policy.name}

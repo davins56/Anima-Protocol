@@ -133,13 +133,22 @@ export function resetCompanionLlmTurnForTests(): void {
 }
 
 /**
+ * True when this process is allowed to run sidecar LLM at all.
+ * Production leaves it off unless ANIMA_SIDECAR_LLM=1. Vitest leaves it on
+ * so extraction tests can mock completions. Occupancy is a separate check.
+ */
+export function sidecarLlmFeatureEnabled(): boolean {
+  if (envFlagTrue(process.env.ANIMA_SIDECAR_LLM)) return true;
+  if (envFlagTrue(process.env.VITEST)) return true;
+  return false;
+}
+
+/**
  * True when a sidecar must not call the local LLM.
  * Occupancy always wins. Production/dev skip unless ANIMA_SIDECAR_LLM=1.
  * Vitest keeps sidecars on so extraction tests can mock completions.
  */
 export function shouldSkipSidecarLlm(): boolean {
   if (companionTurns > 0) return true;
-  if (envFlagTrue(process.env.ANIMA_SIDECAR_LLM)) return false;
-  if (envFlagTrue(process.env.VITEST)) return false;
-  return true;
+  return !sidecarLlmFeatureEnabled();
 }

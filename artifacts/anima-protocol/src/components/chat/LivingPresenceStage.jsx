@@ -1,5 +1,6 @@
 // @ts-check
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
 import LivingPresence from "./LivingPresence";
 import ResonanceField from "./ResonanceField";
@@ -40,6 +41,9 @@ export default function LivingPresenceStage({
   isLoading = false,
 }) {
   const inputRef = useRef(/** @type {HTMLInputElement | null} */ (null));
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window === "undefined" ? 1024 : window.innerWidth,
+  );
   const last = lastSpokenLine(messages);
   const leadId = highlightedCastId(cast, last, speaking);
   const lead = cast.find((c) => c.id === leadId) || cast[0];
@@ -47,7 +51,9 @@ export default function LivingPresenceStage({
   const palette = getEmotionPalette(leadEmotion);
   const dialogue =
     last?.content && last.role !== "user"
-      ? String(last.content).replace(/\[[^\]]*\]/g, "").trim()
+      ? String(last.content)
+          .replace(/\[[^\]]*\]/g, "")
+          .trim()
       : "";
 
   useEffect(() => {
@@ -56,18 +62,31 @@ export default function LivingPresenceStage({
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
-    const t = setTimeout(() => inputRef.current?.focus(), 180);
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    onResize();
+    // Opening Stage on a phone should not immediately open the keyboard and
+    // shrink the scene. Desktop keyboard users still land on the speak field.
+    const t = window.matchMedia?.("(pointer: fine)")?.matches
+      ? setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 180)
+      : null;
     return () => {
       window.removeEventListener("keydown", onKey);
-      clearTimeout(t);
+      window.removeEventListener("resize", onResize);
+      if (t != null) clearTimeout(t);
     };
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || typeof document === "undefined") return null;
 
-  const figureSize = cast.length > 2 ? 280 : cast.length === 2 ? 340 : 420;
+  const figureSize = Math.min(
+    cast.length > 2 ? 280 : cast.length === 2 ? 340 : 420,
+    Math.max(1, Math.floor((viewportWidth - 32) / 0.78)),
+  );
 
-  return (
+  // Chat's animated ancestors create a containing/stacking context for fixed
+  // descendants. Escape it so the modal cannot be clipped below the tab bar.
+  return createPortal(
     <motion.div
       role="dialog"
       aria-modal="true"
@@ -75,9 +94,12 @@ export default function LivingPresenceStage({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[9999] flex flex-col items-center overflow-hidden"
+      className="fixed inset-x-0 top-0 z-[9999] flex min-h-0 flex-col items-center overflow-hidden"
       data-living-presence-stage
       style={{
+        height: "var(--app-height, 100dvh)",
+        maxHeight: "var(--app-height, 100dvh)",
+        paddingTop: "env(safe-area-inset-top, 0px)",
         background: `radial-gradient(ellipse at 50% 38%, hsl(${palette.hue} ${palette.sat}% 8% / 0.95), rgba(0,0,0,0.98) 70%)`,
       }}
     >
@@ -92,63 +114,89 @@ export default function LivingPresenceStage({
         }}
       />
 
-      <button
-        type="button"
-        onClick={onClose}
-        className="absolute top-5 right-5 z-20 font-mono text-[10px] tracking-[0.25em] uppercase text-primary/70 hover:text-primary border border-primary/30 hover:border-primary/60 rounded px-3 py-1.5 transition-colors"
-      >
-        ✕ Exit
-      </button>
+      <div className="relative z-20 flex w-full shrink-0 justify-end px-4 py-3">
+        <button
+          type="button"
+          onClick={onClose}
+          className="font-mono text-[10px] tracking-[0.25em] uppercase text-primary/70 hover:text-primary border border-primary/30 hover:border-primary/60 rounded px-3 py-2 transition-colors"
+        >
+          ✕ Exit
+        </button>
+      </div>
 
       {resonance && (
-        <div className="relative z-10 w-full max-w-md px-6 pt-8">
+        <div className="relative z-10 w-full max-w-md shrink-0 px-6 pb-2">
           <ResonanceField value={resonance.value} label={resonance.label} />
         </div>
       )}
 
-      <div className="relative z-10 flex-1 flex items-end justify-center gap-2 sm:gap-6 px-4 min-h-0 w-full">
-        {cast.length === 0 ? (
-          <p className="font-mono text-xs text-primary/50 uppercase tracking-widest mb-24">
-            No companions on stage
-          </p>
-        ) : (
-          cast.map((character) => {
-            const em = characterEmotions[character.id] || {};
-            const isLead = character.id === lead?.id;
-            return (
-              <LivingPresence
-                key={character.id}
-                character={character}
-                emotion={em.emotion || "calm"}
-                intensity={em.intensity ?? 5}
-                resonance={isLead ? resonance?.value ?? 0 : Math.max(0, (resonance?.value ?? 0) * 0.6)}
-                speaking={speaking && isLead}
-                thinking={thinking && isLead}
-                highlighted={isLead}
-                size={isLead ? figureSize : Math.round(figureSize * 0.78)}
-                detail={isLead}
-                showLabel
-              />
-            );
-          })
-        )}
+      <div
+        className="relative z-10 min-h-0 w-full flex-1 overflow-y-auto overscroll-y-contain touch-pan-y"
+        style={{ WebkitOverflowScrolling: "touch" }}
+        tabIndex={0}
+        aria-label="Stage content"
+        data-stage-scroll
+      >
+        <div className="flex min-h-full flex-col items-center justify-end gap-3 px-4 pb-3 pt-4">
+          <div className="flex w-full shrink-0 flex-wrap items-end justify-center gap-2 sm:gap-6">
+            {cast.length === 0 ? (
+              <p className="font-mono text-xs text-primary/50 uppercase tracking-widest mb-24">
+                No companions on stage
+              </p>
+            ) : (
+              cast.map((character) => {
+                const em = characterEmotions[character.id] || {};
+                const isLead = character.id === lead?.id;
+                return (
+                  <LivingPresence
+                    key={character.id}
+                    character={character}
+                    emotion={em.emotion || "calm"}
+                    intensity={em.intensity ?? 5}
+                    resonance={
+                      isLead
+                        ? (resonance?.value ?? 0)
+                        : Math.max(0, (resonance?.value ?? 0) * 0.6)
+                    }
+                    speaking={speaking && isLead}
+                    thinking={thinking && isLead}
+                    highlighted={isLead}
+                    size={isLead ? figureSize : Math.round(figureSize * 0.78)}
+                    detail={isLead}
+                    showLabel
+                  />
+                );
+              })
+            )}
+          </div>
+
+          {dialogue ? (
+            <p
+              className="w-full max-w-lg shrink-0 break-words px-2 font-mono text-sm text-primary/85 leading-relaxed whitespace-pre-wrap text-center"
+              data-stage-dialogue
+            >
+              {lead?.name ? (
+                <span
+                  className="block text-[10px] tracking-[0.28em] uppercase mb-1"
+                  style={{ color: emotionCss(leadEmotion) }}
+                >
+                  {lead.name}
+                </span>
+              ) : null}
+              {dialogue}
+            </p>
+          ) : null}
+        </div>
       </div>
 
-      <div className="relative z-10 w-full max-w-lg px-6 pb-5 pt-2 flex flex-col gap-3">
-        {dialogue ? (
-          <p
-            className="font-mono text-sm text-primary/85 leading-relaxed whitespace-pre-wrap text-center max-h-[18vh] overflow-y-auto"
-            data-stage-dialogue
-          >
-            {lead?.name ? (
-              <span className="block text-[10px] tracking-[0.28em] uppercase mb-1" style={{ color: emotionCss(leadEmotion) }}>
-                {lead.name}
-              </span>
-            ) : null}
-            {dialogue}
-          </p>
-        ) : null}
-
+      <div
+        className="relative z-10 w-full max-w-lg shrink-0 px-4 pt-2"
+        style={{
+          paddingBottom:
+            "calc(var(--safe-bottom, env(safe-area-inset-bottom, 0px)) + 1rem)",
+        }}
+        data-stage-composer
+      >
         <form
           className="flex gap-2"
           onSubmit={(e) => {
@@ -166,7 +214,7 @@ export default function LivingPresenceStage({
             ref={inputRef}
             name="stage-line"
             placeholder={lead?.name ? `Speak to ${lead.name}...` : "Speak..."}
-            className="flex-1 bg-black/50 border border-primary/30 focus:border-primary/70 rounded px-4 py-2.5 font-mono text-sm text-primary placeholder:text-primary/30 outline-none"
+            className="min-w-0 flex-1 bg-black/50 border border-primary/30 focus:border-primary/70 rounded px-4 py-2.5 font-mono text-base text-primary placeholder:text-primary/30 outline-none"
             autoComplete="off"
           />
           <button
@@ -178,7 +226,8 @@ export default function LivingPresenceStage({
           </button>
         </form>
       </div>
-    </motion.div>
+    </motion.div>,
+    document.body,
   );
 }
 

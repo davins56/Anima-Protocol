@@ -4,8 +4,8 @@ import { JULES_PERSONA } from "./julesApi";
 
 const invokeMock = vi.fn();
 
-vi.mock("@/api/base44Client", () => ({
-  base44: {
+vi.mock("@/api/animaClient", () => ({
+  animaClient: {
     functions: {
       codespaceAgentStep: {
         invoke: (...args) => invokeMock(...args),

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { ArrowLeft, BookOpen, Search, TrendingUp, Users, Lightbulb, Plus, X, Edit2, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -30,11 +30,11 @@ export default function GlobalWiki() {
   const loadData = async () => {
     setLoading(true);
     const [lore, chars, sess] = await Promise.all([
-      base44.entities.WorldState.filter({ is_active: true }, "-created_date", 500),
-      base44.entities.Character.list("-created_date", 200),
+      animaClient.entities.WorldState.filter({ is_active: true }, "-created_date", 500),
+      animaClient.entities.Character.list("-created_date", 200),
       // Sessions are only used here as a title/id lookup for lore entries — skip
       // hydrating every session's full message history so the wiki loads fast.
-      base44.entities.ChatSession.list("-updated_date", 200, { withMessages: false })
+      animaClient.entities.ChatSession.list("-updated_date", 200, { withMessages: false })
     ]);
 
     setLoreEntries(lore || []);
@@ -44,7 +44,7 @@ export default function GlobalWiki() {
     // Load character memories
     const allMemories = [];
     for (const char of (chars || []).slice(0, 50)) {
-      const res = await base44.functions.invoke("characterMemory", {
+      const res = await animaClient.functions.invoke("characterMemory", {
         action: "get",
         character_id: char.id
       }).catch(() => ({ data: { memories: [] } }));
@@ -123,15 +123,15 @@ export default function GlobalWiki() {
     if (!form.subject.trim() || !form.fact.trim()) return;
     setSaving(true);
     const payload = { category: form.category, subject: form.subject.trim(), fact: form.fact.trim(), importance: form.importance, session_id: form.session_id || undefined, is_active: true };
-    if (editingEntry) await base44.entities.WorldState.update(editingEntry.id, payload);
-    else await base44.entities.WorldState.create(payload);
+    if (editingEntry) await animaClient.entities.WorldState.update(editingEntry.id, payload);
+    else await animaClient.entities.WorldState.create(payload);
     closeForm();
     await loadData();
     setSaving(false);
   };
 
   const archiveEntry = async (entry) => {
-    await base44.entities.WorldState.update(entry.id, { is_active: false });
+    await animaClient.entities.WorldState.update(entry.id, { is_active: false });
     setLoreEntries((current) => current.filter((item) => item.id !== entry.id));
   };
 

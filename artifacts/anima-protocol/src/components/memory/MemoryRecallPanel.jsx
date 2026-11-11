@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { Search, Brain, BookOpen, Heart, Zap, TrendingUp, X, ChevronDown, Sparkles, Copy, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 const MEMORY_TYPE_CONFIG = {
   narrative_event:       { color: 'text-blue-400',   bg: 'bg-blue-400/10',   border: 'border-blue-400/30',   label: 'Event' },
@@ -133,7 +133,7 @@ export default function MemoryRecallPanel({ characterId, sessionId, onMemoriesIn
     setSearching(true);
     setSearched(false);
     try {
-      const res = await base44.functions.invoke('vectorMemorySearch', {
+      const res = await animaClient.functions.invoke('vectorMemorySearch', {
         character_id: characterId,
         query: q.trim(),
         limit: 10,
@@ -154,7 +154,7 @@ export default function MemoryRecallPanel({ characterId, sessionId, onMemoriesIn
     if (browseLoaded || !characterId) return;
     setBrowseLoading(true);
     try {
-      const res = await base44.entities.VectorMemory.filter(
+      const res = await animaClient.entities.VectorMemory.filter(
         { character_id: characterId },
         '-created_date',
         30

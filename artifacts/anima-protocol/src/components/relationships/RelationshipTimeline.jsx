@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { motion, AnimatePresence } from "framer-motion";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 
@@ -16,7 +16,7 @@ export default function RelationshipTimeline({ sessionId, characterId }) {
   const loadRelationshipHistory = async () => {
     try {
       // Load all relationships for this character
-      const data = await base44.entities.CharacterRelationship.filter(
+      const data = await animaClient.entities.CharacterRelationship.filter(
         {
           session_id: sessionId,
           character_a_id: characterId,

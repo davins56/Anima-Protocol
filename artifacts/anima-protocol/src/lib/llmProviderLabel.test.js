@@ -16,7 +16,7 @@ describe("llmProviderLabel", () => {
     expect(llmProviderShortLabel("minimax")).toBe("MiniMax");
     expect(llmProviderShortLabel("deepshi")).toBe("Deepshi");
     expect(llmProviderShortLabel("openrouter")).toBe("Venice");
-    expect(llmProviderShortLabel("workersai")).toBe("DeepSeek");
+    expect(llmProviderShortLabel("workersai")).toBe("Workers AI");
     expect(llmProviderShortLabel("kimi")).toBeNull();
     expect(llmProviderShortLabel(null)).toBeNull();
   });
@@ -25,7 +25,7 @@ describe("llmProviderLabel", () => {
     expect(llmDisplayLabel("local", "anima")).toBe("Anima");
     expect(llmDisplayLabel("local", null)).toBe("Anima");
     expect(llmDisplayLabel("openrouter", "openrouter")).toBe("Venice");
-    expect(llmDisplayLabel("workersai", "workersai")).toBe("DeepSeek");
+    expect(llmDisplayLabel("workersai", "workersai")).toBe("Workers AI");
     expect(llmDisplayTitle("local", "anima")).toMatch(/Anima LLM/);
     expect(llmDisplayTitle("openrouter", "openrouter")).toMatch(/Venice Uncensored/);
     expect(llmDisplayTitle("workersai", "workersai")).toMatch(/Workers AI/);

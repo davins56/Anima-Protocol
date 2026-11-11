@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Lightbulb, Loader, Shield, Zap, Eye, Lock, Heart } from "lucide-react";
 
 const SCENE_PATTERNS = {

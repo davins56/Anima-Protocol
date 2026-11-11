@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { useStoreSync } from '@/lib/useStoreSync';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Loader, BookOpen, Sparkles } from 'lucide-react';
 
 // The Book of Echoes — a permanent journal the Anima writes about the bond.
 // Entries are generated automatically during conversation (see Chat.jsx) and
-// stored as BookOfEcho rows (schemaless base44 store, no migration).
+// stored as BookOfEcho rows (schemaless animaClient store, no migration).
 
 function fmtDay(d) {
   if (!d) return '';
@@ -38,11 +38,11 @@ export default function BookOfEchoes() {
 
   const load = useCallback(async () => {
     try {
-      const me = await base44.auth.me().catch(() => null);
+      const me = await animaClient.auth.me().catch(() => null);
       const [animas, echoes] = await Promise.all([
-        base44.entities.Anima.list().catch(() => []),
-        base44.entities.BookOfEcho.list('-entry_date').catch(() =>
-          base44.entities.BookOfEcho.list('-created_date').catch(() => []),
+        animaClient.entities.Anima.list().catch(() => []),
+        animaClient.entities.BookOfEcho.list('-entry_date').catch(() =>
+          animaClient.entities.BookOfEcho.list('-created_date').catch(() => []),
         ),
       ]);
       const primary = animas?.find((a) => a.assigned_user === me?.email) || animas?.[0] || null;

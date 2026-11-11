@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Search, Loader, X, BookMarked } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -15,7 +15,7 @@ export default function RealStoriesBrowser({ onSelectStory, onClose }) {
 
     setLoading(true);
     try {
-      const res = await base44.functions.invoke("fetchYnStoryURL", {
+      const res = await animaClient.functions.invoke("fetchYnStoryURL", {
         search_query: query,
         limit: 10,
       });

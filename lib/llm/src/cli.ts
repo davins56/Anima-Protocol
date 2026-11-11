@@ -23,6 +23,7 @@ import {
   resolveProvider,
   type ProviderName,
 } from "./registry";
+import { withOpenAiV1Suffix } from "./openaiBaseUrl";
 import {
   cleanExamples,
   characterSlug,
@@ -656,14 +657,11 @@ See docs/llm-build.md for the full CUDA checklist.
 }
 
 async function cmdChat(args: string[]): Promise<void> {
-  const base = (
+  const root = withOpenAiV1Suffix(
     process.env.ANIMA_LOCAL_LLM_BASE_URL ||
-    process.env.OLLAMA_BASE_URL ||
-    "http://127.0.0.1:11434/v1"
-  )
-    .trim()
-    .replace(/\/$/, "");
-  const root = base.endsWith("/v1") ? base : `${base}/v1`;
+      process.env.OLLAMA_BASE_URL ||
+      "http://127.0.0.1:11434/v1",
+  );
   const model =
     process.env.ANIMA_OLLAMA_MODEL_STANDARD ||
     process.env.ANIMA_VLLM_MODEL_STANDARD ||

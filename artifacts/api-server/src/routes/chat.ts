@@ -1,4 +1,7 @@
 import { Router, type Request, type Response } from "express";
+import { adultGate } from "../lib/safety/adultGate";
+import { creativeFreedomEnabled } from "../lib/chatStyle";
+import { userIsAdultAttested } from "../lib/safety/ageGate";
 import { getAuth } from "@clerk/express";
 import { and, desc, eq, or, sql } from "drizzle-orm";
 import {
@@ -6,9 +9,10 @@ import {
   CHAT_SESSION,
   asObject,
   chatMessages,
- chatSessions,
- companionMemories,
- memoryEmbeddings,
+  chatSessions,
+  chatTurns,
+  companionMemories,
+  memoryEmbeddings,
  db,
   ensureSchemaOnce,
   resetEnsureSchemaLatch,
@@ -37,6 +41,7 @@ import {
 import { retrievePdfContext } from "../lib/pdf/store";
 import {
   consumeLlmStream,
+  interruptedStreamKeepsReply,
   LlmStreamTimeoutError,
 } from "../lib/consumeLlmStream.js";
 import {
@@ -53,6 +58,7 @@ import {
   repeatRetryBudgetMs,
   shouldRegenerateRepeatedReply,
   watchClientLeave,
+  chatContextMessageLimit,
 } from "../lib/chatTimeouts";
 import { hintLocalLlmWarm } from "../lib/localLlmWarm";
 import {
@@ -82,8 +88,15 @@ import {
   type CompanionMemoryRecord,
   type CharacterData,
 } from "../lib/promptBuilder";
+import { chatTurnContent } from "../lib/chatTurnContent";
 import { beginCompanionLlmTurn, companionTurnsOpenForUser } from "../lib/sidecarLlm";
-import { localLlmSlotEnabled, waitForLocalChatSlot } from "../lib/localLlmSlot";
+import {
+  describeSharedPhotos,
+  photoCountFromMetadata,
+  photosFromMetadata,
+  sharedPhotoPromptNote,
+} from "../lib/sharedPhoto";
+import { acquireLocalLlmBackground, localLlmSlotEnabled, waitForLocalChatSlot } from "../lib/localLlmSlot";
 import {
   FOURTH_WALL_RETRY_MAX_TOKENS,
   fourthWallRetryAllowed,
@@ -97,6 +110,7 @@ import {
   pronounFromPersona,
   stockAssistantDeflection,
 } from "../lib/stockAssistantLine";
+import { isRoleSwapReply, roleSwapRetryReminder } from "../lib/roleSwapReply";
 import { extractOperatorModelFromProfile } from "../lib/operatorModel";
 import {
   incrementConversationCount,
@@ -157,12 +171,53 @@ import {
   noteCompanionCrisisResource,
   type CrisisResourceCard,
 } from "../lib/therapySafety";
-import { ChatPipelineTelemetry } from "../lib/chatTelemetry";
+import {
+  ChatPipelineTelemetry,
+  chatErrorClass,
+  chatErrorCode,
+  replySurvivesDatabaseTimeout,
+} from "../lib/chatTelemetry";
 import { streamErrorMessage } from "../lib/chatStreamError";
-import { optionalChatContext } from "../lib/optionalChatContext";
+import { optionalChatContext, optionalChatContextTimeoutMs } from "../lib/optionalChatContext";
+import { buildMemoryCoreContext, isMemoryCoreEnabled } from "../lib/memoryCore/sessionContext";
+import { buildCorrectionsContext } from "../lib/corrections/corrections";
+import { searchContextForTurn } from "../lib/search/searchService";
+import { appendMemoryEvent } from "../lib/memoryCore/memoryCore";
+import {
+  companionPhotoConfig,
+  photoDirective,
+  photoFailureLine,
+  photoMetadata,
+  photoTagIntent,
+  planCompanionPhoto,
+  recordPhotoMemory,
+  settleCompanionPhoto,
+  startCompanionPhoto,
+  stripPhotoTags,
+  type PhotoOutcome,
+  type PhotoPlan,
+} from "../lib/companionPhotos";
+import {
+  activeMindProfile,
+  factScopeForTurn,
+  type FactScope,
+  type MindProfile,
+  antiRepetitionNote,
+  replyLengthNote,
+  buildMindKnowledge,
+  consumeWithMidstreamFallback,
+  createPersonaStreamGuard,
+  echoesRecentReply,
+  hasAlternativeProvider,
+  runMindPostTurn,
+  sanitizeCompanionReply,
+  shapeMessagesForModel,
+} from "../lib/mind";
 import { classifyDbError, errorCauseBlob } from "../lib/dbErrors";
 import {
   finalizeAssistantReply,
+  isCutOffReply,
+  keptPartialNeedsCutOff,
   settleCappedReply,
 } from "../lib/visibleAssistantReply";
 import {
@@ -178,6 +233,8 @@ import {
   claimChatTurnLease,
   classifyChatTurnReuse,
   decideDurableTurnJoin,
+  CONVERSATION_BUSY_CODE,
+  CONVERSATION_BUSY_MESSAGE,
   latestOpenChatTurn,
   markChatTurnWaiting,
   markTurnCommitted,
@@ -186,6 +243,7 @@ import {
   readChatTurn,
   renewChatTurnLease,
   retryableChatTurns,
+  sessionHasOlderPendingChatTurn,
   userHasOtherPendingChatTurn,
   type PersistenceOwner,
 } from "../lib/chatTurnLedger";
@@ -201,10 +259,41 @@ import { planTurnMessageSeqs, type SeqRow } from "../lib/chatMessageOrder";
 import {
   emotionalStateWithTurnBond,
   emotionalStateWithTurnMood,
+  moodLoopStops,
   moodTurnAlreadyWritten,
   relationshipTurnAlreadyWritten,
   savedMomentsTurnAlreadyWritten,
 } from "../lib/turnMoodWrite";
+import {
+  discardReplacedCompanionReply,
+  forgetReplacedTurnMemory,
+  inspectReplacedReply,
+} from "../lib/discardReplacedReply";
+import {
+  omitPersistedUserRow,
+  clientTurnMetadata,
+  replacedFromMessageIdOf,
+  replacedMessageIdsOf,
+  replacedTurnIdOf,
+  replacedTurnIdsOf,
+  replyActionOf,
+  shouldDiscardStoredMessage,
+  turnMetadataReplaced,
+  turnSkipsAffect,
+} from "../lib/replyReplacement";
+import { deferLocalLlmJob } from "../lib/deferredLocalLlm";
+import {
+  buildMemoryPolicyJob,
+  buildMemoryReembedJob,
+  factsWithoutTurns,
+  persistCompanionTurnFact,
+} from "../lib/memoryPolicy";
+import {
+  applyCompanionMemoryChange,
+  groupCompanionMemories,
+} from "../lib/companionMemoryReview";
+import { applyIdentityProposal, seedStarterMemories } from "../lib/starterMemories";
+import { isModelResting, queueRestingMessage, restingLine } from "../lib/restingMode";
 import { scheduleWorkerBackground } from "../lib/workerBackground";
 import { logger } from "../lib/logger";
 import {
@@ -284,11 +373,15 @@ function writeSse(res: Response, payload: unknown) {
 
 function replayFlightOutcome(turn: ChatTurn): ChatTurnFlightOutcome {
   const content = String(turn.assistantContent || "");
+  const meta = asObject(turn.metadata);
+  const attachments = Array.isArray(meta.attachments) ? meta.attachments : null;
   return {
     content,
     done: {
       done: true,
       visible: content,
+      ...(attachments?.length ? { attachments } : {}),
+      ...(meta.companion_photo ? { photo: meta.companion_photo } : {}),
       turn_id: turn.id,
       persistence_status: turn.status,
       replayed: true,
@@ -363,7 +456,7 @@ async function streamDurableFollow(
   flight: ChatTurnFlightReservation,
   work: ReturnType<typeof awaitDurableTurnOwner>,
 ): Promise<
-  | { action: "finished" }
+  | { action: "finished"; error?: unknown; replayed?: boolean }
   | {
       action: "generate";
       turn: ChatTurn;
@@ -378,7 +471,7 @@ async function streamDurableFollow(
       flight.resolve(result.outcome);
       if (result.outcome.content) writeSse(res, { content: result.outcome.content });
       writeSse(res, { ...result.outcome.done, joined: true, replayed: true });
-      return { action: "finished" };
+      return { action: "finished", replayed: true };
     }
     handoff = true;
     return { action: "generate", turn: result.turn, sse };
@@ -389,7 +482,7 @@ async function streamDurableFollow(
       flight.fail(err);
     }
     writeSse(res, { error: streamErrorMessage(err) });
-    return { action: "finished" };
+    return { action: "finished", error: err };
   } finally {
     if (!handoff) {
       sse.stop();
@@ -405,17 +498,18 @@ async function streamDurableFollow(
 async function writeJoinedTurn(
   res: Response,
   result: Promise<ChatTurnFlightOutcome>,
-) {
+): Promise<{ ok: boolean; error?: unknown }> {
   try {
     const outcome = await result;
     writeFlightSse(res, { ...outcome, done: { ...outcome.done, joined: true } });
+    return { ok: true };
   } catch (err) {
     if (isChatTurnFlightElsewhere(err)) {
       res.status(409).json({
         error: "This chat turn is already being processed.",
         code: "turn_in_flight",
       });
-      return;
+      return { ok: false, error: err };
     }
     const sse = openChatSse(res);
     try {
@@ -424,6 +518,7 @@ async function writeJoinedTurn(
       sse.stop();
       if (!res.writableEnded) res.end();
     }
+    return { ok: false, error: err };
   }
 }
 
@@ -735,48 +830,62 @@ async function updateStoreSessionMetadata(
   content: string,
   sharedFact?: Record<string, unknown>,
 ) {
-  const [row] = await db
-    .select()
-    .from(userEntities)
-    .where(
-      and(
-        eq(userEntities.userId, userId),
-        eq(userEntities.entityName, CHAT_SESSION),
-        eq(userEntities.entityId, sessionId),
-      ),
-    )
-    .limit(1);
-  if (!row) return;
-  const data = asObject(row.data);
-  const now = new Date().toISOString();
-  const currentSharedMemory = Array.isArray(data.shared_memory)
-    ? data.shared_memory.slice(-24)
-    : [];
-  if (sharedFact) {
-    const factTurnId = sharedFact.turn_id;
-    const already =
-      factTurnId != null &&
-      currentSharedMemory.some(
-        (item) =>
-          item &&
-          typeof item === "object" &&
-          (item as Record<string, unknown>).turn_id === factTurnId,
-      );
-    if (!already) currentSharedMemory.push(sharedFact);
-  }
-  await db
-    .update(userEntities)
-    .set({
-      data: {
-        ...data,
-        last_message: truncate(content, 80),
-        title: data.title || truncate(content, 40) || "New session",
-        shared_memory: currentSharedMemory,
-        updated_date: now,
-      },
-      updatedAt: new Date(),
-    })
-    .where(eq(userEntities.id, row.id));
+  await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${userId}), hashtext(${sessionId}))`,
+    );
+    const [row] = await tx
+      .select()
+      .from(userEntities)
+      .where(
+        and(
+          eq(userEntities.userId, userId),
+          eq(userEntities.entityName, CHAT_SESSION),
+          eq(userEntities.entityId, sessionId),
+        ),
+      )
+      .limit(1);
+    if (!row) return;
+    let fact = sharedFact;
+    const factTurnId = fact && typeof fact.turn_id === "string" ? fact.turn_id : "";
+    if (factTurnId) {
+      const [turn] = await tx
+        .select({ metadata: chatTurns.metadata })
+        .from(chatTurns)
+        .where(and(eq(chatTurns.id, factTurnId), eq(chatTurns.userId, userId)))
+        .limit(1);
+      if (turn && turnMetadataReplaced(turn.metadata)) fact = undefined;
+    }
+    const data = asObject(row.data);
+    const now = new Date().toISOString();
+    const currentSharedMemory = Array.isArray(data.shared_memory)
+      ? data.shared_memory.slice(-24)
+      : [];
+    if (fact) {
+      const already =
+        factTurnId &&
+        currentSharedMemory.some(
+          (item) =>
+            item &&
+            typeof item === "object" &&
+            (item as Record<string, unknown>).turn_id === factTurnId,
+        );
+      if (!already) currentSharedMemory.push(fact);
+    }
+    await tx
+      .update(userEntities)
+      .set({
+        data: {
+          ...data,
+          last_message: truncate(content, 80),
+          title: data.title || truncate(content, 40) || "New session",
+          shared_memory: currentSharedMemory,
+          updated_date: now,
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(userEntities.id, row.id));
+  });
 }
 
 async function loadMemories(userId: string, characterIds: string[]) {
@@ -856,68 +965,37 @@ async function upsertTurnMemory(params: {
   sessionId: string;
   userContent: string;
   assistantContent: string;
+  /** A cut-off reply stores the user line only. The half-reply is not a fact. */
+  omitAssistant?: boolean;
 }) {
-  if (params.characterIds.length === 0 || !params.assistantContent.trim()) return;
+  if (params.characterIds.length === 0) return;
+  if (params.omitAssistant) {
+    if (!params.userContent.trim()) return;
+  } else if (!params.assistantContent.trim()) {
+    return;
+  }
   const now = new Date();
+  const text = params.omitAssistant
+    ? `User: ${truncate(params.userContent, 240)}`
+    : `User: ${truncate(params.userContent, 240)} | Companion: ${truncate(
+        params.assistantContent,
+        320,
+      )}`;
   const fact = {
     type: "turn",
     turn_id: params.turnId,
     session_id: params.sessionId,
-    text: `User: ${truncate(params.userContent, 240)} | Companion: ${truncate(
-      params.assistantContent,
-      320,
-    )}`,
+    text,
     created_at: now.toISOString(),
   };
   for (const characterId of params.characterIds) {
-    const [existing] = await withTransientDbRetry(() =>
-      db
-        .select()
-        .from(companionMemories)
-        .where(
-          and(
-            eq(companionMemories.userId, params.userId),
-            eq(companionMemories.characterId, characterId),
-          ),
-        )
-        .limit(1),
-    );
-    const facts = Array.isArray(existing?.facts) ? existing.facts.slice(-24) : [];
-    if (
-      params.turnId &&
-      facts.some(
-        (item) =>
-          item &&
-          typeof item === "object" &&
-          (item as Record<string, unknown>).turn_id === params.turnId,
-      )
-    ) {
-      continue;
-    }
-    facts.push(fact);
-    await withTransientDbRetry(() =>
-      db
-        .insert(companionMemories)
-        .values({
-          userId: params.userId,
-          characterId,
-          summary: existing?.summary ?? "",
-          facts,
-          emotionalState: existing?.emotionalState ?? {},
-          resonanceNotes: existing?.resonanceNotes ?? "",
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [
-            companionMemories.userId,
-            companionMemories.characterId,
-          ],
-          set: {
-            facts,
-            updatedAt: now,
-          },
-        }),
-    );
+    const wrote = await persistCompanionTurnFact({
+      userId: params.userId,
+      characterId,
+      turnFact: fact,
+      now,
+    });
+    if (!wrote) continue;
 
     // Index the new turn fact for hybrid semantic retrieval. Best-effort —
     // chat must not fail if the embedding endpoint / hash path errors.
@@ -954,9 +1032,16 @@ function storeMessageMoment(data: MsgData): number {
 async function writeTurnMessagesInOrder(
   turn: ChatTurn,
   messages: { user: MsgData | null; assistant: MsgData },
-): Promise<void> {
-  await db.transaction(async (tx) => {
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
     await migrateSessionMessages(tx, turn.userId, turn.sessionId);
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${turn.id}`}))`);
+    const [locked] = await tx
+      .select({ metadata: chatTurns.metadata })
+      .from(chatTurns)
+      .where(and(eq(chatTurns.id, turn.id), eq(chatTurns.userId, turn.userId)))
+      .limit(1);
+    if (locked && turnMetadataReplaced(locked.metadata)) return false;
     const rows = await tx
       .select({
         id: userEntities.id,
@@ -1027,10 +1112,10 @@ async function writeTurnMessagesInOrder(
             updatedAt: new Date(),
           })
           .where(eq(userEntities.id, existing.id));
-        return;
+        return true;
       }
     }
-    if (seqRows.some((row) => row.id === turn.assistantMessageId)) return;
+    if (seqRows.some((row) => row.id === turn.assistantMessageId)) return true;
     await insertRow({
       ...asObject(messages.assistant),
       id: turn.assistantMessageId,
@@ -1039,10 +1124,13 @@ async function writeTurnMessagesInOrder(
       created_date: assistantAt,
       updated_date: now,
     });
+    return true;
   });
 }
 
 async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
+  const latest = await readChatTurn(turn.id, turn.userId);
+  if (latest && turnMetadataReplaced(latest.metadata)) return;
   if (!turn.assistantContent.trim()) {
     throw new Error("Cannot persist a turn before its assistant reply is generated");
   }
@@ -1055,7 +1143,7 @@ async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
     ? String(metadata.active_character_name)
     : null;
   const isCrossover = metadata.is_crossover === true;
-  const isContinue = metadata.is_continue === true;
+  const skipUserRow = omitPersistedUserRow(metadata);
   const mode = String(metadata.mode || "solo");
 
   await syncTypedSession({
@@ -1069,7 +1157,7 @@ async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
   });
 
   const userMessage =
-    !isContinue && turn.userContent.trim()
+    !skipUserRow && turn.userContent.trim()
       ? {
           id: turn.userMessageId,
           role: "user",
@@ -1078,6 +1166,9 @@ async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
           metadata: { turn_id: turn.id },
         }
       : null;
+  const cutOff = isCutOffReply(metadata);
+  // A companion photo sent with this reply (lib/companionPhotos).
+  const replyAttachments = Array.isArray(metadata.attachments) ? metadata.attachments : [];
   const assistantMessage = {
     id: turn.assistantMessageId,
     role: "assistant",
@@ -1085,39 +1176,86 @@ async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
     character_id: activeCharacterId,
     character_name: activeCharacterName,
     timestamp: new Date(turn.createdAt.getTime() + 1).toISOString(),
-    metadata: { turn_id: turn.id },
+    ...(cutOff ? { reply_interrupted: true, cut_off: true } : {}),
+    ...(replyAttachments.length ? { attachments: replyAttachments } : {}),
+    metadata: {
+      turn_id: turn.id,
+      ...(cutOff ? { reply_interrupted: true, cut_off: true } : {}),
+      ...(replyAttachments.length ? { attachments: replyAttachments, media_kind: "photo" } : {}),
+    },
   };
-  await writeTurnMessagesInOrder(turn, {
+  const wroteMessages = await writeTurnMessagesInOrder(turn, {
     user: userMessage,
     assistant: assistantMessage,
   });
-  if (userMessage) {
-    await persistTypedMessage({
-      id: turn.userMessageId,
-      userId: turn.userId,
-      sessionId: turn.sessionId,
-      role: "user",
-      content: turn.userContent,
-      isCrossover,
-      metadata: { turn_id: turn.id },
-      createdAt: turn.createdAt,
-    });
-  }
-  await persistTypedMessage({
-    id: turn.assistantMessageId,
-    userId: turn.userId,
-    sessionId: turn.sessionId,
-    role: "assistant",
-    content: turn.assistantContent,
-    characterId: activeCharacterId,
-    characterName: activeCharacterName,
-    isCrossover,
-    metadata,
-    createdAt: new Date(turn.createdAt.getTime() + 1),
-  });
+  if (!wroteMessages) return;
+  // Same lock as the delete. A retry that landed while this write was in
+  // flight must not get the assistant row inserted again after the delete.
+  const typedSaved = await withTransientDbRetry(() =>
+    db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${turn.id}`}))`);
+      const [row] = await tx
+        .select({ metadata: chatTurns.metadata })
+        .from(chatTurns)
+        .where(and(eq(chatTurns.id, turn.id), eq(chatTurns.userId, turn.userId)))
+        .limit(1);
+      if (turnMetadataReplaced(row?.metadata)) return false;
+      const insertTyped = async (message: {
+        id: string;
+        role: string;
+        content: string;
+        characterId?: string | null;
+        characterName?: string | null;
+        metadata?: Record<string, unknown>;
+        createdAt?: Date;
+      }) => {
+        await tx
+          .insert(chatMessages)
+          .values({
+            id: message.id,
+            sessionId: turn.sessionId,
+            userId: turn.userId,
+            role: message.role,
+            content: message.content,
+            characterId: message.characterId ?? null,
+            characterName: message.characterName ?? null,
+            isCrossover,
+            metadata: message.metadata ?? {},
+            ...(message.createdAt ? { createdAt: message.createdAt } : {}),
+          })
+          .onConflictDoNothing();
+      };
+      if (userMessage) {
+        await insertTyped({
+          id: turn.userMessageId,
+          role: "user",
+          content: turn.userContent,
+          metadata: { turn_id: turn.id },
+          createdAt: turn.createdAt,
+        });
+      }
+      await insertTyped({
+        id: turn.assistantMessageId,
+        role: "assistant",
+        content: turn.assistantContent,
+        characterId: activeCharacterId,
+        characterName: activeCharacterName,
+        metadata,
+        createdAt: new Date(turn.createdAt.getTime() + 1),
+      });
+      return true;
+    }),
+  );
+  if (!typedSaved) return;
 
-  await recordTurnContinuity(turn);
-  await writeTurnMoodFromMetadata(turn);
+  const beforeCommit = await readChatTurn(turn.id, turn.userId);
+  if (beforeCommit && turnMetadataReplaced(beforeCommit.metadata)) return;
+  if (!turnSkipsAffect(metadata)) {
+    await recordTurnContinuity(turn);
+    await writeTurnMoodFromMetadata(turn);
+  }
+  const closing = await readChatTurn(turn.id, turn.userId);
+  if (closing && turnMetadataReplaced(closing.metadata)) return;
   await markTurnCommitted(turn.id, turn.userId);
 }
 
@@ -1131,48 +1269,61 @@ async function writeTurnMoodFromMetadata(turn: ChatTurn): Promise<void> {
   if (!selfState || Object.keys(selfState).length === 0) return;
   const characterIds = asStringArray(metadata.character_ids);
   if (characterIds.length === 0) return;
+  // SEC-005b: mood is the speaker's own felt state. Write it to the resolved
+  // speaker only; with no resolved speaker, write it to no one.
+  const speakerId = metadata.active_character_id ? String(metadata.active_character_id) : "";
+  if (!speakerId || !characterIds.includes(speakerId)) return;
   const now = new Date();
-  for (const characterId of characterIds) {
-    const [existing] = await withTransientDbRetry(() =>
-      db
-        .select({
-          summary: companionMemories.summary,
-          facts: companionMemories.facts,
-          emotionalState: companionMemories.emotionalState,
-          resonanceNotes: companionMemories.resonanceNotes,
-        })
-        .from(companionMemories)
-        .where(
-          and(
-            eq(companionMemories.userId, turn.userId),
-            eq(companionMemories.characterId, characterId),
-          ),
-        )
-        .limit(1),
-    );
-    const current = (existing?.emotionalState as Record<string, unknown> | null) ?? {};
-    const next = emotionalStateWithTurnMood(current, turn.id, selfState);
-    if (!next.wrote) continue;
-    await withTransientDbRetry(() =>
-      db
-        .insert(companionMemories)
-        .values({
-          userId: turn.userId,
-          characterId,
-          summary: existing?.summary ?? "",
-          facts: Array.isArray(existing?.facts) ? existing.facts : [],
-          emotionalState: next.state,
-          resonanceNotes: existing?.resonanceNotes ?? "",
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [companionMemories.userId, companionMemories.characterId],
-          set: {
+  for (const characterId of [speakerId]) {
+    const wrote = await withTransientDbRetry(() =>
+      db.transaction(async (tx) => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${turn.id}`}))`);
+        const [latestMoodTurn] = await tx
+          .select({ metadata: chatTurns.metadata })
+          .from(chatTurns)
+          .where(and(eq(chatTurns.id, turn.id), eq(chatTurns.userId, turn.userId)))
+          .limit(1);
+        if (latestMoodTurn && turnMetadataReplaced(latestMoodTurn.metadata)) return "replaced" as const;
+        const [memory] = await tx
+          .select({
+            summary: companionMemories.summary,
+            facts: companionMemories.facts,
+            emotionalState: companionMemories.emotionalState,
+            resonanceNotes: companionMemories.resonanceNotes,
+          })
+          .from(companionMemories)
+          .where(
+            and(
+              eq(companionMemories.userId, turn.userId),
+              eq(companionMemories.characterId, characterId),
+            ),
+          )
+          .limit(1);
+        const current = (memory?.emotionalState as Record<string, unknown> | null) ?? {};
+        const next = emotionalStateWithTurnMood(current, turn.id, selfState);
+        if (!next.wrote) return "skipped" as const;
+        await tx
+          .insert(companionMemories)
+          .values({
+            userId: turn.userId,
+            characterId,
+            summary: memory?.summary ?? "",
+            facts: Array.isArray(memory?.facts) ? memory.facts : [],
             emotionalState: next.state,
+            resonanceNotes: memory?.resonanceNotes ?? "",
             updatedAt: now,
-          },
-        }),
+          })
+          .onConflictDoUpdate({
+            target: [companionMemories.userId, companionMemories.characterId],
+            set: {
+              emotionalState: next.state,
+              updatedAt: now,
+            },
+          });
+        return "written" as const;
+      }),
     );
+    if (moodLoopStops(wrote)) return;
   }
 }
 
@@ -1182,21 +1333,26 @@ async function writeTurnMoodFromMetadata(turn: ChatTurn): Promise<void> {
  * already appended those).
  */
 async function recordTurnContinuity(turn: ChatTurn): Promise<void> {
+  const opening = await readChatTurn(turn.id, turn.userId);
+  if (opening && turnMetadataReplaced(opening.metadata)) return;
   const metadata = asObject(turn.metadata);
   const characterIds = asStringArray(metadata.character_ids);
   const isCrossover = metadata.is_crossover === true;
+  const cutOff = isCutOffReply(metadata);
   const sharedFact = isCrossover
     ? {
         type: "crossover_turn",
         turn_id: turn.id,
-        text: `User: ${truncate(turn.userContent, 180)} | Reply: ${truncate(turn.assistantContent, 260)}`,
+        text: cutOff
+          ? `User: ${truncate(turn.userContent, 180)}`
+          : `User: ${truncate(turn.userContent, 180)} | Reply: ${truncate(turn.assistantContent, 260)}`,
         created_at: new Date().toISOString(),
       }
     : undefined;
   await updateStoreSessionMetadata(
     turn.userId,
     turn.sessionId,
-    turn.userContent || turn.assistantContent,
+    cutOff ? turn.userContent : turn.userContent || turn.assistantContent,
     sharedFact,
   );
   await upsertTurnMemory({
@@ -1205,8 +1361,38 @@ async function recordTurnContinuity(turn: ChatTurn): Promise<void> {
     characterIds,
     sessionId: turn.sessionId,
     userContent: turn.userContent,
-    assistantContent: turn.assistantContent,
+    assistantContent: cutOff ? "" : turn.assistantContent,
+    omitAssistant: cutOff,
   });
+  const activeId = metadata.active_character_id
+    ? String(metadata.active_character_id)
+    : characterIds[0];
+  const companionName = metadata.active_character_name
+    ? String(metadata.active_character_name)
+    : "";
+  if (activeId) {
+    const job = buildMemoryPolicyJob({
+      userId: turn.userId,
+      characterId: activeId,
+      sessionId: turn.sessionId,
+      turnId: turn.id,
+      companionName,
+      userContent: turn.userContent,
+      assistantContent: cutOff ? "" : turn.assistantContent,
+      userOnly: cutOff,
+    });
+    if (job) {
+      try {
+        await deferLocalLlmJob(job);
+      } catch {
+        // Consolidation must not fail the chat turn.
+      }
+    }
+  }
+  const closing = await readChatTurn(turn.id, turn.userId);
+  if (closing && turnMetadataReplaced(closing.metadata)) {
+    await forgetReplacedTurnMemory(closing).catch(() => {});
+  }
 }
 
 async function applyRelationshipPostProcess(params: {
@@ -1222,6 +1408,13 @@ async function applyRelationshipPostProcess(params: {
   significantExperienceCount: number;
   synchroState: SynchroState | null;
   companionAffect?: CompanionAffect | null;
+  /** The model stream dropped. Do not read the half-reply for mood or memory. */
+  replyCutOff?: boolean;
+  /**
+   * SEC-005b: the speaker whose mood and synchro may be written. Defaults to
+   * activeCharacterId; the commit path passes only a speaker recorded on the turn.
+   */
+  affectSpeakerId?: string | null;
 }): Promise<void> {
   const {
     userId,
@@ -1236,9 +1429,17 @@ async function applyRelationshipPostProcess(params: {
     significantExperienceCount,
     synchroState,
     companionAffect,
+    replyCutOff = false,
   } = params;
+  const requestedSpeakerId =
+    params.affectSpeakerId !== undefined ? params.affectSpeakerId : activeCharacterId;
+  const affectSpeakerId =
+    requestedSpeakerId && characterIds.includes(requestedSpeakerId) ? requestedSpeakerId : null;
+  const companionText = replyCutOff ? "" : assistantContent;
   if (characterIds.length > 0) {
-    const historySummary = `User said: ${truncate(content, 420)}\nCompanion replied: ${truncate(assistantContent, 520)}`;
+    const historySummary = replyCutOff
+      ? `User said: ${truncate(content, 420)}`
+      : `User said: ${truncate(content, 420)}\nCompanion replied: ${truncate(assistantContent, 520)}`;
 
     for (const animaId of characterIds) {
       const updated = await incrementConversationCount({
@@ -1273,7 +1474,7 @@ async function applyRelationshipPostProcess(params: {
       });
     }
   }
-  if ((synchroState || companionAffect) && assistantContent) {
+  if ((synchroState || companionAffect) && (companionText || replyCutOff)) {
     const anchorId =
       activeCharacterId && characterIds.includes(activeCharacterId)
         ? activeCharacterId
@@ -1301,12 +1502,16 @@ async function applyRelationshipPostProcess(params: {
     const evolved =
       bondAlready || !synchroState
         ? null
-        : evolveSynchroFromCompanion(synchroState, assistantContent);
+        : replyCutOff
+          ? synchroState
+          : evolveSynchroFromCompanion(synchroState, companionText);
     const evolvedAffect =
       moodTurnAlreadyWritten(anchorState, turnId) || !companionAffect
         ? null
-        : evolveCompanionAffectFromCompanion(companionAffect, assistantContent);
-    if (evolved && !momentsAlready) {
+        : replyCutOff
+          ? companionAffect
+          : evolveCompanionAffectFromCompanion(companionAffect, companionText);
+    if (evolved && !momentsAlready && !replyCutOff) {
       try {
         const intimacy = Number(
           evolved.vector?.intimacy ?? evolved.vector?.synchroStrength ?? 0,
@@ -1379,10 +1584,18 @@ async function applyRelationshipPostProcess(params: {
       );
       const current =
         (existing?.emotionalState as Record<string, unknown> | null) ?? null;
+      // SEC-005b: mood and synchro values go to the resolved speaker only.
+      // Everyone else gets `{}`, which keeps their own synchro but still
+      // writes this turn's relationshipTurnId stamp exactly as before. The
+      // saved-moment stamp is unchanged.
+      const isSpeaker = cid === affectSpeakerId;
       const next = emotionalStateWithTurnBond(current, turnId, {
-        synchro: evolved ? serializeSynchroState(evolved) : null,
-        selfState: evolvedAffect ? serializeCompanionAffect(evolvedAffect) : null,
-        saveMoment: Boolean(evolved) && !savedMomentsTurnAlreadyWritten(current, turnId),
+        synchro: evolved ? (isSpeaker ? serializeSynchroState(evolved) : {}) : null,
+        selfState: evolvedAffect && isSpeaker ? serializeCompanionAffect(evolvedAffect) : null,
+        saveMoment:
+          Boolean(evolved) &&
+          !replyCutOff &&
+          !savedMomentsTurnAlreadyWritten(current, turnId),
       });
       if (!next.wroteMood && !next.wroteRelationship && !next.wroteSavedMoments) {
         continue;
@@ -1460,11 +1673,64 @@ async function applyRelationshipPostProcessFromTurn(turn: ChatTurn): Promise<voi
     significantExperienceCount: learnedLife,
     synchroState,
     companionAffect,
+    replyCutOff: isCutOffReply(metadata),
+    // SEC-005b: activeCharacterId above falls back to characterIds[0]; mood
+    // and synchro must not. No speaker recorded on the turn, no such write.
+    affectSpeakerId: metadata.active_character_id
+      ? String(metadata.active_character_id)
+      : null,
   });
 }
 
 const leftoverTurnRepair = new Map<string, Promise<void>>();
 const turnPersistInFlight = new Map<string, Promise<void>>();
+
+/** The driver's own retries. False means the reply is delivered anyway. */
+async function checkpointGeneratedTurnOnce(input: {
+  id: string;
+  userId: string;
+  assistantContent: string;
+  metadata?: Record<string, unknown>;
+}): Promise<boolean> {
+  try {
+    await checkpointGeneratedTurn(input);
+    return true;
+  } catch (error) {
+    logger.warn(
+      { error, turnId: input.id },
+      "Generated-turn checkpoint failed; delivering the reply anyway",
+    );
+    return false;
+  }
+}
+
+/** One extra attempt after the driver, for the background persist. */
+async function checkpointGeneratedTurnWithRetry(input: {
+  id: string;
+  userId: string;
+  assistantContent: string;
+  metadata?: Record<string, unknown>;
+}): Promise<boolean> {
+  try {
+    await checkpointGeneratedTurn(input);
+    return true;
+  } catch (error) {
+    logger.warn(
+      { error, turnId: input.id },
+      "Generated-turn checkpoint failed; retrying once",
+    );
+    try {
+      await checkpointGeneratedTurn(input);
+      return true;
+    } catch (retryError) {
+      logger.warn(
+        { error: retryError, turnId: input.id },
+        "Generated-turn checkpoint failed; delivering the reply anyway",
+      );
+      return false;
+    }
+  }
+}
 
 async function retryTurnPersistence(turn: ChatTurn): Promise<void> {
   const existing = turnPersistInFlight.get(turn.id);
@@ -1472,6 +1738,7 @@ async function retryTurnPersistence(turn: ChatTurn): Promise<void> {
   const work = (async () => {
     const latest = await readChatTurn(turn.id, turn.userId);
     if (!latest || latest.status === "committed") return;
+    if (turnMetadataReplaced(latest.metadata)) return;
     try {
       await persistLedgerTurn(latest);
     } catch (error) {
@@ -1644,6 +1911,7 @@ router.get("/memories/:characterId", async (req, res) => {
         emotionalState: {},
         resonanceNotes: "",
       },
+      review: groupCompanionMemories([]),
       companion_affect: companionAffectSnapshotFromEmotionalState({}),
     });
     return;
@@ -1654,10 +1922,104 @@ router.get("/memories/:characterId", async (req, res) => {
       ...memory,
       facts: normalizeMemoryFacts(memory.facts),
     },
+    review: groupCompanionMemories(memory.facts),
     companion_affect: companionAffectSnapshotFromEmotionalState(
       memory.emotionalState as Record<string, unknown>,
     ),
   });
+});
+
+async function changeCompanionMemory(
+  req: Request,
+  res: Response,
+  action: "edit" | "delete",
+) {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+
+  const characterId = String(req.params.characterId || "").trim();
+  const factId = String(req.params.factId || "").trim();
+  const text = action === "edit" ? (req.body as { text?: unknown } | undefined)?.text : undefined;
+  const result = await applyCompanionMemoryChange({
+    userId,
+    characterId,
+    factId,
+    action,
+    text,
+  });
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error, code: result.code });
+    return;
+  }
+  if (result.changed && action === "edit") {
+    const job = buildMemoryReembedJob({
+      userId,
+      characterId,
+      factId: result.focusFactId,
+    });
+    if (job) {
+      try {
+        await deferLocalLlmJob(job);
+      } catch {
+        // The corrected sentence is already stored. Search can catch up later.
+      }
+    }
+  }
+  res.json({ review: result.review, changed: result.changed });
+}
+
+router.patch("/memories/:characterId/facts/:factId", async (req, res) => {
+  await changeCompanionMemory(req, res, "edit");
+});
+
+router.delete("/memories/:characterId/facts/:factId", async (req, res) => {
+  await changeCompanionMemory(req, res, "delete");
+});
+
+/**
+ * Seed a newly created companion's starter memories (backstory + first facts)
+ * into companion_memories and one memory_events milestone. Idempotent.
+ */
+router.post("/memories/:characterId/seed", async (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const characterId = String(req.params.characterId || "").trim();
+  const body = (req.body || {}) as { character?: Record<string, unknown> };
+  const character = body.character && typeof body.character === "object" ? body.character : {};
+  if (!characterId || characterId.length > 200) {
+    res.status(400).json({ error: "characterId is required", code: "character_required" });
+    return;
+  }
+  try {
+    const { added } = await seedStarterMemories({ userId, character: { ...character, id: characterId } });
+    res.json({ added });
+  } catch (err) {
+    res.status(503).json({ error: "Starter memories could not be saved yet.", code: "starter_seed_failed" });
+  }
+});
+
+/** Accept / reject / edit a protected identity proposal (accept + edit append an identity core version). */
+router.post("/memories/:characterId/proposals/:factId", async (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const body = (req.body || {}) as { action?: unknown; text?: unknown };
+  const action = body.action;
+  if (action !== "accept" && action !== "reject" && action !== "edit") {
+    res.status(400).json({ error: "action must be accept, reject or edit", code: "proposal_action_invalid" });
+    return;
+  }
+  const result = await applyIdentityProposal({
+    userId,
+    characterId: String(req.params.characterId || ""),
+    factId: String(req.params.factId || ""),
+    action,
+    text: body.text,
+  });
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error, code: result.code });
+    return;
+  }
+  res.json({ review: result.review, changed: result.changed, identity_version: result.identity_version ?? null });
 });
 
 function toSceneMindCharacters(characters: MsgData[]): SceneMindCharacter[] {
@@ -1674,10 +2036,14 @@ function toSceneMindCharacters(characters: MsgData[]): SceneMindCharacter[] {
 async function runSceneMindDirector(prompt: string): Promise<string | null> {
   try {
     const routed = routeModel("who speaks next", { deepMode: false });
-    const result = await createChatCompletionWithFailover({
+    const background = await acquireLocalLlmBackground("scene-mind", { job: "scene-mind" });
+    if (!background) return null;
+    let result;
+    try {
+    result = await createChatCompletionWithFailover({
       tier: "light",
       model: routed.model,
-      maxTokens: 32,
+      maxTokens: background.maxTokens(32),
       temperature: 0.4,
       messages: [
         {
@@ -1687,7 +2053,12 @@ async function runSceneMindDirector(prompt: string): Promise<string | null> {
         },
         { role: "user", content: prompt },
       ],
+      signal: background.signal,
+      localOnly: true,
     });
+    } finally {
+      await background.release();
+    }
     const name = String(result.content || "")
       .trim()
       .split(/\n/)[0]
@@ -1838,12 +2209,13 @@ function turnStatusPayload(turn: ChatTurn) {
     last_error: turn.lastError,
     committed_at: turn.committedAt,
     user_content: turn.userContent,
-    assistant_content: turn.assistantContent || "",
+    assistant_content: turnMetadataReplaced(metadata) ? "" : turn.assistantContent || "",
     created_at: turn.createdAt,
     assistant_message_id: turn.assistantMessageId,
     user_message_id: turn.userMessageId,
     companion_affect: metadata.companion_affect ?? null,
     active_character_name: metadata.active_character_name ?? null,
+    ...(isCutOffReply(metadata) ? { reply_interrupted: true, cut_off: true } : {}),
   };
 }
 
@@ -1877,6 +2249,14 @@ router.post("/turns/:turnId/commit", async (req, res) => {
     res.status(404).json({ error: "Turn not found" });
     return;
   }
+  if (turnMetadataReplaced(turn.metadata)) {
+    res.status(409).json({
+      error: "Turn was replaced",
+      turn_id: turn.id,
+      persistence_status: turn.status,
+    });
+    return;
+  }
   if (!turn.assistantContent.trim()) {
     res.status(409).json({ error: "Turn generation has not completed" });
     return;
@@ -1884,19 +2264,25 @@ router.post("/turns/:turnId/commit", async (req, res) => {
   if (turn.status !== "committed") {
     // Client persist already wrote message rows. Still record companion
     // memory, crossover shared_memory, and relationship post-process —
-    // those only ran on the unused server-persist path.
-    try {
-      await recordTurnContinuity(turn);
-    } catch (error) {
-      logger.warn({ error, turnId: turn.id }, "Client commit continuity write failed");
+    // those only ran on the unused server-persist path. Retry and edit
+    // already counted mood and memory on the original turn.
+    const skipAffect = turnSkipsAffect(asObject(turn.metadata));
+    if (!skipAffect) {
+      try {
+        await recordTurnContinuity(turn);
+      } catch (error) {
+        logger.warn({ error, turnId: turn.id }, "Client commit continuity write failed");
+      }
     }
     await markTurnCommitted(turn.id, userId);
-    void applyRelationshipPostProcessFromTurn(turn).catch((postProcessError) => {
-      logger.warn(
-        { postProcessError, turnId: turn.id, sessionId: turn.sessionId },
-        "Chat relationship/evolution post-processing failed",
-      );
-    });
+    if (!skipAffect) {
+      void applyRelationshipPostProcessFromTurn(turn).catch((postProcessError) => {
+        logger.warn(
+          { postProcessError, turnId: turn.id, sessionId: turn.sessionId },
+          "Chat relationship/evolution post-processing failed",
+        );
+      });
+    }
   }
   res.json({ turn_id: turn.id, persistence_status: "committed" });
 });
@@ -1907,6 +2293,14 @@ router.post("/turns/:turnId/retry", async (req, res) => {
   const turn = await readChatTurn(req.params.turnId, userId);
   if (!turn) {
     res.status(404).json({ error: "Turn not found" });
+    return;
+  }
+  if (turnMetadataReplaced(turn.metadata)) {
+    res.status(409).json({
+      error: "Turn was replaced",
+      turn_id: turn.id,
+      persistence_status: turn.status,
+    });
     return;
   }
   if (turn.status === "committed") {
@@ -1950,6 +2344,9 @@ router.post("/messages", async (req, res) => {
     own_model_reply?: string;
     own_model_version?: number;
     persist?: boolean;
+    /** "retry" keeps his line and replaces her reply. "edit" sends new wording once. */
+    reply_action?: string;
+    skip_affect?: boolean;
     turn_id?: string;
     idempotency_key?: string;
     persistence_owner?: PersistenceOwner;
@@ -1962,8 +2359,32 @@ router.post("/messages", async (req, res) => {
     return;
   }
 
-  const session = await loadStoreSession(userId, sessionId);
+  const sessionLoadTelemetry = new ChatPipelineTelemetry({
+    turnId: normalizeTurnId(body.turn_id || body.idempotency_key),
+    sessionId,
+    mode: body.mode || "solo",
+  });
+  let session: Awaited<ReturnType<typeof loadStoreSession>> | undefined;
+  try {
+    session = await loadStoreSession(userId, sessionId);
+  } catch (err) {
+    logger.error({ err }, "Chat message stream failed");
+    sessionLoadTelemetry.report("failed", {
+      error_class: chatErrorClass(err),
+      error_code: chatErrorCode(err),
+    });
+    if (!res.headersSent) {
+      res.status(503).json({ error: streamErrorMessage(err) });
+    }
+    return;
+  }
   if (!session) {
+    // A missing session is a client 404, not a pipeline failure. Keep the
+    // event so the exit is visible without counting it as a failed turn.
+    sessionLoadTelemetry.report("completed", {
+      error_class: "SessionNotFound",
+      error_code: "session_not_found",
+    });
     res.status(404).json({ error: "Session not found" });
     return;
   }
@@ -1981,22 +2402,42 @@ router.post("/messages", async (req, res) => {
     ...new Set((requestedIds.length ? requestedIds : sessionCharacterIds).filter(Boolean)),
   ];
   const mode = body.mode || String(sessionData.mode || "solo");
-  const content = String(body.content ?? "");
+  const turnContent = chatTurnContent(body);
+  if (turnContent.error) {
+    res.status(400).json({ error: turnContent.error });
+    return;
+  }
+  const content = turnContent.content;
+  const replyAction = replyActionOf(body.reply_action ?? body.metadata?.reply_action);
+  const skipAffect =
+    replyAction != null || body.skip_affect === true || body.metadata?.skip_affect === true;
   let turnId = normalizeTurnId(body.turn_id || body.idempotency_key);
   const persistenceOwner: PersistenceOwner =
     body.persistence_owner === "client" || body.persist === false
       ? "client"
       : "server";
   const turnMetadata = {
-    ...(body.metadata ?? {}),
+    ...clientTurnMetadata(body.metadata),
     mode,
     character_ids: characterIds,
+    ...(replyAction ? { reply_action: replyAction, skip_affect: true } : {}),
+    ...(skipAffect ? { skip_affect: true } : {}),
   };
   const telemetry = new ChatPipelineTelemetry({
     turnId,
     sessionId,
     mode,
+    requestStartedAtMs: requestStartedAt,
   });
+  let pipelineClosed = false;
+  const closePipeline = (
+    outcome: "completed" | "failed",
+    details: Record<string, unknown> = {},
+  ) => {
+    if (pipelineClosed) return;
+    pipelineClosed = true;
+    telemetry.report(outcome, details);
+  };
   let flight = reserveChatTurnFlight(turnId, content);
   if (flight.mismatched) {
     turnId = normalizeTurnId("");
@@ -2007,15 +2448,28 @@ router.post("/messages", async (req, res) => {
     res.on("close", () => {
       if (joinerWatch.left()) flight.releaseWaiter();
     });
+    let joined: { ok: boolean; error?: unknown } = { ok: false };
     try {
-      await writeJoinedTurn(res, flight.result);
+      joined = await writeJoinedTurn(res, flight.result);
     } finally {
       flight.releaseWaiter();
       joinerWatch.cancel();
     }
+    closePipeline(joined.ok ? "completed" : "failed", {
+      joined: true,
+      ...(joined.ok
+        ? {}
+        : {
+            error_class: chatErrorClass(joined.error),
+            error_code: chatErrorCode(joined.error),
+          }),
+    });
     return;
   }
-  let turnStart = await beginChatTurn({
+  let turnStart!: Awaited<ReturnType<typeof beginChatTurn>>;
+  let adoptedSse: ReturnType<typeof openChatSse> | null = null;
+  try {
+  turnStart = await beginChatTurn({
     id: turnId,
     sessionId,
     userId,
@@ -2024,7 +2478,6 @@ router.post("/messages", async (req, res) => {
     metadata: turnMetadata,
   });
 
-  let adoptedSse: ReturnType<typeof openChatSse> | null = null;
   const followDurableTurn = async (turn: ChatTurn): Promise<boolean> => {
     const joinerWatch = watchClientLeave(res);
     const followed = await streamDurableFollow(
@@ -2037,7 +2490,21 @@ router.post("/messages", async (req, res) => {
       }),
     );
     joinerWatch.cancel();
-    if (followed.action === "finished") return false;
+    if (followed.action === "finished") {
+      if (followed.error) {
+        closePipeline("failed", {
+          joined: true,
+          error_class: chatErrorClass(followed.error),
+          error_code: chatErrorCode(followed.error),
+        });
+      } else {
+        closePipeline("completed", {
+          joined: true,
+          replayed: Boolean(followed.replayed),
+        });
+      }
+      return false;
+    }
     turnStart = { turn: followed.turn, created: false };
     adoptedSse = followed.sse;
     turnId = followed.turn.id;
@@ -2050,6 +2517,7 @@ router.post("/messages", async (req, res) => {
       const outcome = replayFlightOutcome(turnStart.turn);
       flight.resolve(outcome);
       writeFlightSse(res, outcome);
+      closePipeline("completed", { replayed: true });
       return;
     }
     if (reuse === "conflict") {
@@ -2079,6 +2547,166 @@ router.post("/messages", async (req, res) => {
       if (!handedOff) return;
     }
   }
+  } catch (err) {
+    logger.error({ err }, "Chat message stream failed");
+    try {
+      flight.fail(err);
+    } catch {
+      // The flight was already settled.
+    }
+    closePipeline("failed", {
+      error_class: chatErrorClass(err),
+      error_code: chatErrorCode(err),
+    });
+    if (!res.headersSent) {
+      res.status(503).json({ error: streamErrorMessage(err) });
+    } else {
+      writeSse(res, { error: streamErrorMessage(err) });
+      try {
+        if (!res.writableEnded) res.end();
+      } catch {
+        // The browser already left.
+      }
+    }
+    return;
+  }
+
+  // A second message in this conversation must not queue another generate
+  // behind the one already on the single-CPU host. Same turn id still joins
+  // above. This only rejects a newer turn while an older one is pending.
+  // The reply this send is replacing does not count: a hung generate must
+  // not block the retry that retires it. Slot priority is unchanged.
+  const emptyDiscardedReply = {
+    turnId: "",
+    turnIds: [] as string[],
+    messageIds: replacedMessageIdsOf(body.metadata),
+    fromMessageId: replacedFromMessageIdOf(body.metadata),
+    fromSeq: null as number | null,
+  };
+  let discardedReply = emptyDiscardedReply;
+  const wantsReplace = Boolean(replyAction);
+  const failReplacement = async (error: unknown) => {
+    logger.warn({ error, turnId: turnStart.turn.id }, "Could not discard the replaced companion reply");
+    const retireError = new Error("Could not replace the previous reply");
+    flight.fail(retireError);
+    try {
+      await markTurnFailed(turnStart.turn.id, userId, retireError);
+    } catch (markErr) {
+      logger.warn({ err: markErr, turnId: turnStart.turn.id }, "Failed to mark replace failure");
+    }
+    if (!res.headersSent) {
+      res.status(503).json({
+        error: "Could not replace the previous reply. Try again.",
+        code: "reply_replace_failed",
+      });
+    }
+  };
+  if (replyAction) {
+    try {
+      discardedReply = await inspectReplacedReply({
+        userId,
+        sessionId,
+        replacingTurnId: turnStart.turn.id,
+        replyAction,
+        userContent: content,
+        replacedTurnId: replacedTurnIdOf(body.metadata),
+        replacedTurnIds: replacedTurnIdsOf(body.metadata),
+        messageIds: emptyDiscardedReply.messageIds,
+        fromMessageId: emptyDiscardedReply.fromMessageId,
+      });
+    } catch (error) {
+      if (wantsReplace) {
+        await failReplacement(error);
+        return;
+      }
+      logger.warn({ error, turnId: turnStart.turn.id }, "Could not resolve the reply being replaced");
+    }
+  }
+  let olderPending = false;
+  try {
+    olderPending = await sessionHasOlderPendingChatTurn(
+      userId,
+      sessionId,
+      turnStart.turn.id,
+      turnStart.turn.createdAt,
+      new Date(),
+      discardedReply.turnIds,
+    );
+  } catch (err) {
+    logger.error({ err }, "Chat message stream failed");
+    try {
+      flight.fail(err);
+    } catch {
+      // The flight was already settled.
+    }
+    closePipeline("failed", {
+      error_class: chatErrorClass(err),
+      error_code: chatErrorCode(err),
+    });
+    if (!res.headersSent) {
+      res.status(503).json({ error: streamErrorMessage(err) });
+    } else {
+      writeSse(res, { error: streamErrorMessage(err) });
+      // A durable follow may already have opened the SSE heartbeat.
+      // That assignment sits in a closure, so control-flow still sees null.
+      const durableSse = adoptedSse as ReturnType<typeof openChatSse> | null;
+      durableSse?.stop();
+      try {
+        if (!res.writableEnded) res.end();
+      } catch {
+        // The browser already left.
+      }
+    }
+    return;
+  }
+  if (olderPending) {
+    const busyError = new Error(CONVERSATION_BUSY_MESSAGE);
+    flight.fail(busyError);
+    try {
+      await markTurnFailed(turnStart.turn.id, userId, busyError);
+    } catch (markErr) {
+      logger.warn({ err: markErr, turnId: turnStart.turn.id }, "Failed to mark busy turn");
+    }
+    if (!res.headersSent) {
+      res.status(409).json({
+        error: CONVERSATION_BUSY_MESSAGE,
+        code: CONVERSATION_BUSY_CODE,
+      });
+    }
+    closePipeline("failed", {
+      error_class: "Error",
+      error_code: CONVERSATION_BUSY_CODE,
+    });
+    return;
+  }
+
+  if (
+    replyAction &&
+    (discardedReply.turnIds.length > 0 ||
+      discardedReply.messageIds.length > 0 ||
+      discardedReply.fromMessageId)
+  ) {
+    try {
+      discardedReply = await discardReplacedCompanionReply(
+        {
+          userId,
+          sessionId,
+          replacingTurnId: turnStart.turn.id,
+          replyAction,
+          userContent: content,
+          replacedTurnId: discardedReply.turnId || replacedTurnIdOf(body.metadata),
+          replacedTurnIds: replacedTurnIdsOf(body.metadata),
+          messageIds: discardedReply.messageIds,
+          fromMessageId: discardedReply.fromMessageId,
+          characterIds,
+        },
+        { plan: discardedReply },
+      );
+    } catch (error) {
+      await failReplacement(error);
+      return;
+    }
+  }
 
   // First SSE byte / heartbeat before memories, embeddings, weather, RAG, or
   // prompt compose. User-perceived TTFT used to include all of that work.
@@ -2087,13 +2715,32 @@ router.post("/messages", async (req, res) => {
   let clientLeft: () => boolean = () => false;
   const clientWatch = watchClientLeave(res);
   clientLeft = clientWatch.left;
+  // The turn this request owns. A retry marks it replaced; the next heartbeat
+  // aborts this generate so the slot is released. Slot priority is unchanged.
+  const replacedController = new AbortController();
   const leaseHeartbeat = setInterval(() => {
-    void renewChatTurnLease(turnId, userId).catch(() => {});
+    void (async () => {
+      try {
+        await renewChatTurnLease(turnId, userId);
+      } catch {
+        // The next tick retries. A dropped renewal is not a failed reply.
+      }
+      try {
+        const latest = await readChatTurn(turnId, userId);
+        if (latest && turnMetadataReplaced(latest.metadata)) replacedController.abort();
+      } catch {
+        // A missed check waits for the next tick.
+      }
+    })();
   }, 10_000);
   leaseHeartbeat.unref?.();
   hintLocalLlmWarm();
   let streamSucceeded = false;
   let fullResponse = "";
+  // Checkpoint metadata for a late persist retry if the first write timed out.
+  let pipelineMetadata: Record<string, unknown> = turnMetadata;
+  // True when the saved reply is a trimmed partial from a dropped stream.
+  let replyCutOff = false;
   let releaseBackground = () => {};
   const backgroundDone = new Promise<void>((resolve) => {
     releaseBackground = resolve;
@@ -2111,9 +2758,22 @@ router.post("/messages", async (req, res) => {
   let synchroState: SynchroState | null = null;
   let companionAffect: CompanionAffect | null = null;
   let activeCharacterId: string | null = null;
+  // Set once the prompt is built; read by the post-stream background block.
+  let mindTurn: {
+    profile: MindProfile;
+    userName?: string;
+    companionName?: string;
+    factScope: FactScope;
+  } | null = null;
+  let restingCharacterName: string | null = null;
   let isCrossover = false;
   let preStreamPersist: Promise<void> = Promise.resolve();
   let crisisResourceCard: CrisisResourceCard | null = null;
+  // Companion photo for this turn (lib/companionPhotos): plan → job → outcome.
+  let photoPlan: PhotoPlan = { action: "none" };
+  let photoJob: Promise<PhotoOutcome> | null = null;
+  let photoDeadlineAt = 0;
+  let photoOutcome: PhotoOutcome | null = null;
   const shouldPersist = body.persist !== false;
 
   try {
@@ -2206,6 +2866,84 @@ router.post("/messages", async (req, res) => {
         [undefined, null, null] as const,
       )
     : Promise.resolve([undefined, null, null] as const);
+  // Chat mind: hosted models (Workers AI / OpenRouter) get a prompt sized
+  // for their context window, durable user facts, a rolling summary, and
+  // tuned sampling. Null on the self-hosted path (legacy packing).
+  const mindProfile = activeMindProfile();
+  const recentMessagesPromise = readRecentStoreMessages(
+    userId,
+    sessionId,
+    mindProfile
+      ? Math.max(chatContextMessageLimit(), mindProfile.historyExchanges * 2 + 2)
+      : chatContextMessageLimit(),
+    { skipMigrate: Boolean(sessionData.messages_migrated) },
+  );
+  // Persistent memory core (identity anchor + ranked long-term memories).
+  // Best-effort with its own 1.5s ceiling; never blocks the reply.
+  const memoryCorePromise =
+    hintedCharId && isMemoryCoreEnabled() && mindProfile
+      ? optionalChatContext(
+          "chat_mind",
+          async () => {
+            const historyWait = new Promise<MsgData[]>((resolve) => setTimeout(() => resolve([]), 250));
+            const [[character], history] = await Promise.all([
+              loadCharacters(userId, [hintedCharId]),
+              Promise.race([recentMessagesPromise.catch(() => [] as MsgData[]), historyWait]),
+            ]);
+            return buildMindKnowledge({
+              userId,
+              character: character || { id: hintedCharId },
+              sessionId,
+              query: content,
+              profile: mindProfile,
+              historyTexts: history.map((m) => String(m.content ?? "")).filter(Boolean),
+            });
+          },
+          "",
+        )
+      : hintedCharId && isMemoryCoreEnabled()
+      ? optionalChatContext(
+          "memory_core",
+          async () => {
+            const [character] = await loadCharacters(userId, [hintedCharId]);
+            return buildMemoryCoreContext({
+              userId,
+              character: character || { id: hintedCharId },
+              query: content,
+              sessionId,
+            });
+          },
+          "",
+        )
+      : Promise.resolve("");
+  // Steward corrections: relevant past thumbs-down lessons for this companion,
+  // plus the re-render instruction when this retry carries a fresh correction.
+  const correctionsPromise = hintedCharId
+    ? optionalChatContext(
+        "steward_corrections",
+        () =>
+          buildCorrectionsContext({
+            userId,
+            characterId: hintedCharId,
+            query: content,
+            current: body.metadata?.reply_action === "retry" ? body.metadata?.correction : null,
+          }),
+        "",
+      )
+    : Promise.resolve("");
+  // Web search (feature/web-search): transient tool context for this turn only,
+  // rebuilt from the server's own filtered audit row (metadata.web_search_audit_id).
+  const webSearchPromise = body.metadata?.web_search_audit_id
+    ? optionalChatContext(
+        "web_search",
+        () => searchContextForTurn(userId, hintedCharId, body.metadata?.web_search_audit_id),
+        "",
+      )
+    : Promise.resolve("");
+  // Already parallel. Wall time is the slowest branch. On the Worker a
+  // required read (characters or recent messages) that hits the 5s query
+  // cap is tried twice, so one stuck query is about 10s — not the sum of
+  // every lookup. Optional branches fall back in optionalChatContext.
   const [
     characters,
     memories,
@@ -2215,6 +2953,7 @@ router.post("/messages", async (req, res) => {
     worldKnowledgeResult,
     repositoryKnowledge,
     pdfContext,
+    memoryCoreContext,
   ] = await telemetry.measure(
     "context_load_ms",
     Promise.all([
@@ -2222,9 +2961,7 @@ router.post("/messages", async (req, res) => {
       // no longer includes either; a failed read must not become an empty chat.
       loadCharacters(userId, characterIds),
       memoriesPromise,
-      readRecentStoreMessages(userId, sessionId, 24, {
-        skipMigrate: Boolean(sessionData.messages_migrated),
-      }),
+      recentMessagesPromise,
       memoriesPromise.then((rows) => {
         const adapted = adaptMemories(rows);
         // Local companion_memories + stored vectors only. Remote supermemory
@@ -2235,9 +2972,40 @@ router.post("/messages", async (req, res) => {
       worldKnowledgePromise,
       repositoryKnowledgePromise,
       pdfContextPromise,
+      memoryCorePromise,
     ]),
   );
   const worldKnowledge = worldKnowledgeResult.prompt;
+  const webSearchContext = await webSearchPromise;
+  const promptDropsReplaced =
+    discardedReply.turnIds.length > 0 ||
+    discardedReply.messageIds.length > 0 ||
+    discardedReply.fromSeq != null;
+  const promptRecentMessages = promptDropsReplaced
+    ? recentMessages.filter((message) => !shouldDiscardStoredMessage(message, discardedReply))
+    : recentMessages;
+  // What this turn actually sent the model, plus the ceiling the optional
+  // branches ran under: pair these with context_load_ms and first_word_ms to
+  // show a context-budget change really shortened the wait.
+  telemetry.note("prompt_messages", promptRecentMessages.length);
+  telemetry.note("optional_context_budget_ms", optionalChatContextTimeoutMs());
+  const promptMemories =
+    discardedReply.turnIds.length > 0
+      ? adaptedMemories.map((memory) => ({
+          ...memory,
+          facts: factsWithoutTurns(
+            Array.isArray(memory.facts) ? memory.facts : [],
+            discardedReply.turnIds,
+          ) as CompanionMemoryRecord["facts"],
+        }))
+      : adaptedMemories;
+  const promptSharedMemory =
+    discardedReply.turnIds.length > 0
+      ? factsWithoutTurns(
+          Array.isArray(sessionData.shared_memory) ? sessionData.shared_memory : [],
+          discardedReply.turnIds,
+        )
+      : sessionData.shared_memory;
   
   const requestedAssistantId = body.assistant_character_id
     ? String(body.assistant_character_id)
@@ -2280,7 +3048,7 @@ router.post("/messages", async (req, res) => {
   if (needsSceneMind) {
     sceneMindDecision = await selectNextSpeaker({
       characters: toSceneMindCharacters(characters),
-      recentMessages,
+      recentMessages: promptRecentMessages,
       userMessage: content,
       forceCharacterId: forcedSpeakerId,
       eligibleCharacterIds: body.eligible_character_ids?.length
@@ -2316,6 +3084,7 @@ router.post("/messages", async (req, res) => {
       requestedAssistantName || sceneMindDecision?.characterName || "",
     loadedName: activeChar?.name ?? null,
   });
+  restingCharacterName = activeCharacterName || null;
   const [activeEvolutionRow, activeRelationshipState, activeArcState] =
     activeCharacterId && hintedCharId && activeCharacterId === hintedCharId
       ? hintedState
@@ -2366,10 +3135,19 @@ router.post("/messages", async (req, res) => {
     sessionData.companion_mode === "therapy" ||
     body.metadata?.therapy_mode === true ||
     mode === "therapy";
-  const adultActive =
-    !therapyActive &&
-    (profileSettings.adult_content_enabled === true ||
-      body.metadata?.adult_mode === true);
+  // Server-enforced adult gate: needs a stored age attestation, and is
+  // always off in therapy and crossover scenes (P1-11). The client's
+  // adult_mode flag is only a hint. See lib/safety/adultGate.ts.
+  const adultRequested =
+    profileSettings.adult_content_enabled === true || body.metadata?.adult_mode === true;
+  const adultDecision = adultGate({
+    therapy: therapyActive,
+    crossover: isCrossover || body.metadata?.is_crossover === true,
+    ageAttested: adultRequested && !therapyActive ? await userIsAdultAttested(userId) : false,
+    settingEnabled: profileSettings.adult_content_enabled === true,
+    requested: body.metadata?.adult_mode === true,
+  });
+  const adultActive = adultDecision.adult;
   const modePolicy = resolveChatModePolicy({
     requestedMode: mode,
     therapy: therapyActive,
@@ -2379,7 +3157,7 @@ router.post("/messages", async (req, res) => {
   });
   const therapyAssessment =
     modePolicy.name === "therapy"
-      ? assessTherapySafety({ content, recentMessages })
+      ? assessTherapySafety({ content, recentMessages: promptRecentMessages })
       : null;
   crisisResourceCard = detectCompanionCrisis(content)
     ? companionCrisisResourceCard()
@@ -2388,6 +3166,46 @@ router.post("/messages", async (req, res) => {
     noteCompanionCrisisResource({ sessionId, turnId, mode });
     writeSse(res, { crisis_resource: crisisResourceCard });
   }
+
+  // Companion photos: "send me a selfie" → a generated photo on this reply.
+  // The small intent call only runs when the line could be a photo request;
+  // it overlaps the context work below.
+  const photoCharacter: MsgData | null = activeCharacterId
+    ? characters.find((c) => String(c.id || "") === activeCharacterId) ?? null
+    : null;
+  const photoCompanionName = String(activeCharacterName || activeChar?.name || "Companion");
+  const startPhotoJob = (plan: Extract<PhotoPlan, { action: "send" }>) => {
+    if (!activeCharacterId || !photoCharacter) return;
+    photoDeadlineAt = Date.now() + companionPhotoConfig().timeoutMs;
+    photoJob = startCompanionPhoto({
+      plan,
+      userId,
+      characterId: activeCharacterId,
+      companionName: photoCompanionName,
+      character: photoCharacter,
+      turnId,
+    });
+    writeSse(res, { status: "photo", photo: { state: "pending" } });
+  };
+  const photoPlanArgs = {
+    userId,
+    character: photoCharacter,
+    companionName: photoCompanionName,
+    userMessage: String(content || ""),
+    recent: promptRecentMessages.slice(-8).map((m) => ({
+      role: String(m.role || ""),
+      content: String(m.content || ""),
+    })),
+    mode,
+    isContinue: Boolean(body.is_continue),
+    adultActive,
+    therapy: therapyActive,
+    crisis: Boolean(crisisResourceCard),
+  };
+  const photoPlanPromise: Promise<PhotoPlan> = planCompanionPhoto(photoPlanArgs).catch((error) => {
+    logger.warn({ error, turnId }, "Companion photo planning failed");
+    return { action: "none" } as PhotoPlan;
+  });
 
   intimacyProfile = null;
   intimacyScene = null;
@@ -2417,16 +3235,59 @@ router.post("/messages", async (req, res) => {
     worldKnowledgeResult.profile,
   );
 
-  const messages = telemetry.measureSync("prompt_build_ms", () =>
-    composeCompanionChatMessages({
+  const photos = photosFromMetadata(body.metadata);
+  const photoCount = Math.max(photoCountFromMetadata(body.metadata), photos.length);
+  const photoNote = sharedPhotoPromptNote({
+    count: photoCount,
+    visionSummary: photoCount
+      ? await describeSharedPhotos({ count: photoCount, photos })
+      : null,
+  });
+  const resolvedCorrections = await correctionsPromise;
+  photoPlan = await photoPlanPromise;
+  if (photoPlan.action === "send") startPhotoJob(photoPlan);
+  const companionPhotoNote = photoDirective(photoPlan);
+  // Mind knowledge was recalled for the hinted companion; a different
+  // speaker this turn falls back to no long-term block rather than borrow it.
+  const mindKnowledge =
+    mindProfile && (!activeCharacterId || activeCharacterId === hintedCharId) ? memoryCoreContext : "";
+  // Hosted replies always get full output room (`hostedReplyMaxTokens`), so
+  // Settings → Short is a prompt instruction there instead of a 90-token cut.
+  const mindTurnNote = mindProfile
+    ? [
+        antiRepetitionNote(recentAssistantReplies(promptRecentMessages)),
+        replyLengthNote(String(body.metadata?.response_length ?? profileSettings.ai_response_length ?? "")),
+        companionPhotoNote,
+      ]
+        .filter(Boolean)
+        .join(" ")
+    : "";
+  const messages = telemetry.measureSync("prompt_build_ms", () => {
+    const composed = composeCompanionChatMessages({
+      ...(mindProfile
+        ? {
+            mind: {
+              promptTokens: mindProfile.promptTokens,
+              historyExchanges: mindProfile.historyExchanges,
+              minHistoryExchanges: mindProfile.minHistoryExchanges,
+              historyMessageChars: mindProfile.historyMessageChars,
+              memoryTopK: mindProfile.memoryTopK,
+            },
+            mindTurnNote,
+          }
+        : {}),
       clientContext: body.system_prompt,
       repositoryKnowledge,
-      pdfContext,
+      pdfContext: [pdfContext, webSearchContext].filter(Boolean).join("\n\n") || pdfContext,
+      memoryCoreContext: [mindProfile ? mindKnowledge : memoryCoreContext, resolvedCorrections]
+        .filter(Boolean)
+        .join("\n\n"),
+      photoNote: [photoNote, mindProfile ? "" : companionPhotoNote].filter(Boolean).join("\n\n"),
       characters: adaptedChars,
       activeCharacter: activeChar,
-      memories: adaptedMemories,
-      recentMessages,
-      sharedMemory: sessionData.shared_memory,
+      memories: promptMemories,
+      recentMessages: promptRecentMessages,
+      sharedMemory: promptSharedMemory,
       mode,
       content,
       isCrossover,
@@ -2437,6 +3298,7 @@ router.post("/messages", async (req, res) => {
       arcState: activeArcState,
       worldKnowledge,
       modePolicy,
+      uncensoredMode: creativeFreedomEnabled(profileSettings, therapyActive),
       therapyAssessment,
       crisisResource: crisisResourceForCountry(
         worldKnowledgeResult.countryCode,
@@ -2449,12 +3311,23 @@ router.post("/messages", async (req, res) => {
       intimacyTurnResult: intimacyResult,
       operatorModel,
       userDisplayName,
-    }),
-  );
+    });
+    return mindProfile ? shapeMessagesForModel(composed, mindProfile) : composed;
+  });
+  if (mindProfile) {
+    mindTurn = {
+      profile: mindProfile,
+      userName: userDisplayName || undefined,
+      companionName: activeChar?.name ? String(activeChar.name) : undefined,
+      // Facts are shared across this user's companions, except what was
+      // said in therapy or adult turns, which stays with this companion.
+      factScope: factScopeForTurn({ mode, therapy: therapyActive, adult: adultActive }),
+    };
+  }
 
   const routed = routeModel(content, {
     deepMode: Boolean(body.deep_mode),
-    conversationDepth: recentMessages.length,
+    conversationDepth: promptRecentMessages.length,
   });
   const requestedLength = String(
     body.metadata?.response_length ?? profileSettings.ai_response_length ?? "",
@@ -2526,10 +3399,18 @@ router.post("/messages", async (req, res) => {
   usedTier = routed.tier;
 
   let producingTokens = false;
-  const emitDelta = (delta: string) => {
-    if (delta) producingTokens = true;
+  // The local host holds the first ~40 characters for the repeat / role-swap
+  // checks. Flip this on the first upstream chunk, not when that text is
+  // released, so a disconnect in the hold window is still "generating".
+  const noteUpstreamChunk = () => {
+    producingTokens = true;
     telemetry.markFirstToken();
+  };
+  const emitDelta = (delta: string) => {
+    if (delta) noteUpstreamChunk();
+    else telemetry.markFirstToken();
     sse.markStreaming();
+    telemetry.markVisibleDelta(delta);
     writeSse(res, { content: delta });
   };
   const emitReasoning = () => writeSse(res, { status: "thinking" });
@@ -2537,6 +3418,7 @@ router.post("/messages", async (req, res) => {
   const generationBudgetMs = llmChatMessagesOpenTimeoutMs({ freeTierCascade });
   const consumeOpts = {
     onDelta: emitDelta,
+    onActivity: noteUpstreamChunk,
     onReasoning: emitReasoning,
     firstChunkMs: llmChatMessagesFirstChunkMs({ freeTierCascade }),
     totalMs: llmChatMessagesStreamTotalMs({ freeTierCascade }),
@@ -2556,7 +3438,7 @@ router.post("/messages", async (req, res) => {
       onWaiting: (position) => {
         writeSse(res, { status: "waiting", queue_position: position });
       },
-      shouldStop: () => clientLeft(),
+      shouldStop: () => clientLeft() || replacedController.signal.aborted,
     });
     releaseLocalSlot = grant.release;
     sse.resumeProgress();
@@ -2576,8 +3458,19 @@ router.post("/messages", async (req, res) => {
         return chatTurnHasRemoteWaiter(turnId, userId);
       },
     });
-    const generateSignal = combineAbortSignals(open.signal, abandoned.signal);
     try {
+      const latestSelf = await readChatTurn(turnId, userId);
+      if (latestSelf && turnMetadataReplaced(latestSelf.metadata)) replacedController.abort();
+    } catch {
+      // Generation still uses the slot. The heartbeat retries the check.
+    }
+    const generateSignal = combineAbortSignals(
+      open.signal,
+      abandoned.signal,
+      replacedController.signal,
+    );
+    try {
+    let streamInterrupted = false;
     const personaParts = [
       activeChar?.personality,
       activeChar?.backstory,
@@ -2586,7 +3479,7 @@ router.post("/messages", async (req, res) => {
     // A self-harm turn keeps the generated reply. Swapping it for the
     // in-character dodge would drop the care the model just offered.
     // The crisis card and the care note are unchanged; this only skips
-    // the stock, repeat, and fourth-wall machinery.
+    // the stock, repeat, fourth-wall, and role-swap machinery.
     const crisisTurn = Boolean(crisisResourceCard);
     const replyIsStock = (text: unknown) =>
       !crisisTurn && isStockAssistantLine(text, personaParts);
@@ -2606,7 +3499,7 @@ router.post("/messages", async (req, res) => {
       maxTokens: number,
       reminder: string,
       noteStock: boolean,
-    ): Promise<string | null> => {
+    ): Promise<{ text: string; interrupted: boolean } | null> => {
       const retryBudgetMs = repeatRetryBudgetMs(Date.now() - requestStartedAt);
       if (noteStock) noteStockAssistantLine("retry");
       const retryOpen = openStreamAbort(retryBudgetMs);
@@ -2615,9 +3508,10 @@ router.post("/messages", async (req, res) => {
           tier: routed.tier,
           model: routed.model,
           maxTokens,
+          companionReply: true,
           messages: appendFinalUserReminder(messages, reminder),
           temperature: COMPANION_CHAT_TEMPERATURE,
-          signal: combineAbortSignals(retryOpen.signal, abandoned.signal),
+          signal: combineAbortSignals(retryOpen.signal, abandoned.signal, replacedController.signal),
         });
         const retried = await consumeLlmStream(retry.stream, {
           ...consumeOpts,
@@ -2628,6 +3522,7 @@ router.post("/messages", async (req, res) => {
         });
         const retriedText = settleCappedReply(finalizeAssistantReply(retried.content), {
           timedOut: retried.timedOut,
+          interrupted: retried.interrupted,
           finishReason: retried.finishReason,
           stoppedEarly: retried.stoppedEarly,
         });
@@ -2637,14 +3532,24 @@ router.post("/messages", async (req, res) => {
         if (
           retriedText.trim() &&
           !replyIsStock(retriedText) &&
-          !replyBreaksFourthWall(retriedText)
+          !replyBreaksFourthWall(retriedText) &&
+          !isRoleSwapReply(retriedText, activeChar?.name)
         ) {
           usedModel = retry.model;
           usedTier = retry.tier;
           usedProvider = retry.provider;
           usedBrand = retry.brand;
           failedOver = retry.failedOver;
-          return retriedText;
+          return {
+            text: retriedText,
+            interrupted:
+              interruptedStreamKeepsReply(retried) ||
+              keptPartialNeedsCutOff(
+                finalizeAssistantReply(retried.content),
+                retriedText,
+                retried,
+              ),
+          };
         }
         return null;
       } catch (error) {
@@ -2654,10 +3559,15 @@ router.post("/messages", async (req, res) => {
         retryOpen.cancel();
       }
     };
-    const guardReminder = (stock: boolean, fourthWall: boolean): string =>
+    const guardReminder = (
+      stock: boolean,
+      fourthWall: boolean,
+      roleSwap: boolean,
+    ): string =>
       [
         stock ? inCharacterRetryReminder(activeChar?.name) : "",
         fourthWall ? inWorldRetryReminder(activeChar?.name) : "",
+        roleSwap ? roleSwapRetryReminder(activeChar?.name) : "",
       ]
         .filter(Boolean)
         .join("\n");
@@ -2686,6 +3596,8 @@ router.post("/messages", async (req, res) => {
       }
       ensembleMinds = drafts.map((d) => d.label);
 
+      let ensembleSettled = "";
+      let ensemblePartial = false;
       if (drafts.length === 1) {
         // Only one mind produced anything usable — nothing to combine.
         usedModel = drafts[0]!.model;
@@ -2719,13 +3631,25 @@ router.post("/messages", async (req, res) => {
         });
         fullResponse = settleCappedReply(finalizeAssistantReply(streamed.content), {
           timedOut: streamed.timedOut,
+          interrupted: streamed.interrupted,
           finishReason: streamed.finishReason,
           stoppedEarly: streamed.stoppedEarly,
         });
+        streamInterrupted = interruptedStreamKeepsReply(streamed);
+        replyCutOff = streamInterrupted;
+        ensembleSettled = fullResponse;
+        ensemblePartial =
+          !streamInterrupted &&
+          keptPartialNeedsCutOff(
+            finalizeAssistantReply(streamed.content),
+            ensembleSettled,
+            streamed,
+          );
       }
       const ensembleStock = !crisisTurn && replyIsStock(fullResponse);
       const ensembleFourth = replyBreaksFourthWall(fullResponse) && fourthWallRetryOpen();
-      if (ensembleStock || ensembleFourth) {
+      const ensembleSwap = !crisisTurn && isRoleSwapReply(fullResponse, activeChar?.name);
+      if (!streamInterrupted && (ensembleStock || ensembleFourth || ensembleSwap)) {
         const retryBudgetMs = repeatRetryBudgetMs(Date.now() - requestStartedAt);
         let otherWorkQueued = companionTurnsOpenForUser(userId) > 1;
         if (retryBudgetMs > 0 && !generateSignal.aborted && !otherWorkQueued) {
@@ -2742,36 +3666,57 @@ router.post("/messages", async (req, res) => {
         const recovered =
           retryBudgetMs > 0 && !generateSignal.aborted && !otherWorkQueued
             ? await regenerateGuardedReply(
-                guardedRetryMaxTokens(true, ensembleFourth),
-                guardReminder(ensembleStock, ensembleFourth),
+                guardedRetryMaxTokens(true, ensembleFourth && !ensembleSwap),
+                guardReminder(ensembleStock, ensembleFourth, ensembleSwap),
                 ensembleStock,
               )
             : null;
         if (recovered) {
-          fullResponse = recovered;
-        } else if (ensembleStock) {
+          fullResponse = recovered.text;
+          replyCutOff = recovered.interrupted;
+        } else if (ensembleStock || ensembleSwap) {
           fullResponse = stockDeflection();
-          noteStockAssistantLine("deflect");
+          if (ensembleStock) noteStockAssistantLine("deflect");
         }
+      }
+      // A stall, or a token cap that shortened the text or never finished
+      // a sentence, is still a partial. Mark it only when the role-swap /
+      // stock guards left that text in place, so those replacements still run.
+      if (
+        !replyCutOff &&
+        ensemblePartial &&
+        fullResponse.trim() === ensembleSettled.trim()
+      ) {
+        replyCutOff = true;
       }
       if (fullResponse.trim()) emitDelta(fullResponse);
     } else {
       sse.setPhase("waking");
       let completion;
-      try {
-        completion = await createChatStreamWithFailover({
-          tier: routed.tier,
-          model: routed.model,
-          maxTokens: replyMaxTokens,
-          messages,
-          temperature: COMPANION_CHAT_TEMPERATURE,
-          signal: generateSignal,
-        });
-      } finally {
-        // Headers are in. The open timer must not cut a slow prefill once
-        // bytes are flowing. Disconnect grace still aborts an abandoned slot.
-        open.cancel();
-      }
+      // Chat mind: per-family sampling, and a second open on the next
+      // provider when the first stream dies before any text is shown.
+      const openMainStream = async (excludeProviders: LlmProviderId[]) => {
+        try {
+          return await createChatStreamWithFailover({
+            tier: routed.tier,
+            model: routed.model,
+            maxTokens: replyMaxTokens,
+            // Hosted providers get full reply room; the small caps are for the local model.
+            companionReply: true,
+            messages,
+            temperature: mindProfile ? mindProfile.sampling.temperature : COMPANION_CHAT_TEMPERATURE,
+            ...(mindProfile
+              ? { sampling: mindProfile.sampling, ...(excludeProviders.length ? { excludeProviders } : {}) }
+              : {}),
+            signal: generateSignal,
+          });
+        } finally {
+          // Headers are in. The open timer must not cut a slow prefill once
+          // bytes are flowing. Disconnect grace still aborts an abandoned slot.
+          open.cancel();
+        }
+      };
+      completion = await openMainStream([]);
       sse.setPhase("generating");
       usedModel = completion.model;
       usedTier = completion.tier;
@@ -2784,12 +3729,57 @@ router.post("/messages", async (req, res) => {
       // ~40 characters instead of waiting out a 200-token decode. The user
       // is not shown that text. Hosted providers still stream as they go.
       const localHost = usedProvider === "local";
-      const priorReplies = recentAssistantReplies(recentMessages);
+      const priorReplies = recentAssistantReplies(promptRecentMessages);
       let held = "";
       let flushed = false;
       let suppressFourthWall = false;
-      let cutReason: "repeat" | "stock" | null = null;
-      const streamed = await consumeLlmStream(completion.stream, {
+      let cutReason: "repeat" | "stock" | "role_swap" | null = null;
+      const personaGuard =
+        mindProfile && !localHost
+          ? createPersonaStreamGuard({ companionName: activeChar?.name, userName: userDisplayName })
+          : null;
+      let mindShown = false;
+      const streamed = personaGuard
+        ? await (async () => {
+            const firstOpen = completion;
+            const run = await consumeWithMidstreamFallback({
+              open: async (exclude) =>
+                exclude.length ? await openMainStream(exclude as LlmProviderId[]) : firstOpen,
+              consume: (opened) =>
+                consumeLlmStream(opened.stream, {
+                  ...consumeOpts,
+                  onDelta: (delta) => {
+                    // Template tokens, a "Name:" label, scaffolding lines and
+                    // a run-on into the user's turn never reach the bubble.
+                    const safe = personaGuard.push(delta);
+                    if (safe) {
+                      mindShown = true;
+                      emitDelta(safe);
+                    }
+                  },
+                  stopWhen: () => personaGuard.stopped,
+                }),
+              emittedVisible: () => mindShown,
+              hasAlternative: (excluded) => hasAlternativeProvider(excluded),
+              onFallback: (from, error) =>
+                logger.warn(
+                  { error, turnId, from },
+                  "Chat mind: stream failed before any text; reopening on the next provider",
+                ),
+            });
+            if (run.opened !== firstOpen) {
+              completion = run.opened;
+              usedModel = completion.model;
+              usedTier = completion.tier;
+              usedProvider = completion.provider;
+              usedBrand = completion.brand;
+              failedOver = true;
+            }
+            const tail = personaGuard.finish();
+            if (tail) emitDelta(tail);
+            return run.result;
+          })()
+        : await consumeLlmStream(completion.stream, {
         ...consumeOpts,
         onDelta: (delta) => {
           if (!localHost) {
@@ -2805,6 +3795,12 @@ router.post("/messages", async (req, res) => {
           held += delta;
           if (cutReason || suppressFourthWall) return;
           const visible = held.trim();
+          // Stop before the 40-character repeat window. "You are Natasha"
+          // is already the bug, and the droplet has one slot.
+          if (!crisisTurn && isRoleSwapReply(visible, activeChar?.name)) {
+            cutReason = "role_swap";
+            return;
+          }
           // Keep the whole reply. A clear narration is not shown until the
           // one short backup finishes, or until we decide to keep it.
           if (replyBreaksFourthWall(visible)) {
@@ -2829,17 +3825,37 @@ router.post("/messages", async (req, res) => {
         },
         stopWhen: () => cutReason !== null,
       });
-      // A stall, a deadline, or finish_reason "length" stops mid-word.
-      // `done.visible` repaints the bubble, so the saved and shown reply
-      // both end on a finished sentence or a closed action. No extra call.
+      // A stall, a deadline, an upstream drop, or finish_reason "length"
+      // stops mid-word. `done.visible` repaints the bubble, so the saved
+      // and shown reply both end on a finished sentence or a closed action.
+      // An interrupted reply that already has text is a finished turn: trim,
+      // persist, send done, and do not spend the extra regenerate.
+      streamInterrupted = interruptedStreamKeepsReply(streamed);
+      replyCutOff = streamInterrupted;
       fullResponse = settleCappedReply(finalizeAssistantReply(streamed.content), {
         timedOut: streamed.timedOut,
+        interrupted: streamed.interrupted,
         finishReason: streamed.finishReason,
         stoppedEarly: streamed.stoppedEarly,
       });
+      if (personaGuard) {
+        fullResponse =
+          sanitizeCompanionReply(fullResponse, {
+            companionName: activeChar?.name,
+            userName: userDisplayName,
+          }) || fullResponse;
+      }
       if (localHost && !flushed && !cutReason && held && !fullResponse) {
         fullResponse = held;
       }
+      const mainSettled = fullResponse;
+      const mainPartial =
+        !streamInterrupted &&
+        keptPartialNeedsCutOff(
+          finalizeAssistantReply(streamed.content) || held,
+          mainSettled,
+          streamed,
+        );
 
       const retryBudgetMs = repeatRetryBudgetMs(Date.now() - requestStartedAt);
       const copiedReply = crisisTurn
@@ -2848,18 +3864,29 @@ router.post("/messages", async (req, res) => {
           (cutReason === "repeat" ? matchingRepeatedReply(held, priorReplies) : null);
       const repeated =
         !crisisTurn &&
-        (Boolean(copiedReply) || isRepeatedReply(fullResponse, priorReplies));
+        (Boolean(copiedReply) ||
+          isRepeatedReply(fullResponse, priorReplies) ||
+          // Chat mind: a reply that mostly restates a recent one is a loop
+          // even when the wording shifted.
+          (Boolean(personaGuard) && echoesRecentReply(fullResponse, priorReplies.slice(-4), 0.85)));
       const stockLine =
         !crisisTurn &&
         (cutReason === "stock" || replyIsStock(fullResponse) || replyIsStock(held));
       const fourthWall =
         replyBreaksFourthWall(fullResponse) && fourthWallRetryOpen();
+      const swapped =
+        !crisisTurn &&
+        localHost &&
+        (cutReason === "role_swap" ||
+          isRoleSwapReply(fullResponse, activeChar?.name) ||
+          isRoleSwapReply(held, activeChar?.name));
       let otherWorkQueued = false;
       const wantsExtra =
-        (repeated || stockLine || fourthWall) &&
+        (repeated || stockLine || fourthWall || swapped) &&
         retryBudgetMs > 0 &&
         !generateSignal.aborted &&
-        !streamed.timedOut;
+        !streamed.timedOut &&
+        !streamInterrupted;
       if (wantsExtra) {
         otherWorkQueued = companionTurnsOpenForUser(userId) > 1;
         if (!otherWorkQueued) {
@@ -2875,10 +3902,10 @@ router.post("/messages", async (req, res) => {
         }
       }
       // One extra generation per turn, shared by the repeat retry, the
-      // stock-assistant retry, and the fourth-wall retry. Repeat wins when
-      // more than one matches: dropping the copied line is the more specific
-      // fix, and a stock or fourth-wall result still deflects below without
-      // a second generate.
+      // stock-assistant retry, the fourth-wall retry, and the role-swap
+      // retry. Repeat wins when more than one matches: dropping the copied
+      // line is the more specific fix, and a stock, fourth-wall, or
+      // role-swap result still deflects below without a second generate.
       let extraGenerationUsed = false;
       let repeatResolved = false;
       const canRegenerate = wantsExtra && !otherWorkQueued;
@@ -2887,7 +3914,7 @@ router.post("/messages", async (req, res) => {
         shouldRegenerateRepeatedReply({
           retryBudgetMs,
           aborted: generateSignal.aborted,
-          timedOut: Boolean(streamed.timedOut),
+          timedOut: Boolean(streamed.timedOut || streamInterrupted),
           repeated,
           otherWorkQueued,
         })
@@ -2910,7 +3937,7 @@ router.post("/messages", async (req, res) => {
               : replyMaxTokens,
             messages: messagesForRepeatRetry(messages, copiedReply || fullResponse),
             temperature: OLLAMA_MAX_TEMPERATURE,
-            signal: combineAbortSignals(retryOpen.signal, abandoned.signal),
+            signal: combineAbortSignals(retryOpen.signal, abandoned.signal, replacedController.signal),
           });
           const retried = await consumeLlmStream(retry.stream, {
             ...consumeOpts,
@@ -2921,14 +3948,23 @@ router.post("/messages", async (req, res) => {
           });
           const retriedText = settleCappedReply(finalizeAssistantReply(retried.content), {
             timedOut: retried.timedOut,
+            interrupted: retried.interrupted,
             finishReason: retried.finishReason,
             stoppedEarly: retried.stoppedEarly,
           });
           if (
             retriedText.trim() &&
-            !isRepeatedReply(retriedText, [fullResponse, copiedReply || ""])
+            !isRepeatedReply(retriedText, [fullResponse, copiedReply || ""]) &&
+            !isRoleSwapReply(retriedText, activeChar?.name)
           ) {
             fullResponse = retriedText;
+            replyCutOff =
+              interruptedStreamKeepsReply(retried) ||
+              keptPartialNeedsCutOff(
+                finalizeAssistantReply(retried.content),
+                retriedText,
+                retried,
+              );
             flushed = false;
             repeatResolved = true;
             usedModel = retry.model;
@@ -2943,25 +3979,30 @@ router.post("/messages", async (req, res) => {
         } finally {
           retryOpen.cancel();
         }
-      } else if (canRegenerate && (stockLine || fourthWall) && !extraGenerationUsed) {
+      } else if (
+        canRegenerate &&
+        (stockLine || fourthWall || swapped) &&
+        !extraGenerationUsed
+      ) {
         extraGenerationUsed = true;
         const recovered = await regenerateGuardedReply(
-          guardedRetryMaxTokens(localHost, fourthWall),
-          guardReminder(stockLine, fourthWall),
+          guardedRetryMaxTokens(localHost, fourthWall && !swapped),
+          guardReminder(stockLine, fourthWall, swapped),
           stockLine,
         );
         if (recovered) {
-          fullResponse = recovered;
+          fullResponse = recovered.text;
+          replyCutOff = recovered.interrupted;
           flushed = false;
         }
       }
       // A repeat stop leaves only the opening fragment. Never save or show
       // that fragment when the retry was skipped or failed. Crisis turns
       // keep whatever the model wrote.
-      if (!crisisTurn && cutReason === "repeat" && !repeatResolved) {
+      if (!replyCutOff && !crisisTurn && cutReason === "repeat" && !repeatResolved) {
         fullResponse = stockDeflection();
         flushed = false;
-      } else if (!crisisTurn) {
+      } else if (!replyCutOff && !crisisTurn) {
         const unresolvedStock =
           replyIsStock(fullResponse) ||
           (cutReason === "stock" &&
@@ -2972,6 +4013,23 @@ router.post("/messages", async (req, res) => {
           flushed = false;
           noteStockAssistantLine("deflect");
         }
+        const unresolvedSwap =
+          localHost &&
+          (isRoleSwapReply(fullResponse, activeChar?.name) ||
+            (cutReason === "role_swap" &&
+              !String(fullResponse || "").trim() &&
+              isRoleSwapReply(held, activeChar?.name)));
+        if (unresolvedSwap) {
+          fullResponse = stockDeflection();
+          flushed = false;
+        }
+      }
+      if (
+        !replyCutOff &&
+        mainPartial &&
+        fullResponse.trim() === mainSettled.trim()
+      ) {
+        replyCutOff = true;
       }
       if (localHost && !flushed && fullResponse.trim()) {
         emitDelta(fullResponse);
@@ -2989,6 +4047,7 @@ router.post("/messages", async (req, res) => {
     void releaseLocalSlot();
   }
 
+    telemetry.markReplySettled();
     // An empty completion used to look like a successful turn on the client
     // (thinking/typing cleared, no visible reply). Fail loudly instead.
     // Unclosed / think-only DeepSeek R1 output is recovered by finalizeAssistantReply.
@@ -2997,9 +4056,46 @@ router.post("/messages", async (req, res) => {
     }
 
     streamSucceeded = true;
-    const evolvedCompanion = companionAffect
-      ? evolveCompanionAffectFromCompanion(companionAffect, fullResponse)
-      : null;
+    // The companion chose to show something on her own ([IMAGE: …] tag).
+    // Same safety gate and limits as a request; the tag never reaches the bubble.
+    if (photoPlan.action === "none" && !replyCutOff) {
+      const tagIntent = photoTagIntent(fullResponse);
+      if (tagIntent) {
+        photoPlan = await planCompanionPhoto({ ...photoPlanArgs, intent: tagIntent }).catch(
+          () => ({ action: "none" }) as PhotoPlan,
+        );
+        if (photoPlan.action === "send") startPhotoJob(photoPlan);
+      }
+    }
+    if (photoPlan.action !== "none") {
+      const stripped = stripPhotoTags(fullResponse);
+      if (stripped) fullResponse = stripped;
+    }
+    if (photoJob) {
+      photoOutcome = await telemetry.measure(
+        "companion_photo_ms",
+        settleCompanionPhoto(photoJob, photoDeadlineAt),
+      );
+      if (photoOutcome.status === "failed") {
+        logger.warn({ turnId, error: photoOutcome.errorKind }, "Companion photo not sent");
+        const line = photoFailureLine(photoOutcome.errorKind, turnId);
+        const sep = fullResponse.trim() ? "\n\n" : "";
+        fullResponse = `${fullResponse.trimEnd()}${sep}${line}`;
+        writeSse(res, { content: `${sep}${line}` });
+      }
+    }
+    const photoMeta = photoMetadata(photoPlan, photoOutcome);
+    const photoAttachments =
+      photoOutcome?.status === "sent" ? [photoOutcome.attachment] : [];
+    const photoDone = photoMeta
+      ? { photo: photoMeta, ...(photoAttachments.length ? { attachments: photoAttachments } : {}) }
+      : {};
+    const evolvedCompanion =
+      skipAffect || !companionAffect
+        ? null
+        : replyCutOff
+          ? companionAffect
+          : evolveCompanionAffectFromCompanion(companionAffect, fullResponse);
     const evolvedAffectSnapshot = evolvedCompanion
       ? toCompanionAffectSnapshot(
           evolvedCompanion,
@@ -3012,7 +4108,7 @@ router.post("/messages", async (req, res) => {
       ? serializeCompanionAffect(evolvedCompanion)
       : null;
     const generatedMetadata = {
-      ...(body.metadata ?? {}),
+      ...clientTurnMetadata(body.metadata),
       mode,
       session_title: String(sessionData.title || "New session"),
       character_ids: characterIds,
@@ -3027,31 +4123,29 @@ router.post("/messages", async (req, res) => {
       // POST /model/auto-lesson only learns from own-model turns marked here:
       // never therapy, adult, or continuation turns.
       own_model_learnable:
-        usedBrand === "own" && !therapyActive && !adultActive && !body.is_continue,
+        usedBrand === "own" && !therapyActive && !adultActive && !body.is_continue && !skipAffect,
       failed_over: failedOver,
       ensemble_minds: ensembleMinds,
       ensemble_combined: ensembleCombined,
-      companion_affect: evolvedAffectSnapshot,
-      mood_self_state: evolvedMoodSelfState,
+      companion_affect: skipAffect ? null : evolvedAffectSnapshot,
+      mood_self_state: skipAffect ? null : evolvedMoodSelfState,
+      ...(skipAffect ? { skip_affect: true, reply_action: replyAction } : {}),
+      ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
+      ...(photoMeta ? { companion_photo: photoMeta } : {}),
+      ...(photoAttachments.length ? { attachments: photoAttachments, media_kind: "photo" } : {}),
     };
-    try {
-      await telemetry.measure(
-        "turn_checkpoint_ms",
-        checkpointGeneratedTurn({
-          id: turnId,
-          userId,
-          assistantContent: fullResponse,
-          metadata: generatedMetadata,
-        }),
-      );
-    } catch (error) {
-      // The model already replied. A Hyperdrive blip here must not replace
-      // the answer with "Database unavailable" — leftover-turn repair retries.
-      logger.warn(
-        { error, turnId },
-        "Generated-turn checkpoint failed; delivering the reply anyway",
-      );
-    }
+    pipelineMetadata = generatedMetadata;
+    // One checkpoint, then `done`. A second attempt waits in the background
+    // so a database timeout cannot hold the reply for another full window.
+    const checkpointSaved = await telemetry.measure(
+      "turn_checkpoint_ms",
+      checkpointGeneratedTurnOnce({
+        id: turnId,
+        userId,
+        assistantContent: fullResponse,
+        metadata: generatedMetadata,
+      }),
+    );
     // Close the SSE as soon as the model is done. Persistence / evolution LLM
     // calls used to run before `done`, so the Chat page stayed on Processing...
     // until those finished (or hung).
@@ -3059,6 +4153,8 @@ router.post("/messages", async (req, res) => {
       done: true,
       visible: fullResponse,
       ...(crisisResourceCard ? { crisis_resource: crisisResourceCard } : {}),
+      // Request arrival → first visible word (server side of chatTelemetry).
+      first_word_ms: telemetry.firstWordMs(),
       model: usedModel,
       tier: usedTier,
       provider: usedProvider,
@@ -3079,9 +4175,11 @@ router.post("/messages", async (req, res) => {
       turn_id: turnId,
       user_message_id: turnStart.turn.userMessageId,
       assistant_message_id: turnStart.turn.assistantMessageId,
-      persistence_status: "generated",
+      persistence_status: checkpointSaved ? "generated" : "checkpoint_failed",
       persistence_owner: persistenceOwner,
       companion_affect: evolvedAffectSnapshot,
+      ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
+      ...photoDone,
     });
     flight.resolve({
       content: fullResponse,
@@ -3102,32 +4200,101 @@ router.post("/messages", async (req, res) => {
         turn_id: turnId,
         user_message_id: turnStart.turn.userMessageId,
         assistant_message_id: turnStart.turn.assistantMessageId,
-        persistence_status: "generated",
+        persistence_status: checkpointSaved ? "generated" : "checkpoint_failed",
         persistence_owner: persistenceOwner,
         companion_affect: evolvedAffectSnapshot,
+        ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
+        ...photoDone,
         joined: true,
       },
     });
-    telemetry.report("completed", {
+    closePipeline("completed", {
       provider: usedProvider,
       fallback_provider: failedOver ? usedProvider : null,
       model: usedModel,
       stream_stalled: false,
-      persistence_status: "generated",
+      persistence_status: checkpointSaved ? "generated" : "checkpoint_failed",
     });
   } catch (err) {
-    logger.error({ err }, "Chat message stream failed");
-    flight.fail(err);
-    await markTurnFailed(turnId, userId, err).catch(() => {});
-    writeSse(res, {
-      error: streamErrorMessage(err),
-      ...(crisisResourceCard ? { crisis_resource: crisisResourceCard } : {}),
-    });
-    telemetry.report("failed", {
-      provider: usedProvider,
-      model: usedModel,
-      stream_timeout: err instanceof LlmStreamTimeoutError,
-    });
+    const kept = String(fullResponse || "").trim();
+    if (replySurvivesDatabaseTimeout(kept, telemetry.currentPhase(), err)) {
+      logger.warn(
+        { err, turnId },
+        "Database timeout after the reply started; keeping the text",
+      );
+      // The database just timed out. Send the text now. The background
+      // persist retries the checkpoint; this catch does not wait on it.
+      streamSucceeded = true;
+      pipelineMetadata = {
+        ...pipelineMetadata,
+        ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
+      };
+      const keptDone = {
+        done: true,
+        visible: kept,
+        ...(crisisResourceCard ? { crisis_resource: crisisResourceCard } : {}),
+        model: usedModel,
+        tier: usedTier,
+        provider: usedProvider,
+        brand: usedBrand,
+        failed_over: failedOver,
+        turn_id: turnId,
+        user_message_id: turnStart.turn.userMessageId,
+        assistant_message_id: turnStart.turn.assistantMessageId,
+        persistence_status: "checkpoint_failed",
+        persistence_owner: persistenceOwner,
+        ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
+      };
+      writeSse(res, keptDone);
+      flight.resolve({ content: kept, done: { ...keptDone, joined: true } });
+      closePipeline("completed", {
+        provider: usedProvider,
+        model: usedModel,
+        persistence_status: "checkpoint_failed",
+        database_timeout: true,
+      });
+    } else if (!crisisResourceCard && activeCharacterId && isModelResting(err, kept.length)) {
+      // Resting mode: the model / tunnel is down before any token. Queue the
+      // turn (append-only) and answer it from the cron once she is back.
+      logger.warn({ err, turnId }, "Model resting; queueing the user's message");
+      flight.fail(err);
+      const queuedId = await queueRestingMessage({
+        userId,
+        sessionId,
+        characterId: activeCharacterId,
+        turnId,
+        content: String(content || ""),
+      }).catch(() => null);
+      writeSse(res, {
+        error: restingLine(restingCharacterName),
+        resting: true,
+        queued: Boolean(queuedId),
+        ...(queuedId ? { resting_queue_id: queuedId } : {}),
+      });
+      closePipeline("failed", {
+        provider: usedProvider,
+        model: usedModel,
+        resting: true,
+        error_class: chatErrorClass(err),
+        error_code: chatErrorCode(err),
+      });
+      void markTurnFailed(turnId, userId, err).catch(() => {});
+    } else {
+      logger.error({ err }, "Chat message stream failed");
+      flight.fail(err);
+      writeSse(res, {
+        error: streamErrorMessage(err),
+        ...(crisisResourceCard ? { crisis_resource: crisisResourceCard } : {}),
+      });
+      closePipeline("failed", {
+        provider: usedProvider,
+        model: usedModel,
+        stream_timeout: err instanceof LlmStreamTimeoutError,
+        error_class: chatErrorClass(err),
+        error_code: chatErrorCode(err),
+      });
+      void markTurnFailed(turnId, userId, err).catch(() => {});
+    }
   } finally {
     clearInterval(leaseHeartbeat);
     stopHeartbeat();
@@ -3147,13 +4314,60 @@ router.post("/messages", async (req, res) => {
       }
       if (!streamSucceeded || !String(fullResponse).trim()) return;
 
+      // Client-owned turns leave before this runs. Retry a missing
+      // checkpoint here so the second attempt never blocks `done`.
+      // A retry that already replaced this turn is left alone.
+      let generatedTurn: Awaited<ReturnType<typeof readChatTurn>> = null;
+      try {
+      generatedTurn = await readChatTurn(turnId, userId);
+      if (!generatedTurn || !turnMetadataReplaced(generatedTurn.metadata)) {
+        if (
+          generatedTurn &&
+          !String(generatedTurn.assistantContent || "").trim() &&
+          String(fullResponse).trim()
+        ) {
+          const saved = await checkpointGeneratedTurnWithRetry({
+            id: turnId,
+            userId,
+            assistantContent: fullResponse,
+            metadata: pipelineMetadata,
+          });
+          if (saved) generatedTurn = await readChatTurn(turnId, userId);
+        }
+        if (
+          !generatedTurn ||
+          !String(generatedTurn.assistantContent || "").trim()
+        ) {
+          void markTurnFailed(
+            turnId,
+            userId,
+            new Error("Generated turn checkpoint is missing"),
+          ).catch(() => {});
+        }
+      }
+      } catch (error) {
+        logger.warn({ error, turnId }, "Background checkpoint retry failed");
+      }
+
+      // Remember the photo she sent, whoever persists the messages.
+      if (photoOutcome?.status === "sent" && activeCharacterId && isMemoryCoreEnabled()) {
+        void recordPhotoMemory({
+          userId,
+          characterId: activeCharacterId,
+          sessionId,
+          turnId,
+          attachment: photoOutcome.attachment,
+        }).catch((e) => logger.warn({ error: e, turnId }, "Companion photo memory append failed"));
+      }
+
       const lateClient = clientLeft();
       const serverPersist = persistenceOwner === "server" && shouldPersist;
       if (serverPersist || lateClient) {
       const persistenceStartedAt = Date.now();
       try {
-        const generatedTurn = await readChatTurn(turnId, userId);
-        if (!generatedTurn) throw new Error("Generated turn checkpoint is missing");
+        if (!generatedTurn || !String(generatedTurn.assistantContent || "").trim()) {
+          throw new Error("Generated turn checkpoint is missing");
+        }
         await retryTurnPersistence(generatedTurn);
         logger.info(
           {
@@ -3181,17 +4395,60 @@ router.post("/messages", async (req, res) => {
     }
     if (!(persistenceOwner === "server" && shouldPersist) && !clientLeft()) return;
 
-    // Save intimacy profile and scene updates if intimacy engine ran
-    if (intimacyProfile) {
+    // Save intimacy profile and scene updates if intimacy engine ran.
+    // Retry and edit must not write a second heat/affect pass.
+    if (!skipAffect && intimacyProfile) {
       void saveIntimacyProfile(intimacyProfile).catch((e) => logger.warn({ error: e }, "Failed to save intimacy profile"));
     }
-    if (intimacyScene) {
+    if (!skipAffect && intimacyScene) {
       void saveIntimacyScene(intimacyScene).catch((e) => logger.warn({ error: e }, "Failed to save intimacy scene"));
     }
 
     // Relationship/evolution is derived state. Message + memory durability is
     // committed first; failures here are observable and can be rebuilt without
     // risking duplicate visible chat rows.
+    if (skipAffect) return;
+    // Append-only memory stream: one `turn` event per committed turn
+    // (dedupe on turnId so persist retries never double-log).
+    if (activeCharacterId && isMemoryCoreEnabled() && !replyCutOff) {
+      void appendMemoryEvent({
+        userId,
+        characterId: activeCharacterId,
+        eventType: "turn",
+        content: `User: ${String(content || "").slice(0, 600)}\nMe: ${String(fullResponse || "").slice(0, 900)}${
+          photoOutcome?.status === "sent"
+            ? `\n(I sent a photo: ${photoOutcome.attachment.description.slice(0, 240)})`
+            : ""
+        }`,
+        payload: { turn_id: turnId, mode, is_crossover: isCrossover },
+        emotionalWeight: Math.min(1, Math.max(0, Number(companionAffect?.intensity ?? 0.5) || 0.5)),
+        conversationId: sessionId,
+        dedupeKey: `turn:${turnId}`,
+        source: "chat",
+      }).catch((e) => logger.warn({ error: e, turnId }, "memory_events turn append failed"));
+    }
+    // Chat mind learning (facts + rolling summary) runs on the background
+    // model after the reply is saved; it never delays the stream.
+    let mindLearning: Promise<void> = Promise.resolve();
+    if (mindTurn && activeCharacterId && isMemoryCoreEnabled() && !replyCutOff && fullResponse.trim()) {
+      mindLearning = runMindPostTurn(
+        {
+          userId,
+          characterId: activeCharacterId,
+          sessionId,
+          turnId,
+          userMessage: String(content || ""),
+          companionReply: fullResponse,
+          userName: mindTurn.userName,
+          companionName: mindTurn.companionName,
+          profile: mindTurn.profile,
+          factScope: mindTurn.factScope,
+          loadRecentMessages: (limit) =>
+            readRecentStoreMessages(userId, sessionId, limit, { skipMigrate: true }),
+        },
+        (msg, meta) => logger.info(meta, msg),
+      ).catch((e) => logger.warn({ error: e, turnId }, "Chat mind post-turn failed"));
+    }
     try {
       const hiddenLife = body.metadata?.hidden_sequences as
         | { learned_life?: unknown[] }
@@ -3211,6 +4468,7 @@ router.post("/messages", async (req, res) => {
           : 0,
         synchroState,
         companionAffect,
+        replyCutOff,
       });
     } catch (postProcessError) {
       logger.warn(
@@ -3218,6 +4476,8 @@ router.post("/messages", async (req, res) => {
         "Chat relationship/evolution post-processing failed",
       );
     }
+    // Keep the Worker alive (waitUntil) until the mind has learned this turn.
+    await mindLearning;
     } finally {
       releaseBackground();
     }

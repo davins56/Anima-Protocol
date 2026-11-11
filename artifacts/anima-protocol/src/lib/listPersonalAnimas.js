@@ -1,13 +1,17 @@
-import { awaitCompanionStoreAuth, base44 } from "@/api/base44Client";
+import { awaitCompanionStoreAuth, animaClient } from "@/api/animaClient";
 
 export { awaitCompanionStoreAuth };
 import {
+  AELAND_NAME,
+  canonicalizeCompanionRow,
   isKnownPersonalAnimaName,
   isPersonalAnimaRecord,
   PERSONAL_ANIMA_NAME_ALIASES,
 } from "@/lib/personalAnimaRecord";
 
 export {
+  AELAND_NAME,
+  canonicalizeCompanionRow,
   isKnownPersonalAnimaName,
   isPersonalAnimaRecord,
   PERSONAL_ANIMA_NAME_ALIASES,
@@ -27,7 +31,7 @@ export function companionLookHref(id) {
 
 export async function updateCompanionRecord(row, patch) {
   const entity = companionStoreEntity(row);
-  return base44.entities[entity].update(row.id, patch);
+  return animaClient.entities[entity].update(row.id, patch);
 }
 
 /**
@@ -40,7 +44,7 @@ export async function loadCompanionRecord(id, preferredEntity) {
   const first = preferredEntity === "Character" ? "Character" : "Anima";
   const second = first === "Character" ? "Anima" : "Character";
   for (const entity of [first, second]) {
-    const rows = await base44.entities[entity]
+    const rows = await animaClient.entities[entity]
       .list("-created_date", 100)
       .catch(() => []);
     const found = (rows || []).find((row) => row && row.id === id);
@@ -49,10 +53,15 @@ export async function loadCompanionRecord(id, preferredEntity) {
   return null;
 }
 
-/** Strip picker-only flags so they are not written back to the store. */
+/**
+ * Strip picker-only flags so they are not written back to the store. A row
+ * displayed as "Aeland" but stored under a legacy spelling keeps its stored
+ * name unless the user actually renamed her.
+ */
 export function companionPersistPatch(form) {
   if (!form || typeof form !== "object") return {};
-  const { _storeEntity, _isAnima, _bundled, ...rest } = form;
+  const { _storeEntity, _isAnima, _bundled, legacy_name, ...rest } = form;
+  if (legacy_name && rest.name === AELAND_NAME) rest.name = legacy_name;
   return rest;
 }
 
@@ -65,7 +74,7 @@ function createdMs(row) {
 function tagCompanionRow(row, storeEntity) {
   if (!row || typeof row !== "object") return row;
   return {
-    ...row,
+    ...canonicalizeCompanionRow(row),
     _storeEntity: storeEntity,
     _isAnima: storeEntity === "Anima" ? true : row._isAnima === true,
   };
@@ -98,7 +107,7 @@ export function mergePersonalCompanions(animas, characters) {
 }
 
 async function listByNameSearch(entity, name, limit) {
-  return base44.entities[entity]
+  return animaClient.entities[entity]
     .list("-created_date", limit, { search: { name } })
     .catch(() => []);
 }
@@ -107,7 +116,7 @@ async function listByNameSearch(entity, name, limit) {
  * Load personal companions from Anima + Character.
  *
  * Character.list(limit) is newest-first. A second Anima stored as an older
- * Character (Aelynd without `ai_prompt`) can fall past a 100-row roster cap.
+ * Character (Aeland, stored as legacy "Aelynd", without `ai_prompt`) can fall past a 100-row roster cap.
  * Also query `creation_method` and known name aliases across the whole store.
  */
 export async function listPersonalAnimas(limit = 500) {
@@ -117,13 +126,13 @@ export async function listPersonalAnimas(limit = 500) {
   // Primary Anima.list must throw so Customise Anima can classify
   // timeout / database / misconfigured failures. Recovery queries are
   // best-effort and must not hide that error.
-  const animas = await base44.entities.Anima.list("-created_date", limit);
-  const characters = await base44.entities.Character.list(
+  const animas = await animaClient.entities.Anima.list("-created_date", limit);
+  const characters = await animaClient.entities.Character.list(
     "-created_date",
     limit,
   ).catch(() => []);
   const [prompted, ...namedCharacters] = await Promise.all([
-    base44.entities.Character.filter(
+    animaClient.entities.Character.filter(
       { creation_method: "ai_prompt" },
       "-created_date",
       limit,

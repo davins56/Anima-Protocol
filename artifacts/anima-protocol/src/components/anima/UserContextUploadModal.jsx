@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Upload, X, Loader } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { downscaleDataUrl } from '@/lib/downscaleImage';
 import { readPhotoAsDataUrl } from '@/lib/avatarPhoto';
 import {
@@ -59,7 +59,7 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
     setError('');
 
     try {
-      const user = await base44.auth.me();
+      const user = await animaClient.auth.me();
 
       const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
       const isPdf = ext === '.pdf' || file.type === 'application/pdf';
@@ -104,7 +104,7 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
         try {
           fileUrl = await uploadUserContextStorageFile(
             fileToUpload,
-            (payload) => base44.integrations.Core.UploadFile(payload),
+            (payload) => animaClient.integrations.Core.UploadFile(payload),
           );
         } catch (uploadErr) {
           setError(formatUserContextUploadError(uploadErr));
@@ -121,7 +121,7 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
       }
 
       // Create UserContext record
-      const contextRecord = await base44.entities.UserContext.create({
+      const contextRecord = await animaClient.entities.UserContext.create({
         user_email: user.email,
         title,
         document_type: docType,
@@ -134,7 +134,7 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
       // inline data URL (OCR + vision); for text it reads file_content. It
       // persists the extracted analysis onto the record server-side, so refresh
       // the list again once it finishes to surface the generated summary.
-      base44.functions.invoke('processUserContext', {
+      animaClient.functions.invoke('processUserContext', {
         user_context_id: contextRecord.id,
         file_url: fileUrl,
         file_content: fileData,

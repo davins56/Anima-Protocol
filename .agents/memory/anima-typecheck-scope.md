@@ -20,8 +20,8 @@ globally. Adopt it **incrementally per file** with a top-of-file `// @ts-check`
 - Want real type checking on a specific JS file? Add `// @ts-check` at the top
   and fix what it surfaces. Don't enable `checkJs` project-wide.
 - JS modules imported from `.tsx` files cause `TS7016 (no declaration file)`. The
-  fix is a colocated `.d.ts` (see `src/api/base44Client.d.ts` typing the
-  server-backed base44 client loosely — entity records are `any`, call shapes
+  fix is a colocated `.d.ts` (see `src/api/animaClient.d.ts` typing the
+  server-backed animaClient client loosely — entity records are `any`, call shapes
   are accurate). Add similar `.d.ts` files for other JS modules a `.tsx` imports.
 - `src/components/mockups/**` is excluded from typecheck: it's an orphaned scratch
   area, NOT wired to the mockup-sandbox artifact (that artifact loads mockups from

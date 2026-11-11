@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { useConfirm } from "@/lib/ConfirmDialog";
 import { Search, Filter, Plus, Loader } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -25,7 +25,7 @@ export default function WikiBrowser({ sessionId, onEditEntry }) {
     if (!sessionId) return;
     setLoading(true);
     try {
-      const data = await base44.entities.WikiCodex.filter({
+      const data = await animaClient.entities.WikiCodex.filter({
         session_ids: { $elemMatch: sessionId },
       }, `-${sortBy}`, 100);
       setEntries(data || []);
@@ -146,7 +146,7 @@ export default function WikiBrowser({ sessionId, onEditEntry }) {
                     confirmLabel: "Delete",
                   });
                   if (!ok) return;
-                  await base44.entities.WikiCodex.delete(id);
+                  await animaClient.entities.WikiCodex.delete(id);
                   loadEntries();
                 }}
               />

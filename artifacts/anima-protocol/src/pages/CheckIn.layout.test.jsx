@@ -7,8 +7,8 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
 }));
 
-vi.mock("@/api/base44Client", () => ({
-  base44: {
+vi.mock("@/api/animaClient", () => ({
+  animaClient: {
     auth: { me: mocks.me },
     entities: { CheckIn: { create: mocks.create } },
   },

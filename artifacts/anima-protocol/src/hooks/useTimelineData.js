@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 export function useTimelineData(sessionId) {
   const [events, setEvents] = useState([]);
@@ -15,7 +15,7 @@ export function useTimelineData(sessionId) {
     setLoading(true);
     try {
       // Fetch all wiki entries for this session
-      const wikiEntries = await base44.entities.WikiCodex.filter({
+      const wikiEntries = await animaClient.entities.WikiCodex.filter({
         session_ids: { $elemMatch: sessionId },
       }, '-mention_count', 200);
 
@@ -37,7 +37,7 @@ export function useTimelineData(sessionId) {
       setEvents(events);
 
       // Load session metadata for quick reference
-      const allSessions = await base44.entities.ChatSession.list('-created_date', 100);
+      const allSessions = await animaClient.entities.ChatSession.list('-created_date', 100);
       const sessionMap = {};
       (allSessions || []).forEach(s => {
         sessionMap[s.id] = {

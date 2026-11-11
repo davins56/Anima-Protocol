@@ -9,12 +9,12 @@ vi.mock("sonner", () => {
   return { toast };
 });
 
-// The undo helpers talk to base44. Back it with a simple in-memory store so the
+// The undo helpers talk to animaClient. Back it with a simple in-memory store so the
 // delete/restore flow can be tested without a server or auth token (the real
 // client gates every request on a Clerk token getter that never resolves under
 // vitest, so it would otherwise hang). update() acts as an upsert, mirroring the
 // real client's behaviour that restore relies on.
-vi.mock("@/api/base44Client", () => {
+vi.mock("@/api/animaClient", () => {
   const stores = new Map();
   let counter = 0;
   const store = (name) => {
@@ -47,7 +47,7 @@ vi.mock("@/api/base44Client", () => {
   });
   const entities = new Proxy({}, { get: (_, name) => entity(name) });
   return {
-    base44: { entities },
+    animaClient: { entities },
     default: { entities },
     __resetStore: () => {
       stores.clear();
@@ -57,7 +57,7 @@ vi.mock("@/api/base44Client", () => {
 });
 
 import { toast } from "sonner";
-import { base44, __resetStore } from "@/api/base44Client";
+import { animaClient, __resetStore } from "@/api/animaClient";
 import {
   deleteWithUndo,
   deleteArrayItemWithUndo,
@@ -85,7 +85,7 @@ beforeEach(() => {
 
 describe("deleteArrayItemWithUndo (single chat message)", () => {
   it("restores a deleted message to its original position on undo", async () => {
-    const session = await base44.entities.ChatSession.create({
+    const session = await animaClient.entities.ChatSession.create({
       title: "Session",
       messages: [
         { role: "user", content: "first" },
@@ -102,13 +102,13 @@ describe("deleteArrayItemWithUndo (single chat message)", () => {
     });
 
     // The middle message is gone after delete.
-    let current = await base44.entities.ChatSession.get(session.id);
+    let current = await animaClient.entities.ChatSession.get(session.id);
     expect(current.messages.map((m) => m.content)).toEqual(["first", "third"]);
 
     // Undo brings it back at the same index.
     await lastUndoAction()();
 
-    current = await base44.entities.ChatSession.get(session.id);
+    current = await animaClient.entities.ChatSession.get(session.id);
     expect(current.messages.map((m) => m.content)).toEqual([
       "first",
       "second",
@@ -118,7 +118,7 @@ describe("deleteArrayItemWithUndo (single chat message)", () => {
   });
 
   it("keeps the message deleted when undo is never triggered", async () => {
-    const session = await base44.entities.ChatSession.create({
+    const session = await animaClient.entities.ChatSession.create({
       title: "Session",
       messages: [
         { role: "user", content: "keep" },
@@ -134,12 +134,12 @@ describe("deleteArrayItemWithUndo (single chat message)", () => {
     });
 
     // Grace window passes with no undo click — the message stays gone.
-    const current = await base44.entities.ChatSession.get(session.id);
+    const current = await animaClient.entities.ChatSession.get(session.id);
     expect(current.messages.map((m) => m.content)).toEqual(["keep"]);
   });
 
   it("restores to the right place even if other messages change during the grace window", async () => {
-    const session = await base44.entities.ChatSession.create({
+    const session = await animaClient.entities.ChatSession.create({
       title: "Session",
       messages: [
         { role: "user", content: "a" },
@@ -156,20 +156,20 @@ describe("deleteArrayItemWithUndo (single chat message)", () => {
     });
 
     // Simulate the surrounding array shrinking before undo is clicked.
-    await base44.entities.ChatSession.update(session.id, {
+    await animaClient.entities.ChatSession.update(session.id, {
       messages: [{ role: "user", content: "a" }],
     });
 
     await lastUndoAction()();
 
-    const current = await base44.entities.ChatSession.get(session.id);
+    const current = await animaClient.entities.ChatSession.get(session.id);
     expect(current.messages.map((m) => m.content)).toEqual(["a", "c"]);
   });
 });
 
 describe("deleteWithUndo (whole chat session)", () => {
   it("restores a deleted session with its original id and fields on undo", async () => {
-    const session = await base44.entities.ChatSession.create({
+    const session = await animaClient.entities.ChatSession.create({
       title: "My session",
       last_message: "hello there",
       messages: [{ role: "user", content: "hi" }],
@@ -182,13 +182,13 @@ describe("deleteWithUndo (whole chat session)", () => {
     });
 
     // The session is gone after delete.
-    expect(await base44.entities.ChatSession.get(session.id)).toBeNull();
-    expect(await base44.entities.ChatSession.list()).toHaveLength(0);
+    expect(await animaClient.entities.ChatSession.get(session.id)).toBeNull();
+    expect(await animaClient.entities.ChatSession.list()).toHaveLength(0);
 
     // Undo brings the whole record back intact.
     await lastUndoAction()();
 
-    const restored = await base44.entities.ChatSession.get(session.id);
+    const restored = await animaClient.entities.ChatSession.get(session.id);
     expect(restored).not.toBeNull();
     expect(restored.id).toBe(session.id);
     expect(restored.title).toBe("My session");
@@ -197,7 +197,7 @@ describe("deleteWithUndo (whole chat session)", () => {
   });
 
   it("keeps the session deleted when undo is never triggered", async () => {
-    const session = await base44.entities.ChatSession.create({
+    const session = await animaClient.entities.ChatSession.create({
       title: "Doomed session",
     });
 
@@ -208,15 +208,15 @@ describe("deleteWithUndo (whole chat session)", () => {
     });
 
     // Grace window passes with no undo click — the session stays gone.
-    expect(await base44.entities.ChatSession.get(session.id)).toBeNull();
-    expect(await base44.entities.ChatSession.list()).toHaveLength(0);
+    expect(await animaClient.entities.ChatSession.get(session.id)).toBeNull();
+    expect(await animaClient.entities.ChatSession.list()).toHaveLength(0);
   });
 });
 
 describe("deleteAllWithUndo (bulk delete)", () => {
   it("restores every deleted record on undo", async () => {
-    const a = await base44.entities.Character.create({ name: "Alpha" });
-    const b = await base44.entities.Character.create({ name: "Beta" });
+    const a = await animaClient.entities.Character.create({ name: "Alpha" });
+    const b = await animaClient.entities.Character.create({ name: "Beta" });
 
     await deleteAllWithUndo({
       entity: "Character",
@@ -224,18 +224,18 @@ describe("deleteAllWithUndo (bulk delete)", () => {
       label: "characters",
     });
 
-    expect(await base44.entities.Character.list()).toHaveLength(0);
+    expect(await animaClient.entities.Character.list()).toHaveLength(0);
 
     await lastUndoAction()();
 
-    const restored = await base44.entities.Character.list("name");
+    const restored = await animaClient.entities.Character.list("name");
     expect(restored.map((c) => c.name).sort()).toEqual(["Alpha", "Beta"]);
     expect(restored.map((c) => c.id).sort()).toEqual([a.id, b.id].sort());
   });
 
   it("keeps everything deleted when undo is never triggered", async () => {
-    const a = await base44.entities.Character.create({ name: "Alpha" });
-    const b = await base44.entities.Character.create({ name: "Beta" });
+    const a = await animaClient.entities.Character.create({ name: "Alpha" });
+    const b = await animaClient.entities.Character.create({ name: "Beta" });
 
     await deleteAllWithUndo({
       entity: "Character",
@@ -243,6 +243,6 @@ describe("deleteAllWithUndo (bulk delete)", () => {
       label: "characters",
     });
 
-    expect(await base44.entities.Character.list()).toHaveLength(0);
+    expect(await animaClient.entities.Character.list()).toHaveLength(0);
   });
 });

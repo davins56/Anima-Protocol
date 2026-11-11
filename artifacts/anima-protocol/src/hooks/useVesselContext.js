@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { subscribeCheckInContext } from "@/hooks/useCheckInRitual";
 
 // Pulls the user's real-world state — their latest Check-In and Journal entry —
@@ -87,8 +87,8 @@ export function useVesselContext(sessionId) {
   const load = useCallback(async () => {
     try {
       const [checkIns, journals] = await Promise.all([
-        base44.entities.CheckIn.list("-created_date", 1).catch(() => []),
-        base44.entities.CharacterJournal.list("-created_date", 1).catch(() => []),
+        animaClient.entities.CheckIn.list("-created_date", 1).catch(() => []),
+        animaClient.entities.CharacterJournal.list("-created_date", 1).catch(() => []),
       ]);
       const ci = checkIns?.[0] || null;
       const j = journals?.[0] || null;

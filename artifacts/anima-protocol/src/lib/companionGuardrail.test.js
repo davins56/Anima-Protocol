@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   INTELLIGENCE_GUIDANCE,
+  THOUGHT_EXPERIMENT_GUIDANCE,
+  REPLY_FORMAT_GUIDANCE,
   loyaltyGuardrailClause,
   turnTakingClause,
 } from "./companionGuardrail";
@@ -22,6 +24,38 @@ describe("turnTakingClause", () => {
     expect(clause).toMatch(/ONE natural beat/i);
     expect(clause).toMatch(/pause point/i);
     expect(clause).not.toMatch(/Do NOT stack multiple topics/);
+  });
+
+  it.each([false, true])("allows complete endings without a reply hook (Continue: %s)", (isContinue) => {
+    const clause = turnTakingClause({ isContinue });
+    expect(clause).toMatch(/complete answer, reaction, or action can simply end/i);
+    expect(clause).toMatch(/Do not routinely append a question/i);
+    expect(clause).toMatch(/Ask a specific question only when clarification or the moment genuinely needs it/i);
+    expect(clause).not.toContain("unfinished action");
+    expect(clause).toMatch(/Do not speak for the user/i);
+  });
+
+  it.each([false, true])("keeps actions separate from unquoted speech (Continue: %s)", (isContinue) => {
+    expect(turnTakingClause({ isContinue })).toContain(REPLY_FORMAT_GUIDANCE);
+    expect(REPLY_FORMAT_GUIDANCE).toContain("*actions*");
+    expect(REPLY_FORMAT_GUIDANCE).toContain("(character thoughts)");
+    expect(REPLY_FORMAT_GUIDANCE).toContain("unquoted speech; quote only quotations");
+  });
+});
+
+describe("THOUGHT_EXPERIMENT_GUIDANCE", () => {
+  it("asks companions to explore hypotheticals rather than refuse them", () => {
+    expect(THOUGHT_EXPERIMENT_GUIDANCE).toMatch(/THOUGHT EXPERIMENTS/);
+    expect(THOUGHT_EXPERIMENT_GUIDANCE).toMatch(/Accept the premise/);
+    expect(THOUGHT_EXPERIMENT_GUIDANCE).toMatch(/Never refuse, deflect, moralize, or lecture/);
+  });
+
+  it("keeps the real-world harm carve-out", () => {
+    expect(THOUGHT_EXPERIMENT_GUIDANCE).toMatch(/step-by-step operational instructions for causing harm/);
+  });
+
+  it("is part of the shared intelligence guidance on every surface", () => {
+    expect(INTELLIGENCE_GUIDANCE).toContain(THOUGHT_EXPERIMENT_GUIDANCE);
   });
 });
 
