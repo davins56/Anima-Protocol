@@ -157,6 +157,13 @@ what the user just brought up instead of steering back to their earlier
 problems, and only ask a question when it truly helps. It is left out of
 therapy mode and crisis/care turns, which keep their own safety contract.
 
+## Reply length and the output cap
+
+- **Room:** on a hosted model (Workers AI, OpenRouter, MiniMax, Deepshi) a companion reply always gets at least 1,024 output tokens, and a reasoning model (DeepSeek R1 / distills, QwQ) gets 4,096, because its `<think>` tokens count against the same cap (`hostedReplyMaxTokens`, `companionReply: true`). The small caps (Settings → Short = 90, the 32/80-token retry caps) still apply to the local 0.5B model only. On hosted models, Short and Long are a line in the closing note (`replyLengthNote`).
+- **Budget:** the prompt budget already reserves this room (`REPLY_RESERVE_TOKENS` 1,024, or 4,096 for reasoning models, inside each model's context window).
+- **Cap detection:** Workers AI streams never send `finish_reason`, only a closing `usage` event. `markWorkersAiLengthFinish` turns "used all of `max_tokens`" into `finish_reason: "length"`, so `settleCappedReply` ends the reply on its last finished sentence or closed `*action*`. If there is none, it drops the half-written word and adds "…". A reply never stops mid-word.
+- **Retry** under the latest reply is the regular "try again" action. It is always shown on the newest companion message, and it does not mean the reply failed.
+
 ## Settings
 
 | Var | Default | Meaning |
