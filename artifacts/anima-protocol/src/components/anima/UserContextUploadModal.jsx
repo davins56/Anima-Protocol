@@ -105,20 +105,22 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
         }
       }
 
-      // For PDFs, pre-extract via the existing /pdfs endpoint so analysis has content.
+      // For PDFs, upload via the existing extractor so the server has the chunks.
+      // Pass the document id so processUserContext can pull the real text.
       let fileData = '';
+      let pdfDocumentId = '';
       if (isPdf) {
         try {
           const stored = await uploadPdfDocument({
             file,
             scope: 'lore',
           });
-          fileData = stored?.id
-            ? `[PDF uploaded: ${stored.filename || file.name}. Text extracted server-side. Document id: ${stored.id}]`
-            : `[PDF: ${file.name}]`;
+          pdfDocumentId = stored?.id || '';
+          fileData = pdfDocumentId
+            ? `[PDF document id: ${pdfDocumentId}]`
+            : '';
         } catch (pdfErr) {
           console.warn('PDF pre-extract failed; continuing with empty content', pdfErr);
-          fileData = `[PDF: ${file.name} — extraction unavailable]`;
         }
       } else if (!isImage) {
         try { fileData = await file.text(); } catch (_) {}
@@ -137,11 +139,12 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
       // Refresh the list right away so the upload resolves for the user.
       onUploadComplete?.();
 
-      // Background analysis (non-blocking).
+      // Background analysis (non-blocking). Backend will fetch PDF text from chunks when pdf_document_id is present.
       animaClient.functions.invoke('processUserContext', {
         user_context_id: contextRecord.id,
         file_url: fileUrl,
         file_content: fileData,
+        pdf_document_id: pdfDocumentId || undefined,
         is_pdf: isPdf,
         is_image: isImage,
         image_data_url: imageDataUrl,
