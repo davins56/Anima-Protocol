@@ -1,24 +1,37 @@
 /**
  * Natural Web Speech helpers for Sacred Space / meditation.
- * Prefer neural/premium English voices, intimate pacing, and phrase-sized
- * utterances so browser TTS is less flat and robotic.
+ *
+ * Browser TTS sounds robotic for a few specific reasons, each handled here:
+ * - Every utterance restarts the engine's intonation, so speaking one short
+ *   sentence at a time gives every line the same flat "read-out" contour.
+ *   We group sentences into breath-sized phrases instead.
+ * - Heavy slow-down (rate well below 1) stretches vowels unnaturally.
+ * - Any pitch other than 1 makes neural / network voices pitch-shift their
+ *   audio, which adds a metallic edge. Pitch only moves on basic local voices.
+ * - Uniform gaps between phrases sound mechanical; pauses follow punctuation.
+ * - Emoji, symbols and URLs get read out literally.
  */
 
 export const SACRED_SPACE_SPEECH = Object.freeze({
-  rate: 0.86,
-  pitch: 0.98,
-  volume: 0.88,
-  pauseMs: 320,
+  rate: 0.92,
+  pitch: 1.0,
+  volume: 0.9,
+  pauseMs: 240,
 });
 
 export const CHAT_SPEECH = Object.freeze({
-  rate: 0.92,
+  rate: 1.0,
   pitch: 1.0,
   volume: 1.0,
-  pauseMs: 180,
+  pauseMs: 160,
 });
 
-export const DEFAULT_CHUNK_MAX = 140;
+/**
+ * Upper bound for one utterance. Long enough to hold a couple of sentences
+ * with natural flow; short enough to dodge Chrome's network voices going
+ * silent on long utterances (~15s).
+ */
+export const DEFAULT_CHUNK_MAX = 180;
 
 const QUALITY_BOOSTS = [
   [/online\s*\(natural\)/i, 90],
@@ -36,8 +49,13 @@ const QUALITY_PENALTIES = [
   [/desktop/i, -18],
 ];
 
-const FEMININE_VOICE = /samantha|karen|moira|fiona|victoria|allison|ava|zoe|aria|jenny|susan|zira|salli|ivy|joanna|kendra|kimberly|nicole|raveena|tessa|emma|amy|olivia|luna|nova|shimmer|samantha|female|woman/i;
-const MASCULINE_VOICE = /daniel|alex(?!a)|ryan|guy|davis|brian|matthew|james|david|fred|tom|arthur|oliver|mark|george|male|man\b/i;
+// Word boundaries matter: without them "Female" matches "male" and
+// "Woman" matches "man", so feminine voices were scored as masculine too.
+const FEMININE_VOICE = /\b(samantha|karen|moira|fiona|victoria|allison|ava|zoe|aria|jenny|susan|zira|salli|ivy|joanna|kendra|kimberly|nicole|raveena|tessa|emma|amy|olivia|luna|nova|shimmer|sonia|libby|natasha|michelle|ana|female|woman)\b/i;
+const MASCULINE_VOICE = /\b(daniel|alex|ryan|guy|davis|brian|matthew|james|david|fred|tom|arthur|oliver|mark|george|eric|christopher|roger|steffan|william|male|man)\b/i;
+
+/** Voices that are neural / streamed and must not be pitch-shifted. */
+const NEURAL_VOICE = /online\s*\(natural\)|neural|natural|premium|enhanced|google/i;
 
 const FEMININE_NAMES = new Set([
   "serenity", "anima", "korra", "asami", "jinora", "lin", "natasha", "wanda",
@@ -62,6 +80,26 @@ export function stripSpeechMarkup(text) {
     .replace(/\[(.*?)\]\(.*?\)/g, "$1")
     .replace(/#{1,6}\s+/g, "")
     .replace(/`([^`]+)`/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Turn cleaned text into something a TTS engine reads like a person would:
+ * no emoji names, no URLs, no "dot dot dot", no spelled-out symbols.
+ * @param {unknown} text
+ * @returns {string}
+ */
+export function normalizeForSpeech(text) {
+  return stripSpeechMarkup(text)
+    .replace(/https?:\/\/\S+/gi, "")
+    .replace(/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\u{FE0F}\u{200D}]/gu, "")
+    .replace(/\.{3,}/g, "…")
+    .replace(/…+/g, "…")
+    .replace(/\s*&\s*/g, " and ")
+    .replace(/[~^|<>{}\\]/g, " ")
+    .replace(/([!?])\1+/g, "$1")
+    .replace(/\s+([,.;:!?…])/g, "$1")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -101,31 +139,69 @@ export function inferCompanionVoiceGender(companion) {
 }
 
 /**
- * Break a companion reply into phrase/sentence-sized chunks so each
- * utterance can carry its own cadence, with short pauses between them.
+ * Break a companion reply into breath-sized phrases. Short sentences are
+ * grouped so the engine can carry intonation across them (one sentence per
+ * utterance is what makes browser TTS sound like a list being read).
+ * A trailing ellipsis always ends a phrase so the pause after it is real.
  * @param {unknown} text
  * @param {{ maxLen?: number }} [options]
  * @returns {string[]}
  */
 export function chunkSpeechText(text, options = {}) {
   const maxLen = Number(options.maxLen) > 0 ? Number(options.maxLen) : DEFAULT_CHUNK_MAX;
-  const clean = stripSpeechMarkup(text);
+  const clean = normalizeForSpeech(text);
   if (!clean) return [];
 
   const sentences = clean
-    .split(/(?<=[.!?…])\s+|\n+/)
+    .split(/(?<=[.!?…])\s+/)
     .map((s) => s.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .flatMap((s) => (s.length <= maxLen ? [s] : splitLongPhrase(s, maxLen)));
 
   const chunks = [];
+  let buf = "";
   for (const sentence of sentences) {
-    if (sentence.length <= maxLen) {
-      chunks.push(sentence);
-      continue;
+    const next = buf ? `${buf} ${sentence}` : sentence;
+    if (buf && next.length > maxLen) {
+      chunks.push(buf);
+      buf = sentence;
+    } else {
+      buf = next;
     }
-    chunks.push(...splitLongPhrase(sentence, maxLen));
+    if (buf.endsWith("…")) {
+      chunks.push(buf);
+      buf = "";
+    }
   }
+  if (buf) chunks.push(buf);
   return chunks;
+}
+
+/**
+ * Pause after a phrase, shaped by how it ends — longer after a trailing-off
+ * ellipsis or a question, shorter after a clause break.
+ * @param {string} chunk
+ * @param {number} baseMs
+ * @returns {number}
+ */
+export function pauseAfterChunk(chunk, baseMs) {
+  const base = Math.max(0, Number(baseMs) || 0);
+  const end = String(chunk || "").trim().slice(-1);
+  if (end === "…") return Math.round(base * 1.8);
+  if (end === "?") return Math.round(base * 1.3);
+  if (end === "." || end === "!") return base;
+  return Math.round(base * 0.5);
+}
+
+/**
+ * Neural / streamed voices sound best untouched; pitch-shifting them adds
+ * a metallic edge.
+ * @param {{ name?: string, localService?: boolean } | null | undefined} voice
+ * @returns {boolean}
+ */
+export function isNeuralVoice(voice) {
+  if (!voice) return false;
+  return NEURAL_VOICE.test(String(voice.name || "")) || voice.localService === false;
 }
 
 /**
@@ -245,9 +321,22 @@ export function selectNaturalVoice(voices, options = {}) {
 export function resolveSpeechSettings(options = {}) {
   const base = { ...SACRED_SPACE_SPEECH, ...(options.settings || {}) };
   const gender = options.gender || inferCompanionVoiceGender(options.companion);
-  const pitch = gender === "masculine"
-    ? clamp(Number(base.pitch) - 0.04, 0.85, 1.15)
-    : clamp(Number(base.pitch) + 0.03, 0.85, 1.15);
+  const basePitch = Number.isFinite(Number(base.pitch)) ? Number(base.pitch) : 1;
+  // Only nudge pitch on basic local voices, and only when the voice's own
+  // timbre does not already match the companion. Neural voices stay at their
+  // native pitch.
+  let pitch = basePitch;
+  const voice = options.voice || null;
+  const voiceName = String(voice?.name || "");
+  const timbreMatches = gender === "masculine"
+    ? MASCULINE_VOICE.test(voiceName)
+    : FEMININE_VOICE.test(voiceName);
+  if (voice && !isNeuralVoice(voice) && !timbreMatches) {
+    pitch = gender === "masculine" ? basePitch - 0.05 : basePitch + 0.04;
+  } else if (!voice) {
+    pitch = gender === "masculine" ? basePitch - 0.03 : basePitch;
+  }
+  pitch = clamp(pitch, 0.85, 1.15);
   return {
     rate: clamp(Number(base.rate) || SACRED_SPACE_SPEECH.rate, 0.7, 1.15),
     pitch,
@@ -288,8 +377,8 @@ export function speakNaturally(text, options = {}) {
   const voices = options.voices
     || (typeof synth?.getVoices === "function" ? synth.getVoices() : []);
   const gender = options.gender || inferCompanionVoiceGender(options.companion);
-  const settings = resolveSpeechSettings({ ...options, gender });
   const voice = selectNaturalVoice(voices, { companion: options.companion, gender });
+  const settings = resolveSpeechSettings({ ...options, gender, voice });
 
   let cancelled = false;
   let timer = null;
@@ -343,7 +432,7 @@ export function speakNaturally(text, options = {}) {
         finish();
         return;
       }
-      timer = setTimeout(speakNext, settings.pauseMs);
+      timer = setTimeout(speakNext, pauseAfterChunk(chunks[index - 1], settings.pauseMs));
     };
     utterance.onerror = (event) => {
       const err = event?.error;
