@@ -28,6 +28,7 @@ import {
   SignUp,
   Show,
   useClerk,
+  useUser,
 } from "@clerk/react";
 import EmailCodeSignIn from "@/components/auth/EmailCodeSignIn";
 import { dark } from "@clerk/themes";
@@ -36,6 +37,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { useSwipeGestures } from "@/hooks/useSwipeGestures";
 import useViewportHeight from "@/hooks/useViewportHeight";
 import { initializeColorScheme } from "@/lib/colorScheme";
+import { applyActiveExtras, EXTRAS_EVENT } from "@/lib/experienceRuntime";
 import PageNotFound from "./lib/PageNotFound";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import ErrorBoundary from "@/components/ErrorBoundary";
@@ -225,6 +227,23 @@ const clerkAppearance = {
     otpCodeFieldInput: "!text-cyan-100 !border-cyan-400/30",
   },
 };
+
+function ExperienceRuntimeSync() {
+  const {user, isLoaded} = useUser();
+  const userId = isLoaded ? user?.id || null : null;
+  useEffect(() => {
+    if (!isLoaded) return;
+    const sync = () => applyActiveExtras(userId);
+    sync();
+    window.addEventListener("storage",sync);
+    window.addEventListener(EXTRAS_EVENT,sync);
+    return () => {
+      window.removeEventListener("storage",sync);
+      window.removeEventListener(EXTRAS_EVENT,sync);
+    };
+  },[isLoaded,userId]);
+  return null;
+}
 
 function ClerkQueryClientCacheInvalidator() {
   const { addListener } = useClerk();
@@ -1690,6 +1709,7 @@ export default function ProtocolApp() {
           <ClerkProviderWithRoutes>
             <AuthProvider>
               <UserActivitySync />
+              <ExperienceRuntimeSync />
               <ConfirmProvider>
                 <InAppBrowserWarning />
                 <TapTargetValidator />
