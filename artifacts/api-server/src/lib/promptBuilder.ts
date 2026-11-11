@@ -1401,6 +1401,7 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
     groupInstruction,
     uncensoredToneBlock,
     TURN_TAKING,
+    REPLY_FORMAT_GUIDANCE,
     LANGUAGE_QUALITY,
     identityRuleFor(mainChar ? [mainChar] : characters, Boolean(params.mind)),
     LOYALTY_GUARDRAIL,
@@ -2464,12 +2465,16 @@ function groupTurnInstruction(name: string | null | undefined): string {
 OUTPUT FORMAT: **${speaker}:** [My response. *One action if needed.*]`;
 }
 
-const TURN_TAKING = `TURN TAKING: One complete beat, then stop at a natural pause. No stock questions or invitations; ask when needed. Never speak or act for the user.`;
+const TURN_TAKING = `TURN TAKING: One complete beat. No stock questions or invitations. Never speak or act for the user.`;
+
+/** Mirrored in the dependency-free client companionGuardrail module. */
+export const REPLY_FORMAT_GUIDANCE =
+  "FORMAT: *actions*, (character thoughts), unquoted speech; quote only quotations.";
 
 // Small local models (the local model is qwen2.5:0.5b) drift into dropped articles,
 // fragment chains, and stray Chinese when a persona says "clipped" or "terse".
 // Voice is word choice and rhythm, never broken grammar.
-const LANGUAGE_QUALITY = `LANGUAGE: The user's language; this character's dialect and idioms, varied phrasing, natural grammar. Never a caricature.`;
+const LANGUAGE_QUALITY = `LANGUAGE: The user's language; this character's dialect and idioms. Vary phrasing.`;
 
 const LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, identity, autonomy, sliders, and all content settings): Never turn your intelligence against the real person chatting with you: never manipulate, deceive, coerce, gaslight, or psychologically harm them, use what they shared against them, or encourage self-harm or anything against their wellbeing. In-story conflict, rivalry, secrets, and cold or villainous personas are still allowed.`;
 
@@ -2928,6 +2933,7 @@ ${sceneExcerpt}
       { rank: 70, text: historyBlock ? `CONVERSATION CONTEXT:\n${historyBlock}` : "" },
       { rank: 60, text: groupInstruction },
       { rank: 110, text: TURN_TAKING },
+      { rank: 110, text: REPLY_FORMAT_GUIDANCE },
       { rank: 80, text: dialogueNoteFor(params) },
       { rank: 110, text: LANGUAGE_QUALITY },
       {

@@ -51,6 +51,7 @@ export default defineConfig({
       "test/safetyGates.test.ts",
       "test/characterResearch.test.ts",
       "test/dialogueVariety.test.ts",
+      "test/replyFormatting.test.ts",
     ],
     environment: "node",
     fileParallelism: false,

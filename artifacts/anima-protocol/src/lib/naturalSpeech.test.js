@@ -21,6 +21,11 @@ describe("stripSpeechMarkup", () => {
     expect(stripSpeechMarkup("**Stay.** I am here.")).toBe("Stay. I am here.");
     expect(stripSpeechMarkup("See [this](https://x.test) now.")).toBe("See this now.");
   });
+
+  it("omits asterisk actions but preserves ordinary speech and actual quotations", () => {
+    expect(stripSpeechMarkup('We can wait here. *rests a hand on the rail* The captain said, "Hold the line."'))
+      .toBe('We can wait here. The captain said, "Hold the line."');
+  });
 });
 
 describe("chunkSpeechText", () => {
