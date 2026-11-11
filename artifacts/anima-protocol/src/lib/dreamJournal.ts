@@ -1,10 +1,10 @@
 /**
  * Dream journal client (docs/dream-journal-frontend-contract.md).
  *
- * List / detail / settings / mark-read talk to /api/dreams/:characterId, which
- * is not on the server yet. Responses are validated with zod. A missing route
- * becomes `unavailable` so the UI can show "not available yet" instead of a
- * fake journal. Continuity (last three fragments, presence) is a separate,
+ * List / detail / settings / mark-read talk to /api/dreams/:characterId
+ * (artifacts/api-server/src/routes/dreams.ts). Responses are validated with
+ * zod. A missing route or schema (older deploy) becomes `unavailable` so the UI
+ * can show "not available yet" instead of a fake journal. Continuity (last three fragments, presence) is a separate,
  * already-shipped surface — see useIsDreaming and unreadDreamsFromContinuity.
  */
 import { z } from "zod";
