@@ -1228,11 +1228,10 @@ router.post("/invoke/:fnName", async (req, res) => {
   const data = req.body as Record<string, unknown>;
   const clientLeft = abortWhenClientLeaves(res);
   const auth = getAuth(req) as { userId?: string | null };
-  invokeLlmScope.enterWith({
-    signal: clientLeft.signal,
-    userId: auth.userId || "",
-  });
-
+  // run(), not enterWith(): the Workers runtime does not implement
+  // AsyncLocalStorage.enterWith() and throws "not implemented", which failed
+  // every /invoke call with a bare 500 before the switch below ran.
+  await invokeLlmScope.run({ signal: clientLeft.signal, userId: auth.userId || "" }, async () => {
   try {
     let result: unknown = null;
 
@@ -2525,6 +2524,7 @@ router.post("/invoke/:fnName", async (req, res) => {
   } finally {
     clientLeft.cancel();
   }
+  });
 });
 
 // Maps a raw error from the gpt-image-1 edit call into a stable
