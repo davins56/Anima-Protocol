@@ -1,4 +1,4 @@
-import { animaClient } from "@/api/animaClient";
+import { animaClient, postApiJson } from "@/api/animaClient";
 import { setGlobalCheckInContext } from "@/hooks/useCheckInRitual";
 
 const FOCUS_MOOD = {
@@ -110,4 +110,23 @@ export async function recordSacredSpaceCheckIn(input) {
     `User mood: ${payload.mood}. Sacred Space${focus}. Reflection: ${payload.reflection}`,
   );
   return created;
+}
+
+/**
+ * Save the session as a companion-scoped memory the main chat can recall.
+ * `sessionId` makes a retry idempotent. Only the structured turns are sent;
+ * the server keeps a digest, never the transcript.
+ * @param {{ characterId: string, characterName?: string, sessionId: string,
+ *   ritualFocus?: string, messages?: Array<{ role: string, content: string }>,
+ *   reflection?: string }} input
+ */
+export async function recordSacredSpaceMemory(input) {
+  const { characterId, characterName, sessionId, ritualFocus, messages = [], reflection } = input;
+  return postApiJson(`/memory-core/${encodeURIComponent(characterId)}/sacred-space`, {
+    session_id: sessionId,
+    character_name: characterName,
+    ritual_focus: ritualFocus,
+    reflection,
+    transcript: messages.map((m) => ({ role: m.role, content: m.content })),
+  });
 }

@@ -416,6 +416,9 @@ async function postImageApi(path, body, signal) {
   return res.json();
 }
 
+// Authenticated JSON POST to any /api path (same error shape as the image calls).
+export const postApiJson = postImageApi;
+
 // AI photo edit. Sends a base64 image data URL + a text prompt to the
 // api-server (gpt-image-1 edit) and returns the transformed image as a data
 // URL. Used by the home-page "add photo" AI edit feature.

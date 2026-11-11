@@ -17,6 +17,13 @@ import {
 } from "./hybridRecall";
 import type { MindProfile } from "./profile";
 import { loadSessionSummary, SESSION_SUMMARY_KIND } from "./rollingSummary";
+import {
+  experiencePromptText,
+  loadSacredSpaceExperiences,
+  pgSacredSpaceStore,
+  SACRED_SPACE_KIND,
+  type SacredSpaceExperience,
+} from "./sacredSpace";
 import { loadUserFacts, USER_FACT_KIND, type UserFact } from "./userFacts";
 
 /** Each loader gives up here so the block still beats the 1.2s optional-context budget. */
@@ -25,7 +32,11 @@ export const MIND_CONTEXT_TIMEOUT_MS = 900;
 const MIND_NOTE_KINDS = new Set([USER_FACT_KIND, SESSION_SUMMARY_KIND]);
 
 /** Turn rows from three stores into one candidate list. */
-export function knowledgeCandidates(facts: UserFact[], recalled: RecalledMemory[]): KnowledgeCandidate[] {
+export function knowledgeCandidates(
+  facts: UserFact[],
+  recalled: RecalledMemory[],
+  experiences: SacredSpaceExperience[] = [],
+): KnowledgeCandidate[] {
   const out: KnowledgeCandidate[] = facts.map((f, i) => ({
     id: f.id || `fact-${i}`,
     kind: "fact",
@@ -39,6 +50,9 @@ export function knowledgeCandidates(facts: UserFact[], recalled: RecalledMemory[
     // Facts / summaries arrive through their own loaders.
     if (m.event_type === "note" && MIND_NOTE_KINDS.has(kind)) continue;
     if (m.event_type === "retraction" || m.event_type === "recall") continue;
+    // Sacred Space rows arrive only through their own scoped loader, which
+    // also applies retention; the generic recall never surfaces them.
+    if (kind === SACRED_SPACE_KIND) continue;
     out.push({
       id: m.id,
       kind: "moment",
@@ -46,6 +60,16 @@ export function knowledgeCandidates(facts: UserFact[], recalled: RecalledMemory[
       occurredAt: m.occurred_at,
       importance: m.emotional_weight,
       similarity: typeof m.similarity === "number" ? m.similarity : null,
+    });
+  }
+  for (const e of experiences) {
+    out.push({
+      id: e.id,
+      kind: "moment",
+      text: experiencePromptText(e),
+      occurredAt: e.occurredAt,
+      importance: e.emotionalWeight,
+      similarity: null,
     });
   }
   return out;
@@ -68,7 +92,7 @@ export async function buildMindKnowledge(args: {
   const characterId = String(args.character.id);
   const soft = <T>(p: Promise<T>, fallback: T) =>
     withTimeout(p.catch(() => fallback), MIND_CONTEXT_TIMEOUT_MS, fallback);
-  const [identity, facts, summary, recalled, continuity] = await Promise.all([
+  const [identity, facts, summary, recalled, continuity, experiences] = await Promise.all([
     soft(ensureIdentitySnapshot(args.userId, args.character), null),
     soft(loadUserFacts(args.userId, characterId, args.profile.factLimit * 2), [] as UserFact[]),
     soft(loadSessionSummary(args.userId, characterId, args.sessionId), null),
@@ -83,8 +107,9 @@ export async function buildMindKnowledge(args: {
       [] as RecalledMemory[],
     ),
     soft(loadCompanionState(args.userId, characterId), null),
+    soft(loadSacredSpaceExperiences(pgSacredSpaceStore, args.userId, characterId), [] as SacredSpaceExperience[]),
   ]);
-  const ranked = rankKnowledge(knowledgeCandidates(facts, recalled), {
+  const ranked = rankKnowledge(knowledgeCandidates(facts, recalled, experiences), {
     query: args.query,
     historyTexts: args.historyTexts,
   });
