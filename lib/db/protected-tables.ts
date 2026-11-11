@@ -34,4 +34,8 @@ export const PROTECTED_SQL_TABLES = [
   "dream_recent",
   "companion_state_snapshots",
   "search_audit",
+  "tool_user_settings",
+  "tool_permissions",
+  "tool_pending_confirmations",
+  "tool_action_log",
 ] as const;
