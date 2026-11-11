@@ -42,7 +42,6 @@ export default function IntimacyDock({ characterId, conversationId, refreshKey, 
       clearTimeout(t2);
     };
   }, [characterId, refreshKey]);
-
   if (!characterId || !profile) return null;
 
   const toggleIntimacy = async () => {

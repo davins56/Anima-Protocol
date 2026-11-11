@@ -4234,7 +4234,7 @@ Return JSON:
                     betterReply,
                     note: extra?.note,
                   });
-                  if (!payload) throw new Error("This reply can't be rated.");
+                  if (!payload) return;
                   await animaApi.ratings.rate(payload);
                   // Keep the pressed thumb when the list re-renders or pages.
                   setActiveSession((prev) => {

@@ -619,3 +619,58 @@ html[data-keyboard-open] .fixed-bottom-chrome {
 #algolia-search-host input {
   font-family: var(--font-mono), ui-monospace, monospace;
 }
+
+/* Experience Studio: isolated to authenticated visual preferences. */
+html[data-experience-bubble="rounded"] [data-message-bubble] { border-radius: 1.25rem; }
+html[data-experience-bubble="standard"] [data-message-bubble] { border-radius: .35rem; }
+html[data-experience-bubble="terminal"] [data-message-bubble] {
+  border-radius: 0; border-left-width: 3px; font-family: ui-monospace, SFMono-Regular, monospace;
+}
+html[data-experience-bubble="outlined"] [data-message-bubble] {
+  border-radius: .75rem; background: transparent; border-width: 2px;
+}
+html[data-experience-shell="frosted"] [data-message-bubble] {
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+html[data-experience-shell="glass"] [data-message-bubble] {
+  background: rgba(16, 25, 40, .52);
+  backdrop-filter: blur(22px) saturate(140%); -webkit-backdrop-filter: blur(22px) saturate(140%);
+}
+html[data-experience-navigation="command"] [data-testid="bottom-tab-bar"] {
+  border-top-width: 2px; border-radius: 18px 18px 0 0; box-shadow: 0 -6px 24px rgba(34,211,238,.12);
+}
+html[data-experience-navigation="rail"] [data-testid="bottom-tab-bar"] {
+  border-top-width: 3px; background: rgba(8,20,34,.96);
+}
+html[data-experience-navigation="rail"] [data-testid="bottom-tab-bar"] > button {
+  border-right: 1px solid rgba(34,211,238,.12);
+}
+html[data-experience-character="hologram"] [data-anima-avatar] {
+  border-radius: 50%; box-shadow: 0 0 14px rgba(34,211,238,.55);
+  filter: saturate(1.3);
+}
+html[data-experience-character="netnavi"] [data-anima-avatar] {
+  border-radius: .2rem; outline: 1px solid rgba(34,211,238,.45); outline-offset: 2px;
+  box-shadow: inset 0 0 10px rgba(34,211,238,.2), 0 0 12px rgba(34,211,238,.25);
+}
+html[data-experience-hud="battle-network"] [data-message-bubble] {
+  border-top: 2px solid hsl(var(--primary));
+}
+html[data-experience-hud="tactical"] [data-message-bubble] {
+  border-left: 2px solid hsl(var(--primary));
+}
+html[data-experience-background="matrix"] [data-chat-theme-default] {
+  background: repeating-linear-gradient(90deg,transparent 0 24px,rgba(39,235,103,.08) 25px),#06140c;
+}
+html[data-experience-background="nebula"] [data-chat-theme-default] {
+  background: radial-gradient(ellipse at 78% 20%,rgba(129,78,220,.34),transparent 60%),#0c0920;
+}
+html[data-experience-background="grid"] [data-chat-theme-default] {
+  background-color: #071727;
+  background-image: linear-gradient(rgba(34,211,238,.08) 1px, transparent 1px),
+                    linear-gradient(90deg,rgba(34,211,238,.08) 1px,transparent 1px);
+  background-size: 32px 32px;
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-experience-character] [data-anima-avatar] { transition: none; }
+}
