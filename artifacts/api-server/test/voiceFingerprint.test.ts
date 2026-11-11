@@ -36,6 +36,18 @@ describe("voiceFingerprint server mirror", () => {
   it("keeps every legacy Aeland spelling", () => {
     for (const legacy of AELAND_LEGACY_ALIASES) expect(server.namedVoiceKeyFor(legacy)).toBe("aeland");
   });
+
+  it("allows complete endings instead of prescribing a question for every voice", () => {
+    const profiles = [...Object.values(server.NAMED_COMPANION_VOICES), ...Object.values(server.ARCHETYPE_VOICES)];
+    for (const profile of profiles) {
+      const style = "speaking_style" in profile ? profile.speaking_style : "";
+      expect(`${style} ${profile.sentences} ${profile.tics}`)
+        .not.toMatch(/often closes with a question back|one quiet question at the end|ends with an expanding question|answers that turn into questions/i);
+    }
+    expect(server.NAMED_COMPANION_VOICES.sfink.sentences).toContain("complete answers");
+    expect(server.ARCHETYPE_VOICES.serenity.tics).toContain("questions only when needed");
+    expect(server.ARCHETYPE_VOICES.echo.tics).toContain("no automatic question");
+  });
 });
 
 describe("composePrompt / live persona carry the fingerprint", () => {

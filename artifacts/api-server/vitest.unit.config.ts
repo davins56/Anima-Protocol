@@ -50,6 +50,7 @@ export default defineConfig({
       "test/companionPromptBudget.test.ts",
       "test/safetyGates.test.ts",
       "test/characterResearch.test.ts",
+      "test/dialogueVariety.test.ts",
     ],
     environment: "node",
     fileParallelism: false,

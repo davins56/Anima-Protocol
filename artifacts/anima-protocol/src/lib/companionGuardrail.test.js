@@ -24,6 +24,15 @@ describe("turnTakingClause", () => {
     expect(clause).toMatch(/pause point/i);
     expect(clause).not.toMatch(/Do NOT stack multiple topics/);
   });
+
+  it.each([false, true])("allows complete endings without a reply hook (Continue: %s)", (isContinue) => {
+    const clause = turnTakingClause({ isContinue });
+    expect(clause).toMatch(/complete answer, reaction, or action can simply end/i);
+    expect(clause).toMatch(/Do not routinely append a question/i);
+    expect(clause).toMatch(/Ask a specific question only when clarification or the moment genuinely needs it/i);
+    expect(clause).not.toContain("unfinished action");
+    expect(clause).toMatch(/Do not speak for the user/i);
+  });
 });
 
 describe("THOUGHT_EXPERIMENT_GUIDANCE", () => {

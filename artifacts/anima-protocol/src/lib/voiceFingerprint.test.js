@@ -71,6 +71,15 @@ describe("buildVoiceFingerprint", () => {
     expect(block).toContain("wins over every default below");
   });
 
+  it("varies phrasing within the character's dialect instead of prescribing accents or stock tics", () => {
+    for (const character of [{ name: "Linda Winings" }, { name: "Nyx", speaking_style: "A quiet regional drawl; dry humour." }]) {
+      const block = buildVoiceFingerprint(character);
+      expect(block).toContain("Keep this character's dialect and register; vary phrasing, not accents.");
+      expect(block).toContain("Use tics sparingly, never as a script.");
+    }
+    expect(NAMED_COMPANION_VOICES.linda.tics).toContain("without stock openings or tag questions");
+  });
+
   it("treats TODO placeholders as empty so the named default applies", () => {
     const block = buildVoiceFingerprint({ name: "Scarlet", speaking_style: "TODO(user): voice. Placeholder." });
     expect(block).not.toContain("TODO");
