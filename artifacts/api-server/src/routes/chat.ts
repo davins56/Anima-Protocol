@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { adultGate } from "../lib/safety/adultGate";
+import { creativeFreedomEnabled } from "../lib/chatStyle";
 import { userIsAdultAttested } from "../lib/safety/ageGate";
 import { getAuth } from "@clerk/express";
 import { and, desc, eq, or, sql } from "drizzle-orm";
@@ -3297,6 +3298,7 @@ router.post("/messages", async (req, res) => {
       arcState: activeArcState,
       worldKnowledge,
       modePolicy,
+      uncensoredMode: creativeFreedomEnabled(profileSettings, therapyActive),
       therapyAssessment,
       crisisResource: crisisResourceForCountry(
         worldKnowledgeResult.countryCode,
