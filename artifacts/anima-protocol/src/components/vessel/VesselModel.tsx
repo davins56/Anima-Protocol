@@ -20,6 +20,8 @@ import { useArkitFace } from "./useArkitFace";
 import { useVesselMaterial } from "@/lib/vessel/materialCache";
 import { createRefCache } from "@/lib/vessel/refCache";
 import { VRMUtils } from "@pixiv/three-vrm";
+import { lifelikeAssetPath } from "@/lib/vessel/lifelikeBase";
+import LifelikeVessel from "./LifelikeVessel";
 
 /** Calm flame shift for a saved `effects.aura: "flame"` vessel when no live emotion drives it. */
 function useStaticFlameShift(config: VesselConfig, active: boolean): VesselShift | null {
@@ -134,7 +136,7 @@ function Hair({ style, mat, seg }: { style: string; mat: THREE.Material; seg: nu
   }
 }
 
-function Aura({ config, hologram, still = false }: { config: VesselConfig; hologram: boolean; still?: boolean }) {
+function Aura({ config, hologram, still = false, noWings = false }: { config: VesselConfig; hologram: boolean; still?: boolean; noWings?: boolean }) {
   const { aura, color, glow } = config.effects;
   const count = config.effects.particles;
   const points = useRef<THREE.Points>(null);
@@ -167,12 +169,12 @@ function Aura({ config, hologram, still = false }: { config: VesselConfig; holog
           <pointsMaterial color={color} size={aura === "mist" ? 0.06 : 0.025} transparent opacity={0.4 + glow * 0.4} depthWrite={false} blending={THREE.AdditiveBlending} sizeAttenuation />
         </points>
       )}
-      {aura === "halo" && (
+      {aura === "halo" && !noWings && (
         <mesh material={emissive} position={[0, 1.86, -0.06]} rotation={[Math.PI / 2.3, 0, 0]}>
           <torusGeometry args={[0.14, 0.008, 6, 32]} />
         </mesh>
       )}
-      {aura === "wings" && !hologram &&
+      {aura === "wings" && !hologram && !noWings &&
         [-1, 1].map((s) => (
           <mesh key={s} material={emissive} position={[s * 0.32, 1.3, -0.15]} rotation={[0, s * 0.5, s * 0.35]}>
             <planeGeometry args={[0.55, 0.8]} />
@@ -401,6 +403,35 @@ export default function VesselModel(props: Props) {
   const { model } = props.config;
   const { kind, url } = model;
   if (kind === "procedural" || !url) return procedural;
+  // Bundled lifelike base (high-detail rigged GLB). Holograms stay procedural (cheap, additive).
+  const lifelike = kind === "gltf" ? lifelikeAssetPath(url) : null;
+  if (lifelike) {
+    if (props.hologram) return procedural;
+    return (
+      <AssetBoundary key={lifelike} fallback={procedural}>
+        <Suspense fallback={procedural}>
+          <group>
+            <LifelikeVessel
+              path={lifelike}
+              config={props.config}
+              expression={props.shift ? props.shift.face : props.expression}
+              speaking={props.speaking}
+              audioLevel={props.audioLevel}
+              faceOverride={props.faceOverride}
+              track={props.track !== false}
+              reducedMotion={props.reducedMotion}
+              hd={props.hd}
+              onFrame={props.onFrame}
+              onLoaded={props.onLoaded}
+            />
+            {/* particles only: wings and halo are part of the lifelike body */}
+            <Aura config={props.config} hologram={false} still={props.reducedMotion} noWings />
+            {props.shift && <VesselAura shift={props.shift} budget={props.hd ? 72 : props.track !== false ? 40 : 0} />}
+          </group>
+        </Suspense>
+      </AssetBoundary>
+    );
+  }
   if (usesUploadedRuntime(model)) {
     // Owner-only route: other stewards' vessels (resonance holograms) can't load it.
     if (props.hologram) return procedural;

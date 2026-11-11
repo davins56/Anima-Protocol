@@ -24,6 +24,8 @@ import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import type { FrameloopGate } from "@/lib/vessel/frameloopGate";
 import { RenderDemandContext, type RenderDemand } from "./renderDemand";
 import { detectRendererCapabilities, selectRendererQuality } from "@/lib/rendererQuality";
+import { isLifelikeModel } from "@/lib/vessel/lifelikeBase";
+import LifelikeStage from "./LifelikeStage";
 
 /** Idle (nothing moving but breathing/blink) render rate for full mode. */
 export const IDLE_FPS = 15;
@@ -119,6 +121,13 @@ const VesselCanvas = forwardRef<VesselCanvasHandle, Props>(function VesselCanvas
   const portrait = mode === "portrait";
   const head = !portrait && focus === "head";
   const reduced = usePrefersReducedMotion();
+  // Lifelike bases (20 MB GLB, physical skin, HDRI) are a Studio / presence-view thing:
+  // tiny portraits keep the light procedural body.
+  const lifelike = !portrait && isLifelikeModel(config.model);
+  const shownConfig = useMemo<VesselConfig>(
+    () => (portrait && isLifelikeModel(config.model) ? { ...config, model: { kind: "procedural" } } : config),
+    [portrait, config],
+  );
   const { gate, frameloop, active } = useFrameloopGate(visible);
   const demand = useMemo<RenderDemand>(
     () => ({
@@ -165,10 +174,16 @@ const VesselCanvas = forwardRef<VesselCanvasHandle, Props>(function VesselCanvas
         gl={{ antialias: !portrait && hd && tier.antialias, powerPreference: "low-power", preserveDrawingBuffer: false, alpha: true }}
       >
         <RenderDemandContext.Provider value={demand}>
-        <ambientLight intensity={0.6} />
-        <directionalLight position={[1.5, 3, 2]} intensity={1.1} />
-        <pointLight position={[-1.5, 1.6, 1]} intensity={0.6} color={config.effects.color} />
-        <VesselModel config={config} expression={expression} hd={hd && !portrait} track={!portrait} shift={shift} mood={mood} intensity={intensity} speaking={speaking} faceOverride={faceOverride} reducedMotion={reduced} onLoaded={() => demand.pulse(LOAD_PULSE_MS)} />
+        {lifelike ? (
+          <LifelikeStage tier={tier} hd={hd} rim={config.effects.color} reducedMotion={reduced} />
+        ) : (
+          <>
+            <ambientLight intensity={0.6} />
+            <directionalLight position={[1.5, 3, 2]} intensity={1.1} />
+            <pointLight position={[-1.5, 1.6, 1]} intensity={0.6} color={config.effects.color} />
+          </>
+        )}
+        <VesselModel config={shownConfig} expression={expression} hd={hd && !portrait} track={!portrait} shift={shift} mood={mood} intensity={intensity} speaking={speaking} faceOverride={faceOverride} reducedMotion={reduced} onLoaded={() => demand.pulse(LOAD_PULSE_MS)} />
         {portrait ? (
           <Ticker fps={speaking && config.model.kind === "vrm" ? 24 : 12} active={visible} />
         ) : (
