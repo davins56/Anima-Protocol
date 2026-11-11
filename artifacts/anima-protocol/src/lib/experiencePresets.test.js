@@ -44,9 +44,9 @@ describe("visual-only experience presets", () => {
     })),storage)).toHaveLength(30);
   });
 
-  it("does not mislabel simulated patterns as production implementations", () => {
+  it("labels runtime styling separately from advanced production mechanics", () => {
     for (const name of ["Navigation patterns","Character presentation","NetNavi-inspired HUD"]) {
-      expect(FEATURE_MATRIX.find(feature => feature.name === name)?.status).toBe("planned");
+      expect(FEATURE_MATRIX.find(feature => feature.name === name)?.status).toBe("partial");
     }
   });
 });
