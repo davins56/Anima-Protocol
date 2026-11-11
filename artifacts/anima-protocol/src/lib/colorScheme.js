@@ -33,3 +33,10 @@ export const applyTheme = (theme) => {
     html.classList.add("dark");
   }
 };
+
+// The profile is authoritative for Original; other Studio presets remain device-specific.
+export const syncProfileColorScheme = (theme) => {
+  if (theme !== "light" && theme !== "dark") return;
+  localStorage.setItem("app-color-scheme", theme);
+  applyTheme(theme);
+};

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect } from "react";
+import { lazy, Suspense, useState, useEffect, useRef } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useUser } from "@clerk/react";
 import { animaClient, exportData } from "@/api/animaClient";
@@ -26,7 +26,9 @@ import { resetTutorial } from "@/components/onboarding/TutorialOverlay";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
-import { BACKGROUND_THEMES } from "@/components/chat/ChatBackground.jsx";
+import ChatBackground, { BACKGROUND_THEMES } from "@/components/chat/ChatBackground.jsx";
+import { applyAppearance, readAppearance, saveAppearance } from "@/lib/appearanceStudio";
+import { applyTheme, syncProfileColorScheme } from "@/lib/colorScheme";
 import { Upload, BookOpen, GraduationCap } from "lucide-react";
 import OwnModelConsent from "@/components/tutor/OwnModelConsent";
 import { useModelTutor } from "@/hooks/useModelTutor";
@@ -56,7 +58,6 @@ function SectionSkeleton() {
 import AgeGateDialog from "@/components/settings/AgeGateDialog";
 import {
   formatChatBackgroundUploadError,
-  persistChatBackgroundSettings,
   uploadChatBackgroundImage,
 } from "@/lib/settingsChatBackground";
 
@@ -127,6 +128,15 @@ export default function Settings() {
     display_name: displayNameFromAccount(authUser) || displayNameFromAccount(clerkIdentity) || "",
   });
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const savingRef = useRef(false);
+  const uploadingBgRef = useRef(false);
+  const draftRevision = useRef(0);
+  const themePreview = useRef(false);
+  const previewTheme = useRef("dark");
+  const [appearanceTheme, setAppearanceTheme] = useState(() => readAppearance().theme);
+  const [showCustomBackground, setShowCustomBackground] = useState(false);
   const [sessionCount, setSessionCount] = useState(0);
   const [charCount, setCharCount] = useState(0);
   const [clearingData, setClearingData] = useState(null);
@@ -154,6 +164,21 @@ export default function Settings() {
   const [startersRestored, setStartersRestored] = useState(false);
   const [startersRestoreError, setStartersRestoreError] = useState(null);
   const [anima, setAnima] = useState(null);
+
+  useEffect(() => {
+    const studioChanged = () => {
+      themePreview.current = false;
+      setAppearanceTheme(readAppearance().theme);
+    };
+    window.addEventListener("anima:appearance", studioChanged);
+    return () => {
+      window.removeEventListener("anima:appearance", studioChanged);
+      if (themePreview.current) {
+        applyAppearance();
+        applyTheme(localStorage.getItem("app-color-scheme"));
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const identity = mergeAccountIdentity(clerkIdentity, authUser);
@@ -222,10 +247,12 @@ export default function Settings() {
   }, [section, isAuthenticated, authUser?.id, clerkIdentity?.id]);
 
   const loadUser = async () => {
+    const revision = draftRevision.current;
     const me = await animaClient.auth.me();
     // Clerk / AuthContext identity first — empty store strings must not win.
     setUser((prev) => mergeAccountIdentity(clerkIdentity, authUser, prev, me));
-    if (me?.settings) {
+    if (me?.settings && revision === draftRevision.current) {
+      if (!themePreview.current) syncProfileColorScheme(me.settings.theme_mode);
       setPrefs({
         ...defaultPrefs,
         ...me.settings,
@@ -236,7 +263,7 @@ export default function Settings() {
           displayNameFromAccount(clerkIdentity) ||
           "",
       });
-    } else {
+    } else if (!me?.settings) {
       const display =
         me?.display_name ||
         displayNameFromAccount(authUser) ||
@@ -264,12 +291,38 @@ export default function Settings() {
   };
 
   const handleSave = async () => {
+    if (savingRef.current || uploadingBgRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    setSaved(false);
+    setSaveError("");
+    const revision = draftRevision.current;
+    const previewingTheme = themePreview.current;
     try {
       await animaClient.auth.updateMe({ settings: prefs, display_name: prefs.display_name });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      const readback = await animaClient.auth.refreshMe();
+      if (!readback?.settings || Object.keys(prefs).some(
+        (key) => JSON.stringify(readback.settings[key]) !== JSON.stringify(prefs[key]),
+      )) throw new Error("Settings could not be verified. Please try saving again.");
+      if (previewingTheme && themePreview.current) {
+        syncProfileColorScheme(prefs.theme_mode);
+        saveAppearance({ theme: "original" });
+        if (previewTheme.current !== prefs.theme_mode) {
+          themePreview.current = true;
+          applyTheme(previewTheme.current);
+        }
+      }
+      if (revision === draftRevision.current) {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+      }
     } catch (err) {
-      toast.error(err?.message || "Couldn't save settings. Try again.");
+      const message = err?.message || "Couldn't save settings. Try again.";
+      setSaveError(message);
+      toast.error(message);
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
   };
 
@@ -472,12 +525,26 @@ export default function Settings() {
   };
 
   const handleLogout = () => logout();
-  const setPref = (key, val) => setPrefs((p) => ({ ...p, [key]: val }));
+  const setPref = (key, val) => {
+    draftRevision.current += 1;
+    setSaved(false);
+    setPrefs((p) => ({ ...p, [key]: val }));
+  };
+
+  const selectColorTheme = (theme) => {
+    themePreview.current = true;
+    previewTheme.current = theme;
+    setAppearanceTheme("original");
+    applyAppearance({ ...readAppearance(), theme: "original" });
+    applyTheme(theme);
+    setPref("theme_mode", theme);
+  };
 
   const handleChatBackgroundFile = async (e) => {
     const input = e.target;
     const file = input.files?.[0];
-    if (!file) return;
+    if (!file || uploadingBgRef.current) return;
+    uploadingBgRef.current = true;
     setUploadingBg(true);
     setBgUploadError("");
     try {
@@ -485,20 +552,15 @@ export default function Settings() {
         file,
         (payload) => animaClient.integrations.Core.UploadFile(payload),
       );
+      draftRevision.current += 1;
+      setSaved(false);
       setPrefs((p) => ({ ...p, chat_bg_theme: "custom", chat_bg_image: fileUrl }));
-      const next = await persistChatBackgroundSettings({
-        prefs,
-        fileUrl,
-        updateMe: (data) => animaClient.auth.updateMe(data),
-      });
-      setPrefs(next);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
     } catch (err) {
       const message = formatChatBackgroundUploadError(err);
       setBgUploadError(message);
       toast.error(message);
     } finally {
+      uploadingBgRef.current = false;
       setUploadingBg(false);
       input.value = "";
     }
@@ -638,7 +700,7 @@ export default function Settings() {
                   <LogOut className="w-3.5 h-3.5" />
                   Logout
                 </button>
-                <SaveButton onSave={handleSave} saved={saved} />
+                <SaveButton onSave={handleSave} saved={saved} saving={saving || uploadingBg} error={saveError} />
               </div>
             </div>
           )}
@@ -944,7 +1006,7 @@ export default function Settings() {
               </div>
 
               <div className="flex justify-end">
-                <SaveButton onSave={handleSave} saved={saved} />
+                <SaveButton onSave={handleSave} saved={saved} saving={saving || uploadingBg} error={saveError} />
               </div>
             </div>
           )}
@@ -1013,13 +1075,14 @@ export default function Settings() {
                  <div className="flex items-center justify-between gap-4">
                    <div>
                      <p className="font-mono text-xs text-primary/70 tracking-wider uppercase">Color Theme</p>
-                     <p className="text-[9px] font-mono text-primary/30 mt-0.5">Toggle between dark and light interface</p>
+                     <p className="text-[9px] font-mono text-primary/30 mt-0.5">Dark or Light previews the Original Studio preset. Save to keep it.</p>
                    </div>
                    <div className="flex gap-2 flex-shrink-0">
                      <button
-                       onClick={() => setPref("theme_mode", "dark")}
+                       onClick={() => selectColorTheme("dark")}
+                       aria-pressed={prefs.theme_mode === "dark" && appearanceTheme === "original"}
                        className={`px-4 py-1.5 border font-mono text-[10px] tracking-widest uppercase transition-all ${
-                         prefs.theme_mode === "dark"
+                         prefs.theme_mode === "dark" && appearanceTheme === "original"
                            ? "bg-primary/20 border-primary/50 text-primary"
                            : "border-primary/15 text-primary/40 hover:text-primary/70"
                        }`}
@@ -1027,9 +1090,10 @@ export default function Settings() {
                        Dark
                      </button>
                      <button
-                       onClick={() => setPref("theme_mode", "light")}
+                       onClick={() => selectColorTheme("light")}
+                       aria-pressed={prefs.theme_mode === "light" && appearanceTheme === "original"}
                        className={`px-4 py-1.5 border font-mono text-[10px] tracking-widest uppercase transition-all ${
-                         prefs.theme_mode === "light"
+                         prefs.theme_mode === "light" && appearanceTheme === "original"
                            ? "bg-primary/20 border-primary/50 text-primary"
                            : "border-primary/15 text-primary/40 hover:text-primary/70"
                        }`}
@@ -1046,7 +1110,17 @@ export default function Settings() {
                   {BACKGROUND_THEMES.map((t) => (
                     <button
                       key={t.id}
-                      onClick={() => setPref("chat_bg_theme", t.id)}
+                      onClick={() => {
+                        if (t.id === "custom") {
+                          setShowCustomBackground(true);
+                          if (prefs.chat_bg_image) setPref("chat_bg_theme", "custom");
+                        }
+                        else {
+                          setShowCustomBackground(false);
+                          setPref("chat_bg_theme", t.id);
+                        }
+                      }}
+                      aria-pressed={prefs.chat_bg_theme === t.id}
                       className={`relative flex flex-col items-center justify-center gap-1.5 p-3 border transition-all ${
                         prefs.chat_bg_theme === t.id
                           ? "border-primary/60 bg-primary/10 text-primary"
@@ -1059,14 +1133,19 @@ export default function Settings() {
                   ))}
                 </div>
 
-                {prefs.chat_bg_theme === "custom" && (
+                <div role="img" aria-label={`${prefs.chat_bg_theme} chat background preview`} className="relative h-32 overflow-hidden border border-primary/20">
+                  <ChatBackground theme={prefs.chat_bg_theme} imageUrl={prefs.chat_bg_image} />
+                </div>
+
+                {(showCustomBackground || prefs.chat_bg_theme === "custom") && (
                   <div className="space-y-2 pt-2 border-t border-primary/10">
                     <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase">Custom Background Image</label>
                     <label className="flex items-center gap-2 cursor-pointer w-fit">
                       <input
                         type="file"
                         accept="image/*"
-                        className="hidden"
+                        className="sr-only"
+                        aria-label="Upload background image"
                         disabled={uploadingBg}
                         onChange={handleChatBackgroundFile}
                       />
@@ -1097,7 +1176,12 @@ export default function Settings() {
                       spellCheck={false}
                       aria-label="Custom background image URL"
                       value={prefs.chat_bg_image}
-                      onChange={(e) => setPref("chat_bg_image", e.target.value)}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        draftRevision.current += 1;
+                        setSaved(false);
+                        setPrefs((p) => ({ ...p, chat_bg_image: value, chat_bg_theme: "custom" }));
+                      }}
                       placeholder="Or paste image URL..."
                       className="w-full bg-black/60 border border-primary/15 text-primary/70 placeholder-primary/15 font-mono text-[10px] px-3 py-2 focus:outline-none focus:border-primary/40 transition-colors"
                     />
@@ -1106,7 +1190,7 @@ export default function Settings() {
               </div>
 
               <div className="flex justify-end">
-                <SaveButton onSave={handleSave} saved={saved} />
+                <SaveButton onSave={handleSave} saved={saved} saving={saving || uploadingBg} error={saveError} />
               </div>
             </div>
           )}
@@ -1721,10 +1805,13 @@ function LegalLink({ href, label, description }) {
   );
 }
 
-function SaveButton({ onSave, saved }) {
+function SaveButton({ onSave, saved, saving, error }) {
   return (
+    <div>
+    {error && <p role="alert" className="text-xs text-red-400 mb-2">{error}</p>}
     <button
       onClick={onSave}
+      disabled={saving}
       className={`flex items-center gap-2 px-6 py-2 border font-mono text-xs tracking-widest uppercase transition-all hud-corner ${
         saved
           ? "bg-green-900/20 border-green-500/40 text-green-400"
@@ -1732,7 +1819,8 @@ function SaveButton({ onSave, saved }) {
       }`}
     >
       <Save className="w-3.5 h-3.5" />
-      {saved ? "Saved!" : "Save Changes"}
+      {saving ? "Saving..." : saved ? "Saved!" : "Save Changes"}
     </button>
+    </div>
   );
 }
