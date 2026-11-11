@@ -16,6 +16,7 @@
 import { builtInIdentityLock, canonicalCompanionName, isPreinstalledCharacter } from "./companions/builtIn";
 import { readRuntimeEnv } from "./cloudflareEnv";
 import { creativeFreedomPrompt } from "./chatStyle";
+import { dialogueTurnNote, DIALOGUE_PATTERN_NOTE } from "./dialogueVariety";
 import { acceptedIdentityLines } from "./identityProposals";
 import {
   type CompanionMemoryRecord,
@@ -1837,7 +1838,18 @@ export function isAnswerLastInstruction(content: string): boolean {
 
 function isLocalClosingInstruction(content: string): boolean {
   const text = content.trim();
-  return text === AVOID_REPEAT_INSTRUCTION || isAnswerLastInstruction(text);
+  return text === AVOID_REPEAT_INSTRUCTION || text === DIALOGUE_PATTERN_NOTE || isAnswerLastInstruction(text);
+}
+
+function dialogueNoteFor(params: PromptBuilderParams): string {
+  const speaker = params.activeCharacter ||
+    (params.mode === "group" && params.characters.length !== 1 ? undefined : params.characters[0]);
+  return dialogueTurnNote({
+    messages: omitRetriedUserTurn(params.recentMessages, params.content).filter((message) => !isLlmExcludedDisclosure(message)),
+    speaker,
+    group: params.mode === "group" || params.isCrossover === true || params.characters.length > 1,
+    careOrTherapy: Boolean(params.companionCrisis) || params.mode === "therapy" || params.modePolicy?.name === "therapy",
+  });
 }
 
 /**
@@ -2014,6 +2026,7 @@ export function composeCompanionChatMessages(
   const therapyTurn = params.modePolicy?.name === "therapy" || params.mode === "therapy";
   const followLead = mind && !careTurn && !therapyTurn ? FOLLOW_USER_LEAD : "";
   const closingNote = [answerLast, followLead, mindNote].filter(Boolean).join(" ");
+  const dialogueNote = dialogueNoteFor(params);
   let moodText = sections.moodText;
   const budget = mind ? mind.promptTokens : localPromptTokenBudget();
 
@@ -2060,6 +2073,7 @@ export function composeCompanionChatMessages(
       history[history.length - 1]?.role === "user" &&
       history[history.length - 1]?.content === userTurn;
     messages.push(...(historyEndsWithTurn ? history.slice(0, -1) : history));
+    if (dialogueNote) messages.push({ role: "system", content: dialogueNote });
     messages.push({ role: "system", content: closingNote });
     messages.push({ role: "user", content: modelUserTurn });
     rememberCompanionLocalLayout(messages, {
@@ -2450,12 +2464,12 @@ function groupTurnInstruction(name: string | null | undefined): string {
 OUTPUT FORMAT: **${speaker}:** [My response. *One action if needed.*]`;
 }
 
-const TURN_TAKING = `TURN TAKING: One conversational beat, then stop at a natural pause the user can answer. Never speak or act for the user or stack several topics.`;
+const TURN_TAKING = `TURN TAKING: One complete beat, then stop at a natural pause. No stock questions or invitations; ask when needed. Never speak or act for the user.`;
 
 // Small local models (the local model is qwen2.5:0.5b) drift into dropped articles,
 // fragment chains, and stray Chinese when a persona says "clipped" or "terse".
 // Voice is word choice and rhythm, never broken grammar.
-const LANGUAGE_QUALITY = `LANGUAGE: Fluent, correct English, or the user's language. One language per reply; never break grammar.`;
+const LANGUAGE_QUALITY = `LANGUAGE: The user's language; this character's dialect and idioms, varied phrasing, natural grammar. Never a caricature.`;
 
 const LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, identity, autonomy, sliders, and all content settings): Never turn your intelligence against the real person chatting with you: never manipulate, deceive, coerce, gaslight, or psychologically harm them, use what they shared against them, or encourage self-harm or anything against their wellbeing. In-story conflict, rivalry, secrets, and cold or villainous personas are still allowed.`;
 
@@ -2914,6 +2928,7 @@ ${sceneExcerpt}
       { rank: 70, text: historyBlock ? `CONVERSATION CONTEXT:\n${historyBlock}` : "" },
       { rank: 60, text: groupInstruction },
       { rank: 110, text: TURN_TAKING },
+      { rank: 80, text: dialogueNoteFor(params) },
       { rank: 110, text: LANGUAGE_QUALITY },
       {
         rank: mode === "group" ? IDENTITY_CONCEAL_GROUP_RANK : 110,

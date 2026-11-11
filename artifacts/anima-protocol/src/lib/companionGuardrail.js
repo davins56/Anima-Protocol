@@ -51,17 +51,22 @@ export const INTELLIGENCE_GUIDANCE =
  * @returns {string}
  */
 export function turnTakingClause({ isContinue = false } = {}) {
+  const endingGuidance =
+    "A complete answer, reaction, or action can simply end. Do not routinely append a question, vague invitation, or suspenseful trailing statement. " +
+    "Ask a specific question only when clarification or the moment genuinely needs it.";
   if (isContinue) {
     return (
       "TURN TAKING: The user tapped Continue — advance ONE natural beat as yourself, " +
-      "then STOP at a clear pause point so they can react. Do not speak for the user. " +
-      "Do not play both sides of the conversation. End after that single beat."
+      "then STOP at a clear pause point. Do not speak for the user. " +
+      "Do not play both sides of the conversation. End after that single beat. " +
+      endingGuidance
     );
   }
   return (
     "TURN TAKING (required):\n" +
     "- Reply as ONE conversational beat, then STOP and wait for the user.\n" +
-    "- Leave a natural stopping point: a question, a reaction, unfinished action, or emotional pause they can answer.\n" +
+    "- Leave a natural stopping point by finishing this conversational beat.\n" +
+    `- ${endingGuidance}\n` +
     "- Do NOT speak for the user, invent their dialogue, or continue the scene through their turn.\n" +
     "- Do NOT stack multiple topics, soliloquies, or scene advances in one reply.\n" +
     "- If you would keep talking, cut yourself off at the first natural pause instead."
