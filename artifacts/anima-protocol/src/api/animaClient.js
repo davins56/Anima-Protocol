@@ -1611,12 +1611,13 @@ function mergedUser(profileData) {
   };
 }
 
-async function loadProfile(force) {
+async function loadProfile(force, strict = false) {
   if (!force && profileCache && profileExpiry > Date.now()) {
     return profileCache;
   }
   const token = await getToken();
   if (!token) {
+    if (strict) throw new Error('Sign in to verify your settings.');
     // Do not cache an empty profile — Clerk getToken is often still minting
     // right after sign-in. A 2s empty TTL made Settings look signed-out.
     return profileCache || {};
@@ -1629,6 +1630,7 @@ async function loadProfile(force) {
     timeoutMs: STORE_LIST_TIMEOUT_MS,
   });
   if (!res.ok) {
+    if (strict) await throwErr(res);
     profileCache = profileCache || {};
     return profileCache;
   }
@@ -1680,6 +1682,8 @@ export const animaClient = {
       const profile = await loadProfile(false);
       return mergedUser(profile);
     },
+
+    refreshMe: async () => mergedUser(await loadProfile(true, true)),
 
     // Sync identity + cached profile only — no /profile GET. Sacred Space
     // uses this so a hung ensureSchemaOnce() cannot own AFFIRMATION_LOAD_TIMEOUT.
