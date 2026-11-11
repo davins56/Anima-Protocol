@@ -25,6 +25,8 @@ let baseUrl = "";
 const ids: string[] = [];
 let foreignDreamId = "";
 let siblingDreamId = "";
+let firstResponse: Response;
+let firstBody: { dreams?: unknown[]; code?: string; dreaming_enabled?: boolean } = {};
 
 function call(path: string, user: string | null, init: { method?: string; body?: unknown } = {}) {
   return fetch(`${baseUrl}${path}`, {
@@ -45,43 +47,11 @@ async function insertDream(userId: string, characterId: string, summary: string,
 
 beforeAll(async () => {
   await ensureSchemaOnce();
-  const pool = getPool();
-  // Mirrors supabase/migrations/20261022270000_dream_layer.sql + 20261111030000_dream_journal.sql,
-  // including the append-only triggers, inside the disposable test schema.
-  await pool.query(`
-    CREATE FUNCTION anima_forbid_mutation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'append-only'; END $$;
-    CREATE TABLE dreams (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id text NOT NULL, character_id text NOT NULL,
-      identity_core_id uuid, identity_version integer, source_event_ids uuid[] NOT NULL DEFAULT '{}',
-      cluster_size integer NOT NULL DEFAULT 0, cohesion real, themes text[] NOT NULL DEFAULT '{}', mood text,
-      summary text NOT NULL, fragment text NOT NULL, window_start timestamptz, window_end timestamptz,
-      synthesizer text NOT NULL DEFAULT 'llm', model text, created_at timestamptz NOT NULL DEFAULT now());
-    CREATE TABLE dream_surfacings (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), dream_id uuid NOT NULL REFERENCES dreams(id),
-      user_id text NOT NULL, character_id text NOT NULL, surface text NOT NULL DEFAULT 'proactive',
-      session_id text, surfaced_at timestamptz NOT NULL DEFAULT now());
-    CREATE TABLE dream_reads (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(), dream_id uuid NOT NULL REFERENCES dreams(id),
-      user_id text NOT NULL, character_id text NOT NULL, read_at timestamptz NOT NULL DEFAULT now(),
-      UNIQUE (user_id, dream_id));
-    CREATE TABLE dream_settings (
-      user_id text NOT NULL, character_id text NOT NULL, dreaming_enabled boolean NOT NULL DEFAULT true,
-      updated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (user_id, character_id));
-    CREATE TRIGGER dreams_immutable BEFORE UPDATE OR DELETE ON dreams FOR EACH ROW EXECUTE FUNCTION anima_forbid_mutation();
-    CREATE TRIGGER dream_reads_immutable BEFORE UPDATE OR DELETE ON dream_reads FOR EACH ROW EXECUTE FUNCTION anima_forbid_mutation();
-  `);
 
   await db.insert(userEntities).values([
     { userId: owner, entityName: "Anima", entityId: aelyndra, data: { name: "Aelyndra" } },
     { userId: other, entityName: "Anima", entityId: otherChar, data: { name: "Other" } },
   ]);
-
-  for (let i = 0; i < 5; i += 1) {
-    ids.push(await insertDream(owner, aelyndra, `Aelyndra dream ${i}`, `2026-11-0${i + 1}T12:00:00.123456Z`));
-  }
-  foreignDreamId = await insertDream(other, otherChar, "someone else's dream", "2026-11-05T12:00:00Z");
-  siblingDreamId = await insertDream(owner, `${PREFIX}unowned`, "unowned companion dream", "2026-11-05T12:00:00Z");
-  await getPool().query(`INSERT INTO dream_surfacings (dream_id, user_id, character_id) VALUES ($1,$2,$3)`, [ids[0], owner, aelyndra]);
 
   const app = express();
   app.use(express.json());
@@ -90,6 +60,18 @@ beforeAll(async () => {
     server = app.listen(0, () => resolve());
   });
   baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+  // No dream tables exist yet (migrations unapplied): the first journal request
+  // must create them and answer normally instead of 503 dream_schema_missing.
+  firstResponse = await call(`/dreams/${aelyndra}`, owner);
+  firstBody = await firstResponse.json();
+
+  for (let i = 0; i < 5; i += 1) {
+    ids.push(await insertDream(owner, aelyndra, `Aelyndra dream ${i}`, `2026-11-0${i + 1}T12:00:00.123456Z`));
+  }
+  foreignDreamId = await insertDream(other, otherChar, "someone else's dream", "2026-11-05T12:00:00Z");
+  siblingDreamId = await insertDream(owner, `${PREFIX}unowned`, "unowned companion dream", "2026-11-05T12:00:00Z");
+  await getPool().query(`INSERT INTO dream_surfacings (dream_id, user_id, character_id) VALUES ($1,$2,$3)`, [ids[0], owner, aelyndra]);
 });
 
 afterAll(async () => {
@@ -97,6 +79,13 @@ afterAll(async () => {
 });
 
 describe("dream journal API", () => {
+  it("creates missing dream tables on first request instead of reporting unavailable", async () => {
+    expect(firstResponse.status).toBe(200);
+    expect(firstBody).toMatchObject({ dreams: [], dreaming_enabled: true });
+    // Append-only triggers came with them.
+    await expect(getPool().query(`UPDATE dreams SET summary = 'x' WHERE id = $1`, [ids[0]])).rejects.toThrow();
+  });
+
   it("requires authentication", async () => {
     expect((await call(`/dreams/${aelyndra}`, null)).status).toBe(401);
     expect((await call(`/dreams/${aelyndra}/settings`, null)).status).toBe(401);

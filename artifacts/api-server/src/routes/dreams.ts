@@ -18,6 +18,7 @@ import { presenceState } from "../lib/continuity/continuityCore";
 import { loadCompanionState } from "../lib/continuity/continuityStore";
 import { dreamConfig } from "../lib/dreams/dreamCore";
 import { dreamingEnabledFor } from "../lib/dreams/dreamLayer";
+import { ensureDreamJournalSchema } from "../lib/dreams/dreamJournalSchema";
 
 const router = Router();
 router.use(rateLimit);
@@ -50,6 +51,33 @@ function fail(res: Response, err: unknown): void {
   }
   console.warn("[dreams] request failed:", (err as Error)?.message);
   res.status(500).json({ error: "Dream journal request failed.", code: "server_error" });
+}
+
+type Handler = (req: Request, res: Response) => Promise<void>;
+
+/**
+ * Runs a handler; when a dream table is missing (migration not applied on this
+ * database yet), creates the tables and retries once instead of answering 503.
+ */
+function withDreamSchema(handler: Handler): Handler {
+  return async (req, res) => {
+    try {
+      await handler(req, res);
+    } catch (err) {
+      if (!isMissingSchema(err) || res.headersSent) return fail(res, err);
+      try {
+        await ensureDreamJournalSchema();
+      } catch (ddlErr) {
+        console.warn("[dreams] could not create dream journal tables:", (ddlErr as Error)?.message);
+        return fail(res, err);
+      }
+      try {
+        await handler(req, res);
+      } catch (retryErr) {
+        fail(res, retryErr);
+      }
+    }
+  };
 }
 
 function requireUser(req: Request, res: Response): string | null {
@@ -134,84 +162,72 @@ async function isDreaming(userId: string, characterId: string): Promise<boolean>
   }
 }
 
-router.get("/:characterId/settings", async (req, res) => {
-  try {
-    const auth = await authorize(req, res);
-    if (!auth) return;
-    res.json({ character_id: auth.characterId, dreaming_enabled: await dreamingEnabledFor(auth.userId, auth.characterId) });
-  } catch (err) {
-    fail(res, err);
-  }
-});
+router.get("/:characterId/settings", withDreamSchema(async (req, res) => {
+  const auth = await authorize(req, res);
+  if (!auth) return;
+  res.json({ character_id: auth.characterId, dreaming_enabled: await dreamingEnabledFor(auth.userId, auth.characterId) });
+}));
 
-router.put("/:characterId/settings", async (req, res) => {
-  try {
-    const auth = await authorize(req, res);
-    if (!auth) return;
-    const enabled = (req.body as { dreaming_enabled?: unknown } | undefined)?.dreaming_enabled;
-    if (typeof enabled !== "boolean") {
-      res.status(400).json({ error: "dreaming_enabled must be a boolean", code: "invalid_body" });
+router.put("/:characterId/settings", withDreamSchema(async (req, res) => {
+  const auth = await authorize(req, res);
+  if (!auth) return;
+  const enabled = (req.body as { dreaming_enabled?: unknown } | undefined)?.dreaming_enabled;
+  if (typeof enabled !== "boolean") {
+    res.status(400).json({ error: "dreaming_enabled must be a boolean", code: "invalid_body" });
+    return;
+  }
+  await getPool().query(
+    `INSERT INTO dream_settings (user_id, character_id, dreaming_enabled) VALUES ($1,$2,$3)
+     ON CONFLICT (user_id, character_id) DO UPDATE SET dreaming_enabled = EXCLUDED.dreaming_enabled, updated_at = now()`,
+    [auth.userId, auth.characterId, enabled],
+  );
+  res.json({ character_id: auth.characterId, dreaming_enabled: enabled });
+}));
+
+router.get("/:characterId", withDreamSchema(async (req, res) => {
+  const auth = await authorize(req, res);
+  if (!auth) return;
+  const { userId, characterId } = auth;
+
+  const limitRaw = req.query.limit;
+  const parsed = limitRaw == null || limitRaw === "" ? DEFAULT_LIMIT : Number(limitRaw);
+  const limit = Number.isFinite(parsed) ? Math.min(MAX_LIMIT, Math.max(1, Math.floor(parsed))) : DEFAULT_LIMIT;
+
+  let cursor: { createdAt: string; id: string } | null = null;
+  if (typeof req.query.cursor === "string" && req.query.cursor) {
+    cursor = decodeCursor(req.query.cursor);
+    if (!cursor) {
+      res.status(400).json({ error: "Invalid cursor", code: "invalid_cursor" });
       return;
     }
-    await getPool().query(
-      `INSERT INTO dream_settings (user_id, character_id, dreaming_enabled) VALUES ($1,$2,$3)
-       ON CONFLICT (user_id, character_id) DO UPDATE SET dreaming_enabled = EXCLUDED.dreaming_enabled, updated_at = now()`,
-      [auth.userId, auth.characterId, enabled],
-    );
-    res.json({ character_id: auth.characterId, dreaming_enabled: enabled });
-  } catch (err) {
-    fail(res, err);
   }
-});
 
-router.get("/:characterId", async (req, res) => {
-  try {
-    const auth = await authorize(req, res);
-    if (!auth) return;
-    const { userId, characterId } = auth;
-
-    const limitRaw = req.query.limit;
-    const parsed = limitRaw == null || limitRaw === "" ? DEFAULT_LIMIT : Number(limitRaw);
-    const limit = Number.isFinite(parsed) ? Math.min(MAX_LIMIT, Math.max(1, Math.floor(parsed))) : DEFAULT_LIMIT;
-
-    let cursor: { createdAt: string; id: string } | null = null;
-    if (typeof req.query.cursor === "string" && req.query.cursor) {
-      cursor = decodeCursor(req.query.cursor);
-      if (!cursor) {
-        res.status(400).json({ error: "Invalid cursor", code: "invalid_cursor" });
-        return;
-      }
-    }
-
-    const params: unknown[] = [userId, characterId, limit + 1];
-    let where = "d.user_id = $1 AND d.character_id = $2";
-    if (cursor) {
-      params.push(cursor.createdAt, cursor.id);
-      where += " AND (d.created_at, d.id) < ($4::timestamptz, $5::uuid)";
-    }
-    const { rows } = await getPool().query<DreamRow>(
-      `${SELECT_DREAM} WHERE ${where} ORDER BY d.created_at DESC, d.id DESC LIMIT $3`,
-      params,
-    );
-    const page = rows.slice(0, limit);
-    const last = page[page.length - 1];
-    const [enabled, unread, dreaming] = await Promise.all([
-      dreamingEnabledFor(userId, characterId),
-      unreadCount(userId, characterId),
-      isDreaming(userId, characterId),
-    ]);
-    res.json({
-      character_id: characterId,
-      dreaming_enabled: enabled,
-      unread_count: unread,
-      is_dreaming: dreaming,
-      dreams: page.map(shape),
-      next_cursor: rows.length > limit && last ? encodeCursor(last.created_raw!, last.id) : null,
-    });
-  } catch (err) {
-    fail(res, err);
+  const params: unknown[] = [userId, characterId, limit + 1];
+  let where = "d.user_id = $1 AND d.character_id = $2";
+  if (cursor) {
+    params.push(cursor.createdAt, cursor.id);
+    where += " AND (d.created_at, d.id) < ($4::timestamptz, $5::uuid)";
   }
-});
+  const { rows } = await getPool().query<DreamRow>(
+    `${SELECT_DREAM} WHERE ${where} ORDER BY d.created_at DESC, d.id DESC LIMIT $3`,
+    params,
+  );
+  const page = rows.slice(0, limit);
+  const last = page[page.length - 1];
+  const [enabled, unread, dreaming] = await Promise.all([
+    dreamingEnabledFor(userId, characterId),
+    unreadCount(userId, characterId),
+    isDreaming(userId, characterId),
+  ]);
+  res.json({
+    character_id: characterId,
+    dreaming_enabled: enabled,
+    unread_count: unread,
+    is_dreaming: dreaming,
+    dreams: page.map(shape),
+    next_cursor: rows.length > limit && last ? encodeCursor(last.created_raw!, last.id) : null,
+  });
+}));
 
 async function loadDream(userId: string, characterId: string, dreamId: string): Promise<DreamRow | null> {
   if (!UUID.test(dreamId)) return null;
@@ -224,32 +240,24 @@ async function loadDream(userId: string, characterId: string, dreamId: string): 
 
 const dreamNotFound = (res: Response) => res.status(404).json({ error: "Dream not found", code: "dream_not_found" });
 
-router.get("/:characterId/:dreamId", async (req, res) => {
-  try {
-    const auth = await authorize(req, res);
-    if (!auth) return;
-    const row = await loadDream(auth.userId, auth.characterId, String(req.params.dreamId));
-    if (!row) return void dreamNotFound(res);
-    res.json(shape(row));
-  } catch (err) {
-    fail(res, err);
-  }
-});
+router.get("/:characterId/:dreamId", withDreamSchema(async (req, res) => {
+  const auth = await authorize(req, res);
+  if (!auth) return;
+  const row = await loadDream(auth.userId, auth.characterId, String(req.params.dreamId));
+  if (!row) return void dreamNotFound(res);
+  res.json(shape(row));
+}));
 
-router.post("/:characterId/:dreamId/read", async (req, res) => {
-  try {
-    const auth = await authorize(req, res);
-    if (!auth) return;
-    const row = await loadDream(auth.userId, auth.characterId, String(req.params.dreamId));
-    if (!row) return void dreamNotFound(res);
-    await getPool().query(
-      `INSERT INTO dream_reads (dream_id, user_id, character_id) VALUES ($1,$2,$3) ON CONFLICT (user_id, dream_id) DO NOTHING`,
-      [row.id, auth.userId, auth.characterId],
-    );
-    res.json({ ok: true, unread_count: await unreadCount(auth.userId, auth.characterId) });
-  } catch (err) {
-    fail(res, err);
-  }
-});
+router.post("/:characterId/:dreamId/read", withDreamSchema(async (req, res) => {
+  const auth = await authorize(req, res);
+  if (!auth) return;
+  const row = await loadDream(auth.userId, auth.characterId, String(req.params.dreamId));
+  if (!row) return void dreamNotFound(res);
+  await getPool().query(
+    `INSERT INTO dream_reads (dream_id, user_id, character_id) VALUES ($1,$2,$3) ON CONFLICT (user_id, dream_id) DO NOTHING`,
+    [row.id, auth.userId, auth.characterId],
+  );
+  res.json({ ok: true, unread_count: await unreadCount(auth.userId, auth.characterId) });
+}));
 
 export default router;
