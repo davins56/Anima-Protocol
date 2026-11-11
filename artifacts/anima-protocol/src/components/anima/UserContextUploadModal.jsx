@@ -9,6 +9,7 @@ import {
   uploadUserContextStorageFile,
   userContextNeedsStorageUpload,
 } from '@/lib/userContextUpload';
+import { uploadPdfDocument } from '@/api/pdfDocuments';
 
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
 
@@ -65,12 +66,6 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
       const isPdf = ext === '.pdf' || file.type === 'application/pdf';
       const isImage = isImageFile(file);
 
-      // Large phone photos (5–15MB) are shrunk to ~1024px JPEG before upload so
-      // they don't slow the request or bloat in-memory data URLs; the original
-      // file is kept as a fallback if downscaling fails.
-      // The backend has no fetchable copy of the file (uploads aren't persisted
-      // to object storage here), so for images we also send the downscaled photo
-      // inline as a data URL — that's how the backend reads (OCR + describes) it.
       let fileToUpload = file;
       let imageDataUrl = '';
       if (isImage) {
@@ -96,9 +91,6 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
         }
       }
 
-      // Images go through Postgres-backed /api/storage/uploads. Text documents
-      // skip that path — UploadFile only accepts images and would fail every
-      // .txt/.md/.pdf pick before the UserContext row is created.
       let fileUrl = '';
       if (userContextNeedsStorageUpload(isImage)) {
         try {
@@ -113,14 +105,26 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
         }
       }
 
-      // For plain-text files, also read as text to send to backend. PDFs and
-      // images are handled by the backend from the uploaded file instead.
+      // For PDFs, pre-extract via the existing /pdfs endpoint so analysis has content.
       let fileData = '';
-      if (!isPdf && !isImage) {
+      if (isPdf) {
+        try {
+          const stored = await uploadPdfDocument({
+            file,
+            scope: 'lore',
+          });
+          fileData = stored?.id
+            ? `[PDF uploaded: ${stored.filename || file.name}. Text extracted server-side. Document id: ${stored.id}]`
+            : `[PDF: ${file.name}]`;
+        } catch (pdfErr) {
+          console.warn('PDF pre-extract failed; continuing with empty content', pdfErr);
+          fileData = `[PDF: ${file.name} — extraction unavailable]`;
+        }
+      } else if (!isImage) {
         try { fileData = await file.text(); } catch (_) {}
       }
 
-      // Create UserContext record
+      // Create UserContext record immediately so the list updates.
       const contextRecord = await animaClient.entities.UserContext.create({
         user_email: user.email,
         title,
@@ -130,10 +134,10 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
         processing_complete: false,
       });
 
-      // Process the context in the background. For images the backend reads the
-      // inline data URL (OCR + vision); for text it reads file_content. It
-      // persists the extracted analysis onto the record server-side, so refresh
-      // the list again once it finishes to surface the generated summary.
+      // Refresh the list right away so the upload resolves for the user.
+      onUploadComplete?.();
+
+      // Background analysis (non-blocking).
       animaClient.functions.invoke('processUserContext', {
         user_context_id: contextRecord.id,
         file_url: fileUrl,
@@ -147,7 +151,6 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
         .then(() => onUploadComplete?.())
         .catch(err => console.warn('Background processing encountered an issue:', err));
 
-      onUploadComplete?.();
       setFile(null);
       setTitle('');
       setDocType('other');
@@ -174,7 +177,6 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
         animate={{ scale: 1, opacity: 1 }}
         className="w-full max-w-md bg-black border border-purple-400/30 rounded-lg p-6 space-y-4"
       >
-        {/* Header */}
         <div className="flex items-center justify-between">
           <h3 className="font-mono text-purple-400 tracking-wider uppercase text-sm">
             Upload Background Document
@@ -187,7 +189,6 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
           </button>
         </div>
 
-        {/* File Input */}
         <div className="space-y-2">
           <label className="block text-[9px] font-mono text-purple-400/60 tracking-widest uppercase">
             Document Type
@@ -208,7 +209,6 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
           </select>
         </div>
 
-        {/* Title */}
         <div className="space-y-2">
           <label className="block text-[9px] font-mono text-purple-400/60 tracking-widest uppercase">
             Title
@@ -222,7 +222,6 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
           />
         </div>
 
-        {/* File Upload */}
         <div className="space-y-2">
           <label className="block text-[9px] font-mono text-purple-400/60 tracking-widest uppercase">
             File
@@ -255,14 +254,12 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
           </p>
         </div>
 
-        {/* Error */}
         {error && (
           <div className="p-2 border border-red-400/30 bg-red-900/10 rounded">
             <p className="text-[8px] font-mono text-red-400">{error}</p>
           </div>
         )}
 
-        {/* Actions */}
         <div className="flex gap-3 pt-2">
           <button
             onClick={onClose}
