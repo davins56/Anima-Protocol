@@ -6,9 +6,13 @@ vi.mock("@/api/animaApi", () => ({
 
 import {
   buildBrowserSensesSnapshot,
+  forgetSenses,
+  pushSensesSnapshot,
   reportSenses,
   sensesOptedIn,
+  sensesTimezoneOverride,
   setSensesOptIn,
+  setSensesTimezoneOverride,
 } from "./animaSenses";
 
 function memoryStorage() {
@@ -61,5 +65,30 @@ describe("animaSenses", () => {
 
     const off = vi.fn(async () => ({ ok: false, status: 409, json: async () => ({}) }));
     expect(await reportSenses({ fetchImpl: off, storage, nav: {}, force: true })).toBeNull();
+  });
+
+  it("sends a timezone override in the snapshot", async () => {
+    const storage = memoryStorage();
+    setSensesTimezoneOverride("America/New_York", storage);
+    expect(sensesTimezoneOverride(storage)).toBe("America/New_York");
+    const snap = await buildBrowserSensesSnapshot({}, { timezone: "Europe/Paris", storage });
+    expect(snap.timezone).toBe("Europe/Paris");
+    const fromStore = await buildBrowserSensesSnapshot({}, { storage });
+    expect(fromStore.timezone).toBe("America/New_York");
+  });
+
+  it("pushSensesSnapshot reports 409 as serverOff", async () => {
+    const off = vi.fn(async () => ({ ok: false, status: 409, json: async () => ({ enabled: false }) }));
+    const result = await pushSensesSnapshot({ fetchImpl: off, storage: memoryStorage(), nav: {} });
+    expect(result).toEqual({ ok: false, serverOff: true });
+  });
+
+  it("forgetSenses DELETEs and clears opt-in", async () => {
+    const storage = memoryStorage();
+    setSensesOptIn(true, storage);
+    const fetchImpl = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ ok: true }) }));
+    expect(await forgetSenses({ fetchImpl, storage })).toEqual({ ok: true });
+    expect(sensesOptedIn(storage)).toBe(false);
+    expect(fetchImpl.mock.calls[0][1].method).toBe("DELETE");
   });
 });

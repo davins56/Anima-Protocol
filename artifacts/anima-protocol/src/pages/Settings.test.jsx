@@ -113,6 +113,9 @@ vi.mock("@/components/anima/KnowledgeGraphViewer", () => ({
 vi.mock("@/components/settings/ProactiveMessageSettings", () => ({
   default: () => <div>Proactive messages</div>,
 }));
+vi.mock("@/components/settings/DayRhythmSettings", () => ({
+  default: () => <div>Day rhythm settings</div>,
+}));
 vi.mock("@/components/onboarding/TutorialOverlay", () => ({
   resetTutorial: vi.fn(),
 }));
