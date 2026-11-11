@@ -21,6 +21,7 @@ import {
   recallMemories,
   retractMemory,
 } from "../lib/memoryCore/memoryCore";
+import { characterOwnedBy } from "../lib/memoryCore/characterOwnedBy";
 
 const router = Router();
 router.use(rateLimit);
@@ -47,11 +48,18 @@ function fail(res: Response, err: unknown): void {
 }
 
 router.get("/:characterId/health", async (req, res) => {
+  // Owner-gated, per-user stats (and oldest_recent_recall may include content).
+  // private, max-age=30 would let a browser reuse a 30s copy; no-store matches
+  // the recall ledger and avoids serving a previous user's (or stale) health.
+  res.setHeader("Cache-Control", "private, no-store");
   const userId = requireUser(req, res);
   if (!userId) return;
+  const characterId = String(req.params.characterId || "");
+  const notFound = () => res.status(404).json({ error: "Companion not found", code: "companion_not_found" });
+  if (!characterId || characterId.length > 120) return void notFound();
   try {
-    res.setHeader("Cache-Control", "private, max-age=30");
-    res.json({ health: await memoryHealth(userId, String(req.params.characterId)) });
+    if (!(await characterOwnedBy(userId, characterId))) return void notFound();
+    res.json({ health: await memoryHealth(userId, characterId) });
   } catch (err) {
     fail(res, err);
   }
