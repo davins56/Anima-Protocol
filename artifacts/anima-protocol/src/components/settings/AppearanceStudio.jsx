@@ -1,3 +1,4 @@
+import ExperienceWorkbench from "./ExperienceWorkbench";
 import { useEffect, useState } from "react";
 import { APPEARANCE_DEFAULTS, readAppearance, saveAppearance } from "@/lib/appearanceStudio";
 
@@ -20,5 +21,6 @@ export default function AppearanceStudio() {
     <label className="flex flex-col gap-2 text-sm">Text size<select className="min-h-11 rounded-lg border border-border bg-background p-2" value={value.scale} onChange={e => change("scale", e.target.value)}><option value="normal">Normal</option><option value="large">Large</option></select></label>
     <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={value.motion === "reduced"} onChange={e => change("motion", e.target.checked ? "reduced" : "system")} /> Reduce animations</label>
     <button type="button" className="min-h-11 rounded-lg border border-primary px-4 py-2 text-primary" onClick={() => setValue(saveAppearance(APPEARANCE_DEFAULTS))}>Restore defaults</button>
+    <ExperienceWorkbench />
   </section>;
 }
