@@ -24,6 +24,7 @@ import {
 import { STORE_AUTH_WAIT_MS } from "@/lib/storeTimeouts";
 import { useAuth } from "@/lib/AuthContext";
 import CompanionLoreFiles from "@/components/pdf/CompanionLoreFiles";
+import AppModalOverlay from "@/components/common/AppModalOverlay";
 
 const ARCHETYPES = ["guardian", "muse", "sage", "trickster", "shadow", "lover", "explorer", "oracle"];
 
@@ -562,8 +563,8 @@ Return JSON with a single "${field}" string field.`,
 
       {/* Form Modal */}
       {showForm && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm p-0 sm:p-4">
-          <div className="w-full h-full sm:h-auto sm:max-h-[90vh] sm:rounded-none flex flex-col overflow-hidden sm:overflow-auto bg-background border border-primary/30 hud-corner glow-border">
+        <AppModalOverlay className="p-0 sm:p-4 sm:items-center sm:justify-center">
+          <div className="w-full h-full min-h-0 sm:h-auto sm:max-h-full sm:rounded-none flex flex-col overflow-hidden bg-background border border-primary/30 hud-corner glow-border">
 
             <div className="flex items-center justify-between p-4 sm:p-6 border-b border-primary/20">
               <div>
@@ -766,7 +767,7 @@ Return JSON with a single "${field}" string field.`,
               </button>
             </div>
           </div>
-        </div>
+        </AppModalOverlay>
       )}
     </div>
   );
