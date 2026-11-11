@@ -16,6 +16,7 @@ export default defineConfig({
       "test/llmWarmRoute.test.ts",
       "test/llmFailover.test.ts",
       "test/wranglerConfig.test.ts",
+      "test/webPushImport.test.ts",
       "test/localLlmLive.test.ts",
       "test/localModelCatalog.test.ts",
       "test/modelRouter.test.ts",
