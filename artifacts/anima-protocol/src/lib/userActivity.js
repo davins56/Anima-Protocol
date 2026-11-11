@@ -393,6 +393,7 @@ export function bindActivityListeners(input) {
     : input.view;
   const state = {
     refs: 1,
+    present: false,
     getExtras: input.getExtras || (() => ({})),
     onChange: input.onChange || null,
     lastInteractionWrite: 0,
@@ -413,10 +414,22 @@ export function bindActivityListeners(input) {
   };
 
   const onHidden = () => {
+    // blur, visibilitychange, pagehide and freeze can describe one departure.
+    // Keep its first timestamp, even when later events arrive much later.
+    if (!state.present) return;
+    state.present = false;
     emit(markHidden(userId, nowFn(), { storage }));
   };
 
   const onVisible = () => {
+    if (doc?.hidden || doc?.visibilityState === "hidden") return;
+    // focus/pageshow may follow visibilitychange after the reload grace window.
+    // They are activity within this visit, not a second return from absence.
+    if (state.present) {
+      emit(recordActivity(userId, nowFn(), { storage }));
+      return;
+    }
+    state.present = true;
     const extra = extras();
     emit(captureVisibleVisit({
       userId,

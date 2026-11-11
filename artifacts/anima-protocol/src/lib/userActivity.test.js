@@ -243,6 +243,57 @@ describe("multiple tabs", () => {
 describe("bindActivityListeners", () => {
   const userId = "user_bind";
 
+  it("handles duplicate departure and return events without changing the wait", () => {
+    const storage = memoryStorage();
+    const doc = new EventTarget();
+    doc.hidden = false;
+    doc.visibilityState = "visible";
+    const win = new EventTarget();
+    let now = Date.parse("2026-11-10T12:00:00Z");
+    const stop = bindActivityListeners({
+      userId,
+      thresholdMs: WAITING_THRESHOLD_MS,
+      now: () => now,
+      storage,
+      target: doc,
+      view: win,
+    });
+
+    const leftAt = now;
+    win.dispatchEvent(new Event("blur"));
+    now += 10_000;
+    doc.hidden = true;
+    doc.visibilityState = "hidden";
+    doc.dispatchEvent(new Event("visibilitychange"));
+    win.dispatchEvent(new Event("pagehide"));
+    expect(readActivityRecord(userId, storage).lastActivityMs).toBe(leftAt);
+
+    now = leftAt + 3 * WAITING_THRESHOLD_MS;
+    // A focus/pageshow notification must not reset activity while still hidden.
+    win.dispatchEvent(new Event("focus"));
+    expect(readActivityRecord(userId, storage).lastActivityMs).toBe(leftAt);
+    doc.hidden = false;
+    doc.visibilityState = "visible";
+    doc.dispatchEvent(new Event("visibilitychange"));
+    const returnedAtMs = now;
+    now += 10_000;
+    win.dispatchEvent(new Event("focus"));
+    win.dispatchEvent(new Event("pageshow"));
+    expect(readActivityRecord(userId, storage).visitAbsence).toEqual({
+      startMs: leftAt, returnedAtMs,
+    });
+
+    // A subsequent real departure still starts a new absence.
+    const nextLeftAt = now;
+    win.dispatchEvent(new Event("blur"));
+    now += 2 * WAITING_THRESHOLD_MS;
+    win.dispatchEvent(new Event("focus"));
+    expect(readActivityRecord(userId, storage).visitAbsence).toEqual({
+      startMs: nextLeftAt, returnedAtMs: now,
+    });
+    stop();
+  });
+
   afterEach(() => {
     _resetActivityBindingsForTests();
   });
