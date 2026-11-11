@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { getIntimacyPromptGuidance } from "../src/lib/intimacyPrompt";
+import { defaultProfile } from "../src/lib/intimacyStore";
 import {
   computeSynchroLevel,
   initSynchroState,
@@ -440,5 +442,67 @@ describe("integration: full turn cycle", () => {
     expect(evolved.vector.synchroStrength).toBeGreaterThanOrEqual(36);
     expect(evolved.level).toBe("synchronized");
     expect(evolved.lastShift).toContain("synchronized");
+  });
+});
+
+describe("tier-shaped dialogue guidance", () => {
+  const at = (strength: number): SynchroState => ({
+    vector: { intimacy: 30, powerDynamic: 0, spiritualAttunement: 10, primalIntensity: 0, crossoverOpenness: 5, synchroStrength: strength },
+    level: computeSynchroLevel(strength),
+    emotionalTone: "neutral",
+    totalTurns: 20,
+    sessionTurns: 3,
+    lastInteraction: new Date().toISOString(),
+  });
+
+  it("gives every tier distinct guidance", () => {
+    const texts = [5, 25, 50, 70, 95].map((v) => synchroToPromptGuidance(at(v)));
+    expect(new Set(texts).size).toBe(5);
+  });
+
+  it("keeps low tiers reserved and high tiers familiar, each in the character's own voice", () => {
+    const low = synchroToPromptGuidance(at(5));
+    const high = synchroToPromptGuidance(at(70));
+    expect(low).toMatch(/reserved|cautious|terse|unfamiliar/i);
+    expect(low).not.toMatch(/shorthand|shared history/i);
+    expect(high).toMatch(/shared moments|humor and rhythm/i);
+    expect(synchroToPromptGuidance(at(95))).toMatch(/shorthand/i);
+    expect(high).toMatch(/way your character would|your character/i);
+  });
+
+  it("never makes high resonance mean agreement, submission or unlocked capability", () => {
+    for (const v of [70, 95]) {
+      const g = synchroToPromptGuidance(at(v));
+      expect(g).toMatch(/disagree|push back|decline/i);
+      expect(g).not.toMatch(/read (your|their) mind|always agree|submit|unlock/i);
+    }
+  });
+
+  it("states that the bond is separate from Heat", () => {
+    expect(synchroToPromptGuidance(at(95))).toMatch(/Heat/);
+  });
+});
+
+describe("Heat independence from resonance", () => {
+  const enabled = { ...defaultProfile("u", "c"), intimacyEnabled: true, heat: 22 };
+
+  it("reports the same Heat and limits at every tier, mentioning the bond only as context", () => {
+    const low = getIntimacyPromptGuidance(enabled, undefined, undefined, "Disconnected");
+    const high = getIntimacyPromptGuidance(enabled, undefined, undefined, "Full Cross");
+    expect(low).toContain("Heat: 22/100");
+    expect(high).toContain("Heat: 22/100");
+    expect(high).toContain("Full Cross");
+    expect(high).toMatch(/not Heat/);
+    expect(high).toMatch(/safeword/i);
+  });
+
+  it("adds nothing when intimacy is off, however high the bond", () => {
+    const off = getIntimacyPromptGuidance(
+      { ...enabled, intimacyEnabled: false },
+      undefined,
+      undefined,
+      "Full Cross",
+    );
+    expect(off).toBe("Never explicit or anatomical content.");
   });
 });

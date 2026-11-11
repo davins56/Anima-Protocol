@@ -63,3 +63,36 @@ describe("emotionalStateWithTurnMood", () => {
     expect(second.state).toEqual(first.state);
   });
 });
+
+describe("emotionalStateWithTurnBond synchro rebase", () => {
+  it("keeps a Sacred Space award that landed while the turn was in flight", () => {
+    // Turn read 40, gained +1 (41); a ritual stored +3 (43) in between.
+    const out = emotionalStateWithTurnBond({ synchroStrength: 43, synchroLevel: "synchronized" }, "t1", {
+      synchro: { synchroStrength: 41 },
+      synchroBaseline: 40,
+    });
+    expect(out.state.synchroStrength).toBe(44);
+  });
+
+  it("recomputes the tier and clamps to 0-100 after a rebase", () => {
+    const up = emotionalStateWithTurnBond({ synchroStrength: 60 }, "t2", {
+      synchro: { synchroStrength: 36 },
+      synchroBaseline: 35,
+    });
+    expect(up.state.synchroStrength).toBe(61);
+    expect(up.state.synchroLevel).toBe("soulUnison");
+    const top = emotionalStateWithTurnBond({ synchroStrength: 100 }, "t3", {
+      synchro: { synchroStrength: 90 },
+      synchroBaseline: 50,
+    });
+    expect(top.state.synchroStrength).toBe(100);
+  });
+
+  it("is unchanged when nothing moved since the read", () => {
+    const out = emotionalStateWithTurnBond({ synchroStrength: 40 }, "t4", {
+      synchro: { synchroStrength: 42 },
+      synchroBaseline: 40,
+    });
+    expect(out.state.synchroStrength).toBe(42);
+  });
+});

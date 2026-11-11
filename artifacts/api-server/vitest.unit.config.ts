@@ -33,6 +33,8 @@ export default defineConfig({
       "test/voiceFingerprint.test.ts",
       // Chat mind: pure ranking / parsing / guards / prompt sizing.
       "test/mindRecall.test.ts",
+      // Sacred Space reward math (pure; the DB path is covered by sacredSpaceRoute.test.ts).
+      "test/sacredSpaceResonance.test.ts",
       "test/mindFactsSummary.test.ts",
       "test/mindGuards.test.ts",
       "test/mindPrompt.test.ts",

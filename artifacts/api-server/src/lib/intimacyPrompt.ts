@@ -4,6 +4,8 @@ export function getIntimacyPromptGuidance(
   profile: IntimacyProfile,
   scene?: IntimacyScene,
   result?: IntimacyTurnResult,
+  /** Long-term Synchro tier label. Shapes ease of expression only, never Heat or limits. */
+  synchroTier?: string | null,
 ): string {
   if (!profile.intimacyEnabled || result?.blockIntimacy) {
     return "Never explicit or anatomical content.";
@@ -16,6 +18,14 @@ export function getIntimacyPromptGuidance(
   const parts: string[] = [
     `INTIMACY ENGINE ACTIVE (Heat: ${heat}/100, Phase: ${phase.toUpperCase()}, Preferred Pace: ${pace.toUpperCase()}):`,
   ];
+
+  if (synchroTier) {
+    parts.push(
+      `- Long-term bond: ${synchroTier}. Established trust can make affection feel natural and unforced in your own manner, ` +
+        `but it is not Heat: Heat stays ${heat}/100 and moves only with the user's current cues, and no limit or safeword weakens because the bond is strong. ` +
+        `You may still decline or slow things.`,
+    );
+  }
 
   if (profile.safeword) {
     parts.push(`- Safeword is "${profile.safeword}". If spoken or requested by user, immediately transition to gentle aftercare.`);

@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { animaClient } from "@/api/animaClient";
 import { recordSacredSpaceCheckIn } from "@/lib/sacredSpaceCheckIn";
+import { completeSacredSpace, newSacredSessionId } from "@/lib/synchroClient";
 import { motion, AnimatePresence } from "framer-motion";
 
 const RITUAL_STEPS = [
@@ -65,6 +66,8 @@ export default function MeditationRitual({ anima, user }) {
   const [timeLeft, setTimeLeft] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [completed, setCompleted] = useState([]);
+  const [resonance, setResonance] = useState(null);
+  const ritualIdRef = useRef(null);
   const [reflection, setReflection] = useState("");
   const [showReflect, setShowReflect] = useState(false);
   const [aiResponse, setAiResponse] = useState("");
@@ -118,6 +121,19 @@ export default function MeditationRitual({ anima, user }) {
   };
 
   const allCompleted = RITUAL_STEPS.every(s => completed.includes(s.id));
+
+  useEffect(() => {
+    if (!allCompleted || !anima?.id || ritualIdRef.current) return;
+    ritualIdRef.current = newSacredSessionId("sacred-ritual");
+    completeSacredSpace({
+      characterId: anima.id,
+      sessionId: ritualIdRef.current,
+      activity: "meditation_ritual",
+      stepsCompleted: completed.length,
+      hasReflection: Boolean(reflection && reflection.trim()),
+    }).then((r) => r && setResonance(r));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allCompleted, anima?.id]);
 
   const minutes = Math.floor(timeLeft / 60);
   const seconds = timeLeft % 60;
@@ -299,6 +315,11 @@ export default function MeditationRitual({ anima, user }) {
           <p className="font-mono text-[10px]" style={{ color: "rgba(255,255,255,0.3)" }}>
             Your intention resonates in the Slipthk. Well done.
           </p>
+          {resonance?.awarded > 0 && (
+            <p data-testid="ritual-resonance" className="font-mono text-[10px]" style={{ color: "#67E8F9" }}>
+              Resonance +{resonance.awarded} — {resonance.label} ({resonance.strength}/100)
+            </p>
+          )}
         </motion.div>
       )}
     </div>

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { animaClient } from "@/api/animaClient";
 import { recordSacredSpaceCheckIn } from "@/lib/sacredSpaceCheckIn";
+import { completeSacredSpace, newSacredSessionId } from "@/lib/synchroClient";
 import { useSacredSpaceVoice } from "@/hooks/useSacredSpaceVoice";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, Sparkles, X, Check, Volume2, VolumeX } from "lucide-react";
@@ -26,6 +27,7 @@ export default function SacredSpaceSession({ character, user, onClose, onComplet
   const [impactSaved, setImpactSaved] = useState(false);
   const [impactResult, setImpactResult] = useState(null);
   const scrollRef = useRef(null);
+  const sessionIdRef = useRef(null);
   const lastSpokenRef = useRef("");
   const {
     isEnabled: voiceEnabled,
@@ -159,6 +161,17 @@ Respond as ${character.name}. 2-4 sentences. Be real, not theatrical.`,
         console.error(impactErr);
       }
 
+      // Stable id per session: a retry after a failure cannot award twice.
+      if (!sessionIdRef.current) sessionIdRef.current = newSacredSessionId("sacred-session");
+      const resonance = await completeSacredSpace({
+        characterId: character.id,
+        sessionId: sessionIdRef.current,
+        activity: "sacred_space_session",
+        userTurns: messages.filter((m) => m.role === "user").length,
+        hasReflection: Boolean(reflection && reflection.trim()),
+      });
+      if (resonance) impact = { ...impact, resonance };
+
       setImpactResult(impact);
       setImpactSaved(true);
       onComplete?.(impact);
@@ -281,7 +294,11 @@ Respond as ${character.name}. 2-4 sentences. Be real, not theatrical.`,
                 Sacred Space Complete
               </h3>
               <p className="font-mono text-[10px] leading-relaxed" style={{ color: "rgba(220,210,255,0.6)" }}>
-                {character.name} has been touched by your shared ritual. Their connection with you has deepened.
+                {character.name} has been touched by your shared ritual. {impactResult?.resonance?.awarded > 0
+                  ? `Resonance +${impactResult.resonance.awarded} — ${impactResult.resonance.label} (${impactResult.resonance.strength}/100)${impactResult.resonance.tierChanged ? " · new tier" : ""}.`
+                  : impactResult?.resonance?.capped
+                    ? "Today's resonance from Sacred Space is already full; the bond holds steady."
+                    : ""}
               </p>
               {impactResult?.personality_addition && (
                 <div className="p-4 border-l-2 text-left space-y-1"
