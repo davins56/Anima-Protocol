@@ -13,7 +13,7 @@ import DeviceScanCard from "./DeviceScanCard";
 import PdfFileChip from "@/components/pdf/PdfFileChip";
 import { openPdfDocument } from "@/api/pdfDocuments";
 import { toast } from "sonner";
-import { renderItalicText } from "./renderItalicText";
+import MessageMarkdown from "./MessageMarkdown";
 import { memo, useState, useEffect } from "react";
 import { animaClient } from "@/api/animaClient";
 import { useMemoryHighlight } from "@/hooks/useMemoryHighlight";
@@ -21,7 +21,7 @@ import { useLoreDetection } from "@/hooks/useLoreDetection";
 import { isOwnModelReply } from "@/lib/modelTutor";
 import ReplyRating from "./ReplyRating";
 
-const renderMessageWithActions = (content) => renderItalicText(content);
+const renderMessageWithActions = (content) => <MessageMarkdown content={content} />;
 
 function MessageBubble({ message, onRewind, canRewind, onSpeak, character, characterMemories = [], characterEmotion = 'neutral', characterEmotionIntensity = 5, sessionId = null, onEditMessage, onDeleteMessage, onRegenerateMessage, messageLoreLinks = [], onAvatarClick, onTeach, onRate, showEdit = false, showRetry = false, actionsDisabled = false }) {
   const [loreEntries, setLoreEntries] = useState([]);

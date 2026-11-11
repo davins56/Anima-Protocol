@@ -1,0 +1,162 @@
+/* Tight typography for GFM inside a chat bubble. Colours follow theme tokens
+   so the same rules work in the default dark theme and :root.light. */
+.message-md {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.message-md > :first-child {
+  margin-top: 0;
+}
+
+.message-md > :last-child {
+  margin-bottom: 0;
+}
+
+.message-md p {
+  margin: 0.35em 0;
+}
+
+.message-md .md-heading {
+  margin: 0.5em 0 0.25em;
+  font-weight: 600;
+  line-height: 1.3;
+  color: hsl(var(--primary) / 0.9);
+}
+
+.message-md .md-h1 { font-size: 1.05em; }
+.message-md .md-h2 { font-size: 1em; }
+.message-md .md-h3,
+.message-md .md-h4,
+.message-md .md-h5,
+.message-md .md-h6 { font-size: 0.95em; }
+
+.message-md ul,
+.message-md ol {
+  margin: 0.35em 0;
+  padding-left: 1.25em;
+}
+
+.message-md li {
+  margin: 0.15em 0;
+}
+
+.message-md li > ul,
+.message-md li > ol {
+  margin: 0.1em 0;
+}
+
+.message-md .md-blockquote {
+  margin: 0.4em 0;
+  padding: 0.15em 0 0.15em 0.75em;
+  border-left: 2px solid hsl(var(--primary) / 0.4);
+  color: hsl(var(--primary) / 0.7);
+}
+
+.message-md .md-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 0.45em 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+.message-md .md-table {
+  border-collapse: collapse;
+  width: max-content;
+  min-width: 100%;
+  font-size: 0.95em;
+}
+
+.message-md .md-table th,
+.message-md .md-table td {
+  border: 1px solid hsl(var(--primary) / 0.25);
+  padding: 0.25em 0.5em;
+  text-align: left;
+}
+
+.message-md .md-table th {
+  background: hsl(var(--primary) / 0.08);
+  font-weight: 600;
+}
+
+.message-md .md-inline-code {
+  padding: 0.05em 0.3em;
+  border: 1px solid hsl(var(--primary) / 0.25);
+  background: hsl(var(--background) / 0.6);
+  font-size: 0.9em;
+}
+
+.message-md .md-hr {
+  border: 0;
+  border-top: 1px solid hsl(var(--primary) / 0.25);
+  margin: 0.6em 0;
+}
+
+.message-md .md-link {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-all;
+}
+
+.message-md .katex {
+  color: inherit;
+  font-size: 1.05em;
+}
+
+.message-md .katex-display {
+  margin: 0.4em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* Prism token colours use theme tokens so they stay readable on dark and light. */
+.message-md .token-comment,
+.message-md .token-prolog,
+.message-md .token-doctype,
+.message-md .token-cdata {
+  color: hsl(var(--muted-foreground));
+  font-style: italic;
+}
+
+.message-md .token-keyword,
+.message-md .token-selector,
+.message-md .token-important,
+.message-md .token-atrule {
+  color: hsl(var(--primary));
+}
+
+.message-md .token-string,
+.message-md .token-attr-value,
+.message-md .token-char,
+.message-md .token-regex,
+.message-md .token-inserted {
+  color: hsl(var(--accent-foreground));
+}
+
+.message-md .token-function,
+.message-md .token-class-name,
+.message-md .token-attr-name {
+  color: hsl(var(--secondary-foreground));
+}
+
+.message-md .token-number,
+.message-md .token-boolean,
+.message-md .token-constant,
+.message-md .token-symbol,
+.message-md .token-builtin {
+  color: hsl(var(--aura-gold));
+}
+
+.message-md .token-punctuation,
+.message-md .token-operator,
+.message-md .token-entity,
+.message-md .token-url {
+  color: hsl(var(--primary) / 0.7);
+}
+
+.message-md .token-tag,
+.message-md .token-property,
+.message-md .token-deleted {
+  color: hsl(var(--destructive));
+}
