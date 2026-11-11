@@ -1,4 +1,6 @@
-import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, ne, notInArray, or, sql } from "drizzle-orm";
+import { turnMetadataReplaced } from "./replyReplacement";
+import { ACTIVE_CHAT_QUIET_WINDOW_MS } from "./chatTimeouts";
 import {
   chatTurns,
   db,
@@ -35,6 +37,69 @@ export function chatTurnUserContentMatches(
 }
 
 export type ChatTurnReuse = "replay" | "conflict" | "in_flight";
+
+/**
+ * How long a generating isolate may hold a turn before another isolate can
+ * claim it. Heartbeats renew this while the generate is alive. A dead Worker
+ * stops renewing, so the turn cannot stay pending forever.
+ */
+export const CHAT_TURN_LEASE_MS = 45_000;
+
+/**
+ * A pending row whose lease expired this long ago is abandoned. The chat
+ * page must not keep a "..." bubble for it.
+ */
+export const STALE_PENDING_LEASE_MS = 3 * 60 * 1000;
+
+export function pendingTurnLeaseIsStale(
+  turn: { status?: string | null; leaseExpiresAt?: Date | string | null },
+  now = Date.now(),
+): boolean {
+  if (turn.status !== "pending") return false;
+  if (!turn.leaseExpiresAt) return false;
+  const at =
+    turn.leaseExpiresAt instanceof Date
+      ? turn.leaseExpiresAt.getTime()
+      : Date.parse(String(turn.leaseExpiresAt));
+  return Number.isFinite(at) && at <= now - STALE_PENDING_LEASE_MS;
+}
+
+export type DurableTurnJoin = "replay" | "join" | "claim" | "conflict";
+
+export function chatTurnLeaseActive(
+  turn: { leaseExpiresAt?: Date | string | null },
+  now = Date.now(),
+): boolean {
+  if (!turn.leaseExpiresAt) return false;
+  const at =
+    turn.leaseExpiresAt instanceof Date
+      ? turn.leaseExpiresAt.getTime()
+      : Date.parse(String(turn.leaseExpiresAt));
+  return Number.isFinite(at) && at > now;
+}
+
+/**
+ * Cross-isolate retry join. Same user text plus a live lease waits on the
+ * durable row. An expired lease is claimable so a dead owner does not leave
+ * the turn pending. A finished reply replays. Different text never replays.
+ */
+export function decideDurableTurnJoin(
+  existing: Pick<ChatTurn, "status" | "assistantContent" | "userContent"> & {
+    leaseExpiresAt?: Date | string | null;
+  },
+  userContent: string,
+  now = Date.now(),
+): DurableTurnJoin {
+  if (!chatTurnUserContentMatches(existing, userContent)) return "conflict";
+  if (
+    String(existing.assistantContent || "").trim() &&
+    (existing.status === "generated" || existing.status === "committed")
+  ) {
+    return "replay";
+  }
+  if (chatTurnLeaseActive(existing, now)) return "join";
+  return "claim";
+}
 
 /**
  * How to treat a `turn_id` that already exists.
@@ -121,11 +186,73 @@ export async function checkpointGeneratedTurn(input: {
         assistantContent: input.assistantContent,
         metadata: input.metadata ?? {},
         lastError: null,
+        leaseExpiresAt: null,
+        waitingUntil: null,
         updatedAt: new Date(),
       })
-      .where(and(eq(chatTurns.id, input.id), eq(chatTurns.userId, input.userId))),
+      .where(
+        and(
+          eq(chatTurns.id, input.id),
+          eq(chatTurns.userId, input.userId),
+          // A retry already cleared this reply. Do not write it back.
+          sql`coalesce(${chatTurns.metadata}->>'replaced', '') <> 'true'`,
+        ),
+      ),
   );
 }
+
+/**
+ * The user asked for a new reply. Clear this turn so a late checkpoint or
+ * persist cannot put the old text back on the thread or into memory.
+ */
+type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Mark one turn replaced on the caller's transaction, which already holds its lock. */
+export async function markChatTurnReplacedOn(
+  tx: DbTransaction,
+  id: string,
+  userId: string,
+  supersededBy: string,
+): Promise<ChatTurn | null> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${id}`}))`);
+  const [row] = await tx
+    .select()
+    .from(chatTurns)
+    .where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId)))
+    .limit(1);
+  if (!row) return null;
+  const metadata = {
+    ...(row.metadata ?? {}),
+    replaced: true,
+    superseded_by: supersededBy,
+  };
+  const [updated] = await tx
+    .update(chatTurns)
+    .set({
+      metadata,
+      assistantContent: "",
+      status: row.status === "committed" ? row.status : "failed",
+      lastError: "Replaced by a new reply",
+      leaseExpiresAt: null,
+      waitingUntil: null,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId)))
+    .returning();
+  return updated ?? null;
+}
+
+export async function markChatTurnReplaced(
+  id: string,
+  userId: string,
+  supersededBy: string,
+): Promise<ChatTurn | null> {
+  return withTransientDbRetry(() =>
+    db.transaction((tx) => markChatTurnReplacedOn(tx, id, userId, supersededBy)),
+  );
+}
+
+export { turnMetadataReplaced };
 
 export async function markTurnCommitted(
   id: string,
@@ -138,10 +265,18 @@ export async function markTurnCommitted(
       .set({
         status: "committed",
         lastError: null,
+        leaseExpiresAt: null,
+        waitingUntil: null,
         committedAt: now,
         updatedAt: now,
       })
-      .where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId))),
+      .where(
+        and(
+          eq(chatTurns.id, id),
+          eq(chatTurns.userId, userId),
+          sql`coalesce(${chatTurns.metadata}->>'replaced', '') <> 'true'`,
+        ),
+      ),
   );
 }
 
@@ -158,6 +293,8 @@ export async function markTurnFailed(
         status: "failed",
         retryCount: sql`${chatTurns.retryCount} + 1`,
         lastError: message.slice(0, 1000),
+        leaseExpiresAt: null,
+        waitingUntil: null,
         updatedAt: new Date(),
       })
       .where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId))),
@@ -178,24 +315,289 @@ export async function readChatTurn(
   return turn ?? null;
 }
 
-export async function retryableChatTurns(
+/**
+ * Newest pending or generated turn for this session, if the reply is not
+ * committed yet. Abandoned pending rows (lease, or before any lease the last
+ * update, older than `STALE_PENDING_LEASE_MS`) are marked failed first, so
+ * reopening the chat does not show a "..." bubble for a dead generate. Both
+ * steps filter in SQL, so a run of abandoned rows cannot hide a live one.
+ */
+export async function latestOpenChatTurn(
   userId: string,
   sessionId: string,
-  limit = 3,
-): Promise<ChatTurn[]> {
-  return withTransientDbRetry(() =>
+  now = new Date(),
+): Promise<ChatTurn | null> {
+  const staleBefore = new Date(now.getTime() - STALE_PENDING_LEASE_MS);
+  const scope = and(eq(chatTurns.userId, userId), eq(chatTurns.sessionId, sessionId));
+  await withTransientDbRetry(() =>
+    db
+      .update(chatTurns)
+      .set({
+        status: "failed",
+        retryCount: sql`${chatTurns.retryCount} + 1`,
+        lastError: "Companion turn lease expired",
+        leaseExpiresAt: null,
+        waitingUntil: null,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          scope,
+          eq(chatTurns.status, "pending"),
+          or(
+            lt(chatTurns.leaseExpiresAt, staleBefore),
+            and(isNull(chatTurns.leaseExpiresAt), lt(chatTurns.updatedAt, staleBefore)),
+          ),
+        ),
+      ),
+  );
+  const [turn] = await withTransientDbRetry(() =>
     db
       .select()
+      .from(chatTurns)
+      .where(and(scope, inArray(chatTurns.status, ["pending", "generated"])))
+      .orderBy(desc(chatTurns.createdAt))
+      .limit(1),
+  );
+  return turn ?? null;
+}
+
+export const CONVERSATION_BUSY_CODE = "conversation_busy";
+
+export const CONVERSATION_BUSY_MESSAGE =
+  "The companion is still finishing the last reply. Wait a moment, then try again.";
+
+/**
+ * An earlier turn in this conversation is still generating.
+ * A newer send must not take the single Ollama slot behind it.
+ * A long-expired lease does not count — that row is abandoned.
+ */
+export async function sessionHasOlderPendingChatTurn(
+  userId: string,
+  sessionId: string,
+  turnId: string,
+  createdAt: Date,
+  now = new Date(),
+  ignoreTurnIds: readonly string[] = [],
+): Promise<boolean> {
+  const staleBefore = new Date(now.getTime() - STALE_PENDING_LEASE_MS);
+  const ignore = ignoreTurnIds.map((id) => String(id || "")).filter((id) => id && id !== turnId);
+  const [row] = await withTransientDbRetry(() =>
+    db
+      .select({ id: chatTurns.id })
       .from(chatTurns)
       .where(
         and(
           eq(chatTurns.userId, userId),
           eq(chatTurns.sessionId, sessionId),
-          inArray(chatTurns.status, ["generated", "failed"]),
-          lt(chatTurns.retryCount, 5),
+          eq(chatTurns.status, "pending"),
+          ne(chatTurns.id, turnId),
+          ...(ignore.length > 0 ? [notInArray(chatTurns.id, ignore)] : []),
+          or(
+            lt(chatTurns.createdAt, createdAt),
+            and(eq(chatTurns.createdAt, createdAt), lt(chatTurns.id, turnId)),
+          ),
+          or(isNull(chatTurns.leaseExpiresAt), gt(chatTurns.leaseExpiresAt, staleBefore)),
         ),
       )
+      .limit(1),
+  );
+  return Boolean(row);
+}
+
+/**
+ * Another pending turn for this user is waiting on the model. A long-expired
+ * lease does not count — that row is abandoned, not queued.
+ */
+export async function userHasOtherPendingChatTurn(
+  userId: string,
+  exceptTurnId: string,
+  now = new Date(),
+): Promise<boolean> {
+  const staleBefore = new Date(now.getTime() - STALE_PENDING_LEASE_MS);
+  const [row] = await withTransientDbRetry(() =>
+    db
+      .select({ id: chatTurns.id })
+      .from(chatTurns)
+      .where(
+        and(
+          eq(chatTurns.userId, userId),
+          eq(chatTurns.status, "pending"),
+          ne(chatTurns.id, exceptTurnId),
+          or(isNull(chatTurns.leaseExpiresAt), gt(chatTurns.leaseExpiresAt, staleBefore)),
+        ),
+      )
+      .limit(1),
+  );
+  return Boolean(row);
+}
+
+/**
+ * Server-owned turns that still need their reply written, and only when they
+ * are newer than the session's last committed turn.
+ *
+ * Client-owned turns are persisted by the browser. An older generated turn
+ * must not be rewritten at the end of the transcript after a later turn
+ * already committed.
+ */
+export async function retryableChatTurns(
+  userId: string,
+  sessionId: string,
+  limit = 3,
+): Promise<ChatTurn[]> {
+  const [latestCommitted] = await withTransientDbRetry(() =>
+    db
+      .select({ createdAt: chatTurns.createdAt })
+      .from(chatTurns)
+      .where(
+        and(
+          eq(chatTurns.userId, userId),
+          eq(chatTurns.sessionId, sessionId),
+          eq(chatTurns.status, "committed"),
+        ),
+      )
+      .orderBy(desc(chatTurns.createdAt))
+      .limit(1),
+  );
+
+  const filters = [
+    eq(chatTurns.userId, userId),
+    eq(chatTurns.sessionId, sessionId),
+    eq(chatTurns.persistenceOwner, "server"),
+    or(
+      eq(chatTurns.status, "generated"),
+      and(
+        eq(chatTurns.status, "failed"),
+        sql`char_length(btrim(${chatTurns.assistantContent})) > 0`,
+      ),
+    ),
+    sql`coalesce(${chatTurns.metadata}->>'replaced', '') <> 'true'`,
+    lt(chatTurns.retryCount, 5),
+  ];
+  if (latestCommitted?.createdAt) {
+    filters.push(gt(chatTurns.createdAt, latestCommitted.createdAt));
+  }
+
+  return withTransientDbRetry(() =>
+    db
+      .select()
+      .from(chatTurns)
+      .where(and(...filters))
       .orderBy(asc(chatTurns.createdAt))
       .limit(Math.max(1, Math.min(limit, 10))),
   );
+}
+
+/** Take the running lease if nobody else still holds it. */
+export async function claimChatTurnLease(
+  id: string,
+  userId: string,
+  ttlMs = CHAT_TURN_LEASE_MS,
+  now = new Date(),
+): Promise<boolean> {
+  const expires = new Date(now.getTime() + ttlMs);
+  const updated = await withTransientDbRetry(() =>
+    db
+      .update(chatTurns)
+      .set({
+        leaseExpiresAt: expires,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(chatTurns.id, id),
+          eq(chatTurns.userId, userId),
+          or(isNull(chatTurns.leaseExpiresAt), lt(chatTurns.leaseExpiresAt, now)),
+        ),
+      )
+      .returning({ id: chatTurns.id }),
+  );
+  return updated.length > 0;
+}
+
+/** Extend the lease while this isolate is still generating. */
+export async function renewChatTurnLease(
+  id: string,
+  userId: string,
+  ttlMs = CHAT_TURN_LEASE_MS,
+  now = new Date(),
+): Promise<void> {
+  const expires = new Date(now.getTime() + ttlMs);
+  await withTransientDbRetry(() =>
+    db
+      .update(chatTurns)
+      .set({
+        leaseExpiresAt: expires,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(chatTurns.id, id),
+          eq(chatTurns.userId, userId),
+          eq(chatTurns.status, "pending"),
+        ),
+      ),
+  );
+}
+
+/** A retry on any isolate is waiting for this turn's reply. */
+export async function markChatTurnWaiting(
+  id: string,
+  userId: string,
+  ttlMs: number,
+  now = new Date(),
+): Promise<void> {
+  const until = new Date(now.getTime() + ttlMs);
+  await withTransientDbRetry(() =>
+    db
+      .update(chatTurns)
+      .set({
+        waitingUntil: until,
+        updatedAt: now,
+      })
+      .where(and(eq(chatTurns.id, id), eq(chatTurns.userId, userId))),
+  );
+}
+
+/**
+ * Cross-instance signal that the local model should stay with chat.
+ * A pending turn whose lease is not stale is in flight. Any turn created
+ * inside the quiet window means someone just sent a message and may send
+ * another. One Ollama slot, so this is global, not per user.
+ */
+export async function localModelChatIsActive(
+  now = new Date(),
+  windowMs = ACTIVE_CHAT_QUIET_WINDOW_MS,
+): Promise<boolean> {
+  const quietAfter = new Date(now.getTime() - windowMs);
+  const staleBefore = new Date(now.getTime() - STALE_PENDING_LEASE_MS);
+  const [row] = await withTransientDbRetry(() =>
+    db
+      .select({ id: chatTurns.id })
+      .from(chatTurns)
+      .where(
+        or(
+          and(
+            eq(chatTurns.status, "pending"),
+            or(
+              and(isNull(chatTurns.leaseExpiresAt), gt(chatTurns.updatedAt, staleBefore)),
+              gt(chatTurns.leaseExpiresAt, staleBefore),
+            ),
+          ),
+          gt(chatTurns.createdAt, quietAfter),
+        ),
+      )
+      .limit(1),
+  );
+  return Boolean(row);
+}
+
+export async function chatTurnHasRemoteWaiter(
+  id: string,
+  userId: string,
+  now = new Date(),
+): Promise<boolean> {
+  const turn = await readChatTurn(id, userId);
+  if (!turn?.waitingUntil) return false;
+  return turn.waitingUntil.getTime() > now.getTime();
 }

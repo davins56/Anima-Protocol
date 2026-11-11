@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  backgroundLlmSignal,
   beginCompanionLlmTurn,
   companionLlmTurnOpen,
+  tryBeginCompanionLlmTurn,
   isPostTurnSidecarFunction,
+  localCallSignal,
   resetCompanionLlmTurnForTests,
   shouldSkipSidecarLlm,
 } from "../src/lib/sidecarLlm";
@@ -15,9 +18,12 @@ afterEach(() => {
 describe("sidecar LLM occupancy", () => {
   it("classifies post-turn chat helpers as sidecars", () => {
     expect(isPostTurnSidecarFunction("updateCharacterEmotion")).toBe(true);
+    expect(isPostTurnSidecarFunction("aggregatePersonalityShifts")).toBe(true);
     expect(isPostTurnSidecarFunction("updateInventory")).toBe(true);
     expect(isPostTurnSidecarFunction("characterMemory")).toBe(true);
     expect(isPostTurnSidecarFunction("extractLore")).toBe(true);
+    expect(isPostTurnSidecarFunction("scanAndLinkLoreKeywords")).toBe(true);
+    expect(isPostTurnSidecarFunction("generateDivergentPaths")).toBe(true);
     expect(isPostTurnSidecarFunction("generateCompanionFromPrompt")).toBe(false);
     expect(isPostTurnSidecarFunction("codespaceAgentStep")).toBe(false);
   });
@@ -35,6 +41,16 @@ describe("sidecar LLM occupancy", () => {
     expect(shouldSkipSidecarLlm()).toBe(false);
   });
 
+  it("gives the local slot to only one holder at a time", () => {
+    const first = tryBeginCompanionLlmTurn("probe");
+    expect(typeof first).toBe("function");
+    expect(tryBeginCompanionLlmTurn("other")).toBeNull();
+    first?.();
+    const next = tryBeginCompanionLlmTurn("other");
+    expect(typeof next).toBe("function");
+    next?.();
+  });
+
   it("releases occupancy only once", () => {
     const release = beginCompanionLlmTurn();
     beginCompanionLlmTurn();
@@ -44,6 +60,20 @@ describe("sidecar LLM occupancy", () => {
     expect(companionLlmTurnOpen()).toBe(true);
     resetCompanionLlmTurnForTests();
     expect(companionLlmTurnOpen()).toBe(false);
+  });
+
+  it("aborts in-flight background LLM work when a companion turn starts", () => {
+    const background = backgroundLlmSignal();
+    const combined = localCallSignal(new AbortController().signal);
+    expect(background.aborted).toBe(false);
+    expect(combined?.aborted).toBe(false);
+
+    const release = beginCompanionLlmTurn();
+    expect(background.aborted).toBe(true);
+    expect(combined?.aborted).toBe(true);
+    expect(localCallSignal()).toBeUndefined();
+    release();
+    expect(backgroundLlmSignal().aborted).toBe(false);
   });
 
   it("skips sidecar LLM outside tests unless explicitly enabled", () => {

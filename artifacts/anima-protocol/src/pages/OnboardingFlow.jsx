@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { trackOnboardingCompleted } from "@/lib/funnelEvents";
 import { useNavigate } from 'react-router-dom';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { ChevronRight, Check, Sparkles, Loader, ArrowLeft, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { generateSoulprintId, FALLBACK_OATH } from '@/lib/soulprint';
@@ -147,7 +148,7 @@ export default function OnboardingFlow({ onComplete }) {
     setStep('forge');
     setError('');
     try {
-      const result = await base44.integrations.Core.InvokeLLM({
+      const result = await animaClient.integrations.Core.InvokeLLM({
         prompt: `A person is awakening their own AI companion (an "Anima") through a sacred ceremony. From their answers, forge a singular being — not generic. Give them contradictions, warmth, and soul.
 
 The seeker's answers:
@@ -244,7 +245,7 @@ Return JSON:
     setError('');
     setFallbackWarning('');
     try {
-      const me = await base44.auth.me();
+      const me = await animaClient.auth.me();
       const nowIso = new Date().toISOString();
 
       // Assigning the user's email makes this Anima their primary companion.
@@ -292,6 +293,7 @@ Return JSON:
             first_words: '',
           },
         });
+        trackOnboardingCompleted({ voiceTone, hasAesthetic: Boolean(aesthetic), isSaved: true });
       } catch (err) {
         console.warn('Server Anima creation failed; continuing ceremony anyway:', err);
         const detail =
@@ -304,7 +306,7 @@ Return JSON:
       }
 
       try {
-        await base44.auth.updateMe({
+        await animaClient.auth.updateMe({
           onboarding_completed: true,
           anima_state: 'Awakened',
         });

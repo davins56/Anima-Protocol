@@ -1,6 +1,6 @@
 // @ts-check
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { recordDailyResonanceCheckIn } from "@/lib/dailyResonanceCheckIn";
@@ -26,7 +26,7 @@ export default function CheckIn() {
     // Profile is only used for the greeting + mode_used. Do not gate Record
     // Check-in on this — create is Clerk-scoped, and a rejected me() used to
     // leave `user` null so the button silently no-op'd.
-    base44.auth.me()
+    animaClient.auth.me()
       .then((me) => {
         if (!me) return;
         setUser(me);

@@ -1,6 +1,6 @@
 // @ts-check
 import { useEffect, useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 export function useUserContext() {
   const [contextPrompt, setContextPrompt] = useState('');
@@ -13,7 +13,7 @@ export function useUserContext() {
 
   const loadUserContext = async () => {
     try {
-      const result = await base44.functions.invoke('buildUserContextPrompt', {});
+      const result = await animaClient.functions.invoke('buildUserContextPrompt', {});
       setContextPrompt(result.data?.context_prompt || '');
       setDocumentCount(result.data?.context_count || 0);
     } catch (err) {

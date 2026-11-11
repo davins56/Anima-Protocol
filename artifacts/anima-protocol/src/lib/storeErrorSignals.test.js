@@ -13,7 +13,7 @@ import {
 import {
   STORE_UNREACHABLE_MESSAGE,
   parseStoreErrorDetail,
-} from "@/api/base44Client";
+} from "@/api/animaClient";
 
 /** Shape the API error handler produces for a real database fault. */
 function serverDbError(reason = "unavailable") {

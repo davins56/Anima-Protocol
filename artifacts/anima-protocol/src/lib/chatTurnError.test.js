@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { chatTurnErrorMessage } from "./chatTurnError.js";
+import { chatTurnErrorMessage, shouldCheckBackForCompanionReply } from "./chatTurnError.js";
 
 describe("chatTurnErrorMessage", () => {
   it("keeps actionable API / network copy", () => {
@@ -9,16 +9,39 @@ describe("chatTurnErrorMessage", () => {
   });
 
   it("hides Temporal Dead Zone / minified engine errors", () => {
-    expect(chatTurnErrorMessage(new ReferenceError("Cannot access 'H' before initialization."))).toBe(
+    const tdz = new ReferenceError("Cannot access 'H' before initialization.");
+    const engine = new TypeError("H is not a function");
+    expect(chatTurnErrorMessage(tdz)).toBe(
       "The companion could not reply. Please try again.",
     );
-    expect(chatTurnErrorMessage(new TypeError("H is not a function"))).toBe(
+    expect(chatTurnErrorMessage(engine)).toBe(
       "The companion could not reply. Please try again.",
+    );
+    expect(shouldCheckBackForCompanionReply(tdz)).toBe(true);
+    expect(shouldCheckBackForCompanionReply(engine)).toBe(true);
+    expect(chatTurnErrorMessage(new TypeError("Failed to fetch"))).toMatch(
+      /connection dropped, checking for her reply/i,
+    );
+    expect(chatTurnErrorMessage(new TypeError("Load failed"))).toMatch(
+      /connection dropped, checking for her reply/i,
     );
   });
 
   it("falls back when the failure has no message", () => {
     expect(chatTurnErrorMessage(null)).toBe("The companion could not reply. Please try again.");
+    expect(shouldCheckBackForCompanionReply(null)).toBe(true);
+  });
+
+  it("does not check back for an actionable failure or a busy conversation", () => {
+    const auth = new Error("Unauthorized");
+    expect(shouldCheckBackForCompanionReply(auth)).toBe(false);
+    const busy = new Error(
+      "The companion is still finishing the last reply. Wait a moment, then try again.",
+    );
+    busy.code = "conversation_busy";
+    busy.status = 409;
+    expect(chatTurnErrorMessage(busy)).toBe(busy.message);
+    expect(shouldCheckBackForCompanionReply(busy)).toBe(false);
   });
 
   it("remaps OpenRouter's raw provider-400 wrapper", () => {
@@ -147,6 +170,16 @@ describe("chatTurnErrorMessage", () => {
     expect(message).not.toMatch(/anima-chat-llm\.fly\.dev/i);
   });
 
+  it("remaps a raw database operation timeout to retryable conversation copy", () => {
+    const message = chatTurnErrorMessage(
+      new Error("Database operation aborted due to timeout after 5000ms"),
+    );
+    expect(message).toBe(
+      "Couldn't load this conversation — the database timed out. Please try again.",
+    );
+    expect(message).not.toMatch(/ETIMEOUT|aborted due to timeout/i);
+  });
+
   it("remaps a pre-token Database unavailable toast to conversation copy", () => {
     expect(chatTurnErrorMessage(new Error("Database unavailable"))).toBe(
       "Couldn't load this conversation. Please try again.",
@@ -162,6 +195,23 @@ describe("chatTurnErrorMessage", () => {
         new Error("Cannot perform I/O on behalf of a different request"),
       ),
     ).toBe("Couldn't load this conversation. Please try again.");
+  });
+
+  it("hides raw Ollama connection and stream-drop text", () => {
+    const dropped = chatTurnErrorMessage(
+      new Error("Ollama /api/chat stream ended before the reply finished"),
+    );
+    expect(dropped).toBe("The companion could not finish this reply. Please try again.");
+    expect(dropped).not.toMatch(/ollama/i);
+    const unreachable = chatTurnErrorMessage(
+      new Error(
+        "The Ollama model server is not running or not reachable. Start it with `ollama serve`.",
+      ),
+    );
+    expect(unreachable).toBe(
+      "The companion could not finish this reply. Please try again.",
+    );
+    expect(unreachable).not.toMatch(/ollama serve/i);
   });
 
   it("keeps local-only timeout copy so the HUD does not look like a silent hang", () => {

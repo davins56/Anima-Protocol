@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Zap, Trophy, Clock } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -15,7 +15,7 @@ export default function SpecialQuestPanel({ sessionId }) {
 
   const loadSpecialQuests = async () => {
     try {
-      const result = await base44.functions.invoke("generateSpecialQuests", {
+      const result = await animaClient.functions.invoke("generateSpecialQuests", {
         session_id: sessionId,
         type: "daily_weekly",
       });

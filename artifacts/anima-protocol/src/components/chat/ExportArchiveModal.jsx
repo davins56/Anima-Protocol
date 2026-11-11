@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { Download, FileText, Loader, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { toast } from "sonner";
 
 /**
@@ -18,7 +18,7 @@ export default function ExportArchiveModal({ isOpen, onClose, session }) {
 
     setExporting(true);
     try {
-      const response = await base44.functions.invoke("exportSessionArchive", {
+      const response = await animaClient.functions.invoke("exportSessionArchive", {
         session_id: session.id,
         format,
         include_summary: includeSummary,

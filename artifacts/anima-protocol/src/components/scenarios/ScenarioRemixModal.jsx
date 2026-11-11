@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { X, Loader } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 export default function ScenarioRemixModal({ scenario, onClose, onRemixComplete }) {
   const [name, setName] = useState(`${scenario.title} - Remix`);
@@ -19,7 +19,7 @@ export default function ScenarioRemixModal({ scenario, onClose, onRemixComplete 
 
     try {
       // Create new ChatSession from scenario
-      const newSession = await base44.entities.ChatSession.create({
+      const newSession = await animaClient.entities.ChatSession.create({
         title: name.trim(),
         mode: 'solo',
         character_id: scenario.character_bases?.[0]?.id,
@@ -38,7 +38,7 @@ export default function ScenarioRemixModal({ scenario, onClose, onRemixComplete 
       });
 
       // Increment remix count
-      await base44.entities.SharedScenario.update(scenario.id, {
+      await animaClient.entities.SharedScenario.update(scenario.id, {
         remix_count: (scenario.remix_count || 0) + 1,
       });
 

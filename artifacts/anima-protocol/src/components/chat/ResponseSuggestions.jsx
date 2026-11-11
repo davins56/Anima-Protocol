@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader, Sparkles } from "lucide-react";
 
@@ -23,7 +23,7 @@ export default function ResponseSuggestions({
   const generateSuggestions = async () => {
     setLoading(true);
     try {
-      const result = await base44.functions.invoke("generateResponseSuggestions", {
+      const result = await animaClient.functions.invoke("generateResponseSuggestions", {
         session_id: sessionId,
         character_id: characterId,
         recent_messages: recentMessages.slice(-6),

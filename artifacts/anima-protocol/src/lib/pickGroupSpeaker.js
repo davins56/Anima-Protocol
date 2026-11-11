@@ -2,10 +2,14 @@
  * Instant group-speaker selection (force / @address / least-recent / interrupt).
  * Mirrors the heuristic path of server Scene Mind so Chat does not wait on an
  * extra HTTP round-trip or director LLM before the companion processes the turn.
+ *
+ * Interrupt is OFF by default: a 35% random out-of-turn swap made companions
+ * feel like they ignored what the user said. Pass interruptChance explicitly
+ * to re-enable it.
  */
 
 function escapeRegExp(value) {
-  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return String(value || "").replace(/[.*+?^${}()|[]\\]/g, "\\$&");
 }
 
 /** True when the user message clearly addresses this character. */
@@ -35,7 +39,7 @@ function recentAssistantNames(recentMessages = []) {
 }
 
 /**
- * @returns {{ character: object | null, interrupted: boolean, reason: string }}
+ * @returns {{ character: object | null, interrupted: boolean, reason: string }
  */
 export function pickGroupSpeaker({
   groupChars = [],
@@ -45,7 +49,7 @@ export function pickGroupSpeaker({
   forceCharacterId = null,
   isContinue = false,
   random = Math.random,
-  interruptChance = 0.35,
+  interruptChance = 0,
 } = {}) {
   const participants = (groupChars || []).filter((c) => c?.id && c?.name);
   if (!participants.length) {
@@ -72,11 +76,9 @@ export function pickGroupSpeaker({
   }
 
   const recentNames = recentAssistantNames(recentMessages);
-  const preferred =
-    usable.find((c) => !recentNames.has(c.name)) || usable[0];
+  const preferred = usable.find((c) => !recentNames.has(c.name)) || usable[0];
 
-  const allowInterrupt =
-    !isContinue && usable.length >= 2 && random() < interruptChance;
+  const allowInterrupt = !isContinue && usable.length >= 2 && random() < interruptChance;
   if (allowInterrupt) {
     const interrupter = usable.find((c) => c.id !== preferred.id);
     if (interrupter) {

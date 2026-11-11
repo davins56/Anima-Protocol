@@ -2,7 +2,7 @@
 // Provides direct integration for coding, automated debugging, and troubleshooting
 // directly within the codespace environment.
 
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { scanCode } from "./codeScanner";
 import { summarizeRunErrors, buildRepairGoal } from "./repair";
 
@@ -38,7 +38,7 @@ export async function executeAgentStep(messages, files = [], options = {}) {
   const filePaths = (files || []).map((f) => (typeof f === "string" ? f : f.path));
 
   // Primary path: invoke server-side codespaceAgentStep function
-  const res = await base44.functions.codespaceAgentStep.invoke({
+  const res = await animaClient.functions.codespaceAgentStep.invoke({
     messages,
     character: JULES_PERSONA,
     files: filePaths,
@@ -58,7 +58,7 @@ Files in project: ${filePaths.join(", ") || "none"}
 Analyze the project state and assist the user by generating clean code or fixing bugs directly.
 Answer in JSON: { "content": "explanation and narration", "tool_calls": [] }`;
 
-  const fallback = await base44.integrations.Core.InvokeLLM({
+  const fallback = await animaClient.integrations.Core.InvokeLLM({
     prompt: promptText,
     systemPrompt,
     response_json_schema: {

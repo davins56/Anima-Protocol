@@ -19,8 +19,8 @@ vi.mock("framer-motion", async () => {
   };
 });
 
-vi.mock("@/api/base44Client", () => ({
-  base44: {
+vi.mock("@/api/animaClient", () => ({
+  animaClient: {
     entities: {
       Anima: {
         create: vi.fn().mockResolvedValue({ id: "anima_1", name: "Atlas" }),
@@ -33,7 +33,7 @@ vi.mock("@/api/base44Client", () => ({
 }));
 
 import CreateCompanionModal from "./CreateCompanionModal";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 
 describe("CreateCompanionModal", () => {
   afterEach(() => {
@@ -107,7 +107,7 @@ describe("CreateCompanionModal", () => {
       createBtn.click();
     });
 
-    expect(base44.entities.Anima.create).toHaveBeenCalledWith(
+    expect(animaClient.entities.Anima.create).toHaveBeenCalledWith(
       expect.objectContaining({
         name: "Atlas",
         archetype: "Muse",

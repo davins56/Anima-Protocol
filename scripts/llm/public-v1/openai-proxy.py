@@ -4,14 +4,23 @@
 Unauthenticated /v1/* → 401. /healthz is open. Does not log the token.
 
 Ollama's OpenAI layer (`/v1/chat/completions`) unmarshals a struct with no
-`keep_alive` field, so the Worker field is dropped and anima-chat unloads
-after the server default (~5m). Cold generate on the droplet is ~15–18s.
-This proxy maps that one route onto native `/api/chat`, which honors
-`keep_alive`, and streams the reply instead of buffering the full generate
-(buffering made the Worker open budget cover decode as well as the load).
+`keep_alive` field. This proxy maps that one route onto native `/api/chat`
+and streams the reply instead of buffering the full generate.
+
+`keep_alive` is copied only when the request or `ANIMA_OLLAMA_KEEP_ALIVE`
+sets it. Omitting it lets the droplet's `OLLAMA_KEEP_ALIVE` (production:
+`-1`, keep loaded) win. A client disconnect closes the upstream connection
+so Ollama stops generating instead of holding the single CPU slot.
 
 Set ANIMA_LLM_PROXY_NATIVE=0 to pass `/v1/chat/completions` through unchanged
-(vLLM). Set ANIMA_OLLAMA_KEEP_ALIVE=0 to stop injecting a default.
+(vLLM).
+
+Self-hosted voice (docs/voice-local.md): `/tts/*` goes to Kokoro-FastAPI
+(ANIMA_VOICE_TTS_UPSTREAM, default 127.0.0.1:8880) and `/stt/*` to speaches /
+faster-whisper (ANIMA_VOICE_STT_UPSTREAM, default 127.0.0.1:8000), prefix
+stripped, same bearer. Only the routes the API server uses are open; model
+download/delete and the rest of either server stay closed. Streams are passed
+through as they arrive and a client disconnect closes the upstream socket.
 """
 from __future__ import annotations
 
@@ -19,10 +28,31 @@ import http.client
 import http.server
 import json
 import os
+import select
+import socket
 import sys
+import threading
 from typing import Any
 
 UPSTREAM_HOST = os.environ.get("ANIMA_LLM_UPSTREAM", "127.0.0.1:11434")
+VOICE_TTS_UPSTREAM = os.environ.get("ANIMA_VOICE_TTS_UPSTREAM", "127.0.0.1:8880")
+VOICE_STT_UPSTREAM = os.environ.get("ANIMA_VOICE_STT_UPSTREAM", "127.0.0.1:8000")
+# Push-to-talk is capped at 60 s of 16 kHz PCM16 (~1.9 MB) by the API server.
+VOICE_MAX_BODY_BYTES = 4 * 1024 * 1024
+# (method, path after the /tts or /stt prefix) the API server actually calls.
+VOICE_ROUTES = {
+    "tts": {
+        ("GET", "/health"),
+        ("GET", "/v1/audio/voices"),
+        ("POST", "/v1/audio/speech"),
+        ("POST", "/dev/captioned_speech"),
+        ("POST", "/dev/phonemize"),
+    },
+    "stt": {
+        ("GET", "/health"),
+        ("POST", "/v1/audio/transcriptions"),
+    },
+}
 LISTEN_HOST = os.environ.get("ANIMA_LLM_PROXY_HOST", "127.0.0.1")
 LISTEN_PORT = int(os.environ.get("ANIMA_LLM_PROXY_PORT", "18000"))
 TOKEN_PATH = os.environ.get(
@@ -41,9 +71,26 @@ HOP_BY_HOP = {
     "host",
     "content-length",
 }
-DEFAULT_KEEP_ALIVE = "30m"
+# Hard ceiling so one translated generate cannot pin the single CPU slot.
+NUM_PREDICT_CAP = 200
 
 TOKEN = ""
+
+
+def voice_route(method: str, path: str) -> tuple[str, str] | None:
+    """`/tts/v1/audio/speech` -> (tts upstream, "/v1/audio/speech"); None when closed."""
+    for prefix, upstream_attr in (("tts", "VOICE_TTS_UPSTREAM"), ("stt", "VOICE_STT_UPSTREAM")):
+        lead = f"/{prefix}"
+        if path == lead or path.startswith(lead + "/"):
+            rest = path[len(lead):] or "/"
+            if (method, rest) in VOICE_ROUTES[prefix] or (method == "HEAD" and ("GET", rest) in VOICE_ROUTES[prefix]):
+                return globals()[upstream_attr], rest
+            return None
+    return None
+
+
+def is_voice_path(path: str) -> bool:
+    return any(path == f"/{p}" or path.startswith(f"/{p}/") for p in ("tts", "stt"))
 
 
 def load_token() -> str:
@@ -61,10 +108,19 @@ def load_token() -> str:
 
 
 def default_keep_alive() -> str:
-    raw = os.environ.get("ANIMA_OLLAMA_KEEP_ALIVE", DEFAULT_KEEP_ALIVE).strip()
+    """Empty unless the operator set ANIMA_OLLAMA_KEEP_ALIVE."""
+    if "ANIMA_OLLAMA_KEEP_ALIVE" not in os.environ:
+        return ""
+    raw = os.environ.get("ANIMA_OLLAMA_KEEP_ALIVE", "").strip()
     if not raw or raw.lower() in {"0", "off", "false", "no"}:
         return ""
     return raw
+
+
+def cap_num_predict(value: int) -> int:
+    if value < 1:
+        return 1
+    return min(value, NUM_PREDICT_CAP)
 
 
 def native_chat_enabled() -> bool:
@@ -97,7 +153,9 @@ def openai_chat_to_native(body: dict[str, Any], keep_alive: str) -> dict[str, An
         options["temperature"] = body["temperature"]
     max_tokens = body.get("max_tokens", body.get("max_completion_tokens"))
     if isinstance(max_tokens, (int, float)) and not isinstance(max_tokens, bool):
-        options["num_predict"] = int(max_tokens)
+        options["num_predict"] = cap_num_predict(int(max_tokens))
+    else:
+        options["num_predict"] = NUM_PREDICT_CAP
     if isinstance(body.get("top_p"), (int, float)) and not isinstance(body.get("top_p"), bool):
         options["top_p"] = body["top_p"]
     stop = body.get("stop")
@@ -293,9 +351,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path in ("/healthz", "/health"):
             self._send(200, b"ok", "text/plain")
             return
-        native_api = path == "/api/chat" or path == "/api/generate" or path.startswith("/api/")
+        if is_voice_path(path):
+            self._handle_voice(path)
+            return
+        # /api/ps and /api/tags are the health probe. /api/pull and /api/delete stay closed.
+        native_api = path in ("/api/chat", "/api/generate", "/api/ps", "/api/tags")
         openai_api = path == "/v1" or path.startswith("/v1/")
-        if not openai_api and not (native_api and path in ("/api/chat", "/api/generate")):
+        if not openai_api and not native_api:
             self._send(404, b'{"error":{"message":"not found"}}', "application/json")
             return
         if not self._authorized():
@@ -315,6 +377,31 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._translate_chat(body)
             return
         self._passthrough(self.command, self.path, body)
+
+    def _handle_voice(self, path: str) -> None:
+        if not self._authorized():
+            self._send(401, b'{"error":{"message":"unauthorized","type":"auth"}}', "application/json")
+            return
+        route = voice_route(self.command, path)
+        if route is None:
+            self._send(404, b'{"error":{"message":"not found"}}', "application/json")
+            return
+        if int(self.headers.get("Content-Length") or 0) > VOICE_MAX_BODY_BYTES:
+            self._send(413, b'{"error":{"message":"voice body too large"}}', "application/json")
+            return
+        upstream, rest = route
+        query = self.path[len(path):]
+        body = self._read_body()
+        try:
+            self._passthrough(self.command, rest + query, body, upstream=upstream)
+        except (ConnectionRefusedError, socket.timeout, OSError) as exc:
+            if getattr(self, "_response_started", False):
+                return
+            status, payload = openai_error(f"voice upstream unreachable: {exc.__class__.__name__}", 502)
+            try:
+                self._send(status, payload, "application/json")
+            except Exception:
+                return
 
     def _translate_chat(self, body: bytes) -> None:
         try:
@@ -337,9 +424,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "Connection": "close",
         }
         conn = http.client.HTTPConnection(UPSTREAM_HOST, timeout=300)
+        stop_watch = self._arm_client_cancel(conn)
         self._response_started = False
         try:
             conn.request("POST", "/api/chat", body=upstream_body, headers=headers)
+            conn.anima_upstream_sock = conn.sock  # type: ignore[attr-defined]
             resp = conn.getresponse()
             if resp.status != 200:
                 raw = resp.read()
@@ -377,7 +466,51 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 except Exception:
                     return
         finally:
+            stop_watch.set()
             conn.close()
+
+    def _arm_client_cancel(self, conn: http.client.HTTPConnection) -> threading.Event:
+        """Close upstream when the client socket EOFs, including during prefill.
+
+        After getresponse() on a `Connection: close` reply, http.client hands the
+        socket to the response and conn.close() no longer closes it, so the
+        socket captured after the request is shut down directly. That also
+        wakes a read1() blocked on a silent upstream.
+        """
+        stop = threading.Event()
+        client = self.connection
+
+        def cancel() -> None:
+            sock = conn.sock or getattr(conn, "anima_upstream_sock", None)
+            if sock is not None:
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+            conn.close()
+
+        def watch() -> None:
+            while not stop.wait(0.2):
+                try:
+                    readable, _, _ = select.select([client], [], [], 0)
+                except (OSError, ValueError):
+                    cancel()
+                    return
+                if not readable:
+                    continue
+                try:
+                    peeked = client.recv(1, socket.MSG_PEEK | socket.MSG_DONTWAIT)
+                except BlockingIOError:
+                    continue
+                except OSError:
+                    cancel()
+                    return
+                if peeked == b"":
+                    cancel()
+                    return
+
+        threading.Thread(target=watch, daemon=True).start()
+        return stop
 
     def _stream_native_chat(self, resp: http.client.HTTPResponse, model: str) -> None:
         self.send_response(200)
@@ -398,16 +531,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(b"data: [DONE]\n\n")
         self.wfile.flush()
 
-    def _passthrough(self, method: str, path: str, body: bytes) -> None:
+    def _passthrough(self, method: str, path: str, body: bytes, upstream: str | None = None) -> None:
+        target = upstream or UPSTREAM_HOST
         headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP_BY_HOP}
-        headers["Host"] = "127.0.0.1:11434"
+        # The bearer is this proxy's; never forward it to the local servers.
+        if upstream is not None:
+            headers = {k: v for k, v in headers.items() if k.lower() != "authorization"}
+        headers["Host"] = target if upstream is not None else "127.0.0.1:11434"
         headers["Connection"] = "close"
         if body:
             headers["Content-Length"] = str(len(body))
-        conn = http.client.HTTPConnection(UPSTREAM_HOST, timeout=300)
+        conn = http.client.HTTPConnection(target, timeout=300)
+        stop_watch = self._arm_client_cancel(conn)
+        self._response_started = False
         try:
             conn.request(method, path, body=body, headers=headers)
+            conn.anima_upstream_sock = conn.sock  # type: ignore[attr-defined]
             resp = conn.getresponse()
+            self._response_started = True
             self.send_response(resp.status, resp.reason)
             for key, value in resp.getheaders():
                 if key.lower() in HOP_BY_HOP:
@@ -428,6 +569,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.wfile.write(chunk)
                 self.wfile.flush()
         finally:
+            stop_watch.set()
             conn.close()
 
 
@@ -451,7 +593,8 @@ def main() -> None:
     TOKEN = load_token()
     server = http.server.ThreadingHTTPServer((LISTEN_HOST, LISTEN_PORT), Handler)
     print(
-        f"anima openai proxy listening on http://{LISTEN_HOST}:{LISTEN_PORT} -> {UPSTREAM_HOST}",
+        f"anima openai proxy listening on http://{LISTEN_HOST}:{LISTEN_PORT} -> {UPSTREAM_HOST}"
+        f" (voice: /tts -> {VOICE_TTS_UPSTREAM}, /stt -> {VOICE_STT_UPSTREAM})",
         flush=True,
     )
     server.serve_forever()

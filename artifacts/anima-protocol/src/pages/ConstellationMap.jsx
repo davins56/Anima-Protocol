@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { useStoreSync } from '@/lib/useStoreSync';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Loader, X } from 'lucide-react';
@@ -55,12 +55,12 @@ export default function ConstellationMap() {
 
   const load = useCallback(async () => {
     try {
-      const me = await base44.auth.me().catch(() => null);
+      const me = await animaClient.auth.me().catch(() => null);
       const [animas, crys, sess, drm] = await Promise.all([
-        base44.entities.Anima.list().catch(() => []),
-        base44.entities.MemoryCrystal.list('-created_date').catch(() => []),
-        base44.entities.ChatSession.list().catch(() => []),
-        base44.entities.AnimaDream.list('-created_date').catch(() => []),
+        animaClient.entities.Anima.list().catch(() => []),
+        animaClient.entities.MemoryCrystal.list('-created_date').catch(() => []),
+        animaClient.entities.ChatSession.list().catch(() => []),
+        animaClient.entities.AnimaDream.list('-created_date').catch(() => []),
       ]);
       const primary = animas?.find((a) => a.assigned_user === me?.email) || animas?.[0] || null;
       setAnima(primary);

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Loader, AlertCircle, X } from "lucide-react";
 
 export default function MessageTagSuggestions({ message, characterIds, onApply }) {
@@ -17,7 +17,7 @@ export default function MessageTagSuggestions({ message, characterIds, onApply }
       setLoading(true);
       setError(null);
       try {
-        const res = await base44.functions.invoke("analyzeMessageTags", {
+        const res = await animaClient.functions.invoke("analyzeMessageTags", {
           message,
           character_ids: characterIds || [],
         });

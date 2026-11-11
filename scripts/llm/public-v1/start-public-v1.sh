@@ -15,9 +15,15 @@ LOG_DIR="${ANIMA_LLM_LOG_DIR:-$ROOT/logs}"
 
 die() { echo "error: $*" >&2; exit 1; }
 
-if ! curl -sf "http://${OLLAMA_HOST}/api/tags" >/dev/null 2>&1 \
+# Self-hosted voice (docs/voice-local.md): /tts -> Kokoro-FastAPI, /stt -> speaches.
+export ANIMA_VOICE_TTS_UPSTREAM="${ANIMA_VOICE_TTS_UPSTREAM:-127.0.0.1:8880}"
+export ANIMA_VOICE_STT_UPSTREAM="${ANIMA_VOICE_STT_UPSTREAM:-127.0.0.1:8000}"
+
+# ANIMA_VOICE_ONLY=1: chat stays on the Cloudflare brain; only voice is served here.
+if [[ "${ANIMA_VOICE_ONLY:-0}" != "1" ]] \
+  && ! curl -sf "http://${OLLAMA_HOST}/api/tags" >/dev/null 2>&1 \
   && ! curl -sf "http://${OLLAMA_HOST}/v1/models" >/dev/null 2>&1; then
-  die "nothing listening on ${OLLAMA_HOST}. Run: pnpm llm:up"
+  die "nothing listening on ${OLLAMA_HOST}. Run: pnpm llm:up (or ANIMA_VOICE_ONLY=1 for voice only)"
 fi
 
 [[ -s "$BEARER_FILE" || -n "${ANIMA_LLM_PROXY_TOKEN:-}" ]] \
@@ -55,9 +61,15 @@ fi
 
 echo "Public URL: ${PUBLIC_URL}"
 echo "Model: anima-chat (Ollama, not vLLM)"
-echo "keep_alive: proxy rewrites /v1/chat/completions → /api/chat (30m)."
+echo "keep_alive: omitted unless ANIMA_OLLAMA_KEEP_ALIVE is set (daemon OLLAMA_KEEP_ALIVE wins)."
 echo "Restart this proxy after upgrading it; a healthy process is left running."
-echo "Also set OLLAMA_KEEP_ALIVE=30m on the ollama serve process."
+echo "Also set OLLAMA_KEEP_ALIVE=-1 on the ollama serve process."
 echo "Worker secrets: ANIMA_LOCAL_LLM_BASE_URL=${PUBLIC_URL}"
 echo "                ANIMA_LOCAL_LLM_API_KEY=<contents of ${BEARER_FILE}>"
 echo "Do not put the URL in wrangler.jsonc vars. Do not commit token files."
+for svc in "tts ${ANIMA_VOICE_TTS_UPSTREAM}" "stt ${ANIMA_VOICE_STT_UPSTREAM}"; do
+  set -- $svc
+  if curl -sf "http://$2/health" >/dev/null 2>&1; then echo "Voice $1: up on $2"; else echo "Voice $1: nothing on $2 (voice_offline until it is)"; fi
+done
+echo "Voice secrets: ANIMA_LOCAL_VOICE_BASE_URL=${PUBLIC_URL%/v1} (no /v1)"
+echo "               ANIMA_LOCAL_VOICE_API_KEY=<optional; defaults to ANIMA_LOCAL_LLM_API_KEY>"

@@ -1,4 +1,10 @@
-# Anima LLM — public HTTPS host
+# Anima LLM — public HTTPS host (optional)
+
+> Production does **not** need this. `ANIMA_CHAT_BRAIN=cloudflare` (committed in
+> `wrangler.jsonc`) runs chat on Workers AI inside the Worker — no Fly.io, no
+> DigitalOcean droplet. See [`docs/chat-brain.md`](./chat-brain.md). This page is
+> only for running your own `anima-chat` host and setting
+> `ANIMA_CHAT_BRAIN=self-hosted`.
 
 Production chat is **one** backend: `ANIMA_LOCAL_LLM_BASE_URL` (OpenAI-compatible
 `…/v1`). The Cloudflare Worker cannot reach `localhost`. This page is the
@@ -14,7 +20,6 @@ Do **not** set `ANIMA_LOCAL_LLM_BASE_URL` to `api.openai.com`.
 | [`scripts/llm/public-v1/`](../scripts/llm/public-v1/README.md) | Ollama already running on a CPU box; named Cloudflare Tunnel (`https://llm.anima-protocol.com/v1`) |
 | [`scripts/llm/tunnel-cloudflared.sh`](../scripts/llm/tunnel-cloudflared.sh) (`pnpm llm:tunnel`) | Quick tunnel for a laptop/VPS |
 | [`scripts/llm/cloud-init-vps.sh`](../scripts/llm/cloud-init-vps.sh) (`pnpm llm:vps-init`) | Fresh Debian/Ubuntu: Ollama + `anima-chat` + systemd |
-| [`deploy/ollama-fly/`](../deploy/ollama-fly/README.md) | Always-on Fly.io image |
 | [`scripts/llm/docker-compose.vllm.yml`](../scripts/llm/docker-compose.vllm.yml) | GPU vLLM after QLoRA (Ministral 8B) |
 
 After the host answers on HTTPS `/v1`:

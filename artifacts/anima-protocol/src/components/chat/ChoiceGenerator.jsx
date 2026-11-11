@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { ChevronDown, Zap, Loader } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -26,7 +26,7 @@ export default function ChoiceGenerator({
   const generateChoices = async () => {
     setLoading(true);
     try {
-      const result = await base44.functions.invoke("generateChoices", {
+      const result = await animaClient.functions.invoke("generateChoices", {
         session_id: sessionId,
         character_name: characterName,
         character_id: characterId,
@@ -52,7 +52,7 @@ export default function ChoiceGenerator({
     setSelectedChoiceId(choice.id);
 
     // Track the choice selection
-    await base44.analytics.track({
+    await animaClient.analytics.track({
       eventName: "narrative_choice_selected",
       properties: {
         session_id: sessionId,

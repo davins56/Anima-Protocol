@@ -16,7 +16,7 @@ describe("llmProviderLabel", () => {
     expect(llmProviderShortLabel("minimax")).toBe("MiniMax");
     expect(llmProviderShortLabel("deepshi")).toBe("Deepshi");
     expect(llmProviderShortLabel("openrouter")).toBe("Venice");
-    expect(llmProviderShortLabel("workersai")).toBe("DeepSeek");
+    expect(llmProviderShortLabel("workersai")).toBe("Workers AI");
     expect(llmProviderShortLabel("kimi")).toBeNull();
     expect(llmProviderShortLabel(null)).toBeNull();
   });
@@ -25,13 +25,21 @@ describe("llmProviderLabel", () => {
     expect(llmDisplayLabel("local", "anima")).toBe("Anima");
     expect(llmDisplayLabel("local", null)).toBe("Anima");
     expect(llmDisplayLabel("openrouter", "openrouter")).toBe("Venice");
-    expect(llmDisplayLabel("workersai", "workersai")).toBe("DeepSeek");
+    expect(llmDisplayLabel("workersai", "workersai")).toBe("Workers AI");
     expect(llmDisplayTitle("local", "anima")).toMatch(/Anima LLM/);
     expect(llmDisplayTitle("openrouter", "openrouter")).toMatch(/Venice Uncensored/);
     expect(llmDisplayTitle("workersai", "workersai")).toMatch(/Workers AI/);
     expect(llmDisplayBadgeClass("local", "anima")).toMatch(/rose/);
     expect(llmDisplayBadgeClass("openrouter", "openrouter")).toMatch(/amber/);
     expect(llmDisplayBadgeClass("workersai", "workersai")).toMatch(/emerald/);
+  });
+
+  it("labels the steward's own model", () => {
+    expect(llmProviderShortLabel("own")).toBe("Your model");
+    expect(llmDisplayLabel("own", "own")).toBe("Your model");
+    expect(llmDisplayTitle("own", "own")).toMatch(/learning from your lessons/);
+    expect(llmProviderTitle("own")).toMatch(/your own model/);
+    expect(llmDisplayBadgeClass("own", "own")).toMatch(/fuchsia/);
   });
 
   it("lists self-hosted Anima, MiniMax, and OpenRouter Venice backends", () => {

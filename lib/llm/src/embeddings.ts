@@ -24,6 +24,32 @@ export interface EmbedResult {
 
 const DEFAULT_HASH_DIM = 256;
 
+function envFlagTrue(value: string | undefined): boolean {
+  const raw = String(value || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
+}
+
+/**
+ * True when chat is the single local host and no dedicated embeddings URL
+ * is configured. POSTing `/v1/embeddings` at that host 404s and queues
+ * behind companion `/api/chat`.
+ */
+export function skipChatHostEmbeddings(env: NodeJS.ProcessEnv = process.env): boolean {
+  if ((env.ANIMA_EMBEDDINGS_BASE_URL || "").trim()) return false;
+  const localUrl = (env.ANIMA_LOCAL_LLM_BASE_URL || "").trim();
+  if (!localUrl) return false;
+  if (envFlagTrue(env.ANIMA_LOCAL_LLM_FALLBACK)) {
+    const openRouterKey = (
+      env.OPENROUTER_API_KEY ||
+      env.ANIMA_OPENROUTER_API_KEY ||
+      env.OPEN_ROUTER_API_KEY ||
+      ""
+    ).trim();
+    if (openRouterKey) return false;
+  }
+  return true;
+}
+
 /** Cosine similarity in [-1, 1]. Returns 0 for zero / mismatched vectors. */
 export function cosineSimilarity(a: EmbeddingVector, b: EmbeddingVector): number {
   if (!a?.length || !b?.length || a.length !== b.length) return 0;
@@ -107,11 +133,9 @@ export async function fetchOpenAIEmbeddings(
     return { embeddings: [], model: opts.model || "none", semantic: false };
   }
 
+  const explicit = (opts.baseUrl || process.env.ANIMA_EMBEDDINGS_BASE_URL || "").trim();
   const baseUrl = (
-    opts.baseUrl ||
-    process.env.ANIMA_EMBEDDINGS_BASE_URL ||
-    process.env.ANIMA_LOCAL_LLM_BASE_URL ||
-    ""
+    explicit || (skipChatHostEmbeddings() ? "" : process.env.ANIMA_LOCAL_LLM_BASE_URL || "")
   )
     .trim()
     .replace(/\/$/, "");

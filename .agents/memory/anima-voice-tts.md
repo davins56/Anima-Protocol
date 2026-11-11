@@ -7,7 +7,7 @@ description: How ElevenLabs voice is wired in Anima Protocol and the gotchas aro
 
 Rule: ElevenLabs speech goes through a **dedicated binary route** `POST /api/tts`
 (returns `audio/mpeg` bytes) on the api-server, consumed client-side via
-`res.blob()` + `new Audio()`. It does **not** go through `base44.functions.invoke`
+`res.blob()` + `new Audio()`. It does **not** go through `animaClient.functions.invoke`
 — that path is JSON-only and its `elevenLabsTTS` case is a stub returning
 `{audio:null}`. An older hook implementation pointed at a dead
 `/api/apps/<appId>/functions/<ver>/...` path that never existed on this server.

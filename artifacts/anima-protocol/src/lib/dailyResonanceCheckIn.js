@@ -1,4 +1,4 @@
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { setGlobalCheckInContext } from "@/hooks/useCheckInRitual";
 
 /**
@@ -59,7 +59,7 @@ export function buildDailyResonanceCheckIn(input = {}) {
  */
 export async function recordDailyResonanceCheckIn(input) {
   const payload = buildDailyResonanceCheckIn(input);
-  const created = await base44.entities.CheckIn.create(payload);
+  const created = await animaClient.entities.CheckIn.create(payload);
   setGlobalCheckInContext(
     `User mood: ${payload.mood}. Intensity: ${payload.mood_intensity}/10. Body: ${payload.physical_state}. Reflection: ${payload.reflection}`,
   );

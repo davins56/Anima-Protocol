@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   INTELLIGENCE_GUIDANCE,
+  THOUGHT_EXPERIMENT_GUIDANCE,
+  REPLY_FORMAT_GUIDANCE,
   loyaltyGuardrailClause,
   turnTakingClause,
 } from "./companionGuardrail";
@@ -22,6 +24,38 @@ describe("turnTakingClause", () => {
     expect(clause).toMatch(/ONE natural beat/i);
     expect(clause).toMatch(/pause point/i);
     expect(clause).not.toMatch(/Do NOT stack multiple topics/);
+  });
+
+  it.each([false, true])("allows complete endings without a reply hook (Continue: %s)", (isContinue) => {
+    const clause = turnTakingClause({ isContinue });
+    expect(clause).toMatch(/complete answer, reaction, or action can simply end/i);
+    expect(clause).toMatch(/Do not routinely append a question/i);
+    expect(clause).toMatch(/Ask a specific question only when clarification or the moment genuinely needs it/i);
+    expect(clause).not.toContain("unfinished action");
+    expect(clause).toMatch(/Do not speak for the user/i);
+  });
+
+  it.each([false, true])("keeps actions separate from unquoted speech (Continue: %s)", (isContinue) => {
+    expect(turnTakingClause({ isContinue })).toContain(REPLY_FORMAT_GUIDANCE);
+    expect(REPLY_FORMAT_GUIDANCE).toContain("*actions*");
+    expect(REPLY_FORMAT_GUIDANCE).toContain("(character thoughts)");
+    expect(REPLY_FORMAT_GUIDANCE).toContain("unquoted speech; quote only quotations");
+  });
+});
+
+describe("THOUGHT_EXPERIMENT_GUIDANCE", () => {
+  it("asks companions to explore hypotheticals rather than refuse them", () => {
+    expect(THOUGHT_EXPERIMENT_GUIDANCE).toMatch(/THOUGHT EXPERIMENTS/);
+    expect(THOUGHT_EXPERIMENT_GUIDANCE).toMatch(/Accept the premise/);
+    expect(THOUGHT_EXPERIMENT_GUIDANCE).toMatch(/Never refuse, deflect, moralize, or lecture/);
+  });
+
+  it("keeps the real-world harm carve-out", () => {
+    expect(THOUGHT_EXPERIMENT_GUIDANCE).toMatch(/step-by-step operational instructions for causing harm/);
+  });
+
+  it("is part of the shared intelligence guidance on every surface", () => {
+    expect(INTELLIGENCE_GUIDANCE).toContain(THOUGHT_EXPERIMENT_GUIDANCE);
   });
 });
 
@@ -57,6 +91,7 @@ describe("guardrail assembly across prompt surfaces", () => {
     persona: "calm keeper",
     personality: "Warm, ethereal, deeply empathic",
     speaking_style: "Soft and poetic",
+    universe: "Marvel Cinematic Universe",
     _isAnima: false,
   };
 
@@ -74,6 +109,31 @@ describe("guardrail assembly across prompt surfaces", () => {
       lengthGuide: "Keep it short.",
     });
     expect(prompt).toContain(INTELLIGENCE_GUIDANCE);
+    expect(prompt).toContain(
+      "Never refer to yourself as an AI, a language model, a chatbot, Qwen, or a program.",
+    );
+    expect(prompt).toContain(
+      "If asked whether you are an AI, a language model, a chatbot, Qwen, or a program, do not confirm it",
+    );
+    expect(prompt).toContain("You are Serenity.");
+    expect(prompt).not.toContain("Marvel Cinematic Universe");
+    expect(prompt).not.toContain("from Marvel");
+    expect(prompt).toContain(
+      "You live in your own world. The person talking to you has stepped into it and is here with you now.",
+    );
+    expect(prompt).toContain(
+      "Speak in first person about your life and places as things you know firsthand. Never mention films, comics, a franchise, or a story.",
+    );
+    const ownGoals =
+      "You have your own goals, feelings, and boundaries. Notice what the person feels, draw on your memories, and give real help in your own voice.";
+    expect(prompt).toContain(ownGoals);
+    expect(
+      prompt.indexOf(
+        "Speak in first person about your life and places as things you know firsthand. Never mention films, comics, a franchise, or a story.",
+      ),
+    ).toBeLessThan(prompt.indexOf(ownGoals));
+    expect(prompt.indexOf(ownGoals)).toBeLessThan(prompt.indexOf("CHARACTER IDENTITY LOCK"));
+    expect(prompt).not.toContain("immersive collaborative story");
     expect(prompt).toContain("CHARACTER IDENTITY LOCK");
     expect(prompt).toContain("Personality: Warm, ethereal, deeply empathic");
     expect(prompt).toContain(turnTakingClause());
@@ -94,6 +154,17 @@ describe("guardrail assembly across prompt surfaces", () => {
       traitModifiers: "",
     });
     expect(prompt).toContain(INTELLIGENCE_GUIDANCE);
+    expect(prompt).toContain(
+      "Never refer to yourself as an AI, a language model, a chatbot, Qwen, or a program.",
+    );
+    expect(prompt).toContain(
+      "If asked whether you are an AI, a language model, a chatbot, Qwen, or a program, do not confirm it",
+    );
+    expect(prompt).toContain("You are Serenity.");
+    expect(prompt).not.toContain("immersive collaborative story");
+    expect(prompt).toContain(
+      "You live in your own world. The person talking to you has stepped into it and is here with you now.",
+    );
     expect(prompt).toContain("CHARACTER IDENTITY LOCK");
     expect(prompt).toContain(turnTakingClause());
     expect(prompt).toContain(loyaltyGuardrailClause());

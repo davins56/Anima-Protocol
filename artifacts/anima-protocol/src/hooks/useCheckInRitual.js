@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 // Singleton store for check-in context — accessible across components without prop drilling
 let _globalCheckInContext = "";
@@ -31,11 +31,11 @@ export const useCheckInRitual = (sessionId, characterId) => {
   useEffect(() => {
     const checkDailyCheckIn = async () => {
       try {
-        const user = await base44.auth.me();
+        const user = await animaClient.auth.me();
         if (!user || !sessionId) return; // Only require check-in if there's an active session
         
         const today = new Date().toISOString().split('T')[0];
-        const existingCheckIns = await base44.entities.CheckIn.filter({
+        const existingCheckIns = await animaClient.entities.CheckIn.filter({
           user_email: user.email,
           check_in_date: today,
         });
@@ -61,10 +61,10 @@ export const useCheckInRitual = (sessionId, characterId) => {
   }, [sessionId]);
 
   const submitCheckIn = async (checkInData) => {
-    const user = await base44.auth.me();
+    const user = await animaClient.auth.me();
     const today = new Date().toISOString().split('T')[0];
 
-    const newCheckIn = await base44.entities.CheckIn.create({
+    const newCheckIn = await animaClient.entities.CheckIn.create({
       session_id: sessionId,
       user_email: user.email,
       check_in_date: today,
@@ -81,7 +81,7 @@ export const useCheckInRitual = (sessionId, characterId) => {
 
     // Process in background — inject into world state & character emotion
     if (characterId) {
-      base44.functions.invoke('ingestCheckInToWorldState', {
+      animaClient.functions.invoke('ingestCheckInToWorldState', {
         check_in_id: newCheckIn.id,
         session_id: sessionId,
         character_id: characterId,

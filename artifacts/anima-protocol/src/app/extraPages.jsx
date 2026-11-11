@@ -6,6 +6,10 @@ import { lazy, Suspense } from "react";
 import { PageLoader } from "./PageLoader";
 
 const PAGES = {
+  Resonance: lazy(() => import("../pages/Resonance")),
+  VesselStudio: lazy(() => import("../pages/VesselStudio")),
+  SimArena: lazy(() => import("../pages/SimArena")),
+  Cyberworld: lazy(() => import("../features/cyberworld/CyberworldPage")),
   AIBehaviorSettings: lazy(() => import("../pages/AIBehaviorSettings")),
   BookOfEchoes: lazy(() => import("../pages/BookOfEchoes")),
   CalendarView: lazy(() => import("../pages/CalendarView")),
@@ -32,6 +36,7 @@ const PAGES = {
   ConstellationMap: lazy(() => import("../pages/ConstellationMap")),
   CreateScenario: lazy(() => import("../pages/CreateScenario")),
   Disclaimer: lazy(() => import("../pages/Disclaimer")),
+  DreamJournal: lazy(() => import("../pages/DreamJournal")),
   DiscoveryQueue: lazy(() => import("../pages/DiscoveryQueue")),
   EnergyFragments: lazy(() => import("../pages/EnergyFragments")),
   FactionNetwork: lazy(() => import("../pages/FactionNetwork")),
@@ -65,6 +70,8 @@ const PAGES = {
   Network: lazy(() => import("../pages/Network")),
   Onboarding: lazy(() => import("../pages/Onboarding")),
   OnboardingFlow: lazy(() => import("../pages/OnboardingFlow")),
+  PhotoMoments: lazy(() => import("../pages/PhotoMoments")),
+  CompanionCard: lazy(() => import("../pages/CompanionCard")),
   PremiumPlans: lazy(() => import("../pages/PremiumPlans")),
   PrivacyPolicy: lazy(() => import("../pages/PrivacyPolicy")),
   ProgressDashboard: lazy(() => import("../pages/ProgressDashboard")),
@@ -101,7 +108,9 @@ const PAGES = {
   TemplateHub: lazy(() => import("../pages/TemplateHub")),
   TermsOfUse: lazy(() => import("../pages/TermsOfUse")),
   TimelineDashboard: lazy(() => import("../pages/TimelineDashboard")),
+  ScenarioHub: lazy(() => import("../pages/ScenarioHub")),
   WhatIfScenarios: lazy(() => import("../pages/WhatIfScenarios")),
+  WhatSheRemembers: lazy(() => import("../pages/WhatSheRemembers")),
   Wiki: lazy(() => import("../pages/Wiki")),
   WorldCalendar: lazy(() => import("../pages/WorldCalendar")),
   WorldCalendarDashboard: lazy(() => import("../pages/WorldCalendarDashboard")),

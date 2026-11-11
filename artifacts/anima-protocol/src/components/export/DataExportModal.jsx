@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { Download, X, Check, Loader } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { base44 } from '@/api/base44Client';
-import jsPDF from 'jspdf';
+import { animaClient } from '@/api/animaClient';
 
 const EXPORT_OPTIONS = [
   { id: 'messages', label: 'Chat Messages', desc: 'All conversation history' },
@@ -33,7 +32,7 @@ export default function DataExportModal({ isOpen, onClose, session }) {
     setStatus('idle');
 
     try {
-      const result = await base44.functions.invoke('exportSessionData', {
+      const result = await animaClient.functions.invoke('exportSessionData', {
         session_id: session.id,
         format: format,
         data_types: selectedTypes,
@@ -45,7 +44,7 @@ export default function DataExportModal({ isOpen, onClose, session }) {
         downloadFile(blob, `${session.title || 'session'}_export.csv`);
       } else if (format === 'pdf' && result?.data?.data) {
         // Generate PDF from data
-        generatePDF(result.data.data, session.title);
+        await generatePDF(result.data.data, session.title);
       }
 
       setStatus('success');
@@ -73,7 +72,10 @@ export default function DataExportModal({ isOpen, onClose, session }) {
     window.URL.revokeObjectURL(url);
   };
 
-  const generatePDF = (data, sessionTitle) => {
+  // jspdf is ~350 KB; load it only when someone actually exports a PDF so it
+  // stays out of the Chat page bundle.
+  const generatePDF = async (data, sessionTitle) => {
+    const { default: jsPDF } = await import('jspdf');
     const doc = new jsPDF();
     let yPosition = 10;
     const pageHeight = doc.internal.pageSize.height;

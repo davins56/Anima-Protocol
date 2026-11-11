@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 // Global voice cache to prevent multiple API calls
 let voiceCache = null;
@@ -11,7 +11,7 @@ export function useElevenLabsVoiceCache() {
   useEffect(() => {
     // Preload voices on mount (fires once per app lifecycle)
     if (!voiceCache && !voiceCachePromise) {
-      voiceCachePromise = base44.functions.invoke('elevenLabsVoices', {})
+      voiceCachePromise = animaClient.functions.invoke('elevenLabsVoices', {})
         .then((res) => {
           voiceCache = res?.data?.voices || [];
           return voiceCache;

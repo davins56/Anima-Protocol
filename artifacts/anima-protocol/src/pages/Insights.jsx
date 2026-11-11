@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { ArrowLeft, TrendingUp, Activity, Brain } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 
@@ -29,8 +29,8 @@ export default function Insights() {
     setLoading(true);
     try {
       const [cis, refs] = await Promise.all([
-        base44.entities.CheckIn.list('-created_date', 100),
-        base44.entities.Reflection.list('-created_date', 100),
+        animaClient.entities.CheckIn.list('-created_date', 100),
+        animaClient.entities.Reflection.list('-created_date', 100),
       ]);
       setCheckIns(cis || []);
       setReflections(refs || []);

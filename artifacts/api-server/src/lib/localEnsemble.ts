@@ -9,6 +9,7 @@
 // sample. Off by default — opt in with ANIMA_LOCAL_LLM_ENSEMBLE=true.
 
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import { combineAbortSignals } from "./chatTimeouts";
 import {
   createChatCompletionWithFailover,
   createChatStreamWithFailover,
@@ -82,12 +83,15 @@ function draftOneMind(
 ): Promise<{ content: string; model: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const signal = req.signal
+    ? combineAbortSignals(controller.signal, req.signal)
+    : controller.signal;
   return createChatCompletionWithFailover({
     tier: req.tier,
     maxTokens: req.maxTokens,
     messages: req.messages,
     temperature: spec.temperature,
-    signal: controller.signal,
+    signal,
   }).finally(() => clearTimeout(timer));
 }
 
@@ -95,6 +99,8 @@ export interface DraftLocalMindsRequest {
   tier: ModelTier;
   maxTokens: number;
   messages: ChatCompletionMessageParam[];
+  /** Client disconnect. Combined with each mind's own deadline. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -133,7 +139,7 @@ function systemContentOf(messages: ChatCompletionMessageParam[]): string {
 export async function combineLocalDrafts(
   drafts: LocalMindDraft[],
   originalMessages: ChatCompletionMessageParam[],
-  opts: { tier: ModelTier; maxTokens: number },
+  opts: { tier: ModelTier; maxTokens: number; signal?: AbortSignal },
 ): Promise<ChatStreamResult> {
   const draftsBlock = drafts.map((d, i) => `Draft ${i + 1} (${d.label}):\n${d.content}`).join("\n\n");
   const messages: ChatCompletionMessageParam[] = [
@@ -146,5 +152,6 @@ export async function combineLocalDrafts(
     model: "",
     maxTokens: opts.maxTokens,
     messages,
+    signal: opts.signal,
   });
 }

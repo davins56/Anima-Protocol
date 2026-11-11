@@ -139,6 +139,15 @@ export const ROUTE_META: Record<string, PageMeta> = {
     ogDescription:
       "A Battle Network-style 4D arena. Echo Keys are crystallized memories of function the Anima synchronizes with and executes.",
   },
+  "/cyberworld": {
+    title: "Cyberworld | Anima Protocol",
+    description:
+      "Jack in and walk a Battle Network-style cyberworld: a neon hub plaza linked by data paths to a homepage for each of your Anima.",
+    canonical: `${BASE_URL}/cyberworld`,
+    ogTitle: "Anima Protocol — Cyberworld",
+    ogDescription:
+      "An explorable 3D network where every Anima has a homepage of their own.",
+  },
   "/echo-keys": {
     title: "Echo Keys | Anima Protocol",
     description:

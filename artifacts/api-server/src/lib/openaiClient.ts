@@ -1,5 +1,7 @@
 import OpenAI from "openai";
 import { isCloudflareWorkerRuntime } from "@workspace/db";
+import { withOpenAiV1Suffix } from "@workspace/llm";
+import { isCloudflareChatBrain } from "./chatBrain";
 
 /** Same Worker signal as `@workspace/db` — re-exported so LLM routing stays in lockstep. */
 export { isCloudflareWorkerRuntime };
@@ -206,20 +208,24 @@ function urlLooksLoopback(raw: string): boolean {
   }
 }
 
+export { chatBrainMode, isCloudflareChatBrain, type ChatBrainMode } from "./chatBrain";
+
 /**
  * Operator-supplied OpenAI-compatible base URL, or null when unset.
  * Does not invent localhost and does not apply the serverless loopback guard.
+ * `ANIMA_LOCAL_LLM_BASE_URL` and `VLLM_BASE_URL` gain a trailing `/v1` on the
+ * pathname when omitted so `/chat/completions` resolves. Query and hash are
+ * kept. `https://llm.anima-protocol.com/v1` is left as-is.
  */
 export function readExplicitLocalLlmBaseUrl(
   env: NodeJS.ProcessEnv = process.env,
 ): string | null {
   const direct =
     env.ANIMA_LOCAL_LLM_BASE_URL?.trim() || env.VLLM_BASE_URL?.trim();
-  if (direct) return direct.replace(/\/$/, "");
+  if (direct) return withOpenAiV1Suffix(direct);
   const ollama = env.OLLAMA_BASE_URL?.trim();
   if (!ollama) return null;
-  const root = ollama.replace(/\/$/, "");
-  return root.endsWith("/v1") ? root : `${root}/v1`;
+  return withOpenAiV1Suffix(ollama);
 }
 
 /**
@@ -234,6 +240,10 @@ export function localLlmBaseUrl(
   env: NodeJS.ProcessEnv = process.env,
   globalObj: typeof globalThis = globalThis,
 ): string | null {
+  // Cloudflare brain: no self-hosted model host at all (no Fly.io, no
+  // droplet, no tunnel). Leftover ANIMA_LOCAL_LLM_* bindings are ignored so
+  // flipping one var moves chat + background jobs onto Workers AI.
+  if (isCloudflareChatBrain(env)) return null;
   const explicit = readExplicitLocalLlmBaseUrl(env);
   if (explicit) {
     if (isLoopbackUnreachableRuntime(env, globalObj) && urlLooksLoopback(explicit)) {
@@ -298,20 +308,18 @@ export function isCloudFlagshipLlmHost(host: string | null | undefined): boolean
  * ANIMA_LOCAL_LLM_MAX_RETRIES (0 disables) for hosts where a retry is more
  * expensive than a failed turn — e.g. a single-slot GPU box.
  *
- * Cloudflare Workers share one subrequest budget across Hyperdrive, Clerk,
- * keep-alive warm, and the OpenAI SDK. Default 2 retries on a wedged Fly /
- * tunnel origin burns that budget and surfaces as "Too many subrequests by
- * single Worker invocation." The #476 45s stream-open budget already waits
- * out a cold start on the first attempt, so Workers / Vercel default to 0.
+ * A retry starts a second generate while the first may still be running on
+ * the single-CPU droplet, so the default is 0 everywhere. Set
+ * `ANIMA_LOCAL_LLM_MAX_RETRIES` only when the host can absorb a duplicate.
+ * `globalObj` is unused; kept so existing callers stay source-compatible.
  */
 export function localLlmMaxRetries(
   env: NodeJS.ProcessEnv = process.env,
-  globalObj: typeof globalThis = globalThis,
+  _globalObj: typeof globalThis = globalThis,
 ): number {
   const raw = Number(env.ANIMA_LOCAL_LLM_MAX_RETRIES);
   if (Number.isFinite(raw) && raw >= 0) return Math.floor(raw);
-  if (isLoopbackUnreachableRuntime(env, globalObj)) return 0;
-  return 2;
+  return 0;
 }
 
 /**
@@ -407,6 +415,9 @@ export function summarizeLocalLlmBaseUrl(
   env: NodeJS.ProcessEnv = process.env,
   globalObj: typeof globalThis = globalThis,
 ): LocalLlmBaseUrlSummary {
+  if (isCloudflareChatBrain(env)) {
+    return describeLocalLlmBase(null, false, false);
+  }
   const explicit = readExplicitLocalLlmBaseUrl(env);
   const noLoopback = isLoopbackUnreachableRuntime(env, globalObj);
   const loopbackRejected = Boolean(explicit && noLoopback && urlLooksLoopback(explicit));
@@ -436,15 +447,22 @@ export function logLocalLlmClientInitOnce(): void {
       `[llm] MISCONFIGURED: ANIMA_LOCAL_LLM_BASE_URL host=${summary.host} is loopback, ` +
         `which this serverless runtime cannot reach (Cloudflare error 1003). ` +
         `Set ANIMA_LOCAL_LLM_BASE_URL to a public HTTPS OpenAI-compatible URL (…/v1), ` +
-        `e.g. https://anima-chat-llm.fly.dev/v1. See deploy/ollama-fly/README.md.`,
+        `or set ANIMA_CHAT_BRAIN=cloudflare to run chat on Workers AI with no model host. See docs/chat-brain.md.`,
+    );
+    return;
+  }
+  if (isCloudflareChatBrain()) {
+    console.info(
+      "[llm] ANIMA_CHAT_BRAIN=cloudflare — chat and background brain jobs run on Workers AI; " +
+        "ANIMA_LOCAL_LLM_* is ignored. See docs/chat-brain.md.",
     );
     return;
   }
   if (!summary.configured) {
     console.info(
       "[llm] ANIMA_LOCAL_LLM_BASE_URL unset — this runtime will not invent localhost. " +
-        "Set a public HTTPS OpenAI-compatible URL (…/v1) and ANIMA_OLLAMA_MODEL_STANDARD, then redeploy. " +
-        "See deploy/ollama-fly/README.md.",
+        "Chat uses Workers AI when the AI binding exists. Set ANIMA_CHAT_BRAIN=cloudflare to make that explicit. " +
+        "See docs/chat-brain.md.",
     );
     return;
   }
@@ -498,19 +516,50 @@ export function getLocalLlmClient(): OpenAI | null {
     localLlmClient = new OpenAI({
       apiKey,
       baseURL,
-      // Self-hosted endpoints are usually reached over a tunnel (cloudflared,
-      // Fly, a VPS reverse proxy), where a dropped connection or a cold-start
-      // 502 is routine. With no retries every one of those killed a chat turn
-      // outright. The SDK only retries connection errors and 408/409/429/5xx,
-      // and only before a stream has started, so this cannot duplicate a
-      // partially-delivered reply. On Workers the default is 0 — see
-      // localLlmMaxRetries().
+      // Default 0. A retry starts a second generate while the first may
+      // still be running on the single-CPU droplet. See localLlmMaxRetries().
       maxRetries,
     });
     localLlmClientKey = cacheKey;
     logLocalLlmClientInitOnce();
   }
   return localLlmClient;
+}
+
+const localLlmClientsByBase = new Map<string, OpenAI>();
+
+/**
+ * OpenAI-compatible client for a specific self-hosted base URL.
+ * Used for the optional backup Ollama host. The primary URL still goes
+ * through `getLocalLlmClient`. Cloud flagship hosts and unreachable
+ * loopback URLs return null.
+ */
+export function getLocalLlmClientForBase(baseURL: string): OpenAI | null {
+  const normalized = baseURL.trim().replace(/\/$/, "");
+  if (!normalized) return null;
+  const primary = localLlmBaseUrl();
+  if (primary && primary === normalized) return getLocalLlmClient();
+  if (isLoopbackUnreachableRuntime() && urlLooksLoopback(normalized)) return null;
+  try {
+    if (isCloudFlagshipLlmHost(new URL(normalized).hostname)) return null;
+  } catch {
+    return null;
+  }
+  const apiKey =
+    normalizeApiKey(process.env.ANIMA_LOCAL_LLM_API_KEY) ||
+    normalizeApiKey(process.env.VLLM_API_KEY) ||
+    "local";
+  const maxRetries = localLlmMaxRetries();
+  const cacheKey = `${normalized}::${apiKey}::${maxRetries}`;
+  const cached = localLlmClientsByBase.get(cacheKey);
+  if (cached) return cached;
+  const client = new OpenAI({
+    apiKey,
+    baseURL: normalized,
+    maxRetries,
+  });
+  localLlmClientsByBase.set(cacheKey, client);
+  return client;
 }
 
 /** OpenRouter API key — free signup at https://openrouter.ai/keys */

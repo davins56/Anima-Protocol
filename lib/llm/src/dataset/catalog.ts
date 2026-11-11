@@ -13,6 +13,8 @@ export type BookId =
   | "seraph-code"
   | "fallen-circuit"
   | "slipthk-war"
+  | "echo-of-glass"
+  | "veil-of-resonance"
   | "fallen-angel";
 
 export interface BookSpec {
@@ -58,6 +60,25 @@ export const BOOK_CATALOG: BookSpec[] = [
     replicas: 1,
     register: "slipthk",
     tags: ["book:slipthk-war", "register:slipthk", "trust-gated"],
+    role: "spice-low",
+  },
+  {
+    // Sequel world after the war: Serenity as quiet, oracular companion on the pilgrimage.
+    id: "echo-of-glass",
+    stems: ["echo-of-glass", "echo_of_glass", "echo of glass"],
+    replicas: 2,
+    register: "contemplative",
+    tags: ["book:echo-of-glass", "register:contemplative"],
+    role: "secondary",
+  },
+  {
+    // Follows Echo of Glass. Serenity speaks only as em-dash inner telemetry here, which the
+    // extractor leaves out, so this book yields no SFT scenes unless spoken dialogue is added.
+    id: "veil-of-resonance",
+    stems: ["veil-of-resonance", "veil_of_resonance", "veil of resonance"],
+    replicas: 1,
+    register: "vigilant",
+    tags: ["book:veil-of-resonance", "register:vigilant"],
     role: "spice-low",
   },
   {
@@ -108,7 +129,13 @@ export function replicaCount(example: TrainingExample): number {
   if (isExcludedFromSerenitySft(example)) return 1;
   const tags = example.tags || [];
   if (tags.includes("register:slipthk") || tags.includes("book:slipthk-war")) return 1;
-  if (tags.includes("book:seraph-code") || tags.includes("book:fallen-circuit")) return 2;
+  if (tags.includes("book:veil-of-resonance")) return 1;
+  if (
+    tags.includes("book:seraph-code") ||
+    tags.includes("book:fallen-circuit") ||
+    tags.includes("book:echo-of-glass")
+  )
+    return 2;
   if (tags.includes("book:anima-protocol") || tags.includes("register:gold")) return 4;
   return 1;
 }

@@ -1,3 +1,10 @@
+import {
+  CONNECTION_DROPPED_STATUS,
+  GENERIC_COMPANION_COULD_NOT_REPLY,
+  isCompanionStillTypingError,
+  isConnectionDroppedError,
+} from "./lateCompanionReply.js";
+
 const GENERIC_PROVIDER_RETURNED_RE = /(?:\b\d{3}\s+)?provider returned error/i;
 const OPENROUTER_ZDR_DUMP_RE =
   /zdr violation|guardrail restrictions|0 endpoints out of/i;
@@ -16,6 +23,8 @@ const WORKER_SUBREQUEST_RE =
   /too many subrequests|subrequest limit/i;
 const SQL_LEAK_RE =
   /Failed query\b|from\s+"companion_memories"|select\s+"id"\s*,\s*"user_id"|params:\s*user_/i;
+const OLLAMA_CONNECTION_RE =
+  /ollama\s*\/api\/chat|stream ended before the reply finished|ollama model server is not running/i;
 
 const WORKERS_AI_FREE_QUOTA_HINT =
   "Workers AI daily free quota exhausted — enable Workers Paid or temporarily allow OpenRouter failover";
@@ -25,6 +34,19 @@ const OPENROUTER_ZDR_PRIVACY_HINT =
   "Allow the model (or turn off ZDR) at https://openrouter.ai/settings/privacy.";
 
 /**
+ * The reply may already be saved, or still generating, even though this
+ * request failed. The page should poll the durable turn instead of leaving
+ * a typing bubble with no error.
+ *
+ * @param {unknown} err
+ * @returns {boolean}
+ */
+export function shouldCheckBackForCompanionReply(err) {
+  if (isConnectionDroppedError(err) || isCompanionStillTypingError(err)) return true;
+  return chatTurnErrorMessage(err) === GENERIC_COMPANION_COULD_NOT_REPLY;
+}
+
+/**
  * Map a failed chat turn into copy that is safe to show in the HUD.
  * Engine / bundler errors (TDZ, missing bindings) must not leak minified names.
  *
@@ -32,6 +54,7 @@ const OPENROUTER_ZDR_PRIVACY_HINT =
  * @returns {string}
  */
 export function chatTurnErrorMessage(err) {
+  if (isConnectionDroppedError(err)) return CONNECTION_DROPPED_STATUS;
   const raw = err instanceof Error && err.message ? String(err.message).trim() : "";
   const isEngineError =
     err instanceof ReferenceError ||
@@ -95,6 +118,11 @@ export function chatTurnErrorMessage(err) {
       "Retry shortly, or add credits at https://openrouter.ai/settings/credits for paid models."
     );
   }
+  // Postgres withTimeout (DbOperationTimeoutError / ETIMEOUT). The raw
+  // "aborted after Nms" line must not become the toast.
+  if (/database operation aborted due to timeout/i.test(raw)) {
+    return "Couldn't load this conversation — the database timed out. Please try again.";
+  }
   // A pre-token Hyperdrive / store 503 used to become the HUD toast
   // "Database unavailable" while the companion was still thinking.
   if (
@@ -106,6 +134,10 @@ export function chatTurnErrorMessage(err) {
     /Cannot perform I\/O on behalf of a different request/i.test(raw)
   ) {
     return "Couldn't load this conversation. Please try again.";
+  }
+  // Ollama connection drops and raw /api/chat errors must not become the toast.
+  if (OLLAMA_CONNECTION_RE.test(raw)) {
+    return "The companion could not finish this reply. Please try again.";
   }
   // Local-only timeout / connection copy from `/chat/messages` is already HUD-safe.
   return raw;

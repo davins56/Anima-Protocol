@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { Zap, Plus } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import WikiBrowser from './WikiBrowser';
@@ -28,10 +28,10 @@ export default function WikiSystem({
     try {
       if (editingEntry?.id) {
         // Update existing
-        await base44.entities.WikiCodex.update(editingEntry.id, entryData);
+        await animaClient.entities.WikiCodex.update(editingEntry.id, entryData);
       } else {
         // Create new
-        await base44.entities.WikiCodex.create({
+        await animaClient.entities.WikiCodex.create({
           ...entryData,
           session_ids: [sessionId],
         });

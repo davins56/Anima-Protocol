@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { lazy, Suspense, useState, useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useUser } from "@clerk/react";
-import { base44, exportData } from "@/api/base44Client";
+import { animaClient, exportData } from "@/api/animaClient";
 import { useAuth } from "@/lib/AuthContext";
 import {
   classifyCustomiseAnimaLoadError,
@@ -27,17 +27,33 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import { BACKGROUND_THEMES } from "@/components/chat/ChatBackground.jsx";
-import { Upload, BookOpen } from "lucide-react";
-import UserContextSettings from "@/components/anima/UserContextSettings";
-import DeviceScanPanel from "@/components/anima/DeviceScanPanel";
-import KnowledgeGraphViewer from "@/components/anima/KnowledgeGraphViewer";
+import { Upload, BookOpen, GraduationCap } from "lucide-react";
+import OwnModelConsent from "@/components/tutor/OwnModelConsent";
+import { useModelTutor } from "@/hooks/useModelTutor";
 import { entityLabel, parseBackup, summarizeEntities } from "@/lib/restoreBackup";
 import { performRestoreFlow } from "@/lib/restoreHandlers";
 import { repairStarterCharacters } from "@/lib/seedCharacters";
-import ProactiveMessageSettings from "@/components/settings/ProactiveMessageSettings";
 
 import { CONFIGURED_LLM_PROVIDERS } from "@/lib/llmProviderLabel";
 import { toast } from "sonner";
+
+// Heavier Settings sections load when their tab opens, not with the page.
+const UserContextSettings = lazy(() => import("@/components/anima/UserContextSettings"));
+const DeviceScanPanel = lazy(() => import("@/components/anima/DeviceScanPanel"));
+const KnowledgeGraphViewer = lazy(() => import("@/components/anima/KnowledgeGraphViewer"));
+const ModelTutorPanel = lazy(() => import("@/components/tutor/ModelTutorPanel"));
+const ProactiveMessageSettings = lazy(() => import("@/components/settings/ProactiveMessageSettings"));
+const DayRhythmSettings = lazy(() => import("@/components/settings/DayRhythmSettings"));
+const AppearanceStudio = lazy(() => import("@/components/settings/AppearanceStudio"));
+const AnimaForge = lazy(() => import("@/components/settings/AnimaForge"));
+const ForgeProfiles = lazy(() => import("@/components/settings/ForgeProfiles"));
+
+function SectionSkeleton() {
+  return (
+    <div role="status" aria-label="Loading section" className="h-24 border border-primary/10 bg-primary/5 animate-pulse" />
+  );
+}
+import AgeGateDialog from "@/components/settings/AgeGateDialog";
 import {
   formatChatBackgroundUploadError,
   persistChatBackgroundSettings,
@@ -52,6 +68,7 @@ export const SECTION = {
   INTERFACE: "interface",
   DATA: "data",
   LEGAL: "legal",
+  TUTOR: "model-tutor",
 };
 
 export function normalizeSettingsSection(raw) {
@@ -73,6 +90,7 @@ const defaultPrefs = {
   chat_bg_theme: "default",
   chat_bg_image: "",
   adult_content_enabled: false,
+  creative_freedom_enabled: false,
   voice_input_enabled: true,
   auto_read_responses: false,
   theme_mode: "dark",
@@ -84,6 +102,7 @@ export default function Settings() {
   const { logout, user: authUser, isAuthenticated } = useAuth();
   const { user: clerkUser } = useUser();
   const clerkIdentity = clerkIdentityFromUser(clerkUser);
+  const modelTutor = useModelTutor();
   const [section, setSectionState] = useState(() =>
     normalizeSettingsSection(searchParams.get("section")),
   );
@@ -203,7 +222,7 @@ export default function Settings() {
   }, [section, isAuthenticated, authUser?.id, clerkIdentity?.id]);
 
   const loadUser = async () => {
-    const me = await base44.auth.me();
+    const me = await animaClient.auth.me();
     // Clerk / AuthContext identity first — empty store strings must not win.
     setUser((prev) => mergeAccountIdentity(clerkIdentity, authUser, prev, me));
     if (me?.settings) {
@@ -237,8 +256,8 @@ export default function Settings() {
     const [sessions, chars] = await Promise.all([
       // Stats only needs the row count — skip hydrating every session's full
       // message history so this loads instantly for users with lots of chats.
-      base44.entities.ChatSession.list("-created_date", 200, { withMessages: false }),
-      base44.entities.Character.list("-created_date", 200),
+      animaClient.entities.ChatSession.list("-created_date", 200, { withMessages: false }),
+      animaClient.entities.Character.list("-created_date", 200),
     ]);
     setSessionCount(sessions.length);
     setCharCount(chars.length);
@@ -246,7 +265,7 @@ export default function Settings() {
 
   const handleSave = async () => {
     try {
-      await base44.auth.updateMe({ settings: prefs, display_name: prefs.display_name });
+      await animaClient.auth.updateMe({ settings: prefs, display_name: prefs.display_name });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
@@ -257,7 +276,7 @@ export default function Settings() {
   const handleClearSessions = async () => {
     setClearingData("sessions");
     try {
-      const sessions = await base44.entities.ChatSession.list("-created_date", 200);
+      const sessions = await animaClient.entities.ChatSession.list("-created_date", 200);
       await deleteAllWithUndo({
         entity: "ChatSession",
         items: sessions,
@@ -272,7 +291,7 @@ export default function Settings() {
   const handleClearCustomChars = async () => {
     setClearingData("chars");
     try {
-      const chars = await base44.entities.Character.filter({ is_default: false });
+      const chars = await animaClient.entities.Character.filter({ is_default: false });
       await deleteAllWithUndo({
         entity: "Character",
         items: chars,
@@ -290,25 +309,25 @@ export default function Settings() {
       // Fetch all linked entities in parallel
       const [sessions, chars, memories, vectorMemories, inventory, checkIns, lore, quests] = await Promise.all([
         // Deleting only needs each session's id — skip message hydration.
-        base44.entities.ChatSession.list("-created_date", 500, { withMessages: false }),
-        base44.entities.Character.filter({ is_default: false }),
-        base44.entities.CharacterMemory.list("-created_date", 500).catch(() => []),
-        base44.entities.VectorMemory.list("-created_date", 500).catch(() => []),
-        base44.entities.Inventory.list("-created_date", 500).catch(() => []),
-        base44.entities.CheckIn.list("-created_date", 500).catch(() => []),
-        base44.entities.WorldState.list("-created_date", 500).catch(() => []),
-        base44.entities.Quest.list("-created_date", 500).catch(() => []),
+        animaClient.entities.ChatSession.list("-created_date", 500, { withMessages: false }),
+        animaClient.entities.Character.filter({ is_default: false }),
+        animaClient.entities.CharacterMemory.list("-created_date", 500).catch(() => []),
+        animaClient.entities.VectorMemory.list("-created_date", 500).catch(() => []),
+        animaClient.entities.Inventory.list("-created_date", 500).catch(() => []),
+        animaClient.entities.CheckIn.list("-created_date", 500).catch(() => []),
+        animaClient.entities.WorldState.list("-created_date", 500).catch(() => []),
+        animaClient.entities.Quest.list("-created_date", 500).catch(() => []),
       ]);
       // Delete all linked entities in parallel
       await Promise.all([
-        ...sessions.map((s) => base44.entities.ChatSession.delete(s.id)),
-        ...chars.map((c) => base44.entities.Character.delete(c.id)),
-        ...memories.map((m) => base44.entities.CharacterMemory.delete(m.id)),
-        ...vectorMemories.map((m) => base44.entities.VectorMemory.delete(m.id)),
-        ...inventory.map((i) => base44.entities.Inventory.delete(i.id)),
-        ...checkIns.map((c) => base44.entities.CheckIn.delete(c.id)),
-        ...lore.map((l) => base44.entities.WorldState.delete(l.id)),
-        ...quests.map((q) => base44.entities.Quest.delete(q.id)),
+        ...sessions.map((s) => animaClient.entities.ChatSession.delete(s.id)),
+        ...chars.map((c) => animaClient.entities.Character.delete(c.id)),
+        ...memories.map((m) => animaClient.entities.CharacterMemory.delete(m.id)),
+        ...vectorMemories.map((m) => animaClient.entities.VectorMemory.delete(m.id)),
+        ...inventory.map((i) => animaClient.entities.Inventory.delete(i.id)),
+        ...checkIns.map((c) => animaClient.entities.CheckIn.delete(c.id)),
+        ...lore.map((l) => animaClient.entities.WorldState.delete(l.id)),
+        ...quests.map((q) => animaClient.entities.Quest.delete(q.id)),
       ]);
       // Clear local storage and sign out via Clerk
       localStorage.clear();
@@ -326,38 +345,38 @@ export default function Settings() {
       // Fetch all deletable entity lists in parallel
       const [sessions, chars, animas, quests, lore, memories, worldStates, checkIns, crystals, resonance, userContexts, graphs] = await Promise.all([
         // Deleting only needs each session's id — skip message hydration.
-        base44.entities.ChatSession.list("-created_date", 500, { withMessages: false }),
-        base44.entities.Character.filter({ is_default: false }),
-        base44.entities.Anima.list("-created_date", 500),
-        base44.entities.Quest.list("-created_date", 500),
-        base44.entities.WorldState.list("-created_date", 500),
-        base44.entities.CharacterMemory.list("-created_date", 500).catch(() => []),
-        base44.entities.VectorMemory.list("-created_date", 500).catch(() => []),
-        base44.entities.CheckIn.list("-created_date", 500).catch(() => []),
-        base44.entities.MemoryCrystal.list("-created_date", 500).catch(() => []),
-        base44.entities.ResonanceProfile.list("-created_date", 500).catch(() => []),
-        base44.entities.UserContext.list("-created_date", 500).catch(() => []),
-        base44.entities.KnowledgeGraph.list("-created_date", 500).catch(() => []),
+        animaClient.entities.ChatSession.list("-created_date", 500, { withMessages: false }),
+        animaClient.entities.Character.filter({ is_default: false }),
+        animaClient.entities.Anima.list("-created_date", 500),
+        animaClient.entities.Quest.list("-created_date", 500),
+        animaClient.entities.WorldState.list("-created_date", 500),
+        animaClient.entities.CharacterMemory.list("-created_date", 500).catch(() => []),
+        animaClient.entities.VectorMemory.list("-created_date", 500).catch(() => []),
+        animaClient.entities.CheckIn.list("-created_date", 500).catch(() => []),
+        animaClient.entities.MemoryCrystal.list("-created_date", 500).catch(() => []),
+        animaClient.entities.ResonanceProfile.list("-created_date", 500).catch(() => []),
+        animaClient.entities.UserContext.list("-created_date", 500).catch(() => []),
+        animaClient.entities.KnowledgeGraph.list("-created_date", 500).catch(() => []),
       ]);
 
       // Delete everything in parallel batches
       await Promise.all([
-        ...sessions.map(s => base44.entities.ChatSession.delete(s.id)),
-        ...chars.map(c => base44.entities.Character.delete(c.id)),
-        ...animas.map(a => base44.entities.Anima.delete(a.id)),
-        ...quests.map(q => base44.entities.Quest.delete(q.id)),
-        ...lore.map(l => base44.entities.WorldState.delete(l.id)),
-        ...memories.map(m => base44.entities.CharacterMemory.delete(m.id)),
-        ...worldStates.map(w => base44.entities.VectorMemory.delete(w.id)),
-        ...checkIns.map(c => base44.entities.CheckIn.delete(c.id)),
-        ...crystals.map(c => base44.entities.MemoryCrystal.delete(c.id)),
-        ...resonance.map(r => base44.entities.ResonanceProfile.delete(r.id)),
-        ...userContexts.map(u => base44.entities.UserContext.delete(u.id)),
-        ...graphs.map(g => base44.entities.KnowledgeGraph.delete(g.id)),
+        ...sessions.map(s => animaClient.entities.ChatSession.delete(s.id)),
+        ...chars.map(c => animaClient.entities.Character.delete(c.id)),
+        ...animas.map(a => animaClient.entities.Anima.delete(a.id)),
+        ...quests.map(q => animaClient.entities.Quest.delete(q.id)),
+        ...lore.map(l => animaClient.entities.WorldState.delete(l.id)),
+        ...memories.map(m => animaClient.entities.CharacterMemory.delete(m.id)),
+        ...worldStates.map(w => animaClient.entities.VectorMemory.delete(w.id)),
+        ...checkIns.map(c => animaClient.entities.CheckIn.delete(c.id)),
+        ...crystals.map(c => animaClient.entities.MemoryCrystal.delete(c.id)),
+        ...resonance.map(r => animaClient.entities.ResonanceProfile.delete(r.id)),
+        ...userContexts.map(u => animaClient.entities.UserContext.delete(u.id)),
+        ...graphs.map(g => animaClient.entities.KnowledgeGraph.delete(g.id)),
       ]);
 
       // Reset user settings to defaults
-      await base44.auth.updateMe({ settings: defaultPrefs, display_name: "" });
+      await animaClient.auth.updateMe({ settings: defaultPrefs, display_name: "" });
 
       // Clear all localStorage (tutorial flags, age verification, etc.)
       localStorage.clear();
@@ -464,13 +483,13 @@ export default function Settings() {
     try {
       const fileUrl = await uploadChatBackgroundImage(
         file,
-        (payload) => base44.integrations.Core.UploadFile(payload),
+        (payload) => animaClient.integrations.Core.UploadFile(payload),
       );
       setPrefs((p) => ({ ...p, chat_bg_theme: "custom", chat_bg_image: fileUrl }));
       const next = await persistChatBackgroundSettings({
         prefs,
         fileUrl,
-        updateMe: (data) => base44.auth.updateMe(data),
+        updateMe: (data) => animaClient.auth.updateMe(data),
       });
       setPrefs(next);
       setSaved(true);
@@ -488,7 +507,7 @@ export default function Settings() {
   const handleAssignVoices = async () => {
     setAssigningVoices(true);
     try {
-      const result = await base44.functions.invoke("assignCharacterVoices", {});
+      const result = await animaClient.functions.invoke("assignCharacterVoices", {});
       if (result?.data?.assigned > 0) {
         setVoicesAssigned(true);
         setTimeout(() => setVoicesAssigned(false), 3000);
@@ -505,6 +524,10 @@ export default function Settings() {
     { id: SECTION.CUSTOMISE_ANIMA, label: "Customise Anima", icon: Wand2 },
     { id: SECTION.BACKGROUND, label: "Background", icon: BookOpen },
     { id: SECTION.AI, label: "AI Behavior", icon: Bot },
+    // Steward only — teach the own model (see ModelTutorPanel).
+    ...(modelTutor.isSteward || section === SECTION.TUTOR
+      ? [{ id: SECTION.TUTOR, label: "Model Tutor", icon: GraduationCap }]
+      : []),
     { id: SECTION.INTERFACE, label: "Interface", icon: Sliders },
     { id: SECTION.DATA, label: "Data & Privacy", icon: Shield },
     { id: SECTION.LEGAL, label: "Legal", icon: Scale },
@@ -591,10 +614,15 @@ export default function Settings() {
 
               <SectionTitle>Display Name</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5">
-                <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-2">
+                <label htmlFor="settings-display-name" className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-2">
                   Name shown in chat
                 </label>
                 <input
+                  id="settings-display-name"
+                  name="display_name"
+                  autoComplete="nickname"
+                  autoCapitalize="words"
+                  enterKeyHint="done"
                   value={prefs.display_name}
                   onChange={(e) => setPref("display_name", e.target.value)}
                   placeholder="Enter your display name..."
@@ -722,9 +750,9 @@ export default function Settings() {
           {/* ── BACKGROUND CONTEXT ── */}
           {section === SECTION.BACKGROUND && (
             <div className="space-y-4">
-              <UserContextSettings />
+              <Suspense fallback={<SectionSkeleton />}><UserContextSettings /></Suspense>
               <SectionTitle>Knowledge Graph</SectionTitle>
-              <KnowledgeGraphViewer />
+              <Suspense fallback={<SectionSkeleton />}><KnowledgeGraphViewer /></Suspense>
             </div>
           )}
 
@@ -734,7 +762,7 @@ export default function Settings() {
               <SectionTitle>LLM Providers</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5 space-y-3">
                 <p className="text-[9px] font-mono text-primary/30 leading-relaxed">
-                  Chat stays on the self-hosted Anima LLM when ANIMA_LOCAL_LLM_BASE_URL is set (customOnly). OpenRouter does not hop after that host, even if ANIMA_OPENROUTER_FALLBACK is on. MiniMax and Deepshi are not in the companion chat chain.
+                  With ANIMA_CHAT_BRAIN=cloudflare, chat and background memory jobs run on Cloudflare Workers AI inside the Worker — no Fly.io or droplet. Otherwise chat prefers a self-hosted Anima LLM when ANIMA_LOCAL_LLM_BASE_URL is set (customOnly). MiniMax and Deepshi are not in the companion chat chain.
                 </p>
                 {CONFIGURED_LLM_PROVIDERS.map((provider) => (
                   <div
@@ -757,15 +785,18 @@ export default function Settings() {
               <SectionTitle>AI Behavior</SectionTitle>
 
               <div className="border border-primary/15 bg-black/40 p-5 space-y-5">
+                <OwnModelConsent />
+
                 {/* Creativity */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase">
+                    <label htmlFor="settings-ai-creativity" className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase">
                       Creativity / Temperature
                     </label>
                     <span className="font-mono text-xs text-primary">{prefs.ai_creativity.toFixed(1)}</span>
                   </div>
                   <input
+                    id="settings-ai-creativity"
                     type="range" min="0" max="1" step="0.1"
                     value={prefs.ai_creativity}
                     onChange={(e) => setPref("ai_creativity", parseFloat(e.target.value))}
@@ -806,12 +837,13 @@ export default function Settings() {
                 {/* Context Window */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase">
+                    <label htmlFor="settings-context-window" className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase">
                       Conversation Memory (messages)
                     </label>
                     <span className="font-mono text-xs text-primary">{prefs.context_window}</span>
                   </div>
                   <input
+                    id="settings-context-window"
                     type="range" min="4" max="30" step="2"
                     value={prefs.context_window}
                     onChange={(e) => setPref("context_window", parseInt(e.target.value))}
@@ -864,6 +896,16 @@ export default function Settings() {
                     </div>
                     </div>
 
+              <SectionTitle>Conversation Style</SectionTitle>
+              <div className="border border-primary/15 bg-black/40 p-5">
+                <TogglePref
+                  label="Creative freedom"
+                  description="More expressive characters, natural language, and room for dark or unusual fiction. Your boundaries still apply. Separate from adult mode; unavailable in therapy."
+                  value={prefs.creative_freedom_enabled}
+                  onChange={(v) => setPref("creative_freedom_enabled", v)}
+                />
+              </div>
+
               {/* 18+ Adult Content */}
               <SectionTitle>Content Rating</SectionTitle>
               <div className={`border p-5 space-y-3 ${prefs.adult_content_enabled ? "border-rose-500/30 bg-rose-950/20" : "border-primary/15 bg-black/40"}`}>
@@ -874,10 +916,10 @@ export default function Settings() {
                       <p className="font-mono text-xs text-primary/70 tracking-wider uppercase">Adult Content Mode</p>
                     </div>
                     <p className="text-[9px] font-mono text-primary/30 leading-relaxed">
-                      Enables explicit, lewd, and sexual roleplay. Characters escalate when the moment invites it — and hold back during grief, support, or non-intimate beats. By enabling this you confirm you are 18 years of age or older.
+                      Enables mature roleplay for adults after the age check. Follow your pace and boundaries. Available outside therapy, crossover scenes, and Deep mode. Model providers may apply their own content limits.
                     </p>
                     {prefs.adult_content_enabled && (
-                      <p className="text-[9px] font-mono text-rose-400/70 mt-1.5">● Adult mode active — heat when the beat is right</p>
+                      <p className="text-[9px] font-mono text-rose-400/70 mt-1.5">● Adult preference enabled — applies in supported chats</p>
                     )}
                   </div>
                   <button
@@ -911,6 +953,9 @@ export default function Settings() {
           {section === SECTION.INTERFACE && (
             <div className="space-y-4">
               <SectionTitle>Interface Preferences</SectionTitle>
+              <Suspense fallback={<SectionSkeleton />}><AppearanceStudio /></Suspense>
+              <Suspense fallback={<SectionSkeleton />}><AnimaForge /></Suspense>
+              <Suspense fallback={<SectionSkeleton />}><ForgeProfiles /></Suspense>
 
               <div className="border border-primary/15 bg-black/40 p-5 space-y-0 divide-y divide-primary/10">
                 <TogglePref
@@ -958,7 +1003,10 @@ export default function Settings() {
                 </div>
 
                 <SectionTitle>Notifications</SectionTitle>
-                <ProactiveMessageSettings />
+                <Suspense fallback={<SectionSkeleton />}><ProactiveMessageSettings /></Suspense>
+
+                <SectionTitle>Day rhythm</SectionTitle>
+                <Suspense fallback={<SectionSkeleton />}><DayRhythmSettings /></Suspense>
 
                 <SectionTitle>Theme</SectionTitle>
                 <div className="border border-primary/15 bg-black/40 p-5">
@@ -1042,6 +1090,12 @@ export default function Settings() {
                       </div>
                     )}
                     <input
+                      type="url"
+                      inputMode="url"
+                      autoComplete="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      aria-label="Custom background image URL"
                       value={prefs.chat_bg_image}
                       onChange={(e) => setPref("chat_bg_image", e.target.value)}
                       placeholder="Or paste image URL..."
@@ -1054,6 +1108,18 @@ export default function Settings() {
               <div className="flex justify-end">
                 <SaveButton onSave={handleSave} saved={saved} />
               </div>
+            </div>
+          )}
+
+          {/* ── MODEL TUTOR ── */}
+          {section === SECTION.TUTOR && (
+            <div className="space-y-4">
+              <SectionTitle>Model Tutor</SectionTitle>
+              <p className="text-xs leading-relaxed text-primary/45">
+                Teach the model you trained. Every correction fine-tunes it, and it keeps each
+                version so a bad lesson can be undone.
+              </p>
+              <Suspense fallback={<SectionSkeleton />}><ModelTutorPanel /></Suspense>
             </div>
           )}
 
@@ -1086,7 +1152,7 @@ export default function Settings() {
               </div>
 
               <SectionTitle>Anima device scan</SectionTitle>
-              <DeviceScanPanel anima={anima} />
+              <Suspense fallback={<SectionSkeleton />}><DeviceScanPanel anima={anima} /></Suspense>
 
               <div className="border border-primary/15 bg-black/40 p-5">
                 <div className="flex items-start justify-between gap-4">
@@ -1291,7 +1357,7 @@ export default function Settings() {
                   label="AI Engine"
                   value={CONFIGURED_LLM_PROVIDERS.map((p) => p.label).join(", ")}
                 />
-                <InfoRow label="Platform" value="Base44" />
+                <InfoRow label="Platform" value="Cloudflare Workers" />
               </div>
             </div>
           )}
@@ -1299,41 +1365,15 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* 18+ Age Gate */}
+      {/* 18+ Age Gate — server-stored attestation (POST /api/safety/age-attestation) */}
       {showAdultGate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm bg-background border border-rose-500/40 hud-corner p-6 space-y-4">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="w-5 h-5 text-rose-400 flex-shrink-0" />
-              <h2 className="font-mono text-rose-400 tracking-[0.2em] uppercase text-sm">Age Verification</h2>
-            </div>
-            <div className="border border-rose-500/20 bg-rose-950/30 px-4 py-3">
-              <p className="font-mono text-[10px] text-rose-300/80 tracking-wider leading-relaxed">
-                This feature enables explicit adult content including sexual and lewd roleplay. It is intended for adults only.
-              </p>
-            </div>
-            <p className="font-mono text-xs text-primary/60 leading-relaxed">
-              By continuing, you confirm that you are <span className="text-rose-400 font-bold">18 years of age or older</span> and consent to viewing adult content.
-            </p>
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={() => setShowAdultGate(false)}
-                className="flex-1 px-4 py-2 border border-primary/20 text-primary/50 hover:text-primary hover:border-primary/40 font-mono text-xs tracking-widest uppercase transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setPref("adult_content_enabled", true);
-                  setShowAdultGate(false);
-                }}
-                className="flex-1 px-4 py-2 bg-rose-900/30 border border-rose-500/60 text-rose-400 hover:bg-rose-900/50 font-mono text-xs tracking-widest uppercase transition-all"
-              >
-                I Am 18+ — Enable
-              </button>
-            </div>
-          </div>
-        </div>
+        <AgeGateDialog
+          onCancel={() => setShowAdultGate(false)}
+          onAttested={() => {
+            setPref("adult_content_enabled", true);
+            setShowAdultGate(false);
+          }}
+        />
       )}
 
       {/* Restore From Backup Dialog */}
@@ -1615,6 +1655,10 @@ function TogglePref({ label, description, value, onChange }) {
         <p className="text-[9px] font-mono text-primary/30 mt-0.5">{description}</p>
       </div>
       <button
+        type="button"
+        role="switch"
+        aria-label={label}
+        aria-checked={Boolean(value)}
         onClick={() => onChange(!value)}
         className={`relative w-10 h-5 border transition-all flex-shrink-0 ${
           value ? "bg-primary/20 border-primary/50" : "bg-black/60 border-primary/15"

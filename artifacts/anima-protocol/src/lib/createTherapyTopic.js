@@ -1,4 +1,4 @@
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { isRetryableStoreWriteError } from "@/lib/storeErrorSignals";
 import {
   STORE_TOPIC_CREATE_RETRY_LIMIT,
@@ -29,7 +29,7 @@ export async function createTherapyTopic(
   data,
   {
     create = (payload, opts) =>
-      base44.entities.TherapyTopic.create(payload, opts),
+      animaClient.entities.TherapyTopic.create(payload, opts),
     timeoutMs = STORE_TOPIC_CREATE_TIMEOUT_MS,
     retryLimit = STORE_TOPIC_CREATE_RETRY_LIMIT,
   } = {},

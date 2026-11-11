@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { ArrowLeft, BookOpen, Search, Filter, Sparkles } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 
@@ -43,7 +43,7 @@ export default function LoreArchive() {
 
   const loadSessions = async () => {
     try {
-      const data = await base44.entities.ChatSession.list("-updated_date", 100, {
+      const data = await animaClient.entities.ChatSession.list("-updated_date", 100, {
         withMessages: false,
       });
       setSessions(data || []);
@@ -59,7 +59,7 @@ export default function LoreArchive() {
     setLoading(true);
     try {
       const query = { session_id: selectedSession, is_active: true };
-      const data = await base44.entities.WorldState.filter(query, "-created_date", 300);
+      const data = await animaClient.entities.WorldState.filter(query, "-created_date", 300);
       setLore(data || []);
     } catch (err) {
       console.warn("Failed to load lore:", err);

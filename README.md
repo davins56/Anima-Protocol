@@ -70,8 +70,8 @@ flowchart LR
 Clone and install:
 
 ```bash
-git clone https://github.com/davins56/Anima-Protocol.git
-cd Anima-Protocol
+git clone https://github.com/davins56/anima-protocol.git
+cd anima-protocol
 pnpm install --frozen-lockfile
 ```
 
@@ -189,14 +189,14 @@ Chat talks to a self-hosted Ollama host. The API reads `ANIMA_LOCAL_LLM_BASE_URL
 2. Pull a small model and create the Anima tag:
 
    ```bash
-   ollama pull qwen2.5:3b
+   ollama pull qwen2.5:0.5b
    pnpm llm:up          # creates anima-chat from that base, then smoke-tests
    ```
 
    Or skip the branded tag and use the pulled model directly:
 
    ```bash
-   export ANIMA_OLLAMA_MODEL_STANDARD=qwen2.5:3b
+   export ANIMA_OLLAMA_MODEL_STANDARD=qwen2.5:0.5b
    ```
 
 3. Point the API at it (these are the `.env.example` defaults):
@@ -325,7 +325,11 @@ Consent gating and no-PII rules are mandatory. See `AGENTS.md` for the tracking 
 
 ## Deployment
 
-The frontend can be deployed independently when configured with the required Vite environment variables. The API requires a reachable PostgreSQL database, authentication configuration, and access to the configured Anima LLM endpoint.
+The frontend can be deployed independently when configured with the required Vite environment variables. The API requires a reachable PostgreSQL database and authentication configuration.
+
+### Chat brain (Cloudflare, no Fly.io / DigitalOcean)
+
+Production chat runs entirely inside the Cloudflare Worker: Clerk auth → identity + memory from Postgres (Hyperdrive) → prompt → **Workers AI** (streamed) → turn appended to the `memory_events` stream. `ANIMA_CHAT_BRAIN=cloudflare` is committed in `wrangler.jsonc`, so no model host is needed. No new secrets: it uses the existing `AI` and `HYPERDRIVE` bindings plus the Clerk / `DATABASE_URL` Secrets Store entries. Optional vars: `ANIMA_WORKERS_AI_MODEL` (default `@cf/meta/llama-3.3-70b-instruct-fp8-fast`), `ANIMA_WORKERS_AI_LORA`, `ANIMA_WORKERS_AI_BACKGROUND_MODEL`, `ANIMA_WORKERS_AI_BACKGROUND`. Workers AI Free caps at 10k neurons/day; use Workers Paid for real traffic. Details and checks: [`docs/chat-brain.md`](docs/chat-brain.md). On hosted models the **chat mind** sizes the prompt for the real context window (16 verbatim exchanges), learns durable facts about the user (shared across that user's companions), keeps a rolling summary, and guards the stream — see [`docs/chat-mind.md`](docs/chat-mind.md).
 
 Production deployment documentation is available in `docs/`, including the Vercel API migration and custom LLM deployment guides.
 

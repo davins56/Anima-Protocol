@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ChevronDown, CheckCircle2, Circle, Zap, Gift, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 const statusConfig = {
   available: { icon: Circle, color: 'text-primary/50', label: 'Available' },
@@ -29,7 +29,7 @@ export default function QuestTrackerSidebar({
     const detectQuests = async () => {
       setLoading(true);
       try {
-        const result = await base44.functions.invoke('detectQuestsFromNarrative', {
+        const result = await animaClient.functions.invoke('detectQuestsFromNarrative', {
           session_id: sessionId,
           character_id: characterId,
           recent_messages: recentMessages.slice(-8),

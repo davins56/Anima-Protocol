@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from "express";
+import { requireSteward } from "../lib/safety/stewardGate";
 import { getAuth } from "@clerk/express";
 import * as fs from "fs/promises";
 import * as fsSync from "fs";
@@ -7,6 +8,7 @@ import { exec } from "child_process";
 import { createRateLimit } from "../lib/rateLimit";
 import { resolveModel } from "../lib/modelRouter";
 import { createChatCompletionWithFailover } from "../lib/llmFailover";
+import { acquireLocalLlmBackground } from "../lib/localLlmSlot";
 import {
   fetchGithubArchiveFiles,
   validateGithubArchiveRef,
@@ -28,6 +30,18 @@ function requireUser(req: Request, res: Response, next: () => void) {
 }
 
 router.use(requireUser);
+
+// Steward-only (audit P1-6): the repo workspace reads and writes source, so
+// every route except /status and /terminal (which keeps its own ordered
+// checks: worker → opt-in → steward) is gated here, not in the client.
+const stewardOnly = requireSteward({
+  code: "codespace_forbidden",
+  message: "Repo Workspace is restricted to Protocol stewards.",
+});
+router.use((req: Request, res: Response, next: () => void) => {
+  if ((req.method === "GET" && req.path === "/status") || req.path === "/terminal") return next();
+  return stewardOnly(req, res, next);
+});
 
 function getRepoRoot(): string {
   const fromEnv = process.env.REPO_ROOT?.trim();
@@ -457,13 +471,27 @@ Rules:
     ];
 
     const heavy = resolveModel("heavy");
-    const completion = await createChatCompletionWithFailover({
+    const background = await acquireLocalLlmBackground("codespace", { job: "codespace" });
+    if (!background) {
+      res.status(429).json({
+        error: "The companion is using the model. Try again in a moment.",
+        code: "llm_busy",
+      });
+      return;
+    }
+    let completion;
+    try {
+    completion = await createChatCompletionWithFailover({
       tier: "heavy",
       model: heavy.model,
       maxTokens: heavy.maxTokens,
       messages: baseMessages as any,
       tools: tools as any,
+      signal: background.signal,
     });
+    } finally {
+      await background.release();
+    }
 
     res.json({
       result: {

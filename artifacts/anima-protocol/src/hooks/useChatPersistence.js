@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { animaApi } from "@/api/animaApi";
 
 export function createChatTurnId() {
@@ -19,6 +19,14 @@ export function assignTurnMessageIds(messages, turnId) {
       const suffix = eventIndex === 0 ? "event" : `event:${eventIndex}`;
       eventIndex += 1;
       return { ...message, id: `${turnId}:${suffix}`, turn_id: turnId };
+    }
+    if (message?.type === "crisis_resource" || message?.type === "ai_notice") {
+      return {
+        ...message,
+        id: `${turnId}:${message.type === "crisis_resource" ? "crisis" : "ai-notice"}`,
+        turn_id: turnId,
+        role: "system",
+      };
     }
     if (message?.role === "user") {
       const suffix = userIndex === 0 ? "user" : `user:${userIndex}`;
@@ -43,12 +51,12 @@ export function useChatPersistence() {
         // bubbles can land assistant-before-user.
         const results = [];
         for (const message of identifiedMessages) {
-          const stored = await base44.messages.append(sessionId, message);
+          const stored = await animaClient.messages.append(sessionId, message);
           storedMessages.push(stored);
           results.push(stored);
         }
         if (content) {
-          await base44.entities.ChatSession.update(sessionId, {
+          await animaClient.entities.ChatSession.update(sessionId, {
             last_message: content.slice(0, 60),
             title: title || content.slice(0, 30),
           });

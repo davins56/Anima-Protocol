@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
-import { db, ensureSchemaOnce, memoryEmbeddings } from "@workspace/db";
+import { companionMemories, db, ensureSchemaOnce, memoryEmbeddings } from "@workspace/db";
 import {
   attachStoredEmbeddings,
   factIdFor,
@@ -20,7 +20,21 @@ afterEach(async () => {
   await db
     .delete(memoryEmbeddings)
     .where(eq(memoryEmbeddings.userId, `${PREFIX}user`));
+  await db
+    .delete(companionMemories)
+    .where(eq(companionMemories.userId, `${PREFIX}user`));
 });
+
+async function storeTurn(userId: string, characterId: string, text: string) {
+  await db.insert(companionMemories).values({
+    userId,
+    characterId,
+    summary: "",
+    facts: [{ type: "turn", text, created_at: new Date().toISOString() }],
+    emotionalState: {},
+    resonanceNotes: "",
+  });
+}
 
 describe("memoryEmbeddings write + search", () => {
   it("upserts turn facts and returns them via semantic search", async () => {
@@ -28,6 +42,7 @@ describe("memoryEmbeddings write + search", () => {
     const characterId = `${PREFIX}char`;
     const text =
       "User: I love rainy nights in Neo-Kyoto | Companion: Then we watch the neon melt together.";
+    await storeTurn(userId, characterId, text);
 
     const written = await upsertMemoryEmbeddings({
       userId,
@@ -81,6 +96,7 @@ describe("memoryEmbeddings write + search", () => {
     const userId = `${PREFIX}user`;
     const characterId = `${PREFIX}char2`;
     const text = "User: remember my callsign is Ash | Companion: Ash it is.";
+    await storeTurn(userId, characterId, text);
 
     await upsertMemoryEmbeddings({
       userId,

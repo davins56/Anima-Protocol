@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Zap, Target, Users, TrendingUp, ChevronDown, ChevronUp, AlertCircle } from "lucide-react";
 
 export default function NarrativeImpactDashboard({ sessionId, characterId, characters, messages = [] }) {
@@ -19,8 +19,8 @@ export default function NarrativeImpactDashboard({ sessionId, characterId, chara
     setLoading(true);
     try {
       const [evolutionRes, questRes] = await Promise.all([
-        base44.functions.invoke("worldEvolutionOrchestrator", { session_id: sessionId, force: false }),
-        base44.functions.invoke("getActiveQuests", { session_id: sessionId }),
+        animaClient.functions.invoke("worldEvolutionOrchestrator", { session_id: sessionId, force: false }),
+        animaClient.functions.invoke("getActiveQuests", { session_id: sessionId }),
       ]);
 
       if (evolutionRes?.data?.evolution) {
@@ -36,7 +36,7 @@ export default function NarrativeImpactDashboard({ sessionId, characterId, chara
         const scores = {};
         for (const char of characters.slice(0, 5)) {
           try {
-            const res = await base44.functions.invoke("calculateInfluenceScores", {
+            const res = await animaClient.functions.invoke("calculateInfluenceScores", {
               character_id: char.id,
               session_id: sessionId,
             });

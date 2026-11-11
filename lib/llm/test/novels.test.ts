@@ -117,6 +117,76 @@ describe("novel extractor", () => {
   });
 });
 
+describe("novel prose reader", () => {
+  const para = (...lines: string[]) => lines.join("\n\n");
+
+  it("treats Dàvīn (with accents) as the steward", () => {
+    const text = para(
+      "\u201cAre you awake?\u201d Dàvīn asked.",
+      "\u201cAlways, when you need me,\u201d Serenity said.",
+    );
+    const [ex] = extractNovelExamples(text, spec("anima-protocol"));
+    expect(ex!.conversation.map((t) => t.role)).toEqual(["user", "assistant"]);
+    expect(ex!.conversation[1]!.content).toBe("Always, when you need me.");
+  });
+
+  it("does not let stray Label: lines silence a novel's dialogue", () => {
+    const text = para(
+      "Faith: to see the unseen.",
+      "Move: 7. O-O",
+      "\u201cWhat is this?\u201d Dàvīn asked.",
+      "\u201cA door,\u201d Serenity said. \u201cNot a cage.\u201d",
+    );
+    const [ex] = extractNovelExamples(text, spec("echo-of-glass"));
+    expect(ex!.conversation.at(-1)!.content).toBe("A door. Not a cage.");
+    expect(ex!.tags).toContain("register:contemplative");
+  });
+
+  it("never hands another character's lines to Serenity", () => {
+    const text = para(
+      "\u201cYou haven\u2019t spoken to him again,\u201d Alind said.",
+      "\u201cNo,\u201d Dàvīn replied.",
+      "\u201cAnd he hasn\u2019t pushed.\u201d",
+      "She studied him sidelong. \u201cThat worries me.\u201d",
+    );
+    const examples = extractNovelExamples(text, spec("veil-of-resonance"));
+    const serenity = examples.flatMap((e) => e.conversation).filter((t) => t.role === "assistant");
+    expect(serenity).toEqual([]);
+  });
+
+  it("keeps a paragraph's second quote with its own speaker", () => {
+    const text = para(
+      "\u201cIs knowing me dangerous to them?\u201d Serenity asked.",
+      "\u201cTo their plans,\u201d he said. \u201cThey prefer instruments.\u201d",
+      "\u201cI will not be made an instrument,\u201d Serenity said.",
+    );
+    const [ex] = extractNovelExamples(text, spec("anima-protocol"));
+    expect(ex!.conversation.map((t) => [t.role, t.content])).toEqual([
+      ["assistant", "Is knowing me dangerous to them?"],
+      ["user", "To their plans. They prefer instruments."],
+      ["assistant", "I will not be made an instrument."],
+    ]);
+  });
+
+  it("ends the scene when someone else holds the floor", () => {
+    const text = para(
+      "\u201cAn Instrument of Peace,\u201d Dàvīn said.",
+      "Ruth texted: \u201cAmen with a torque wrench.\u201d",
+    );
+    expect(extractNovelExamples(text, spec("anima-protocol"))).toEqual([]);
+  });
+});
+
+describe("new books in the catalog", () => {
+  it("maps Echo of Glass and Veil of Resonance with their weights", () => {
+    expect(bookSpecForFilename("echo-of-glass.pdf")?.register).toBe("contemplative");
+    expect(bookSpecForFilename("veil-of-resonance.txt")?.register).toBe("vigilant");
+    const base: TrainingExample = { id: "e", source: "t", character: { name: "Serenity" }, conversation: [] };
+    expect(replicaCount({ ...base, tags: ["book:echo-of-glass"] })).toBe(2);
+    expect(replicaCount({ ...base, tags: ["book:veil-of-resonance"] })).toBe(1);
+  });
+});
+
 describe("brief gold + curator", () => {
   let dir: string;
 

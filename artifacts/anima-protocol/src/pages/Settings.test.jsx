@@ -76,10 +76,10 @@ vi.mock("@/lib/loadCustomiseAnimaCompanions", () => ({
   loadCustomiseAnimaCompanions: (...args) => loadCompanionsMock(...args),
 }));
 
-vi.mock("@/api/base44Client", () => ({
+vi.mock("@/api/animaClient", () => ({
   exportData: vi.fn(),
   waitForStoreAuth: vi.fn().mockResolvedValue("token"),
-  base44: {
+  animaClient: {
     auth: {
       me: meMock,
       updateMe: updateMeMock,
@@ -112,6 +112,9 @@ vi.mock("@/components/anima/KnowledgeGraphViewer", () => ({
 }));
 vi.mock("@/components/settings/ProactiveMessageSettings", () => ({
   default: () => <div>Proactive messages</div>,
+}));
+vi.mock("@/components/settings/DayRhythmSettings", () => ({
+  default: () => <div>Day rhythm settings</div>,
 }));
 vi.mock("@/components/onboarding/TutorialOverlay", () => ({
   resetTutorial: vi.fn(),
@@ -199,6 +202,34 @@ describe("Settings custom chat background upload", () => {
 
   afterEach(() => {
     document.body.innerHTML = "";
+  });
+
+  it("saves creative freedom independently of adult mode and restores it", async () => {
+    const { container, root } = renderPage();
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const openAi = async () => {
+      const button = Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.includes("AI Behavior"));
+      await act(async () => button.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    };
+    await openAi();
+    const toggle = container.querySelector('[role="switch"][aria-label="Creative freedom"]');
+    expect(toggle?.getAttribute("aria-checked")).toBe("false");
+    await act(async () => toggle.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const save = Array.from(container.querySelectorAll("button")).find((b) => /save changes/i.test(b.textContent));
+    expect(save).toBeTruthy();
+    await act(async () => save.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const saved = updateMeMock.mock.calls.at(-1)[0];
+    expect(saved.settings.creative_freedom_enabled).toBe(true);
+    expect(saved.settings.adult_content_enabled).toBe(false);
+    await act(async () => root.unmount());
+
+    meMock.mockResolvedValue({ email: "operator@example.com", settings: saved.settings });
+    const restored = renderPage();
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const ai = Array.from(restored.container.querySelectorAll("button")).find((b) => b.textContent?.includes("AI Behavior"));
+    await act(async () => ai.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(restored.container.querySelector('[aria-label="Creative freedom"]')?.getAttribute("aria-checked")).toBe("true");
+    await act(async () => restored.root.unmount());
   });
 
   it("uploads an image, shows the storage preview, and persists settings", async () => {

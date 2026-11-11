@@ -122,6 +122,14 @@ Optional Postgres path (same TrainingExample shape):
 pnpm llm:prepare-finetune -- --with-db --user <clerk_user_id> --val-split 0.05
 ```
 
+### Scribe register (committed synthetic set)
+
+`scripts/llm/data/scribe/` holds a synthetic scribe-register set (finished,
+literate replies; DPO pairs against truncation / fragments / drift). It is
+merged by `prepare-finetune` and `prepare-dpo` at weight 1 unless
+`--no-scribe`. Validate edits with `python3 scripts/llm/data/scribe/validate.py`.
+The T4 walkthrough is `scripts/llm/finetune/colab_scribe_qlora.ipynb`.
+
 ## CUDA host checklist (next phase — not this VM)
 
 Need ~12–16 GB VRAM for QLoRA on Ministral 3 8B Base. Copy the repo (or at
@@ -169,7 +177,13 @@ dump, speaker-lock break, negotiating a boundary). Do not strawman.
 
 ### 4. Merge + quantize + eval
 
-Merge the adapter (Unsloth `save_pretrained_merged` / PEFT
+One step with Unsloth (merges the adapter and writes the GGUF):
+
+```bash
+pnpm llm:export-gguf -- --adapter scripts/llm/checkpoints/anima-ministral8b-dpo --prefix anima-ministral8b
+```
+
+Or merge the adapter yourself (Unsloth `save_pretrained_merged` / PEFT
 `merge_and_unload`) then:
 
 ```bash
@@ -193,7 +207,7 @@ pnpm llm:eval
 Point production at the new tag only after eval looks right:
 
 - CPU Ollama + named tunnel: [`scripts/llm/public-v1/`](../scripts/llm/public-v1/README.md)
-- Always-on: [`deploy/ollama-fly/`](../deploy/ollama-fly/README.md)
+- Or no host at all: Workers AI LoRA via `ANIMA_WORKERS_AI_LORA` ([`docs/chat-brain.md`](./chat-brain.md))
 - GPU vLLM: [`scripts/llm/docker-compose.vllm.yml`](../scripts/llm/docker-compose.vllm.yml)
 
 Then `ANIMA_LOCAL_LLM_BASE_URL=https://<host>/v1` on the Worker. Never
