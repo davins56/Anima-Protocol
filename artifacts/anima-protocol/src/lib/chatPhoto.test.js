@@ -30,6 +30,6 @@ describe("chat photo checks", () => {
     expect(chatPhotoRejection(file("empty.jpg", "image/jpeg", 0))).toMatch(/empty/i);
     expect(
       chatPhotoRejection(file("huge.jpg", "image/jpeg", CHAT_PHOTO_MAX_SOURCE_BYTES + 1)),
-    ).toMatch(/15 MB/);
+    ).toMatch(/100 MB/);
   });
 });
