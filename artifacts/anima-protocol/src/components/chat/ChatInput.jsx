@@ -1,5 +1,6 @@
-import { useState, useRef, useLayoutEffect, useEffect } from "react";
+import { memo, useState, useRef, useLayoutEffect, useEffect } from "react";
 import { mergeDraftIntoComposer } from "@/lib/heldChatSend";
+import { composerHint, shouldSendOnEnter, useTouchFirst } from "@/lib/composerKeys";
 import { Send, Zap, Paperclip, Loader, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { animaClient, deleteUploadedFile } from "@/api/animaClient";
@@ -18,7 +19,7 @@ function isInItalicContext(text) {
   return !!starMatches;
 }
 
-export default function ChatInput({
+function ChatInput({
   onSend,
   isLoading,
   disabled,
@@ -29,7 +30,8 @@ export default function ChatInput({
   restoreDraft = null,
   onRestoreDraftApplied,
   onRestoredDraftSettled,
-}) {
+}) {  const touchFirst = useTouchFirst();
+
   // A reply can still be in flight. The follow-up is held by the page
   // instead of locking the box, so typing and Send stay available.
   const blockComposer = disabled || (isLoading && !composeWhileBusy);
@@ -233,7 +235,7 @@ export default function ChatInput({
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (shouldSendOnEnter(e, touchFirst)) {
       e.preventDefault();
       handleSubmit(e);
     }
@@ -371,6 +373,9 @@ export default function ChatInput({
               settleIfComposerEmpty(next, attachmentsRef.current, pdfsRef.current);
             }}
             onKeyDown={handleKeyDown}
+            enterKeyHint={touchFirst ? "enter" : "send"}
+            aria-label="Message"
+            autoComplete="off"
             placeholder={allowEmpty ? "Message... (or send empty to continue story)" : "Ask me anything (I'm an AI and can make mistakes)..."}
             disabled={blockComposer}
             rows={1}
@@ -380,6 +385,7 @@ export default function ChatInput({
         </div>
         <button
           type="submit"
+          aria-label="Send message"
           disabled={((!value.trim() && !attachments.length && !pdfs.some((pdf) => pdf.status === "ready") && !allowEmpty) || blockComposer || uploadingMedia || pdfBusy)}
           className="flex-shrink-0 w-10 sm:w-12 h-10 sm:h-12 btn-sacred text-primary disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center hud-corner"
         >
@@ -387,9 +393,12 @@ export default function ChatInput({
         </button>
       </form>
       <p className="mt-1.5 text-[8px] sm:text-[9px] font-mono text-primary/15 tracking-widest uppercase">
-        <span className="hidden sm:inline">Enter to send · Shift+Enter for newline</span>
-        <span className="sm:hidden">Enter to send</span>
+        {composerHint(touchFirst)}
       </p>
     </div>
   );
 }
+
+// Memoized so a streaming reply (which re-renders Chat on every token) does
+// not re-render this subtree; Chat passes stable handlers and a settled thread.
+export default memo(ChatInput);

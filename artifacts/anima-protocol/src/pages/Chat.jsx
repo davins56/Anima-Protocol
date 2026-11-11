@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from "react";
 import { trackFirstReplyReceived } from "@/lib/funnelEvents";
 import MoodWhyPanel from "@/components/chat/MoodWhyPanel";
-import { buildRatingPayload } from "@/lib/replyRatings";
+import { buildRatingPayload, messageRatingId } from "@/lib/replyRatings";
 import { isRestingError, restingNotice, withRestingNotice } from "@/lib/restingMode";
 import { useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { COMPOSE_PREFILL_TOKEN_PREFIX, consumeComposePrefill } from "@/lib/dreamJournal";
 import { animaClient, uploadDataUrl } from "@/api/animaClient";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import {
@@ -25,10 +26,18 @@ import {
   settleDeferredSync,
 } from "@/lib/chatSyncHandlers";
 import { appendAmbientMessage } from "@/lib/appendAmbientMessage";
+import {
+  NARRATOR_RESPONSE_SCHEMA,
+  buildNarratorPrompt,
+  narratorMessageFromResult,
+  narratorConsultation,
+  storyModeEnabled,
+} from "@/lib/storyNarrator";
 import { cyberspaceBattlePromptBlock } from "@/lib/energyFragments";
 import { echoKeyPromptBlock } from "@/lib/echoKeys";
 import {
   imageGenerationTagInstruction,
+  serverPhotoFromPayload,
   stripImageTags,
   parseImagePrompts,
   userRequestedImage,
@@ -43,6 +52,7 @@ import {
   stripVoiceTags,
   voiceClipTagInstruction,
 } from "@/lib/chatVoiceClips";
+import { chooseSpeechRoute, chooseStoryRoute, getVoicePrefs } from "@/lib/voicePrefs";
 import {
   beginOpenSession,
   loadOpenChatSession,
@@ -61,69 +71,57 @@ import {
 import { track } from "@/lib/analytics";
 import Sidebar from "@/components/layout/Sidebar";
 import WelcomeScreen from "@/components/chat/WelcomeScreen";
-import MessageBubble from "@/components/chat/MessageBubble";
+import { ChatSkeleton } from "@/app/ChatSkeleton";
 import ChatInput from "@/components/chat/ChatInput";
 import ChatPdfBar from "@/components/pdf/ChatPdfBar";
 import WebSearchToggle from "@/components/chat/WebSearchToggle";
 import { parseSearchCommand, prepareSearchTurn } from "@/lib/webSearch";
-import NewSessionModal from "@/components/chat/NewSessionModal";
-import { Menu, X } from "lucide-react";
 import ChatBackground, { BACKGROUND_THEMES } from "@/components/chat/ChatBackground.jsx";
 import { detectMood } from "@/lib/moodDetector";
-import TTSControls from "@/components/chat/TTSControls";
 import { useTTS } from "@/hooks/useTTS";
 import { useElevenLabsTTS } from "@/hooks/useElevenLabsTTS";
 import { useEmotionalTTS } from "@/hooks/useEmotionalTTS";
 import { useEmotionalTheming } from "@/hooks/useEmotionalTheming";
 import { motion, AnimatePresence } from "framer-motion";
-import InventoryDrawer from "@/components/chat/InventoryDrawer";
 import CharacterBioSheet from "@/components/character/CharacterBioSheet";
-import TeachDialog from "@/components/tutor/TeachDialog";
 import { useModelTutor } from "@/hooks/useModelTutor";
 import { buildTeachTarget } from "@/lib/modelTutor";
-import SystemAlert from "@/components/chat/SystemAlert";
-import CalendarDisplay from "@/components/chat/CalendarDisplay";
 
-import ChapterRecap from "@/components/chat/ChapterRecap";
-import SessionRecapModal from "@/components/session/SessionRecapModal";
-import NarrativeSuggestions from "@/components/chat/NarrativeSuggestions";
-import EmotionIndicator from "@/components/chat/EmotionIndicator";
 
 import NarrativeChoicesPanel from "@/components/chat/NarrativeChoicesPanel";
 import { useSessionRecap } from "@/hooks/useSessionRecap";
-import DailySummaryModal from "@/components/chat/DailySummaryModal";
 import { useDailyCompilation } from "@/hooks/useDailyCompilation";
 import { useSerenityDebug } from "@/hooks/useSerenityDebug";
 import { maybeHandleProtocolUpgrade, launchMentalLineUpgrade, shouldAttemptProtocolUpgrade } from "@/lib/serenityProtocolUpgrade";
 import { maybeHandleDeviceScan, shouldAttemptDeviceScan, DEVICE_SCAN_PROMPT } from "@/lib/animaDeviceScan";
 import { useAuth } from "@/lib/AuthContext";
 import { pickGroupSpeaker } from "@/lib/pickGroupSpeaker";
-import { useQuestDetectionEngine } from "@/hooks/useQuestDetectionEngine";
-import AIInsightsPanel from "@/components/insights/AIInsightsPanel";
 import { useAIInsights } from "@/hooks/useAIInsights";
-import WorldEvolutionStatus from "@/components/world/WorldEvolutionStatus";
-import WorldPulseFeed from "@/components/world/WorldPulseFeed";
-import AtmosphericDescription from "@/components/world/AtmosphericDescription";
 import { useEmotionalSoundscape } from "@/hooks/useEmotionalSoundscape";
-import EmotionalSoundscapeControl from "@/components/audio/EmotionalSoundscapeControl";
-import { Package, Brain } from "lucide-react";
-import MentalLine from "@/components/chat/MentalLine";
-import SessionEditModal from "@/components/chat/SessionEditModal";
 import ChatInputControls from "@/components/chat/ChatInputControls";
-import DataExportModal from "@/components/export/DataExportModal";
-import CharacterEvolutionPanel from "@/components/chat/CharacterEvolutionPanel";
-import GroupDynamicsPanel from "@/components/group/GroupDynamicsPanel";
-import WorldStateMonitor from "@/components/world/WorldStateMonitor";
 import ResponseSuggestions from "@/components/chat/ResponseSuggestions";
 import QuickActionChips from "@/components/chat/QuickActionChips";
-import NarrativeArcPanel from "@/components/narrative/NarrativeArcPanel";
-import RelationshipEvolutionMap from "@/components/network/RelationshipEvolutionMap";
-import DynamicPortrait from "@/components/chat/DynamicPortrait";
-import LivingPresence from "@/components/chat/LivingPresence";
-import LivingPresenceStage from "@/components/chat/LivingPresenceStage";
+// Modals and drawers load on first open (see DeferredMount), not with Chat.
+const SessionRecapModal = lazy(() => import("@/components/session/SessionRecapModal"));
+const DataExportModal = lazy(() => import("@/components/export/DataExportModal"));
+const TeachDialog = lazy(() => import("@/components/tutor/TeachDialog"));
+const SessionEditModal = lazy(() => import("@/components/chat/SessionEditModal"));
+const VoiceChatMode = lazy(() => import("@/components/chat/VoiceChatMode"));
+const ExportArchiveModal = lazy(() => import("@/components/chat/ExportArchiveModal"));
+const CreateBranchModal = lazy(() => import("@/components/world/CreateBranchModal"));
+const ImageGenerationModal = lazy(() => import("@/components/chat/ImageGenerationModal"));
+const DailySummaryModal = lazy(() => import("@/components/chat/DailySummaryModal"));
+const MentalLine = lazy(() => import("@/components/chat/MentalLine"));
+const NewSessionModal = lazy(() => import("@/components/chat/NewSessionModal"));
+const InventoryDrawer = lazy(() => import("@/components/chat/InventoryDrawer"));
+import DeferredMount from "@/components/common/DeferredMount";
+// Presence rail and full-screen stage load only when a cast is on screen /
+// the stage is opened, not with the Chat chunk.
+const LivingPresence = lazy(() => import("@/components/chat/LivingPresence"));
+const LivingPresenceStage = lazy(() => import("@/components/chat/LivingPresenceStage"));
 import ResonanceField from "@/components/chat/ResonanceField";
 import { resolvePresenceCast, highlightedCastId, lastSpokenLine } from "@/lib/livingPresence";
-import { useResonance, resonancePromptGuidance } from "@/hooks/useResonance";
+import { useResonance } from "@/hooks/useResonance";
 import {
   characterEmotionFromAffect,
   parseCompanionAffectSnapshot,
@@ -134,22 +132,15 @@ import { toast } from "sonner";
 import { useVesselContext } from "@/hooks/useVesselContext";
 import { useHiddenSequencesThread } from "@/hooks/useHiddenSequencesThread";
 import JackInOfferChip from "@/components/chat/JackInOfferChip";
-import VoiceChatMode from "@/components/chat/VoiceChatMode";
 import VoiceInputPanel from "@/components/chat/VoiceInputPanel";
-import ImageGenerationModal from "@/components/chat/ImageGenerationModal";
 // Identity-locked photo studio — lazy so the chat bundle stays lean on iPad.
 const InlinePhotoComposer = lazy(() => import("@/components/photo/InlinePhotoComposer"));
 const VoiceLauncher = lazy(() => import("@/components/voice/VoiceLauncher"));
 const PHOTO_STUDIO_ENABLED = String(import.meta.env.VITE_PHOTO_STUDIO ?? "on").toLowerCase() !== "off";
-import CreateBranchModal from "@/components/world/CreateBranchModal";
-import LocationDialogueHints from "@/components/chat/LocationDialogueHints";
-import ChoiceGenerator from "@/components/chat/ChoiceGenerator";
 
 import { useAutoQuestManager } from "@/components/quests/AutoQuestManager";
 import QuestDetectionMessage from "@/components/chat/QuestDetectionMessage";
 import CharacterPresencePanel from "@/components/chat/CharacterPresencePanel";
-import CharacterQuickChat from "@/components/chat/CharacterQuickChat";
-import SessionToolsDropdown from "@/components/chat/SessionToolsDropdown";
 import { getCompanionModePrompt, getMultiAspectPrompt, getAspectName, ASPECT_META } from "@/lib/companionModePrompts";
 import {
   isTherapySession,
@@ -232,20 +223,23 @@ import {
 } from "@/lib/userRegion";
 import MessageList from "@/components/chat/MessageList";
 import MemoryRecallPanel from "@/components/memory/MemoryRecallPanel";
-import ChatToolbar from "@/components/chat/ChatToolbar";
 import ChatToolbarSection from "@/components/chat/ChatToolbarSection";
 import ChatWidgetsArea from "@/components/chat/ChatWidgetsArea";
 import IntimacyDock from "@/components/intimacy/IntimacyDock";
-import ExportArchiveModal from "@/components/chat/ExportArchiveModal";
 import { useLoreKeywordScanning } from "@/hooks/useLoreKeywordScanning";
 import NarrativeDivergencePanel from "@/components/narrative/NarrativeDivergencePanel";
 import { useDivergentPaths } from "@/hooks/useDivergentPaths";
 import GoToTopButton from "@/components/chat/GoToTopButton";
 import { useNativeBridge } from "@/hooks/useNativeBridge";
 import InteractiveCalendarWidget from "@/components/calendar/InteractiveCalendarWidget";
-import SpeakToAnimaButton from "@/components/anima/SpeakToAnimaButton";
 import { useChatSession } from "@/hooks/useChatSession";
 import { stitchLiveMessages, useChatStreaming } from "@/hooks/useChatStreaming";
+import { useStickToBottom } from "@/hooks/useStickToBottom";
+import { beginReply } from "@/lib/replyActivity";
+import { useStableCallback } from "@/hooks/useStableCallback";
+import { settleMessages } from "@/lib/settledMessages";
+import { mergeOlderMessages, OLDER_MESSAGES_PAGE } from "@/lib/olderMessages";
+import JumpToLatestChip from "@/components/chat/JumpToLatestChip";
 import {
   assignTurnMessageIds,
   createChatTurnId,
@@ -259,9 +253,11 @@ import {
   buildLoreContext,
   buildMemoryContext,
   buildUserProfileContext,
+  getDynamicLength,
   getDynamicLengthGuide,
   getRelationshipContext,
 } from "@/lib/chatPromptContext";
+import { mindLabel } from "@/lib/mindLabel";
 import { chatHistoryForLlm, crisisCardFromPayload, messagesForModel } from "@/lib/aiCompanionNotice";
 import { useAiCompanionNotice } from "@/hooks/useAiCompanionNotice";
 import SystemDisclosure from "@/components/chat/SystemDisclosure";
@@ -324,6 +320,12 @@ export default function Chat() {
   const [awaitingCompanion, setAwaitingCompanion] = useState(false);
   const awaitingSessionRef = useRef(null);
   const composerBusy = isLoading || awaitingCompanion;
+  // Tell the service-worker update prompt a reply is in flight so it never
+  // reloads the page mid-stream.
+  useEffect(() => {
+    if (!composerBusy) return undefined;
+    return beginReply();
+  }, [composerBusy]);
   const [sessionLoad, setSessionLoad] = useState({ status: "idle" });
   const [sessionLoadNonce, setSessionLoadNonce] = useState(0);
   const sessionLoadGenRef = useRef(0);
@@ -337,6 +339,22 @@ export default function Chat() {
   const claimedHeldDraftsRef = useRef(new Set());
   const heldDraftStampRef = useRef(new Map());
   const [composerRestore, setComposerRestore] = useState(null);
+  // "What did you dream?" and other journal prompts land in the box only.
+  // They are never auto-sent. The compose query stays until a session is
+  // open, then it is stripped so a refresh does not re-apply it.
+  useEffect(() => {
+    const taken = consumeComposePrefill(location.search || "");
+    if (!taken) return;
+    const sid = activeSession?.id;
+    if (!sid) return;
+    const token = `${COMPOSE_PREFILL_TOKEN_PREFIX}:${sid}:${taken.text}`;
+    setComposerRestore((prev) =>
+      prev?.token === token
+        ? prev
+        : { token, sessionId: sid, savedAt: Date.now(), text: taken.text, attachments: [], droppedAttachmentCount: 0 },
+    );
+    navigate({ pathname: location.pathname, search: taken.nextSearch }, { replace: true });
+  }, [location.search, location.pathname, navigate, activeSession?.id]);
   const handleHeldDraftRestored = useCallback((draft) => {
     setComposerRestore((prev) => dropAppliedComposerRestore(prev, draft));
   }, []);
@@ -383,6 +401,8 @@ export default function Chat() {
   replyActionsDisabledRef.current = replyActionsDisabled;
   /** Same user line while the self-hosted model is still generating. */
   const lateTurnRef = useRef(null);
+  /** Bumped on every send. Background bubbles from an older turn are dropped. */
+  const sendSeqRef = useRef(0);
   /** Background check after the browser abort. Retry does not wait on it. */
   const lateReplyWatchRef = useRef(null);
   const supersededTurnIdsRef = useRef(new Set());
@@ -433,6 +453,7 @@ export default function Chat() {
   const [showImageGen, setShowImageGen] = useState(false);
   const [showPhotoStudio, setShowPhotoStudio] = useState(false);
   const [analyzingNarrative, setAnalyzingNarrative] = useState(false);
+  const narratorBusyRef = useRef(null);
   const [characterEvolutions, setCharacterEvolutions] = useState({});
   const [characterEmotions, setCharacterEmotions] = useState({}); // keyed by character_id: {emotion, intensity, trigger}
   const [worldEvent, setWorldEvent] = useState(null); // current system event
@@ -491,24 +512,28 @@ export default function Chat() {
     },
   });
 
-  // Override speakMessage to prefer native TTS when inside WKWebView
+  // Auto-speak. Her voice runs on the home box; native iOS speech,
+  // ElevenLabs and Web Speech are opt-in only (lib/voicePrefs.js, all off by
+  // default), so there is no automatic native -> ElevenLabs -> Web Speech
+  // cascade any more. Home-box playback in chat is the Builder's V6.
   const speakMessageNative = useCallback((content, charName) => {
-    if (isNative && speakNative(content)) return; // handed off to native AVSpeechSynthesizer
-    // Fallback to existing web TTS
     const char = characters.find((c) => c.name === charName);
     const voiceId = char?.elevenlabs_voice_id;
     const charEmotion = characterEmotions[char?.id];
     const emotion = charEmotion?.emotion || 'neutral';
     const intensity = charEmotion?.intensity || 5;
-    // ElevenLabs falls back to the server default voice when the character has
-    // no cloned voice assigned, so auto-speak works even without a voice clone.
-    if (emotionalTTS.isEnabled) {
-      emotionalTTS.speakWithEmotion(content, voiceId, emotion, intensity);
-    } else if (elTTS.isEnabled) {
-      elTTS.speak(content, voiceId, intensity, emotion);
-    } else if (tts.isEnabled) {
-      tts.speak(content);
-    }
+    const route = chooseSpeechRoute({
+      prefs: getVoicePrefs(),
+      isNative,
+      emotionalEnabled: emotionalTTS.isEnabled,
+      elevenEnabled: elTTS.isEnabled,
+      webEnabled: tts.isEnabled,
+    });
+    if (route === 'native') speakNative(content); // on-device AVSpeechSynthesizer
+    else if (route === 'emotional') emotionalTTS.speakWithEmotion(content, voiceId, emotion, intensity);
+    else if (route === 'elevenlabs') elTTS.speak(content, voiceId, intensity, emotion);
+    else if (route === 'webSpeech') tts.speak(content);
+    // route null: TODO(V6) play the home-box /api/voice/:id/speak stream here.
   }, [isNative, speakNative, characters, emotionalTTS, elTTS, tts, characterEmotions]);
 
   const questManager = useAutoQuestManager({
@@ -716,6 +741,9 @@ export default function Chat() {
   }, [sessionId, sessionLoadNonce]);
 
   const lastMessageCountRef = useRef(0);
+  const lastMessageRef = useRef(null);
+  const lastScrolledSessionRef = useRef(null);
+  const stick = useStickToBottom(scrollContainerRef, activeSession?.id);
   useEffect(() => {
     const messages = activeSession?.messages || [];
     const currentCount = messages.length;
@@ -725,20 +753,80 @@ export default function Chat() {
       last?.is_streaming === true ||
       last?.character_name === "__typing__" ||
       last?.character_name === "__thinking__";
-    // Scroll on new messages, a held follow-up, and while a reply is streaming in.
-    if (currentCount > lastMessageCountRef.current || isLiveBubble || heldText) {
-      const behavior = last?.is_streaming ? "auto" : "smooth";
-      requestAnimationFrame(() => {
-        const container = scrollContainerRef.current;
-        if (container) {
-          container.scrollTo({ top: container.scrollHeight, behavior });
-        } else {
-          messagesEndRef.current?.scrollIntoView({ behavior });
-        }
-      });
+    const openedThread = lastScrolledSessionRef.current !== (activeSession?.id || null);
+    // Older history was prepended above (same last row, more rows): the list
+    // keeps the reader's place, so do not jump to the bottom.
+    const prepended = !openedThread && currentCount > lastMessageCountRef.current && last === lastMessageRef.current;
+    const userJustSent = currentCount > lastMessageCountRef.current && last?.role === "user";
+    // Scroll on new messages, a held follow-up, and while a reply is streaming in,
+    // but only while the reader is following the bottom of the thread. Opening a
+    // thread or sending a message always lands at the bottom.
+    if (!prepended && (openedThread || currentCount > lastMessageCountRef.current || isLiveBubble || heldText)) {
+      if (openedThread || userJustSent) stick.follow();
+      if (openedThread || userJustSent || stick.followingRef.current) {
+        const behavior = openedThread || last?.is_streaming ? "auto" : "smooth";
+        requestAnimationFrame(() => {
+          if (scrollContainerRef.current) {
+            stick.scrollToBottom(behavior);
+          } else {
+            messagesEndRef.current?.scrollIntoView({ behavior });
+          }
+        });
+      } else {
+        stick.markUnseen();
+      }
     }
+    lastScrolledSessionRef.current = activeSession?.id || null;
     lastMessageCountRef.current = currentCount;
+    lastMessageRef.current = last || null;
+    // stick's callbacks are stable; followingRef is read at run time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSession?.messages, activeSession?.id, gateSnap]);
+
+  // "Previous messages" past the opened page: read the next older page from
+  // the store (GET /messages?before_seq=) and prepend it to this thread.
+  const loadOlderMessages = useCallback(async (beforeSeq) => {
+    const sid = openSessionIdRef.current;
+    if (!sid || typeof beforeSeq !== "number") return { fetched: 0, exhausted: true };
+    const older = await animaClient.messages.list(sid, {
+      limit: OLDER_MESSAGES_PAGE,
+      beforeSeq,
+      timeoutMs: STORE_LIST_TIMEOUT_MS,
+    });
+    const rows = Array.isArray(older) ? older : [];
+    if (openSessionIdRef.current !== sid) return { fetched: 0, exhausted: false };
+    setActiveSession((prev) => {
+      if (!prev || prev.id !== sid) return prev;
+      const merged = mergeOlderMessages(prev.messages, rows);
+      return merged === prev.messages ? prev : { ...prev, messages: merged };
+    });
+    return { fetched: rows.length, exhausted: rows.length < OLDER_MESSAGES_PAGE };
+  }, [setActiveSession]);
+
+  // Per-token isolation: while a reply streams in, only the thread's last
+  // bubble should re-render. The Story Feed reads a thread without in-flight
+  // rows (stable until a reply lands), and memoized children get handlers
+  // with a stable identity.
+  const settledMessagesRef = useRef(null);
+  const settledMessages = settleMessages(activeSession?.messages, settledMessagesRef.current);
+  settledMessagesRef.current = settledMessages;
+  const widgetSessionId = activeSession?.id;
+  const widgetCharacterId = activeSession?.character_id;
+  const widgetMode = activeSession?.mode;
+  const widgetGroupIds = activeSession?.group_character_ids;
+  const widgetSession = useMemo(
+    () =>
+      widgetSessionId
+        ? {
+            id: widgetSessionId,
+            character_id: widgetCharacterId,
+            mode: widgetMode,
+            group_character_ids: widgetGroupIds,
+            messages: settledMessages,
+          }
+        : null,
+    [widgetSessionId, widgetCharacterId, widgetMode, widgetGroupIds, settledMessages],
+  );
 
   // Send a follow-up that was held while this conversation was replying.
   // Runs after paint so the next turn sees the reply that just landed.
@@ -803,16 +891,17 @@ export default function Chat() {
     const emotion = charEmotion?.emotion || 'neutral';
     const intensity = charEmotion?.intensity || 5;
     
-    // Use emotional TTS with voice emotion adjustment if available.
-    // ElevenLabs falls back to the server default voice when the character
-    // has no cloned voice assigned, so voice still works out of the box.
-    if (emotionalTTS.isEnabled) {
-      emotionalTTS.speakWithEmotion(content, voiceId, emotion, intensity);
-    } else if (elTTS.isEnabled) {
-      elTTS.speak(content, voiceId, intensity, emotion);
-    } else if (tts.isEnabled) {
-      tts.speak(content);
-    }
+    // Cloud voices only when opted in (lib/voicePrefs.js, off by default).
+    const route = chooseSpeechRoute({
+      prefs: getVoicePrefs(),
+      emotionalEnabled: emotionalTTS.isEnabled,
+      elevenEnabled: elTTS.isEnabled,
+      webEnabled: tts.isEnabled,
+    });
+    if (route === 'emotional') emotionalTTS.speakWithEmotion(content, voiceId, emotion, intensity);
+    else if (route === 'elevenlabs') elTTS.speak(content, voiceId, intensity, emotion);
+    else if (route === 'webSpeech') tts.speak(content);
+    // route null: TODO(V6) home-box playback.
   }, [characters, emotionalTTS, elTTS, tts, characterEmotions]);
 
   const handleReadStory = async () => {
@@ -842,11 +931,15 @@ export default function Chat() {
       : null;
     const voiceId = activeChar?.elevenlabs_voice_id;
 
-    if (voiceId && elTTS.isEnabled) {
-      elTTS.speak(fullStoryText, voiceId);
-    } else if (tts.isEnabled) {
-      tts.speak(fullStoryText);
-    }
+    const storyRoute = chooseStoryRoute({
+      prefs: getVoicePrefs(),
+      voiceId,
+      elevenEnabled: elTTS.isEnabled,
+      webEnabled: tts.isEnabled,
+    });
+    if (storyRoute === 'elevenlabs') elTTS.speak(fullStoryText, voiceId);
+    else if (storyRoute === 'webSpeech') tts.speak(fullStoryText);
+    // storyRoute null: TODO(V6) home-box playback.
     
     setIsReadingStory(false);
   };
@@ -1427,6 +1520,21 @@ export default function Chat() {
   // onto the most capable (heavy) model tier instead of the cost-saving
   // auto-routed tier. Persisted on the session so it survives reloads and
   // syncs across devices. Optimistic toggle with rollback on failure.
+  // Per-conversation story mode: the Narrator adds a scene update when the
+  // conversation calls for one. On by default; never offered in therapy.
+  const handleToggleStoryMode = async () => {
+    if (!activeSession?.id) return;
+    const next = !storyModeEnabled(activeSession);
+    setActiveSession((prev) => ({ ...prev, story_mode: next }));
+    try {
+      await animaClient.entities.ChatSession.update(activeSession.id, { story_mode: next });
+      track("story_mode_toggled", { session_mode: activeSession.mode || "solo", is_enabled: next });
+    } catch (err) {
+      console.error("Error toggling story mode:", err);
+      setActiveSession((prev) => ({ ...prev, story_mode: !next }));
+    }
+  };
+
   const handleToggleDeepMode = async () => {
     if (!activeSession?.id) return;
     const next = !activeSession.deep_mode;
@@ -1654,6 +1762,7 @@ export default function Chat() {
               userContent: turn.user_content,
               assistantContent: text,
               characterName: turn.active_character_name,
+              createdAt: turn.created_at,
               ...cutOffReplyFields(turn),
             }),
           };
@@ -1948,6 +2057,7 @@ export default function Chat() {
       return;
     }
 
+    const sendSeq = ++sendSeqRef.current;
     const attachments = messageData.attachments || [];
     const pdfAttachments = attachments.filter((item) => item?.type === "pdf");
     const imageAttachments = attachments.filter((item) => item?.type === "image");
@@ -2140,6 +2250,7 @@ export default function Chat() {
           if (protocolUpgrade.message?.content) {
             speakMessage(protocolUpgrade.message.content, "Serenity");
           }
+          lateTurnRef.current = null;
           settleTurn("reply_finished");
           return;
         }
@@ -2166,6 +2277,7 @@ export default function Chat() {
               deviceScan.message.character_name || "Anima",
             );
           }
+          lateTurnRef.current = null;
           settleTurn("reply_finished");
           return;
         }
@@ -2417,7 +2529,9 @@ ${lewdityGuide}`;
             vesselContext,
             lengthGuide,
             imageInstruction: [
-              imageGenerationTagInstruction(),
+              // Server-side companion photos own solo photo requests
+              // (lib/companionPhotos); the [IMAGE:] tag path is the fallback.
+              soloMediaCaps.chat_photos ? "" : imageGenerationTagInstruction(),
               soloMediaCaps.voice_clip ? voiceClipTagInstruction() : "",
             ]
               .filter(Boolean)
@@ -2738,10 +2852,26 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // Companions (onboard Serenity and user-created Animas) may also emit
       // [IMAGE: ...] so this turn can attach a generated still.
       const eventTagRegex = /\[(EMOTION|LOCATION):([^\]]+)\]/gi;
-      const wantsImage = replyCutOff.reply_interrupted
-        ? userRequestedImage(content)
-        : parseImagePrompts(result).length > 0 || userRequestedImage(content);
-      let replyImageAttachments = [];
+      // Solo photos are generated on the server and arrive on `done`
+      // (photo + attachments). The client pipeline below is only the
+      // fallback for group scenes and deployments without server photos.
+      const serverPhoto = serverPhotoFromPayload(resultPayload);
+      const serverPhotosOn =
+        activeSession.mode === "solo" && (await fetchMediaCapabilities()).chat_photos;
+      const wantsImage =
+        !serverPhoto.handled &&
+        !serverPhotosOn &&
+        (replyCutOff.reply_interrupted
+          ? userRequestedImage(content)
+          : parseImagePrompts(result).length > 0 || userRequestedImage(content));
+      let replyImageAttachments = serverPhoto.attachments;
+      if (serverPhoto.attachments.length) {
+        track("image_generated", {
+          source: "companion_photo",
+          is_anima: Boolean(activeChar?._isAnima),
+          session_mode: activeSession.mode || "solo",
+        });
+      }
       if (wantsImage) {
         const imageProgressText =
           stripVoiceTags(stripImageTags(result.replace(eventTagRegex, ""))).trim() || result;
@@ -2943,6 +3073,51 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // side effects. A second pass would double-count affect. A cut-off
       // reply is not sent into these jobs — the half-reply is not a memory.
       if (!skipAffect && !replyCutOff.reply_interrupted) {
+      // Story mode — the Narrator's mind reads the log after each exchange and
+      // decides whether the story needs a scene update now (after one exchange
+      // or ten). Local scene cues only decide when to ask. Never in therapy.
+      const narratorCheck = storyModeEnabled(activeSession, { therapy: therapyActive })
+        ? narratorConsultation(finalMessages)
+        : null;
+      if (narratorCheck?.consult && narratorBusyRef.current !== sendSessionId) {
+        narratorBusyRef.current = sendSessionId;
+        const castNames =
+          activeSession.mode === "group"
+            ? characters
+                .filter((c) => (activeSession.group_character_ids || []).includes(c.id))
+                .map((c) => c.name)
+            : [activeChar?.name || charName];
+        animaClient.integrations.Core.InvokeLLM({
+          sidecar: true,
+          max_tokens: 360,
+          prompt: buildNarratorPrompt({
+            messages: finalMessages,
+            characterNames: castNames,
+            userName: user?.full_name || "",
+            openingScene: activeSession.opening_scene || "",
+            allowMature: adultMode,
+            consultation: narratorCheck,
+          }),
+          response_json_schema: NARRATOR_RESPONSE_SCHEMA,
+        })
+          .then((res) => {
+            const narratorMsg = narratorMessageFromResult(res);
+            if (!narratorMsg) return null;
+            return appendAmbientMessage({
+              appendMessage: animaClient.messages.append,
+              sessionId: sendSessionId,
+              message: narratorMsg,
+              setActiveSession,
+            });
+          })
+          .catch(() => {
+            // Narration is ambient; a failed beat never interrupts the chat.
+          })
+          .finally(() => {
+            if (narratorBusyRef.current === sendSessionId) narratorBusyRef.current = null;
+          });
+      }
+
       // Update calendar based on elapsed real-world time (every 10 messages)
       if (finalMessages.length % 10 === 0) {
         animaClient.functions.invoke("updateSeasonalContext", {
@@ -3058,7 +3233,12 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           };
           return `\nRELATIONSHIP: Tier "${rel.tier}" (score ${rel.score}/100). ${tierGuides[rel.tier] || ""}\n`;
         })();
-        const serenityLength = getDynamicLength(finalMessages, characterEmotions, user?.settings?.ai_response_length, finalMessages.length || 0);
+        const serenityLength = getDynamicLength({
+          messages: finalMessages,
+          emotions: characterEmotions,
+          userPreference: user?.settings?.ai_response_length,
+          messageCount: finalMessages.length || 0,
+        });
         const serenityLengthGuide = serenityLength === "short" 
           ? "Keep your response brief (1 sentence max)." 
           : serenityLength === "long" 
@@ -3087,6 +3267,8 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         }).then(async (serenityResult) => {
           const raw = String(serenityResult || "");
           if (!raw.trim()) return;
+          // The user already sent a newer line; this answers an old one.
+          if (sendSeqRef.current !== sendSeq) return;
           let attachments = [];
           try {
             const resolved = await resolveChatImageAttachments({
@@ -3107,6 +3289,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           } catch {
             /* Serenity still speaks even if the still fails */
           }
+          if (sendSeqRef.current !== sendSeq) return;
           const serenityMsg = {
             role: "assistant",
             content: stripImageTags(raw.replace(/\[(EMOTION|LOCATION):[^\]]+\]/gi, "")).trim(),
@@ -3180,7 +3363,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             session_context: activeSession.opening_scene,
             last_speaker_id: activeChar?.id,
           }).then((res) => {
-            if (res?.data?.interactions?.length > 0) {
+            if (res?.data?.interactions?.length > 0 && sendSeqRef.current === sendSeq) {
               const interaction = res.data.interactions[0];
               const interactionMsg = {
                 role: "assistant",
@@ -3726,6 +3909,14 @@ Return JSON:
     };
   handleSendMessageRef.current = handleSendMessage;
 
+  // Stable-identity handlers for memoized children (Story Feed, composer).
+  const stableSendMessage = useStableCallback(handleSendMessage);
+  const stableComposerSend = useStableCallback(handleComposerSend);
+  const stableAnalyzeNow = useStableCallback(analyzeNow);
+  const stableApplyEvent = useStableCallback(handleApplyEvent);
+  const stableLoadInventory = useStableCallback(loadInventory);
+  const bumpPdfRevision = useCallback(() => setPdfRevision((n) => n + 1), []);
+
   useEffect(() => {
     if (!activeSession?.id || composerBusy) return;
     if (hiddenThread.spokeFirst.current) return;
@@ -3831,6 +4022,16 @@ Return JSON:
               }
               onShowEditModal={() => setShowEditModal(true)}
               onToggleDeepMode={handleToggleDeepMode}
+              onToggleStoryMode={
+                isTherapySession(
+                  activeSession,
+                  authUser,
+                  characters.find((c) => c.id === activeSession?.character_id),
+                )
+                  ? undefined
+                  : handleToggleStoryMode
+              }
+              storyModeOn={storyModeEnabled(activeSession)}
               onOpenRecap={() => openRecap(activeSession.id)}
               onSelectBranch={handleSelectBranch}
               onCreateBranch={() => setShowCreateBranch(true)}
@@ -3844,7 +4045,11 @@ Return JSON:
             {activeSession?.mode === "solo" && activeSession?.character_id && (
               <div className="px-3 py-1 flex items-center justify-between bg-black/40 border-b border-primary/10">
                 <ResonanceField value={resonance.value} label={resonance.label} />
-                <IntimacyDock characterId={activeSession.character_id} conversationId={activeSession.id} />
+                <IntimacyDock
+                  characterId={activeSession.character_id}
+                  conversationId={activeSession.id}
+                  refreshKey={isLoading ? null : activeSession.messages?.length || 0}
+                />
               </div>
             )}
             {isTherapySession(
@@ -3920,7 +4125,7 @@ Return JSON:
             <div ref={scrollContainerRef} className={`flex-1 overflow-y-auto p-2 sm:p-4 md:p-6 space-y-2 sm:space-y-4 min-h-0 relative ${presenceCast.length > 0 ? "lg:pr-56 xl:pr-64" : ""}`} data-no-swipe data-scroll-preserve style={{ WebkitOverflowScrolling: 'touch' }}>
               <GoToTopButton containerRef={scrollContainerRef} />
               <ChatWidgetsArea
-                activeSession={activeSession}
+                activeSession={widgetSession}
                 characters={characters}
                 narrativeArcs={narrativeArcs}
                 arcsLoading={arcsLoading}
@@ -3942,10 +4147,10 @@ Return JSON:
                 loadingAtmosphere={loadingAtmosphere}
                 generatedContent={generatedContent}
                 worldEvent={worldEvent}
-                analyzeNow={analyzeNow}
-                handleSendMessage={handleSendMessage}
-                handleApplyEvent={handleApplyEvent}
-                loadInventory={loadInventory}
+                analyzeNow={stableAnalyzeNow}
+                handleSendMessage={stableSendMessage}
+                handleApplyEvent={stableApplyEvent}
+                loadInventory={stableLoadInventory}
                 setCharacterEvolutions={setCharacterEvolutions}
                 setActiveSession={setActiveSession}
                 setPulseHeadlines={setPulseHeadlines}
@@ -4010,6 +4215,8 @@ Return JSON:
                 characters={characters}
                 characterMemories={characterMemories}
                 loreLinks={loreLinks}
+                onLoadOlder={loadOlderMessages}
+                scrollContainerRef={scrollContainerRef}
                 onRewindToMessage={handleRewindToMessage}
                 onSpeak={speakMessage}
                 onEditMessage={handleEditMessage}
@@ -4021,6 +4228,7 @@ Return JSON:
                   const payload = buildRatingPayload({
                     session: activeSession,
                     messages: activeSession.messages,
+                    characters,
                     index,
                     rating,
                     betterReply,
@@ -4028,6 +4236,18 @@ Return JSON:
                   });
                   if (!payload) return;
                   await animaApi.ratings.rate(payload);
+                  // Keep the pressed thumb when the list re-renders or pages.
+                  setActiveSession((prev) => {
+                    if (!prev || prev.id !== payload.session_id) return prev;
+                    const list = Array.isArray(prev.messages) ? prev.messages : [];
+                    const at = list.findIndex(
+                      (m, i) => m?.role === "assistant" && messageRatingId(m, prev.id, i) === payload.message_id,
+                    );
+                    if (at < 0) return prev;
+                    const messages = list.slice();
+                    messages[at] = { ...messages[at], my_rating: rating };
+                    return { ...prev, messages };
+                  });
                   // "Correct her": re-render this reply in her voice, guided by the correction.
                   if (extra?.rerender && rating === -1 && (payload.better_reply || payload.note)) {
                     await regenerateMessageFlow(index, {
@@ -4078,6 +4298,11 @@ Return JSON:
               {heldForThread ? (
                 <HeldOutgoingBubble text={heldForThread.text} onCancel={cancelHeldOutgoing} />
               ) : null}
+              <JumpToLatestChip
+                visible={stick.hasUnseen}
+                streaming={composerBusy}
+                onJump={stick.jumpToLatest}
+              />
               <div ref={messagesEndRef} className="mb-4 lg:mb-2" />
             </div>
             {/*
@@ -4236,13 +4461,13 @@ Return JSON:
                 />
                 <ChatInput
                   key={activeSession.id}
-                  onSend={handleComposerSend}
+                  onSend={stableComposerSend}
                   isLoading={composerBusy}
                   composeWhileBusy
                   disabled={false}
                   allowEmpty={activeSession?.mode === "group" || activeSession?.mode === "solo"}
                   sessionId={activeSession.id}
-                  onPdfStored={() => setPdfRevision((n) => n + 1)}
+                  onPdfStored={bumpPdfRevision}
                   restoreDraft={
                     composerRestore?.sessionId === activeSession.id ? composerRestore : null
                   }
@@ -4253,16 +4478,7 @@ Return JSON:
             </div>
           </div>
         ) : sessionId && sessionLoad.status === "loading" ? (
-          <div
-            className="flex-1 flex flex-col items-center justify-center gap-3"
-            role="status"
-            aria-live="polite"
-          >
-            <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
-            <p className="font-mono text-[9px] text-primary/40 tracking-widest uppercase">
-              Opening conversation...
-            </p>
-          </div>
+          <ChatSkeleton label="Opening conversation..." header={false} />
         ) : sessionId && sessionLoad.status === "missing" ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
             <p className="font-mono text-sm text-primary/70">
@@ -4315,12 +4531,14 @@ Return JSON:
       </main>
 
       {showInventory && activeSession?.character_id && (
-        <InventoryDrawer
-          characterId={activeSession.character_id}
-          characterName={characters.find(c => c.id === activeSession.character_id)?.name || "Character"}
-          recentMessages={activeSession?.messages?.slice(-10) || []}
-          onClose={() => { setShowInventory(false); loadInventory(activeSession.character_id); }}
-        />
+        <Suspense fallback={null}>
+          <InventoryDrawer
+            characterId={activeSession.character_id}
+            characterName={characters.find(c => c.id === activeSession.character_id)?.name || "Character"}
+            recentMessages={activeSession?.messages?.slice(-10) || []}
+            onClose={() => { setShowInventory(false); loadInventory(activeSession.character_id); }}
+          />
+        </Suspense>
       )}
 
       <CharacterBioSheet
@@ -4329,127 +4547,149 @@ Return JSON:
         onClose={() => setBioCharacter(null)}
       />
 
-      <TeachDialog target={teachTarget} onClose={() => setTeachTarget(null)} />
+      <DeferredMount when={teachTarget}>
+        <TeachDialog target={teachTarget} onClose={() => setTeachTarget(null)} />
+      </DeferredMount>
 
-      <DataExportModal
-        isOpen={showExportModal}
-        onClose={() => setShowExportModal(false)}
-        session={activeSession}
-      />
+      <DeferredMount when={showExportModal}>
+        <DataExportModal
+          isOpen={showExportModal}
+          onClose={() => setShowExportModal(false)}
+          session={activeSession}
+        />
+      </DeferredMount>
 
-      <DailySummaryModal
-        summary={summary}
-        dayInfo={calendar ? { season: calendar.current_season, day_of_season: calendar.day_of_season } : null}
-        isOpen={showSummary}
-        onClose={closeSummary}
-      />
+      <DeferredMount when={showSummary}>
+        <DailySummaryModal
+          summary={summary}
+          dayInfo={calendar ? { season: calendar.current_season, day_of_season: calendar.day_of_season } : null}
+          isOpen={showSummary}
+          onClose={closeSummary}
+        />
+      </DeferredMount>
 
       {showModal && (
-        <NewSessionModal
-          mode={mode}
-          onClose={() => setShowModal(false)}
-          onCreate={handleCreateSession}
-        />
+        <Suspense fallback={null}>
+          <NewSessionModal
+            mode={mode}
+            onClose={() => setShowModal(false)}
+            onCreate={handleCreateSession}
+          />
+        </Suspense>
       )}
 
-      <SessionRecapModal
-        isOpen={showRecap}
-        sessionId={recapSessionId}
-        onClose={closeRecap}
-      />
+      <DeferredMount when={showRecap}>
+        <SessionRecapModal
+          isOpen={showRecap}
+          sessionId={recapSessionId}
+          onClose={closeRecap}
+        />
+      </DeferredMount>
 
-      <MentalLine
-        isOpen={showMentalLine}
-        onClose={() => setShowMentalLine(false)}
-        onSendThought={handleMentalLineThought}
-        serenity={serenity}
-        loading={mentalLineLoading}
-      />
+      <DeferredMount when={showMentalLine}>
+        <MentalLine
+          isOpen={showMentalLine}
+          onClose={() => setShowMentalLine(false)}
+          onSendThought={handleMentalLineThought}
+          serenity={serenity}
+          loading={mentalLineLoading}
+        />
+      </DeferredMount>
 
-      <SessionEditModal
-        isOpen={showEditModal}
-        onClose={() => setShowEditModal(false)}
-        session={activeSession}
-        onSave={handleSaveSettings}
-        saving={savingSettings}
-      />
+      <DeferredMount when={showEditModal}>
+        <SessionEditModal
+          isOpen={showEditModal}
+          onClose={() => setShowEditModal(false)}
+          session={activeSession}
+          onSave={handleSaveSettings}
+          saving={savingSettings}
+        />
+      </DeferredMount>
 
-      <VoiceChatMode
-        isOpen={voiceChatOpen}
-        onClose={() => setVoiceChatOpen(false)}
-        character={activeSession?.character_id ? characters.find((c) => c.id === activeSession.character_id) : null}
-        onUserMessage={async (text, speakCallback) => {
-          await handleSendMessage(text);
-          // Wait a moment for the response to be generated, then speak it
-          if (speakCallback && activeSession?.character_id) {
-            setTimeout(() => {
-              const activeChar = characters.find((c) => c.id === activeSession.character_id);
-              const lastMsg = activeSession?.messages?.[activeSession.messages.length - 1];
-              if (lastMsg && lastMsg.role === "assistant" && activeChar) {
-                speakCallback(lastMsg.content, activeChar.name);
-              }
-            }, 500);
-          }
-        }}
-        isLoading={composerBusy}
-      />
-
-      <CreateBranchModal
-        isOpen={showCreateBranch}
-        onClose={() => setShowCreateBranch(false)}
-        onCreateBranch={handleCreateBranch}
-        loading={creatingBranch}
-      />
-
-      <ImageGenerationModal
-        isOpen={showImageGen}
-        onClose={() => setShowImageGen(false)}
-        characterName={
-          activeSession?.mode === "solo"
-            ? characters.find((c) => c.id === activeSession.character_id)?.name
-            : "Serenity"
-        }
-        onImageGenerated={async (url, promptText) => {
-          if (!activeSession?.id || !url) return;
-          const speaker =
-            (activeSession.mode === "solo" &&
-              characters.find((c) => c.id === activeSession.character_id)) ||
-            serenity;
-          let persisted = url;
-          if (typeof url === "string" && url.startsWith("data:")) {
-            try {
-              persisted = await uploadDataUrl(url);
-            } catch {
-              persisted = url;
+      <DeferredMount when={voiceChatOpen}>
+        <VoiceChatMode
+          isOpen={voiceChatOpen}
+          onClose={() => setVoiceChatOpen(false)}
+          character={activeSession?.character_id ? characters.find((c) => c.id === activeSession.character_id) : null}
+          onUserMessage={async (text, speakCallback) => {
+            await handleSendMessage(text);
+            // Wait a moment for the response to be generated, then speak it
+            if (speakCallback && activeSession?.character_id) {
+              setTimeout(() => {
+                const activeChar = characters.find((c) => c.id === activeSession.character_id);
+                const lastMsg = activeSession?.messages?.[activeSession.messages.length - 1];
+                if (lastMsg && lastMsg.role === "assistant" && activeChar) {
+                  speakCallback(lastMsg.content, activeChar.name);
+                }
+              }, 500);
             }
-          }
-          await appendAmbientMessage({
-            appendMessage: animaClient.messages.append,
-            sessionId: activeSession.id,
-            message: {
-              role: "assistant",
-              content: promptText
-                ? `*shares a vision: ${String(promptText).slice(0, 180)}*`
-                : "*shares an image*",
-              character_name: speaker?.name || "Serenity",
-              attachments: [{ type: "image", url: persisted, name: "Generated scene" }],
-              timestamp: new Date().toISOString(),
-            },
-            setActiveSession,
-          });
-          track("image_generated", {
-            source: "modal",
-            is_anima: Boolean(speaker?._isAnima),
-            session_mode: activeSession.mode || "solo",
-          });
-        }}
-      />
+          }}
+          isLoading={composerBusy}
+        />
+      </DeferredMount>
 
-      <ExportArchiveModal
-        isOpen={showExportArchive}
-        onClose={() => setShowExportArchive(false)}
-        session={activeSession}
-      />
+      <DeferredMount when={showCreateBranch}>
+        <CreateBranchModal
+          isOpen={showCreateBranch}
+          onClose={() => setShowCreateBranch(false)}
+          onCreateBranch={handleCreateBranch}
+          loading={creatingBranch}
+        />
+      </DeferredMount>
+
+      <DeferredMount when={showImageGen}>
+        <ImageGenerationModal
+          isOpen={showImageGen}
+          onClose={() => setShowImageGen(false)}
+          characterName={
+            activeSession?.mode === "solo"
+              ? characters.find((c) => c.id === activeSession.character_id)?.name
+              : "Serenity"
+          }
+          onImageGenerated={async (url, promptText) => {
+            if (!activeSession?.id || !url) return;
+            const speaker =
+              (activeSession.mode === "solo" &&
+                characters.find((c) => c.id === activeSession.character_id)) ||
+              serenity;
+            let persisted = url;
+            if (typeof url === "string" && url.startsWith("data:")) {
+              try {
+                persisted = await uploadDataUrl(url);
+              } catch {
+                persisted = url;
+              }
+            }
+            await appendAmbientMessage({
+              appendMessage: animaClient.messages.append,
+              sessionId: activeSession.id,
+              message: {
+                role: "assistant",
+                content: promptText
+                  ? `*shares a vision: ${String(promptText).slice(0, 180)}*`
+                  : "*shares an image*",
+                character_name: speaker?.name || "Serenity",
+                attachments: [{ type: "image", url: persisted, name: "Generated scene" }],
+                timestamp: new Date().toISOString(),
+              },
+              setActiveSession,
+            });
+            track("image_generated", {
+              source: "modal",
+              is_anima: Boolean(speaker?._isAnima),
+              session_mode: activeSession.mode || "solo",
+            });
+          }}
+        />
+      </DeferredMount>
+
+      <DeferredMount when={showExportArchive}>
+        <ExportArchiveModal
+          isOpen={showExportArchive}
+          onClose={() => setShowExportArchive(false)}
+          session={activeSession}
+        />
+      </DeferredMount>
 
       <VoiceInputPanel
         isOpen={showVoiceInput}
@@ -4484,6 +4724,7 @@ Return JSON:
           className="hidden lg:flex absolute right-0 top-0 h-full flex-col items-center justify-center gap-3 pr-2 py-6 pointer-events-none z-30"
         >
           <div className="pointer-events-auto flex flex-col items-center gap-2 max-h-full overflow-y-auto">
+            <Suspense fallback={null}>
             {presenceCast.slice(0, 4).map((character) => {
               const em = characterEmotions[character.id] || {};
               const isLead = character.id === (presenceLeadId || presenceCast[0]?.id);
@@ -4502,6 +4743,7 @@ Return JSON:
                 />
               );
             })}
+            </Suspense>
             <button
               type="button"
               onClick={openPresenceStage}
@@ -4524,6 +4766,8 @@ Return JSON:
         </button>
       )}
 
+      {immersive ? (
+        <Suspense fallback={null}>
       <LivingPresenceStage
         open={Boolean(immersive)}
         onClose={() => setImmersive(false)}
@@ -4536,6 +4780,8 @@ Return JSON:
         onSend={(text) => handleSendMessage(text)}
         isLoading={turnControlsLocked}
       />
+        </Suspense>
+      ) : null}
     </div>
   );
 }

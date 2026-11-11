@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { lazy, Suspense, useState, useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useUser } from "@clerk/react";
 import { animaClient, exportData } from "@/api/animaClient";
@@ -28,22 +28,31 @@ import {
 } from "@/components/ui/select";
 import { BACKGROUND_THEMES } from "@/components/chat/ChatBackground.jsx";
 import { Upload, BookOpen, GraduationCap } from "lucide-react";
-import ModelTutorPanel from "@/components/tutor/ModelTutorPanel";
 import OwnModelConsent from "@/components/tutor/OwnModelConsent";
 import { useModelTutor } from "@/hooks/useModelTutor";
-import UserContextSettings from "@/components/anima/UserContextSettings";
-import DeviceScanPanel from "@/components/anima/DeviceScanPanel";
-import KnowledgeGraphViewer from "@/components/anima/KnowledgeGraphViewer";
 import { entityLabel, parseBackup, summarizeEntities } from "@/lib/restoreBackup";
 import { performRestoreFlow } from "@/lib/restoreHandlers";
 import { repairStarterCharacters } from "@/lib/seedCharacters";
-import ProactiveMessageSettings from "@/components/settings/ProactiveMessageSettings";
-import AppearanceStudio from "@/components/settings/AppearanceStudio";
-import AnimaForge from "@/components/settings/AnimaForge";
-import ForgeProfiles from "@/components/settings/ForgeProfiles";
 
 import { CONFIGURED_LLM_PROVIDERS } from "@/lib/llmProviderLabel";
 import { toast } from "sonner";
+
+// Heavier Settings sections load when their tab opens, not with the page.
+const UserContextSettings = lazy(() => import("@/components/anima/UserContextSettings"));
+const DeviceScanPanel = lazy(() => import("@/components/anima/DeviceScanPanel"));
+const KnowledgeGraphViewer = lazy(() => import("@/components/anima/KnowledgeGraphViewer"));
+const ModelTutorPanel = lazy(() => import("@/components/tutor/ModelTutorPanel"));
+const ProactiveMessageSettings = lazy(() => import("@/components/settings/ProactiveMessageSettings"));
+const DayRhythmSettings = lazy(() => import("@/components/settings/DayRhythmSettings"));
+const AppearanceStudio = lazy(() => import("@/components/settings/AppearanceStudio"));
+const AnimaForge = lazy(() => import("@/components/settings/AnimaForge"));
+const ForgeProfiles = lazy(() => import("@/components/settings/ForgeProfiles"));
+
+function SectionSkeleton() {
+  return (
+    <div role="status" aria-label="Loading section" className="h-24 border border-primary/10 bg-primary/5 animate-pulse" />
+  );
+}
 import AgeGateDialog from "@/components/settings/AgeGateDialog";
 import {
   formatChatBackgroundUploadError,
@@ -81,6 +90,7 @@ const defaultPrefs = {
   chat_bg_theme: "default",
   chat_bg_image: "",
   adult_content_enabled: false,
+  creative_freedom_enabled: false,
   voice_input_enabled: true,
   auto_read_responses: false,
   theme_mode: "dark",
@@ -604,10 +614,15 @@ export default function Settings() {
 
               <SectionTitle>Display Name</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5">
-                <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-2">
+                <label htmlFor="settings-display-name" className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-2">
                   Name shown in chat
                 </label>
                 <input
+                  id="settings-display-name"
+                  name="display_name"
+                  autoComplete="nickname"
+                  autoCapitalize="words"
+                  enterKeyHint="done"
                   value={prefs.display_name}
                   onChange={(e) => setPref("display_name", e.target.value)}
                   placeholder="Enter your display name..."
@@ -735,9 +750,9 @@ export default function Settings() {
           {/* ── BACKGROUND CONTEXT ── */}
           {section === SECTION.BACKGROUND && (
             <div className="space-y-4">
-              <UserContextSettings />
+              <Suspense fallback={<SectionSkeleton />}><UserContextSettings /></Suspense>
               <SectionTitle>Knowledge Graph</SectionTitle>
-              <KnowledgeGraphViewer />
+              <Suspense fallback={<SectionSkeleton />}><KnowledgeGraphViewer /></Suspense>
             </div>
           )}
 
@@ -747,7 +762,7 @@ export default function Settings() {
               <SectionTitle>LLM Providers</SectionTitle>
               <div className="border border-primary/15 bg-black/40 p-5 space-y-3">
                 <p className="text-[9px] font-mono text-primary/30 leading-relaxed">
-                  Chat stays on the self-hosted Anima LLM when ANIMA_LOCAL_LLM_BASE_URL is set (customOnly). OpenRouter does not hop after that host, even if ANIMA_OPENROUTER_FALLBACK is on. MiniMax and Deepshi are not in the companion chat chain.
+                  With ANIMA_CHAT_BRAIN=cloudflare, chat and background memory jobs run on Cloudflare Workers AI inside the Worker — no Fly.io or droplet. Otherwise chat prefers a self-hosted Anima LLM when ANIMA_LOCAL_LLM_BASE_URL is set (customOnly). MiniMax and Deepshi are not in the companion chat chain.
                 </p>
                 {CONFIGURED_LLM_PROVIDERS.map((provider) => (
                   <div
@@ -775,12 +790,13 @@ export default function Settings() {
                 {/* Creativity */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase">
+                    <label htmlFor="settings-ai-creativity" className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase">
                       Creativity / Temperature
                     </label>
                     <span className="font-mono text-xs text-primary">{prefs.ai_creativity.toFixed(1)}</span>
                   </div>
                   <input
+                    id="settings-ai-creativity"
                     type="range" min="0" max="1" step="0.1"
                     value={prefs.ai_creativity}
                     onChange={(e) => setPref("ai_creativity", parseFloat(e.target.value))}
@@ -821,12 +837,13 @@ export default function Settings() {
                 {/* Context Window */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase">
+                    <label htmlFor="settings-context-window" className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase">
                       Conversation Memory (messages)
                     </label>
                     <span className="font-mono text-xs text-primary">{prefs.context_window}</span>
                   </div>
                   <input
+                    id="settings-context-window"
                     type="range" min="4" max="30" step="2"
                     value={prefs.context_window}
                     onChange={(e) => setPref("context_window", parseInt(e.target.value))}
@@ -879,6 +896,16 @@ export default function Settings() {
                     </div>
                     </div>
 
+              <SectionTitle>Conversation Style</SectionTitle>
+              <div className="border border-primary/15 bg-black/40 p-5">
+                <TogglePref
+                  label="Creative freedom"
+                  description="More expressive characters, natural language, and room for dark or unusual fiction. Your boundaries still apply. Separate from adult mode; unavailable in therapy."
+                  value={prefs.creative_freedom_enabled}
+                  onChange={(v) => setPref("creative_freedom_enabled", v)}
+                />
+              </div>
+
               {/* 18+ Adult Content */}
               <SectionTitle>Content Rating</SectionTitle>
               <div className={`border p-5 space-y-3 ${prefs.adult_content_enabled ? "border-rose-500/30 bg-rose-950/20" : "border-primary/15 bg-black/40"}`}>
@@ -889,10 +916,10 @@ export default function Settings() {
                       <p className="font-mono text-xs text-primary/70 tracking-wider uppercase">Adult Content Mode</p>
                     </div>
                     <p className="text-[9px] font-mono text-primary/30 leading-relaxed">
-                      Enables explicit, lewd, and sexual roleplay. Characters escalate when the moment invites it — and hold back during grief, support, or non-intimate beats. By enabling this you confirm you are 18 years of age or older.
+                      Enables mature roleplay for adults after the age check. Follow your pace and boundaries. Available outside therapy, crossover scenes, and Deep mode. Model providers may apply their own content limits.
                     </p>
                     {prefs.adult_content_enabled && (
-                      <p className="text-[9px] font-mono text-rose-400/70 mt-1.5">● Adult mode active — heat when the beat is right</p>
+                      <p className="text-[9px] font-mono text-rose-400/70 mt-1.5">● Adult preference enabled — applies in supported chats</p>
                     )}
                   </div>
                   <button
@@ -926,9 +953,9 @@ export default function Settings() {
           {section === SECTION.INTERFACE && (
             <div className="space-y-4">
               <SectionTitle>Interface Preferences</SectionTitle>
-              <AppearanceStudio />
-              <AnimaForge />
-              <ForgeProfiles />
+              <Suspense fallback={<SectionSkeleton />}><AppearanceStudio /></Suspense>
+              <Suspense fallback={<SectionSkeleton />}><AnimaForge /></Suspense>
+              <Suspense fallback={<SectionSkeleton />}><ForgeProfiles /></Suspense>
 
               <div className="border border-primary/15 bg-black/40 p-5 space-y-0 divide-y divide-primary/10">
                 <TogglePref
@@ -976,7 +1003,10 @@ export default function Settings() {
                 </div>
 
                 <SectionTitle>Notifications</SectionTitle>
-                <ProactiveMessageSettings />
+                <Suspense fallback={<SectionSkeleton />}><ProactiveMessageSettings /></Suspense>
+
+                <SectionTitle>Day rhythm</SectionTitle>
+                <Suspense fallback={<SectionSkeleton />}><DayRhythmSettings /></Suspense>
 
                 <SectionTitle>Theme</SectionTitle>
                 <div className="border border-primary/15 bg-black/40 p-5">
@@ -1060,6 +1090,12 @@ export default function Settings() {
                       </div>
                     )}
                     <input
+                      type="url"
+                      inputMode="url"
+                      autoComplete="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      aria-label="Custom background image URL"
                       value={prefs.chat_bg_image}
                       onChange={(e) => setPref("chat_bg_image", e.target.value)}
                       placeholder="Or paste image URL..."
@@ -1083,7 +1119,7 @@ export default function Settings() {
                 Teach the model you trained. Every correction fine-tunes it, and it keeps each
                 version so a bad lesson can be undone.
               </p>
-              <ModelTutorPanel />
+              <Suspense fallback={<SectionSkeleton />}><ModelTutorPanel /></Suspense>
             </div>
           )}
 
@@ -1116,7 +1152,7 @@ export default function Settings() {
               </div>
 
               <SectionTitle>Anima device scan</SectionTitle>
-              <DeviceScanPanel anima={anima} />
+              <Suspense fallback={<SectionSkeleton />}><DeviceScanPanel anima={anima} /></Suspense>
 
               <div className="border border-primary/15 bg-black/40 p-5">
                 <div className="flex items-start justify-between gap-4">
@@ -1619,6 +1655,10 @@ function TogglePref({ label, description, value, onChange }) {
         <p className="text-[9px] font-mono text-primary/30 mt-0.5">{description}</p>
       </div>
       <button
+        type="button"
+        role="switch"
+        aria-label={label}
+        aria-checked={Boolean(value)}
         onClick={() => onChange(!value)}
         className={`relative w-10 h-5 border transition-all flex-shrink-0 ${
           value ? "bg-primary/20 border-primary/50" : "bg-black/60 border-primary/15"

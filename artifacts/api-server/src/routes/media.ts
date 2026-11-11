@@ -2,8 +2,13 @@
  * /api/media — an Anima's own photos and voice notes (switch `media`,
  * ANIMA_KERNEL_MEDIA). See ANIMA_KERNEL.md §14.
  *
- * GET  /capabilities  what this deployment can send (no secrets, no flag names)
- * POST /voice-clip    { characterId, text } → { url, transcript, … } in her saved voice
+ * GET  /capabilities  what this deployment can send (no secrets, no flag names);
+ *                     `chat_photos`: companions generate requested photos in solo chat
+ * POST /voice-clip    { characterId, text, cloud_opt_in? } → { url, transcript, … }
+ *
+ * Voice notes are spoken on the home box (Kokoro). `cloud_opt_in` ("xai" |
+ * "elevenlabs") is the steward's explicit opt-in from Settings; without it a
+ * down box is a 503 voice_offline with cloudFallback:false.
  *
  * In-chat clips are not capped (the steward asked for them, or the Anima chose
  * to speak in a live conversation); the shared rate limiter still applies.
@@ -12,8 +17,10 @@
 import { getAuth } from "@clerk/express";
 import { Router } from "express";
 import { isKernelFeatureEnabled } from "../lib/kernelFeatures";
-import { synthesizeVoiceClip, voiceClipProvider } from "../lib/media/voiceClip";
+import { parseCloudOptIn } from "../lib/media/voiceClipCore";
+import { synthesizeVoiceClip, voiceClipKeys } from "../lib/media/voiceClip";
 import { rateLimit } from "../lib/rateLimit";
+import { companionPhotosAvailable } from "../lib/companionPhotos";
 
 const router = Router();
 router.use(rateLimit);
@@ -25,7 +32,19 @@ router.get("/capabilities", (req, res) => {
     return;
   }
   const enabled = isKernelFeatureEnabled("media");
-  res.json({ voice_clip: enabled && voiceClipProvider() != null });
+  const keys = voiceClipKeys();
+  // voice_clip: possible with no opt-in (home box configured). The cloud flags
+  // only say an opt-in would work; the client decides with the steward's prefs.
+  res.json({
+    voice_clip: enabled && keys.local,
+    voice_clip_local: enabled && keys.local,
+    voice_clip_cloud: { xai: enabled && keys.xai, elevenlabs: enabled && keys.elevenlabs },
+    cloud_default: false,
+    // Solo chat photos are generated server-side on Workers AI
+    // (lib/companionPhotos). Not behind the Kernel `media` switch; its own
+    // kill switch is ANIMA_COMPANION_PHOTOS=off.
+    chat_photos: companionPhotosAvailable(),
+  });
 });
 
 router.post("/voice-clip", async (req, res) => {
@@ -46,7 +65,8 @@ router.post("/voice-clip", async (req, res) => {
     return;
   }
   try {
-    const clip = await synthesizeVoiceClip({ userId, characterId, text });
+    const cloudOptIn = parseCloudOptIn(body.cloud_opt_in);
+    const clip = await synthesizeVoiceClip({ userId, characterId, text, cloudOptIn });
     res.json({
       url: clip.url,
       content_type: clip.contentType,
@@ -54,8 +74,12 @@ router.post("/voice-clip", async (req, res) => {
       provider: clip.provider,
     });
   } catch (err) {
-    const e = err as { status?: number; message?: string };
+    const e = err as { status?: number; message?: string; code?: string; reason?: string; cloudFallback?: boolean };
     const status = e?.status && e.status >= 400 && e.status < 600 ? e.status : 500;
+    if (e?.code) {
+      res.status(status).json({ error: e.message, code: e.code, reason: e.reason, cloudFallback: false });
+      return;
+    }
     if (status >= 500) console.error("POST /api/media/voice-clip failed:", e?.message);
     res.status(status).json({ error: e?.message || "Voice note failed" });
   }

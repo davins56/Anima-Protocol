@@ -3,9 +3,49 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat/completio
 import { aiBinding } from "./aiBinding";
 import { visibleAssistantReply } from "./visibleAssistantReply";
 
-/** Production chat model — DeepSeek R1 distill via Workers AI + AI Gateway. */
-export const WORKERS_AI_CHAT_MODEL =
-  "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b";
+/**
+ * Production chat model — Llama 3.3 70B (fp8, fast) via Workers AI + AI
+ * Gateway. Non-reasoning, so replies stream without a `<think>` preamble.
+ * The `<think>` stripping in visibleAssistantReply stays as a no-op for this
+ * model and still covers a reasoning model set via ANIMA_WORKERS_AI_MODEL.
+ */
+export const WORKERS_AI_CHAT_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+
+/**
+ * Chat model the Cloudflare brain runs. `ANIMA_WORKERS_AI_MODEL` overrides
+ * the Llama 3.3 default with any Workers AI text-generation model id
+ * (must start with `@cf/` or `@hf/`; anything else falls back to the default
+ * so a typo cannot send companion text somewhere unexpected).
+ */
+export function workersAiChatModel(env: NodeJS.ProcessEnv = process.env): string {
+  const raw = (env.ANIMA_WORKERS_AI_MODEL || "").trim();
+  if (raw && /^@(cf|hf)\//.test(raw)) return raw;
+  return WORKERS_AI_CHAT_MODEL;
+}
+
+/**
+ * Small non-reasoning model for background brain jobs (scene director,
+ * evolution, consolidation, dreams, journal). Their token budgets are tiny,
+ * which a reasoning model would spend inside <think>. Override with
+ * `ANIMA_WORKERS_AI_BACKGROUND_MODEL`.
+ */
+export const WORKERS_AI_BACKGROUND_MODEL = "@cf/meta/llama-3.1-8b-instruct";
+
+export function workersAiBackgroundModel(env: NodeJS.ProcessEnv = process.env): string {
+  const raw = (env.ANIMA_WORKERS_AI_BACKGROUND_MODEL || "").trim();
+  if (raw && /^@(cf|hf)\//.test(raw)) return raw;
+  return WORKERS_AI_BACKGROUND_MODEL;
+}
+
+/**
+ * Optional Workers AI LoRA fine-tune (name or id) applied on top of the chat
+ * model — the hosted equivalent of the self-hosted `anima-chat` tag. Only
+ * LoRA-capable base models accept it; see docs/chat-brain.md.
+ */
+export function workersAiLora(env: NodeJS.ProcessEnv = process.env): string | null {
+  const raw = (env.ANIMA_WORKERS_AI_LORA || "").trim();
+  return raw || null;
+}
 
 /** wrangler.jsonc `ai.gateway.id` — documented here so healthz stays secret-free. */
 export const WORKERS_AI_GATEWAY_ID = "deepseek-gateway";
@@ -20,7 +60,7 @@ export const WORKERS_AI_FREE_QUOTA_HINT =
   "Workers AI daily free quota exhausted — enable Workers Paid or temporarily allow OpenRouter failover";
 
 export const WORKERS_AI_USER_HINT =
-  "DeepSeek on Workers AI failed to reply. Confirm the AI binding uses @cf/deepseek-ai/deepseek-r1-distill-qwen-32b via AI Gateway deepseek-gateway, then retry.";
+  `Workers AI chat failed to reply. Confirm the AI binding serves ${WORKERS_AI_CHAT_MODEL} (or ANIMA_WORKERS_AI_MODEL) via AI Gateway deepseek-gateway, then retry.`;
 
 const WORKERS_AI_FREE_QUOTA_RE =
   /\b4006\b|10[, ]?000 neurons|daily free (?:allocation|quota)|used up your daily free/i;
@@ -36,7 +76,7 @@ export function hasWorkersAiBinding(): boolean {
   return typeof aiBinding?.run === "function";
 }
 
-/** Isolate-local: after 4006, later turns skip DeepSeek and hop OpenRouter immediately. */
+/** Isolate-local: after 4006, later turns skip Workers AI and hop OpenRouter immediately. */
 let workersAiQuotaExhaustedThisIsolate = false;
 
 export function markWorkersAiQuotaExhausted(): void {
@@ -139,8 +179,8 @@ export function formatWorkersAiError(err: unknown): string {
         : "";
   if (!detail) return WORKERS_AI_USER_HINT;
   if (isWorkersAiFreeQuotaError(detail)) return WORKERS_AI_FREE_QUOTA_HINT;
-  if (/deepseek on workers ai/i.test(detail)) return detail;
-  return `DeepSeek on Workers AI failed: ${detail}`;
+  if (/(?:deepseek on|^) ?workers ai(?: chat)? failed/i.test(detail)) return detail;
+  return `Workers AI chat failed: ${detail}`;
 }
 
 function withWorkersAiErrorCode(code: unknown, message: string): string {
@@ -254,7 +294,7 @@ function workersAiChunk(
     id: "workersai",
     object: "chat.completion.chunk",
     created: Math.floor(Date.now() / 1000),
-    model: WORKERS_AI_CHAT_MODEL,
+    model: workersAiChatModel(),
     choices: [
       {
         index: 0,
@@ -266,6 +306,62 @@ function workersAiChunk(
       },
     ],
   };
+}
+
+/**
+ * Workers AI streams never send `finish_reason`; the last events carry
+ * `usage` instead. Surface it so a reply that hit `max_tokens` can be told
+ * apart from one the model finished.
+ */
+function workersAiUsage(parsed: unknown): { completion_tokens: number } | null {
+  if (!parsed || typeof parsed !== "object") return null;
+  const usage = (parsed as { usage?: unknown }).usage;
+  if (!usage || typeof usage !== "object") return null;
+  const completion = Number((usage as { completion_tokens?: unknown }).completion_tokens);
+  return Number.isFinite(completion) && completion > 0 ? { completion_tokens: completion } : null;
+}
+
+function workersAiUsageChunk(usage: { completion_tokens: number }): OpenAI.Chat.Completions.ChatCompletionChunk {
+  return {
+    id: "workersai",
+    object: "chat.completion.chunk",
+    created: Math.floor(Date.now() / 1000),
+    model: workersAiChatModel(),
+    choices: [],
+    usage: { completion_tokens: usage.completion_tokens, prompt_tokens: 0, total_tokens: usage.completion_tokens },
+  };
+}
+
+/**
+ * Rewrite the closing `finish_reason` to `"length"` when the reply used the
+ * whole `max_tokens` budget (from the reported usage, or, if none was
+ * reported, a conservative 4-chars-per-token estimate of the text). Without
+ * this every Workers AI reply looked finished and a capped one was shown
+ * cut off mid-word instead of being settled on a sentence end.
+ */
+export async function* markWorkersAiLengthFinish(
+  stream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>,
+  maxTokens: number,
+): AsyncGenerator<OpenAI.Chat.Completions.ChatCompletionChunk> {
+  let completionTokens = 0;
+  let chars = 0;
+  const capped = () =>
+    Number.isFinite(maxTokens) && maxTokens > 0 &&
+    (completionTokens > 0 ? completionTokens >= maxTokens : Math.ceil(chars / 4) >= maxTokens);
+  for await (const chunk of stream) {
+    const reported = Number(chunk.usage?.completion_tokens);
+    if (Number.isFinite(reported) && reported > completionTokens) completionTokens = reported;
+    const choice = chunk.choices?.[0];
+    if (!choice) continue;
+    const delta = choice.delta as { content?: unknown; reasoning?: unknown } | undefined;
+    if (typeof delta?.content === "string") chars += delta.content.length;
+    if (typeof delta?.reasoning === "string") chars += delta.reasoning.length;
+    if (choice.finish_reason === "stop" && capped()) {
+      yield { ...chunk, choices: [{ ...choice, finish_reason: "length" }] };
+      continue;
+    }
+    yield chunk;
+  }
 }
 
 function isReadableByteStream(value: unknown): value is ReadableStream<Uint8Array> {
@@ -299,6 +395,8 @@ function* emitParsedSseLine(
     const text = extractWorkersAiText(parsed);
     const reasoning = text ? "" : extractWorkersAiReasoning(parsed);
     if (text || reasoning) yield workersAiChunk(text, false, reasoning);
+    const usage = workersAiUsage(parsed);
+    if (usage) yield workersAiUsageChunk(usage);
   } catch (err) {
     // 4006 / Workers AI error objects must not become "content" — that hid
     // the failure from llmFailover after stream-open already succeeded.
@@ -451,21 +549,59 @@ function requireWorkersAiBinding() {
   return aiBinding;
 }
 
+/** Extra sampling knobs the chat mind tunes per model family. */
+export type WorkersAiSampling = {
+  top_p?: number;
+  top_k?: number;
+  repetition_penalty?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
+};
+
+const SAMPLING_RANGES: Record<keyof WorkersAiSampling, [number, number]> = {
+  top_p: [0, 2],
+  top_k: [1, 50],
+  repetition_penalty: [0, 2],
+  frequency_penalty: [-2, 2],
+  presence_penalty: [-2, 2],
+};
+
+/** Only finite, in-range values reach the binding (it rejects the rest). */
+export function workersAiSamplingOptions(sampling?: WorkersAiSampling | null): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!sampling) return out;
+  for (const key of Object.keys(SAMPLING_RANGES) as Array<keyof WorkersAiSampling>) {
+    const v = sampling[key];
+    const [lo, hi] = SAMPLING_RANGES[key];
+    if (typeof v === "number" && Number.isFinite(v) && v >= lo && v <= hi) {
+      out[key] = key === "top_k" ? Math.round(v) : v;
+    }
+  }
+  return out;
+}
+
 function runOptions(
   opts: {
     messages: ChatCompletionMessageParam[];
     maxTokens: number;
     temperature?: number;
+    model?: string;
+    sampling?: WorkersAiSampling | null;
   },
   stream: boolean,
 ): Record<string, unknown> {
+  // The LoRA is trained against the chat model; never attach it to a
+  // different (background) base model.
+  const lora = !opts.model || opts.model === workersAiChatModel() ? workersAiLora() : null;
   return {
     messages: workersAiMessages(opts.messages),
     max_tokens: opts.maxTokens,
+    ...(lora ? { lora } : {}),
     ...(stream ? { stream: true } : {}),
     ...(typeof opts.temperature === "number"
       ? { temperature: opts.temperature }
       : {}),
+    ...workersAiSamplingOptions(opts.sampling),
   };
 }
 
@@ -473,10 +609,13 @@ export async function completeWorkersAi(opts: {
   messages: ChatCompletionMessageParam[];
   maxTokens: number;
   temperature?: number;
+  sampling?: WorkersAiSampling | null;
+  /** Defaults to workersAiChatModel(). */
+  model?: string;
 }): Promise<string> {
   const binding = requireWorkersAiBinding();
   const response = await binding.run(
-    WORKERS_AI_CHAT_MODEL,
+    opts.model || workersAiChatModel(),
     runOptions(opts, false),
   );
   const text = extractWorkersAiText(response);
@@ -486,7 +625,7 @@ export async function completeWorkersAi(opts: {
     visibleAssistantReply(reasoning, { allowThinkFallback: true }).trim();
   if (visible) return visible;
   throw new WorkersAiRequestError(
-    "DeepSeek on Workers AI returned an empty reply. Please try again.",
+    "Workers AI chat returned an empty reply. Please try again.",
   );
 }
 
@@ -496,6 +635,7 @@ async function* withEmptyStreamFallback(
     messages: ChatCompletionMessageParam[];
     maxTokens: number;
     temperature?: number;
+    sampling?: WorkersAiSampling | null;
   },
 ): AsyncGenerator<OpenAI.Chat.Completions.ChatCompletionChunk> {
   let content = "";
@@ -523,11 +663,12 @@ export async function streamWorkersAi(opts: {
   messages: ChatCompletionMessageParam[];
   maxTokens: number;
   temperature?: number;
+  sampling?: WorkersAiSampling | null;
 }): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
   const binding = requireWorkersAiBinding();
   try {
     const response = await binding.run(
-      WORKERS_AI_CHAT_MODEL,
+      workersAiChatModel(),
       runOptions(opts, true),
     );
     // Fail at stream-open so llmFailover can hop (e.g. 4006 neuron quota)
@@ -548,7 +689,7 @@ export async function streamWorkersAi(opts: {
       throw new WorkersAiRequestError(formatWorkersAiError(errorMessage));
     }
     return await ensureWorkersAiStreamOpens(
-      withEmptyStreamFallback(iterateWorkersAiStream(response), opts),
+      markWorkersAiLengthFinish(withEmptyStreamFallback(iterateWorkersAiStream(response), opts), opts.maxTokens),
     );
   } catch (err) {
     if (err instanceof WorkersAiRequestError) throw err;

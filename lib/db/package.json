@@ -14,17 +14,17 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@clerk/backend": "^3.26.5",
+    "@clerk/backend": "^3.27.0",
     "drizzle-orm": "catalog:",
     "drizzle-zod": "^0.8.3",
     "pg": "^8.23.1",
-    "postgres": "^3.4.9",
+    "postgres": "^4.1.0",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
     "@types/pg": "^8.23.1",
     "drizzle-kit": "^0.31.11",
-    "vitest": "^5.0.5"
+    "vitest": "^5.1.0"
   }
 }

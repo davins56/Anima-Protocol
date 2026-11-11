@@ -3,6 +3,9 @@
  * Lazy-loaded from App.full.jsx so the HTML entry chunk stays Landing-only.
  */
 import { Toaster } from "@/components/ui/toaster";
+import UpdateAvailablePrompt from "@/components/app/UpdateAvailablePrompt";
+import OfflineBanner from "@/components/app/OfflineBanner";
+import UserActivitySync from "@/components/app/UserActivitySync";
 import ConsentBanner from "@/components/ConsentBanner";
 import { usePageMeta, ROUTE_META } from "./lib/usePageMeta";
 
@@ -25,14 +28,16 @@ import {
   SignUp,
   Show,
   useClerk,
+  useUser,
 } from "@clerk/react";
 import EmailCodeSignIn from "@/components/auth/EmailCodeSignIn";
 import { dark } from "@clerk/themes";
 import { Suspense, lazy, useRef, useEffect, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { useSwipeGestures } from "@/hooks/useSwipeGestures";
 import useViewportHeight from "@/hooks/useViewportHeight";
 import { initializeColorScheme } from "@/lib/colorScheme";
+import { applyActiveExtras, EXTRAS_EVENT } from "@/lib/experienceRuntime";
 import PageNotFound from "./lib/PageNotFound";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import ErrorBoundary from "@/components/ErrorBoundary";
@@ -41,6 +46,7 @@ import { ConfirmProvider } from "@/lib/ConfirmDialog";
 import BottomTabBar from "@/components/layout/BottomTabBar";
 import MobileHeader from "@/components/layout/MobileHeader";
 import { useKeyboardAvoidance } from "@/hooks/useKeyboardAvoidance";
+import { useSensesReporter } from "@/hooks/useSensesReporter";
 import {
   bootstrapUserData,
   mergeLeftoverLocalData,
@@ -105,6 +111,8 @@ import InAppBrowserWarning from "@/components/InAppBrowserWarning";
 import TapTargetValidator from "@/components/mobile/TapTargetValidator";
 
 import { PageLoader } from "./app/PageLoader";
+import NavigationFocus from "./components/layout/RouteFocus";
+import { ChatSkeleton } from "./app/ChatSkeleton";
 
 // ── Clerk auth wiring ─────────────────────────────────────────────────────
 // BASE_URL is "/" for this artifact, so basePath is "" and the sign-in/up
@@ -219,6 +227,25 @@ const clerkAppearance = {
     otpCodeFieldInput: "!text-cyan-100 !border-cyan-400/30",
   },
 };
+
+function ExperienceRuntimeSync() {
+  const { user, isLoaded } = useUser();
+  const userId = isLoaded ? user?.id || null : null;
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    const sync = () => applyActiveExtras(userId);
+    sync();
+    window.addEventListener("storage", sync);
+    window.addEventListener(EXTRAS_EVENT, sync);
+    return () => {
+      window.removeEventListener("storage", sync);
+      window.removeEventListener(EXTRAS_EVENT, sync);
+    };
+  }, [isLoaded, userId]);
+
+  return null;
+}
 
 function ClerkQueryClientCacheInvalidator() {
   const { addListener } = useClerk();
@@ -766,6 +793,8 @@ const AuthenticatedApp = () => {
   const navigationStack = useRef(["/"]);
   const appContainerRef = useRef(null);
   useKeyboardAvoidance(appContainerRef);
+  const reduceMotion = useReducedMotion();
+  useSensesReporter(isAuthenticated);
 
   // Initialize color scheme on mount
   useEffect(() => {
@@ -927,6 +956,7 @@ const AuthenticatedApp = () => {
     return <Navigate to="/" replace />;
   }
 
+  const routeSection = pathname.split("/")[1] || "home";
   const showChrome =
     isAuthenticated &&
     !pathname.startsWith("/sign-in") &&
@@ -939,15 +969,15 @@ const AuthenticatedApp = () => {
         <AIDisclaimerModal onAccept={() => setDisclaimerAccepted(true)} />
       )}
       {showChrome && disclaimerAccepted && <TutorialOverlay />}
+      {showChrome && <NavigationFocus />}
       {showChrome && <MobileHeader />}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={location.pathname.split("/")[1] || "home"}
+      {/* The shell (keyboard avoidance, error boundary, Suspense) stays
+          mounted across navigations. Only the route panel fades in, ~100ms,
+          with no exit wait — the old mode="wait" x-slide held every
+          navigation ~180ms and unmounted the whole tree. Skipped entirely
+          under prefers-reduced-motion. */}
+        <div
           ref={appContainerRef}
-          initial={{ x: 20, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          exit={{ x: -20, opacity: 0 }}
-          transition={{ duration: 0.18, ease: "easeInOut" }}
           className="app-shell-main flex-1 min-h-0 flex flex-col"
           style={{
             paddingBottom:
@@ -956,7 +986,13 @@ const AuthenticatedApp = () => {
         >
           <ErrorBoundary resetKey={location.pathname}>
             <Suspense fallback={<PageLoader />}>
-            <div className="app-shell-route flex min-h-0 min-w-0 flex-1 flex-col">
+            <motion.div
+              key={routeSection}
+              initial={reduceMotion ? false : { opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: reduceMotion ? 0 : 0.1, ease: "easeOut" }}
+              className="app-shell-route flex min-h-0 min-w-0 flex-1 flex-col"
+            >
             <Routes location={location}>
               {/* Root: signed-out -> Landing, signed-in -> MainHome */}
               <Route path="/" element={<HomeGate />} />
@@ -980,7 +1016,9 @@ const AuthenticatedApp = () => {
               <Route
                 path="/chat/:sessionId?"
                 element={
+                  <Suspense fallback={<ChatSkeleton />}>
                     <Chat />
+                  </Suspense>
                 }
               />
               <Route
@@ -1011,6 +1049,12 @@ const AuthenticatedApp = () => {
                 path="/vessel"
                 element={
                     <ExtraPage name="VesselStudio" />
+                }
+              />
+              <Route
+                path="/cyberworld"
+                element={
+                    <ExtraPage name="Cyberworld" />
                 }
               />
               <Route
@@ -1552,6 +1596,12 @@ const AuthenticatedApp = () => {
                 }
               />
               <Route
+                path="/dreams/:characterId?"
+                element={
+                    <ExtraPage name="DreamJournal" />
+                }
+              />
+              <Route
                 path="/what-she-remembers/:characterId"
                 element={
                     <ExtraPage name="WhatSheRemembers" />
@@ -1643,11 +1693,10 @@ const AuthenticatedApp = () => {
               />
               <Route path="*" element={<PageNotFound />} />
             </Routes>
-            </div>
+            </motion.div>
             </Suspense>
           </ErrorBoundary>
-        </motion.div>
-      </AnimatePresence>
+        </div>
       {showChrome && !isHomeFloor && <BottomTabBar />}
     </>
   );
@@ -1661,6 +1710,8 @@ export default function ProtocolApp() {
         <ErrorBoundary resetKey={window.location?.pathname || "init"}>
           <ClerkProviderWithRoutes>
             <AuthProvider>
+              <UserActivitySync />
+              <ExperienceRuntimeSync />
               <ConfirmProvider>
                 <InAppBrowserWarning />
                 <TapTargetValidator />
@@ -1690,6 +1741,8 @@ export default function ProtocolApp() {
           </ClerkProviderWithRoutes>
         </ErrorBoundary>
         <ConsentBanner />
+        <UpdateAvailablePrompt />
+        <OfflineBanner />
         <Toaster />
         <SonnerToaster
           theme="dark"

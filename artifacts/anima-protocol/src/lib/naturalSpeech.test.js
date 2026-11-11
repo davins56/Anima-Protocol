@@ -4,6 +4,8 @@ import {
   CHAT_SPEECH,
   chunkSpeechText,
   inferCompanionVoiceGender,
+  normalizeForSpeech,
+  pauseAfterChunk,
   resolveSpeechSettings,
   scoreSpeechVoice,
   selectNaturalVoice,
@@ -21,13 +23,30 @@ describe("stripSpeechMarkup", () => {
     expect(stripSpeechMarkup("**Stay.** I am here.")).toBe("Stay. I am here.");
     expect(stripSpeechMarkup("See [this](https://x.test) now.")).toBe("See this now.");
   });
+
+  it("omits asterisk actions but preserves ordinary speech and actual quotations", () => {
+    expect(stripSpeechMarkup('We can wait here. *rests a hand on the rail* The captain said, "Hold the line."'))
+      .toBe('We can wait here. The captain said, "Hold the line."');
+  });
 });
 
 describe("chunkSpeechText", () => {
-  it("splits companion replies on sentence boundaries", () => {
+  it("groups short sentences into one breath so intonation flows across them", () => {
     expect(
       chunkSpeechText("Welcome. Breathe with me. Feel the space settle."),
-    ).toEqual(["Welcome.", "Breathe with me.", "Feel the space settle."]);
+    ).toEqual(["Welcome. Breathe with me. Feel the space settle."]);
+  });
+
+  it("starts a new phrase at sentence boundaries once the phrase is full", () => {
+    const chunks = chunkSpeechText("Welcome here. Breathe with me now. Feel the space settle.", { maxLen: 30 });
+    expect(chunks).toEqual(["Welcome here.", "Breathe with me now.", "Feel the space settle."]);
+  });
+
+  it("ends a phrase on a trailing ellipsis so the pause after it is real", () => {
+    expect(chunkSpeechText("Breathe in... and let it go. You are safe.")).toEqual([
+      "Breathe in…",
+      "and let it go. You are safe.",
+    ]);
   });
 
   it("breaks a long sentence on a clause so one utterance is not a wall of text", () => {
@@ -42,6 +61,22 @@ describe("chunkSpeechText", () => {
   it("returns an empty list for blank or markup-only text", () => {
     expect(chunkSpeechText("   ")).toEqual([]);
     expect(chunkSpeechText("*only a gesture*")).toEqual([]);
+  });
+});
+
+describe("normalizeForSpeech", () => {
+  it("drops emoji, URLs and symbols the engine would read out literally", () => {
+    expect(normalizeForSpeech("You did well 🌙✨ today!! See https://x.test/a now & rest.")).toBe(
+      "You did well today! See now and rest.",
+    );
+  });
+});
+
+describe("pauseAfterChunk", () => {
+  it("lingers longer after an ellipsis or question than after a plain sentence", () => {
+    expect(pauseAfterChunk("Breathe in…", 200)).toBeGreaterThan(pauseAfterChunk("Rest.", 200));
+    expect(pauseAfterChunk("Are you here?", 200)).toBeGreaterThan(pauseAfterChunk("Rest.", 200));
+    expect(pauseAfterChunk("and then", 200)).toBeLessThan(pauseAfterChunk("Rest.", 200));
   });
 });
 
@@ -106,6 +141,16 @@ describe("selectNaturalVoice", () => {
     expect(aria).toBeGreaterThan(novelty);
   });
 
+  it("does not treat 'Female' voices as masculine", () => {
+    const female = scoreSpeechVoice(voice("Google UK English Female", "en-GB", { localService: false }), {
+      gender: "masculine",
+    });
+    const male = scoreSpeechVoice(voice("Google UK English Male", "en-GB", { localService: false }), {
+      gender: "masculine",
+    });
+    expect(male).toBeGreaterThan(female);
+  });
+
   it("returns null when no voices are available", () => {
     expect(selectNaturalVoice([])).toBeNull();
   });
@@ -124,6 +169,14 @@ describe("resolveSpeechSettings", () => {
     expect(settings.pauseMs).toBe(SACRED_SPACE_SPEECH.pauseMs);
   });
 
+  it("keeps neural voices at their native pitch so they are not pitch-shifted", () => {
+    const settings = resolveSpeechSettings({
+      gender: "masculine",
+      voice: voice("Microsoft Aria Online (Natural)", "en-US", { localService: false }),
+    });
+    expect(settings.pitch).toBe(1);
+  });
+
   it("lowers pitch slightly for masculine companions without cartoon extremes", () => {
     const fem = resolveSpeechSettings({ gender: "feminine" });
     const masc = resolveSpeechSettings({ gender: "masculine" });
@@ -137,7 +190,7 @@ describe("speakNaturally", () => {
     vi.useRealTimers();
   });
 
-  it("queues one utterance per sentence with meditation rate and the chosen voice", () => {
+  it("queues phrases with meditation rate, the chosen voice, and a pause between them", () => {
     vi.useFakeTimers();
     const spoken = [];
     const synth = {
@@ -165,7 +218,7 @@ describe("speakNaturally", () => {
 
     const onStart = vi.fn();
     const onEnd = vi.fn();
-    const result = speakNaturally("Welcome. Breathe with me.", {
+    const result = speakNaturally("Welcome… Breathe with me.", {
       synth,
       Utterance: FakeUtterance,
       companion: { name: "Serenity", gender: "female" },
@@ -173,10 +226,11 @@ describe("speakNaturally", () => {
       onEnd,
     });
 
-    expect(result.chunks).toEqual(["Welcome.", "Breathe with me."]);
+    expect(result.chunks).toEqual(["Welcome…", "Breathe with me."]);
     expect(result.voice?.name).toBe("Microsoft Aria Online (Natural)");
     expect(spoken).toHaveLength(1);
-    expect(spoken[0].text).toBe("Welcome.");
+    expect(spoken[0].text).toBe("Welcome…");
+    expect(spoken[0].pitch).toBe(1);
     expect(spoken[0].rate).toBe(SACRED_SPACE_SPEECH.rate);
     expect(spoken[0].volume).toBe(SACRED_SPACE_SPEECH.volume);
     expect(spoken[0].voice.name).toBe("Microsoft Aria Online (Natural)");
@@ -184,7 +238,7 @@ describe("speakNaturally", () => {
 
     spoken[0].onend();
     expect(spoken).toHaveLength(1);
-    vi.advanceTimersByTime(SACRED_SPACE_SPEECH.pauseMs);
+    vi.advanceTimersByTime(pauseAfterChunk("Welcome…", SACRED_SPACE_SPEECH.pauseMs));
     expect(spoken).toHaveLength(2);
     expect(spoken[1].text).toBe("Breathe with me.");
     spoken[1].onend();

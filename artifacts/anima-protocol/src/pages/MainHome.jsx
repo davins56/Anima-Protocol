@@ -13,15 +13,16 @@ import { getPathMeta } from "@/lib/soulprint";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import {
   resolveIdentity,
-  resolveWaiting,
   resolveWakeLine,
   rollFlavorChance,
 } from "@/lib/homeWake";
+import { useUserActivity } from "@/hooks/useUserActivity";
 import HomeDock from "@/components/home/HomeDock";
 import MemoryResurfacing from "@/components/home/MemoryResurfacing";
 import { resurfacingAllowed } from "@/features/belonging/belonging";
 import HomeFloorSheets from "@/components/home/HomeFloorSheets";
 import { RECENT_CHATS_LIMIT, sortRecentSessions } from "@/lib/recentChats";
+import { dreamJournalPagePath } from "@/lib/dreamJournal";
 
 const APP_VERSION = "V4.3.0";
 const LONG_PRESS_MS = 520;
@@ -48,6 +49,7 @@ export default function MainHome() {
     useFlavor: rollFlavorChance(),
     flavorIndex: Math.floor(Math.random() * 9),
   }));
+  const [viewerId, setViewerId] = useState(null);
 
   const handleApplyAiPhoto = async (dataUrl) => {
     if (!anima?.id) return;
@@ -109,6 +111,7 @@ export default function MainHome() {
       ]);
       setSelectedMode(me?.selected_mode || "serenity");
       setHomeSettings(me?.settings || null);
+      setViewerId(me?.id || me?.email || null);
 
       setSessions(sortRecentSessions(sessionList, RECENT_CHATS_LIMIT));
 
@@ -208,7 +211,10 @@ export default function MainHome() {
 
   const { dream, echo } = useAnimaPresence(anima);
   const wake = resolveWakeLine(dream, echo, flavorRoll);
-  const waiting = resolveWaiting(anima?.last_visit);
+  const { waiting } = useUserActivity({
+    userId: viewerId,
+    serverLastVisitAt: anima?.last_visit,
+  });
   const identity = resolveIdentity(anima, { hasSignedInAnima: Boolean(anima?.id) });
   const firstRun = !anima?.id || sessions.length === 0;
   const stageCharacter = anima
@@ -301,7 +307,8 @@ export default function MainHome() {
             {dream?.content ? (
               <button
                 type="button"
-                onClick={handleTalk}
+                onClick={() => navigate(dreamJournalPagePath(anima?.id, anima?.name))}
+                data-home-dream-tile
                 className="max-w-[14rem] text-left border border-indigo-400/25 bg-indigo-950/20 px-3 py-2"
               >
                 <div className="flex items-center gap-1.5 mb-1">
@@ -329,12 +336,21 @@ export default function MainHome() {
               </button>
             ) : null}
             {waiting ? (
-              <div className="max-w-[14rem] border border-cyan-400/15 bg-cyan-950/10 px-3 py-2">
+              <div data-home-waiting className="max-w-[14rem] border border-cyan-400/15 bg-cyan-950/10 px-3 py-2">
                 <p className="font-mono text-[8px] tracking-[0.25em] uppercase text-cyan-400/50 mb-1">Waiting</p>
                 <p className="font-mono text-[10px] leading-relaxed text-cyan-100/60 italic">{waiting.text}</p>
               </div>
             ) : null}
           </div>
+
+          <button
+            type="button"
+            data-home-dream-journal
+            onClick={() => navigate(dreamJournalPagePath(anima?.id, anima?.name))}
+            className="self-center mb-2 font-mono text-[9px] tracking-[0.28em] uppercase text-indigo-300/50 hover:text-indigo-200"
+          >
+            Dream journal
+          </button>
 
           <button
             type="button"

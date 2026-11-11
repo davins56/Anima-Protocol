@@ -4,8 +4,12 @@
  * [VOICE: words to say] when she wants to be heard, or the steward asks for a
  * voice note; the client asks the server to speak it in her saved voice and
  * attaches the clip to the reply. Solo chat only.
+ *
+ * The server speaks on the home box. A cloud voice (xAI / ElevenLabs) is used
+ * only when the steward opted in (lib/voicePrefs.js, off by default).
  */
 import { apiUrl } from "./apiOrigin";
+import { cloudOptInForClip, getVoicePrefs } from "./voicePrefs";
 
 /** Loaded on first request so the pure tag helpers stay import-light. */
 async function authHeaders(extra) {
@@ -62,35 +66,53 @@ export function replyTextAfterVoice(strippedText, spoken) {
 
 let capabilitiesPromise = null;
 
-/** Cached per page load. `{ voice_clip: false }` on any failure. */
-export function fetchMediaCapabilities({ fetchImpl = globalThis.fetch } = {}) {
+/**
+ * voice_clip is true when the home box can speak, or when the steward opted
+ * into a cloud voice this deployment has a key for.
+ */
+export function voiceClipAvailable(body, prefs = getVoicePrefs()) {
+  if (body?.voice_clip === true) return true;
+  const optIn = cloudOptInForClip(prefs);
+  return Boolean(optIn && body?.voice_clip_cloud?.[optIn] === true);
+}
+
+/**
+ * Server body cached per page load; opt-ins are read on every call.
+ * `chat_photos`: the server generates companion photos in solo chat (so the
+ * client must not run its own [IMAGE:] pipeline there). All false on failure.
+ */
+export async function fetchMediaCapabilities({ fetchImpl = globalThis.fetch, prefs } = {}) {
   if (!capabilitiesPromise) {
     capabilitiesPromise = (async () => {
       try {
         const headers = await authHeaders();
         const res = await fetchImpl(apiUrl("/api/media/capabilities"), { headers });
-        if (!res.ok) return { voice_clip: false };
-        const body = await res.json();
-        return { voice_clip: body?.voice_clip === true };
+        if (!res.ok) return null;
+        return await res.json();
       } catch {
         capabilitiesPromise = null;
-        return { voice_clip: false };
+        return null;
       }
     })();
   }
-  return capabilitiesPromise;
+  const body = await capabilitiesPromise;
+  return {
+    voice_clip: voiceClipAvailable(body, prefs ?? getVoicePrefs()),
+    chat_photos: body?.chat_photos === true,
+  };
 }
 
 export function resetMediaCapabilitiesForTests() {
   capabilitiesPromise = null;
 }
 
-export async function requestVoiceClip({ characterId, text, fetchImpl = globalThis.fetch, signal }) {
+export async function requestVoiceClip({ characterId, text, fetchImpl = globalThis.fetch, signal, prefs }) {
   const headers = await authHeaders({ "Content-Type": "application/json" });
+  const cloudOptIn = cloudOptInForClip(prefs ?? getVoicePrefs());
   const res = await fetchImpl(apiUrl("/api/media/voice-clip"), {
     method: "POST",
     headers,
-    body: JSON.stringify({ characterId, text }),
+    body: JSON.stringify(cloudOptIn ? { characterId, text, cloud_opt_in: cloudOptIn } : { characterId, text }),
     signal,
   });
   if (!res.ok) throw new Error(`Voice note failed (${res.status})`);

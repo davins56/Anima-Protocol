@@ -13,17 +13,17 @@ import DeviceScanCard from "./DeviceScanCard";
 import PdfFileChip from "@/components/pdf/PdfFileChip";
 import { openPdfDocument } from "@/api/pdfDocuments";
 import { toast } from "sonner";
-import { renderItalicText } from "./renderItalicText";
-import { useState, useEffect } from "react";
+import MessageMarkdown from "./MessageMarkdown";
+import { memo, useState, useEffect } from "react";
 import { animaClient } from "@/api/animaClient";
 import { useMemoryHighlight } from "@/hooks/useMemoryHighlight";
 import { useLoreDetection } from "@/hooks/useLoreDetection";
 import { isOwnModelReply } from "@/lib/modelTutor";
 import ReplyRating from "./ReplyRating";
 
-const renderMessageWithActions = (content) => renderItalicText(content);
+const renderMessageWithActions = (content) => <MessageMarkdown content={content} />;
 
-export default function MessageBubble({ message, onRewind, canRewind, onSpeak, character, characterMemories = [], characterEmotion = 'neutral', characterEmotionIntensity = 5, sessionId = null, onEditMessage, onDeleteMessage, onRegenerateMessage, messageLoreLinks = [], onAvatarClick, onTeach, onRate, showEdit = false, showRetry = false, actionsDisabled = false }) {
+function MessageBubble({ message, onRewind, canRewind, onSpeak, character, characterMemories = [], characterEmotion = 'neutral', characterEmotionIntensity = 5, sessionId = null, onEditMessage, onDeleteMessage, onRegenerateMessage, messageLoreLinks = [], onAvatarClick, onTeach, onRate, showEdit = false, showRetry = false, actionsDisabled = false }) {
   const [loreEntries, setLoreEntries] = useState([]);
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(message.content || "");
@@ -38,6 +38,12 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
   const pdfFiles = (message.attachments || []).filter((a) => a.type === "pdf");
   // Identity-locked studio photos carry photo_id so they can be refined inline.
   const studioPhotos = (message.attachments || []).filter((a) => a.type === "image" && a.photo_id);
+  // A photo the companion sent on request (server lib/companionPhotos) shows
+  // as one larger picture in its own shape, not a square thumbnail.
+  const companionPhoto =
+    images.length === 1
+      ? (message.attachments || []).find((a) => a.type === "image" && a.source === "companion_photo")
+      : null;
 
   const handleEditSave = () => {
     const next = editText.trim();
@@ -87,6 +93,7 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
           onClick={() => character && onAvatarClick?.(character)}
           disabled={!character || !onAvatarClick}
           title={character ? `View ${character.name} bio sheet` : undefined}
+          data-anima-avatar=""
           className="flex-shrink-0 w-6 sm:w-8 h-6 sm:h-8 border border-primary/40 overflow-hidden bg-primary/10 flex items-center justify-center self-start mt-2 sm:mt-4 disabled:cursor-default hover:enabled:border-primary/70 hover:enabled:ring-1 hover:enabled:ring-primary/40 transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
         >
           {avatarUrl ? (
@@ -215,7 +222,39 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
             </div>
            )}
 
-           {images.length > 0 && (
+           {isStreaming && message.photo_pending && images.length === 0 && (
+            <div
+              data-testid="companion-photo-pending"
+              className="mt-2 flex w-48 sm:w-56 aspect-[3/4] items-center justify-center border border-primary/20 bg-primary/5 hud-corner animate-pulse"
+            >
+              <span className="font-mono text-[9px] tracking-widest text-primary/50">sending a photo…</span>
+            </div>
+           )}
+
+           {companionPhoto ? (
+            <button
+              type="button"
+              data-testid="companion-photo"
+              onClick={() => {
+                setLightboxIndex(0);
+                setLightboxOpen(true);
+              }}
+              aria-label="View photo full size"
+              className="mt-2 block w-48 sm:w-64 overflow-hidden border border-primary/20 hud-corner hover:border-primary/50 transition-all"
+            >
+              <img
+                src={companionPhoto.url}
+                alt={companionPhoto.description || `Photo from ${message.character_name || "your companion"}`}
+                loading="lazy"
+                className="w-full h-auto object-cover"
+                style={
+                  companionPhoto.width && companionPhoto.height
+                    ? { aspectRatio: `${companionPhoto.width} / ${companionPhoto.height}` }
+                    : undefined
+                }
+              />
+            </button>
+           ) : images.length > 0 && (
             <div className="mt-2 grid grid-cols-2 gap-1 sm:grid-cols-3">
               {images.map((img, idx) => (
                 <button
@@ -334,10 +373,12 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
                 type="button"
                 onClick={onDeleteMessage}
                 disabled={actionsDisabled}
-                className="flex items-center justify-center min-w-[44px] min-h-[44px] text-primary/20 hover:text-red-400 border border-transparent hover:border-red-400/20 font-mono text-xs tracking-widest uppercase transition-all disabled:opacity-40"
+                className="flex items-center justify-center min-w-[44px] min-h-[44px] touch-manipulation text-primary/40 hover:text-red-400 active:text-red-400 border border-transparent hover:border-red-400/20 font-mono text-xs tracking-widest uppercase transition-all disabled:opacity-40"
                 title="Delete message"
+                aria-label="Delete message"
+                data-testid="delete-message"
               >
-                <Trash2 className="w-3 h-3" />
+                <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
             )}
           </div>
@@ -390,3 +431,7 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
     </div>
   );
 }
+
+// Memoized: settled bubbles keep stable props (see MessageList), so a reply
+// streaming into the last bubble no longer re-renders the whole thread.
+export default memo(MessageBubble);

@@ -180,7 +180,7 @@ export const LLM_LOCAL_FAILOVER_ATTEMPT_MS = 12_000;
 
 /**
  * After the upstream stream is open, wait this long for first activity.
- * DeepSeek R1 on Workers AI often buffers `<think>` before the first SSE
+ * A reasoning model (e.g. DeepSeek R1 via ANIMA_WORKERS_AI_MODEL) can buffer `<think>` before the first SSE
  * byte; 35s was aborting signed-in `/openai` sends that `/api/ai/chat`
  * (unauth, non-stream) still completed.
  */
@@ -323,6 +323,32 @@ export function chatContextMessageLimit(): number {
   const raw = Number(process.env.ANIMA_CHAT_CONTEXT_MESSAGES);
   if (!Number.isFinite(raw) || raw <= 0) return CHAT_CONTEXT_MESSAGES;
   return Math.min(Math.max(Math.floor(raw), 6), 40);
+}
+
+/**
+ * Reasoning models (DeepSeek R1 and its distills, QwQ) spend their
+ * `<think>` tokens out of the same `max_tokens`. 1,024 left a long chat
+ * ~100 words of visible reply before the cap cut it mid-sentence.
+ */
+export const REASONING_REPLY_MAX_TOKENS = 4096;
+
+export function isReasoningChatModel(model: string | null | undefined): boolean {
+  return /deepseek-r1|r1-distill|\bqwq\b/i.test(String(model || ""));
+}
+
+/**
+ * Output room for a companion reply on a hosted model (Workers AI,
+ * OpenRouter, MiniMax, Deepshi). The small caps (Settings → Short = 90, the
+ * local extra-generation caps) exist for the 0.5B CPU host; on a hosted model
+ * they only cut a reply mid-sentence, so a hosted reply always gets at least
+ * {@link COMPANION_REPLY_MAX_TOKENS}, and a reasoning model gets
+ * {@link REASONING_REPLY_MAX_TOKENS}. Length preference is carried by the
+ * prompt instead. Group / deep-mode budgets above that are kept.
+ */
+export function hostedReplyMaxTokens(requested: number, model: string | null | undefined): number {
+  const asked = Number.isFinite(requested) && requested > 0 ? Math.floor(requested) : 0;
+  const floor = isReasoningChatModel(model) ? REASONING_REPLY_MAX_TOKENS : COMPANION_REPLY_MAX_TOKENS;
+  return Math.max(asked, floor);
 }
 
 export function companionReplyMaxTokens(routedMax: number): number {

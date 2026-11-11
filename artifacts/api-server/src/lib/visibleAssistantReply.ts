@@ -1,6 +1,7 @@
 /**
- * DeepSeek R1 (Workers AI `@cf/deepseek-ai/deepseek-r1-distill-qwen-32b`)
- * wraps chain-of-thought in `<think>…</think>`. Production often returns
+ * Reasoning models such as DeepSeek R1 (Workers AI
+ * `@cf/deepseek-ai/deepseek-r1-distill-qwen-32b`, the pre-Llama default and
+ * still selectable via ANIMA_WORKERS_AI_MODEL) wrap chain-of-thought in `<think>…</think>`. Production often returns
  * unclosed `<think>`-only text with no post-think answer. Waiting for
  * `</think>` hides the only usable tokens and leaves an empty bubble.
  */
@@ -173,16 +174,31 @@ export function settleCappedReply(
   if (meta.stoppedEarly && !meta.interrupted) return text;
   if (meta.interrupted) return trimToLastFullSentence(text);
   if (meta.timedOut || meta.finishReason === "length") {
-    return trimToLastCompleteSentence(text);
+    return endCappedFragment(trimToLastCompleteSentence(text));
   }
   return text;
+}
+
+/**
+ * A capped reply with no finished sentence or closed action to fall back on
+ * ends on a half-written word ("...within this virt"). Drop that last word
+ * and close with an ellipsis so it never stops mid-word.
+ */
+function endCappedFragment(text: string): string {
+  const value = String(text ?? "").trimEnd();
+  if (!value) return value;
+  if (lastSentenceEnd(value) === value.length) return value;
+  if (/[*…"”')\]]$/.test(value)) return value;
+  const lastSpace = value.search(/\s+\S*$/);
+  if (lastSpace <= 0) return value;
+  return `${value.slice(0, lastSpace).replace(/[\s,;:\-–—]+$/, "")}…`;
 }
 
 export function createVisibleReplyFilter() {
   let raw = "";
   let emittedVisible = "";
 
-  // Unclosed `<think>` is the production DeepSeek reply. Surface inner text
+  // Unclosed `<think>` is how DeepSeek R1 often replies. Surface inner text
   // as it arrives — do not wait for a closing tag that never comes.
   const peek = () => visibleAssistantReply(raw, { allowThinkFallback: true });
   const peekAnswer = () =>

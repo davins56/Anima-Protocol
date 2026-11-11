@@ -223,18 +223,64 @@ export ANIMA_VLLM_MODEL_LIGHT=anima ANIMA_VLLM_MODEL_STANDARD=anima ANIMA_VLLM_M
 `"preferred":"local"`, `"brand":"anima"`, `"chain":["local"]`, and a passing
 probe on model `anima`.
 
-How the server handles a companion request:
+### Or point the api-server's Ollama adapter at it
 
-- It streams `chat.completion.chunk` events a sentence at a time. A
-  length-capped reply is still cut back to its last finished sentence, so
-  the streamed text matches the non-streaming reply.
-- It keeps the newest turns that fit the 1024-token window. The long
-  companion system prompt is usually the first thing dropped. A final message
-  that overflows on its own keeps its tail.
+The server also speaks Ollama's native API (`/api/chat`, `/api/generate`,
+`/api/tags`, `/api/ps`, `/api/show`, `/api/version`). With the Ollama backend
+the api-server sends per-request sampling, `num_ctx`, and its app-open
+warm-up, and `/api/healthz/llm` checks the model with `/api/ps` and
+`/api/tags` instead of a generate:
+
+```bash
+export ANIMA_LOCAL_LLM_BACKEND=ollama
+export ANIMA_LOCAL_LLM_BASE_URL=http://127.0.0.1:8000/v1   # /v1 is stripped for /api/*
+export ANIMA_LOCAL_LLM_API_KEY=<same value as ANIMA_SERVER_TOKEN>
+export ANIMA_OLLAMA_MODEL_STANDARD=anima-own              # or set ANIMA_MODEL_ALIASES on the server
+```
+
+`ANIMA_MODEL_ALIASES=anima-chat` on the model server lists it under that
+name too, so an api-server already configured for `anima-chat` finds it
+without a config change.
+
+### How the server handles a companion request
+
+- **Sampling, the Ollama way.** Each request can set `temperature`,
+  `top_k`, `top_p`, `min_p`, `repeat_penalty` with `repeat_last_n`,
+  `presence_penalty`, `frequency_penalty`, `seed`, `stop`, `num_predict` and
+  `num_ctx`: as Ollama `options` on `/api/*`, or as the usual OpenAI fields on
+  `/v1` (`repetition_penalty`, `top_k` and `min_p` as extensions). They are
+  applied in llama.cpp's order (penalties, temperature, top_k, top_p, min_p).
+  A `seed` reproduces a reply without touching the global RNG. A `stop`
+  string ends the reply and is never streamed. Penalties never touch turn
+  markers, so a reply can still end. `sampling.py` holds the sampler.
+- **Modelfile defaults.** `server/Modelfile` uses Ollama's format
+  (`PARAMETER`, `SYSTEM`, `MESSAGE`; `FROM` and `TEMPLATE` are informational).
+  Request options override it, and it overrides the built-in defaults. The
+  shipped file adds `min_p 0.05`, which trims the long tail of unlikely
+  tokens on a small model. Like Ollama, `SYSTEM` only applies when a request
+  has no system message, and `MESSAGE` turns go ahead of the conversation.
+  `ANIMA_MODELFILE=<path>` picks another file; `ANIMA_MODELFILE=off` uses the
+  built-ins.
+- **Context window.** The prompt is fitted on message boundaries the way
+  Ollama trims a full window: the newest turn first (its tail, if it alone
+  overflows), then each system message that fits whole, then older history,
+  newest first. `num_ctx` can shrink the window; larger values (the
+  api-server sends 8192) are capped at the model's `block_size`. Usage and
+  `prompt_eval_count` report what went in.
+- **Warm-up.** One forward pass runs at startup (`ANIMA_WARMUP=off` skips
+  it). An empty `/api/chat` or `/api/generate`, Ollama's preload request,
+  runs it again and answers `done_reason: "load"`. The weights stay resident
+  for the life of the process, so `keep_alive` is accepted but has nothing
+  to unload, and `/api/ps` reports the model as never expiring.
+- **Streaming.** Replies go out a sentence at a time: SSE chunks on `/v1`,
+  newline-delimited JSON on `/api/*` (Ollama's default is to stream). Both
+  come from the same generator as the non-streaming reply, so with the same
+  seed the two are identical. A length-capped reply is still cut back to its
+  last finished sentence.
 - It reads text only. Image parts are ignored, tool-call turns with no text
   are skipped, and `tools` are accepted but never called.
-- It clamps `max_tokens` to 768 instead of rejecting larger values. The
-  api-server already sends 200 or fewer.
+- It clamps `max_tokens` / `num_predict` to 768 instead of rejecting larger
+  values.
 
 **Production (Worker).** The Worker cannot reach localhost. Expose the server
 over public HTTPS with the same tunnel used for Ollama in
@@ -250,8 +296,9 @@ over public HTTPS with the same tunnel used for Ollama in
 Do step 2 only once the new host answers. Until then production stays on
 `anima-chat`.
 
-Tests: `python3 server/test_server.py` builds a tiny random-weight model, so it
-needs no trained checkpoint (requires `torch`, `tokenizers`, `fastapi`,
+Tests: `python -m unittest discover -s server/tests -v` (what CI runs) and
+`python3 server/test_server.py` build a tiny random-weight model, so they
+need no trained checkpoint (requires `torch`, `tokenizers`, `fastapi`,
 `httpx`).
 
 At about 34M parameters this model is a research and preview voice (see
@@ -356,51 +403,20 @@ nothing else about this code path changes.
 
 ### Exact fix — "The model \`anima-chat\` does not exist…" / cloud host misconfig
 
-If `/api/healthz/llm` shows `localEndpoint.host=api.openai.com` (or Groq/Gemini/etc.) with `model=anima-chat`, Vercel is pointed at a **cloud chat API**, not a self-hosted Anima LLM. OpenAI has no model named `anima-chat`, so every chat turn 404s. Chat never uses ChatGPT/Gemini/Groq — set `ANIMA_LOCAL_LLM_BASE_URL` to your **Ollama/vLLM** HTTPS URL instead (steps below). Healthy response: `status=ok`, `localEndpoint.isCloudFlagship=false`, `host` is your tunnel/Fly/Render hostname.
+If `/api/healthz/llm` shows `localEndpoint.host=api.openai.com` (or Groq/Gemini/etc.) with `model=anima-chat`, Vercel is pointed at a **cloud chat API**, not a self-hosted Anima LLM. OpenAI has no model named `anima-chat`, so every chat turn 404s. Chat never uses ChatGPT/Gemini/Groq — set `ANIMA_LOCAL_LLM_BASE_URL` to your **Ollama/vLLM** HTTPS URL instead (steps below). Healthy response: `status=ok`, `localEndpoint.isCloudFlagship=false`, `host` is your tunnel hostname.
 
 ### Exact fix — 401 / "Anima LLM authentication failed…"
 
 `/api/healthz/llm?probe=1` shows `probeOk=false`, `errorKind: "auth"`,
-`status: 401`. The host is up, but the bearer Vercel sends does **not** match
-Fly `PROXY_AUTH_TOKEN`.
+`status: 401`. The self-hosted host is up, but the bearer the Worker sends does
+**not** match the proxy token on that host. Set the same value as
+`ANIMA_LOCAL_LLM_API_KEY` and as the host's `PROXY_AUTH_TOKEN`, then redeploy.
 
-1. Reset the Fly secret and keep the value:
-   ```bash
-   cd deploy/ollama-fly
-   NEW_TOKEN=$(openssl rand -hex 32)
-   fly secrets set PROXY_AUTH_TOKEN=$NEW_TOKEN -a anima-chat-llm
-   printf '%s\n' "$NEW_TOKEN"
-   ```
-2. Set **the same value** on Vercel Production as `ANIMA_LOCAL_LLM_API_KEY`
-   (with `ANIMA_LOCAL_LLM_BASE_URL=https://anima-chat-llm.fly.dev/v1`).
-3. Redeploy Vercel **without build cache**.
-4. Confirm:
-   ```bash
-   curl -sS https://anima-chat-llm.fly.dev/v1/models \
-     -H "Authorization: Bearer $NEW_TOKEN" | jq '.data[].id'
-   curl -s 'https://www.anima-protocol.com/api/healthz/llm?probe=1' \
-     | jq '{probeOk, probes}'
-   # expect probeOk=true
-   ```
+Or skip the self-hosted host entirely: `ANIMA_CHAT_BRAIN=cloudflare` runs chat
+on Workers AI inside the Worker (see [`docs/chat-brain.md`](./chat-brain.md)).
 
-Unauthenticated calls to the Fly host should return **401** (proves the proxy
-is locked). A matching bearer must list `anima-chat` under `/v1/models`.
-
-### Exact fix — empty-body 403 with a *correct* bearer
-
-Wrong bearer → **401**. Correct bearer → request reaches Ollama, which then
-returns empty-body **403** if the reverse proxy forwards the public
-`Host: *.fly.dev` header. Ollama only accepts loopback Host.
-
-Fix is in [`deploy/ollama-fly/Caddyfile`](../deploy/ollama-fly/Caddyfile)
-(`header_up Host 127.0.0.1:11434`). Redeploy the Fly app:
-
-```bash
-cd deploy/ollama-fly
-fly deploy -a anima-chat-llm
-curl -sS https://anima-chat-llm.fly.dev/v1/models \
-  -H "Authorization: Bearer $NEW_TOKEN" | jq '.data[].id'
-```
+The Fly.io pack (`deploy/ollama-fly/`) was removed — production does not use
+Fly.io or a DigitalOcean droplet.
 
 ### Exact fix — "Anima custom LLM is not configured…" / "No chat LLM configured"
 
@@ -452,7 +468,7 @@ curl -s https://www.anima-protocol.com/api/healthz/llm | jq '.openrouter'
 **Self-hosted (preferred long-term):**
 
 1. **Host an OpenAI-compatible server** (Ollama or vLLM) reachable over **public HTTPS** — it has to be always-on, since Vercel can't reach `localhost` or a laptop that's asleep.
-   - **Ready-made:** [`deploy/ollama-fly/`](../deploy/ollama-fly/README.md) — `fly deploy` builds the `anima-chat` model into an image and serves it behind an authenticated reverse proxy, with a public `https://<app>.fly.dev` URL out of the box. Start here unless you already have a host.
+   - **No host at all (production default):** `ANIMA_CHAT_BRAIN=cloudflare` — chat runs on Workers AI inside the Worker. See [`docs/chat-brain.md`](./chat-brain.md).
    - **Named Cloudflare Tunnel (CPU Ollama, not vLLM):** [`scripts/llm/public-v1/`](../scripts/llm/public-v1/README.md) — bearer proxy + `cloudflared` so a box already running `anima-chat` is reachable as `https://llm.anima-protocol.com/v1`. Worker secrets: `ANIMA_LOCAL_LLM_BASE_URL` + `ANIMA_LOCAL_LLM_API_KEY`. Do not commit token files. A catch-all Worker route `*.anima-protocol.com/*` will swallow this hostname — narrow it (e.g. `www.anima-protocol.com/*`).
    - **One-paste VPS:** [`scripts/llm/cloud-init-vps.sh`](../scripts/llm/cloud-init-vps.sh) (`pnpm llm:vps-init`) — installs Ollama + `anima-chat` + a Cloudflare quick tunnel as systemd services on any fresh Debian/Ubuntu box. See [`docs/llm-deploy.md`](./llm-deploy.md).
    - **Local uncensored:** `ollama pull dolphin-mistral && ollama create anima-uncensored -f scripts/llm/Modelfile.anima-uncensored` then set `ANIMA_OLLAMA_MODEL_STANDARD=anima-uncensored`.

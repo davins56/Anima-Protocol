@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { adultGate } from "../lib/safety/adultGate";
+import { creativeFreedomEnabled } from "../lib/chatStyle";
 import { userIsAdultAttested } from "../lib/safety/ageGate";
 import { getAuth } from "@clerk/express";
 import { and, desc, eq, or, sql } from "drizzle-orm";
@@ -182,6 +183,36 @@ import { buildMemoryCoreContext, isMemoryCoreEnabled } from "../lib/memoryCore/s
 import { buildCorrectionsContext } from "../lib/corrections/corrections";
 import { searchContextForTurn } from "../lib/search/searchService";
 import { appendMemoryEvent } from "../lib/memoryCore/memoryCore";
+import {
+  companionPhotoConfig,
+  photoDirective,
+  photoFailureLine,
+  photoMetadata,
+  photoTagIntent,
+  planCompanionPhoto,
+  recordPhotoMemory,
+  settleCompanionPhoto,
+  startCompanionPhoto,
+  stripPhotoTags,
+  type PhotoOutcome,
+  type PhotoPlan,
+} from "../lib/companionPhotos";
+import {
+  activeMindProfile,
+  factScopeForTurn,
+  type FactScope,
+  type MindProfile,
+  antiRepetitionNote,
+  replyLengthNote,
+  buildMindKnowledge,
+  consumeWithMidstreamFallback,
+  createPersonaStreamGuard,
+  echoesRecentReply,
+  hasAlternativeProvider,
+  runMindPostTurn,
+  sanitizeCompanionReply,
+  shapeMessagesForModel,
+} from "../lib/mind";
 import { classifyDbError, errorCauseBlob } from "../lib/dbErrors";
 import {
   finalizeAssistantReply,
@@ -342,11 +373,15 @@ function writeSse(res: Response, payload: unknown) {
 
 function replayFlightOutcome(turn: ChatTurn): ChatTurnFlightOutcome {
   const content = String(turn.assistantContent || "");
+  const meta = asObject(turn.metadata);
+  const attachments = Array.isArray(meta.attachments) ? meta.attachments : null;
   return {
     content,
     done: {
       done: true,
       visible: content,
+      ...(attachments?.length ? { attachments } : {}),
+      ...(meta.companion_photo ? { photo: meta.companion_photo } : {}),
       turn_id: turn.id,
       persistence_status: turn.status,
       replayed: true,
@@ -1132,6 +1167,8 @@ async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
         }
       : null;
   const cutOff = isCutOffReply(metadata);
+  // A companion photo sent with this reply (lib/companionPhotos).
+  const replyAttachments = Array.isArray(metadata.attachments) ? metadata.attachments : [];
   const assistantMessage = {
     id: turn.assistantMessageId,
     role: "assistant",
@@ -1140,9 +1177,11 @@ async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
     character_name: activeCharacterName,
     timestamp: new Date(turn.createdAt.getTime() + 1).toISOString(),
     ...(cutOff ? { reply_interrupted: true, cut_off: true } : {}),
+    ...(replyAttachments.length ? { attachments: replyAttachments } : {}),
     metadata: {
       turn_id: turn.id,
       ...(cutOff ? { reply_interrupted: true, cut_off: true } : {}),
+      ...(replyAttachments.length ? { attachments: replyAttachments, media_kind: "photo" } : {}),
     },
   };
   const wroteMessages = await writeTurnMessagesInOrder(turn, {
@@ -2719,10 +2758,22 @@ router.post("/messages", async (req, res) => {
   let synchroState: SynchroState | null = null;
   let companionAffect: CompanionAffect | null = null;
   let activeCharacterId: string | null = null;
+  // Set once the prompt is built; read by the post-stream background block.
+  let mindTurn: {
+    profile: MindProfile;
+    userName?: string;
+    companionName?: string;
+    factScope: FactScope;
+  } | null = null;
   let restingCharacterName: string | null = null;
   let isCrossover = false;
   let preStreamPersist: Promise<void> = Promise.resolve();
   let crisisResourceCard: CrisisResourceCard | null = null;
+  // Companion photo for this turn (lib/companionPhotos): plan → job → outcome.
+  let photoPlan: PhotoPlan = { action: "none" };
+  let photoJob: Promise<PhotoOutcome> | null = null;
+  let photoDeadlineAt = 0;
+  let photoOutcome: PhotoOutcome | null = null;
   const shouldPersist = body.persist !== false;
 
   try {
@@ -2815,10 +2866,42 @@ router.post("/messages", async (req, res) => {
         [undefined, null, null] as const,
       )
     : Promise.resolve([undefined, null, null] as const);
+  // Chat mind: hosted models (Workers AI / OpenRouter) get a prompt sized
+  // for their context window, durable user facts, a rolling summary, and
+  // tuned sampling. Null on the self-hosted path (legacy packing).
+  const mindProfile = activeMindProfile();
+  const recentMessagesPromise = readRecentStoreMessages(
+    userId,
+    sessionId,
+    mindProfile
+      ? Math.max(chatContextMessageLimit(), mindProfile.historyExchanges * 2 + 2)
+      : chatContextMessageLimit(),
+    { skipMigrate: Boolean(sessionData.messages_migrated) },
+  );
   // Persistent memory core (identity anchor + ranked long-term memories).
   // Best-effort with its own 1.5s ceiling; never blocks the reply.
   const memoryCorePromise =
-    hintedCharId && isMemoryCoreEnabled()
+    hintedCharId && isMemoryCoreEnabled() && mindProfile
+      ? optionalChatContext(
+          "chat_mind",
+          async () => {
+            const historyWait = new Promise<MsgData[]>((resolve) => setTimeout(() => resolve([]), 250));
+            const [[character], history] = await Promise.all([
+              loadCharacters(userId, [hintedCharId]),
+              Promise.race([recentMessagesPromise.catch(() => [] as MsgData[]), historyWait]),
+            ]);
+            return buildMindKnowledge({
+              userId,
+              character: character || { id: hintedCharId },
+              sessionId,
+              query: content,
+              profile: mindProfile,
+              historyTexts: history.map((m) => String(m.content ?? "")).filter(Boolean),
+            });
+          },
+          "",
+        )
+      : hintedCharId && isMemoryCoreEnabled()
       ? optionalChatContext(
           "memory_core",
           async () => {
@@ -2878,9 +2961,7 @@ router.post("/messages", async (req, res) => {
       // no longer includes either; a failed read must not become an empty chat.
       loadCharacters(userId, characterIds),
       memoriesPromise,
-      readRecentStoreMessages(userId, sessionId, chatContextMessageLimit(), {
-        skipMigrate: Boolean(sessionData.messages_migrated),
-      }),
+      recentMessagesPromise,
       memoriesPromise.then((rows) => {
         const adapted = adaptMemories(rows);
         // Local companion_memories + stored vectors only. Remote supermemory
@@ -3086,6 +3167,46 @@ router.post("/messages", async (req, res) => {
     writeSse(res, { crisis_resource: crisisResourceCard });
   }
 
+  // Companion photos: "send me a selfie" → a generated photo on this reply.
+  // The small intent call only runs when the line could be a photo request;
+  // it overlaps the context work below.
+  const photoCharacter: MsgData | null = activeCharacterId
+    ? characters.find((c) => String(c.id || "") === activeCharacterId) ?? null
+    : null;
+  const photoCompanionName = String(activeCharacterName || activeChar?.name || "Companion");
+  const startPhotoJob = (plan: Extract<PhotoPlan, { action: "send" }>) => {
+    if (!activeCharacterId || !photoCharacter) return;
+    photoDeadlineAt = Date.now() + companionPhotoConfig().timeoutMs;
+    photoJob = startCompanionPhoto({
+      plan,
+      userId,
+      characterId: activeCharacterId,
+      companionName: photoCompanionName,
+      character: photoCharacter,
+      turnId,
+    });
+    writeSse(res, { status: "photo", photo: { state: "pending" } });
+  };
+  const photoPlanArgs = {
+    userId,
+    character: photoCharacter,
+    companionName: photoCompanionName,
+    userMessage: String(content || ""),
+    recent: promptRecentMessages.slice(-8).map((m) => ({
+      role: String(m.role || ""),
+      content: String(m.content || ""),
+    })),
+    mode,
+    isContinue: Boolean(body.is_continue),
+    adultActive,
+    therapy: therapyActive,
+    crisis: Boolean(crisisResourceCard),
+  };
+  const photoPlanPromise: Promise<PhotoPlan> = planCompanionPhoto(photoPlanArgs).catch((error) => {
+    logger.warn({ error, turnId }, "Companion photo planning failed");
+    return { action: "none" } as PhotoPlan;
+  });
+
   intimacyProfile = null;
   intimacyScene = null;
   let intimacyResult: IntimacyTurnResult | null = null;
@@ -3123,13 +3244,45 @@ router.post("/messages", async (req, res) => {
       : null,
   });
   const resolvedCorrections = await correctionsPromise;
-  const messages = telemetry.measureSync("prompt_build_ms", () =>
-    composeCompanionChatMessages({
+  photoPlan = await photoPlanPromise;
+  if (photoPlan.action === "send") startPhotoJob(photoPlan);
+  const companionPhotoNote = photoDirective(photoPlan);
+  // Mind knowledge was recalled for the hinted companion; a different
+  // speaker this turn falls back to no long-term block rather than borrow it.
+  const mindKnowledge =
+    mindProfile && (!activeCharacterId || activeCharacterId === hintedCharId) ? memoryCoreContext : "";
+  // Hosted replies always get full output room (`hostedReplyMaxTokens`), so
+  // Settings → Short is a prompt instruction there instead of a 90-token cut.
+  const mindTurnNote = mindProfile
+    ? [
+        antiRepetitionNote(recentAssistantReplies(promptRecentMessages)),
+        replyLengthNote(String(body.metadata?.response_length ?? profileSettings.ai_response_length ?? "")),
+        companionPhotoNote,
+      ]
+        .filter(Boolean)
+        .join(" ")
+    : "";
+  const messages = telemetry.measureSync("prompt_build_ms", () => {
+    const composed = composeCompanionChatMessages({
+      ...(mindProfile
+        ? {
+            mind: {
+              promptTokens: mindProfile.promptTokens,
+              historyExchanges: mindProfile.historyExchanges,
+              minHistoryExchanges: mindProfile.minHistoryExchanges,
+              historyMessageChars: mindProfile.historyMessageChars,
+              memoryTopK: mindProfile.memoryTopK,
+            },
+            mindTurnNote,
+          }
+        : {}),
       clientContext: body.system_prompt,
       repositoryKnowledge,
       pdfContext: [pdfContext, webSearchContext].filter(Boolean).join("\n\n") || pdfContext,
-      memoryCoreContext: [memoryCoreContext, resolvedCorrections].filter(Boolean).join("\n\n"),
-      photoNote,
+      memoryCoreContext: [mindProfile ? mindKnowledge : memoryCoreContext, resolvedCorrections]
+        .filter(Boolean)
+        .join("\n\n"),
+      photoNote: [photoNote, mindProfile ? "" : companionPhotoNote].filter(Boolean).join("\n\n"),
       characters: adaptedChars,
       activeCharacter: activeChar,
       memories: promptMemories,
@@ -3145,6 +3298,7 @@ router.post("/messages", async (req, res) => {
       arcState: activeArcState,
       worldKnowledge,
       modePolicy,
+      uncensoredMode: creativeFreedomEnabled(profileSettings, therapyActive),
       therapyAssessment,
       crisisResource: crisisResourceForCountry(
         worldKnowledgeResult.countryCode,
@@ -3157,8 +3311,19 @@ router.post("/messages", async (req, res) => {
       intimacyTurnResult: intimacyResult,
       operatorModel,
       userDisplayName,
-    }),
-  );
+    });
+    return mindProfile ? shapeMessagesForModel(composed, mindProfile) : composed;
+  });
+  if (mindProfile) {
+    mindTurn = {
+      profile: mindProfile,
+      userName: userDisplayName || undefined,
+      companionName: activeChar?.name ? String(activeChar.name) : undefined,
+      // Facts are shared across this user's companions, except what was
+      // said in therapy or adult turns, which stays with this companion.
+      factScope: factScopeForTurn({ mode, therapy: therapyActive, adult: adultActive }),
+    };
+  }
 
   const routed = routeModel(content, {
     deepMode: Boolean(body.deep_mode),
@@ -3343,6 +3508,7 @@ router.post("/messages", async (req, res) => {
           tier: routed.tier,
           model: routed.model,
           maxTokens,
+          companionReply: true,
           messages: appendFinalUserReminder(messages, reminder),
           temperature: COMPANION_CHAT_TEMPERATURE,
           signal: combineAbortSignals(retryOpen.signal, abandoned.signal, replacedController.signal),
@@ -3527,20 +3693,30 @@ router.post("/messages", async (req, res) => {
     } else {
       sse.setPhase("waking");
       let completion;
-      try {
-        completion = await createChatStreamWithFailover({
-          tier: routed.tier,
-          model: routed.model,
-          maxTokens: replyMaxTokens,
-          messages,
-          temperature: COMPANION_CHAT_TEMPERATURE,
-          signal: generateSignal,
-        });
-      } finally {
-        // Headers are in. The open timer must not cut a slow prefill once
-        // bytes are flowing. Disconnect grace still aborts an abandoned slot.
-        open.cancel();
-      }
+      // Chat mind: per-family sampling, and a second open on the next
+      // provider when the first stream dies before any text is shown.
+      const openMainStream = async (excludeProviders: LlmProviderId[]) => {
+        try {
+          return await createChatStreamWithFailover({
+            tier: routed.tier,
+            model: routed.model,
+            maxTokens: replyMaxTokens,
+            // Hosted providers get full reply room; the small caps are for the local model.
+            companionReply: true,
+            messages,
+            temperature: mindProfile ? mindProfile.sampling.temperature : COMPANION_CHAT_TEMPERATURE,
+            ...(mindProfile
+              ? { sampling: mindProfile.sampling, ...(excludeProviders.length ? { excludeProviders } : {}) }
+              : {}),
+            signal: generateSignal,
+          });
+        } finally {
+          // Headers are in. The open timer must not cut a slow prefill once
+          // bytes are flowing. Disconnect grace still aborts an abandoned slot.
+          open.cancel();
+        }
+      };
+      completion = await openMainStream([]);
       sse.setPhase("generating");
       usedModel = completion.model;
       usedTier = completion.tier;
@@ -3558,7 +3734,52 @@ router.post("/messages", async (req, res) => {
       let flushed = false;
       let suppressFourthWall = false;
       let cutReason: "repeat" | "stock" | "role_swap" | null = null;
-      const streamed = await consumeLlmStream(completion.stream, {
+      const personaGuard =
+        mindProfile && !localHost
+          ? createPersonaStreamGuard({ companionName: activeChar?.name, userName: userDisplayName })
+          : null;
+      let mindShown = false;
+      const streamed = personaGuard
+        ? await (async () => {
+            const firstOpen = completion;
+            const run = await consumeWithMidstreamFallback({
+              open: async (exclude) =>
+                exclude.length ? await openMainStream(exclude as LlmProviderId[]) : firstOpen,
+              consume: (opened) =>
+                consumeLlmStream(opened.stream, {
+                  ...consumeOpts,
+                  onDelta: (delta) => {
+                    // Template tokens, a "Name:" label, scaffolding lines and
+                    // a run-on into the user's turn never reach the bubble.
+                    const safe = personaGuard.push(delta);
+                    if (safe) {
+                      mindShown = true;
+                      emitDelta(safe);
+                    }
+                  },
+                  stopWhen: () => personaGuard.stopped,
+                }),
+              emittedVisible: () => mindShown,
+              hasAlternative: (excluded) => hasAlternativeProvider(excluded),
+              onFallback: (from, error) =>
+                logger.warn(
+                  { error, turnId, from },
+                  "Chat mind: stream failed before any text; reopening on the next provider",
+                ),
+            });
+            if (run.opened !== firstOpen) {
+              completion = run.opened;
+              usedModel = completion.model;
+              usedTier = completion.tier;
+              usedProvider = completion.provider;
+              usedBrand = completion.brand;
+              failedOver = true;
+            }
+            const tail = personaGuard.finish();
+            if (tail) emitDelta(tail);
+            return run.result;
+          })()
+        : await consumeLlmStream(completion.stream, {
         ...consumeOpts,
         onDelta: (delta) => {
           if (!localHost) {
@@ -3617,6 +3838,13 @@ router.post("/messages", async (req, res) => {
         finishReason: streamed.finishReason,
         stoppedEarly: streamed.stoppedEarly,
       });
+      if (personaGuard) {
+        fullResponse =
+          sanitizeCompanionReply(fullResponse, {
+            companionName: activeChar?.name,
+            userName: userDisplayName,
+          }) || fullResponse;
+      }
       if (localHost && !flushed && !cutReason && held && !fullResponse) {
         fullResponse = held;
       }
@@ -3636,7 +3864,11 @@ router.post("/messages", async (req, res) => {
           (cutReason === "repeat" ? matchingRepeatedReply(held, priorReplies) : null);
       const repeated =
         !crisisTurn &&
-        (Boolean(copiedReply) || isRepeatedReply(fullResponse, priorReplies));
+        (Boolean(copiedReply) ||
+          isRepeatedReply(fullResponse, priorReplies) ||
+          // Chat mind: a reply that mostly restates a recent one is a loop
+          // even when the wording shifted.
+          (Boolean(personaGuard) && echoesRecentReply(fullResponse, priorReplies.slice(-4), 0.85)));
       const stockLine =
         !crisisTurn &&
         (cutReason === "stock" || replyIsStock(fullResponse) || replyIsStock(held));
@@ -3824,6 +4056,40 @@ router.post("/messages", async (req, res) => {
     }
 
     streamSucceeded = true;
+    // The companion chose to show something on her own ([IMAGE: …] tag).
+    // Same safety gate and limits as a request; the tag never reaches the bubble.
+    if (photoPlan.action === "none" && !replyCutOff) {
+      const tagIntent = photoTagIntent(fullResponse);
+      if (tagIntent) {
+        photoPlan = await planCompanionPhoto({ ...photoPlanArgs, intent: tagIntent }).catch(
+          () => ({ action: "none" }) as PhotoPlan,
+        );
+        if (photoPlan.action === "send") startPhotoJob(photoPlan);
+      }
+    }
+    if (photoPlan.action !== "none") {
+      const stripped = stripPhotoTags(fullResponse);
+      if (stripped) fullResponse = stripped;
+    }
+    if (photoJob) {
+      photoOutcome = await telemetry.measure(
+        "companion_photo_ms",
+        settleCompanionPhoto(photoJob, photoDeadlineAt),
+      );
+      if (photoOutcome.status === "failed") {
+        logger.warn({ turnId, error: photoOutcome.errorKind }, "Companion photo not sent");
+        const line = photoFailureLine(photoOutcome.errorKind, turnId);
+        const sep = fullResponse.trim() ? "\n\n" : "";
+        fullResponse = `${fullResponse.trimEnd()}${sep}${line}`;
+        writeSse(res, { content: `${sep}${line}` });
+      }
+    }
+    const photoMeta = photoMetadata(photoPlan, photoOutcome);
+    const photoAttachments =
+      photoOutcome?.status === "sent" ? [photoOutcome.attachment] : [];
+    const photoDone = photoMeta
+      ? { photo: photoMeta, ...(photoAttachments.length ? { attachments: photoAttachments } : {}) }
+      : {};
     const evolvedCompanion =
       skipAffect || !companionAffect
         ? null
@@ -3865,6 +4131,8 @@ router.post("/messages", async (req, res) => {
       mood_self_state: skipAffect ? null : evolvedMoodSelfState,
       ...(skipAffect ? { skip_affect: true, reply_action: replyAction } : {}),
       ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
+      ...(photoMeta ? { companion_photo: photoMeta } : {}),
+      ...(photoAttachments.length ? { attachments: photoAttachments, media_kind: "photo" } : {}),
     };
     pipelineMetadata = generatedMetadata;
     // One checkpoint, then `done`. A second attempt waits in the background
@@ -3911,6 +4179,7 @@ router.post("/messages", async (req, res) => {
       persistence_owner: persistenceOwner,
       companion_affect: evolvedAffectSnapshot,
       ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
+      ...photoDone,
     });
     flight.resolve({
       content: fullResponse,
@@ -3935,6 +4204,7 @@ router.post("/messages", async (req, res) => {
         persistence_owner: persistenceOwner,
         companion_affect: evolvedAffectSnapshot,
         ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
+        ...photoDone,
         joined: true,
       },
     });
@@ -4079,6 +4349,17 @@ router.post("/messages", async (req, res) => {
         logger.warn({ error, turnId }, "Background checkpoint retry failed");
       }
 
+      // Remember the photo she sent, whoever persists the messages.
+      if (photoOutcome?.status === "sent" && activeCharacterId && isMemoryCoreEnabled()) {
+        void recordPhotoMemory({
+          userId,
+          characterId: activeCharacterId,
+          sessionId,
+          turnId,
+          attachment: photoOutcome.attachment,
+        }).catch((e) => logger.warn({ error: e, turnId }, "Companion photo memory append failed"));
+      }
+
       const lateClient = clientLeft();
       const serverPersist = persistenceOwner === "server" && shouldPersist;
       if (serverPersist || lateClient) {
@@ -4134,13 +4415,39 @@ router.post("/messages", async (req, res) => {
         userId,
         characterId: activeCharacterId,
         eventType: "turn",
-        content: `User: ${String(content || "").slice(0, 600)}\nMe: ${String(fullResponse || "").slice(0, 900)}`,
+        content: `User: ${String(content || "").slice(0, 600)}\nMe: ${String(fullResponse || "").slice(0, 900)}${
+          photoOutcome?.status === "sent"
+            ? `\n(I sent a photo: ${photoOutcome.attachment.description.slice(0, 240)})`
+            : ""
+        }`,
         payload: { turn_id: turnId, mode, is_crossover: isCrossover },
         emotionalWeight: Math.min(1, Math.max(0, Number(companionAffect?.intensity ?? 0.5) || 0.5)),
         conversationId: sessionId,
         dedupeKey: `turn:${turnId}`,
         source: "chat",
       }).catch((e) => logger.warn({ error: e, turnId }, "memory_events turn append failed"));
+    }
+    // Chat mind learning (facts + rolling summary) runs on the background
+    // model after the reply is saved; it never delays the stream.
+    let mindLearning: Promise<void> = Promise.resolve();
+    if (mindTurn && activeCharacterId && isMemoryCoreEnabled() && !replyCutOff && fullResponse.trim()) {
+      mindLearning = runMindPostTurn(
+        {
+          userId,
+          characterId: activeCharacterId,
+          sessionId,
+          turnId,
+          userMessage: String(content || ""),
+          companionReply: fullResponse,
+          userName: mindTurn.userName,
+          companionName: mindTurn.companionName,
+          profile: mindTurn.profile,
+          factScope: mindTurn.factScope,
+          loadRecentMessages: (limit) =>
+            readRecentStoreMessages(userId, sessionId, limit, { skipMigrate: true }),
+        },
+        (msg, meta) => logger.info(meta, msg),
+      ).catch((e) => logger.warn({ error: e, turnId }, "Chat mind post-turn failed"));
     }
     try {
       const hiddenLife = body.metadata?.hidden_sequences as
@@ -4169,6 +4476,8 @@ router.post("/messages", async (req, res) => {
         "Chat relationship/evolution post-processing failed",
       );
     }
+    // Keep the Worker alive (waitUntil) until the mind has learned this turn.
+    await mindLearning;
     } finally {
       releaseBackground();
     }

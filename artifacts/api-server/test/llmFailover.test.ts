@@ -1958,7 +1958,7 @@ describe("createChatStreamWithFailover", () => {
         maxTokens: 32,
         messages: [{ role: "user", content: "hello" }],
       }),
-    ).rejects.toThrow(/DeepSeek on Workers AI failed: 3006 inference failed/);
+    ).rejects.toThrow(/Workers AI chat failed: 3006 inference failed/);
     expect(createMock).not.toHaveBeenCalled();
   });
 

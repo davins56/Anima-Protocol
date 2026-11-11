@@ -64,11 +64,13 @@ import { getOpenWeightChatModel, resolveModelSpec } from "@workspace/llm";
 import { LlmStreamTimeoutError } from "./consumeLlmStream";
 import {
   combineAbortSignals,
+  hostedReplyMaxTokens,
   LLM_LOCAL_FAILOVER_ATTEMPT_MS,
   LLM_LOCAL_FIRST_TOKEN_MS,
   openStreamAbort,
 } from "./chatTimeouts";
 import { usableLocalLlmBackupBaseUrl } from "./localLlmBackup";
+import { isCloudflareChatBrain } from "./chatBrain";
 import { localChatKeepAliveFields } from "./localLlmWarm";
 import { companionLlmTurnOpen, localCallSignal } from "./sidecarLlm";
 import {
@@ -88,8 +90,11 @@ import {
   isWorkersAiQuotaExhaustedThisIsolate,
   markWorkersAiQuotaExhausted,
   streamWorkersAi,
+  workersAiSamplingOptions,
+  type WorkersAiSampling,
   workersAiHttpFailure,
-  WORKERS_AI_CHAT_MODEL,
+  workersAiBackgroundModel,
+  workersAiChatModel,
   WORKERS_AI_FREE_PLAN_NEURONS_PER_DAY,
   WORKERS_AI_FREE_QUOTA_CODE,
   WORKERS_AI_FREE_QUOTA_HINT,
@@ -241,6 +246,13 @@ export interface LlmRoutingStatus {
   /** Ordered provider chain for this process. */
   chain: LlmProviderId[];
   /**
+   * ANIMA_CHAT_BRAIN: "cloudflare" runs chat + background jobs on Workers AI
+   * with no self-hosted host; "self-hosted" prefers ANIMA_LOCAL_LLM_BASE_URL.
+   */
+  brain: "cloudflare" | "self-hosted";
+  /** Chain background brain jobs use (empty = they are skipped). */
+  backgroundChain: LlmProviderId[];
+  /**
    * True when chat is fail-closed to the self-hosted Anima LLM. OpenRouter
    * must not take over even if a key and ANIMA_OPENROUTER_FALLBACK are set
    * while a usable local host is preferred.
@@ -280,6 +292,13 @@ export interface ChatStreamRequest {
   maxTokens: number;
   messages: ChatCompletionMessageParam[];
   temperature?: number;
+  /**
+   * Chat-mind sampling (top_p, penalties). Sent to Workers AI and
+   * OpenRouter only when set; the legacy path leaves it unset.
+   */
+  sampling?: WorkersAiSampling | null;
+  /** Skip these providers (mid-stream fallback after one already died). */
+  excludeProviders?: LlmProviderId[];
   /** Cancel the in-flight stream open (e.g. a caller-side timeout). */
   signal?: AbortSignal;
   /**
@@ -287,6 +306,17 @@ export interface ChatStreamRequest {
    * routes leave this unset so they keep `getProviderChain()`.
    */
   localOnly?: boolean;
+  /**
+   * A user-facing companion reply. Hosted providers then get at least the
+   * companion reply room (`hostedReplyMaxTokens`), so a cap sized for the
+   * local 0.5B model cannot cut a hosted reply mid-sentence. Local keeps
+   * `maxTokens` as given.
+   */
+  companionReply?: boolean;
+}
+
+function hostedTokens(req: ChatStreamRequest, model: string): number {
+  return req.companionReply ? hostedReplyMaxTokens(req.maxTokens, model) : req.maxTokens;
 }
 
 /**
@@ -520,7 +550,24 @@ function localUsable(): boolean {
  * so the call fails closed instead of hopping to Workers AI or OpenRouter.
  */
 export function localOnlyProviderChain(): LlmProviderId[] {
-  return localUsable() ? ["local"] : [];
+  if (localUsable()) return ["local"];
+  // Cloudflare brain: background jobs (evolution, consolidation, dreams,
+  // journal, resting mode, proactive) run on the Worker's own Workers AI
+  // binding — still first-party infra, never OpenRouter or a cloud flagship.
+  if (cloudflareBrainBackgroundEnabled() && hasWorkersAiBinding()) {
+    return ["workersai"];
+  }
+  return [];
+}
+
+/**
+ * Background jobs follow the Cloudflare brain unless the operator turns them
+ * off (`ANIMA_WORKERS_AI_BACKGROUND=false`) to save free-plan neurons for chat.
+ */
+export function cloudflareBrainBackgroundEnabled(): boolean {
+  if (!isCloudflareChatBrain()) return false;
+  const raw = (process.env.ANIMA_WORKERS_AI_BACKGROUND || "").trim().toLowerCase();
+  return !(raw === "0" || raw === "false" || raw === "no" || raw === "off");
 }
 
 /**
@@ -581,7 +628,7 @@ export function getProviderChain(): LlmProviderId[] {
  * customOnly that is never OpenRouter, so the turn returns ai_timeout /
  * connection instead of silently calling cloud.
  *
- * Workers AI → OpenRouter on hoppable DeepSeek failures, especially error
+ * Workers AI → OpenRouter on hoppable Workers AI failures, especially error
  * 4006 / daily free neuron allocation, when fallback is on and no custom
  * host is configured.
  *
@@ -809,14 +856,13 @@ function summarizeError(err: unknown): string {
 
 /**
  * Shared operator hint when the self-hosted LLM rejects the bearer token.
- * Fly's Caddy proxy (`deploy/ollama-fly`) returns 401; some edges/proxies
+ * A Caddy / tunnel proxy in front of Ollama returns 401; some edges/proxies
  * surface the same failure as 403 with an empty body.
  */
 export const LOCAL_LLM_AUTH_FIX_HINT =
   "ANIMA_LOCAL_LLM_API_KEY on the Cloudflare Worker (Secrets Store binding in wrangler.jsonc) " +
-  "or Vercel must exactly match PROXY_AUTH_TOKEN on the LLM host " +
-  "(for Fly: `fly secrets set PROXY_AUTH_TOKEN=… -a anima-chat-llm`, then set the same value " +
-  "as ANIMA_LOCAL_LLM_API_KEY and redeploy). See deploy/ollama-fly/README.md.";
+  "or Vercel must exactly match PROXY_AUTH_TOKEN on the LLM host, then redeploy. " +
+  "To drop the self-hosted host entirely, set ANIMA_CHAT_BRAIN=cloudflare (docs/chat-brain.md).";
 
 /**
  * Shared operator hint when the Worker / Vercel cannot open a TCP/TLS session
@@ -1352,9 +1398,6 @@ function configuredLocalModelLabel(): string {
 function localHostDownSuffix(include: boolean): string {
   if (!include) return "";
   const host = summarizeLocalLlmBaseUrl().host ?? "the self-hosted Anima LLM";
-  if (host === "anima-chat-llm.fly.dev") {
-    return ` The primary LLM host (${host}) is also unreachable — run \`fly apps restart anima-chat-llm\`.`;
-  }
   return ` The primary LLM host (${host}) is also unreachable — check that the host is running and reachable from the Cloudflare Worker.`;
 }
 
@@ -1602,7 +1645,7 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
     }
     if (isCloudRunRuntime() && !hasWorkersAiBinding()) {
       noteParts.push(
-        "Cloud Run staging has no Workers AI binding (DeepSeek via deepseek-gateway) and no Hyperdrive. " +
+        "Cloud Run staging has no Workers AI binding (AI Gateway deepseek-gateway) and no Hyperdrive. " +
           "Chat stays fail-closed rather than switching to OpenRouter, Claude, or MiniMax. " +
           "Production chat remains the Cloudflare Worker.",
       );
@@ -1610,12 +1653,14 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
   } else {
     if (chain.includes("workersai")) {
       noteParts.push(
-        `Cloudflare Workers AI model=${WORKERS_AI_CHAT_MODEL} via AI Gateway ${WORKERS_AI_GATEWAY_ID} ` +
-          "(used only because no usable ANIMA_LOCAL_LLM_BASE_URL is set).",
+        `Cloudflare Workers AI model=${workersAiChatModel()} via AI Gateway ${WORKERS_AI_GATEWAY_ID} ` +
+          (isCloudflareChatBrain()
+            ? "(ANIMA_CHAT_BRAIN=cloudflare — no self-hosted model host)."
+            : "(used because no usable ANIMA_LOCAL_LLM_BASE_URL is set)."),
       );
       noteParts.push(
         `Free Workers AI is ${WORKERS_AI_FREE_PLAN_NEURONS_PER_DAY} neurons/day (error ${WORKERS_AI_FREE_QUOTA_CODE} when exhausted). ` +
-          "Point chat at the self-hosted Anima LLM (anima-chat) instead of DeepSeek.",
+          "Enable Workers Paid for steady chat volume.",
       );
       if (openRouterFallback && !chain.includes("openrouter")) {
         noteParts.push(
@@ -1666,7 +1711,7 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
     if (chain.includes("openrouter")) {
       const openRouterRole =
         chain[0] === "workersai"
-          ? " (temporary fallback after Workers AI / DeepSeek, including neuron quota 4006)."
+          ? " (temporary fallback after Workers AI, including neuron quota 4006)."
           : chain[0] === "local"
             ? " (fallback after local connection failure)."
             : chain[0] === "minimax"
@@ -1717,13 +1762,15 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
     },
     workersai: {
       configured: hasWorkersAiBinding(),
-      model: WORKERS_AI_CHAT_MODEL,
+      model: workersAiChatModel(),
       gateway: WORKERS_AI_GATEWAY_ID,
       quotaCode: WORKERS_AI_FREE_QUOTA_CODE,
       freePlanNeuronsPerDay: WORKERS_AI_FREE_PLAN_NEURONS_PER_DAY,
       quotaHint: WORKERS_AI_FREE_QUOTA_HINT,
     },
     chain,
+    brain: isCloudflareChatBrain() ? "cloudflare" : "self-hosted",
+    backgroundChain: localOnlyProviderChain(),
     customOnly,
     openRouterFallback,
     note: noteParts.join(" "),
@@ -1837,8 +1884,8 @@ async function probeOneProvider(
         provider: "workersai",
         configured: true,
         ok: true,
-        model: WORKERS_AI_CHAT_MODEL,
-        configuredModel: WORKERS_AI_CHAT_MODEL,
+        model: workersAiChatModel(),
+        configuredModel: workersAiChatModel(),
         latencyMs: Date.now() - started,
       };
     } catch (err) {
@@ -1856,8 +1903,8 @@ async function probeOneProvider(
         status: Number.isFinite(status) ? status : undefined,
         errorKind: auth ? "auth" : connection ? "connection" : quota ? "quota" : "other",
         message: formatWorkersAiError(err),
-        model: WORKERS_AI_CHAT_MODEL,
-        configuredModel: WORKERS_AI_CHAT_MODEL,
+        model: workersAiChatModel(),
+        configuredModel: workersAiChatModel(),
         latencyMs: Date.now() - started,
       };
     }
@@ -2191,6 +2238,19 @@ async function ensureChatStreamOpens<T>(
   return replay();
 }
 
+/**
+ * OpenRouter takes the same knobs (OpenAI fields plus top_k /
+ * repetition_penalty as provider passthrough). Only the chat mind sets
+ * `sampling`; without it the request is unchanged.
+ */
+export function openRouterSamplingFields(req: Pick<ChatStreamRequest, "temperature" | "sampling">): Record<string, number> {
+  if (!req.sampling) return {};
+  return {
+    ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
+    ...workersAiSamplingOptions(req.sampling),
+  };
+}
+
 async function runOpenRouterStream(
   req: ChatStreamRequest,
   failedOver: boolean,
@@ -2204,9 +2264,10 @@ async function runOpenRouterStream(
       const raw = await client.chat.completions.create(
         {
           model: m.model,
-          max_tokens: Math.min(req.maxTokens, m.maxTokens),
+          max_tokens: Math.min(hostedTokens(req, m.model), m.maxTokens),
           messages: req.messages,
           stream: true,
+          ...openRouterSamplingFields(req),
         },
         {
           ...(req.signal ? { signal: req.signal } : {}),
@@ -2236,7 +2297,7 @@ async function runMinimaxStream(
   const stream = await client.chat.completions.create(
     {
       model: resolved.model,
-      max_tokens: Math.min(req.maxTokens, resolved.maxTokens),
+      max_tokens: Math.min(hostedTokens(req, resolved.model), resolved.maxTokens),
       messages: req.messages,
       stream: true,
     },
@@ -2262,7 +2323,7 @@ async function runDeepshiStream(
   const stream = await client.chat.completions.create(
     {
       model: resolved.model,
-      max_tokens: Math.min(req.maxTokens, resolved.maxTokens),
+      max_tokens: Math.min(hostedTokens(req, resolved.model), resolved.maxTokens),
       messages: req.messages,
       stream: true,
     },
@@ -2553,7 +2614,9 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
   if (cloudFlagshipMisconfigured() && !hasWorkersAiBinding() && !req.localOnly) {
     throw new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }
-  const chain = req.localOnly ? localOnlyProviderChain() : getProviderChain();
+  const fullChain = req.localOnly ? localOnlyProviderChain() : getProviderChain();
+  const excluded = new Set(req.excludeProviders ?? []);
+  const chain = excluded.size ? fullChain.filter((p) => !excluded.has(p)) : fullChain;
   if (!chain.length) throw noProviderConfiguredError();
 
   let lastErr: unknown;
@@ -2573,14 +2636,15 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
         triedWorkersAi = true;
         const stream = await streamWorkersAi({
           messages: req.messages,
-          maxTokens: req.maxTokens,
+          maxTokens: hostedTokens(req, workersAiChatModel()),
           temperature: req.temperature,
+          ...(req.sampling ? { sampling: req.sampling } : {}),
         });
         return {
           stream,
           provider: "workersai",
           brand: "workersai",
-          model: WORKERS_AI_CHAT_MODEL,
+          model: workersAiChatModel(),
           tier: req.tier,
           failedOver: false,
         };
@@ -2668,16 +2732,19 @@ export async function createChatCompletionWithFailover(
           throw new WorkersAiRequestError(WORKERS_AI_FREE_QUOTA_HINT);
         }
         triedWorkersAi = true;
+        // Background brain jobs (localOnly) use the small background model.
+        const model = req.localOnly ? workersAiBackgroundModel() : workersAiChatModel();
         const content = await completeWorkersAi({
           messages: req.messages,
           maxTokens: req.maxTokens,
           temperature: req.temperature,
+          model,
         });
         return {
           content,
           provider: "workersai",
           brand: "workersai",
-          model: WORKERS_AI_CHAT_MODEL,
+          model,
           tier: req.tier,
           failedOver: false,
           toolCalls: null,

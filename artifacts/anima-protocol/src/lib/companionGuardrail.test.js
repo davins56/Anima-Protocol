@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   INTELLIGENCE_GUIDANCE,
   THOUGHT_EXPERIMENT_GUIDANCE,
+  REPLY_FORMAT_GUIDANCE,
   loyaltyGuardrailClause,
   turnTakingClause,
 } from "./companionGuardrail";
@@ -23,6 +24,22 @@ describe("turnTakingClause", () => {
     expect(clause).toMatch(/ONE natural beat/i);
     expect(clause).toMatch(/pause point/i);
     expect(clause).not.toMatch(/Do NOT stack multiple topics/);
+  });
+
+  it.each([false, true])("allows complete endings without a reply hook (Continue: %s)", (isContinue) => {
+    const clause = turnTakingClause({ isContinue });
+    expect(clause).toMatch(/complete answer, reaction, or action can simply end/i);
+    expect(clause).toMatch(/Do not routinely append a question/i);
+    expect(clause).toMatch(/Ask a specific question only when clarification or the moment genuinely needs it/i);
+    expect(clause).not.toContain("unfinished action");
+    expect(clause).toMatch(/Do not speak for the user/i);
+  });
+
+  it.each([false, true])("keeps actions separate from unquoted speech (Continue: %s)", (isContinue) => {
+    expect(turnTakingClause({ isContinue })).toContain(REPLY_FORMAT_GUIDANCE);
+    expect(REPLY_FORMAT_GUIDANCE).toContain("*actions*");
+    expect(REPLY_FORMAT_GUIDANCE).toContain("(character thoughts)");
+    expect(REPLY_FORMAT_GUIDANCE).toContain("unquoted speech; quote only quotations");
   });
 });
 

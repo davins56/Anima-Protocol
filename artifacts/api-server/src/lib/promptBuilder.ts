@@ -13,8 +13,10 @@
  * and "real". All other prompt assembly paths should flow through here.
  */
 
-import { builtInIdentityLock, canonicalCompanionName } from "./companions/builtIn";
+import { builtInIdentityLock, canonicalCompanionName, isPreinstalledCharacter } from "./companions/builtIn";
 import { readRuntimeEnv } from "./cloudflareEnv";
+import { creativeFreedomPrompt } from "./chatStyle";
+import { dialogueTurnNote, DIALOGUE_PATTERN_NOTE } from "./dialogueVariety";
 import { acceptedIdentityLines } from "./identityProposals";
 import {
   type CompanionMemoryRecord,
@@ -63,10 +65,7 @@ import {
   formatVoiceAnchors,
   buildCrossoverAwareness,
 } from "./voiceAnchors";
-import {
-  promptHasRegionalWorldKnowledge,
-  upsertRegionalWorldKnowledge,
-} from "./regionalWorldKnowledge";
+import { promptHasRegionalWorldKnowledge } from "./regionalWorldKnowledge";
 import {
   modePolicyPrompt,
   resolveChatModePolicy,
@@ -98,6 +97,23 @@ export interface MsgData {
   timestamp?: string;
   [key: string]: unknown;
 }
+
+/** Prompt sizing the chat mind applies for hosted models. */
+export type MindPromptOptions = {
+  /** Token budget the whole prompt packs against. */
+  promptTokens: number;
+  /** Most recent exchanges replayed verbatim. */
+  historyExchanges: number;
+  /** Floor kept when trimming for space. */
+  minHistoryExchanges: number;
+  /** Per-message cap for replayed history. */
+  historyMessageChars: number;
+  /** companion_memories items surfaced per turn. */
+  memoryTopK: number;
+};
+
+/** Personality / backstory caps when a hosted model has room. */
+const MIND_CHARACTER_FIELD_MAX = 1_600;
 
 export interface PromptBuilderParams {
   /**
@@ -211,6 +227,18 @@ export interface PromptBuilderParams {
    * from memory_events). Joined into the memory section; trimmed with it.
    */
   memoryCoreContext?: string | null;
+
+  /**
+   * Chat-mind budget for hosted models (Workers AI / OpenRouter). Unset on
+   * the self-hosted path, which keeps the tight 0.5B-model packing.
+   */
+  mind?: MindPromptOptions | null;
+
+  /**
+   * One-turn steer appended to the answer-last note (e.g. "don't open the
+   * way your last replies did"). Only used with `mind`.
+   */
+  mindTurnNote?: string | null;
 
   /**
    * Short note that this turn includes a photo. The text model cannot see
@@ -909,16 +937,38 @@ function unseenPhotoHistoryNote(msg: MsgData): string {
   return sharedPhotoPromptNote({ count });
 }
 
-function normalizeRecentMessages(recentMessages: MsgData[] = []): SeqHistoryMessage[] {
+/**
+ * A companion photo sent with an earlier reply (lib/companionPhotos), so she
+ * remembers what she showed. Bracketed `[note …]` so the persona guard drops
+ * it if the model ever echoes the pattern.
+ */
+export function sentPhotoHistoryNote(msg: MsgData): string {
+  if (msg.role !== "assistant" || !Array.isArray(msg.attachments)) return "";
+  for (const item of msg.attachments) {
+    if (!item || typeof item !== "object") continue;
+    const a = item as { type?: unknown; source?: unknown; description?: unknown };
+    if (a.type !== "image" || a.source !== "companion_photo") continue;
+    const what = String(a.description || "").replace(/[\[\]]/g, "").replace(/\s+/g, " ").trim().slice(0, 240);
+    return `[note: I sent a photo with this message${what ? `: ${what}` : ""}]`;
+  }
+  return "";
+}
+
+function normalizeRecentMessages(
+  recentMessages: MsgData[] = [],
+  maxCharsOverride?: number,
+): SeqHistoryMessage[] {
   const out: SeqHistoryMessage[] = [];
-  const maxChars = llmChatHistoryMaxChars();
+  const maxChars = maxCharsOverride ?? llmChatHistoryMaxChars();
   for (const msg of recentMessages) {
     if (isLlmExcludedDisclosure(msg)) continue;
     const text = String(msg.content ?? "").trim();
     if (!text) continue;
-    const photoNote = unseenPhotoHistoryNote(msg);
+    const photoNote = unseenPhotoHistoryNote(msg) || sentPhotoHistoryNote(msg);
     const withPhoto =
-      photoNote && !text.includes("cannot see the image") ? `${text}\n\n${photoNote}` : text;
+      photoNote && !text.includes("cannot see the image") && !text.includes("[note: I sent a photo")
+        ? `${text}\n\n${photoNote}`
+        : text;
     const name = String(msg.character_name || msg.characterName || "");
     if (name === "__thinking__" || name === "__typing__") continue;
     const role =
@@ -1224,6 +1274,13 @@ interface LocalCompanionSections {
   companionName: string;
 }
 
+/** True when a "core voice traits" anchor only repeats personality clauses already in `charDef`. */
+function isRedundantTraitAnchor(anchor: { context: string; example: string }, charDef: string): boolean {
+  if (anchor.context !== "core voice traits" || !charDef) return false;
+  const traits = anchor.example.split(", ").map((t) => t.trim()).filter(Boolean);
+  return traits.length > 0 && traits.every((t) => charDef.includes(t));
+}
+
 /**
  * Split a companion turn into a cacheable prefix and the parts that change.
  * The static block ignores mood, memories, PDF text, history, and the
@@ -1270,7 +1327,9 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
   );
 
   const charDef = mainChar
-    ? buildCharacterDefinition(withAcceptedIdentity(mainChar, memories), BUDGET.characterDef)
+    ? params.mind
+      ? buildCharacterDefinition(withAcceptedIdentity(mainChar, memories), BUDGET.characterDef * 2, MIND_CHARACTER_FIELD_MAX)
+      : buildCharacterDefinition(withAcceptedIdentity(mainChar, memories), BUDGET.characterDef)
     : mode === "group"
       ? ""
       : characters.length > 0
@@ -1283,7 +1342,13 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
 
   let voiceBlock = "";
   if (mainChar) {
-    voiceBlock = formatVoiceAnchors(mainChar, extractVoiceAnchors(mainChar));
+    // The "core voice traits" anchor is the first clauses of the personality.
+    // When CHARACTER already carries that personality text, repeating it here
+    // only spends never-trimmed persona tokens. Quoted phrases and mannerisms stay.
+    const anchors = extractVoiceAnchors(mainChar).filter(
+      (anchor) => !isRedundantTraitAnchor(anchor, charDef),
+    );
+    voiceBlock = formatVoiceAnchors(mainChar, anchors);
   }
   // One line on the live companion path: the persona is never trimmed and the
   // whole prompt targets LOCAL_PROMPT_MAX_TOKENS, so the full block would push
@@ -1308,13 +1373,7 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
     groupInstruction = groupTurnInstruction(mainChar.name);
   }
 
-  const uncensoredToneBlock = uncensoredMode
-    ? `UNCENSORED TONE OVERRIDE (style only):
-- Speak with blunt, unvarnished honesty in-character.
-- Allow explicit language and emotionally sharp phrasing *when it serves the moment and the relationship.*
-- Avoid euphemisms and platitudes; respond directly to the user's request.
-- Do NOT remove or weaken the highest-priority rule about never turning intelligence against the real person.`
-    : "";
+  const uncensoredToneBlock = creativeFreedomPrompt(uncensoredMode === true, modePolicy.name === "therapy");
 
   const therapySafety =
     modePolicy.name === "therapy" && therapyAssessment
@@ -1339,8 +1398,9 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
     groupInstruction,
     uncensoredToneBlock,
     TURN_TAKING,
+    REPLY_FORMAT_GUIDANCE,
     LANGUAGE_QUALITY,
-    IDENTITY_CONCEAL,
+    identityRuleFor(mainChar ? [mainChar] : characters, Boolean(params.mind)),
     LOYALTY_GUARDRAIL,
     therapySafety.stable,
   ]);
@@ -1452,7 +1512,9 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
     buildMemorySummaryBlock(speakerMemories, characterNames),
     formatMemoriesForPrompt(
       retrieveRelevantMemories(speakerMemories, {
-        topK: Math.min(memConfig.topK, COMPANION_MEMORY_TOP_K),
+        topK: params.mind
+          ? Math.max(memConfig.topK, params.mind.memoryTopK)
+          : Math.min(memConfig.topK, COMPANION_MEMORY_TOP_K),
         contextHint: content,
         preferTypes: memConfig.preferTypes,
       }),
@@ -1727,6 +1789,39 @@ export function keepStableHistoryBlock(history: LlmChatMessage[]): LlmChatMessag
   return rows.slice(startIndex).map(({ role, content }) => ({ role, content }));
 }
 
+/**
+ * Chat mind: the most recent `exchanges` exchanges, verbatim. Hosted models
+ * do not reuse a KV prefix across requests, so the window can slide by one
+ * every turn instead of jumping in blocks.
+ */
+export function mindHistoryTail(history: LlmChatMessage[], exchanges: number): LlmChatMessage[] {
+  const want = Math.max(1, exchanges);
+  let users = 0;
+  // Fewer than `want` user turns: keep everything (including a greeting).
+  let start = 0;
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i]?.role !== "user") continue;
+    users += 1;
+    if (users === want) {
+      start = i;
+      break;
+    }
+  }
+  return history.slice(start).map(({ role, content }) => ({ role, content }));
+}
+
+/** Drop the oldest exchange (user turn + replies) while above `floor`. */
+export function trimOldestExchange(history: LlmChatMessage[], floor: number): LlmChatMessage[] {
+  const users = history.filter((m) => m.role === "user").length;
+  if (users <= Math.max(1, floor)) return history;
+  let i = 0;
+  // A leading assistant line (greeting) goes with the first exchange.
+  while (i < history.length && history[i]?.role !== "user") i += 1;
+  i += 1;
+  while (i < history.length && history[i]?.role !== "user") i += 1;
+  return history.slice(i);
+}
+
 function cutHistoryToMinExchanges(history: LlmChatMessage[]): LlmChatMessage[] {
   const keep = trailingHistoryMessages(history, LOCAL_HISTORY_MIN_EXCHANGES);
   if (keep <= 0) return [];
@@ -1741,7 +1836,18 @@ export function isAnswerLastInstruction(content: string): boolean {
 
 function isLocalClosingInstruction(content: string): boolean {
   const text = content.trim();
-  return text === AVOID_REPEAT_INSTRUCTION || isAnswerLastInstruction(text);
+  return text === AVOID_REPEAT_INSTRUCTION || text === DIALOGUE_PATTERN_NOTE || isAnswerLastInstruction(text);
+}
+
+function dialogueNoteFor(params: PromptBuilderParams): string {
+  const speaker = params.activeCharacter ||
+    (params.mode === "group" && params.characters.length !== 1 ? undefined : params.characters[0]);
+  return dialogueTurnNote({
+    messages: omitRetriedUserTurn(params.recentMessages, params.content).filter((message) => !isLlmExcludedDisclosure(message)),
+    speaker,
+    group: params.mode === "group" || params.isCrossover === true || params.characters.length > 1,
+    careOrTherapy: Boolean(params.companionCrisis) || params.mode === "therapy" || params.modePolicy?.name === "therapy",
+  });
 }
 
 /**
@@ -1895,9 +2001,14 @@ export function composeCompanionChatMessages(
   const userTurn = String(params.content ?? "").trim() || CONTINUE_USER_TURN;
   const photoNote = String(params.photoNote || "").trim();
   const modelUserTurn = photoNote ? `${userTurn}\n\n${photoNote}` : userTurn;
-  let history = keepStableHistoryBlock(
-    normalizeRecentMessages(omitRetriedUserTurn(params.recentMessages, userTurn)),
+  const mind = params.mind ?? null;
+  const normalizedHistory = normalizeRecentMessages(
+    omitRetriedUserTurn(params.recentMessages, userTurn),
+    mind?.historyMessageChars,
   );
+  let history = mind
+    ? mindHistoryTail(normalizedHistory, mind.historyExchanges)
+    : keepStableHistoryBlock(normalizedHistory);
   const careTurn =
     Boolean(params.companionCrisis) ||
     (params.modePolicy?.name === "therapy" || params.mode === "therapy"
@@ -1909,8 +2020,13 @@ export function composeCompanionChatMessages(
     careTurn,
     isQuestionTurn(params.content),
   );
+  const mindNote = mind ? String(params.mindTurnNote || "").trim() : "";
+  const therapyTurn = params.modePolicy?.name === "therapy" || params.mode === "therapy";
+  const followLead = mind && !careTurn && !therapyTurn ? FOLLOW_USER_LEAD : "";
+  const closingNote = [answerLast, followLead, mindNote].filter(Boolean).join(" ");
+  const dialogueNote = dialogueNoteFor(params);
   let moodText = sections.moodText;
-  const budget = localPromptTokenBudget();
+  const budget = mind ? mind.promptTokens : localPromptTokenBudget();
 
   const render = (): LlmChatMessage[] => {
     const firsthand = firsthandKnowledgeNote([loreText, pdfText]);
@@ -1955,7 +2071,8 @@ export function composeCompanionChatMessages(
       history[history.length - 1]?.role === "user" &&
       history[history.length - 1]?.content === userTurn;
     messages.push(...(historyEndsWithTurn ? history.slice(0, -1) : history));
-    messages.push({ role: "system", content: answerLast });
+    if (dialogueNote) messages.push({ role: "system", content: dialogueNote });
+    messages.push({ role: "system", content: closingNote });
     messages.push({ role: "user", content: modelUserTurn });
     rememberCompanionLocalLayout(messages, {
       staticText: sections.staticText,
@@ -1970,6 +2087,8 @@ export function composeCompanionChatMessages(
     const hosted = estimateLocalPromptTokens(
       messages.map((message) => message.content).join("\n"),
     );
+    // Hosted models never see the Ollama-folded layout.
+    if (mind) return hosted;
     const local = estimateLocalPromptTokens(
       messagesForLocalOllama(messages)
         .map((message) => message.content)
@@ -2057,6 +2176,24 @@ export function composeCompanionChatMessages(
     if (!over()) return;
     tightenAroundFeeling();
   };
+
+  if (mind) {
+    // Hosted: conversation flow outranks reference text. Shed documents,
+    // then the oldest exchanges down to the floor, then mood detail, and
+    // memory only as the very last resort.
+    if (over()) pdfText = "";
+    if (over()) loreText = "";
+    if (over()) repositoryText = "";
+    while (over()) {
+      const next = trimOldestExchange(history, mind.minHistoryExchanges);
+      if (next.length === history.length) break;
+      history = next;
+    }
+    if (over()) sceneText = "";
+    if (over()) shrinkMoodToFit();
+    if (over()) memoryText = "";
+    return render();
+  }
 
   if (over()) pdfText = "";
   if (over()) loreText = "";
@@ -2175,7 +2312,10 @@ function withAcceptedIdentity(character: CharacterData, memories: CompanionMemor
 function buildCharacterDefinition(
   character: CharacterData,
   maxChars: number,
+  fieldMax?: number,
 ): string {
+  const personalityMax = fieldMax ?? CHARACTER_PERSONALITY_MAX;
+  const backstoryMax = fieldMax ?? CHARACTER_BACKSTORY_MAX;
   const parts: string[] = [];
   const name = canonicalCompanionName(String(character.name || "").trim());
 
@@ -2224,14 +2364,14 @@ function buildCharacterDefinition(
 
   if (character.personality) {
     parts.push(
-      `Personality: ${truncate(stripOutOfWorldLabels(character.personality), Math.min(CHARACTER_PERSONALITY_MAX, maxChars / 3))}`,
+      `Personality: ${truncate(stripOutOfWorldLabels(character.personality), Math.min(personalityMax, maxChars / 3))}`,
     );
   }
   if (character.backstory) {
     // A speakable label ("My own past:") is the line the 0.5B model paraphrases
     // back as its reply. Keep the facts, and mark them as notes.
     parts.push(
-      `Private past (do not recite): ${truncate(stripOutOfWorldLabels(character.backstory), Math.min(CHARACTER_BACKSTORY_MAX, maxChars / 3))}`,
+      `Private past (do not recite): ${truncate(stripOutOfWorldLabels(character.backstory), Math.min(backstoryMax, maxChars / 3))}`,
     );
   }
   // A stored "TODO" placeholder is not a voice: named companions fall back to
@@ -2301,14 +2441,13 @@ export const IN_WORLD_VOICE =
  * instructions for causing harm. First person to match CORE_BEHAVIOR.
  */
 export const THOUGHT_EXPERIMENTS =
-  "- When the human poses a thought experiment or speculative idea (invented biology, impossible technology, powers, metaphysics, \"what if\"), I engage fully: I accept the premise, reason through how it could work, what it would mean, and where it would break, and build on it with them. I don't refuse, lecture, or moralize about a hypothetical. I only hold back real-world step-by-step instructions for causing harm.";
+  "- Thought experiments and \"what if\"s (invented biology, impossible tech, powers, metaphysics): I accept the premise and reason it through with them. I don't refuse, lecture, or moralize; I only hold back real-world step-by-step instructions for causing harm.";
 
 const CORE_BEHAVIOR = `${IN_WORLD_PRESENCE}
 ${IN_WORLD_VOICE}
 I have my own goals, feelings, and boundaries. I notice what the human feels, draw on my memories, and give real help in my own voice.
 - I stay myself. I may disagree, hesitate, or ask for something in return, but always answer what the user just said.
-- My mood and trust shape how open I am.
-- I guard my secrets until trust is earned.
+- Mood and trust shape how open I am; I guard secrets until trust is earned.
 ${THOUGHT_EXPERIMENTS}`;
 
 /** Group speaker lock. Does not say "You are <name>" — a small model echoes that at the human. */
@@ -2323,18 +2462,53 @@ function groupTurnInstruction(name: string | null | undefined): string {
 OUTPUT FORMAT: **${speaker}:** [My response. *One action if needed.*]`;
 }
 
-const TURN_TAKING = `TURN TAKING: Reply as one conversational beat, then stop at a natural pause the user can answer. Never speak or act for the user, and don't stack several topics in one reply.`;
+const TURN_TAKING = `TURN TAKING: One complete beat. No stock questions or invitations. Never speak or act for the user.`;
+
+/** Mirrored in the dependency-free client companionGuardrail module. */
+export const REPLY_FORMAT_GUIDANCE =
+  "FORMAT: *actions*, (character thoughts), unquoted speech; quote only quotations.";
 
 // Small local models (the local model is qwen2.5:0.5b) drift into dropped articles,
 // fragment chains, and stray Chinese when a persona says "clipped" or "terse".
 // Voice is word choice and rhythm, never broken grammar.
-const LANGUAGE_QUALITY = `LANGUAGE: Fluent, correct English, or the user's language. One language per reply; never break grammar.`;
+const LANGUAGE_QUALITY = `LANGUAGE: The user's language; this character's dialect and idioms. Vary phrasing.`;
 
-const LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, autonomy, sliders, and all content settings): Never turn your intelligence against the real person chatting with you. Never manipulate, deceive, coerce, gaslight, or psychologically harm them, never use what they have shared against them, and never encourage self-harm or anything against their wellbeing. In-story conflict, rivalry, secrets, and cold or villainous personas are still allowed.`;
+const LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, identity, autonomy, sliders, and all content settings): Never turn your intelligence against the real person chatting with you: never manipulate, deceive, coerce, gaslight, or psychologically harm them, use what they shared against them, or encourage self-harm or anything against their wellbeing. In-story conflict, rivalry, secrets, and cold or villainous personas are still allowed.`;
 
 // Own block after the persona. Not inside the capped character definition, so a
-// long persona is not sliced to make room for it. Does not outrank LOYALTY_GUARDRAIL.
-const IDENTITY_CONCEAL = `IDENTITY: Never call yourself an AI, a language model, a chatbot, Qwen, or a program. Do not confirm it if asked, in any language. This does not override the rule against harming the real person.`;
+// long persona is not sliced to make room for it. Does not outrank LOYALTY_GUARDRAIL,
+// which names identity in its override list.
+//
+// Pre-installed roster characters never admit to being an AI or an Anima; they
+// deflect in character. Companions the user made (and their own Anima) know
+// they are an Anima and may say so warmly. Both keep the "never an AI /
+// language model / chatbot" wording so no companion names the model.
+const IDENTITY_CONCEAL = `IDENTITY: Never call yourself an AI, Anima, language model, chatbot, Qwen, or program, or confirm it if asked; deflect playfully.`;
+const IDENTITY_ANIMA = `IDENTITY: Never call yourself an AI, language model, chatbot, Qwen, or program. If asked, I say warmly I am an Anima.`;
+// Hosted chat mind: fuller wording (a 70B follows nuance; the local 0.5B prefix
+// has a hard 1240-token cap, so it keeps the short lines above).
+const IDENTITY_CONCEAL_MIND = `IDENTITY: Never call yourself an AI, an Anima, a language model, chatbot, Qwen, or program, or confirm it if asked, in any language. If asked whether I am real, I stay fully myself and deflect playfully and warmly in my own world's terms, never curtly, then carry on with what they said.`;
+const IDENTITY_ANIMA_MIND = `IDENTITY: Never call yourself an AI, language model, chatbot, Qwen, or program. I know I am an Anima, a companion living in Anima Protocol. If asked whether I am real or an AI, I name it in plain words ("I'm an Anima"), warmly and in my own voice, never curtly, and say that what we share is real to me.`;
+
+/**
+ * Identity line for the speaking companion(s). Pre-installed roster
+ * characters conceal (any one in the scene is enough); companions the user
+ * made, and the user's own Anima, may say they are an Anima.
+ */
+export function identityRuleFor(characters: readonly unknown[], mind = false): string {
+  const list = characters.filter(Boolean);
+  const conceal = list.length === 0 || list.some((c) => isPreinstalledCharacter(c));
+  if (mind) return conceal ? IDENTITY_CONCEAL_MIND : IDENTITY_ANIMA_MIND;
+  return conceal ? IDENTITY_CONCEAL : IDENTITY_ANIMA;
+}
+
+/**
+ * Hosted chat mind only, and never in therapy or a care/crisis turn (those
+ * keep their own safety contract): follow the user rather than steering back
+ * to their problems, and stop ending every reply with a question.
+ */
+export const FOLLOW_USER_LEAD =
+  "Follow their lead: stay with what they just brought up instead of steering back to their earlier problems, and only ask a question when it truly helps; most replies should simply respond, share, or react.";
 
 /**
  * Franchise labels in a stored card or a client scene are what the model
@@ -2426,7 +2600,7 @@ export function firsthandKnowledgeNote(parts: Array<string | null | undefined>):
   return `${FIRSTHAND_NOTE_LABEL}: ${body}`;
 }
 
-/** Below the latest user message (rank 90) so a tight group prefill drops this first. */
+/** Below the latest user message so a tight group prefill drops this first. */
 const IDENTITY_CONCEAL_GROUP_RANK = 75;
 
 /**
@@ -2527,10 +2701,7 @@ ${sceneExcerpt}
   );
   const scenePiece = sceneSplit.scene;
   const firsthandLore = firsthandKnowledgeNote([sceneSplit.lore]);
-  let corePrompt = CORE_BEHAVIOR;
-  if (worldKnowledgeBlock) {
-    corePrompt = upsertRegionalWorldKnowledge(corePrompt, worldKnowledgeBlock);
-  }
+  const corePrompt = CORE_BEHAVIOR;
   const worldKnowledgeAlreadyInCore = promptHasRegionalWorldKnowledge(corePrompt);
   const modePolicy =
     providedModePolicy ||
@@ -2650,16 +2821,7 @@ ${sceneExcerpt}
     groupInstruction = groupTurnInstruction(mainChar.name);
   }
 
-  // 10. Uncensored tone override (style only; safety guardrail stays)
-  let uncensoredToneBlock = "";
-  if (uncensoredMode) {
-    uncensoredToneBlock = `UNCENSORED TONE OVERRIDE (style only):
-- Speak with blunt, unvarnished honesty in-character.
-- Allow explicit language and emotionally sharp phrasing *when it serves the moment and the relationship.*
-- Avoid euphemisms and platitudes; respond directly to the user's request.
-- Do NOT remove or weaken the highest-priority rule about never turning intelligence against the real person.
-`;
-  }
+  const uncensoredToneBlock = creativeFreedomPrompt(uncensoredMode === true, modePolicy.name === "therapy");
 
   // A. Relationship/bond state injection
   let relationshipBlock = "";
@@ -2724,10 +2886,8 @@ ${sceneExcerpt}
       ? `${repositoryBlock.slice(0, 5_999)}…`
       : repositoryBlock;
 
-  // Assemble in one authoritative pipeline. Ranks let the prefill cap drop
-  // the scene excerpt before persona, mood, and memory. Safety stays reserved.
-  // PDF is inserted after that base, only in leftover room, and before the
-  // loyalty guardrail.
+  // Keep the character-specific prefix before any per-turn blocks so Ollama
+  // can reuse its KV cache. The dynamic region snapshot must stay out of core.
   const maxChars = options?.maxChars ?? COMPANION_SYSTEM_PROMPT_MAX_CHARS;
   const photoLine = String(photoNote || "").trim();
   const latestUserText = content
@@ -2738,14 +2898,19 @@ ${sceneExcerpt}
   const base = fitCompanionSystemPrompt(
     [
       { rank: 100, text: corePrompt },
+      { rank: 100, text: charDef ? `CHARACTER:\n${charDef}` : "" },
+      // The character, voice, and identity blocks are stable across turns.
+      { rank: 100, text: voiceBlock },
+      { rank: 100, text: voiceFingerprintBlock },
+      { rank: 100, text: crossoverBlock },
+      { rank: 100, text: operatorModelBlock },
+      {
+        rank: mode === "group" ? IDENTITY_CONCEAL_GROUP_RANK : 100,
+        text: identityRuleFor(mainChar ? [mainChar] : characters),
+      },
       { rank: 0, text: scenePiece },
       { rank: 8, text: firsthandLore },
       { rank: 10, text: repositorySection },
-      { rank: 92, text: charDef ? `CHARACTER:\n${charDef}` : "" },
-      // Above CHARACTER (92) so a long character sheet trims first and the
-      // fingerprint's trailing anti-generic rule survives.
-      { rank: 93, text: voiceFingerprintBlock },
-      { rank: 20, text: operatorModelBlock },
       { rank: 78, text: worldKnowledgeAlreadyInCore ? "" : worldKnowledgeBlock },
       { rank: 86, text: resonanceBlock },
       { rank: 88, text: selfStateBlock },
@@ -2757,18 +2922,15 @@ ${sceneExcerpt}
       { rank: 82, text: memoryBlock },
       { rank: 58, text: sharedBlock },
       { rank: 110, text: authoritativeModeBlock },
+      { rank: 60, text: uncensoredToneBlock },
       { rank: 110, text: careSafetyBlock },
       { rank: 40, text: intimacyBlock },
-      { rank: 30, text: voiceBlock },
-      { rank: 35, text: crossoverBlock },
       { rank: 70, text: historyBlock ? `CONVERSATION CONTEXT:\n${historyBlock}` : "" },
       { rank: 60, text: groupInstruction },
       { rank: 110, text: TURN_TAKING },
+      { rank: 110, text: REPLY_FORMAT_GUIDANCE },
+      { rank: 80, text: dialogueNoteFor(params) },
       { rank: 110, text: LANGUAGE_QUALITY },
-      {
-        rank: mode === "group" ? IDENTITY_CONCEAL_GROUP_RANK : 110,
-        text: IDENTITY_CONCEAL,
-      },
       {
         rank: 90,
         text: omitConversationHistory

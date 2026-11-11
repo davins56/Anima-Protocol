@@ -5,6 +5,7 @@
  */
 
 import { FEATURE_MESSAGING } from "./featureMessaging";
+import { absenceDurationMs, parseUtcMs } from "./userActivity";
 
 /** @type {string[]} */
 export const FLAVOR_LINES = [
@@ -88,10 +89,10 @@ export function resolveIdentity(anima, opts = {}) {
  * @returns {{ hours: number, text: string } | null}
  */
 export function resolveWaiting(lastVisit, now = Date.now()) {
-  if (!lastVisit) return null;
-  const then = new Date(lastVisit).getTime();
-  if (Number.isNaN(then)) return null;
-  const away = now - then;
+  if (!lastVisit && lastVisit !== 0) return null;
+  const then = parseUtcMs(lastVisit);
+  if (then == null) return null;
+  const away = absenceDurationMs(then, now);
   if (away < WAITING_THRESHOLD_MS) return null;
   const hours = Math.max(1, Math.round(away / (60 * 60 * 1000)));
   const label = hours === 1 ? "an hour" : `${hours} hours`;

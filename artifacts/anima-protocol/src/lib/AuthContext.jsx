@@ -115,8 +115,9 @@ export const AuthProvider = ({ children }) => {
     clearAuthTokenGetter();
   }, [getToken, isSignedIn, localUser]);
 
-  // One background preload per tab session so a cold droplet model is already
-  // loading before the first chat send. Not awaited; failures stay silent.
+  // One background preload per tab session so a cold self-hosted model is already
+  // loading before the first chat send (server no-ops on the Cloudflare brain).
+  // Not awaited; failures stay silent.
   useEffect(() => {
     if (!isLoaded || !isSignedIn || !clerkUser) return;
     scheduleSessionLlmWarm();

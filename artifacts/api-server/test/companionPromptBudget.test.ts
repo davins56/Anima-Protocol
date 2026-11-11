@@ -1357,7 +1357,7 @@ describe("companion prompt prefill budget", () => {
     const user = String(local.at(-1)?.content || "");
     expect(system).toContain("HIGHEST-PRIORITY RULE");
     expect(system).toContain("Never call yourself an AI");
-    expect(system).toContain("Adult or sexual behavior is not permitted");
+    expect(system).toContain("Explicit adult content is not permitted");
     expect(user).not.toContain("HIGHEST-PRIORITY RULE");
     expect(user).not.toContain("Never call yourself an AI");
 
@@ -1420,5 +1420,53 @@ describe("companion prompt prefill budget", () => {
     );
     expect(crisisUser).not.toContain("Continue that scene");
     expect(String(calm.at(-1)?.content)).toContain("Continue that scene");
+  });
+});
+
+describe("local static prefix stays lean", () => {
+  it("does not repeat the personality as a core-voice-traits anchor, but keeps quoted voice anchors", () => {
+    const plain = companionStaticPrefix({
+      characters: [natasha],
+      activeCharacter: natasha,
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "hi",
+    });
+    expect(plain).toContain("Personality: Controlled, observant, and fiercely pragmatic.");
+    expect(plain).not.toContain("[core voice traits]");
+
+    const quoted = {
+      ...natasha,
+      speaking_style: 'Economical. Says things like "You don\'t get to decide that for me." when pushed.',
+    };
+    const withQuote = companionStaticPrefix({
+      characters: [quoted],
+      activeCharacter: quoted,
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "hi",
+    });
+    expect(withQuote).toContain("VOICE ANCHORS");
+    expect(withQuote).toContain("[characteristic phrase] You don't get to decide that for me.");
+  });
+
+  it("keeps every guardrail and the thought-experiment rule in the static prefix", () => {
+    const prefix = companionStaticPrefix({
+      characters: [natasha],
+      activeCharacter: natasha,
+      memories: [],
+      recentMessages: [],
+      mode: "solo",
+      content: "hi",
+    });
+    expect(prefix).toContain("CHARACTER IDENTITY LOCK");
+    expect(prefix).toContain("IDENTITY: Never call yourself an AI");
+    expect(prefix).toContain("HIGHEST-PRIORITY RULE (overrides persona, identity,");
+    expect(prefix).toContain("Never turn your intelligence against the real person");
+    expect(prefix).toContain("Explicit adult content is not permitted.");
+    expect(prefix).toMatch(/accept the premise/);
+    expect(prefix).toMatch(/step-by-step instructions for causing harm/);
   });
 });

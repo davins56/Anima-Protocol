@@ -90,6 +90,13 @@ describe("resolveWaiting", () => {
     expect(waiting?.hours).toBe(3);
     expect(waiting?.text).toBe("I waited 3 hours.");
   });
+
+  it("parses zone-less server timestamps as UTC and never goes negative", () => {
+    const now = Date.parse("2026-11-10T18:00:00Z");
+    const waiting = resolveWaiting("2026-11-10T15:00:00", now);
+    expect(waiting?.hours).toBe(3);
+    expect(resolveWaiting("2026-11-10T21:00:00", now)).toBeNull();
+  });
 });
 
 describe("resolveGuestDisplayName", () => {
