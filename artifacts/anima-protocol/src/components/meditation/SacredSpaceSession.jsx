@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { animaClient } from "@/api/animaClient";
 import { recordSacredSpaceCheckIn, recordSacredSpaceMemory } from "@/lib/sacredSpaceCheckIn";
+import { completeSacredSpace, newSacredSessionId } from "@/lib/synchroClient";
 import { useSacredSpaceVoice } from "@/hooks/useSacredSpaceVoice";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, Sparkles, X, Check, Volume2, VolumeX } from "lucide-react";
@@ -27,9 +28,7 @@ export default function SacredSpaceSession({ character, user, onClose, onComplet
   const [impactSaved, setImpactSaved] = useState(false);
   const [impactResult, setImpactResult] = useState(null);
   const scrollRef = useRef(null);
-  const sessionIdRef = useRef(
-    typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `ss-${Date.now()}`,
-  );
+  const sessionIdRef = useRef(null);
   const lastSpokenRef = useRef("");
   const {
     isEnabled: voiceEnabled,
@@ -127,6 +126,7 @@ Respond as ${character.name}, in your own voice. Let the length follow the momen
   const saveImpact = async () => {
     if (savingImpact) return;
     setSavingImpact(true);
+    if (!sessionIdRef.current) sessionIdRef.current = newSacredSessionId("sacred-session");
     try {
       const transcript = messages.map(m =>
         `${m.role === "user" ? "User" : m.character_name}: ${m.content}`
@@ -171,6 +171,15 @@ Respond as ${character.name}, in your own voice. Let the length follow the momen
       } catch (impactErr) {
         console.error(impactErr);
       }
+
+      const resonance = await completeSacredSpace({
+        characterId: character.id,
+        sessionId: sessionIdRef.current,
+        activity: "sacred_space_session",
+        userTurns: messages.filter((m) => m.role === "user").length,
+        hasReflection: Boolean(reflection && reflection.trim()),
+      });
+      if (resonance) impact = { ...impact, resonance };
 
       setImpactResult(impact);
       setImpactSaved(true);
@@ -294,7 +303,11 @@ Respond as ${character.name}, in your own voice. Let the length follow the momen
                 Sacred Space Complete
               </h3>
               <p className="font-mono text-[10px] leading-relaxed" style={{ color: "rgba(220,210,255,0.6)" }}>
-                {character.name} has been touched by your shared ritual. Their connection with you has deepened.
+                {character.name} has been touched by your shared ritual. {impactResult?.resonance?.awarded > 0
+                  ? `Resonance +${impactResult.resonance.awarded} — ${impactResult.resonance.label} (${impactResult.resonance.strength}/100)${impactResult.resonance.tierChanged ? " · new tier" : ""}.`
+                  : impactResult?.resonance?.capped
+                    ? "Today's resonance from Sacred Space is already full; the bond holds steady."
+                    : ""}
               </p>
               {impactResult?.personality_addition && (
                 <div className="p-4 border-l-2 text-left space-y-1"

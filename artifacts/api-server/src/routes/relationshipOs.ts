@@ -1,5 +1,15 @@
 import { Router, type Request, type Response } from "express";
 import { getAuth } from "@clerk/express";
+import { and, eq, or } from "drizzle-orm";
+import { db, userEntities, withTransientDbRetry } from "@workspace/db";
+import {
+  SACRED_ACTIVITIES,
+  awardSacredSpaceResonance,
+  isValidSacredSessionId,
+  readSynchroSummary,
+  type SacredActivity,
+} from "../lib/sacredSpaceResonance";
+import { SYNCHRO_THRESHOLDS } from "../lib/synchroEngine";
 import { loadTimelineEvents, openRelationshipChapter } from "../lib/relationshipTimeline";
 import {
   crystallizeResonanceMemory,
@@ -326,6 +336,83 @@ router.post("/home/artifacts", async (req, res) => {
     memory,
   });
   res.json({ home });
+});
+
+async function userOwnsCharacter(userId: string, characterId: string): Promise<boolean> {
+  const rows = await withTransientDbRetry(() =>
+    db
+      .select({ id: userEntities.id })
+      .from(userEntities)
+      .where(
+        and(
+          eq(userEntities.userId, userId),
+          or(eq(userEntities.entityName, "Character"), eq(userEntities.entityName, "Anima")),
+          eq(userEntities.entityId, characterId),
+        ),
+      )
+      .limit(1),
+  );
+  return rows.length > 0;
+}
+
+function boundedCount(value: unknown, max: number): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(0, Math.min(max, Math.floor(n))) : 0;
+}
+
+/** Long-term resonance (Synchro) for one of the caller's companions. Separate from Heat. */
+router.get("/synchro/:characterId", async (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const characterId = String(req.params.characterId || "").trim();
+  if (!characterId) {
+    res.status(400).json({ error: "characterId required" });
+    return;
+  }
+  const summary = await readSynchroSummary(userId, characterId);
+  res.setHeader("Cache-Control", "private, no-store");
+  res.json({ synchro: { ...summary, thresholds: SYNCHRO_THRESHOLDS } });
+});
+
+/**
+ * A completed Sacred Space activity earns bounded resonance. The server owns
+ * the amount; the body only identifies the activity and the session, so a
+ * client cannot choose how much it earns. Replaying a session id is a no-op.
+ */
+router.post("/sacred-space/complete", async (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const characterId = typeof body.character_id === "string" ? body.character_id.trim() : "";
+  const activity = body.activity as SacredActivity;
+  if (!characterId) {
+    res.status(400).json({ error: "character_id required" });
+    return;
+  }
+  if (!SACRED_ACTIVITIES.includes(activity)) {
+    res.status(400).json({ error: "activity must be sacred_space_session or meditation_ritual" });
+    return;
+  }
+  if (!isValidSacredSessionId(body.session_id)) {
+    res.status(400).json({ error: "session_id required (8-100 chars: letters, digits, _ . : -)" });
+    return;
+  }
+  if (!(await userOwnsCharacter(userId, characterId))) {
+    res.status(404).json({ error: "Character not found" });
+    return;
+  }
+  const result = await awardSacredSpaceResonance({
+    userId,
+    characterId,
+    sessionId: body.session_id,
+    completion: {
+      activity,
+      userTurns: boundedCount(body.user_turns, 200),
+      stepsCompleted: boundedCount(body.steps_completed, 6),
+      hasReflection: body.has_reflection === true,
+    },
+  });
+  res.json({ resonance: result });
 });
 
 export default router;
