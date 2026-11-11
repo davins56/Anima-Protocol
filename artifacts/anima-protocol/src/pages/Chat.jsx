@@ -30,7 +30,7 @@ import {
   NARRATOR_RESPONSE_SCHEMA,
   buildNarratorPrompt,
   narratorMessageFromResult,
-  shouldNarrate,
+  narratorConsultation,
   storyModeEnabled,
 } from "@/lib/storyNarrator";
 import { cyberspaceBattlePromptBlock } from "@/lib/energyFragments";
@@ -1518,8 +1518,8 @@ export default function Chat() {
   // onto the most capable (heavy) model tier instead of the cost-saving
   // auto-routed tier. Persisted on the session so it survives reloads and
   // syncs across devices. Optimistic toggle with rollback on failure.
-  // Per-conversation story mode: the Narrator adds a scene update about every
-  // three exchanges. On by default; never offered in therapy.
+  // Per-conversation story mode: the Narrator adds a scene update when the
+  // conversation calls for one. On by default; never offered in therapy.
   const handleToggleStoryMode = async () => {
     if (!activeSession?.id) return;
     const next = !storyModeEnabled(activeSession);
@@ -3067,13 +3067,13 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // side effects. A second pass would double-count affect. A cut-off
       // reply is not sent into these jobs — the half-reply is not a memory.
       if (!skipAffect && !replyCutOff.reply_interrupted) {
-      // Story mode — about every three exchanges a Narrator steps into the log
-      // with a short scene update that moves the story on. Never in therapy.
-      if (
-        storyModeEnabled(activeSession, { therapy: therapyActive }) &&
-        shouldNarrate(finalMessages) &&
-        narratorBusyRef.current !== sendSessionId
-      ) {
+      // Story mode — the Narrator's mind reads the log after each exchange and
+      // decides whether the story needs a scene update now (after one exchange
+      // or ten). Local scene cues only decide when to ask. Never in therapy.
+      const narratorCheck = storyModeEnabled(activeSession, { therapy: therapyActive })
+        ? narratorConsultation(finalMessages)
+        : null;
+      if (narratorCheck?.consult && narratorBusyRef.current !== sendSessionId) {
         narratorBusyRef.current = sendSessionId;
         const castNames =
           activeSession.mode === "group"
@@ -3083,13 +3083,14 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             : [activeChar?.name || charName];
         animaClient.integrations.Core.InvokeLLM({
           sidecar: true,
-          max_tokens: 320,
+          max_tokens: 360,
           prompt: buildNarratorPrompt({
             messages: finalMessages,
             characterNames: castNames,
             userName: user?.full_name || "",
             openingScene: activeSession.opening_scene || "",
             allowMature: adultMode,
+            consultation: narratorCheck,
           }),
           response_json_schema: NARRATOR_RESPONSE_SCHEMA,
         })
