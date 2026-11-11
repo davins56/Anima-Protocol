@@ -9,9 +9,16 @@ export function buildTextPdf(
   const padBytes = Math.max(0, options?.padBytes || 0);
   let id = 4;
   pages.forEach((text, pageIndex) => {
-    const safe = text.replace(/\\/g, "\\\\").replace(/[()]/g, "");
+    const clean = (line: string) => line.replace(/\\/g, "\\\\").replace(/[()]/g, "");
     const padding = pageIndex === 0 && padBytes > 0 ? " ".repeat(padBytes) : "";
-    const stream = `BT /F1 18 Tf 72 720 Td (${safe}) Tj ET\n${padding}`;
+    // Multi-line pages ("\n") use small type so long text stays on the page;
+    // text past the page edge is not extracted.
+    const stream = text.includes("\n")
+      ? `BT /F1 7 Tf 9 TL 18 780 Td ${text
+          .split("\n")
+          .map((line) => `(${clean(line)}) Tj T*`)
+          .join(" ")} ET\n${padding}`
+      : `BT /F1 18 Tf 72 720 Td (${clean(text)}) Tj ET\n${padding}`;
     const contentId = id++;
     const pageId = id++;
     contentObjs.push({

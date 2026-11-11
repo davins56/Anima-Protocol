@@ -7,6 +7,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const listPdfDocuments = vi.hoisted(() => vi.fn());
 const renamePdfDocument = vi.hoisted(() => vi.fn());
 const deletePdfDocument = vi.hoisted(() => vi.fn());
+const uploadPdfDocument = vi.hoisted(() => vi.fn());
 
 vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
@@ -14,7 +15,7 @@ vi.mock("sonner", () => ({
 
 vi.mock("@/api/pdfDocuments", () => ({
   listPdfDocuments,
-  uploadPdfDocument: vi.fn(),
+  uploadPdfDocument,
   renamePdfDocument,
   deletePdfDocument,
   pdfProgressLabel: () => "Reading PDF…",
@@ -96,5 +97,29 @@ describe("CompanionLoreFiles", () => {
       await Promise.resolve();
     });
     expect(deletePdfDocument).toHaveBeenCalledWith("doc_1");
+  });
+
+  it("shows the chunk-cap rejection instead of saving a half-read lore file", async () => {
+    const message =
+      "This PDF has too much text for one file. Only the first 95,855 of 95,999 characters would fit, so it wasn't saved. Split it into smaller files.";
+    uploadPdfDocument.mockRejectedValueOnce(
+      Object.assign(new Error(message), { code: "pdf_too_much_text", status: 413 }),
+    );
+    const { container } = renderLore();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const input = container.querySelector("[data-testid='lore-pdf-upload']");
+    Object.defineProperty(input, "files", {
+      configurable: true,
+      value: [new File(["%PDF-1.7"], "dense-lore.pdf", { type: "application/pdf" })],
+    });
+    await act(async () => {
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(container.querySelector("[role='alert']")?.textContent).toBe(message);
+    expect(listPdfDocuments).toHaveBeenCalledTimes(1);
   });
 });

@@ -996,3 +996,47 @@ describe("functions.invoke timeout", () => {
     }
   });
 });
+
+describe("functions.invoke throwOnError", () => {
+  beforeEach(() => {
+    setAuthTokenGetter(() => "test-token");
+  });
+
+  afterEach(() => {
+    clearAuthTokenGetter();
+    vi.restoreAllMocks();
+    delete global.fetch;
+  });
+
+  it("still returns null by default when the server fails", async () => {
+    global.fetch = vi.fn(async () =>
+      Response.json({ error: "boom" }, { status: 500 }),
+    );
+    const result = await animaClient.functions.invoke("processUserContext", {});
+    expect(result).toBeNull();
+  });
+
+  it("rethrows the server error, status and code when the caller asks", async () => {
+    global.fetch = vi.fn(async () =>
+      Response.json(
+        {
+          error: "No text received. This screen can't read PDFs yet.",
+          code: "pdf_not_supported",
+          retryable: false,
+        },
+        { status: 422 },
+      ),
+    );
+    await expect(
+      animaClient.functions.invoke(
+        "processUserContext",
+        { user_context_id: "ctx_1", is_pdf: true },
+        { throwOnError: true },
+      ),
+    ).rejects.toMatchObject({
+      status: 422,
+      code: "pdf_not_supported",
+      message: expect.stringContaining("No text received"),
+    });
+  });
+});

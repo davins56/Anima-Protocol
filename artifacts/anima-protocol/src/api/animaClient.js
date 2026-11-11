@@ -1895,6 +1895,9 @@ export const animaClient = {
             return json.result;
           } catch (err) {
             console.warn(`animaClient.functions.${String(realName)} failed:`, err.message);
+            // Callers that show the failure to the user (Background uploads)
+            // pass throwOnError; everyone else keeps the null fallback.
+            if (invokeOptions?.throwOnError) throw err;
             return null;
           } finally {
             timeout.cancel();

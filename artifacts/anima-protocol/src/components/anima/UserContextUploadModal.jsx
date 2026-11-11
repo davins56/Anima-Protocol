@@ -2,50 +2,82 @@ import { useState } from 'react';
 import { Upload, X, Loader } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { animaClient } from '@/api/animaClient';
-import { downscaleDataUrl } from '@/lib/downscaleImage';
-import { readPhotoAsDataUrl } from '@/lib/avatarPhoto';
+import { buildUserContextPayload, readUserContextImage } from '@/lib/userContextPayload';
 import {
+  USER_CONTEXT_ACCEPT,
+  classifyUserContextFile,
   formatUserContextUploadError,
+  runUserContextProcessing,
   uploadUserContextStorageFile,
+  userContextFileRejection,
   userContextNeedsStorageUpload,
 } from '@/lib/userContextUpload';
-
-const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
-
-function isImageFile(file) {
-  if (!file) return false;
-  const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-  return (file.type || '').startsWith('image/') || IMAGE_EXTS.includes(ext);
-}
 
 export default function UserContextUploadModal({ isOpen, onClose, onUploadComplete }) {
   const [file, setFile] = useState(null);
   const [title, setTitle] = useState('');
   const [docType, setDocType] = useState('other');
   const [uploading, setUploading] = useState(false);
+  const [phase, setPhase] = useState('');
   const [error, setError] = useState('');
+  // Row saved on a previous attempt whose analysis failed. "Retry analysis"
+  // re-runs processing on it instead of saving a duplicate card.
+  const [savedRecord, setSavedRecord] = useState(null);
+  const [savedPayload, setSavedPayload] = useState(null);
+
+  const resetAndClose = () => {
+    setFile(null);
+    setTitle('');
+    setDocType('other');
+    setError('');
+    setPhase('');
+    setSavedRecord(null);
+    setSavedPayload(null);
+    onClose();
+  };
 
   const handleFileSelect = (e) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
-      const validTypes = ['text/plain', 'application/pdf', 'text/markdown', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/epub+zip', 'image/png', 'image/jpeg', 'image/webp', 'image/gif'];
-      const validExts = ['.txt', '.md', '.pdf', '.docx', '.epub', ...IMAGE_EXTS];
-      const ext = selectedFile.name.substring(selectedFile.name.lastIndexOf('.')).toLowerCase();
-      
-      if (!validTypes.includes(selectedFile.type) && !validExts.includes(ext)) {
-        setError('Please upload: .txt, .md, .pdf, .docx, .epub, or an image');
+      const rejection = userContextFileRejection(selectedFile);
+      if (rejection) {
+        setFile(null);
+        setError(rejection);
         return;
       }
-
-      const maxSize = 10 * 1024 * 1024;
-      if (selectedFile.size > maxSize) {
-        setError('File must be under 10MB.');
-        return;
-      }
-
       setFile(selectedFile);
       setError('');
+      setSavedRecord(null);
+      setSavedPayload(null);
       if (!title) setTitle(selectedFile.name.replace(/\.[^.]+$/, ''));
+    }
+  };
+
+  const processRecord = async (recordId, payload) => {
+    setPhase('analysing');
+    const outcome = await runUserContextProcessing({
+      invoke: (name, data, options) => animaClient.functions.invoke(name, data, options),
+      updateRecord: (id, patch) => animaClient.entities.UserContext.update(id, patch),
+      recordId,
+      payload,
+    });
+    onUploadComplete?.();
+    if (outcome.ok) {
+      resetAndClose();
+      return;
+    }
+    setError(`Saved, but the analysis failed: ${outcome.message} The card shows Failed with a Retry button.`);
+  };
+
+  const handleRetry = async () => {
+    if (!savedRecord || !savedPayload) return;
+    setUploading(true);
+    setError('');
+    try {
+      await processRecord(savedRecord.id, savedPayload);
+    } finally {
+      setUploading(false);
+      setPhase('');
     }
   };
 
@@ -54,51 +86,29 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
       setError('Please select a file and enter a title');
       return;
     }
+    const rejection = userContextFileRejection(file);
+    if (rejection) {
+      setError(rejection);
+      return;
+    }
 
     setUploading(true);
     setError('');
+    setPhase('uploading');
 
     try {
       const user = await animaClient.auth.me();
+      const kind = classifyUserContextFile(file);
+      const isImage = kind === 'image';
 
-      const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-      const isPdf = ext === '.pdf' || file.type === 'application/pdf';
-      const isImage = isImageFile(file);
-
-      // Large phone photos (5–15MB) are shrunk to ~1024px JPEG before upload so
-      // they don't slow the request or bloat in-memory data URLs; the original
-      // file is kept as a fallback if downscaling fails.
-      // The backend has no fetchable copy of the file (uploads aren't persisted
-      // to object storage here), so for images we also send the downscaled photo
-      // inline as a data URL — that's how the backend reads (OCR + describes) it.
       let fileToUpload = file;
       let imageDataUrl = '';
       if (isImage) {
-        try {
-          const dataUrl = await readPhotoAsDataUrl(file);
-          if (dataUrl) {
-            let small = '';
-            try {
-              small = await downscaleDataUrl(dataUrl, 1024, 0.85);
-            } catch (downscaleErr) {
-              console.debug('Image downscale failed; using original', downscaleErr);
-            }
-            imageDataUrl = small || dataUrl;
-            if (small) {
-              const blob = await (await fetch(small)).blob();
-              const baseName = file.name.replace(/\.[^.]+$/, '');
-              fileToUpload = new File([blob], `${baseName}.jpg`, { type: 'image/jpeg' });
-            }
-          }
-        } catch (readErr) {
-          console.debug('Image read failed; using original', readErr);
-          fileToUpload = file;
-        }
+        ({ fileToUpload, imageDataUrl } = await readUserContextImage(file));
       }
 
       // Images go through Postgres-backed /api/storage/uploads. Text documents
-      // skip that path — UploadFile only accepts images and would fail every
-      // .txt/.md/.pdf pick before the UserContext row is created.
+      // skip that path — UploadFile only accepts images.
       let fileUrl = '';
       if (userContextNeedsStorageUpload(isImage)) {
         try {
@@ -108,55 +118,44 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
           );
         } catch (uploadErr) {
           setError(formatUserContextUploadError(uploadErr));
-          setUploading(false);
           return;
         }
       }
 
-      // For plain-text files, also read as text to send to backend. PDFs and
-      // images are handled by the backend from the uploaded file instead.
-      let fileData = '';
-      if (!isPdf && !isImage) {
-        try { fileData = await file.text(); } catch (_) {}
+      const payload = await buildUserContextPayload(file, {
+        title,
+        docType,
+        fileUrl,
+        imageDataUrl: isImage ? imageDataUrl : undefined,
+      });
+      if (!isImage && !payload.file_content.trim()) {
+        setError('That file has no text in it.');
+        return;
       }
 
-      // Create UserContext record
       const contextRecord = await animaClient.entities.UserContext.create({
         user_email: user.email,
         title,
         document_type: docType,
         file_url: fileUrl,
+        file_name: file.name,
+        source_kind: isImage ? 'image' : 'text',
         is_active: true,
         processing_complete: false,
+        processing_status: 'processing',
+        processing_started_at: new Date().toISOString(),
       });
+      setSavedRecord(contextRecord);
+      setSavedPayload(payload);
 
-      // Process the context in the background. For images the backend reads the
-      // inline data URL (OCR + vision); for text it reads file_content. It
-      // persists the extracted analysis onto the record server-side, so refresh
-      // the list again once it finishes to surface the generated summary.
-      animaClient.functions.invoke('processUserContext', {
-        user_context_id: contextRecord.id,
-        file_url: fileUrl,
-        file_content: fileData,
-        is_pdf: isPdf,
-        is_image: isImage,
-        image_data_url: imageDataUrl,
-        document_type: docType,
-        title,
-      })
-        .then(() => onUploadComplete?.())
-        .catch(err => console.warn('Background processing encountered an issue:', err));
-
-      onUploadComplete?.();
-      setFile(null);
-      setTitle('');
-      setDocType('other');
-      onClose();
+      // Wait for the analysis so a failure is shown here, not swallowed.
+      await processRecord(contextRecord.id, payload);
     } catch (err) {
       console.error('Upload failed:', err);
       setError(formatUserContextUploadError(err) || 'Upload failed. Please check the file and try again.');
     } finally {
       setUploading(false);
+      setPhase('');
     }
   };
 
@@ -180,7 +179,8 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
             Upload Background Document
           </h3>
           <button
-            onClick={onClose}
+            onClick={resetAndClose}
+            aria-label="Close"
             className="text-purple-400/50 hover:text-purple-400 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -231,7 +231,8 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
             <input
               type="file"
               onChange={handleFileSelect}
-              accept=".txt,.md,.pdf,.docx,.epub,image/*"
+              accept={USER_CONTEXT_ACCEPT}
+              data-testid="user-context-file"
               className="hidden"
               id="file-input"
               disabled={uploading}
@@ -251,13 +252,13 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
             </label>
           </div>
           <p className="text-[8px] font-mono text-purple-400/40">
-            Supported: .txt, .md, .pdf, .docx, .epub, images (max 10MB)
+            Supported: .txt, .md, images (max 10MB). Book PDFs, Word and EPUB files are coming with the new upload pipeline.
           </p>
         </div>
 
         {/* Error */}
         {error && (
-          <div className="p-2 border border-red-400/30 bg-red-900/10 rounded">
+          <div className="p-2 border border-red-400/30 bg-red-900/10 rounded" role="alert">
             <p className="text-[8px] font-mono text-red-400">{error}</p>
           </div>
         )}
@@ -265,26 +266,26 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
         {/* Actions */}
         <div className="flex gap-3 pt-2">
           <button
-            onClick={onClose}
+            onClick={resetAndClose}
             disabled={uploading}
             className="flex-1 px-4 py-2 border border-purple-400/20 text-purple-400/70 hover:text-purple-400 font-mono text-sm tracking-wider uppercase transition-colors disabled:opacity-50"
           >
             Cancel
           </button>
           <button
-            onClick={handleUpload}
+            onClick={savedRecord ? handleRetry : handleUpload}
             disabled={!file || !title || uploading}
             className="flex-1 px-4 py-2 bg-purple-600/30 border border-purple-400/50 text-purple-400 hover:bg-purple-600/50 disabled:opacity-50 disabled:cursor-not-allowed font-mono text-sm tracking-wider uppercase transition-all flex items-center justify-center gap-2"
           >
             {uploading ? (
               <>
                 <Loader className="w-4 h-4 animate-spin" />
-                Uploading...
+                {phase === 'analysing' ? 'Analysing...' : 'Uploading...'}
               </>
             ) : (
               <>
                 <Upload className="w-4 h-4" />
-                Upload
+                {savedRecord ? 'Retry analysis' : 'Upload'}
               </>
             )}
           </button>

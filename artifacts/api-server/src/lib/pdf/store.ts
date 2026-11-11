@@ -5,7 +5,7 @@ import {
   getPool,
   withTransientDbRetry,
 } from "@workspace/db";
-import { chunkPdfPages } from "./chunk";
+import { chunkPdfPagesDetailed, pdfChunkCapMessage } from "./chunk";
 import {
   buildPdfRetrievalSql,
   packPdfContext,
@@ -277,7 +277,17 @@ export async function createPdfDocument(input: {
     const bytes = decodePdfBase64(String(input.dataBase64 || ""));
     const byteSize = bytes.byteLength;
     const extracted = await extractPdfPages(bytes);
-    const chunks = chunkPdfPages(extracted.pages);
+    const chunked = chunkPdfPagesDetailed(extracted.pages);
+    const chunks = chunked.chunks;
+    if (chunked.truncated) {
+      // The chunk cap would keep only part of the text. Reject with the same
+      // code as the character cap so no file is ever stored half-read.
+      throw new PdfUploadError(
+        pdfChunkCapMessage(chunked.coveredChars, chunked.totalChars),
+        "pdf_too_much_text",
+        413,
+      );
+    }
     if (!chunks.length) {
       throw new PdfUploadError(
         "This PDF has no extractable text. It looks like a scan or pictures only, so I can't read it. Export a text-based PDF and try again.",
