@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildGroupPrompt } from "./buildGroupPrompt";
+import { REPLY_FORMAT_GUIDANCE } from "./companionGuardrail";
 
 describe("buildGroupPrompt", () => {
   const base = {
@@ -31,6 +32,13 @@ describe("buildGroupPrompt", () => {
     expect(prompt).toContain("TURN TAKING");
     expect(prompt).toMatch(/STOP and wait for the user/i);
     expect(prompt).toContain("CHARACTER IDENTITY LOCK");
+  });
+
+  it("guides actions and unquoted speech without duplicating the shared formatting instruction", () => {
+    const prompt = buildGroupPrompt(base);
+    expect(prompt).toContain(REPLY_FORMAT_GUIDANCE);
+    expect(prompt.split(REPLY_FORMAT_GUIDANCE)).toHaveLength(2);
+    expect(prompt).toContain("**Ava:**");
   });
 
   it("embeds group intimacy guidance when provided", () => {

@@ -88,6 +88,15 @@ describe("MessageMarkdown", () => {
     expect(legacyEm.className).toBe("text-primary/70 opacity-75");
   });
 
+  it("renders actions, parenthesized character thoughts, unquoted speech, and genuine quotations", () => {
+    const source = 'We can wait here. *rests a hand on the rail* (I hope the storm passes.) The captain said, "Hold the line."';
+    const { container } = mount(<MessageMarkdown content={source} />);
+    expect(container.querySelectorAll("em")).toHaveLength(1);
+    expect(container.querySelector("em")?.textContent).toBe("rests a hand on the rail");
+    expect(container.querySelector("em")?.className).toBe(ROLEPLAY_ACTION_CLASS);
+    expect(container.textContent).toBe('We can wait here. rests a hand on the rail (I hope the storm passes.) The captain said, "Hold the line."');
+  });
+
   it("does not render raw HTML or dangerous URLs, and does not load markdown images", async () => {
     const source = [
       "<script>alert(1)</script>",
