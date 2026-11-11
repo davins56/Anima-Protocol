@@ -84,7 +84,7 @@ describe("buildCompanionPrompt", () => {
     expect(prompt).toContain("CHARACTER IDENTITY LOCK");
     expect(prompt).toContain("Personality: Warm, ethereal, deeply empathic angel with sovereign grace");
     expect(prompt).toContain("TURN TAKING");
-    expect(prompt).toMatch(/stop at a natural pause/i);
+    expect(prompt).toMatch(/one complete beat/i);
     expect(prompt).toContain("I think I'm ready to talk about my mother again");
   });
 
