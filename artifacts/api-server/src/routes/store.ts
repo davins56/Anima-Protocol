@@ -22,6 +22,7 @@ import {
   type MsgData,
 } from "@workspace/db";
 import { messageTurnId, turnMetadataReplaced } from "../lib/replyReplacement";
+import { forgetDeletedMessage, unforgetDeletedMessage } from "../lib/mind/forgetMessage";
 import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import type { Request, Response, NextFunction } from "express";
 import { addClient, removeClient, notifyUser } from "../lib/storeEvents";
@@ -1090,6 +1091,93 @@ router.post("/messages", async (req, res) => {
     return;
   }
   res.status(201).json(created);
+});
+
+// DELETE /messages/:id?session_id= — delete ONE message row. The trash can
+// used to rewrite the whole history through /messages/replace (one upsert and
+// one replaced-turn check per message), which on a 100+ message chat outran
+// the client's 8s write budget and was cancelled, so nothing was deleted.
+// Rows are scoped by user_id, so a caller can only delete their own messages.
+// What the mind learned from the message is forgotten best effort (see
+// lib/mind/forgetMessage); a missing memory table never fails the delete.
+router.delete("/messages/:messageId", async (req, res) => {
+  const userId = getUserId(req);
+  const messageId = String(req.params.messageId || "").trim();
+  const sessionId = String(req.query.session_id || "").trim();
+  if (!messageId || !sessionId) {
+    res.status(400).json({ error: "session_id and message id are required" });
+    return;
+  }
+  const deleted = await withTransientDbRetry(() =>
+    db.transaction(async (tx) => {
+      await migrateSessionMessages(tx, userId, sessionId);
+      const removed = await tx
+        .delete(userEntities)
+        .where(
+          and(
+            eq(userEntities.userId, userId),
+            eq(userEntities.entityName, CHAT_MESSAGE),
+            eq(userEntities.entityId, messageId),
+            sessionIdEq(sessionId),
+          ),
+        )
+        .returning({ data: userEntities.data });
+      return removed[0] ? (removed[0].data as MsgData) : null;
+    }),
+  );
+  if (!deleted) {
+    // Already gone (a second tap, or another device) is still "deleted".
+    res.status(404).json({ error: "Message not found" });
+    return;
+  }
+  let forgotten = 0;
+  try {
+    forgotten = await forgetDeletedMessage({
+      userId,
+      sessionId,
+      message: {
+        id: messageId,
+        role: deleted.role,
+        seq: deleted.seq,
+        turnId: messageTurnId(deleted) || null,
+      },
+    });
+  } catch (error) {
+    logger.warn({ error, sessionId }, "Deleted message; could not retract what the mind learned from it");
+  }
+  res.json({ deleted: true, id: messageId, seq: deleted.seq ?? null, forgotten });
+});
+
+// POST /messages/restore { session_id, message } — Undo for the delete above.
+// Puts the row back with its original id and seq (the gap it left is still
+// free), and re-appends what the mind forgot.
+router.post("/messages/restore", async (req, res) => {
+  const userId = getUserId(req);
+  const body = req.body as { session_id?: string; message?: unknown };
+  const sessionId = String(body.session_id || "").trim();
+  const msg = asObject(body.message);
+  const messageId = msg.id != null ? String(msg.id) : "";
+  if (!sessionId || !messageId) {
+    res.status(400).json({ error: "session_id and message.id are required" });
+    return;
+  }
+  // Client-only view flags never belong on a stored row.
+  const stored: Record<string, unknown> = { ...msg };
+  delete stored.is_streaming;
+  delete stored.is_typing;
+  const data: MsgData = { ...stored, id: messageId, session_id: sessionId, updated_date: new Date().toISOString() };
+  await withTransientDbRetry(() =>
+    db
+      .insert(userEntities)
+      .values({ userId, entityName: CHAT_MESSAGE, entityId: messageId, data })
+      .onConflictDoNothing(),
+  );
+  try {
+    await unforgetDeletedMessage(userId, messageId);
+  } catch (error) {
+    logger.warn({ error, sessionId }, "Restored message; could not restore what the mind had forgotten");
+  }
+  res.status(201).json(data);
 });
 
 /** Snapshot first, then stored rows whose ids are not in it, in seq order. */
