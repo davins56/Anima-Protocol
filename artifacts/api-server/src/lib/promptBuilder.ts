@@ -157,6 +157,8 @@ export interface PromptBuilderParams {
   mode: string;
   /** The latest user message content */
   content: string;
+  /** Whether this turn replaces an earlier companion reply. */
+  replyAction?: "retry" | "edit" | null;
   /**
    * Signed-in display name. Used only by the answer-last instruction.
    * When empty, the operator-model identity name is the next fallback.
@@ -2002,10 +2004,16 @@ export function composeCompanionChatMessages(
   const photoNote = String(params.photoNote || "").trim();
   const modelUserTurn = photoNote ? `${userTurn}\n\n${photoNote}` : userTurn;
   const mind = params.mind ?? null;
-  const normalizedHistory = normalizeRecentMessages(
-    omitRetriedUserTurn(params.recentMessages, userTurn),
-    mind?.historyMessageChars,
-  );
+  const recentMessages = params.replyAction
+    ? omitRetriedUserTurn(params.recentMessages, userTurn)
+    : params.recentMessages;
+  const lastRecentMessage = recentMessages[recentMessages.length - 1];
+  const historyWithoutCurrentTurn =
+    lastRecentMessage?.role === "user" &&
+    String(lastRecentMessage.content ?? "").trim() === userTurn
+      ? recentMessages.slice(0, -1)
+      : recentMessages;
+  const normalizedHistory = normalizeRecentMessages(historyWithoutCurrentTurn, mind?.historyMessageChars);
   let history = mind
     ? mindHistoryTail(normalizedHistory, mind.historyExchanges)
     : keepStableHistoryBlock(normalizedHistory);
@@ -2063,14 +2071,7 @@ export function composeCompanionChatMessages(
     ]);
     const messages: LlmChatMessage[] = [];
     if (system) messages.push({ role: "system", content: system });
-    // Retry dedupe already dropped this question and its stale answer. A
-    // leftover trailing copy (continue turns are left in place) is still
-    // removed so the answer-last system turn sits directly before one user line.
-    const historyEndsWithTurn =
-      history.length > 0 &&
-      history[history.length - 1]?.role === "user" &&
-      history[history.length - 1]?.content === userTurn;
-    messages.push(...(historyEndsWithTurn ? history.slice(0, -1) : history));
+    messages.push(...history);
     if (dialogueNote) messages.push({ role: "system", content: dialogueNote });
     messages.push({ role: "system", content: closingNote });
     messages.push({ role: "user", content: modelUserTurn });
