@@ -6,6 +6,8 @@ import { createRateLimit } from "../lib/rateLimit";
 import { logger } from "../lib/logger";
 import { readChatTurn } from "../lib/chatTurnLedger";
 import { createChatCompletionWithFailover } from "../lib/llmFailover";
+import { combineAbortSignals } from "../lib/chatTimeouts";
+import { acquireLocalLlmBackground } from "../lib/localLlmSlot";
 import { finalizeAssistantReply } from "../lib/visibleAssistantReply";
 import {
   buildTeacherMessages,
@@ -173,7 +175,8 @@ type Skip =
   | "not_learnable"
   | "already_taught"
   | "queue_full"
-  | "no_better_reply";
+  | "no_better_reply"
+  | "model_busy";
 
 function skipped(res: Response, reason: Skip): void {
   res.json({ queued: false, reason });
@@ -230,13 +233,22 @@ router.post(
       );
 
       const advice = (await listAdvice()).map((a) => a.text);
-      const completion = await createChatCompletionWithFailover({
+      const background = await acquireLocalLlmBackground("own-model-teacher", {
+        job: "own-model-teacher",
+      });
+      if (!background) return skipped(res, "model_busy");
+      let completion;
+      try {
+      completion = await createChatCompletionWithFailover({
         tier: "light",
         maxTokens: 300,
         temperature: 0.7,
         messages: buildTeacherMessages({ context, advice }),
-        signal: AbortSignal.timeout(TEACHER_TIMEOUT_MS),
+        signal: combineAbortSignals(AbortSignal.timeout(TEACHER_TIMEOUT_MS), background.signal),
       });
+      } finally {
+        await background.release();
+      }
       const chosen = cleanDraft(finalizeAssistantReply(completion.content));
       const rejectedRaw = turn.assistantContent.trim();
       const rejected =

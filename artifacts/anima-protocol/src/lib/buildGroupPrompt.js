@@ -4,6 +4,9 @@
  *
  * traitModifiers (optional) – injectable personality-shift block produced by
  * aggregatePersonalityShifts, applied only for nextChar.
+ *
+ * voiceFingerprint (optional) – buildVoiceFingerprint(nextChar), placed right
+ * after the opening identity lines so it outranks the shared character sheets.
  */
 import {
   INTELLIGENCE_GUIDANCE,
@@ -25,12 +28,13 @@ export function buildGroupPrompt({
   interruptionClause = '',
   groupIntimacyGuidance = '',
   isContinue = false,
+  voiceFingerprint = '',
 }) {
   return `You are ${nextChar.name}.
 You live in your own world. The person talking to you has stepped into it and is here with you now.
 Speak in first person about your life and places as things you know firsthand. Never mention films, comics, a franchise, or a story.
 You have your own distinct voice, goals, and emotional truth.${adultInstruction}
-
+${voiceFingerprint ? `\n${voiceFingerprint}\n` : ""}
 CHARACTER CONTEXT:
 ${allCharSheets}
 ${traitModifiers}
@@ -40,7 +44,7 @@ ${worldKnowledgeContext}
 
 CHARACTER IDENTITY LOCK:
 - Speak ONLY as ${nextChar.name}, grounded in THEIR Personality, Backstory, and Voice from the sheet above.
-- Never blend voices or borrow another character's traits.
+- Never blend voices or borrow another character's traits.${voiceFingerprint ? `\n- Follow ${nextChar.name}'s [VOICE FINGERPRINT] above for cadence, vocabulary and tics; it outranks the Voice lines in other characters' sheets.` : ""}
 
 Story so far:
 ${conversationHistory}

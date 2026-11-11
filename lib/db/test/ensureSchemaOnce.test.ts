@@ -56,7 +56,10 @@ describe("ensureSchema skips DDL when the schema is already present", () => {
           const names = pdfCreated
             ? REQUIRED_TABLES
             : REQUIRED_TABLES.filter(
-                (name) => name !== "pdf_documents" && name !== "pdf_chunks",
+                (name) =>
+                  name !== "pdf_documents" &&
+                  name !== "pdf_chunks" &&
+                  name !== "pdf_file_parts",
               );
           return { rows: names.map((table_name) => ({ table_name })) };
         }
@@ -68,10 +71,15 @@ describe("ensureSchema skips DDL when the schema is already present", () => {
     };
     const result = await ensureSchema(queryable);
     expect(result.ok).toBe(true);
-    expect(result.missingBefore.sort()).toEqual(["pdf_chunks", "pdf_documents"]);
+    expect(result.missingBefore.sort()).toEqual([
+      "pdf_chunks",
+      "pdf_documents",
+      "pdf_file_parts",
+    ]);
     const creates = statements.filter((sql) => /CREATE /i.test(sql));
     expect(creates.some((sql) => /"pdf_documents"/i.test(sql))).toBe(true);
     expect(creates.some((sql) => /"pdf_chunks"/i.test(sql))).toBe(true);
+    expect(creates.some((sql) => /"pdf_file_parts"/i.test(sql))).toBe(true);
     expect(creates.some((sql) => /"user_entities"/i.test(sql))).toBe(false);
     expect(creates.some((sql) => /pg_trgm/i.test(sql))).toBe(false);
   });

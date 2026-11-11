@@ -1,4 +1,4 @@
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import { classifyEmptyCustomiseAnimaLoad } from "@/lib/customiseAnimaLoad";
 import {
@@ -32,7 +32,7 @@ export async function loadCustomiseAnimaCompanions({
 
   let me = meFallback || null;
   try {
-    me = (await base44.auth.me()) || meFallback || null;
+    me = (await animaClient.auth.me()) || meFallback || null;
   } catch {
     me = meFallback || null;
   }

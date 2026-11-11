@@ -1,6 +1,6 @@
 // @ts-check
 import { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Upload, Loader, LogOut, Check } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -21,7 +21,7 @@ export default function YnLoginSection({ onStoriesLoaded }) {
 
     try {
       // Fetch Y/n stories for the user
-      const result = await base44.functions.invoke("fetchYnStory", {
+      const result = await animaClient.functions.invoke("fetchYnStory", {
         username: inputValue.trim(),
       });
 
@@ -41,7 +41,7 @@ export default function YnLoginSection({ onStoriesLoaded }) {
         // Load stories as chat sessions
         for (const story of stories) {
           try {
-            await base44.entities.ChatSession.create({
+            await animaClient.entities.ChatSession.create({
               title: story.title || "Imported Y/n Story",
               mode: "solo",
               messages: [

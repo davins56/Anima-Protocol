@@ -1,0 +1,204 @@
+{
+  "fileKey": "VkJdHFwuUvVrNUiXwSgo82",
+  "fileUrl": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82",
+  "codeConnect": "unavailable (Starter plan, View seat); mapping kept here and in Figma component descriptions",
+  "components": [
+    {
+      "figma": "Button",
+      "nodeId": "2:9",
+      "url": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82/Anima-Protocol?node-id=2-9",
+      "properties": "Kind=Primary|Secondary|Ghost; Label (TEXT)",
+      "source": null,
+      "note": "No shared Button component; Tailwind/shadcn classes inline (src/components/ui)."
+    },
+    {
+      "figma": "Chip",
+      "nodeId": "2:14",
+      "url": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82/Anima-Protocol?node-id=2-14",
+      "properties": "Selected=false|true; Label (TEXT)",
+      "source": null,
+      "note": "Inline preset/refine chips inside InlinePhotoComposer/VesselCustomizer."
+    },
+    {
+      "figma": "MemoryHealth",
+      "nodeId": "2:24",
+      "url": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82/Anima-Protocol?node-id=2-24",
+      "properties": "Status=Healthy|Recalled|Empty",
+      "source": "artifacts/anima-protocol/src/components/memory/MemoryHealth.tsx",
+      "note": "default export"
+    },
+    {
+      "figma": "VesselPortrait",
+      "nodeId": "2:37",
+      "url": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82/Anima-Protocol?node-id=2-37",
+      "properties": "Mood=Calm|Joy|Hologram",
+      "source": "artifacts/anima-protocol/src/components/vessel/VesselPortrait.tsx",
+      "note": "props characterId, mood, intensity, fallback"
+    },
+    {
+      "figma": "ResonanceGlyph",
+      "nodeId": "2:69",
+      "url": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82/Anima-Protocol?node-id=2-69",
+      "properties": "Band=Noise|Ambient|Data|Rare|Serenity",
+      "source": "artifacts/anima-protocol/src/components/resonance/ResonanceScene.tsx",
+      "note": "beacon visuals (shaders.ts); colours via styles/anima-tokens.ts"
+    },
+    {
+      "figma": "Icon/*",
+      "nodeId": "3:4",
+      "url": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82/Anima-Protocol?node-id=3-4",
+      "properties": "14 lucide icons (3:4…3:63)",
+      "source": "lucide-react",
+      "note": "Mic, Camera, Send, RefreshCw, RotateCw, Shirt, Smile, Lock, Box, X, Sparkles, Heart, Radio, Upload"
+    },
+    {
+      "figma": "IconButton",
+      "nodeId": "3:81",
+      "url": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82/Anima-Protocol?node-id=3-81",
+      "properties": "Kind=Outline|Solid; Icon (INSTANCE_SWAP)",
+      "source": null,
+      "note": "44x44 touch target pattern; inline buttons in code."
+    },
+    {
+      "figma": "PhotoAttachmentActions",
+      "nodeId": "3:82",
+      "url": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82/Anima-Protocol?node-id=3-82",
+      "properties": "-",
+      "source": "artifacts/anima-protocol/src/components/photo/PhotoAttachmentActions.tsx",
+      "note": "props imageId, characterId"
+    },
+    {
+      "figma": "VoiceLauncher",
+      "nodeId": "3:144",
+      "url": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82/Anima-Protocol?node-id=3-144",
+      "properties": "State=Idle|Live",
+      "source": "artifacts/anima-protocol/src/components/voice/VoiceLauncher.tsx",
+      "note": "Live mirrors useSerenityVoice status; panel = SerenityVoicePanel.tsx"
+    },
+    {
+      "figma": "MessageBubble",
+      "nodeId": "3:190",
+      "url": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82/Anima-Protocol?node-id=3-190",
+      "properties": "Role=Companion|User|Photo",
+      "source": "artifacts/anima-protocol/src/components/chat/MessageBubble.jsx",
+      "note": "Role=Photo = image attachment + PhotoAttachmentActions"
+    },
+    {
+      "figma": "ChatHeader",
+      "nodeId": "4:66",
+      "url": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82/Anima-Protocol?node-id=4-66",
+      "properties": "-",
+      "source": "artifacts/anima-protocol/src/components/chat/ChatHeader.jsx",
+      "note": "contains VesselPortrait + MemoryHealth"
+    },
+    {
+      "figma": "InlinePhotoComposer",
+      "nodeId": "4:100",
+      "url": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82/Anima-Protocol?node-id=4-100",
+      "properties": "-",
+      "source": "artifacts/anima-protocol/src/components/photo/InlinePhotoComposer.tsx",
+      "note": "InlinePhotoComposerProps"
+    },
+    {
+      "figma": "ChatInput",
+      "nodeId": "4:148",
+      "url": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82/Anima-Protocol?node-id=4-148",
+      "properties": "-",
+      "source": "artifacts/anima-protocol/src/components/chat/ChatInput.jsx",
+      "note": "VoiceLauncher mounted beside it in pages/Chat.jsx"
+    },
+    {
+      "figma": "FrequencyTuner",
+      "nodeId": "5:177",
+      "url": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82/Anima-Protocol?node-id=5-177",
+      "properties": "Tuned=Serenity|Crossfade",
+      "source": "artifacts/anima-protocol/src/components/resonance/FrequencyTuner.tsx",
+      "note": "value, onChange, lockStrength, lockedLabel"
+    },
+    {
+      "figma": "ResonanceNode",
+      "nodeId": "5:223",
+      "url": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82/Anima-Protocol?node-id=5-223",
+      "properties": "Band=Noise..Serenity",
+      "source": "artifacts/anima-protocol/src/components/resonance/ResonanceScene.tsx",
+      "note": "Beacons (instanced) + lib/resonance/openNode.ts"
+    },
+    {
+      "figma": "ResonanceScene",
+      "nodeId": "5:224",
+      "url": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82/Anima-Protocol?node-id=5-224",
+      "properties": "-",
+      "source": "artifacts/anima-protocol/src/components/resonance/ResonanceScene.tsx",
+      "note": "static stand-in for R3F scene"
+    },
+    {
+      "figma": "VesselCanvas",
+      "nodeId": "5:323",
+      "url": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82/Anima-Protocol?node-id=5-323",
+      "properties": "-",
+      "source": "artifacts/anima-protocol/src/components/vessel/VesselCanvas.tsx",
+      "note": "viewport placeholder; model VesselModel.tsx"
+    },
+    {
+      "figma": "VesselCustomizer",
+      "nodeId": "5:333",
+      "url": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82/Anima-Protocol?node-id=5-333",
+      "properties": "-",
+      "source": "artifacts/anima-protocol/src/components/vessel/VesselCustomizer.tsx",
+      "note": "value: VesselConfig, onChange"
+    },
+    {
+      "figma": "IdentityLockPanel",
+      "nodeId": "5:433",
+      "url": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82/Anima-Protocol?node-id=5-433",
+      "properties": "-",
+      "source": "artifacts/anima-protocol/src/components/photo/IdentityLockPanel.tsx",
+      "note": "reference images + VisualDescriptor FIELDS + lock"
+    },
+    {
+      "figma": "PhotoGallery",
+      "nodeId": "5:475",
+      "url": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82/Anima-Protocol?node-id=5-475",
+      "properties": "-",
+      "source": null,
+      "note": "design-ahead; proposed src/components/photo/PhotoGallery.tsx (GET /api/photo/images)"
+    }
+  ],
+  "screens": [
+    {
+      "figma": "Chat · iPad Pro 13 landscape",
+      "nodeId": "6:2",
+      "url": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82/Anima-Protocol?node-id=6-2",
+      "source": "artifacts/anima-protocol/src/pages/Chat.jsx",
+      "route": "/chat/:id"
+    },
+    {
+      "figma": "Chat · iPad Pro 13 portrait",
+      "nodeId": "6:249",
+      "url": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82/Anima-Protocol?node-id=6-249",
+      "source": "artifacts/anima-protocol/src/pages/Chat.jsx",
+      "route": "/chat/:id"
+    },
+    {
+      "figma": "Resonance · iPad Pro 13 landscape",
+      "nodeId": "6:361",
+      "url": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82/Anima-Protocol?node-id=6-361",
+      "source": "artifacts/anima-protocol/src/pages/Resonance.tsx",
+      "route": "/resonance"
+    },
+    {
+      "figma": "Vessel Studio · iPad Pro 13 landscape",
+      "nodeId": "6:582",
+      "url": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82/Anima-Protocol?node-id=6-582",
+      "source": "artifacts/anima-protocol/src/pages/VesselStudio.tsx",
+      "route": "/vessel"
+    },
+    {
+      "figma": "Photo Generator · iPad Pro 13 landscape",
+      "nodeId": "6:726",
+      "url": "https://www.figma.com/design/VkJdHFwuUvVrNUiXwSgo82/Anima-Protocol?node-id=6-726",
+      "source": "artifacts/anima-protocol/src/components/photo/InlinePhotoComposer.tsx + IdentityLockPanel.tsx",
+      "route": "/chat/:id (photo studio)"
+    }
+  ]
+}

@@ -1,15 +1,18 @@
 import { useState } from "react";
-import { ChevronLeft, Zap, BookText, Check, Loader, BookOpen, Sparkles, Palette } from "lucide-react";
+import { ChevronLeft, Zap, BookText, Check, Loader, BookOpen, Sparkles, Palette, ScrollText } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import MoodIndicator from "@/components/chat/MoodIndicator";
+import VesselPortrait from "@/components/vessel/VesselPortrait";
+import MemoryHealth from "@/components/memory/MemoryHealth";
+import PresenceIndicator from "@/components/continuity/PresenceIndicator";
 import {
   llmDisplayBadgeClass,
   llmDisplayLabel,
   llmDisplayTitle,
 } from "@/lib/llmProviderLabel";
 
-export default function ChatHeader({ session, characters, mood, moodIntensity, characterEmotions, onToggleDeepMode, onAvatarClick, llmProvider, llmBrand }) {
+export default function ChatHeader({ session, characters, mood, moodIntensity, characterEmotions, onToggleDeepMode, onToggleStoryMode, storyModeOn, onAvatarClick, llmProvider, llmBrand }) {
   const navigate = useNavigate();
   const [summarizing, setSummarizing] = useState(false);
   const [summarized, setSummarized] = useState(false);
@@ -23,7 +26,7 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
   const handleSummarize = async () => {
     if (!session?.id || summarizing) return;
     setSummarizing(true);
-    await base44.functions.invoke("generateStorySummary", { session_id: session.id }).catch(() => {});
+    await animaClient.functions.invoke("generateStorySummary", { session_id: session.id }).catch(() => {});
     setSummarizing(false);
     setSummarized(true);
     setTimeout(() => setSummarized(false), 3000);
@@ -68,7 +71,7 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
   const emotionArousalLabel = emotionArousalPct != null ? `${emotionArousalPct}%` : null;
 
   return (
-    <div className="flex items-center gap-2 sm:gap-4 px-3 sm:px-4 py-2 sm:py-3 bg-transparent">
+    <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 bg-transparent min-w-max">
       <button
         onClick={() => navigate("/")}
         className="lg:hidden text-primary/40 hover:text-primary transition-colors p-1"
@@ -110,13 +113,21 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
           title={`View ${primaryChar.name} bio sheet`}
           className="w-6 sm:w-8 h-6 sm:h-8 border border-primary/40 overflow-hidden flex-shrink-0 hover:border-primary/70 hover:ring-1 hover:ring-primary/40 transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
         >
-          {primaryChar.avatar_url ? (
-            <img src={primaryChar.avatar_url} alt={primaryChar.name} className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full bg-primary/10 flex items-center justify-center font-mono text-primary text-sm">
-              {primaryChar.name[0]}
-            </div>
-          )}
+          <VesselPortrait
+            characterId={primaryChar.id}
+            name={primaryChar.name}
+            mood={primaryEmotion?.emotion}
+            intensity={primaryEmotion?.intensity}
+            fallback={
+              primaryChar.avatar_url ? (
+                <img src={primaryChar.avatar_url} alt={primaryChar.name} className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full bg-primary/10 flex items-center justify-center font-mono text-primary text-sm">
+                  {primaryChar.name[0]}
+                </div>
+              )
+            }
+          />
         </button>
       ) : null}
 
@@ -125,6 +136,9 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
         <h2 className="font-mono text-[9px] sm:text-xs text-primary tracking-[0.2em] uppercase truncate">
           {session?.title || (isGroup ? "Group" : primaryChar?.name || "Session")}
         </h2>
+        {!isGroup && primaryChar?.id && (
+          <PresenceIndicator characterId={primaryChar.id} name={primaryChar.name} surface="chat" showGreeting />
+        )}
         <div className="flex items-center gap-1.5 sm:gap-3 mt-0.5 flex-wrap">
           <div className="flex items-center gap-1">
             <div className="w-1 sm:w-1.5 h-1 sm:h-1.5 bg-primary rounded-full animate-pulse" />
@@ -161,6 +175,13 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
             </div>
           )}
           {!isGroup && mood && <MoodIndicator mood={mood} intensity={moodIntensity} />}
+          {!isGroup && primaryChar?.id && (
+            <MemoryHealth
+              characterId={primaryChar.id}
+              characterName={primaryChar.name}
+              refreshKey={Math.floor((session?.messages?.length || 0) / 4)}
+            />
+          )}
           {session?.therapy_mode && (
             <span
               title={session.therapy_topic || "Therapy mode"}
@@ -200,6 +221,29 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
         >
           <Sparkles className="w-2.5 h-2.5" />
           <span className="hidden sm:inline">Deep</span>
+        </button>
+      )}
+
+      {/* Story mode toggle — the Narrator adds scene updates when the story calls for them */}
+      {onToggleStoryMode && (
+        <button
+          type="button"
+          onClick={onToggleStoryMode}
+          title={
+            storyModeOn
+              ? "Story mode ON — a narrator steps in when the story needs a scene update"
+              : "Story mode OFF — no narrator scene updates"
+          }
+          aria-pressed={!!storyModeOn}
+          data-testid="story-mode-toggle"
+          className={`flex items-center gap-1 px-2 py-1 border font-mono text-[8px] sm:text-[9px] tracking-widest uppercase transition-all ${
+            storyModeOn
+              ? "border-primary/60 text-primary bg-primary/10"
+              : "border-primary/20 text-primary/30 hover:text-primary/70 hover:border-primary/40"
+          }`}
+        >
+          <ScrollText className="w-2.5 h-2.5" />
+          <span className="hidden sm:inline">Story</span>
         </button>
       )}
 

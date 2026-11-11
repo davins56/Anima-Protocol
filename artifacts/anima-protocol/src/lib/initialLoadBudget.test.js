@@ -41,8 +41,8 @@ describe("initial module graph budget", () => {
     expect(main).not.toContain("@vercel/analytics");
 
     const landing = readSrc("pages/Landing.tsx");
-    expect(landing).not.toMatch(/from\s+["']@\/api\/base44Client["']/);
-    expect(landing).toMatch(/import\(\s*["']@\/api\/base44Client["']\s*\)/);
+    expect(landing).not.toMatch(/from\s+["']@\/api\/animaClient["']/);
+    expect(landing).toMatch(/import\(\s*["']@\/api\/animaClient["']\s*\)/);
 
     const shell = readSrc("ProtocolApp.jsx");
     expect(shell).toMatch(/from\s+["']@clerk\/react["']/);

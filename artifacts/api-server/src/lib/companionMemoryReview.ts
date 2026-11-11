@@ -1,0 +1,420 @@
+/**
+ * Review, correct, and forget facts already stored on companion_memories.
+ *
+ * This does not call a model and does not write mood, summary, persona,
+ * backstory, or the operator model. Core proposals stay read-only.
+ * User facts stay in their own list, even if someone rewrites the sentence.
+ */
+
+import { and, eq, inArray } from "drizzle-orm";
+import {
+  companionMemories,
+  db,
+  memoryEmbeddings,
+} from "@workspace/db";
+import { factIdFor } from "./memoryEmbeddings";
+import {
+  isForgottenFact,
+  isPolicyFact,
+  policyDedupeKey,
+  policyFactId,
+  shapeFromCorrectedText,
+  withCompanionMemoryLock,
+  type ForgottenFact,
+  type MemoryAbout,
+  type MemoryClass,
+  type PolicyFact,
+} from "./memoryPolicy";
+
+export const MEMORY_TEXT_MAX = 500;
+
+export type MemoryReviewSection = "about_you" | "companion" | "core";
+
+export type CompanionMemoryReviewItem = {
+  fact_id: string;
+  text: string;
+  section: MemoryReviewSection;
+  kind_label: string;
+  importance_hint: string | null;
+  about: MemoryAbout;
+  memory_class: MemoryClass;
+  protected: boolean;
+  editable: boolean;
+  /** True while the identity proposal awaits accept / reject / edit. */
+  proposal: boolean;
+  created_at: string | null;
+};
+
+export type CompanionMemoryReview = {
+  about_you: CompanionMemoryReviewItem[];
+  companion: CompanionMemoryReviewItem[];
+  core: CompanionMemoryReviewItem[];
+};
+
+export type MemoryChangeResult =
+  | { ok: true; review: CompanionMemoryReview; changed: boolean; focusFactId?: string }
+  | { ok: false; status: 400 | 403 | 404; error: string; code: string };
+
+const EMPTY_REVIEW: CompanionMemoryReview = {
+  about_you: [],
+  companion: [],
+  core: [],
+};
+
+export function cleanMemoryText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.replace(/\s+/g, " ").trim();
+  if (!text || text.length > MEMORY_TEXT_MAX) return null;
+  return text;
+}
+
+export function memoryFactLocked(fact: PolicyFact): boolean {
+  return fact.memory_class === "core" || fact.protected === true || fact.proposal === true;
+}
+
+/** User facts never share a section with the companion's own facts. */
+export function memoryReviewSection(fact: PolicyFact): MemoryReviewSection {
+  if (fact.about === "user") return "about_you";
+  if (fact.memory_class === "core" || fact.proposal === true) return "core";
+  return "companion";
+}
+
+function importanceHint(importance: number): string {
+  if (importance >= 0.75) return "She holds onto this";
+  if (importance >= 0.45) return "Worth remembering";
+  return "A light note";
+}
+
+function kindLabel(fact: PolicyFact, section: MemoryReviewSection): string {
+  if (section === "core") return fact.proposal === true ? "Identity proposal" : "Who she is";
+  if (fact.about === "user") {
+    return fact.memory_class === "episodic" ? "A moment with you" : "Something about you";
+  }
+  return fact.memory_class === "episodic" ? "Something that happened" : "Something she knows";
+}
+
+function toReviewItem(fact: PolicyFact): CompanionMemoryReviewItem {
+  const section = memoryReviewSection(fact);
+  const locked = memoryFactLocked(fact);
+  return {
+    fact_id: fact.fact_id,
+    text: fact.text,
+    section,
+    kind_label: kindLabel(fact, section),
+    importance_hint: section === "core" || locked ? null : importanceHint(fact.importance),
+    about: fact.about,
+    memory_class: fact.memory_class,
+    protected: locked,
+    editable:
+      !locked &&
+      (fact.memory_class === "episodic" || fact.memory_class === "semantic"),
+    proposal: fact.proposal === true,
+    created_at: fact.created_at || null,
+  };
+}
+
+function byImportanceThenNewest(a: PolicyFact, b: PolicyFact): number {
+  if (b.importance !== a.importance) return b.importance - a.importance;
+  const aTime = Date.parse(a.created_at || "") || 0;
+  const bTime = Date.parse(b.created_at || "") || 0;
+  return bTime - aTime;
+}
+
+/**
+ * Policy facts only. Recent turn crumbs mix the human and the companion in
+ * one line, so they stay out of this screen.
+ */
+export function groupCompanionMemories(facts: unknown): CompanionMemoryReview {
+  if (!Array.isArray(facts)) return { ...EMPTY_REVIEW };
+  const policy = facts.filter(isPolicyFact);
+  const aboutYou = policy
+    .filter((fact) => memoryReviewSection(fact) === "about_you")
+    .sort(byImportanceThenNewest)
+    .map(toReviewItem);
+  const companion = policy
+    .filter((fact) => memoryReviewSection(fact) === "companion")
+    .sort(byImportanceThenNewest)
+    .map(toReviewItem);
+  const core = policy
+    .filter((fact) => memoryReviewSection(fact) === "core")
+    .sort(byImportanceThenNewest)
+    .map(toReviewItem);
+  return { about_you: aboutYou, companion, core };
+}
+
+function findPolicyFact(facts: unknown[], factId: string): PolicyFact | undefined {
+  return facts.find((item): item is PolicyFact => isPolicyFact(item) && item.fact_id === factId);
+}
+
+function lockedResult(): MemoryChangeResult {
+  return {
+    ok: false,
+    status: 403,
+    error: "This memory is protected and can't be changed.",
+    code: "memory_protected",
+  };
+}
+
+export function editCompanionMemoryFact(
+  facts: unknown[],
+  factId: string,
+  nextText: unknown,
+  now = new Date().toISOString(),
+): MemoryChangeResult & { facts?: unknown[] } {
+  const fact = findPolicyFact(facts, factId);
+  if (!fact) {
+    return {
+      ok: false,
+      status: 404,
+      error: "No memory like that was found.",
+      code: "memory_not_found",
+    };
+  }
+  if (memoryFactLocked(fact)) return lockedResult();
+  if (fact.memory_class !== "episodic" && fact.memory_class !== "semantic") {
+    return lockedResult();
+  }
+  const text = cleanMemoryText(nextText);
+  if (!text) {
+    return {
+      ok: false,
+      status: 400,
+      error: "Write a short sentence to correct this memory.",
+      code: "memory_text_invalid",
+    };
+  }
+  if (text === fact.text.trim()) {
+    return { ok: true, changed: false, review: groupCompanionMemories(facts), facts };
+  }
+  const shape = shapeFromCorrectedText(fact.predicate, text);
+  const priorKey = policyDedupeKey(fact);
+  const nextKey = policyDedupeKey({
+    about: fact.about,
+    subject: fact.subject,
+    predicate: shape.predicate,
+    object: shape.object,
+  });
+  const keyChanged = nextKey !== priorKey;
+  const lockedOwner =
+    keyChanged &&
+    facts.some(
+      (item) =>
+        isPolicyFact(item) &&
+        item.fact_id !== fact.fact_id &&
+        memoryFactLocked(item) &&
+        policyDedupeKey(item) === nextKey,
+    );
+  const episodic = shape.predicate === "did" || shape.predicate === "felt";
+  const nextFact: PolicyFact = {
+    ...fact,
+    text,
+    predicate: shape.predicate,
+    object: shape.object,
+    value: shape.object,
+    user_edited: true,
+    updated_at: now,
+    memory_class: shape.matched ? (episodic ? "episodic" : "semantic") : fact.memory_class,
+    fact_id: keyChanged && !lockedOwner ? policyFactId(nextKey) : fact.fact_id,
+  };
+  let next = facts.map((item) =>
+    isPolicyFact(item) && item.fact_id === factId ? nextFact : item,
+  );
+  // Only the old triple is forgotten. A custom fact id that still names the
+  // same subject, predicate, and object stays as it is. A second live fact
+  // that already uses the new triple is the older duplicate and is dropped.
+  if (keyChanged) {
+    next = next.filter((item) => {
+      if (item === nextFact) return true;
+      if (!isPolicyFact(item) || policyDedupeKey(item) !== nextKey) return true;
+      return memoryFactLocked(item);
+    });
+    next = replaceForgotten(next, toForgottenFact(fact, now));
+  }
+  return {
+    ok: true,
+    changed: true,
+    review: groupCompanionMemories(next),
+    facts: next,
+    focusFactId: nextFact.fact_id,
+  };
+}
+
+function toForgottenFact(fact: PolicyFact, now: string): ForgottenFact {
+  return {
+    forgotten: true,
+    fact_id: fact.fact_id,
+    about: fact.about,
+    subject: fact.subject,
+    predicate: fact.predicate,
+    object: fact.object,
+    deleted_at: now,
+    turn_id: fact.turn_id,
+    source_text: fact.text,
+  };
+}
+
+const WEAK_FORGOTTEN_OBJECTS = new Set([
+  "it",
+  "that",
+  "this",
+  "them",
+  "something",
+  "anything",
+  "stuff",
+]);
+
+function mentionsForgotten(text: string, object: string, source: string): boolean {
+  if (source && text.toLowerCase().includes(source.toLowerCase())) return true;
+  const needle = object.trim();
+  if (needle.length < 3 || WEAK_FORGOTTEN_OBJECTS.has(needle.toLowerCase())) return false;
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${escaped}\\b`, "i").test(text);
+}
+
+function isSourceTurn(item: unknown): item is Record<string, unknown> {
+  if (!item || typeof item !== "object") return false;
+  if (isPolicyFact(item) || isForgottenFact(item)) return false;
+  const rec = item as Record<string, unknown>;
+  return rec.type === "turn" || typeof rec.turn_id === "string";
+}
+
+function replaceForgotten(facts: unknown[], marker: ForgottenFact): unknown[] {
+  const key = policyDedupeKey(marker);
+  let seen = false;
+  const next = facts.map((item) => {
+    if (!isForgottenFact(item) || policyDedupeKey(item) !== key) return item;
+    seen = true;
+    return marker;
+  });
+  return seen ? next : [...next, marker];
+}
+
+export function deleteCompanionMemoryFact(
+  facts: unknown[],
+  factId: string,
+): MemoryChangeResult & { facts?: unknown[] } {
+  const fact = findPolicyFact(facts, factId);
+  if (!fact) {
+    return {
+      ok: false,
+      status: 404,
+      error: "No memory like that was found.",
+      code: "memory_not_found",
+    };
+  }
+  if (memoryFactLocked(fact)) return lockedResult();
+  if (fact.memory_class !== "episodic" && fact.memory_class !== "semantic") {
+    return lockedResult();
+  }
+  const marker = toForgottenFact(fact, new Date().toISOString());
+  const withoutLive = facts.filter((item) => !(isPolicyFact(item) && item.fact_id === factId));
+  const withoutSource = withoutLive.filter((item) => {
+    if (!isSourceTurn(item)) return true;
+    const text = typeof item.text === "string" ? item.text : "";
+    const sameTurn = Boolean(fact.turn_id && item.turn_id === fact.turn_id);
+    return !(sameTurn || mentionsForgotten(text, fact.object, fact.text));
+  });
+  const next = replaceForgotten(withoutSource, marker);
+  return { ok: true, changed: true, review: groupCompanionMemories(next), facts: next };
+}
+
+function idOk(value: string, max: number): boolean {
+  const trimmed = value.trim();
+  return trimmed.length > 0 && trimmed.length <= max && !/\s/.test(trimmed);
+}
+
+async function dropFactEmbeddings(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  userId: string,
+  characterId: string,
+  factIds: string[],
+): Promise<void> {
+  const ids = [...new Set(factIds.map((id) => id.trim()).filter(Boolean))];
+  if (ids.length === 0) return;
+  await tx
+    .delete(memoryEmbeddings)
+    .where(
+      and(
+        eq(memoryEmbeddings.userId, userId),
+        eq(memoryEmbeddings.characterId, characterId),
+        inArray(memoryEmbeddings.factId, ids),
+      ),
+    );
+}
+
+/**
+ * Writes only `facts` on the caller's companion_memories row.
+ * Mood, summary, resonance notes, and every other table stay untouched.
+ */
+export async function applyCompanionMemoryChange(input: {
+  userId: string;
+  characterId: string;
+  factId: string;
+  action: "edit" | "delete";
+  text?: unknown;
+}): Promise<MemoryChangeResult> {
+  const userId = input.userId.trim();
+  const characterId = input.characterId.trim();
+  const factId = input.factId.trim();
+  if (!userId) {
+    return { ok: false, status: 404, error: "No memory like that was found.", code: "memory_not_found" };
+  }
+  if (!idOk(characterId, 200) || !idOk(factId, 128)) {
+    return { ok: false, status: 400, error: "That memory could not be found.", code: "memory_not_found" };
+  }
+
+  return withCompanionMemoryLock(userId, characterId, async (tx) => {
+      const [existing] = await tx
+        .select()
+        .from(companionMemories)
+        .where(and(eq(companionMemories.userId, userId), eq(companionMemories.characterId, characterId)))
+        .limit(1);
+      if (!existing) {
+        return {
+          ok: false as const,
+          status: 404 as const,
+          error: "No memory like that was found.",
+          code: "memory_not_found",
+        };
+      }
+      const current = Array.isArray(existing.facts) ? existing.facts : [];
+      const prior = findPolicyFact(current, factId);
+      const changed =
+        input.action === "delete"
+          ? deleteCompanionMemoryFact(current, factId)
+          : editCompanionMemoryFact(current, factId, input.text);
+      if (!changed.ok || !changed.changed || !changed.facts) return changed;
+
+      await tx
+        .update(companionMemories)
+        .set({
+          facts: changed.facts as Record<string, unknown>[],
+          updatedAt: new Date(),
+        })
+        .where(and(eq(companionMemories.userId, userId), eq(companionMemories.characterId, characterId)));
+
+      const embeddingIds = new Set<string>([factId]);
+      if (prior?.text) embeddingIds.add(factIdFor(prior.text));
+      if (changed.focusFactId) embeddingIds.add(changed.focusFactId);
+      const afterPolicyIds = new Set(
+        changed.facts.filter(isPolicyFact).map((item) => item.fact_id),
+      );
+      for (const item of current) {
+        if (isPolicyFact(item) && !afterPolicyIds.has(item.fact_id)) {
+          embeddingIds.add(item.fact_id);
+          embeddingIds.add(factIdFor(item.text));
+        }
+      }
+      const afterTurnKeys = new Set(
+        changed.facts.filter(isSourceTurn).map((item) => `${item.turn_id || ""}|${item.text || ""}`),
+      );
+      for (const item of current) {
+        if (!isSourceTurn(item)) continue;
+        const key = `${item.turn_id || ""}|${item.text || ""}`;
+        if (afterTurnKeys.has(key)) continue;
+        if (typeof item.text === "string" && item.text.trim()) embeddingIds.add(factIdFor(item.text));
+      }
+      await dropFactEmbeddings(tx, userId, characterId, [...embeddingIds]);
+      return changed;
+  });
+}

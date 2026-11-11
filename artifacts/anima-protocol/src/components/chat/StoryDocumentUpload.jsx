@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Upload, X, Loader, Check } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function StoryDocumentUpload({ sessionId, onDocumentProcessed }) {
@@ -23,10 +23,10 @@ export default function StoryDocumentUpload({ sessionId, onDocumentProcessed }) 
 
       try {
         // Upload file
-        const { file_url } = await base44.integrations.Core.UploadFile({ file });
+        const { file_url } = await animaClient.integrations.Core.UploadFile({ file });
 
         // Process document as user context
-        const result = await base44.functions.invoke('processUserContext', {
+        const result = await animaClient.functions.invoke('processUserContext', {
           file_url,
           title: file.name,
           document_type: 'user_uploaded',

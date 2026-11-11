@@ -13,7 +13,7 @@ import ProtocolUpgradeConsole from "./ProtocolUpgradeConsole";
 import DeviceScanConsole from "./DeviceScanConsole";
 import PortaledFixedPanel from "./PortaledFixedPanel";
 import { useAuth } from "@/lib/AuthContext";
-import { AI_COMPANION_HEADER_LINE } from "@/lib/aiCompanionNotice";
+import { sessionMemoryTargets } from "@/lib/whatSheRemembers";
 
 export default function ChatToolbar({
   activeSession,
@@ -36,6 +36,8 @@ export default function ChatToolbar({
   onShowImageGen,
   onShowEditModal,
   onToggleDeepMode,
+  onToggleStoryMode,
+  storyModeOn,
   onOpenRecap,
   onSelectBranch,
   onCreateBranch,
@@ -53,6 +55,7 @@ export default function ChatToolbar({
   const [showProtocolUpgrade, setShowProtocolUpgrade] = useState(false);
   const [showDeviceScan, setShowDeviceScan] = useState(false);
   const onlineButtonRef = useRef(null);
+  const memoryTargets = sessionMemoryTargets(activeSession, characters);
   const activeChar = (characters || []).find((c) => c.id === activeSession?.character_id);
   const chattingWithAnima = Boolean(activeChar?._isAnima) && activeSession?.mode === "solo";
 
@@ -70,9 +73,9 @@ export default function ChatToolbar({
 
   return (
     <div className="flex flex-col border-b border-primary/20 bg-black/60 backdrop-blur-md flex-shrink-0 relative">
-      {/* Single row: session info + Online button */}
-      <div className="flex items-center min-w-0 h-12">
-        <div className="flex-shrink-0 min-w-[200px] max-w-[60%]">
+      {/* Stack navigation on narrow screens; never let header actions overlap. */}
+      <div className="flex flex-col lg:flex-row lg:items-center min-w-0">
+        <div className="min-w-0 w-full lg:flex-1 overflow-x-auto overscroll-x-contain">
           <ChatHeader
             session={activeSession}
             characters={characters}
@@ -80,12 +83,14 @@ export default function ChatToolbar({
             moodIntensity={moodIntensity}
             characterEmotions={characterEmotions}
             onToggleDeepMode={onToggleDeepMode}
+            onToggleStoryMode={onToggleStoryMode}
+            storyModeOn={storyModeOn}
             onAvatarClick={onAvatarClick}
             llmProvider={llmProvider}
           />
         </div>
 
-        <div className="ml-auto flex items-center gap-2 px-3 flex-shrink-0">
+        <div className="flex items-center justify-end gap-2 px-3 py-2 lg:py-0 flex-shrink-0 border-t border-primary/10 lg:border-t-0">
           {typeof onOpenHistory === "function" && (
             <button
               type="button"
@@ -129,13 +134,6 @@ export default function ChatToolbar({
         </div>
       </div>
 
-      <p
-        data-testid="ai-companion-header-line"
-        className="w-full px-3 py-2 text-base leading-snug text-cyan-50 border-t border-cyan-300/40 bg-cyan-950/70"
-      >
-        {AI_COMPANION_HEADER_LINE}
-      </p>
-
       <PortaledFixedPanel
         open={showActionsPanel}
         onDismiss={() => setShowActionsPanel(false)}
@@ -146,6 +144,26 @@ export default function ChatToolbar({
         backdropTestId="chat-online-actions-backdrop"
       >
               <div className="flex flex-col">
+
+                {memoryTargets.length > 0 && (
+                  <div className="px-3 py-2 border-b border-primary/10">
+                    <p className="font-mono text-[8px] text-primary/30 tracking-widest uppercase mb-1.5">Memory</p>
+                    <div className="flex flex-col gap-0.5">
+                      {memoryTargets.map((target) => (
+                        <Link
+                          key={target.id}
+                          to={target.to}
+                          data-testid="what-she-remembers-link"
+                          onClick={() => setShowActionsPanel(false)}
+                          className="flex items-center gap-3 px-2 min-h-11 text-base text-primary/80 hover:text-primary hover:bg-primary/5 transition-all rounded touch-manipulation"
+                        >
+                          <Brain className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+                          <span className="min-w-0 leading-snug">{target.label}</span>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Navigation */}
                 <div className="px-3 py-2 border-b border-primary/10">

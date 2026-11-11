@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Calendar, MapPin, Heart, Zap, Loader, AlertCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { format } from "date-fns";
@@ -48,7 +48,7 @@ export default function CharacterHistoryTimeline({ characterId, characterName })
     setLoading(true);
     try {
       // Load memories
-      const memoryData = await base44.entities.CharacterMemory.filter(
+      const memoryData = await animaClient.entities.CharacterMemory.filter(
         { character_id: characterId },
         "-created_date",
         100
@@ -56,11 +56,11 @@ export default function CharacterHistoryTimeline({ characterId, characterName })
       setMemories(memoryData || []);
 
       // Load all locations for linking
-      const locData = await base44.entities.Location.list("-created_date", 100);
+      const locData = await animaClient.entities.Location.list("-created_date", 100);
       setLocations(locData || []);
 
       // Load character emotional states
-      const emotionalData = await base44.entities.CharacterEmotionalState.filter(
+      const emotionalData = await animaClient.entities.CharacterEmotionalState.filter(
         { character_id: characterId },
         "-created_date",
         100

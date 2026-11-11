@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { ChevronDown, Loader, Edit2, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -31,8 +31,8 @@ export default function CharacterRelationshipForceGraph() {
   const loadData = async () => {
     setLoading(true);
     const [charData, relData] = await Promise.all([
-      base44.entities.Character.list("-created_date", 100),
-      base44.entities.CharacterRelationship.list("-created_date", 500),
+      animaClient.entities.Character.list("-created_date", 100),
+      animaClient.entities.CharacterRelationship.list("-created_date", 500),
     ]);
     setCharacters(charData || []);
     setRelationships(relData || []);
@@ -362,7 +362,7 @@ export default function CharacterRelationshipForceGraph() {
             characters={characters}
             onClose={() => setShowEditModal(false)}
             onSave={async (updatedRel) => {
-              await base44.entities.CharacterRelationship.update(
+              await animaClient.entities.CharacterRelationship.update(
                 selectedRelationship.id,
                 updatedRel
               );

@@ -12,10 +12,11 @@ import {
   chatCompletionHttpFailure,
   createChatCompletionWithFailover,
 } from "./lib/llmFailover";
-import { llmAiChatOpenTimeoutMs, openStreamAbort } from "./lib/chatTimeouts";
+import { combineAbortSignals, llmAiChatOpenTimeoutMs, openStreamAbort } from "./lib/chatTimeouts";
 import { tryBeginCompanionLlmTurn } from "./lib/sidecarLlm";
 import { acquireLocalLlmBackground } from "./lib/localLlmSlot";
 import { createRateLimit } from "./lib/rateLimit";
+import { isAllowedCorsOrigin } from "./lib/corsPolicy";
 import {
   AI_CHAT_RATE_LIMIT_MAX,
   AI_CHAT_RATE_LIMIT_WINDOW_MS,
@@ -32,6 +33,7 @@ import {
 } from "./middlewares/clerkProxyMiddleware";
 import { safeClerkMiddleware } from "./middlewares/clerkAuthFallback";
 import clerkWebhookRouter from "./webhooks/clerk";
+import stripeWebhookRouter from "./webhooks/stripe";
 import healthRouter from "./routes/health";
 import router from "./routes";
 import { logger } from "./lib/logger";
@@ -50,9 +52,9 @@ const corsMiddleware = (
   next: NextFunction,
 ) => {
   const origin = req.headers.origin;
-  if (typeof origin === "string") {
+  res.setHeader("Vary", "Origin");
+  if (typeof origin === "string" && isAllowedCorsOrigin(origin, req.headers.host)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Credentials", "true");
   }
   res.setHeader(
@@ -103,6 +105,8 @@ app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 // Webhook route needs the raw request body for svix signature verification, so
 // it must be mounted before the JSON body parser.
 app.use("/api/webhooks", clerkWebhookRouter);
+// Stripe webhook: raw body for signature verification (see webhooks/stripe.ts).
+app.use("/api/webhooks", stripeWebhookRouter);
 
 app.use(corsMiddleware);
 // Limit raised to accommodate base64 image data URLs (e.g. avatar AI edit,
@@ -171,7 +175,10 @@ app.post("/api/ai/chat", async (req: Request, res: Response) => {
     });
     return;
   }
-  const background = await acquireLocalLlmBackground("ai-chat");
+  const background = await acquireLocalLlmBackground("ai-chat", {
+    job: "ai-chat",
+    ledgerOnly: true,
+  });
   if (!background) {
     releaseSlot();
     res.status(429).json({
@@ -197,7 +204,7 @@ app.post("/api/ai/chat", async (req: Request, res: Response) => {
       tier: "standard",
       maxTokens: 256,
       messages: chatMessages,
-      signal: open.signal,
+      signal: combineAbortSignals(open.signal, background.signal),
     });
     const content = visibleAssistantReply(result.content);
     if (!String(content).trim()) {

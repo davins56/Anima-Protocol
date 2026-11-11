@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 export function useEmotionalMemory(sessionId, characterId) {
   const [memories, setMemories] = useState([]);
@@ -16,7 +16,7 @@ export function useEmotionalMemory(sessionId, characterId) {
   const loadMemories = async () => {
     try {
       // Load cross-session memories for this character
-      const data = await base44.entities.CrossSessionMemory.filter({
+      const data = await animaClient.entities.CrossSessionMemory.filter({
         character_id: characterId,
       }, '-reinforcement_count', 20);
 
@@ -30,7 +30,7 @@ export function useEmotionalMemory(sessionId, characterId) {
 
   const recordMemory = async (memoryData) => {
     try {
-      await base44.functions.invoke('formCrossSessionMemory', {
+      await animaClient.functions.invoke('formCrossSessionMemory', {
         character_id: characterId,
         session_id: sessionId,
         ...memoryData,
@@ -43,8 +43,8 @@ export function useEmotionalMemory(sessionId, characterId) {
 
   const recordBirthday = async (date) => {
     try {
-      const user = await base44.auth.me();
-      await base44.auth.updateMe({
+      const user = await animaClient.auth.me();
+      await animaClient.auth.updateMe({
         settings: {
           ...user.settings,
           companion_birthday: date,

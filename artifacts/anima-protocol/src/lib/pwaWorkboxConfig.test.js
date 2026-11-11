@@ -23,4 +23,15 @@ describe("PWA Workbox config", () => {
     expect(viteConfig).toMatch(/navigateFallbackDenylist: \[\s*\/\^\\\/api/);
     expect(viteConfig).toContain("/^\\/assets");
   });
+
+  it("precaches only the static offline page and falls back to it for offline navigations", () => {
+    expect(viteConfig).toMatch(/additionalManifestEntries:\s*\[\s*\{ url: "\/offline\.html"/);
+    expect(viteConfig).toContain('precacheFallback: { fallbackURL: "/offline.html" }');
+    expect(viteConfig).toContain('handler: "NetworkOnly"');
+  });
+
+  it("waits for the Reload prompt instead of skipping waiting", () => {
+    expect(viteConfig).toContain('registerType: "prompt"');
+    expect(viteConfig).toContain("skipWaiting: false");
+  });
 });

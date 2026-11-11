@@ -148,6 +148,26 @@ describe("streamChatReply", () => {
     expect(caught).toBeInstanceOf(Error);
     expect(caught.message).toBe("cut");
     expect(caught.partialContent).toBe("Hello");
+    expect(caught.chatClientTrace.partialKept).toBe(true);
+    expect(caught.chatClientTrace.sawFirstToken).toBe(true);
+    expect(caught.chatClientTrace.serverError).toBe(true);
+    expect(JSON.stringify(caught.chatClientTrace)).not.toContain("Hello");
+    expect(JSON.stringify(caught.chatClientTrace)).not.toContain("cut");
+  });
+
+  it("records a queue wait without copying status text into the trace", async () => {
+    let caught;
+    try {
+      await streamChatReply(
+        fromEvents([{ status: "waiting", queue_position: 2 }, { error: "slot" }]),
+      );
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught.chatClientTrace.sawQueueWait).toBe(true);
+    expect(caught.chatClientTrace.leftQueue).toBe(false);
+    expect(caught.chatClientTrace.sawFirstToken).toBe(false);
+    expect(JSON.stringify(caught.chatClientTrace)).not.toContain("slot");
   });
 
   it("keeps the answer after DeepSeek think tags and does not return empty", async () => {

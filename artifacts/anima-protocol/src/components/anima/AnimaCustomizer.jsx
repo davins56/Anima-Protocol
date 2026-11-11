@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { base44, uploadDataUrl } from "@/api/base44Client";
+import { animaClient, uploadDataUrl } from "@/api/animaClient";
 import { updateCompanionRecord } from "@/lib/listPersonalAnimas";
 import {
   formatAvatarUploadError,
@@ -84,7 +84,7 @@ export default function AnimaCustomizer({
       // With a reference photo, use image-edit so likeness is preserved while
       // features (including skin) are applied. Without one, generate fresh —
       // editing the current avatar used to lock old complexion in place.
-      const result = await base44.integrations.Core.GenerateImage({
+      const result = await animaClient.integrations.Core.GenerateImage({
         prompt,
         existing_image_urls: useReference ? [referenceUrl] : undefined,
       });
@@ -116,7 +116,7 @@ export default function AnimaCustomizer({
     setSaved(false);
     try {
       const fileUrl = await uploadCharacterAvatar(file, (payload) =>
-        base44.integrations.Core.UploadFile(payload),
+        animaClient.integrations.Core.UploadFile(payload),
       );
       if (kind === "photo") {
         setPreviewUrl(fileUrl);

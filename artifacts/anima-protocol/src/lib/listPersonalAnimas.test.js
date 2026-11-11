@@ -7,9 +7,9 @@ const mocks = vi.hoisted(() => ({
   waitForStoreAuth: vi.fn(),
 }));
 
-vi.mock("@/api/base44Client", () => ({
+vi.mock("@/api/animaClient", () => ({
   awaitCompanionStoreAuth: vi.fn().mockResolvedValue("token"),
-  base44: {
+  animaClient: {
     entities: {
       Anima: { list: mocks.listAnima },
       Character: { list: mocks.listCharacter, filter: mocks.filterCharacter },
@@ -18,7 +18,7 @@ vi.mock("@/api/base44Client", () => ({
   waitForStoreAuth: mocks.waitForStoreAuth,
 }));
 
-import { awaitCompanionStoreAuth } from "@/api/base44Client";
+import { awaitCompanionStoreAuth } from "@/api/animaClient";
 import {
   companionLookHref,
   companionPersistPatch,
@@ -155,7 +155,9 @@ describe("loadCompanionRecord", () => {
     ]);
 
     const row = await loadCompanionRecord("char-aelindra", "Anima");
-    expect(row?.name).toBe("Aelindra");
+    // Legacy spelling is displayed as the canonical name; the stored one is kept.
+    expect(row?.name).toBe("Aeland");
+    expect(row?.legacy_name).toBe("Aelindra");
     expect(companionStoreEntity(row)).toBe("Character");
   });
 });
@@ -226,7 +228,7 @@ describe("listPersonalAnimas", () => {
     const rows = await listPersonalAnimas(100);
     expect(awaitCompanionStoreAuth).toHaveBeenCalled();
     expect(rows.map((row) => row.name)).toEqual(
-      expect.arrayContaining(["Serenity", "Aelynd"]),
+      expect.arrayContaining(["Serenity", "Aeland"]),
     );
   });
 });

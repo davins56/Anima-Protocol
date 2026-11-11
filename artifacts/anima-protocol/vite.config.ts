@@ -2,6 +2,8 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { VitePWA } from "vite-plugin-pwa";
 import { config as loadEnv } from "dotenv";
 import { sanitizeClerkPublishableKey } from "./src/lib/clerkProxy.js";
@@ -28,6 +30,19 @@ const algoliaBranch =
   process.env.HEAD?.trim() ||
   "main";
 
+// Optional build revision for chat failure reports. Empty when the host
+// does not inject a commit. Never required for the app to run.
+const appCommit = (
+  process.env.VITE_APP_COMMIT ||
+  process.env.VERCEL_GIT_COMMIT_SHA ||
+  process.env.CF_PAGES_COMMIT_SHA ||
+  process.env.WORKERS_CI_COMMIT_SHA ||
+  process.env.GITHUB_SHA ||
+  ""
+)
+  .trim()
+  .slice(0, 64);
+
 const rawPort = process.env.FRONTEND_PORT ?? process.env.PORT ?? "5173";
 
 const port = parseInt(rawPort);
@@ -48,6 +63,12 @@ if (typeof basePath !== "string" || !basePath.trim()) {
   console.warn("[vite.config] BASE_PATH missing/invalid, defaulting to '/'");
 }
 const normalizedBasePath = (basePath || "/").trim().replace(/\/$/, "") + "/";
+
+// Content hash for the precached offline page (see VitePWA below).
+const offlinePageRevision = createHash("sha256")
+  .update(readFileSync(path.join(import.meta.dirname, "public/offline.html")))
+  .digest("hex")
+  .slice(0, 16);
 
 const isReplit = process.env.REPL_ID !== undefined;
 const runtimeErrorOverlay = isReplit
@@ -81,24 +102,26 @@ export default defineConfig({
     "import.meta.env.VITE_CLERK_PUBLISHABLE_KEY":
       JSON.stringify(clerkPublishableKey),
     "import.meta.env.VITE_ALGOLIA_BRANCH": JSON.stringify(algoliaBranch),
+    "import.meta.env.VITE_APP_COMMIT": JSON.stringify(appCommit),
   },
   plugins: [
     react({ jsxRuntime: "automatic" }),
     tailwindcss({ optimize: false }),
     // Replit-only: Clerk load failures are handled in-app (guest landing fallback).
     ...(runtimeErrorOverlay ? [runtimeErrorOverlay()] : []),
-    // Auto-updating service worker. Once installed, every new deploy is picked
-    // up automatically: the regenerated precache manifest triggers a SW update,
-    // which skips waiting, claims open clients, and reloads them onto the fresh
-    // build — so installed/home-screen users no longer need to remove and
-    // re-add the app to see changes. Kept deliberately minimal: precache the
+    // Service worker with an update prompt. Every new deploy is still picked
+    // up without removing/re-adding the home-screen app: the regenerated
+    // precache manifest installs a new SW, which then WAITS (no skipWaiting)
+    // until the reader taps Reload in UpdateAvailablePrompt — deferred while a
+    // reply is streaming (src/lib/swUpdate.js). The old autoUpdate +
+    // skipWaiting could reload mid-reply. Kept deliberately minimal: precache the
     // built assets only (`navigateFallback: null`), so it never intercepts
     // /api calls, /assets/* hashes (EchoKeys-*.js), or the prerendered route
     // HTML. Disabled in dev to avoid interfering with HMR. The existing
     // public/manifest.json is reused (manifest: false), and registration
     // happens in src/main.jsx.
     VitePWA({
-      registerType: "autoUpdate",
+      registerType: "prompt",
       injectRegister: false,
       manifest: false,
       workbox: {
@@ -106,6 +129,12 @@ export default defineConfig({
         globDirectory: path.resolve(import.meta.dirname, "dist/public"),
         globPatterns: [
           "**/*.{js,css,svg,png,ico,webp,woff,woff2,jpg,jpeg,json}",
+        ],
+        // The one HTML file that is precached: the static offline page. It is
+        // not a route and prerender never rewrites it, so it cannot go stale
+        // the way route HTML would. Revision = content hash.
+        additionalManifestEntries: [
+          { url: "/offline.html", revision: offlinePageRevision },
         ],
         // Default is index.html. HTML is intentionally not precached (prerender
         // rewrites it after the SW manifest is generated). A fallback to a
@@ -116,6 +145,19 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/api(?:\/|$)/, /^\/assets(?:\/|$)/],
         cleanupOutdatedCaches: true,
         runtimeCaching: [
+          {
+            // Navigations stay network-only (same as before), but when the
+            // network is down the reader gets a clear offline page instead
+            // of the browser's error screen.
+            urlPattern: ({ request, url }) =>
+              request.mode === "navigate" &&
+              !url.pathname.startsWith("/api") &&
+              !url.pathname.startsWith("/assets"),
+            handler: "NetworkOnly",
+            options: {
+              precacheFallback: { fallbackURL: "/offline.html" },
+            },
+          },
           {
             urlPattern: /^https?:\/\/.*\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/i,
             handler: "CacheFirst",
@@ -130,7 +172,8 @@ export default defineConfig({
         ],
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         clientsClaim: true,
-        skipWaiting: true,
+        // No skipWaiting: the new worker waits for the Reload prompt.
+        skipWaiting: false,
       },
     }),
     ...replitDevPlugins,
@@ -172,6 +215,45 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rolldownOptions: {
+      output: {
+        // Named vendor chunks for the heavy, view-specific libraries (Vite 8 /
+        // Rolldown's replacement for Rollup's manualChunks). jspdf and
+        // html2canvas already split on their own and are used independently,
+        // so they are left alone. Each group is only
+        // reachable through a lazy route or component, so none of them is in
+        // the initial or Chat download; naming them keeps their hashes stable
+        // across app deploys (better HTTP/SW cache hits) and stops them being
+        // folded into whichever page happened to import them first.
+        // Do not add packages that are imported statically by the app shell or
+        // Chat (react, router, framer-motion, radix, lucide, dompurify, ...):
+        // a group pulls everything in it into every importer's static graph.
+        codeSplitting: {
+          // Capture only the matched packages, not their dependencies (the
+          // default would drag react/react-dom into vendor-three via R3F and
+          // make every page import it).
+          includeDependenciesRecursively: false,
+          groups: [
+            {
+              name: "vendor-three",
+              test: /[\\/]node_modules[\\/](three|@react-three|postprocessing|three-stdlib|three-mesh-bvh|troika-[^\\/]+|maath|camera-controls|meshline|stats-gl|@monogrid)[\\/]/,
+            },
+            {
+              name: "vendor-graph",
+              test: /[\\/]node_modules[\\/](cytoscape|react-cytoscapejs)[\\/]/,
+            },
+            {
+              name: "vendor-map",
+              test: /[\\/]node_modules[\\/](leaflet|react-leaflet|@react-leaflet)[\\/]/,
+            },
+            {
+              name: "vendor-charts",
+              test: /[\\/]node_modules[\\/](recharts|victory-vendor|d3-[^\\/]+|internmap|decimal\.js-light|@reduxjs|redux|reselect|immer)[\\/]/,
+            },
+          ],
+        },
+      },
+    },
   },
   server: {
     port: finalPort,

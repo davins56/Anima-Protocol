@@ -19,8 +19,8 @@ vi.mock("@/hooks/useSacredSpaceVoice", () => ({
 const invokeLLM = vi.fn();
 const recordSacredSpaceCheckIn = vi.fn();
 
-vi.mock("@/api/base44Client", () => ({
-  base44: {
+vi.mock("@/api/animaClient", () => ({
+  animaClient: {
     integrations: { Core: { InvokeLLM: (...args) => invokeLLM(...args) } },
     functions: { invoke: vi.fn() },
   },

@@ -57,6 +57,7 @@ export function SerenityFigure({
   expression = 0,
   layers,
   sequences,
+  shift = null,
 }) {
   const group = useSmoothPanel(anchored ? 1 : col, anchored ? 1 : row);
 
@@ -73,6 +74,7 @@ export function SerenityFigure({
         breathing
         layers={layers}
         sequences={sequences}
+        shift={shift}
       />
     </group>
   );

@@ -125,6 +125,49 @@ export async function deletePdfDocument(id) {
   await request(`/pdfs/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
+/** Open the stored PDF in a new tab. The request carries the signed-in session. */
+export function openPdfDocument(id) {
+  const popup = typeof window !== "undefined" ? window.open("", "_blank") : null;
+  if (!popup) {
+    return Promise.reject(new Error("Allow pop-ups to open this PDF."));
+  }
+  return (async () => {
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(apiUrl(`/pdfs/${encodeURIComponent(id)}/file`), {
+        headers,
+        credentials: "same-origin",
+      });
+      if (!res.ok) {
+        let message = "Could not open that PDF.";
+        try {
+          const data = await res.json();
+          if (data?.error) message = String(data.error);
+        } catch {
+          // Non-JSON error page.
+        }
+        throw new Error(message);
+      }
+      const blob = await res.blob();
+      const pdf =
+        blob.type === "application/pdf"
+          ? blob
+          : new Blob([blob], { type: "application/pdf" });
+      const url = URL.createObjectURL(pdf);
+      popup.location.href = url;
+      try {
+        popup.opener = null;
+      } catch {
+        // The new tab can already be detached from this page.
+      }
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (error) {
+      popup?.close();
+      throw error;
+    }
+  })();
+}
+
 export function pdfProgressLabel(progress) {
   if (!progress) return "Reading PDF…";
   if (progress.phase === "reading_file") return "Reading file…";

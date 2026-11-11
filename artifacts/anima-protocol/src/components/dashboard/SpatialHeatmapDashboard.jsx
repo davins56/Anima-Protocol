@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, Flame, Users, Map, Zap } from 'lucide-react';
 
@@ -35,11 +35,11 @@ export default function SpatialHeatmapDashboard({ sessionId, isVisible = true })
     setLoading(true);
     try {
       const [locs, worldState, relationships, quests, emotions] = await Promise.all([
-        base44.entities.Location.list('-created_date', 100),
-        base44.entities.WorldState.filter({ session_id: sessionId }, '-created_date', 100),
-        base44.entities.CharacterRelationship.filter({ session_id: sessionId }, '-created_date', 100),
-        base44.entities.Quest.filter({ session_id: sessionId }, '-created_date', 100),
-        base44.entities.CharacterEmotionalState.filter({ session_id: sessionId, is_current: true }, '-created_date', 50),
+        animaClient.entities.Location.list('-created_date', 100),
+        animaClient.entities.WorldState.filter({ session_id: sessionId }, '-created_date', 100),
+        animaClient.entities.CharacterRelationship.filter({ session_id: sessionId }, '-created_date', 100),
+        animaClient.entities.Quest.filter({ session_id: sessionId }, '-created_date', 100),
+        animaClient.entities.CharacterEmotionalState.filter({ session_id: sessionId, is_current: true }, '-created_date', 50),
       ]);
 
       setLocations(locs || []);

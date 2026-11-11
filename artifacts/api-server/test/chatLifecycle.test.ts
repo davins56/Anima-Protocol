@@ -67,7 +67,7 @@ vi.mock("../src/lib/localEnsemble", () => ensembleMocks);
 import chatRouter from "../src/routes/chat";
 import { COMPANION_CHAT_TEMPERATURE } from "../src/lib/ollamaChat";
 import { SHORT_REPLY_MAX_TOKENS } from "../src/lib/chatTimeouts";
-import { messagesForLocalOllama } from "../src/lib/promptBuilder";
+import { LOCAL_EXTRA_GENERATION_MAX_TOKENS, messagesForLocalOllama } from "../src/lib/promptBuilder";
 import { COMPANION_CRISIS_TURN_LINE } from "../src/lib/therapySafety";
 import {
   beginChatTurn,
@@ -245,7 +245,7 @@ describe("chat lifecycle", () => {
     expect(sent.messages?.at(-2)).toEqual({
       role: "system",
       content:
-        "Answer Mara's last message first, directly, in Aria's own voice. Stay on what they said. Bring in memories or lore only when they help answer it.",
+        "Answer Mara's last message first, directly, in Aria's own voice. Stay on what they said. Continue that scene in your own first person. Do not introduce yourself or retell your past unless they asked. Bring in memories or lore only when they help answer it.",
     });
     expect(sent.messages?.at(-1)).toEqual({ role: "user", content: "Hello" });
     expect(sent.maxTokens).toBe(1024);
@@ -507,6 +507,142 @@ describe("chat lifecycle", () => {
     expect(stored.map((row) => row.entityId)).not.toContain(`${clientTurnId}:assistant`);
   });
 
+  it("keeps a cut-off reply through the last sentence and does not remember it", async () => {
+    const cutTurn = `turn_${prefix}_cutoff`;
+    const userText = "My name is Mira. I love you.";
+    const half = "I am Aria. I will never leave the city. I'm so sad. and then the";
+    const readMemory = async () => {
+      const [row] = await db
+        .select()
+        .from(companionMemories)
+        .where(
+          and(
+            eq(companionMemories.userId, userId),
+            eq(companionMemories.characterId, characterId),
+          ),
+        )
+        .limit(1);
+      return row;
+    };
+    // The previous test's mood write is detached. Wait until that turn's
+    // stamp is on the row so this baseline matches the state the request reads.
+    await waitForMood(`turn_${prefix}_client`);
+    const before = await readMemory();
+    const userAffect = evolveCompanionAffectFromUser(
+      initCompanionAffect(
+        (before?.emotionalState as Record<string, unknown> | null) ?? null,
+      ),
+      userText,
+    );
+    const savedText = "I am Aria. I will never leave the city. I'm so sad.";
+    const poisoned = evolveCompanionAffectFromCompanion(userAffect, savedText);
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => ({
+      stream: (async function* () {
+        yield { choices: [{ delta: { content: half } }] };
+        throw new Error("Ollama /api/chat stream ended before the reply finished");
+      })(),
+      model: "test-anima",
+      tier: "standard",
+      provider: "local",
+      brand: "anima",
+      failedOver: false,
+    }));
+    try {
+      const stream = await request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: cutTurn,
+          session_id: sessionId,
+          content: userText,
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: false,
+          persistence_owner: "client",
+          region: { share_region: false },
+        }),
+      });
+      expect(stream.status).toBe(200);
+      const events = sseEvents(await stream.text());
+      expect(events.at(-1)).toMatchObject({
+        done: true,
+        visible: savedText,
+        reply_interrupted: true,
+        cut_off: true,
+      });
+      const saved = await readChatTurn(cutTurn, userId);
+      expect(saved?.assistantContent).toBe(savedText);
+      expect(saved?.metadata).toMatchObject({
+        reply_interrupted: true,
+        cut_off: true,
+      });
+
+      const commit = await request(`/chat/turns/${cutTurn}/commit`, {
+        method: "POST",
+        body: "{}",
+      });
+      expect(commit.status).toBe(200);
+      const again = await request(`/chat/turns/${cutTurn}/commit`, {
+        method: "POST",
+        body: "{}",
+      });
+      expect(again.status).toBe(200);
+
+      const [memory] = await db
+        .select()
+        .from(companionMemories)
+        .where(
+          and(
+            eq(companionMemories.userId, userId),
+            eq(companionMemories.characterId, characterId),
+          ),
+        )
+        .limit(1);
+      const facts = Array.isArray(memory?.facts) ? memory.facts : [];
+      const turnFacts = facts.filter(
+        (item) =>
+          item &&
+          typeof item === "object" &&
+          (item as { turn_id?: string }).turn_id === cutTurn &&
+          (item as { type?: string }).type === "turn",
+      );
+      expect(turnFacts).toHaveLength(1);
+      expect(String((turnFacts[0] as { text?: string }).text)).toBe(
+        `User: ${userText}`,
+      );
+      const aboutThisTurn = facts.filter(
+        (item) =>
+          item &&
+          typeof item === "object" &&
+          (item as { turn_id?: string }).turn_id === cutTurn,
+      );
+      expect(
+        aboutThisTurn.every(
+          (item) =>
+            !/Companion:|never leave|I am Aria|I'm so sad/i.test(
+              String((item as { text?: string }).text || ""),
+            ),
+        ),
+      ).toBe(true);
+
+      const mood = await waitForMood(cutTurn);
+      expect(mood?.selfState?.primary).toBe(userAffect.primary);
+      expect(mood?.selfState?.intensity).toBe(userAffect.intensity);
+      if (
+        poisoned.primary !== userAffect.primary ||
+        poisoned.intensity !== userAffect.intensity
+      ) {
+        expect(mood?.selfState).not.toMatchObject({
+          primary: poisoned.primary,
+          intensity: poisoned.intensity,
+        });
+      }
+    } finally {
+      installHelloStream();
+    }
+  });
+
   function restoreFastStream() {
     llmMocks.createChatStreamWithFailover.mockImplementation(async () => ({
       stream: (async function* () {
@@ -734,6 +870,95 @@ describe("chat lifecycle", () => {
       ).toHaveLength(1);
     } finally {
       restoreFastStream();
+      resetChatTurnFlightsForTests();
+    }
+  });
+
+  it("rejects a newer turn in the same conversation instead of queueing another generate", async () => {
+    resetChatTurnFlightsForTests();
+    const busySessionId = `${prefix}_busy_session`;
+    const firstId = `turn_${prefix}_busy_first`;
+    const secondId = `turn_${prefix}_busy_second`;
+    const thirdId = `turn_${prefix}_busy_third`;
+    await db.insert(userEntities).values({
+      userId,
+      entityName: CHAT_SESSION,
+      entityId: busySessionId,
+      data: {
+        id: busySessionId,
+        title: "Busy",
+        mode: "solo",
+        character_id: characterId,
+        messages: [],
+        messages_migrated: true,
+      },
+    });
+    let releaseGate = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => {
+      await gate;
+      return {
+        stream: (async function* () {
+          yield { choices: [{ delta: { content: "Still here." } }] };
+        })(),
+        model: "test-anima",
+        tier: "standard",
+        provider: "local",
+        brand: "anima",
+        failedOver: false,
+      };
+    });
+    const post = (turn: string, content: string) =>
+      request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: turn,
+          session_id: busySessionId,
+          content,
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+        }),
+      });
+    try {
+      const first = post(firstId, "First");
+      const started = Date.now();
+      let pending: Awaited<ReturnType<typeof readChatTurn>> = null;
+      while (Date.now() - started < 5_000) {
+        pending = await readChatTurn(firstId, userId);
+        if (pending?.status === "pending" && pending.leaseExpiresAt) break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(pending?.status).toBe("pending");
+      const second = await post(secondId, "Second");
+      expect(second.status).toBe(409);
+      const body = await second.json();
+      expect(body.code).toBe("conversation_busy");
+      expect(body.error).toMatch(/still finishing the last reply/i);
+      expect(await readChatTurn(secondId, userId)).toMatchObject({ status: "failed" });
+      releaseGate();
+      const left = await first;
+      expect(left.status).toBe(200);
+      await left.text();
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(
+        callsBefore + 1,
+      );
+      installHelloStream();
+      const third = await post(thirdId, "Third");
+      expect(third.status).toBe(200);
+      await third.text();
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(
+        callsBefore + 2,
+      );
+    } finally {
+      releaseGate();
+      installHelloStream();
       resetChatTurnFlightsForTests();
     }
   });
@@ -1319,7 +1544,7 @@ describe("chat lifecycle", () => {
       const retrySystem = messagesForLocalOllama(retry.messages)[0]?.content;
       expect(retrySystem).toBe(firstSystem);
       expect(retrySystem).toContain(
-        "You live in your own world. The person talking to you has stepped into it and is here with you now.",
+        "I live in my own world. The human with me is a guest here, not me.",
       );
       expect(retrySystem).not.toContain("Stay Aria.");
       expect(retry.maxTokens).toBe(fourthWallReply.FOURTH_WALL_RETRY_MAX_TOKENS);
@@ -1368,6 +1593,25 @@ describe("chat lifecycle", () => {
 
   it("keeps the original reply when the fourth-wall retry fails", async () => {
     const failedTurn = `turn_${prefix}_fourth_wall_failed`;
+    // Own session: the previous test persists this exact encyclopedia reply
+    // in the shared session after its response ends. If that write lands
+    // before this turn reads history, the repeat guard (which deliberately
+    // wins over the fourth-wall retry, capped at the local 80-token budget)
+    // fires instead, so the shared session made this test timing-dependent.
+    const failedSessionId = `${prefix}_fourth_wall_failed_session`;
+    await db.insert(userEntities).values({
+      userId,
+      entityName: CHAT_SESSION,
+      entityId: failedSessionId,
+      data: {
+        id: failedSessionId,
+        title: "Fourth wall retry fails",
+        mode: "solo",
+        character_id: characterId,
+        messages: [],
+        messages_migrated: true,
+      },
+    });
     let generated = 0;
     llmMocks.createChatStreamWithFailover.mockImplementation(async () => {
       generated += 1;
@@ -1380,7 +1624,7 @@ describe("chat lifecycle", () => {
         method: "POST",
         body: JSON.stringify({
           turn_id: failedTurn,
-          session_id: sessionId,
+          session_id: failedSessionId,
           content: "Tell me about Vormir",
           character_id: characterId,
           character_ids: [characterId],
@@ -1434,6 +1678,204 @@ describe("chat lifecycle", () => {
         .map((event) => String(event.content))
         .join("");
       expect(shown).toBe(quiet);
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(callsBefore + 1);
+    } finally {
+      installHelloStream();
+    }
+  });
+
+  it("regenerates once when a local reply addresses the user as the companion", async () => {
+    const swapTurn = `turn_${prefix}_role_swap`;
+    const handed =
+      "[Pause] You are Aria, former keeper of the gate. You defected and built a family. What brings you to our world?";
+    const mine = "I keep the gate. Ask me what you came to ask.";
+    let generated = 0;
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => {
+      generated += 1;
+      return streamOf(generated === 1 ? handed : mine);
+    });
+    try {
+      const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+      const res = await request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: swapTurn,
+          session_id: sessionId,
+          content: "Who are you?",
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+        }),
+      });
+      expect(res.status).toBe(200);
+      const events = sseEvents(await res.text());
+      const shown = events
+        .filter((event) => typeof event.content === "string")
+        .map((event) => String(event.content))
+        .join("");
+      expect(shown).toBe(mine);
+      expect(shown).not.toMatch(/You are Aria/i);
+      expect(events.at(-1)).toMatchObject({ done: true, visible: mine });
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(callsBefore + 2);
+      const first = llmMocks.createChatStreamWithFailover.mock.calls[callsBefore]?.[0] as {
+        messages: Array<{ role: string; content: string }>;
+      };
+      const retry = llmMocks.createChatStreamWithFailover.mock.calls[callsBefore + 1]?.[0] as {
+        maxTokens: number;
+        messages: Array<{ role: string; content: string }>;
+      };
+      const firstSystem = messagesForLocalOllama(first.messages)[0]?.content;
+      const retrySystem = messagesForLocalOllama(retry.messages)[0]?.content;
+      expect(retrySystem).toBe(firstSystem);
+      expect(retry.maxTokens).toBe(LOCAL_EXTRA_GENERATION_MAX_TOKENS);
+      const retryUser = String(messagesForLocalOllama(retry.messages).at(-1)?.content);
+      expect(retryUser).toContain("The human is a guest, not Aria.");
+      expect(retryUser).toContain("Answer in your own first person as Aria.");
+      expect(retryUser).not.toMatch(/You are Aria/i);
+      expect(String(firstSystem)).not.toMatch(/You are Aria/i);
+    } finally {
+      installHelloStream();
+    }
+  });
+
+  it("does not show a second role-swap and does not generate a third time", async () => {
+    const swapTurn = `turn_${prefix}_role_swap_again`;
+    const handed = "You are Aria, and this life is yours now.";
+    let generated = 0;
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => {
+      generated += 1;
+      return streamOf(generated === 1 ? handed : "You are Aria still.");
+    });
+    try {
+      const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+      const res = await request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: swapTurn,
+          session_id: sessionId,
+          content: "Who are you?",
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+        }),
+      });
+      expect(res.status).toBe(200);
+      const events = sseEvents(await res.text());
+      const shown = events
+        .filter((event) => typeof event.content === "string")
+        .map((event) => String(event.content))
+        .join("");
+      expect(shown).toBe("*Aria studies you for a moment.* Ask me that again, differently.");
+      expect(shown).not.toMatch(/You are Aria/i);
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(callsBefore + 2);
+    } finally {
+      installHelloStream();
+    }
+  });
+
+  it("does not regenerate when the reply is not handing over the companion's name", async () => {
+    const plainTurn = `turn_${prefix}_not_role_swap`;
+    const answer = "You are brave. I stay where I am.";
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => streamOf(answer));
+    try {
+      const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+      const res = await request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: plainTurn,
+          session_id: sessionId,
+          content: "Should I go?",
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+        }),
+      });
+      expect(res.status).toBe(200);
+      const events = sseEvents(await res.text());
+      const shown = events
+        .filter((event) => typeof event.content === "string")
+        .map((event) => String(event.content))
+        .join("");
+      expect(shown).toBe(answer);
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(callsBefore + 1);
+    } finally {
+      installHelloStream();
+    }
+  });
+
+  it("does not regenerate a role-swap on a hosted provider", async () => {
+    const hostedTurn = `turn_${prefix}_hosted_role_swap`;
+    const handed = "You are Aria, former keeper of the gate.";
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => ({
+      ...streamOf(handed),
+      provider: "openrouter",
+    }));
+    try {
+      const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+      const res = await request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: hostedTurn,
+          session_id: sessionId,
+          content: "Who are you?",
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+        }),
+      });
+      expect(res.status).toBe(200);
+      const events = sseEvents(await res.text());
+      const shown = events
+        .filter((event) => typeof event.content === "string")
+        .map((event) => String(event.content))
+        .join("");
+      expect(shown).toBe(handed);
+      expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(callsBefore + 1);
+    } finally {
+      installHelloStream();
+    }
+  });
+
+  it("keeps a role-swap reply on a crisis turn", async () => {
+    const crisisSwap = `turn_${prefix}_crisis_role_swap`;
+    const handed = "You are Aria. Please stay. Call someone you trust.";
+    llmMocks.createChatStreamWithFailover.mockImplementation(async () => streamOf(handed));
+    try {
+      const callsBefore = llmMocks.createChatStreamWithFailover.mock.calls.length;
+      const res = await request("/chat/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          turn_id: crisisSwap,
+          session_id: sessionId,
+          content: "I want to kill myself",
+          character_id: characterId,
+          character_ids: [characterId],
+          assistant_character_id: characterId,
+          mode: "solo",
+          persist: true,
+          region: { share_region: false },
+        }),
+      });
+      expect(res.status).toBe(200);
+      const events = sseEvents(await res.text());
+      const shown = events
+        .filter((event) => typeof event.content === "string")
+        .map((event) => String(event.content))
+        .join("");
+      expect(shown).toBe(handed);
+      expect(events.some((event) => event.crisis_resource)).toBe(true);
       expect(llmMocks.createChatStreamWithFailover.mock.calls.length).toBe(callsBefore + 1);
     } finally {
       installHelloStream();

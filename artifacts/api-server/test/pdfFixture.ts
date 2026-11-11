@@ -1,12 +1,17 @@
 /** Minimal text PDF (Helvetica) for extractor tests. Offsets are computed. */
-export function buildTextPdf(pages: string[]): Uint8Array {
+export function buildTextPdf(
+  pages: string[],
+  options?: { padBytes?: number },
+): Uint8Array {
   const encoder = new TextEncoder();
   const pageObjs: { id: number; contentId: number }[] = [];
   const contentObjs: { id: number; body: string }[] = [];
+  const padBytes = Math.max(0, options?.padBytes || 0);
   let id = 4;
-  for (const text of pages) {
+  pages.forEach((text, pageIndex) => {
     const safe = text.replace(/\\/g, "\\\\").replace(/[()]/g, "");
-    const stream = `BT /F1 18 Tf 72 720 Td (${safe}) Tj ET\n`;
+    const padding = pageIndex === 0 && padBytes > 0 ? " ".repeat(padBytes) : "";
+    const stream = `BT /F1 18 Tf 72 720 Td (${safe}) Tj ET\n${padding}`;
     const contentId = id++;
     const pageId = id++;
     contentObjs.push({
@@ -14,7 +19,7 @@ export function buildTextPdf(pages: string[]): Uint8Array {
       body: `<< /Length ${stream.length} >>\nstream\n${stream}endstream`,
     });
     pageObjs.push({ id: pageId, contentId });
-  }
+  });
   const kids = pageObjs.map((page) => `${page.id} 0 R`).join(" ");
   const objects: { id: number; body: string }[] = [
     { id: 1, body: `<< /Type /Catalog /Pages 2 0 R >>` },

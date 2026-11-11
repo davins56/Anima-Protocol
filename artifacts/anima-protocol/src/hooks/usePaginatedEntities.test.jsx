@@ -3,12 +3,12 @@ import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-// Back base44 with a fixed-size in-memory table and record every list() call so
+// Back animaClient with a fixed-size in-memory table and record every list() call so
 // the test can prove each page is fetched with a real SQL offset (one page at a
 // time) rather than pulling the whole history into memory. The real client gates
 // every request on a Clerk token getter that never resolves under vitest, so it
 // would otherwise hang.
-vi.mock("@/api/base44Client", () => {
+vi.mock("@/api/animaClient", () => {
   let rows = [];
   const calls = [];
   const entity = (name) => ({
@@ -26,7 +26,7 @@ vi.mock("@/api/base44Client", () => {
   });
   const entities = new Proxy({}, { get: (_, name) => entity(name) });
   return {
-    base44: { entities },
+    animaClient: { entities },
     default: { entities },
     __setRowCount: (n) => {
       rows = Array.from({ length: n }, (_, i) => ({ id: `r${i}` }));
@@ -38,7 +38,7 @@ vi.mock("@/api/base44Client", () => {
   };
 });
 
-import { base44, __setRowCount, __calls, __resetCalls } from "@/api/base44Client";
+import { animaClient, __setRowCount, __calls, __resetCalls } from "@/api/animaClient";
 import { usePaginatedEntities } from "@/hooks/usePaginatedEntities";
 
 // React needs this flag set for act() to flush effects without warnings.

@@ -3,6 +3,8 @@ import { getAuth } from "@clerk/express";
 import { createRateLimit } from "../lib/rateLimit";
 import { logger } from "../lib/logger";
 import { createChatCompletionWithFailover } from "../lib/llmFailover";
+import { combineAbortSignals } from "../lib/chatTimeouts";
+import { acquireLocalLlmBackground } from "../lib/localLlmSlot";
 import { finalizeAssistantReply } from "../lib/visibleAssistantReply";
 import {
   TutorInputError,
@@ -417,7 +419,17 @@ router.post("/lessons/draft", async (req, res) => {
     typeof value === "string" && value.trim() ? value.trim().slice(0, max) : null;
   try {
     const advice = (await listAdvice()).map((a) => a.text);
-    const completion = await createChatCompletionWithFailover({
+    const background = await acquireLocalLlmBackground("model-tutor", { job: "model-tutor" });
+    if (!background) {
+      res.status(429).json({
+        error: "The companion is using the model. Try again in a moment.",
+        code: "llm_busy",
+      });
+      return;
+    }
+    let completion;
+    try {
+    completion = await createChatCompletionWithFailover({
       tier: "light",
       maxTokens: 400,
       temperature: 0.7,
@@ -427,8 +439,11 @@ router.post("/lessons/draft", async (req, res) => {
         note: clip(body.note, MAX_NOTE_CHARS),
         advice,
       }),
-      signal: AbortSignal.timeout(DRAFT_TIMEOUT_MS),
+      signal: combineAbortSignals(AbortSignal.timeout(DRAFT_TIMEOUT_MS), background.signal),
     });
+    } finally {
+      await background.release();
+    }
     const draft = cleanDraft(finalizeAssistantReply(completion.content));
     if (!draft) throw new Error("empty draft");
     res.json({ draft, model: completion.model, brand: completion.brand });

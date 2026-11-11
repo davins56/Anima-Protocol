@@ -70,9 +70,9 @@ vi.mock("@/components/character/CharacterBioSheet", () => ({
   default: () => null,
 }));
 
-vi.mock("@/api/base44Client", () => ({
+vi.mock("@/api/animaClient", () => ({
   notifyStoreChanged: vi.fn(),
-  base44: {
+  animaClient: {
     entities: {
       Character: {
         list: listCharactersMock,

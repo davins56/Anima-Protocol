@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { deletePdfDocument, listPdfDocuments } from "@/api/pdfDocuments";
+import { deletePdfDocument, listPdfDocuments, openPdfDocument } from "@/api/pdfDocuments";
 import PdfFileChip from "./PdfFileChip";
 
 /**
@@ -37,7 +37,18 @@ export default function ChatPdfBar({ sessionId, revision = 0 }) {
       </p>
       {files.map((file) => (
         <div key={file.id} className="space-y-1">
-          <PdfFileChip name={file.filename} pageCount={file.pageCount} />
+          <PdfFileChip
+            name={file.filename}
+            pageCount={file.pageCount}
+            onOpen={
+              file.hasFile
+                ? () =>
+                    openPdfDocument(file.id).catch((err) => {
+                      toast.error(err?.message || "Could not open that PDF.");
+                    })
+                : undefined
+            }
+          />
           {confirmId === file.id ? (
             <div className="flex gap-2">
               <button

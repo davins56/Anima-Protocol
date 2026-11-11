@@ -12,7 +12,7 @@ Do **not** run these commands against production DNS or the `anima-protocol` Wor
 | Clerk `/api/__clerk` proxy | Yes | Yes on the `*.run.app` host |
 | `clerk.anima-protocol.com` CNAME gateway (`/v1/*`) | Yes (Worker custom domain) | **No** — Worker-only. Do not move this hostname. |
 | Postgres | Hyperdrive + Secrets Store `DATABASE_URL` | Direct `DATABASE_URL` (Supabase pooler or Cloud SQL). **No Hyperdrive.** |
-| Chat | Workers AI DeepSeek `@cf/deepseek-ai/deepseek-r1-distill-qwen-32b` via AI Gateway `deepseek-gateway` | **Fail-closed.** There is no `env.AI` binding. OpenRouter / Claude / MiniMax are **not** used. |
+| Chat | Workers AI `@cf/meta/llama-3.3-70b-instruct-fp8-fast` via AI Gateway `deepseek-gateway` | **Fail-closed.** There is no `env.AI` binding. OpenRouter / Claude / MiniMax are **not** used. |
 | Secrets Store / `wrangler secret` | Yes | Secret Manager (names in `secret-names.txt`) |
 | `/api/healthz` | Yes | Yes (Cloud Run startup + liveness probe) |
 

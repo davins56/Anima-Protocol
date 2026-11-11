@@ -7,19 +7,23 @@ import MemoryCallout from "./MemoryCallout";
 import EmotionalVoiceSynthesis from "./EmotionalVoiceSynthesis";
 import LoreKeywordHighlighter from "@/components/lore/LoreKeywordHighlighter";
 import MediaLightbox from "./MediaLightbox";
+import PhotoAttachmentActions from "@/components/photo/PhotoAttachmentActions";
 import AudioPlayer from "./AudioPlayer";
 import DeviceScanCard from "./DeviceScanCard";
 import PdfFileChip from "@/components/pdf/PdfFileChip";
-import { renderItalicText } from "./renderItalicText";
-import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { openPdfDocument } from "@/api/pdfDocuments";
+import { toast } from "sonner";
+import MessageMarkdown from "./MessageMarkdown";
+import { memo, useState, useEffect } from "react";
+import { animaClient } from "@/api/animaClient";
 import { useMemoryHighlight } from "@/hooks/useMemoryHighlight";
 import { useLoreDetection } from "@/hooks/useLoreDetection";
 import { isOwnModelReply } from "@/lib/modelTutor";
+import ReplyRating from "./ReplyRating";
 
-const renderMessageWithActions = (content) => renderItalicText(content);
+const renderMessageWithActions = (content) => <MessageMarkdown content={content} />;
 
-export default function MessageBubble({ message, onRewind, canRewind, onSpeak, character, characterMemories = [], characterEmotion = 'neutral', characterEmotionIntensity = 5, sessionId = null, onEditMessage, onDeleteMessage, onRegenerateMessage, messageLoreLinks = [], onAvatarClick, onTeach }) {
+function MessageBubble({ message, onRewind, canRewind, onSpeak, character, characterMemories = [], characterEmotion = 'neutral', characterEmotionIntensity = 5, sessionId = null, onEditMessage, onDeleteMessage, onRegenerateMessage, messageLoreLinks = [], onAvatarClick, onTeach, onRate, showEdit = false, showRetry = false, actionsDisabled = false }) {
   const [loreEntries, setLoreEntries] = useState([]);
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(message.content || "");
@@ -32,17 +36,25 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
   const images = (message.attachments || []).filter((a) => a.type === "image").map((a) => a.url);
   const audioClips = (message.attachments || []).filter((a) => a.type === "audio");
   const pdfFiles = (message.attachments || []).filter((a) => a.type === "pdf");
+  // Identity-locked studio photos carry photo_id so they can be refined inline.
+  const studioPhotos = (message.attachments || []).filter((a) => a.type === "image" && a.photo_id);
+  // A photo the companion sent on request (server lib/companionPhotos) shows
+  // as one larger picture in its own shape, not a square thumbnail.
+  const companionPhoto =
+    images.length === 1
+      ? (message.attachments || []).find((a) => a.type === "image" && a.source === "companion_photo")
+      : null;
 
   const handleEditSave = () => {
-    if (editText.trim() && onEditMessage) {
-      onEditMessage(editText.trim());
-    }
+    const next = editText.trim();
+    if (!next || !onEditMessage || actionsDisabled) return;
+    onEditMessage(next);
     setIsEditing(false);
   };
 
   useEffect(() => {
     // Load lore entries on mount
-    base44.entities.WorldState.list("-created_date", 100)
+    animaClient.entities.WorldState.list("-created_date", 100)
       .then(entries => setLoreEntries(entries || []))
       .catch(() => {});
   }, []);
@@ -103,6 +115,7 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
           </span>
         )}
         <div
+          data-message-bubble=""
           className={`relative px-3 sm:px-4 py-2 sm:py-3 font-mono text-xs sm:text-sm leading-relaxed hud-corner transition-all duration-500 ${
             isMemoryReference
               ? "border-amber-400/60 bg-black/40 shadow-[0_0_20px_rgba(251,191,36,0.15)]"
@@ -144,11 +157,20 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
                 autoFocus
               />
               <div className="flex gap-2">
-                <button onClick={handleEditSave} className="flex items-center gap-1 px-2 py-1 bg-primary/20 border border-primary/40 text-primary font-mono text-[8px] tracking-widest uppercase hover:bg-primary/30 transition-all">
-                  <Check className="w-2.5 h-2.5" /> Save
+                <button
+                  type="button"
+                  onClick={handleEditSave}
+                  disabled={!editText.trim() || actionsDisabled}
+                  className="inline-flex items-center justify-center gap-1.5 min-h-[44px] min-w-[44px] px-3 bg-primary/20 border border-primary/40 text-primary font-mono text-[10px] tracking-widest uppercase hover:bg-primary/30 transition-all disabled:opacity-40"
+                >
+                  <Check className="w-3.5 h-3.5" /> Save
                 </button>
-                <button onClick={() => setIsEditing(false)} className="flex items-center gap-1 px-2 py-1 border border-primary/20 text-primary/50 font-mono text-[8px] tracking-widest uppercase hover:border-primary/40 transition-all">
-                  <X className="w-2.5 h-2.5" /> Cancel
+                <button
+                  type="button"
+                  onClick={() => { setEditText(message.content || ""); setIsEditing(false); }}
+                  className="inline-flex items-center justify-center gap-1.5 min-h-[44px] min-w-[44px] px-3 border border-primary/20 text-primary/50 font-mono text-[10px] tracking-widest uppercase hover:border-primary/40 transition-all"
+                >
+                  <X className="w-3.5 h-3.5" /> Cancel
                 </button>
               </div>
             </div>
@@ -177,6 +199,14 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
                   key={file.id || idx}
                   name={file.name || file.filename || "PDF"}
                   pageCount={file.page_count || file.pageCount}
+                  onOpen={
+                    file.id && (file.has_file === true || file.hasFile === true)
+                      ? () =>
+                          openPdfDocument(file.id).catch((err) => {
+                            toast.error(err?.message || "Could not open that PDF.");
+                          })
+                      : undefined
+                  }
                 />
               ))}
             </div>
@@ -191,7 +221,39 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
             </div>
            )}
 
-           {images.length > 0 && (
+           {isStreaming && message.photo_pending && images.length === 0 && (
+            <div
+              data-testid="companion-photo-pending"
+              className="mt-2 flex w-48 sm:w-56 aspect-[3/4] items-center justify-center border border-primary/20 bg-primary/5 hud-corner animate-pulse"
+            >
+              <span className="font-mono text-[9px] tracking-widest text-primary/50">sending a photo…</span>
+            </div>
+           )}
+
+           {companionPhoto ? (
+            <button
+              type="button"
+              data-testid="companion-photo"
+              onClick={() => {
+                setLightboxIndex(0);
+                setLightboxOpen(true);
+              }}
+              aria-label="View photo full size"
+              className="mt-2 block w-48 sm:w-64 overflow-hidden border border-primary/20 hud-corner hover:border-primary/50 transition-all"
+            >
+              <img
+                src={companionPhoto.url}
+                alt={companionPhoto.description || `Photo from ${message.character_name || "your companion"}`}
+                loading="lazy"
+                className="w-full h-auto object-cover"
+                style={
+                  companionPhoto.width && companionPhoto.height
+                    ? { aspectRatio: `${companionPhoto.width} / ${companionPhoto.height}` }
+                    : undefined
+                }
+              />
+            </button>
+           ) : images.length > 0 && (
             <div className="mt-2 grid grid-cols-2 gap-1 sm:grid-cols-3">
               {images.map((img, idx) => (
                 <button
@@ -209,6 +271,10 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
                 </button>
               ))}
             </div>
+           )}
+
+           {studioPhotos.length > 0 && (
+            <PhotoAttachmentActions imageId={studioPhotos[0].photo_id} characterId={studioPhotos[0].character_id} />
            )}
 
            {/* Rewind button */}
@@ -241,37 +307,93 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
           )}
         </div>
 
-        {/* Action bar — edit, delete, regenerate */}
-        {!isTyping && !isThinking && !isStreaming && !isEditing && (
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
-            {isUser && onEditMessage && (
+        {/* Retry on her latest reply and Edit on his latest line stay visible
+            without hover so a finger can hit them on iPhone and iPad. Older
+            bubbles keep the same targets, hidden only for a fine mouse pointer. */}
+        {!isTyping && !isThinking && !isStreaming && !isEditing && (showEdit || showRetry) && (
+          <div className="flex items-center gap-1 mt-1">
+            {showEdit && isUser && onEditMessage && (
               <button
-                onClick={() => { setEditText(message.content); setIsEditing(true); }}
-                className="flex items-center justify-center min-w-[44px] min-h-[44px] text-primary/30 hover:text-primary/70 border border-transparent hover:border-primary/20 font-mono text-xs tracking-widest uppercase transition-all"
+                type="button"
+                data-testid="edit-message"
+                onClick={() => { if (!actionsDisabled) { setEditText(message.content || ""); setIsEditing(true); } }}
+                disabled={actionsDisabled}
+                aria-label="Edit your message"
+                className="inline-flex items-center justify-center gap-1.5 min-w-[44px] min-h-[44px] px-3 border border-primary/40 text-primary/80 font-mono text-[10px] tracking-widest uppercase disabled:opacity-40 disabled:pointer-events-none"
+              >
+                <Pencil className="w-3.5 h-3.5" /> Edit
+              </button>
+            )}
+            {showRetry && onRegenerateMessage && (
+              <button
+                type="button"
+                data-testid="retry-reply"
+                onClick={onRegenerateMessage}
+                disabled={actionsDisabled}
+                aria-label="Retry her reply"
+                className="inline-flex items-center justify-center gap-1.5 min-w-[44px] min-h-[44px] px-3 border border-cyan-400/40 text-cyan-200/90 font-mono text-[10px] tracking-widest uppercase disabled:opacity-40 disabled:pointer-events-none"
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> Retry
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Action bar — edit, delete, regenerate. Always tappable on touch;
+            a mouse can reveal it by hover. */}
+        {!isTyping && !isThinking && !isStreaming && !isEditing && (
+          <div className="flex items-center gap-1 mt-0.5 opacity-100 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 [@media(hover:hover)_and_(pointer:fine)]:group-hover:opacity-100 [@media(hover:hover)_and_(pointer:fine)]:focus-within:opacity-100">
+            {isUser && onEditMessage && !showEdit && (
+              <button
+                type="button"
+                onClick={() => { if (!actionsDisabled) { setEditText(message.content || ""); setIsEditing(true); } }}
+                disabled={actionsDisabled}
+                className="flex items-center justify-center min-w-[44px] min-h-[44px] text-primary/30 hover:text-primary/70 border border-transparent hover:border-primary/20 font-mono text-xs tracking-widest uppercase transition-all disabled:opacity-40"
                 title="Edit message"
+                aria-label="Edit your message"
               >
                 <Pencil className="w-3 h-3" />
               </button>
             )}
-            {!isUser && onRegenerateMessage && (
+            {!isUser && onRegenerateMessage && !showRetry && (
               <button
+                type="button"
                 onClick={onRegenerateMessage}
-                className="flex items-center justify-center min-w-[44px] min-h-[44px] text-primary/30 hover:text-cyan-400 border border-transparent hover:border-cyan-400/20 font-mono text-xs tracking-widest uppercase transition-all"
-                title="Regenerate response"
+                disabled={actionsDisabled}
+                className="flex items-center justify-center min-w-[44px] min-h-[44px] text-primary/30 hover:text-cyan-400 border border-transparent hover:border-cyan-400/20 font-mono text-xs tracking-widest uppercase transition-all disabled:opacity-40"
+                title="Retry her reply"
+                aria-label="Retry her reply"
               >
                 <RefreshCw className="w-3 h-3" />
               </button>
             )}
             {onDeleteMessage && (
               <button
+                type="button"
                 onClick={onDeleteMessage}
-                className="flex items-center justify-center min-w-[44px] min-h-[44px] text-primary/20 hover:text-red-400 border border-transparent hover:border-red-400/20 font-mono text-xs tracking-widest uppercase transition-all"
+                disabled={actionsDisabled}
+                className="flex items-center justify-center min-w-[44px] min-h-[44px] touch-manipulation text-primary/40 hover:text-red-400 active:text-red-400 border border-transparent hover:border-red-400/20 font-mono text-xs tracking-widest uppercase transition-all disabled:opacity-40"
                 title="Delete message"
+                aria-label="Delete message"
+                data-testid="delete-message"
               >
-                <Trash2 className="w-3 h-3" />
+                <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
             )}
           </div>
+        )}
+
+        {!isUser && message.corrected && !isStreaming && (
+          <span
+            className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.2em] text-rose-200/60"
+            title="Re-rendered after your correction"
+            data-testid="corrected-badge"
+          >
+            Corrected
+          </span>
+        )}
+        {onRate && !isUser && !isTyping && !isThinking && !isStreaming && !isEditing && message.content && (
+          <ReplyRating onRate={onRate} initial={Number(message.my_rating) || 0} disabled={actionsDisabled} />
         )}
 
         {/* Steward only: teach the own model a better reply. Visible without
@@ -308,3 +430,7 @@ export default function MessageBubble({ message, onRewind, canRewind, onSpeak, c
     </div>
   );
 }
+
+// Memoized: settled bubbles keep stable props (see MessageList), so a reply
+// streaming into the last bubble no longer re-renders the whole thread.
+export default memo(MessageBubble);

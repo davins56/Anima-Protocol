@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { ChevronLeft, Loader } from "lucide-react";
 import { Link } from "react-router-dom";
 import AIBehaviorDashboard from "@/components/settings/AIBehaviorDashboard";
@@ -16,7 +16,7 @@ export default function AIBehaviorSettings() {
   const loadCharacters = async () => {
     setLoading(true);
     try {
-      const chars = await base44.entities.Character.list("-created_date", 100);
+      const chars = await animaClient.entities.Character.list("-created_date", 100);
       setCharacters(chars || []);
       if (chars?.length > 0) {
         setSelectedCharId(chars[0].id);

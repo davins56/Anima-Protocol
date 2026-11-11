@@ -23,6 +23,8 @@ export const initializeColorScheme = () => {
  */
 export const applyTheme = (theme) => {
   const html = document.documentElement;
+  const appearanceTheme = html.dataset.appearanceTheme;
+  if (appearanceTheme && appearanceTheme !== "original") return;
   if (theme === "light") {
     html.classList.add("light");
     html.classList.remove("dark");

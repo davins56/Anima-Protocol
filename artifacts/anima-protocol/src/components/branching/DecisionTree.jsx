@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, Lock, CheckCircle, GitBranch, Zap } from 'lucide-react';
 
@@ -24,7 +24,7 @@ export default function DecisionTree({
   const predictBranches = async () => {
     setLoading(true);
     try {
-      const result = await base44.functions.invoke('predictNarrativeBranches', {
+      const result = await animaClient.functions.invoke('predictNarrativeBranches', {
         session_id: sessionId,
         last_user_choice: lastUserChoice,
         recent_messages: recentMessages.slice(-5),

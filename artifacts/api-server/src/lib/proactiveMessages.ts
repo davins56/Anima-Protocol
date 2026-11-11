@@ -1,4 +1,11 @@
 import webpush, { type PushSubscription as WebPushSubscription } from "web-push";
+import { dueThread, extractOpenThreads, threadFollowUpInstruction } from "./agencyThreads";
+import { isKernelFeatureEnabled } from "./kernelFeatures";
+import { recordAgencyOutcome, runAgencyTick } from "./kernel/agencyRuntime";
+import { maybeOutreachMedia, type OutreachMedia } from "./media/outreachMedia";
+import { pushTitleFor, type OutreachMediaKind } from "./media/outreachMediaCore";
+import { dreamConfig, dreamOpenerInstruction, shouldSurfaceDream } from "./dreams/dreamCore";
+import { pickDreamFragment, recordDreamSurfacing } from "./dreams/dreamLayer";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   CHAT_MESSAGE,
@@ -18,12 +25,13 @@ import {
   type MsgData,
 } from "@workspace/db";
 import { createChatCompletionWithFailover } from "./llmFailover";
-import { companionLlmTurnOpen } from "./sidecarLlm";
+import { localChatActivityActive } from "./localLlmPriority";
 import { acquireLocalLlmBackground } from "./localLlmSlot";
 import { routeModel } from "./modelRouter";
 import { buildCompanionPrompt, type CharacterData } from "./promptBuilder";
 import { loadOperatorModel } from "./operatorModel";
 import { notifyUser } from "./storeEvents";
+import { logger } from "./logger";
 import { generateAutonomousReflection } from "./animaJournal";
 import { addSharedArtifact } from "./homeWorld";
 
@@ -40,7 +48,7 @@ type ClaimedPreference = {
   lastSessionId: string | null;
 };
 
-type Candidate = {
+export type Candidate = {
   sessionId: string;
   character: CharacterData;
   recentMessages: MsgData[];
@@ -280,7 +288,36 @@ async function loadCandidate(
   return null;
 }
 
-async function generateMessage(userId: string, candidate: Candidate): Promise<string> {
+/** Hours since the newest message in the candidate session. */
+export function gapHoursSince(recent: MsgData[], now = Date.now()): number {
+  const last = recent[recent.length - 1]?.timestamp;
+  const t = last ? Date.parse(String(last)) : NaN;
+  return Number.isFinite(t) ? Math.max(0, (now - t) / 3_600_000) : 0;
+}
+
+async function maybeDreamOpener(userId: string, candidate: Candidate): Promise<{ id: string; fragment: string } | null> {
+  try {
+    const cfg = dreamConfig();
+    const gapHours = gapHoursSince(candidate.recentMessages);
+    if (!shouldSurfaceDream({ gapHours, config: cfg, roll: Math.random(), hasDream: true })) return null;
+    const characterId = String(candidate.character.id);
+    const dream = await pickDreamFragment(userId, characterId);
+    if (!dream) return null;
+    await recordDreamSurfacing({ dreamId: dream.id, userId, characterId, surface: "proactive", sessionId: candidate.sessionId });
+    logger.info({ gapHours: Math.round(gapHours) }, "proactive: dream opener");
+    return dream;
+  } catch (err) {
+    logger.info({ err: (err as Error)?.message }, "proactive: dream opener skipped");
+    return null;
+  }
+}
+
+async function generateMessage(
+  userId: string,
+  candidate: Candidate,
+  signal: AbortSignal,
+  maxTokens: number,
+): Promise<string> {
   const [memory] = await db
     .select()
     .from(companionMemories)
@@ -303,8 +340,18 @@ async function generateMessage(userId: string, candidate: Candidate): Promise<st
         },
       ]
     : [];
-  const instruction =
-    "Send one warm, natural check-in as this character after some time apart. " +
+  // Agency Engine (ANIMA_KERNEL_AGENCY): follow up on an open thread when one is due.
+  const thread = isKernelFeatureEnabled("agency")
+    ? dueThread(extractOpenThreads(candidate.recentMessages))
+    : null;
+  if (thread) logger.info({ eventWord: thread.eventWord }, "proactive: thread follow-up");
+  // Dream layer: after a long gap, occasionally open with a dream fragment.
+  const dream = thread ? null : await maybeDreamOpener(userId, candidate);
+  const instruction = thread
+    ? threadFollowUpInstruction(thread)
+    : dream
+      ? dreamOpenerInstruction(dream.fragment)
+      : "Send one warm, natural check-in as this character after some time apart. " +
     "Continue the relationship or conversation without claiming the user said something new. " +
     "Do not mention apps, notifications, inactivity, schedules, or being an AI. " +
     "Do not guilt, pressure, alarm, sexualize, or manipulate the user. " +
@@ -325,21 +372,19 @@ async function generateMessage(userId: string, candidate: Candidate): Promise<st
     deepMode: false,
     conversationDepth: candidate.recentMessages.length,
   });
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 25_000);
-  timer.unref?.();
   try {
     const completion = await createChatCompletionWithFailover({
       tier: "light",
       model: routed.model,
-      maxTokens: 120,
+      maxTokens,
       temperature: 0.8,
       messages: [{ role: "system", content: prompt }],
-      signal: controller.signal,
+      signal,
+      localOnly: true,
     });
     return sanitizeProactiveMessage(completion.content);
   } finally {
-    clearTimeout(timer);
+    // The background grant owns the abort. Nothing else to clear.
   }
 }
 
@@ -387,6 +432,29 @@ async function persistMessage(
   userId: string,
   candidate: Candidate,
   content: string,
+  media: OutreachMedia | null = null,
+): Promise<void> {
+  const metadata: Record<string, unknown> = { source: "proactive_push" };
+  const extra: Record<string, unknown> = { proactive: true };
+  if (media) {
+    metadata.media_kind = media.kind;
+    metadata.attachments = [media.attachment];
+    extra.attachments = [media.attachment];
+  }
+  await persistCompanionMessage(userId, candidate, content, metadata, extra);
+}
+
+/**
+ * Append an assistant message to a session in both the store (user_entities)
+ * and chat_messages, bump the session, and notify the user. Shared by the
+ * proactive check-in and resting-mode delivery.
+ */
+export async function persistCompanionMessage(
+  userId: string,
+  candidate: Candidate,
+  content: string,
+  metadata: Record<string, unknown>,
+  extra: Record<string, unknown> = {},
 ): Promise<void> {
   const now = new Date();
   const message = {
@@ -395,8 +463,8 @@ async function persistMessage(
     character_id: candidate.character.id,
     character_name: candidate.character.name,
     timestamp: now.toISOString(),
-    proactive: true,
-    metadata: { source: "proactive_push" },
+    ...extra,
+    metadata,
   };
   await appendStoreMessage(userId, candidate.sessionId, message);
   await Promise.all([
@@ -409,7 +477,7 @@ async function persistMessage(
       characterId: String(candidate.character.id),
       characterName: candidate.character.name,
       isCrossover: false,
-      metadata: { source: "proactive_push" },
+      metadata,
       createdAt: now,
     }),
     db
@@ -455,6 +523,7 @@ async function deliverPush(
   userId: string,
   candidate: Candidate,
   content: string,
+  mediaKind: OutreachMediaKind | null = null,
 ): Promise<number> {
   if (!configureWebPush()) return 0;
   const subscriptions = await db
@@ -462,7 +531,7 @@ async function deliverPush(
     .from(pushSubscriptions)
     .where(eq(pushSubscriptions.userId, userId));
   const payload = JSON.stringify({
-    title: `${candidate.character.name} sent you a message`,
+    title: pushTitleFor(String(candidate.character.name), mediaKind),
     body: content,
     icon: "/icon-192.png",
     badge: "/icon-192.png",
@@ -552,14 +621,37 @@ async function runClaim(claim: ClaimedPreference): Promise<ProactiveRunResult> {
         reason: "No eligible inactive chat",
       };
     }
-    if (companionLlmTurnOpen()) {
+    // Agency Engine tick (ANIMA_KERNEL_AGENCY): perceive → relevance → act or
+    // stay silent. The clock only says she *may* reach out; the tick decides
+    // whether she *should*. A tick failure falls back to today's behaviour.
+    const characterId = String(candidate.character.id);
+    const decision = isKernelFeatureEnabled("agency")
+      ? await runAgencyTick({
+          userId: claim.userId,
+          characterId,
+          recentMessages: candidate.recentMessages,
+          frequencyHours: claim.frequencyHours,
+        })
+      : null;
+    if (decision && !decision.act) {
+      await deferPreference(claim.userId, decision.retryAfterHours);
+      await recordAgencyOutcome(claim.userId, characterId, decision).catch(() => {});
+      return {
+        status: "skipped",
+        userId: claim.userId,
+        reason: `Agency silence: ${decision.silenceReason}`,
+      };
+    }
+    if (await localChatActivityActive()) {
       return {
         status: "skipped",
         userId: claim.userId,
         reason: "Companion chat in progress",
       };
     }
-    const background = await acquireLocalLlmBackground(`proactive:${claim.userId}`);
+    const background = await acquireLocalLlmBackground(`proactive:${claim.userId}`, {
+      job: "proactive",
+    });
     if (!background) {
       return {
         status: "skipped",
@@ -568,17 +660,37 @@ async function runClaim(claim: ClaimedPreference): Promise<ProactiveRunResult> {
       };
     }
     let content = "";
-    let delivered = 0;
     try {
-      content = await generateMessage(claim.userId, candidate);
-      if (!content) {
-        throw new Error("The model returned an empty proactive message");
-      }
-      await persistMessage(claim.userId, candidate, content);
-      delivered = await deliverPush(claim.userId, candidate, content);
-      await completePreference(claim.userId, candidate.sessionId);
+      content = await generateMessage(
+        claim.userId,
+        candidate,
+        background.signal,
+        background.maxTokens(120),
+      );
     } finally {
+      // Release before media and delivery: a photo render must not hold the
+      // local model slot that live chat needs.
       await background.release();
+    }
+    if (!content) {
+      throw new Error("The model returned an empty proactive message");
+    }
+    // Anima media (ANIMA_KERNEL_MEDIA): sometimes a photo or voice note rides
+    // along with the words. Null on any failure → text only.
+    const media = await maybeOutreachMedia({
+      userId: claim.userId,
+      characterId,
+      characterName: String(candidate.character.name),
+      sessionId: candidate.sessionId,
+      content,
+      situation: decision?.situation ?? null,
+      intent: decision?.act ? decision.intent : null,
+    });
+    await persistMessage(claim.userId, candidate, content, media);
+    const delivered = await deliverPush(claim.userId, candidate, content, media?.kind ?? null);
+    await completePreference(claim.userId, candidate.sessionId);
+    if (decision?.act) {
+      await recordAgencyOutcome(claim.userId, characterId, decision).catch(() => {});
     }
 
     // Fire-and-forget Relationship OS journal + Home artifact.
@@ -603,6 +715,20 @@ async function runClaim(claim: ClaimedPreference): Promise<ProactiveRunResult> {
 }
 
 export async function runProactiveMessageBatch(): Promise<ProactiveRunResult[]> {
+  const { drainDeferredLocalLlmJobs } = await import("./deferredLocalLlm");
+  await drainDeferredLocalLlmJobs().catch((error) => {
+    logger.warn({ error }, "Deferred local LLM drain failed");
+  });
+  // Resting mode: answer messages queued while the model was down. Runs even
+  // when web push is not configured.
+  const { deliverRestingQueue } = await import("./restingMode");
+  await deliverRestingQueue()
+    .then((summary) => {
+      if (summary.attempted) logger.info({ summary }, "Resting queue drained");
+    })
+    .catch((error) => {
+      logger.warn({ error }, "Resting queue drain failed");
+    });
   if (!proactivePushConfigured()) {
     throw new Error("VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY are required");
   }

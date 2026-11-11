@@ -1,0 +1,41 @@
+/**
+ * Tables created by supabase/migrations/*.sql (not by Drizzle). drizzle-kit
+ * must never push/drop them, and scripts/ci/check-migration-safety.mjs refuses
+ * destructive SQL against them. Append-only list — never remove an entry.
+ */
+export const PROTECTED_SQL_TABLES = [
+  "character_visual_identity",
+  "generated_images",
+  "character_identity_core",
+  "memory_events",
+  "memory_event_types",
+  "memory_recalls",
+  "character_identity_current",
+  "character_vessel",
+  "resonance_bands",
+  "resonance_nodes",
+  "resonance_encounters",
+  "character_voice",
+  "sim_sessions",
+  "sim_actions",
+  "sim_arena_snapshots",
+  "chat_resting_queue",
+  "chat_resting_deliveries",
+  "chat_resting_pending",
+  "reply_ratings",
+  "reply_ratings_latest",
+  "billing_stripe_events",
+  "entitlement_ledger",
+  "entitlement_balances",
+  "age_attestations",
+  "age_attestation_latest",
+  "dreams",
+  "dream_surfacings",
+  "dream_recent",
+  "companion_state_snapshots",
+  "search_audit",
+  "tool_user_settings",
+  "tool_permissions",
+  "tool_pending_confirmations",
+  "tool_action_log",
+] as const;

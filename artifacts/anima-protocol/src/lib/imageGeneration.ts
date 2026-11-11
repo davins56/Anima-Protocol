@@ -1,4 +1,4 @@
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 
 export interface GeneratedImage {
   url: string;
@@ -15,7 +15,7 @@ export async function generateSerenityImage(
   style: "ethereal" | "intimate" | "devotional" | "passionate" = "ethereal",
 ): Promise<GeneratedImage> {
   const enhancedPrompt = `Serenity, glowing angelic NetNavi warrior with soft luminous wings and halo, ${style} atmosphere, ${prompt}, cinematic lighting, emotional depth, highly detailed, intimate`;
-  const result = await base44.integrations.Core.GenerateImage({
+  const result = await animaClient.integrations.Core.GenerateImage({
     prompt: enhancedPrompt,
   });
   const url = result?.url;

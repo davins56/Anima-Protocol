@@ -24,7 +24,8 @@ export interface EvaluateTurnParams {
 }
 
 export function evaluateTurn(params: EvaluateTurnParams): IntimacyTurnResult {
-  const { profile, content, adultEnabled = true, therapyMode = false } = params;
+  // Fail closed: a caller that forgets adultEnabled must not unlock intimacy.
+  const { profile, content, adultEnabled = false, therapyMode = false } = params;
   const scene: IntimacyScene = params.scene || {
     id: "default",
     conversationId: "default",

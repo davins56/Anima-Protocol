@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, Zap, Lock, GitBranch, X } from "lucide-react";
 
@@ -20,7 +20,7 @@ export default function NarrativeWorldMapGraph({ sessionId, onSelectBranch }) {
   const loadSnapshots = async () => {
     setLoading(true);
     try {
-      const data = await base44.entities.WorldSnapshot.filter(
+      const data = await animaClient.entities.WorldSnapshot.filter(
         { session_id: sessionId },
         "-created_date",
         100

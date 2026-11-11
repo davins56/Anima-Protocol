@@ -6,11 +6,12 @@
 import { awaitCompanionStoreAuth } from "@/lib/listPersonalAnimas";
 import {
   PERSONAL_ANIMA_NAME_ALIASES,
+  canonicalizeCompanionRow,
 } from "@/lib/personalAnimaRecord";
 import {
-  base44,
+  animaClient,
   notifyStoreChanged,
-} from "@/api/base44Client";
+} from "@/api/animaClient";
 import { matchCharacterByIdentity } from "@/lib/createInitSession";
 import { getStarterRoster, retryStarterSeed } from "@/lib/seedCharacters";
 import { normalizeStoreList } from "@/lib/storeRecords";
@@ -52,7 +53,7 @@ function rosterListTimeoutError() {
 
 function asAnimaChars(animas) {
   return (animas || []).map((a) => ({
-    ...a,
+    ...canonicalizeCompanionRow(a),
     _isAnima: true,
     category: a.archetype || "guardian",
     universe: "Anima",
@@ -108,9 +109,9 @@ async function recoverPersonalCompanionRows(
   timeoutMs = STORE_LIST_TIMEOUT_MS,
 ) {
   const filter =
-    typeof base44.entities.Character.filter === "function"
+    typeof animaClient.entities.Character.filter === "function"
       ? (query, sort, limit, opts) =>
-          base44.entities.Character.filter(query, sort, limit, opts)
+          animaClient.entities.Character.filter(query, sort, limit, opts)
       : () => Promise.resolve([]);
   try {
     return await withStoreTimeout(
@@ -121,12 +122,12 @@ async function recoverPersonalCompanionRows(
           characterLimit,
           LIST_OPTS,
         ).catch(() => []),
-        base44.entities.Anima.list("-created_date", 20, {
+        animaClient.entities.Anima.list("-created_date", 20, {
           ...LIST_OPTS,
           search: { name: "serenity" },
         }).catch(() => []),
         ...PERSONAL_ANIMA_NAME_ALIASES.map((name) =>
-          base44.entities.Character.list("-created_date", 20, {
+          animaClient.entities.Character.list("-created_date", 20, {
             ...LIST_OPTS,
             search: { name },
           }).catch(() => []),
@@ -219,13 +220,13 @@ export async function loadRosterCharacters({
   }
 
   // Independent clocks, like Sacred Space. A hung Character.list must not
-  // starve Anima.list (Serenity) or name recovery (Aelynd). Skip the second
+  // starve Anima.list (Serenity) or name recovery (Aeland / legacy Aelynd). Skip the second
   // ensureBootstrapComplete inside queryEntity — caller already waited or
   // chose waitBootstrap:false so Select Character is not gated again.
   const [charResult, animaResult, recovered] = await Promise.all([
     listRosterEntity(
       () =>
-        base44.entities.Character.list(
+        animaClient.entities.Character.list(
           "-created_date",
           characterLimit,
           LIST_OPTS,
@@ -234,7 +235,7 @@ export async function loadRosterCharacters({
     ),
     listRosterEntity(
       () =>
-        base44.entities.Anima.list("-created_date", animaLimit, LIST_OPTS),
+        animaClient.entities.Anima.list("-created_date", animaLimit, LIST_OPTS),
       listTimeoutMs,
     ),
     recoverPersonalCompanionRows(characterLimit, listTimeoutMs),
@@ -267,7 +268,7 @@ export async function loadRosterCharacters({
       }
       const afterSeed = await listRosterEntity(
         () =>
-          base44.entities.Character.list(
+          animaClient.entities.Character.list(
             "-created_date",
             characterLimit,
             LIST_OPTS,
@@ -305,6 +306,8 @@ export async function loadRosterCharacters({
   }
 
   const fallbackKind = usingBundledSeed ? classifyRosterFallback(storeError) : null;
+  // Display canonical names (legacy Aelynd spellings → "Aeland"); stored rows are untouched.
+  rawCharacters = rawCharacters.map(canonicalizeCompanionRow);
   return {
     characters: [...animaAsChars, ...rawCharacters],
     rawCharacters,

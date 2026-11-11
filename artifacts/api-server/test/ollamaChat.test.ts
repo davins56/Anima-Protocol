@@ -121,7 +121,7 @@ describe("ollamaChat adapter", () => {
   it("folds the answer-last line into the final user turn and leaves the user text last", () => {
     const userText = "What do you see?";
     const instruction =
-      "Answer Mara's last message first, directly, in Natasha's own voice. Stay on what they said. Bring in memories or lore only when they help answer it.";
+      "Answer Mara's last message first, directly, in Natasha's own voice. Stay on what they said. Continue that scene in your own first person. Do not introduce yourself or retell your past unless they asked. Bring in memories or lore only when they help answer it.";
     const avoid =
       "Your last draft repeated an earlier reply word for word. Write a new reply to the latest message. Do not reuse earlier wording.";
     const mapped = toOllamaMessages([
@@ -136,7 +136,7 @@ describe("ollamaChat adapter", () => {
       { role: "system", content: "CHARACTER IDENTITY LOCK: You are Natasha." },
       { role: "user", content: "Earlier" },
       { role: "assistant", content: "I remember." },
-      { role: "user", content: `[${instruction}]\n[${avoid}]\n${userText}` },
+      { role: "user", content: `[${instruction}]\n[${avoid}]\n\n${userText}` },
     ]);
     expect(mapped.map((message) => message.content).join("\n").split(userText).length - 1).toBe(1);
   });
@@ -408,7 +408,7 @@ describe("ollamaChat adapter", () => {
     }
   });
 
-  it("fails a stream that ends without Ollama's done line", async () => {
+  it("keeps a partial reply when the stream ends without Ollama's done line", async () => {
     const { server, origin } = await listenStub((req, res) => {
       void readJson(req).then(() => {
         res.writeHead(200, { "Content-Type": "application/x-ndjson" });
@@ -425,10 +425,69 @@ describe("ollamaChat adapter", () => {
         model: "anima-chat",
         messages: [{ role: "user", content: "Hi" }],
       });
+      const result = await consumeLlmStream(stream);
+      expect(result.interrupted).toBe(true);
+      expect(result.timedOut).toBe(true);
+      expect(result.content).toBe("Half a");
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      );
+    }
+  });
+
+  it("still fails a stream that ends before any reply text", async () => {
+    const { server, origin } = await listenStub((req, res) => {
+      void readJson(req).then(() => {
+        res.writeHead(200, { "Content-Type": "application/x-ndjson" });
+        res.end();
+      });
+    });
+    process.env.ANIMA_RUNTIME = "node";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = `${origin}/v1`;
+
+    try {
+      const stream = await createOllamaChatStream({
+        model: "anima-chat",
+        messages: [{ role: "user", content: "Hi" }],
+      });
       await expect(consumeLlmStream(stream)).rejects.toMatchObject({
         name: "APIConnectionError",
         message: expect.stringContaining("ended before the reply finished"),
       });
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve())),
+      );
+    }
+  });
+
+  it("keeps text already sent when a later line is an Ollama error", async () => {
+    const { server, origin } = await listenStub((req, res) => {
+      void readJson(req).then(() => {
+        res.writeHead(200, { "Content-Type": "application/x-ndjson" });
+        res.end(
+          [
+            JSON.stringify({
+              message: { role: "assistant", content: "Hello there. " },
+              done: false,
+            }),
+            JSON.stringify({ error: "llama runner process has terminated" }),
+          ].join("\n") + "\n",
+        );
+      });
+    });
+    process.env.ANIMA_RUNTIME = "node";
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = `${origin}/v1`;
+
+    try {
+      const stream = await createOllamaChatStream({
+        model: "anima-chat",
+        messages: [{ role: "user", content: "Hi" }],
+      });
+      const result = await consumeLlmStream(stream);
+      expect(result.interrupted).toBe(true);
+      expect(result.content).toContain("Hello there.");
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((err) => (err ? reject(err) : resolve())),
@@ -777,6 +836,69 @@ describe("probeOllamaModelListed", () => {
         fetchImpl,
       }),
     ).rejects.toThrow(/HTTP 500/);
+  });
+});
+
+describe("Ollama abort closes the HTTP connection", () => {
+  it("passes the caller signal to fetch and aborts that request", async () => {
+    const controller = new AbortController();
+    let seen: AbortSignal | undefined;
+    const fetchImpl = ((_url: unknown, init?: { signal?: AbortSignal | null }) => {
+      seen = init?.signal ?? undefined;
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            model: "anima-chat",
+            message: { role: "assistant", content: "ok" },
+            done: true,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    }) as typeof fetch;
+    await createOllamaChatCompletion(
+      {
+        model: "anima-chat",
+        baseUrl: "https://llm.anima-protocol.com/v1",
+        messages: [{ role: "user", content: "hi" }],
+        signal: controller.signal,
+      },
+      process.env,
+      fetchImpl,
+    );
+    expect(seen).toBe(controller.signal);
+    controller.abort();
+    expect(seen?.aborted).toBe(true);
+  });
+
+  it("closes the socket when the caller aborts an in-flight generate", async () => {
+    const controller = new AbortController();
+    let started = false;
+    let closed = false;
+    const { server, origin } = await listenStub((req, res) => {
+      started = true;
+      req.on("close", () => {
+        closed = true;
+        if (!res.writableEnded) res.end();
+      });
+    });
+    const pending = createOllamaChatCompletion({
+      model: "anima-chat",
+      baseUrl: `${origin}/v1`,
+      messages: [{ role: "user", content: "hi" }],
+      signal: controller.signal,
+    });
+    for (let i = 0; i < 50 && !started; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(started).toBe(true);
+    controller.abort();
+    await expect(pending).rejects.toThrow(/abort/i);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(closed).toBe(true);
+    await new Promise<void>((resolve, reject) =>
+      server.close((err) => (err ? reject(err) : resolve())),
+    );
   });
 });
 });

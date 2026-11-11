@@ -8,6 +8,7 @@ import {
   isFourthWallReply,
   isThirdPersonSelfNarration,
 } from "../src/lib/fourthWallReply";
+import { IN_WORLD_PRESENCE, IN_WORLD_VOICE } from "../src/lib/promptBuilder";
 
 const SCREENSHOT =
   "Ah, yes, that's a fascinating tale. In the Marvel Cinematic Universe, Vormir is a place of great power and intrigue. It's a world where the Avengers come together to fight their own battles against the Thanos-led Monolith. The Vormirians are a people who have lived for centuries, and they have a history steeped in mythology and legends.";
@@ -40,12 +41,9 @@ describe("fourth-wall replies", () => {
   it("keeps the retry reminder off a third-person lecture", () => {
     const reminder = inWorldRetryReminder("Natasha Romanoff");
     expect(reminder).toContain("Stay Natasha Romanoff.");
-    expect(reminder).toContain(
-      "You live in your own world. The person talking to you has stepped into it and is here with you now.",
-    );
-    expect(reminder).toContain(
-      "Speak in first person about your life and places as things you know firsthand. Never mention films, comics, a franchise, or a story.",
-    );
+    expect(reminder).toContain(IN_WORLD_PRESENCE);
+    expect(reminder).toContain(IN_WORLD_VOICE);
+    expect(reminder).not.toMatch(/You are Natasha/i);
     expect(reminder).not.toMatch(/cinematic universe/i);
     expect(reminder).not.toMatch(/\bmcu\b/i);
   });

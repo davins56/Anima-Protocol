@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ChevronDown, Brain, Heart, Zap, BookOpen } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 const MEMORY_TYPE_ICONS = {
   relationship_milestone: { icon: Heart, color: 'text-pink-400', label: 'Relationship' },
@@ -27,7 +27,7 @@ export default function CrossSessionMemoryPanel({ characterId, sessionId }) {
   const loadMemories = async () => {
     setLoading(true);
     try {
-      const result = await base44.entities.CrossSessionMemory.filter({
+      const result = await animaClient.entities.CrossSessionMemory.filter({
         character_id: characterId,
       }, '-relevance_score', 20);
       setMemories(result || []);

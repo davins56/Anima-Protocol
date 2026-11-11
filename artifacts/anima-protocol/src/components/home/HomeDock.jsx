@@ -1,14 +1,17 @@
-import { MessageCircle, Users, Globe, User } from "lucide-react";
+import { MessageCircle, Users, Globe, User, Images } from "lucide-react";
 
 const ITEMS = [
   { id: "talk", label: "Talk", Icon: MessageCircle },
   { id: "people", label: "People", Icon: Users },
   { id: "world", label: "World", Icon: Globe },
   { id: "you", label: "You", Icon: User },
+  { id: "moments", label: "Moments", Icon: Images },
 ];
 
-export default function HomeDock({ onTalk, onPeople, onWorld, onYou }) {
-  const handlers = { talk: onTalk, people: onPeople, world: onWorld, you: onYou };
+export default function HomeDock({ onTalk, onPeople, onWorld, onYou, onMoments }) {
+  const handlers = { talk: onTalk, people: onPeople, world: onWorld, you: onYou, moments: onMoments };
+  // Moments (Photo Moments album) only shows when Home has a companion to open it for.
+  const items = ITEMS.filter((item) => item.id !== "moments" || typeof onMoments === "function");
 
   return (
     <nav
@@ -16,7 +19,7 @@ export default function HomeDock({ onTalk, onPeople, onWorld, onYou }) {
       aria-label="Home"
       className="flex items-stretch border border-cyan-400/20 bg-black/70 backdrop-blur-md"
     >
-      {ITEMS.map(({ id, label, Icon }) => (
+      {items.map(({ id, label, Icon }) => (
         <button
           key={id}
           type="button"

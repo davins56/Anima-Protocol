@@ -1,9 +1,13 @@
-import { useState, useRef, useLayoutEffect } from "react";
+import { memo, useState, useRef, useLayoutEffect, useEffect } from "react";
+import { mergeDraftIntoComposer } from "@/lib/heldChatSend";
+import { composerHint, shouldSendOnEnter, useTouchFirst } from "@/lib/composerKeys";
 import { Send, Zap, Paperclip, Loader, FileText } from "lucide-react";
 import { toast } from "sonner";
-import { base44 } from "@/api/base44Client";
-import { pdfProgressLabel, uploadPdfDocument, deletePdfDocument } from "@/api/pdfDocuments";
+import { animaClient, deleteUploadedFile } from "@/api/animaClient";
+import { pdfProgressLabel, uploadPdfDocument, deletePdfDocument, openPdfDocument } from "@/api/pdfDocuments";
 import PdfFileChip from "@/components/pdf/PdfFileChip";
+import { formatImageUploadError } from "@/lib/characterAvatarUpload";
+import { CHAT_PHOTO_ACCEPT, CHAT_PHOTO_MAX_COUNT, chatPhotoRejection } from "@/lib/chatPhoto";
 
 // Max height the input grows to before it starts scrolling internally (px).
 const MAX_INPUT_HEIGHT = 200;
@@ -15,20 +19,88 @@ function isInItalicContext(text) {
   return !!starMatches;
 }
 
-export default function ChatInput({
+function ChatInput({
   onSend,
   isLoading,
   disabled,
   allowEmpty = false,
   sessionId = null,
   onPdfStored,
-}) {
+  composeWhileBusy = false,
+  restoreDraft = null,
+  onRestoreDraftApplied,
+  onRestoredDraftSettled,
+}) {  const touchFirst = useTouchFirst();
+
+  // A reply can still be in flight. The follow-up is held by the page
+  // instead of locking the box, so typing and Send stay available.
+  const blockComposer = disabled || (isLoading && !composeWhileBusy);
   const [value, setValue] = useState("");
   const [attachments, setAttachments] = useState([]);
   const [pdfs, setPdfs] = useState([]);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [restoreNote, setRestoreNote] = useState("");
   const textareaRef = useRef(null);
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
+  const appliedRestoreRef = useRef(null);
+  const restoredDraftRef = useRef(null);
+  const onRestoreDraftAppliedRef = useRef(onRestoreDraftApplied);
+  onRestoreDraftAppliedRef.current = onRestoreDraftApplied;
+  const onRestoredDraftSettledRef = useRef(onRestoredDraftSettled);
+  onRestoredDraftSettledRef.current = onRestoredDraftSettled;
+  const pdfsRef = useRef(pdfs);
+  pdfsRef.current = pdfs;
+  // Removal settles only after the new list commits. Doing it inside the
+  // state updater can clear the saved draft when React replays that updater
+  // and then drops the update.
+  const emptySettleAfterCommitRef = useRef(false);
+
+  const settleRestoredDraft = () => {
+    const draft = restoredDraftRef.current;
+    if (!draft) return;
+    restoredDraftRef.current = null;
+    onRestoredDraftSettledRef.current?.(draft);
+  };
+
+  const settleIfComposerEmpty = (text, nextAttachments, nextPdfs) => {
+    if (!restoredDraftRef.current) return;
+    const attachmentsLeft = Array.isArray(nextAttachments) ? nextAttachments.length : 0;
+    const pdfsLeft = Array.isArray(nextPdfs) ? nextPdfs.length : 0;
+    if (String(text || "").trim() || attachmentsLeft || pdfsLeft) return;
+    settleRestoredDraft();
+  };
+
+  // A reload puts a held follow-up back in this box. It is not sent.
+  // Text already in the box is kept; the saved line is appended when it
+  // is not already there. The saved copy stays until this box sends or
+  // is cleared.
+  useEffect(() => {
+    if (!restoreDraft?.token) return;
+    if (appliedRestoreRef.current === restoreDraft.token) return;
+    appliedRestoreRef.current = restoreDraft.token;
+    restoredDraftRef.current = restoreDraft;
+    const merged = mergeDraftIntoComposer(
+      { text: valueRef.current, attachments: attachmentsRef.current },
+      restoreDraft,
+    );
+    if (merged.placedText) setValue(merged.text);
+    if (merged.placedAttachment) setAttachments(merged.attachments);
+    if (merged.note) setRestoreNote(merged.note);
+    onRestoreDraftAppliedRef.current?.(restoreDraft);
+    const nextText = merged.placedText ? merged.text : valueRef.current;
+    const nextAttachments = merged.placedAttachment ? merged.attachments : attachmentsRef.current;
+    settleIfComposerEmpty(nextText, nextAttachments, pdfsRef.current);
+  }, [restoreDraft]);
+
+  useEffect(() => {
+    if (!emptySettleAfterCommitRef.current) return;
+    emptySettleAfterCommitRef.current = false;
+    settleIfComposerEmpty(value, attachments, pdfs);
+  }, [value, attachments, pdfs]);
 
   // Grow the textarea to fit its content (up to MAX_INPUT_HEIGHT, then it
   // scrolls internally). Runs on every value change — including the reset to ""
@@ -42,10 +114,10 @@ export default function ChatInput({
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (isLoading || disabled) return;
+    if (blockComposer) return;
     const readyPdfs = pdfs.filter((pdf) => pdf.status === "ready");
     if (!value.trim() && !attachments.length && !readyPdfs.length && !allowEmpty) return;
-    if (pdfBusy) return;
+    if (pdfBusy || uploadingMedia) return;
     
     // Create message with attachments if present
     const message = {
@@ -57,15 +129,21 @@ export default function ChatInput({
           id: pdf.id,
           name: pdf.name,
           page_count: pdf.pageCount,
+          has_file: true,
         })),
       ].filter(Boolean),
     };
     if (!message.attachments.length) message.attachments = undefined;
-    
+
+    // Drop the restored copy before this send is recorded. A busy hold of
+    // the same text keeps the previous savedAt, and settling afterward
+    // would delete that live hold.
+    settleRestoredDraft();
     onSend(message);
     setValue("");
     setAttachments([]);
     setPdfs([]);
+    setRestoreNote("");
   };
 
   const handlePdfUpload = async (e) => {
@@ -115,6 +193,7 @@ export default function ChatInput({
   };
 
   const removePdf = async (pdf) => {
+    emptySettleAfterCommitRef.current = true;
     setPdfs((prev) => prev.filter((item) => item.localId !== pdf.localId));
     if (pdf.id) {
       try {
@@ -128,27 +207,35 @@ export default function ChatInput({
 
   const handleMediaUpload = async (e) => {
     const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
+    e.target.value = "";
+    const file = files[0];
+    if (!file) return;
+    const rejection = chatPhotoRejection(file);
+    if (rejection) {
+      toast.error(rejection);
+      return;
+    }
+    if (attachmentsRef.current.length >= CHAT_PHOTO_MAX_COUNT) {
+      toast.error(`You can attach up to ${CHAT_PHOTO_MAX_COUNT} photos on one message.`);
+      return;
+    }
 
     setUploadingMedia(true);
     try {
-      for (const file of files) {
-        const { file_url } = await base44.integrations.Core.UploadFile({ file });
-        const isAudio = file.type.startsWith("audio/");
-        setAttachments((prev) => [
-          ...prev,
-          { url: file_url, type: isAudio ? "audio" : "image", name: file.name }
-        ]);
-      }
+      const { file_url } = await animaClient.integrations.Core.UploadFile({ file });
+      setAttachments((prev) => [
+        ...prev,
+        { url: file_url, type: "image", name: file.name },
+      ]);
     } catch (err) {
-      console.error("Media upload error:", err);
+      toast.error(formatImageUploadError(err, { noun: "photo" }));
     } finally {
       setUploadingMedia(false);
     }
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (shouldSendOnEnter(e, touchFirst)) {
       e.preventDefault();
       handleSubmit(e);
     }
@@ -181,11 +268,29 @@ export default function ChatInput({
               name={pdf.name}
               pageCount={pdf.pageCount}
               statusLabel={pdf.status === "ready" ? null : pdfProgressLabel(pdf.progress)}
+              onOpen={
+                pdf.id
+                  ? () =>
+                      openPdfDocument(pdf.id).catch((err) => {
+                        toast.error(err?.message || "Could not open that PDF.");
+                      })
+                  : undefined
+              }
               onRemove={() => removePdf(pdf)}
             />
           ))}
         </div>
       )}
+
+      {restoreNote ? (
+        <p
+          data-testid="held-draft-restored"
+          role="status"
+          className="font-mono text-[10px] leading-snug text-primary/60"
+        >
+          {restoreNote}
+        </p>
+      ) : null}
 
       {attachments.length > 0 && (
         <div className="flex gap-2 flex-wrap">
@@ -197,7 +302,17 @@ export default function ChatInput({
                 <div className="w-full h-full flex items-center justify-center text-[10px] text-primary/50">🔊</div>
               )}
               <button
-                onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== idx))}
+                type="button"
+                onClick={() => {
+                  const removed = attachments[idx];
+                  emptySettleAfterCommitRef.current = true;
+                  setAttachments((prev) => prev.filter((_, i) => i !== idx));
+                  if (removed?.type === "image" && removed.url) {
+                    void deleteUploadedFile(removed.url).catch((err) => {
+                      console.error("Photo delete error:", err);
+                    });
+                  }
+                }}
                 className="absolute -top-1 -right-1 w-4 h-4 bg-destructive text-white text-[8px] flex items-center justify-center rounded-full"
               >
                 ×
@@ -218,7 +333,7 @@ export default function ChatInput({
             type="file"
             accept=".pdf,application/pdf"
             onChange={handlePdfUpload}
-            disabled={pdfBusy || isLoading || disabled || !sessionId}
+            disabled={pdfBusy || blockComposer || !sessionId}
             className="hidden"
             aria-label="Attach a PDF"
           />
@@ -228,15 +343,18 @@ export default function ChatInput({
             <FileText className="w-3.5 sm:w-4 h-3.5 sm:h-4" />
           )}
         </label>
-        <label className="flex-shrink-0 w-10 sm:w-12 h-10 sm:h-12 btn-sacred text-primary disabled:opacity-30 flex items-center justify-center hud-corner cursor-pointer">
+        <label
+          className="flex-shrink-0 w-10 sm:w-12 h-10 sm:h-12 btn-sacred text-primary disabled:opacity-30 flex items-center justify-center hud-corner cursor-pointer"
+          title="Attach a photo"
+        >
           <input
+            data-testid="chat-photo-upload"
             type="file"
-            multiple
-            accept="image/*,audio/*"
+            accept={CHAT_PHOTO_ACCEPT}
             onChange={handleMediaUpload}
-            disabled={uploadingMedia || isLoading || disabled}
+            disabled={uploadingMedia || blockComposer}
             className="hidden"
-            aria-label="Attach an image or audio clip"
+            aria-label="Attach a photo"
           />
           {uploadingMedia ? (
             <Loader className="w-3.5 sm:w-4 h-3.5 sm:h-4 animate-spin" />
@@ -249,10 +367,17 @@ export default function ChatInput({
           <textarea
             ref={textareaRef}
             value={value}
-            onChange={(e) => setValue(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value;
+              setValue(next);
+              settleIfComposerEmpty(next, attachmentsRef.current, pdfsRef.current);
+            }}
             onKeyDown={handleKeyDown}
+            enterKeyHint={touchFirst ? "enter" : "send"}
+            aria-label="Message"
+            autoComplete="off"
             placeholder={allowEmpty ? "Message... (or send empty to continue story)" : "Ask me anything (I'm an AI and can make mistakes)..."}
-            disabled={disabled || isLoading}
+            disabled={blockComposer}
             rows={1}
             className="w-full input-sacred text-primary/90 placeholder-primary/20 font-mono text-base sm:text-sm px-3 sm:px-4 py-2 sm:py-3 resize-none focus:outline-none transition-all hud-corner overflow-y-auto"
             style={{ minHeight: "40px", maxHeight: `${MAX_INPUT_HEIGHT}px`, fontSize: "16px", fontStyle: isInItalicContext(value) ? "italic" : "normal" }}
@@ -260,16 +385,20 @@ export default function ChatInput({
         </div>
         <button
           type="submit"
-          disabled={((!value.trim() && !attachments.length && !pdfs.some((pdf) => pdf.status === "ready") && !allowEmpty) || isLoading || disabled || uploadingMedia || pdfBusy)}
+          aria-label="Send message"
+          disabled={((!value.trim() && !attachments.length && !pdfs.some((pdf) => pdf.status === "ready") && !allowEmpty) || blockComposer || uploadingMedia || pdfBusy)}
           className="flex-shrink-0 w-10 sm:w-12 h-10 sm:h-12 btn-sacred text-primary disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center hud-corner"
         >
           <Send className="w-3.5 sm:w-4 h-3.5 sm:h-4" />
         </button>
       </form>
       <p className="mt-1.5 text-[8px] sm:text-[9px] font-mono text-primary/15 tracking-widest uppercase">
-        <span className="hidden sm:inline">Enter to send · Shift+Enter for newline</span>
-        <span className="sm:hidden">Enter to send</span>
+        {composerHint(touchFirst)}
       </p>
     </div>
   );
 }
+
+// Memoized so a streaming reply (which re-renders Chat on every token) does
+// not re-render this subtree; Chat passes stable handlers and a settled thread.
+export default memo(ChatInput);

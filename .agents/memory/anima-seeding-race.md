@@ -5,7 +5,7 @@ description: Why localStorage character seeding double-seeded and how the guard 
 
 # Character seeding double-seed under StrictMode
 
-Anima characters are localStorage-backed (via `base44Client.js`), seeded once by
+Anima characters are localStorage-backed (via `animaClient.js`), seeded once by
 `src/lib/seedCharacters.js`, invoked from a `useEffect([])` in `App.full.jsx`.
 
 **Bug:** the seed was async and set its `SEED_KEY` localStorage guard only *after*

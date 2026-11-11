@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Link } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { useStoreSync } from "@/lib/useStoreSync";
 import { BookOpen, Search, Trash2, Calendar, User, ArrowLeft } from "lucide-react";
 import { useConfirm } from "@/lib/ConfirmDialog";
@@ -26,10 +26,10 @@ export default function Journals() {
     setLoading(true);
     try {
       const [j, c, s] = await Promise.all([
-        base44.entities.CharacterJournal.list("-created_date", 200),
-        base44.entities.Character.list("-created_date", 100),
+        animaClient.entities.CharacterJournal.list("-created_date", 200),
+        animaClient.entities.Character.list("-created_date", 100),
         // Title lookup only — skip hydrating every session's message history.
-        base44.entities.ChatSession.list("-created_date", 100, { withMessages: false }),
+        animaClient.entities.ChatSession.list("-created_date", 100, { withMessages: false }),
       ]);
       setJournals(j || []);
       setCharacters(c || []);

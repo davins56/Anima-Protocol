@@ -7,8 +7,8 @@ import {
   julesApi,
 } from "./julesApi";
 
-vi.mock("@/api/base44Client", () => ({
-  base44: {
+vi.mock("@/api/animaClient", () => ({
+  animaClient: {
     functions: {
       codespaceAgentStep: {
         invoke: vi.fn(),
@@ -22,7 +22,7 @@ vi.mock("@/api/base44Client", () => ({
   },
 }));
 
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 
 describe("julesApi", () => {
   it("exports JULES_PERSONA correctly", () => {
@@ -40,8 +40,8 @@ describe("julesApi", () => {
     expect(task.status).toBe("pending");
   });
 
-  it("executeAgentStep delegates to base44.functions.codespaceAgentStep", async () => {
-    vi.mocked(base44.functions.codespaceAgentStep.invoke).mockResolvedValueOnce({
+  it("executeAgentStep delegates to animaClient.functions.codespaceAgentStep", async () => {
+    vi.mocked(animaClient.functions.codespaceAgentStep.invoke).mockResolvedValueOnce({
       message: {
         role: "assistant",
         content: "Analyzed code and fixed issue.",
@@ -54,7 +54,7 @@ describe("julesApi", () => {
       [{ path: "app.js" }]
     );
 
-    expect(base44.functions.codespaceAgentStep.invoke).toHaveBeenCalledWith({
+    expect(animaClient.functions.codespaceAgentStep.invoke).toHaveBeenCalledWith({
       messages: [{ role: "user", content: "Debug this app" }],
       character: JULES_PERSONA,
       files: ["app.js"],
@@ -63,8 +63,8 @@ describe("julesApi", () => {
   });
 
   it("executeAgentStep falls back to InvokeLLM if codespaceAgentStep returns empty", async () => {
-    vi.mocked(base44.functions.codespaceAgentStep.invoke).mockResolvedValueOnce(null);
-    vi.mocked(base44.integrations.Core.InvokeLLM).mockResolvedValueOnce({
+    vi.mocked(animaClient.functions.codespaceAgentStep.invoke).mockResolvedValueOnce(null);
+    vi.mocked(animaClient.integrations.Core.InvokeLLM).mockResolvedValueOnce({
       content: "Jules fallback repair analysis.",
       tool_calls: [],
     });
@@ -74,7 +74,7 @@ describe("julesApi", () => {
       ["index.html"]
     );
 
-    expect(base44.integrations.Core.InvokeLLM).toHaveBeenCalled();
+    expect(animaClient.integrations.Core.InvokeLLM).toHaveBeenCalled();
     expect(msg.content).toBe("Jules fallback repair analysis.");
   });
 

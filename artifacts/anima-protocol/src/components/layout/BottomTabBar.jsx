@@ -1,11 +1,13 @@
 // @ts-check
 import { useLocation, useNavigate } from "react-router-dom";
-import { MessageSquare, BookOpen, Globe, Grid3x3, Home, X } from "lucide-react";
+import { MessageSquare, Users, Brain, Settings as SettingsIcon, Compass, Home, X } from "lucide-react";
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { syncReservedTabBarHeight } from "@/lib/tabBarLayout";
 import { AnimatePresence, motion } from "framer-motion";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { useAuth } from "@/lib/AuthContext";
+import { useModelTutor } from "@/hooks/useModelTutor";
+import { PRIMARY_TABS, exploreModules } from "@/lib/mobileNav";
 
 const ALL_MODULES = [
   { label: "Sign Out", path: "/", icon: "⎋", signOut: true },
@@ -17,6 +19,7 @@ const ALL_MODULES = [
   { label: "Codespace", path: "/codespace", icon: "⌨" },
   { label: "Repo Workspace", path: "/repo-codespace", icon: "🖥" },
   { label: "NetBattle", path: "/net-battle", icon: "⚔" },
+  { label: "Cyberworld", path: "/cyberworld", icon: "⌗" },
   { label: "Settings", path: "/settings", icon: "⚙" },
   { label: "Storyboard", path: "/storyboard", icon: "📋" },
   { label: "Narrative", path: "/narrative", icon: "📊" },
@@ -43,12 +46,8 @@ const ALL_MODULES = [
   { label: "Reflect Log", path: "/reflection-log", icon: "📝" },
 ];
 
-const PINNED_TABS = [
-  { path: "/", label: "Home", Icon: Home },
-  { path: "/chat", label: "Chat", Icon: MessageSquare },
-  { path: "/storyboard", label: "Board", Icon: BookOpen },
-  { path: "/worldmap", label: "Map", Icon: Globe },
-];
+const TAB_ICONS = { chat: MessageSquare, companions: Users, memories: Brain, home: Home, settings: SettingsIcon };
+const PINNED_TABS = PRIMARY_TABS.map((tab) => ({ ...tab, Icon: TAB_ICONS[tab.key] }));
 
 /**
  * @param {string} tabPath
@@ -64,10 +63,22 @@ export default function BottomTabBar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { logout } = useAuth();
+  const { isSteward } = useModelTutor();
+  const modules = exploreModules(ALL_MODULES, { isSteward });
   const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState("");
+  const filterText = filter.trim().toLowerCase();
+  const shownModules = filterText
+    ? modules.filter(({ label }) => label.toLowerCase().includes(filterText))
+    : modules;
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [mostRecentSessionId, setMostRecentSessionId] = useState(null);
   const tabBarRef = useRef(null);
+
+  // A fresh filter each time Explore opens.
+  useEffect(() => {
+    if (!open) setFilter("");
+  }, [open]);
 
   useLayoutEffect(() => {
     const root = document.documentElement;
@@ -96,7 +107,7 @@ export default function BottomTabBar() {
   }, []);
 
   useEffect(() => {
-    base44.entities.ChatSession.list("-updated_date", 1).then(sessions => {
+    animaClient.entities.ChatSession.list("-updated_date", 1).then(sessions => {
       if (sessions?.length > 0) setMostRecentSessionId(sessions[0].id);
     }).catch(() => {});
   }, []);
@@ -200,17 +211,43 @@ export default function BottomTabBar() {
               }}
             >
               <div className="flex items-center justify-between px-5 py-3 border-b border-primary/10">
-                <span className="font-mono text-[11px] tracking-[0.3em] text-primary/80 uppercase">// All Modules</span>
-                <button onClick={() => setOpen(false)} className="text-primary/40 hover:text-primary transition-colors">
+                <span className="font-mono text-[11px] tracking-[0.3em] text-primary/80 uppercase">// Explore</span>
+                <button onClick={() => setOpen(false)} aria-label="Close Explore" className="text-primary/40 hover:text-primary transition-colors">
                   <X className="w-4 h-4" />
                 </button>
+              </div>
+              <div className="px-4 py-2 border-b border-primary/10">
+                <input
+                  type="search"
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                  placeholder="Filter pages…"
+                  aria-label="Filter Explore pages"
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  enterKeyHint="go"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && shownModules.length === 1 && !shownModules[0].signOut) {
+                      navigate(shownModules[0].path);
+                      setOpen(false);
+                    }
+                  }}
+                  data-testid="explore-filter"
+                  className="w-full bg-black/60 border border-primary/20 text-primary/80 placeholder-primary/25 font-mono text-base sm:text-xs px-3 py-2 focus:outline-none focus:border-primary/50"
+                />
               </div>
               <div 
                 className="grid grid-cols-3 gap-px bg-primary/5 p-px" 
                 style={{ paddingBottom: "calc(80px + env(safe-area-inset-bottom, 0px))" }}
                 data-no-swipe
               >
-                {ALL_MODULES.map(({ label, path, icon, signOut }) => {
+                {shownModules.length === 0 && (
+                  <p className="col-span-3 bg-[#090912] py-6 text-center font-mono text-[10px] tracking-widest uppercase text-primary/40">
+                    No pages match “{filter.trim()}”
+                  </p>
+                )}
+                {shownModules.map(({ label, path, icon, signOut }) => {
                   const isActive = isTabActive(path, location.pathname);
                   return (
                     <button
@@ -244,7 +281,8 @@ export default function BottomTabBar() {
             <button
               key={path}
               onClick={path === "/chat" ? handleChatNav : () => navigate(path)}
-              className={`flex-1 flex flex-col items-center justify-center gap-1 py-2 transition-all relative ${
+              aria-current={active ? "page" : undefined}
+              className={`flex-1 min-w-0 flex flex-col items-center justify-center gap-1 py-2 transition-all relative ${
                 active ? "text-primary" : "text-primary/30 hover:text-primary/60"
               }`}
             >
@@ -257,15 +295,15 @@ export default function BottomTabBar() {
           );
         })}
 
-        {/* More tab */}
+        {/* Explore tab (everything else) */}
         <button
           onClick={() => setOpen(v => !v)}
           className={`flex-1 flex flex-col items-center justify-center gap-1 py-2 transition-all relative ${
             open ? "text-primary" : "text-primary/30 hover:text-primary/60"
           }`}
         >
-          <Grid3x3 className="w-[18px] h-[18px]" strokeWidth={open ? 2 : 1.5} />
-          <span className="font-mono text-[8px] tracking-[0.15em] uppercase">More</span>
+          <Compass className="w-[18px] h-[18px]" strokeWidth={open ? 2 : 1.5} />
+          <span className="font-mono text-[8px] tracking-[0.15em] uppercase">Explore</span>
           {open && (
             <span className="absolute bottom-0 left-1/4 right-1/4 h-[1px] bg-primary shadow-[0_0_6px_#22d3ee]" />
           )}

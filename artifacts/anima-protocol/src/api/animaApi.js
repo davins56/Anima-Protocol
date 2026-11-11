@@ -124,7 +124,14 @@ async function* postAuthedSse(path, body) {
     yield* readSseJsonStream(res.body);
   } catch (err) {
     if (err?.name === "AbortError" || err?.code === "ABORT_ERR") {
-      throw chatStreamTimeoutError();
+      // The deadline timer is the only caller of controller.abort(). A stop,
+      // a chat switch, or leaving the page aborts the fetch without that signal.
+      if (controller.signal.aborted) {
+        throw chatStreamTimeoutError();
+      }
+      const cancel = err instanceof Error ? err : new Error("The reply was cancelled.");
+      cancel.code = "chat_user_cancel";
+      throw cancel;
     }
     throw err;
   } finally {
@@ -327,6 +334,42 @@ export const animaApi = {
      */
     companionMemory: (characterId) =>
       request(`/chat/memories/${encodeURIComponent(characterId)}`).then((r) => r.json()),
+
+    /**
+     * Correct one episodic, semantic, or user-fact sentence.
+     * Does not call a model and does not change mood or persona.
+     */
+    updateCompanionMemory: (characterId, factId, text) =>
+      request(
+        `/chat/memories/${encodeURIComponent(characterId)}/facts/${encodeURIComponent(factId)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ text }),
+        },
+      ).then((r) => r.json()),
+
+    forgetCompanionMemory: (characterId, factId) =>
+      request(
+        `/chat/memories/${encodeURIComponent(characterId)}/facts/${encodeURIComponent(factId)}`,
+        { method: "DELETE" },
+      ).then((r) => r.json()),
+
+    /** Seed a new companion's backstory + first facts (idempotent on the server). */
+    seedCompanionMemory: (characterId, character) =>
+      request(`/chat/memories/${encodeURIComponent(characterId)}/seed`, {
+        method: "POST",
+        body: JSON.stringify({ character }),
+      }).then((r) => r.json()),
+
+    /**
+     * Accept / reject / edit a protected identity proposal. Accept and edit
+     * append a new identity core version on the server.
+     */
+    resolveIdentityProposal: (characterId, factId, action, text) =>
+      request(
+        `/chat/memories/${encodeURIComponent(characterId)}/proposals/${encodeURIComponent(factId)}`,
+        { method: "POST", body: JSON.stringify(text != null ? { action, text } : { action }) },
+      ).then((r) => r.json()),
   },
 
   /**
@@ -452,6 +495,45 @@ export const animaApi = {
         body: JSON.stringify({ turn_id: turnId, context }),
       }).then((r) => r.json()),
   },
+  /** Companion web search: server-side provider, filtered + audited, rate-limited per day. */
+  search: {
+    status: (characterId) =>
+      request(`/search/status?character_id=${encodeURIComponent(characterId)}`).then((r) => r.json()),
+    run: ({ characterId, query, saveAsMemory = false }) =>
+      request("/search", {
+        method: "POST",
+        body: JSON.stringify({ character_id: characterId, query, save_as_memory: saveAsMemory }),
+      }).then((r) => r.json()),
+  },
+  /** Session-start companion state (tone, dreams, presence, greeting) for any surface. */
+  continuity: {
+    load: (characterId, { surface = "chat", name = "" } = {}) => {
+      const q = new URLSearchParams({ surface, tz_offset: String(new Date().getTimezoneOffset()) });
+      if (name) q.set("name", name);
+      return request(`/continuity/${encodeURIComponent(characterId)}?${q}`).then((r) => r.json());
+    },
+  },
+  /** Thumbs up/down + optional better version per reply (append-only on the server). */
+  safety: {
+    status: () => request("/safety/status").then((r) => r.json()),
+    /** Server checks the DOB and stores only an attestation (birth year + age + timestamp). */
+    attestAge: (dob) =>
+      request("/safety/age-attestation", { method: "POST", body: JSON.stringify({ dob, confirm: true }) }).then((r) => r.json()),
+    revokeAge: () => request("/safety/age-attestation/revoke", { method: "POST" }).then((r) => r.json()),
+  },
+
+  billing: {
+    status: () => request("/billing/status").then((r) => r.json()),
+    /** Server picks the price; we only send the offer id. */
+    checkout: (offer) =>
+      request("/billing/checkout", { method: "POST", body: JSON.stringify({ offer }) }).then((r) => r.json()),
+  },
+
+  ratings: {
+    rate: (payload) =>
+      request(`/ratings`, { method: "POST", body: JSON.stringify(payload) }).then((r) => r.json()),
+  },
+
   tutor: {
     status: () => request("/tutor/status").then((r) => r.json()),
     setOwnModelChat: (enabled) =>

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { base44, waitForStoreAuth } from "@/api/base44Client";
+import { animaClient, waitForStoreAuth } from "@/api/animaClient";
 import { ArrowLeft } from "lucide-react";
 import { Plus, X, Edit2, Trash2, Upload, Sparkles, Loader, Volume2, Palette, MessageSquare, Crown, Check, Clock, Swords } from "lucide-react";
 import VoicePicker from "@/components/voice/VoicePicker";
@@ -113,7 +113,7 @@ export default function Animas() {
       await waitForStoreAuth(STORE_AUTH_WAIT_MS).catch(() => {});
       const [data, meData] = await Promise.all([
         listPersonalAnimas(500),
-        base44.auth.me().catch(() => null),
+        animaClient.auth.me().catch(() => null),
       ]);
       setAnimas(data || []);
       setMe(meData);
@@ -147,7 +147,7 @@ export default function Animas() {
   const handleDelete = async (id) => {
     const row = animas.find((a) => a.id === id);
     const entity = companionStoreEntity(row);
-    await base44.entities[entity].delete(id);
+    await animaClient.entities[entity].delete(id);
     await loadAnimas();
   };
 
@@ -176,7 +176,7 @@ export default function Animas() {
   const handleGenerate = async () => {
     if (!form.name) return;
     setGenerating(true);
-    const result = await base44.integrations.Core.InvokeLLM({
+    const result = await animaClient.integrations.Core.InvokeLLM({
       prompt: `Create a rich, immersive AI companion named "${form.name}" with the archetype: ${form.archetype}.${
         form.personality_type ? ` Myers-Briggs type: ${form.personality_type}.` : ""
       }
@@ -243,7 +243,7 @@ Make them feel like a real, singular presence — not generic. Give them contrad
       ]
         .filter(Boolean)
         .join("\n");
-      const result = await base44.integrations.Core.InvokeLLM({
+      const result = await animaClient.integrations.Core.InvokeLLM({
         prompt: `For an AI companion, write ${FIELD_PROMPTS[field]}.
 Make them feel like a real, singular presence — not generic. Stay consistent with any details already provided.
 
@@ -307,7 +307,7 @@ Return JSON with a single "${field}" string field.`,
     setUploadingAvatar(true);
     try {
       const fileUrl = await uploadCharacterAvatar(file, (payload) =>
-        base44.integrations.Core.UploadFile(payload),
+        animaClient.integrations.Core.UploadFile(payload),
       );
       setForm((f) => ({ ...f, avatar_url: fileUrl }));
     } catch (err) {

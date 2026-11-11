@@ -3,6 +3,7 @@ import {
   chunkIsReasoning,
   chunkTextDelta,
   consumeLlmStream,
+  interruptedStreamKeepsReply,
   LlmStreamTimeoutError,
 } from "../src/lib/consumeLlmStream";
 
@@ -165,6 +166,7 @@ describe("consumeLlmStream", () => {
     });
     expect(result.content).toBe("Kept");
     expect(result.timedOut).toBe(true);
+    expect(result.interrupted).toBe(false);
   });
 
   it("throws when no content arrives before the first-chunk deadline", async () => {
@@ -264,5 +266,60 @@ describe("consumeLlmStream", () => {
     expect(result.content).toBe(inner.trim());
     expect(deltas.join("")).toBe(inner.trim());
     expect(result.timedOut).toBe(false);
+  });
+
+  it("notifies on the first upstream chunk before visible text is released", async () => {
+    const events: string[] = [];
+    const result = await consumeLlmStream(
+      fromChunks([{ content: "Hi" }, { content: " there" }]),
+      {
+        onActivity: () => events.push("activity"),
+        onDelta: () => events.push("delta"),
+      },
+    );
+    expect(result.content).toBe("Hi there");
+    expect(events).toEqual(["activity", "delta", "activity", "delta"]);
+  });
+
+  it("keeps visible text when the upstream iterator throws", async () => {
+    async function* dropMidReply() {
+      yield { choices: [{ delta: { content: "You came back. I was thin" } }] };
+      throw Object.assign(
+        new Error("Ollama /api/chat stream ended before the reply finished"),
+        { name: "APIConnectionError", code: "ECONNRESET" },
+      );
+    }
+
+    const result = await consumeLlmStream(dropMidReply());
+    expect(result.interrupted).toBe(true);
+    expect(result.timedOut).toBe(true);
+    expect(result.stoppedEarly).toBeUndefined();
+    expect(result.content).toBe("You came back. I was thin");
+    expect(interruptedStreamKeepsReply(result)).toBe(true);
+  });
+
+  it("rethrows an upstream error when no visible text arrived", async () => {
+    async function* dropImmediately() {
+      throw new Error("Ollama /api/chat stream ended before the reply finished");
+    }
+
+    await expect(consumeLlmStream(dropImmediately())).rejects.toThrow(
+      /ended before the reply finished/,
+    );
+  });
+
+  it("keeps text already yielded when a later chunk throws an api error", async () => {
+    async function* errorLineAfterText() {
+      yield { choices: [{ delta: { content: "Hello there. " } }] };
+      throw Object.assign(new Error("llama runner process has terminated"), {
+        name: "OllamaChatError",
+        code: "api_error",
+      });
+    }
+
+    const result = await consumeLlmStream(errorLineAfterText());
+    expect(result.interrupted).toBe(true);
+    expect(result.content).toContain("Hello there.");
+    expect(interruptedStreamKeepsReply(result)).toBe(true);
   });
 });

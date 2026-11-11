@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 /**
  * Manages memory formation and integration for chat sessions
@@ -26,7 +26,7 @@ export default function ChatMemoryManager({
     if (currentMessageCount - lastFormationIndexRef.current >= 5) {
       const recentMessages = messages.slice(-8);
       
-      base44.functions
+      animaClient.functions
         .invoke('formCrossSessionMemory', {
           character_id: characterId,
           session_id: sessionId,
@@ -44,7 +44,7 @@ export default function ChatMemoryManager({
 
     const loadMemoryContext = async () => {
       try {
-        const result = await base44.functions.invoke('buildMemoryContext', {
+        const result = await animaClient.functions.invoke('buildMemoryContext', {
           character_id: characterId,
           session_id: sessionId,
           include_all_memories: true,
@@ -88,7 +88,7 @@ export default function ChatMemoryManager({
           tags: [emotion?.emotion, 'emotional-discovery'],
         }));
 
-      await base44.functions.invoke('updateMemoryFromSession', {
+      await animaClient.functions.invoke('updateMemoryFromSession', {
         character_id: characterId,
         session_id: sessionId,
         relationship_changes: relationshipChanges,

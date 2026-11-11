@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Heart, TrendingUp, TrendingDown, Zap } from "lucide-react";
 
 export default function CharacterRelationshipGraph({ sessionId }) {
@@ -18,10 +18,10 @@ export default function CharacterRelationshipGraph({ sessionId }) {
   const loadData = async () => {
     setLoading(true);
     const [chars, rels] = await Promise.all([
-      base44.entities.Character.list("-created_date", 100),
+      animaClient.entities.Character.list("-created_date", 100),
       sessionId
-        ? base44.entities.CharacterRelationship.filter({ session_id: sessionId }, "-created_date", 200)
-        : base44.entities.CharacterRelationship.list("-created_date", 200)
+        ? animaClient.entities.CharacterRelationship.filter({ session_id: sessionId }, "-created_date", 200)
+        : animaClient.entities.CharacterRelationship.list("-created_date", 200)
     ]);
 
     setCharacters(chars || []);

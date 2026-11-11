@@ -7,7 +7,7 @@
  * interaction, side-quest accept) must NEVER use that path — concurrent turns
  * would silently wipe newer messages.
  *
- * Prefer this helper (or base44.messages.append) for additive ambient bubbles.
+ * Prefer this helper (or animaClient.messages.append) for additive ambient bubbles.
  */
 
 export async function appendAmbientMessage({

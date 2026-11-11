@@ -8,7 +8,7 @@
 // until the turn ends with no tool calls.
 
 import { useRef, useState, useCallback } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { JULES_PERSONA, executeAgentStep as executeJulesStep } from "./julesApi";
 import { toCodespaceAgentCharacter } from "./companionPicker";
 
@@ -51,7 +51,7 @@ export function useCodespaceAgent({
           if (isJules) {
             assistant = await executeJulesStep(messages, getFiles?.() || [], { mode: "debug" });
           } else {
-            const res = await base44.functions.codespaceAgentStep.invoke({
+            const res = await animaClient.functions.codespaceAgentStep.invoke({
               messages,
               character: toCodespaceAgentCharacter(character),
               files: currentFiles,

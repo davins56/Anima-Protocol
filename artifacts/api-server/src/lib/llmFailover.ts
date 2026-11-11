@@ -64,11 +64,13 @@ import { getOpenWeightChatModel, resolveModelSpec } from "@workspace/llm";
 import { LlmStreamTimeoutError } from "./consumeLlmStream";
 import {
   combineAbortSignals,
+  hostedReplyMaxTokens,
   LLM_LOCAL_FAILOVER_ATTEMPT_MS,
   LLM_LOCAL_FIRST_TOKEN_MS,
   openStreamAbort,
 } from "./chatTimeouts";
 import { usableLocalLlmBackupBaseUrl } from "./localLlmBackup";
+import { isCloudflareChatBrain } from "./chatBrain";
 import { localChatKeepAliveFields } from "./localLlmWarm";
 import { companionLlmTurnOpen, localCallSignal } from "./sidecarLlm";
 import {
@@ -88,8 +90,11 @@ import {
   isWorkersAiQuotaExhaustedThisIsolate,
   markWorkersAiQuotaExhausted,
   streamWorkersAi,
+  workersAiSamplingOptions,
+  type WorkersAiSampling,
   workersAiHttpFailure,
-  WORKERS_AI_CHAT_MODEL,
+  workersAiBackgroundModel,
+  workersAiChatModel,
   WORKERS_AI_FREE_PLAN_NEURONS_PER_DAY,
   WORKERS_AI_FREE_QUOTA_CODE,
   WORKERS_AI_FREE_QUOTA_HINT,
@@ -241,6 +246,13 @@ export interface LlmRoutingStatus {
   /** Ordered provider chain for this process. */
   chain: LlmProviderId[];
   /**
+   * ANIMA_CHAT_BRAIN: "cloudflare" runs chat + background jobs on Workers AI
+   * with no self-hosted host; "self-hosted" prefers ANIMA_LOCAL_LLM_BASE_URL.
+   */
+  brain: "cloudflare" | "self-hosted";
+  /** Chain background brain jobs use (empty = they are skipped). */
+  backgroundChain: LlmProviderId[];
+  /**
    * True when chat is fail-closed to the self-hosted Anima LLM. OpenRouter
    * must not take over even if a key and ANIMA_OPENROUTER_FALLBACK are set
    * while a usable local host is preferred.
@@ -280,8 +292,31 @@ export interface ChatStreamRequest {
   maxTokens: number;
   messages: ChatCompletionMessageParam[];
   temperature?: number;
+  /**
+   * Chat-mind sampling (top_p, penalties). Sent to Workers AI and
+   * OpenRouter only when set; the legacy path leaves it unset.
+   */
+  sampling?: WorkersAiSampling | null;
+  /** Skip these providers (mid-stream fallback after one already died). */
+  excludeProviders?: LlmProviderId[];
   /** Cancel the in-flight stream open (e.g. a caller-side timeout). */
   signal?: AbortSignal;
+  /**
+   * True background streams stay on the self-hosted model. User-waited
+   * routes leave this unset so they keep `getProviderChain()`.
+   */
+  localOnly?: boolean;
+  /**
+   * A user-facing companion reply. Hosted providers then get at least the
+   * companion reply room (`hostedReplyMaxTokens`), so a cap sized for the
+   * local 0.5B model cannot cut a hosted reply mid-sentence. Local keeps
+   * `maxTokens` as given.
+   */
+  companionReply?: boolean;
+}
+
+function hostedTokens(req: ChatStreamRequest, model: string): number {
+  return req.companionReply ? hostedReplyMaxTokens(req.maxTokens, model) : req.maxTokens;
 }
 
 /**
@@ -317,8 +352,12 @@ export function honorCallerMaxTokens(
 export function localOllamaMaxTokens(
   requested: number | undefined,
   modelMax: number,
+  ceiling?: number,
 ): number {
-  return capOllamaNumPredict(honorCallerMaxTokens(requested, modelMax));
+  return capOllamaNumPredict(
+    honorCallerMaxTokens(requested, modelMax),
+    ceiling,
+  );
 }
 
 export interface ChatStreamResult {
@@ -341,6 +380,18 @@ export interface ChatCompletionRequest {
   toolChoice?: OpenAI.Chat.Completions.ChatCompletionToolChoiceOption;
   /** Cancel the in-flight request (e.g. a caller-side timeout) instead of leaving it running server-side. */
   signal?: AbortSignal;
+  /**
+   * True background work stays on the self-hosted model. Token budget and
+   * wall time belong to the caller (the slot grant). User-waited routes
+   * leave this unset so they keep `getProviderChain()`.
+   */
+  localOnly?: boolean;
+  /**
+   * Native Ollama otherwise clamps `num_predict` to `OLLAMA_NUM_PREDICT_CAP`
+   * (200). Deferred JSON jobs raise it to their own budget. Chat replies
+   * leave this unset.
+   */
+  ollamaPredictCeiling?: number;
 }
 
 export interface ChatCompletionResult {
@@ -494,6 +545,58 @@ function localUsable(): boolean {
 }
 
 /**
+ * Background generates stay on the self-hosted model. Fallback flags and
+ * cloud keys do not apply. An unusable local host yields an empty chain
+ * so the call fails closed instead of hopping to Workers AI or OpenRouter.
+ */
+export function localOnlyProviderChain(): LlmProviderId[] {
+  if (localUsable()) return ["local"];
+  // Cloudflare brain: background jobs (evolution, consolidation, dreams,
+  // journal, resting mode, proactive) run on the Worker's own Workers AI
+  // binding — still first-party infra, never OpenRouter or a cloud flagship.
+  if (cloudflareBrainBackgroundEnabled() && hasWorkersAiBinding()) {
+    return ["workersai"];
+  }
+  return [];
+}
+
+/**
+ * Background jobs follow the Cloudflare brain unless the operator turns them
+ * off (`ANIMA_WORKERS_AI_BACKGROUND=false`) to save free-plan neurons for chat.
+ */
+export function cloudflareBrainBackgroundEnabled(): boolean {
+  if (!isCloudflareChatBrain()) return false;
+  const raw = (process.env.ANIMA_WORKERS_AI_BACKGROUND || "").trim().toLowerCase();
+  return !(raw === "0" || raw === "false" || raw === "no" || raw === "off");
+}
+
+/**
+ * Background `localOnly` calls must not open an Ollama request while
+ * `chat_turns` says someone is chatting. Ollama runs one generate at a
+ * time, in arrival order, so a request that is already sent sits ahead of
+ * the reply until its HTTP connection closes.
+ */
+export class LocalModelHeldForChatError extends Error {
+  readonly code = "llm_busy";
+
+  constructor() {
+    super("The local model is reserved for an active chat.");
+    this.name = "LocalModelHeldForChatError";
+  }
+}
+
+async function refuseBackgroundSendWhileChatActive(localOnly?: boolean): Promise<void> {
+  if (!localOnly) return;
+  const { localChatActivityActive } = await import("./localLlmPriority");
+  // Ledger only. A caller that already incremented the same-isolate
+  // companion counter (the ai-chat probe) must still be allowed to send.
+  // Another isolate's chat is visible in chat_turns.
+  if (await localChatActivityActive({ ledgerOnly: true })) {
+    throw new LocalModelHeldForChatError();
+  }
+}
+
+/**
  * Ordered chat providers. A usable self-hosted Anima LLM
  * (`ANIMA_LOCAL_LLM_BASE_URL`, model anima-chat) is preferred over Workers
  * AI DeepSeek and over OpenAI. customOnly / local-preferred is fail-closed:
@@ -525,7 +628,7 @@ export function getProviderChain(): LlmProviderId[] {
  * customOnly that is never OpenRouter, so the turn returns ai_timeout /
  * connection instead of silently calling cloud.
  *
- * Workers AI → OpenRouter on hoppable DeepSeek failures, especially error
+ * Workers AI → OpenRouter on hoppable Workers AI failures, especially error
  * 4006 / daily free neuron allocation, when fallback is on and no custom
  * host is configured.
  *
@@ -753,14 +856,13 @@ function summarizeError(err: unknown): string {
 
 /**
  * Shared operator hint when the self-hosted LLM rejects the bearer token.
- * Fly's Caddy proxy (`deploy/ollama-fly`) returns 401; some edges/proxies
+ * A Caddy / tunnel proxy in front of Ollama returns 401; some edges/proxies
  * surface the same failure as 403 with an empty body.
  */
 export const LOCAL_LLM_AUTH_FIX_HINT =
   "ANIMA_LOCAL_LLM_API_KEY on the Cloudflare Worker (Secrets Store binding in wrangler.jsonc) " +
-  "or Vercel must exactly match PROXY_AUTH_TOKEN on the LLM host " +
-  "(for Fly: `fly secrets set PROXY_AUTH_TOKEN=… -a anima-chat-llm`, then set the same value " +
-  "as ANIMA_LOCAL_LLM_API_KEY and redeploy). See deploy/ollama-fly/README.md.";
+  "or Vercel must exactly match PROXY_AUTH_TOKEN on the LLM host, then redeploy. " +
+  "To drop the self-hosted host entirely, set ANIMA_CHAT_BRAIN=cloudflare (docs/chat-brain.md).";
 
 /**
  * Shared operator hint when the Worker / Vercel cannot open a TCP/TLS session
@@ -1296,9 +1398,6 @@ function configuredLocalModelLabel(): string {
 function localHostDownSuffix(include: boolean): string {
   if (!include) return "";
   const host = summarizeLocalLlmBaseUrl().host ?? "the self-hosted Anima LLM";
-  if (host === "anima-chat-llm.fly.dev") {
-    return ` The primary LLM host (${host}) is also unreachable — run \`fly apps restart anima-chat-llm\`.`;
-  }
   return ` The primary LLM host (${host}) is also unreachable — check that the host is running and reachable from the Cloudflare Worker.`;
 }
 
@@ -1546,7 +1645,7 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
     }
     if (isCloudRunRuntime() && !hasWorkersAiBinding()) {
       noteParts.push(
-        "Cloud Run staging has no Workers AI binding (DeepSeek via deepseek-gateway) and no Hyperdrive. " +
+        "Cloud Run staging has no Workers AI binding (AI Gateway deepseek-gateway) and no Hyperdrive. " +
           "Chat stays fail-closed rather than switching to OpenRouter, Claude, or MiniMax. " +
           "Production chat remains the Cloudflare Worker.",
       );
@@ -1554,12 +1653,14 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
   } else {
     if (chain.includes("workersai")) {
       noteParts.push(
-        `Cloudflare Workers AI model=${WORKERS_AI_CHAT_MODEL} via AI Gateway ${WORKERS_AI_GATEWAY_ID} ` +
-          "(used only because no usable ANIMA_LOCAL_LLM_BASE_URL is set).",
+        `Cloudflare Workers AI model=${workersAiChatModel()} via AI Gateway ${WORKERS_AI_GATEWAY_ID} ` +
+          (isCloudflareChatBrain()
+            ? "(ANIMA_CHAT_BRAIN=cloudflare — no self-hosted model host)."
+            : "(used because no usable ANIMA_LOCAL_LLM_BASE_URL is set)."),
       );
       noteParts.push(
         `Free Workers AI is ${WORKERS_AI_FREE_PLAN_NEURONS_PER_DAY} neurons/day (error ${WORKERS_AI_FREE_QUOTA_CODE} when exhausted). ` +
-          "Point chat at the self-hosted Anima LLM (anima-chat) instead of DeepSeek.",
+          "Enable Workers Paid for steady chat volume.",
       );
       if (openRouterFallback && !chain.includes("openrouter")) {
         noteParts.push(
@@ -1610,7 +1711,7 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
     if (chain.includes("openrouter")) {
       const openRouterRole =
         chain[0] === "workersai"
-          ? " (temporary fallback after Workers AI / DeepSeek, including neuron quota 4006)."
+          ? " (temporary fallback after Workers AI, including neuron quota 4006)."
           : chain[0] === "local"
             ? " (fallback after local connection failure)."
             : chain[0] === "minimax"
@@ -1661,13 +1762,15 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
     },
     workersai: {
       configured: hasWorkersAiBinding(),
-      model: WORKERS_AI_CHAT_MODEL,
+      model: workersAiChatModel(),
       gateway: WORKERS_AI_GATEWAY_ID,
       quotaCode: WORKERS_AI_FREE_QUOTA_CODE,
       freePlanNeuronsPerDay: WORKERS_AI_FREE_PLAN_NEURONS_PER_DAY,
       quotaHint: WORKERS_AI_FREE_QUOTA_HINT,
     },
     chain,
+    brain: isCloudflareChatBrain() ? "cloudflare" : "self-hosted",
+    backgroundChain: localOnlyProviderChain(),
     customOnly,
     openRouterFallback,
     note: noteParts.join(" "),
@@ -1781,8 +1884,8 @@ async function probeOneProvider(
         provider: "workersai",
         configured: true,
         ok: true,
-        model: WORKERS_AI_CHAT_MODEL,
-        configuredModel: WORKERS_AI_CHAT_MODEL,
+        model: workersAiChatModel(),
+        configuredModel: workersAiChatModel(),
         latencyMs: Date.now() - started,
       };
     } catch (err) {
@@ -1800,8 +1903,8 @@ async function probeOneProvider(
         status: Number.isFinite(status) ? status : undefined,
         errorKind: auth ? "auth" : connection ? "connection" : quota ? "quota" : "other",
         message: formatWorkersAiError(err),
-        model: WORKERS_AI_CHAT_MODEL,
-        configuredModel: WORKERS_AI_CHAT_MODEL,
+        model: workersAiChatModel(),
+        configuredModel: workersAiChatModel(),
         latencyMs: Date.now() - started,
       };
     }
@@ -2135,6 +2238,19 @@ async function ensureChatStreamOpens<T>(
   return replay();
 }
 
+/**
+ * OpenRouter takes the same knobs (OpenAI fields plus top_k /
+ * repetition_penalty as provider passthrough). Only the chat mind sets
+ * `sampling`; without it the request is unchanged.
+ */
+export function openRouterSamplingFields(req: Pick<ChatStreamRequest, "temperature" | "sampling">): Record<string, number> {
+  if (!req.sampling) return {};
+  return {
+    ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
+    ...workersAiSamplingOptions(req.sampling),
+  };
+}
+
 async function runOpenRouterStream(
   req: ChatStreamRequest,
   failedOver: boolean,
@@ -2148,9 +2264,10 @@ async function runOpenRouterStream(
       const raw = await client.chat.completions.create(
         {
           model: m.model,
-          max_tokens: Math.min(req.maxTokens, m.maxTokens),
+          max_tokens: Math.min(hostedTokens(req, m.model), m.maxTokens),
           messages: req.messages,
           stream: true,
+          ...openRouterSamplingFields(req),
         },
         {
           ...(req.signal ? { signal: req.signal } : {}),
@@ -2180,7 +2297,7 @@ async function runMinimaxStream(
   const stream = await client.chat.completions.create(
     {
       model: resolved.model,
-      max_tokens: Math.min(req.maxTokens, resolved.maxTokens),
+      max_tokens: Math.min(hostedTokens(req, resolved.model), resolved.maxTokens),
       messages: req.messages,
       stream: true,
     },
@@ -2206,7 +2323,7 @@ async function runDeepshiStream(
   const stream = await client.chat.completions.create(
     {
       model: resolved.model,
-      max_tokens: Math.min(req.maxTokens, resolved.maxTokens),
+      max_tokens: Math.min(hostedTokens(req, resolved.model), resolved.maxTokens),
       messages: req.messages,
       stream: true,
     },
@@ -2331,6 +2448,10 @@ async function streamFromLocalHost(
   const client = openAiClientForLocalBase(baseUrl);
   if (!client) throw new Error(LOCAL_LLM_SETUP_HINT);
   const preferred = resolveLocalModel(req.tier);
+  // Live companion chat posts to Ollama's native /api/chat (the tunnel
+  // serves :11434 directly). A body that ends without `done: true` throws,
+  // and consumeLlmStream keeps that partial. ANIMA_OLLAMA_NATIVE_CHAT=0
+  // uses the OpenAI-style /v1 stream, which is the same consumer.
   const { value: stream, resolved } = await withModelFallback(client, preferred, (m) =>
     useOllamaNativeChat()
       ? createOllamaChatStream({
@@ -2378,7 +2499,8 @@ async function completeFromLocalHost(
       const native = await createOllamaChatCompletion({
         model: m.model,
         messages: req.messages,
-        maxTokens: localOllamaMaxTokens(req.maxTokens, m.maxTokens),
+        maxTokens: localOllamaMaxTokens(req.maxTokens, m.maxTokens, req.ollamaPredictCeiling),
+        numPredictCeiling: req.ollamaPredictCeiling,
         temperature: req.temperature,
         signal,
         baseUrl,
@@ -2397,7 +2519,7 @@ async function completeFromLocalHost(
     return client.chat.completions.create(
       {
         model: m.model,
-        max_tokens: localOllamaMaxTokens(req.maxTokens, m.maxTokens),
+        max_tokens: localOllamaMaxTokens(req.maxTokens, m.maxTokens, req.ollamaPredictCeiling),
         messages: req.messages,
         ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
         ...(hasTools ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" } : {}),
@@ -2428,6 +2550,7 @@ async function runLocalStreamWithOptionalBackup(
   req: ChatStreamRequest,
   hasNextChain: boolean,
 ): Promise<ChatStreamResult> {
+  await refuseBackgroundSendWhileChatActive(req.localOnly);
   const primary = localLlmBaseUrl();
   if (!primary) throw new Error(LOCAL_LLM_SETUP_HINT);
   const backup = usableLocalLlmBackupBaseUrl(process.env, primary);
@@ -2458,6 +2581,7 @@ async function runLocalCompletionWithOptionalBackup(
   req: ChatCompletionRequest,
   hasNextChain: boolean,
 ): Promise<ChatCompletionResult> {
+  await refuseBackgroundSendWhileChatActive(req.localOnly);
   const primary = localLlmBaseUrl();
   if (!primary) throw new Error(LOCAL_LLM_SETUP_HINT);
   const backup = usableLocalLlmBackupBaseUrl(process.env, primary);
@@ -2487,10 +2611,12 @@ async function runLocalCompletionWithOptionalBackup(
 /** Open a streaming chat completion (Workers AI when bound, else local Anima LLM). */
 export async function createChatStreamWithFailover(req: ChatStreamRequest): Promise<ChatStreamResult> {
   beginChatProviderTurn();
-  if (cloudFlagshipMisconfigured() && !hasWorkersAiBinding()) {
+  if (cloudFlagshipMisconfigured() && !hasWorkersAiBinding() && !req.localOnly) {
     throw new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }
-  const chain = getProviderChain();
+  const fullChain = req.localOnly ? localOnlyProviderChain() : getProviderChain();
+  const excluded = new Set(req.excludeProviders ?? []);
+  const chain = excluded.size ? fullChain.filter((p) => !excluded.has(p)) : fullChain;
   if (!chain.length) throw noProviderConfiguredError();
 
   let lastErr: unknown;
@@ -2510,14 +2636,15 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
         triedWorkersAi = true;
         const stream = await streamWorkersAi({
           messages: req.messages,
-          maxTokens: req.maxTokens,
+          maxTokens: hostedTokens(req, workersAiChatModel()),
           temperature: req.temperature,
+          ...(req.sampling ? { sampling: req.sampling } : {}),
         });
         return {
           stream,
           provider: "workersai",
           brand: "workersai",
-          model: WORKERS_AI_CHAT_MODEL,
+          model: workersAiChatModel(),
           tier: req.tier,
           failedOver: false,
         };
@@ -2584,10 +2711,10 @@ export async function createChatCompletionWithFailover(
   req: ChatCompletionRequest,
 ): Promise<ChatCompletionResult> {
   beginChatProviderTurn();
-  if (cloudFlagshipMisconfigured() && !hasWorkersAiBinding()) {
+  if (cloudFlagshipMisconfigured() && !hasWorkersAiBinding() && !req.localOnly) {
     throw new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }
-  const chain = getProviderChain();
+  const chain = req.localOnly ? localOnlyProviderChain() : getProviderChain();
   if (!chain.length) throw noProviderConfiguredError();
 
   let lastErr: unknown;
@@ -2605,16 +2732,19 @@ export async function createChatCompletionWithFailover(
           throw new WorkersAiRequestError(WORKERS_AI_FREE_QUOTA_HINT);
         }
         triedWorkersAi = true;
+        // Background brain jobs (localOnly) use the small background model.
+        const model = req.localOnly ? workersAiBackgroundModel() : workersAiChatModel();
         const content = await completeWorkersAi({
           messages: req.messages,
           maxTokens: req.maxTokens,
           temperature: req.temperature,
+          model,
         });
         return {
           content,
           provider: "workersai",
           brand: "workersai",
-          model: WORKERS_AI_CHAT_MODEL,
+          model,
           tier: req.tier,
           failedOver: false,
           toolCalls: null,

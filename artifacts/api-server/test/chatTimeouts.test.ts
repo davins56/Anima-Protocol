@@ -303,7 +303,7 @@ describe("client/server budget lockstep", () => {
     );
     expect(appRoute).toContain("llmAiChatOpenTimeoutMs()");
     expect(appRoute).toContain("openStreamAbort(");
-    expect(appRoute).toContain("signal: open.signal");
+    expect(appRoute).toContain("combineAbortSignals(open.signal, background.signal)");
     expect(appRoute).not.toContain(
       "llmOpenTimeoutMs({ freeTierCascade: usesFreeTierOpenBudget() })",
     );

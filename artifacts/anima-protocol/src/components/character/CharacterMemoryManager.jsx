@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { useEffect, useRef, useState } from "react";
+import { animaClient } from "@/api/animaClient";
 import { Loader, Plus, X, Edit2, Trash2, Brain, Zap } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -20,6 +20,10 @@ import { useConfirm } from "@/lib/ConfirmDialog";
 
 export default function CharacterMemoryManager({ characterId, characterName }) {
   const confirm = useConfirm();
+  const requestVersion = useRef(0);
+  // Tracks which companion this panel currently shows, so late responses
+  // from a previous companion (loads or post-mutation refreshes) are dropped.
+  const activeCharacterId = useRef(characterId);
   const [memories, setMemories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState(null);
@@ -31,58 +35,84 @@ export default function CharacterMemoryManager({ characterId, characterName }) {
   const [summarizing, setSummarizing] = useState(false);
   const [summary, setSummary] = useState(null);
   const [filterTag, setFilterTag] = useState("all");
+  const [error, setError] = useState("");
 
   useEffect(() => {
+    // Invalidate requests from the previous companion when switching profiles.
+    activeCharacterId.current = characterId;
     if (characterId) {
-      loadMemories();
+      void loadMemories(characterId, { reset: true });
+    } else {
+      requestVersion.current += 1;
+      setMemories([]);
+      setLoading(false);
     }
+    return () => {
+      requestVersion.current += 1;
+    };
   }, [characterId]);
 
-  const loadMemories = async () => {
+  const loadMemories = async (targetId = characterId, { reset = false } = {}) => {
+    // A refresh started by a mutation on a companion we've since left must not
+    // claim the latest version and paint that companion's memories here.
+    if (!targetId || targetId !== activeCharacterId.current) return;
+    const version = ++requestVersion.current;
     setLoading(true);
+    setError("");
+    // Only blank the list when switching companions, not on refresh after edits.
+    if (reset) setMemories([]);
     try {
-      const data = await base44.entities.CharacterMemory.filter(
-        { character_id: characterId },
+      const data = await animaClient.entities.CharacterMemory.filter(
+        { character_id: targetId },
         "-created_date",
         100
       );
-      setMemories(data || []);
+      if (version === requestVersion.current) setMemories(data || []);
     } catch (err) {
-      console.error("Error loading memories:", err);
+      if (version === requestVersion.current) {
+        console.error("Error loading memories:", err);
+        setError("Could not load memories. Please retry.");
+      }
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
   };
 
   const handleAddMemory = async () => {
-    if (!newMemory.trim()) return;
+    if (!characterId || !newMemory.trim()) return;
+    const targetId = characterId;
+    setError("");
     try {
-      await base44.entities.CharacterMemory.create({
-        character_id: characterId,
-        fact: newMemory,
+      await animaClient.entities.CharacterMemory.create({
+        character_id: targetId,
+        fact: newMemory.trim(),
         category: newTags.length > 0 ? newTags[0] : "personal",
         tags: newTags,
       });
       setNewMemory("");
       setNewTags([]);
       setShowAdd(false);
-      await loadMemories();
+      await loadMemories(targetId);
     } catch (err) {
       console.error("Error adding memory:", err);
+      setError("Memory could not be saved. Please retry.");
     }
   };
 
   const handleEditMemory = async (id) => {
     if (!editText.trim()) return;
+    const targetId = characterId;
+    setError("");
     try {
-      await base44.entities.CharacterMemory.update(id, {
-        fact: editText,
+      await animaClient.entities.CharacterMemory.update(id, {
+        fact: editText.trim(),
         tags: editTags,
       });
       setEditingId(null);
-      await loadMemories();
+      await loadMemories(targetId);
     } catch (err) {
       console.error("Error editing memory:", err);
+      setError("Memory could not be updated. Please retry.");
     }
   };
 
@@ -93,11 +123,14 @@ export default function CharacterMemoryManager({ characterId, characterName }) {
       confirmLabel: "Delete",
     });
     if (!ok) return;
+    const targetId = characterId;
+    setError("");
     try {
-      await base44.entities.CharacterMemory.delete(id);
-      await loadMemories();
+      await animaClient.entities.CharacterMemory.delete(id);
+      await loadMemories(targetId);
     } catch (err) {
       console.error("Error deleting memory:", err);
+      setError("Memory could not be deleted. Please retry.");
     }
   };
 
@@ -122,13 +155,17 @@ Provide a concise, narrative summary (2-3 sentences) that captures:
 3. Character's emotional trajectory
 Keep it vivid and story-focused.`;
 
-      const result = await base44.integrations.Core.InvokeLLM({
+      const result = await animaClient.integrations.Core.InvokeLLM({
         prompt,
       });
 
-      setSummary(result);
+      const summaryText = typeof result === "string"
+        ? result
+        : result?.response || result?.text || result?.content || "";
+      setSummary(typeof summaryText === "string" ? summaryText : "");
     } catch (err) {
       console.error("Error summarizing relationships:", err);
+      setError("Relationship summary is unavailable. Please retry.");
     } finally {
       setSummarizing(false);
     }
@@ -154,6 +191,12 @@ Keep it vivid and story-focused.`;
 
   return (
     <div className="space-y-4">
+      {error && (
+        <div role="alert" className="rounded border border-red-500/40 bg-red-950/20 p-3 text-xs text-red-300">
+          {error}
+          <button type="button" onClick={() => setError("")} className="ml-3 underline">Dismiss</button>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -161,8 +204,7 @@ Keep it vivid and story-focused.`;
             {characterName}'s Memories
           </h3>
           <p className="text-[9px] font-mono text-primary/40 mt-1">
-            {filteredMemories.length} memory
-            {filteredMemories.length !== 1 ? "ies" : ""} • Manage what{" "}
+            {filteredMemories.length} {filteredMemories.length === 1 ? "memory" : "memories"} • Manage what{" "}
             {characterName} remembers
           </p>
         </div>

@@ -30,7 +30,7 @@ describe("store fail-fast budget", () => {
   });
 
   it("wires the budget into the store client and bootstrap waits", () => {
-    const client = readFileSync(join(srcRoot, "api/base44Client.js"), "utf8");
+    const client = readFileSync(join(srcRoot, "api/animaClient.js"), "utf8");
     const auth = readFileSync(join(srcRoot, "api/authBridge.js"), "utf8");
     const bootstrap = readFileSync(join(srcRoot, "lib/syncBootstrap.js"), "utf8");
     const state = readFileSync(join(srcRoot, "lib/bootstrapState.js"), "utf8");

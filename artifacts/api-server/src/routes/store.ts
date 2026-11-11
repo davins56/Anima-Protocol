@@ -1,8 +1,12 @@
 import { Router } from "express";
+import { profileWriteNeedsStewardCheck, sanitizeProfileWrite } from "../lib/safety/stewardGate";
+import { userIsAdultAttested } from "../lib/safety/ageGate";
+import { callerIsStewardCached } from "../lib/ownModel";
 import { getAuth } from "@clerk/express";
 
 
 import {
+  chatTurns,
   db,
   userEntities,
   userProfiles,
@@ -17,6 +21,8 @@ import {
   withTransientDbRetry,
   type MsgData,
 } from "@workspace/db";
+import { messageTurnId, turnMetadataReplaced } from "../lib/replyReplacement";
+import { forgetDeletedMessage, unforgetDeletedMessage } from "../lib/mind/forgetMessage";
 import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import type { Request, Response, NextFunction } from "express";
 import { addClient, removeClient, notifyUser } from "../lib/storeEvents";
@@ -110,6 +116,17 @@ async function ensureSchemaMiddleware(
 }
 
 router.use(ensureSchemaMiddleware);
+// Import and restore are legacy migration paths; never allow them to bypass
+// the operator identity gate. Existing Character records remain untouched.
+router.use((req, res, next) => {
+  if (req.method === "POST" && (req.path === "/import" || req.path === "/restore")
+    && req.body?.entities && Object.prototype.hasOwnProperty.call(req.body.entities, "OperatorAnima")) {
+    res.status(403).json({ error: "OperatorAnima cannot be imported or restored through the generic store." });
+    return;
+  }
+  next();
+});
+
 
 
 
@@ -737,7 +754,18 @@ router.get("/profile", async (req, res) => {
 
 router.put("/profile", async (req, res) => {
   const userId = getUserId(req);
-  const data = (req.body ?? {}) as Record<string, unknown>;
+  const raw = (req.body ?? {}) as Record<string, unknown>;
+  // Server-side safety gates (P1-6 + adult age gate): the profile is
+  // owner-writable JSON, so steward grant flags and adult mode are
+  // re-checked here rather than trusted from the client.
+  const rawSettings = (raw.settings ?? {}) as Record<string, unknown>;
+  const isSteward = profileWriteNeedsStewardCheck(raw)
+    ? await callerIsStewardCached({ userId, sessionClaims: getAuth(req).sessionClaims }).catch(() => false)
+    : false;
+  const adultAttested =
+    rawSettings.adult_content_enabled === true ? await userIsAdultAttested(userId) : false;
+  const { data, stripped } = sanitizeProfileWrite(raw, { isSteward, adultAttested });
+  if (stripped.length) logger.info({ stripped }, "profile write: server-gated fields reset");
   const [row] = await db
     .insert(userProfiles)
     .values({ userId, data })
@@ -980,6 +1008,38 @@ router.post("/messages/counts", async (req, res) => {
   res.json(counts);
 });
 
+type StoreTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * A late write must not put back a companion reply the user already replaced.
+ * His existing line stays: it is the prompt this retry is answering, and
+ * dropping it would delete the row because replace only keeps what it writes.
+ * A user line that is not already stored is a later turn from the discarded
+ * suffix, so `blockNewUser` refuses to insert it again.
+ */
+async function nonUserTurnIsReplaced(
+  tx: StoreTx,
+  userId: string,
+  message: MsgData,
+  opts?: { blockNewUser?: boolean; replaced?: Map<string, boolean> },
+): Promise<boolean> {
+  const turnId = messageTurnId(message);
+  if (!turnId) return false;
+  if (message.role === "user" && !opts?.blockNewUser) return false;
+  let replaced = opts?.replaced?.get(turnId);
+  if (replaced == null) {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${turnId}`}))`);
+    const [turn] = await tx
+      .select({ metadata: chatTurns.metadata })
+      .from(chatTurns)
+      .where(and(eq(chatTurns.id, turnId), eq(chatTurns.userId, userId)))
+      .limit(1);
+    replaced = Boolean(turn && turnMetadataReplaced(turn.metadata));
+    opts?.replaced?.set(turnId, replaced);
+  }
+  return replaced;
+}
+
 // POST /messages { session_id, message } — append ONE message. The server
 // assigns the next seq atomically (within a transaction) so an append never has
 // to send or rewrite the existing history. This is the hot path.
@@ -1017,6 +1077,7 @@ router.post("/messages", async (req, res) => {
       created_date: msg.created_date ?? now,
       updated_date: now,
     };
+    if (await nonUserTurnIsReplaced(tx, userId, data)) return null;
     await tx.insert(userEntities).values({
       userId,
       entityName: CHAT_MESSAGE,
@@ -1025,8 +1086,120 @@ router.post("/messages", async (req, res) => {
     });
     return data;
   });
+  if (!created) {
+    res.status(409).json({ error: "Turn was replaced" });
+    return;
+  }
   res.status(201).json(created);
 });
+
+// DELETE /messages/:id?session_id= — delete ONE message row. The trash can
+// used to rewrite the whole history through /messages/replace (one upsert and
+// one replaced-turn check per message), which on a 100+ message chat outran
+// the client's 8s write budget and was cancelled, so nothing was deleted.
+// Rows are scoped by user_id, so a caller can only delete their own messages.
+// What the mind learned from the message is forgotten best effort (see
+// lib/mind/forgetMessage); a missing memory table never fails the delete.
+router.delete("/messages/:messageId", async (req, res) => {
+  const userId = getUserId(req);
+  const messageId = String(req.params.messageId || "").trim();
+  const sessionId = String(req.query.session_id || "").trim();
+  if (!messageId || !sessionId) {
+    res.status(400).json({ error: "session_id and message id are required" });
+    return;
+  }
+  const deleted = await withTransientDbRetry(() =>
+    db.transaction(async (tx) => {
+      await migrateSessionMessages(tx, userId, sessionId);
+      const removed = await tx
+        .delete(userEntities)
+        .where(
+          and(
+            eq(userEntities.userId, userId),
+            eq(userEntities.entityName, CHAT_MESSAGE),
+            eq(userEntities.entityId, messageId),
+            sessionIdEq(sessionId),
+          ),
+        )
+        .returning({ data: userEntities.data });
+      return removed[0] ? (removed[0].data as MsgData) : null;
+    }),
+  );
+  if (!deleted) {
+    // Already gone (a second tap, or another device) is still "deleted".
+    res.status(404).json({ error: "Message not found" });
+    return;
+  }
+  let forgotten = 0;
+  try {
+    forgotten = await forgetDeletedMessage({
+      userId,
+      sessionId,
+      message: {
+        id: messageId,
+        role: deleted.role,
+        seq: deleted.seq,
+        turnId: messageTurnId(deleted) || null,
+      },
+    });
+  } catch (error) {
+    logger.warn({ error, sessionId }, "Deleted message; could not retract what the mind learned from it");
+  }
+  res.json({ deleted: true, id: messageId, seq: deleted.seq ?? null, forgotten });
+});
+
+// POST /messages/restore { session_id, message } — Undo for the delete above.
+// Puts the row back with its original id and seq (the gap it left is still
+// free), and re-appends what the mind forgot.
+router.post("/messages/restore", async (req, res) => {
+  const userId = getUserId(req);
+  const body = req.body as { session_id?: string; message?: unknown };
+  const sessionId = String(body.session_id || "").trim();
+  const msg = asObject(body.message);
+  const messageId = msg.id != null ? String(msg.id) : "";
+  if (!sessionId || !messageId) {
+    res.status(400).json({ error: "session_id and message.id are required" });
+    return;
+  }
+  // Client-only view flags never belong on a stored row.
+  const stored: Record<string, unknown> = { ...msg };
+  delete stored.is_streaming;
+  delete stored.is_typing;
+  const data: MsgData = { ...stored, id: messageId, session_id: sessionId, updated_date: new Date().toISOString() };
+  await withTransientDbRetry(() =>
+    db
+      .insert(userEntities)
+      .values({ userId, entityName: CHAT_MESSAGE, entityId: messageId, data })
+      .onConflictDoNothing(),
+  );
+  try {
+    await unforgetDeletedMessage(userId, messageId);
+  } catch (error) {
+    logger.warn({ error, sessionId }, "Restored message; could not restore what the mind had forgotten");
+  }
+  res.status(201).json(data);
+});
+
+/** Snapshot first, then stored rows whose ids are not in it, in seq order. */
+function messagesKeepingArrivals(snapshot: unknown[], current: Row[]): unknown[] {
+  const base = snapshot.map((raw) => asObject(raw));
+  const ids = new Set(
+    base
+      .map((message) => (message.id != null ? String(message.id) : ""))
+      .filter(Boolean),
+  );
+  const extras = current
+    .map((row) => row.data as MsgData)
+    .filter((message) => message.id != null && !ids.has(String(message.id)))
+    .sort((a, b) => {
+      const aSeq = Number(a.seq);
+      const bSeq = Number(b.seq);
+      const aNum = Number.isFinite(aSeq) ? aSeq : Number.MAX_SAFE_INTEGER;
+      const bNum = Number.isFinite(bSeq) ? bSeq : Number.MAX_SAFE_INTEGER;
+      return aNum - bNum;
+    });
+  return extras.length > 0 ? [...base, ...extras] : snapshot;
+}
 
 // POST /messages/replace { session_id, messages } — reconcile a full message
 // array against the stored rows. Backs the client's ChatSession.update({messages})
@@ -1034,15 +1207,23 @@ router.post("/messages", async (req, res) => {
 // unchanged. It diffs by message id so an edit updates ONE row, a rewind deletes
 // only the trimmed tail, etc. (rather than rewriting every row), and reassigns
 // seq by array position so order always follows the array.
+// `keep_arrivals` unions that array with rows already stored, inside this
+// transaction, after the session lock. An append waits on that lock, so it
+// cannot land between a read and this write and then be deleted.
 router.post("/messages/replace", async (req, res) => {
   const userId = getUserId(req);
-  const body = req.body as { session_id?: string; messages?: unknown };
+  const body = req.body as {
+    session_id?: string;
+    messages?: unknown;
+    keep_arrivals?: unknown;
+  };
   const sessionId = body.session_id;
   if (!sessionId || !Array.isArray(body.messages)) {
     res.status(400).json({ error: "session_id and messages[] are required" });
     return;
   }
-  const incoming = body.messages as unknown[];
+  const requested = body.messages as unknown[];
+  const keepArrivals = body.keep_arrivals === true;
   const out = await db.transaction(async (tx) => {
     await migrateSessionMessages(tx, userId, sessionId);
     const current: Row[] = await tx
@@ -1055,12 +1236,26 @@ router.post("/messages/replace", async (req, res) => {
           sessionIdEq(sessionId),
         ),
       );
+    const incoming = keepArrivals
+      ? messagesKeepingArrivals(requested, current)
+      : requested;
     const currentById = new Map<string, Row>();
     for (const r of current) currentById.set(String((r.data as MsgData).id), r);
+
+    const turnIds: string[] = [];
+    for (const raw of incoming) {
+      const turnId = messageTurnId(asObject(raw));
+      if (turnId && !turnIds.includes(turnId)) turnIds.push(turnId);
+    }
+    turnIds.sort();
+    for (const turnId of turnIds) {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`chat-turn:${turnId}`}))`);
+    }
 
     const now = new Date().toISOString();
     const kept = new Set<string>();
     const result: MsgData[] = [];
+    const replacedTurns = new Map<string, boolean>();
     let i = 0;
     for (const raw of incoming) {
       const msg = asObject(raw);
@@ -1080,6 +1275,14 @@ router.post("/messages/replace", async (req, res) => {
         created_date: prev?.created_date ?? msg.created_date ?? now,
         updated_date: now,
       };
+      if (
+        await nonUserTurnIsReplaced(tx, userId, data, {
+          blockNewUser: data.role === "user" && !existingId,
+          replaced: replacedTurns,
+        })
+      ) {
+        continue;
+      }
       await tx
         .insert(userEntities)
         .values({ userId, entityName: CHAT_MESSAGE, entityId: id, data })
@@ -1200,6 +1403,48 @@ router.post("/:entity/bulk-upsert", async (req, res) => {
     );
     throw err;
   }
+});
+
+// OperatorAnima is the unique operator-bound identity, distinct from story Characters.
+// Serialise writes so two devices cannot mint a second Anima concurrently.
+async function createOperatorAnima(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const userId = getUserId(req);
+    const steward = await callerIsStewardCached({ userId });
+    const data = (req.body ?? {}) as Record<string, unknown>;
+    const record = await withTransientDbRetry(() => db.transaction(async tx => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userId}), hashtext('operator-anima'))`);
+      if (!steward) {
+        const existing = await tx.select({ id: userEntities.entityId }).from(userEntities)
+          .where(and(eq(userEntities.userId, userId), eq(userEntities.entityName, "OperatorAnima"))).limit(1);
+        if (existing.length) return null;
+      }
+      const id = makeId();
+      const now = new Date().toISOString();
+      const result = { ...data, id, created_date: now, updated_date: now };
+      await tx.insert(userEntities).values({ userId, entityName: "OperatorAnima", entityId: id, data: result });
+      return result;
+    }));
+    if (!record) { res.status(409).json({ error: "Each operator may own only one Anima." }); return; }
+    res.status(201).json(record);
+  } catch (err) { next(err); }
+}
+router.post("/OperatorAnima", createOperatorAnima);
+// Block generic bulk and upsert endpoints from bypassing the ownership gate.
+router.post("/OperatorAnima/bulk", (_req, res) => res.status(403).json({ error: "Use single Anima creation." }));
+router.post("/OperatorAnima/bulk-upsert", (_req, res) => res.status(403).json({ error: "Use single Anima creation." }));
+router.put("/OperatorAnima/:id", async (req, res, next) => {
+  try {
+    const userId = getUserId(req);
+    const id = req.params.id;
+    const [existing] = await db.select().from(userEntities).where(and(
+      eq(userEntities.userId,userId), eq(userEntities.entityName,"OperatorAnima"), eq(userEntities.entityId,id)
+    )).limit(1);
+    if (!existing) { res.status(404).json({ error: "Anima not found." }); return; }
+    const data = { ...(existing.data as Record<string,unknown>), ...(req.body ?? {}), id, updated_date: new Date().toISOString() };
+    await upsertEntity(userId,"OperatorAnima",id,data);
+    res.json(data);
+  } catch (err) { next(err); }
 });
 
 // --- Bulk create ------------------------------------------------------------

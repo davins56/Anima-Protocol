@@ -14,8 +14,8 @@ vi.mock("framer-motion", async () => {
   };
 });
 
-vi.mock("@/api/base44Client", () => ({
-  base44: { entities: { Character: { update: vi.fn() } }, messages: { append: vi.fn() } },
+vi.mock("@/api/animaClient", () => ({
+  animaClient: { entities: { Character: { update: vi.fn() } }, messages: { append: vi.fn() } },
 }));
 vi.mock("@/lib/appendAmbientMessage", () => ({ appendAmbientMessage: vi.fn() }));
 
@@ -39,7 +39,7 @@ vi.mock("./EmotionIndicator", () => ({ default: () => null }));
 vi.mock("@/components/world/WorldPulseFeed", () => ({ default: () => null }));
 vi.mock("@/components/world/AtmosphericDescription", () => ({ default: () => null }));
 vi.mock("./SystemAlert", () => ({ default: () => null }));
-vi.mock("@/components/dashboard/NarrativeImpactDashboard", () => ({ default: () => null }));
+vi.mock("@/components/dashboard/NarrativeImpactDashboard", () => ({ default: () => <div data-testid="story-feed-body-loaded" /> }));
 
 import ChatWidgetsArea from "./ChatWidgetsArea";
 
@@ -125,5 +125,20 @@ describe("ChatWidgetsArea", () => {
       close.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(container.querySelector("[data-story-feed]")).toBeNull();
+  });
+
+  it("loads the Story Feed body lazily, only once it is opened", async () => {
+    const { container } = render(<ChatWidgetsArea {...props} />);
+    expect(container.querySelector('[data-testid="story-feed-body-loaded"]')).toBeNull();
+    const toggle = container.querySelector('button[aria-expanded]');
+    await act(async () => {
+      toggle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    for (let i = 0; i < 20 && !container.querySelector('[data-testid="story-feed-body-loaded"]'); i += 1) {
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10));
+      });
+    }
+    expect(container.querySelector('[data-testid="story-feed-body-loaded"]')).toBeTruthy();
   });
 });

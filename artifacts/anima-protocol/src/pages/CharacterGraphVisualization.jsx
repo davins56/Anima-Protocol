@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import CharacterRelationshipGraph from "@/components/network/CharacterRelationshipGraph";
 import { ArrowLeft } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -14,7 +14,7 @@ export default function CharacterGraphVisualization() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    base44.entities.ChatSession.list("-updated_date", 100)
+    animaClient.entities.ChatSession.list("-updated_date", 100)
       .then(data => {
         setSessions(data || []);
         if (sessionId) setSelectedSession(sessionId);

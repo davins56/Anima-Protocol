@@ -8,8 +8,8 @@ const mocks = vi.hoisted(() => ({
   waitForStoreAuth: vi.fn(),
 }));
 
-vi.mock("@/api/base44Client", () => ({
-  base44: {
+vi.mock("@/api/animaClient", () => ({
+  animaClient: {
     auth: { me: mocks.me },
     entities: {
       Anima: { list: mocks.listAnima },
@@ -79,7 +79,7 @@ describe("loadCustomiseAnimaCompanions", () => {
 
     const result = await loadCustomiseAnimaCompanions();
     expect(result.rows.map((row) => row.name)).toEqual(
-      expect.arrayContaining(["Serenity", "Aelynd"]),
+      expect.arrayContaining(["Serenity", "Aeland"]),
     );
   });
 });

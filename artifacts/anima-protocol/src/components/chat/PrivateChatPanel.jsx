@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { X, Send, MessageSquare, ExternalLink } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
@@ -25,7 +25,7 @@ export default function PrivateChatPanel({ character, parentSessionId, onClose }
 
   const loadOrCreatePrivateSession = async () => {
     // Look for an existing private session with this character linked to this parent
-    const all = await base44.entities.ChatSession.list("-updated_date", 100);
+    const all = await animaClient.entities.ChatSession.list("-updated_date", 100);
     const existing = all.find(
       s => s.mode === "solo" &&
            s.character_id === character.id &&
@@ -37,7 +37,7 @@ export default function PrivateChatPanel({ character, parentSessionId, onClose }
       setMessages(existing.messages || []);
     } else {
       // Create a new private session linked to the parent
-      const newSession = await base44.entities.ChatSession.create({
+      const newSession = await animaClient.entities.ChatSession.create({
         mode: "solo",
         character_id: character.id,
         parent_session_id: parentSessionId,
@@ -77,7 +77,7 @@ ${history}
 
 Respond as ${character.name} — naturally, privately, in character. Keep it conversational, 1-3 sentences.`;
 
-      const result = await base44.integrations.Core.InvokeLLM({ prompt });
+      const result = await animaClient.integrations.Core.InvokeLLM({ prompt });
 
       const aiMsg = {
         role: "assistant",
@@ -89,7 +89,7 @@ Respond as ${character.name} — naturally, privately, in character. Keep it con
       const finalMessages = [...messages, userMsg, aiMsg];
       setMessages(finalMessages);
 
-      await base44.entities.ChatSession.update(activePrivateSession.id, {
+      await animaClient.entities.ChatSession.update(activePrivateSession.id, {
         messages: finalMessages,
         last_message: text.slice(0, 60),
       });

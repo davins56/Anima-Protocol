@@ -12,8 +12,8 @@ vi.mock("@/api/authBridge", () => ({
 const listCharacters = vi.fn();
 const invokeFn = vi.fn();
 
-vi.mock("@/api/base44Client", () => ({
-  base44: {
+vi.mock("@/api/animaClient", () => ({
+  animaClient: {
     entities: {
       Character: { list: (...args) => listCharacters(...args) },
     },

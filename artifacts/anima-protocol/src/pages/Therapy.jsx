@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Brain, MessageCircle, Plus, Sparkles } from "lucide-react";
 import { toast } from "sonner";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { track } from "@/lib/analytics";
 import { usePageMeta, ROUTE_META } from "@/lib/usePageMeta";
 import { useStoreSync } from "@/lib/useStoreSync";
@@ -37,7 +37,7 @@ export default function Therapy() {
   const pendingTopicIdsRef = useRef(new Set());
 
   const loadTopics = async () => {
-    const rows = await base44.entities.TherapyTopic.list("-created_date", 100);
+    const rows = await animaClient.entities.TherapyTopic.list("-created_date", 100);
     const listed = (rows || []).filter((t) => t.is_active !== false);
     setTopics((prev) =>
       mergePreservedTherapyTopics(listed, prev, pendingTopicIdsRef.current),
@@ -47,10 +47,10 @@ export default function Therapy() {
   const refresh = async ({ withSpinner = false } = {}) => {
     if (withSpinner) setLoading(true);
     try {
-      const me = await base44.auth.me();
+      const me = await animaClient.auth.me();
       setUser(me);
       const [animas] = await Promise.all([
-        base44.entities.Anima.list("-created_date", 20),
+        animaClient.entities.Anima.list("-created_date", 20),
         loadTopics(),
       ]);
       setAnimaCount(animas?.length || 0);
@@ -104,7 +104,7 @@ export default function Therapy() {
 
   const handleRemoveTopic = async (id) => {
     try {
-      await base44.entities.TherapyTopic.update(id, { is_active: false });
+      await animaClient.entities.TherapyTopic.update(id, { is_active: false });
       pendingTopicIdsRef.current.delete(id);
       setTopics((prev) => prev.filter((t) => t.id !== id));
     } catch (err) {
@@ -131,7 +131,7 @@ export default function Therapy() {
       });
       if (topic?.id) {
         try {
-          await base44.entities.TherapyTopic.update(topic.id, {
+          await animaClient.entities.TherapyTopic.update(topic.id, {
             last_explored_date: new Date().toISOString(),
           });
         } catch {

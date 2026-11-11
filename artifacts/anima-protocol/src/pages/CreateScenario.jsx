@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { Save, Loader, AlertCircle } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import WorldSettingsEditor from '@/components/scenario/WorldSettingsEditor';
@@ -33,7 +33,7 @@ export default function CreateScenario() {
 
   const loadScenario = async (id) => {
     try {
-      const scenario = await base44.entities.SharedScenario.list().then(s => 
+      const scenario = await animaClient.entities.SharedScenario.list().then(s => 
         s.find(sc => sc.id === id)
       );
       if (scenario) {
@@ -88,9 +88,9 @@ export default function CreateScenario() {
       const scenarioId = params.get('id');
 
       if (scenarioId) {
-        await base44.entities.SharedScenario.update(scenarioId, scenarioData);
+        await animaClient.entities.SharedScenario.update(scenarioId, scenarioData);
       } else {
-        const created = await base44.entities.SharedScenario.create(scenarioData);
+        const created = await animaClient.entities.SharedScenario.create(scenarioData);
         setSuccessMessage('Scenario created successfully!');
         setTimeout(() => navigate(`/scenario-hub`), 1500);
       }

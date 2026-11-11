@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { useAuth } from "@/lib/AuthContext";
 import { X, Loader } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -19,12 +19,12 @@ export default function StoryInsertionPoint({ story, onCreateSession, onClose })
     }
 
     try {
-      const res = await base44.functions.invoke("fetchYnStory", {
+      const res = await animaClient.functions.invoke("fetchYnStory", {
         story_url: story.url,
       });
 
       if (res?.data?.content) {
-        const parsed = await base44.functions.invoke("parseYnStory", {
+        const parsed = await animaClient.functions.invoke("parseYnStory", {
           raw_content: res.data.content,
         });
         setContent(parsed?.data?.segments || []);
@@ -46,7 +46,7 @@ export default function StoryInsertionPoint({ story, onCreateSession, onClose })
 
     // Check auth - if not authenticated, redirect to login
     if (!isAuthenticated) {
-      base44.auth.redirectToLogin(window.location.href);
+      animaClient.auth.redirectToLogin(window.location.href);
       return;
     }
 

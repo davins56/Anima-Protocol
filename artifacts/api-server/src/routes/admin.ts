@@ -5,6 +5,7 @@ import {
   migrateUserData,
   resetEnsureSchemaLatch,
 } from "@workspace/db";
+import { timingSafeEqualString } from "../lib/opsAuth";
 
 const router = Router();
 
@@ -25,7 +26,7 @@ function requireMigrationSecret(
   const token = header.startsWith("Bearer ")
     ? header.slice("Bearer ".length).trim()
     : req.header("x-admin-migration-secret")?.trim() ?? "";
-  if (!token || token !== configured) {
+  if (!token || !timingSafeEqualString(token, configured)) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }

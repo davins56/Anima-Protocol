@@ -6,9 +6,9 @@
 // user's account before inserting the backup, so a regression here could erase
 // data without restoring it. Keeping the orchestration here (and the merge/
 // replace semantics on the server inside a transaction) lets a test exercise
-// both modes — and a mid-restore failure — against a mocked base44 backend.
+// both modes — and a mid-restore failure — against a mocked animaClient backend.
 
-import { restoreData } from "@/api/base44Client";
+import { restoreData } from "@/api/animaClient";
 
 // Run the staged restore in the chosen mode.
 //

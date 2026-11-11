@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { ChevronDown, ChevronRight, GitBranch, Plus, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 
 export default function WorldBranchingTreeView({
   sessionId,
@@ -22,7 +22,7 @@ export default function WorldBranchingTreeView({
   const loadSnapshots = async () => {
     setLoading(true);
     try {
-      const data = await base44.entities.WorldSnapshot.filter(
+      const data = await animaClient.entities.WorldSnapshot.filter(
         { session_id: sessionId },
         "-created_date",
         100

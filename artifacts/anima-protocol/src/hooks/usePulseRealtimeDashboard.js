@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 
 export function usePulseRealtimeDashboard(sessionId) {
   const [tension, setTension] = useState(0);
@@ -14,7 +14,7 @@ export function usePulseRealtimeDashboard(sessionId) {
     refreshPulse();
     
     // Subscribe to real-time updates
-    const unsubscribe = base44.entities.WorldState.subscribe((event) => {
+    const unsubscribe = animaClient.entities.WorldState.subscribe((event) => {
       if (event.data?.session_id === sessionId) {
         refreshPulse();
       }
@@ -26,12 +26,12 @@ export function usePulseRealtimeDashboard(sessionId) {
   const refreshPulse = async () => {
     try {
       const [events, emotions] = await Promise.all([
-        base44.entities.WorldState.filter(
+        animaClient.entities.WorldState.filter(
           { session_id: sessionId, category: 'event' },
           '-created_date',
           15
         ),
-        base44.entities.CharacterEmotionalState.filter(
+        animaClient.entities.CharacterEmotionalState.filter(
           { session_id: sessionId, is_current: true },
           '-created_date',
           50

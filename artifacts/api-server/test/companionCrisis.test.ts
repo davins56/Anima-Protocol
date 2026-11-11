@@ -153,6 +153,8 @@ describe("crisis care stays out of the cached prefix and the transcript", () => 
     expect(user.indexOf(COMPANION_CRISIS_TURN_LINE)).toBeLessThan(
       user.indexOf("I want to kill myself"),
     );
+    expect(user).toContain("Respond directly in your own first person. Do not play out a scene.");
+    expect(user).not.toContain("Continue that scene");
     expect(blob).not.toContain(AI_COMPANION_NOTICE_TEXT);
     expect(blob).not.toContain("not a human");
     expect(blob).not.toContain(CRISIS_RESOURCE_CARD_TEXT);
