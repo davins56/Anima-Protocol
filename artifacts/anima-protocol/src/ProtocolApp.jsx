@@ -1572,6 +1572,12 @@ const AuthenticatedApp = () => {
                 }
               />
               <Route
+                path="/dreams/:characterId?"
+                element={
+                    <ExtraPage name="DreamJournal" />
+                }
+              />
+              <Route
                 path="/what-she-remembers/:characterId"
                 element={
                     <ExtraPage name="WhatSheRemembers" />

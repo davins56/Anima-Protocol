@@ -22,6 +22,7 @@ import MemoryResurfacing from "@/components/home/MemoryResurfacing";
 import { resurfacingAllowed } from "@/features/belonging/belonging";
 import HomeFloorSheets from "@/components/home/HomeFloorSheets";
 import { RECENT_CHATS_LIMIT, sortRecentSessions } from "@/lib/recentChats";
+import { dreamJournalPagePath } from "@/lib/dreamJournal";
 
 const APP_VERSION = "V4.3.0";
 const LONG_PRESS_MS = 520;
@@ -301,7 +302,8 @@ export default function MainHome() {
             {dream?.content ? (
               <button
                 type="button"
-                onClick={handleTalk}
+                onClick={() => navigate(dreamJournalPagePath(anima?.id, anima?.name))}
+                data-home-dream-tile
                 className="max-w-[14rem] text-left border border-indigo-400/25 bg-indigo-950/20 px-3 py-2"
               >
                 <div className="flex items-center gap-1.5 mb-1">
@@ -335,6 +337,15 @@ export default function MainHome() {
               </div>
             ) : null}
           </div>
+
+          <button
+            type="button"
+            data-home-dream-journal
+            onClick={() => navigate(dreamJournalPagePath(anima?.id, anima?.name))}
+            className="self-center mb-2 font-mono text-[9px] tracking-[0.28em] uppercase text-indigo-300/50 hover:text-indigo-200"
+          >
+            Dream journal
+          </button>
 
           <button
             type="button"

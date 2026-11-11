@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 
 vi.mock("@/api/animaApi", () => ({ animaApi: {} }));
 
@@ -35,22 +36,42 @@ describe("continuity client", () => {
       greeting: { text: "Evening. You've been on my mind.", usesDream: null },
     });
     const api = { continuity: { load } };
-    const { unmount } = render(<PresenceIndicator characterId="c1" name="Aeland" surface="chat" showGreeting api={api} storage={st} />);
+    const { unmount } = render(<MemoryRouter><PresenceIndicator characterId="c1" name="Aeland" surface="chat" showGreeting api={api} storage={st} /></MemoryRouter>);
     await waitFor(() => expect(screen.getByText("Aeland is dreaming")).toBeTruthy());
     expect(load).toHaveBeenCalledWith("c1", { surface: "chat", name: "Aeland" });
     expect(await screen.findByTestId("continuity-greeting")).toBeTruthy();
     fireEvent.click(screen.getByTestId("continuity-greeting"));
     expect(screen.queryByTestId("continuity-greeting")).toBeNull();
     unmount();
-    render(<PresenceIndicator characterId="c1" name="Aeland" surface="chat" showGreeting api={api} storage={st} />);
+    render(<MemoryRouter><PresenceIndicator characterId="c1" name="Aeland" surface="chat" showGreeting api={api} storage={st} /></MemoryRouter>);
     await waitFor(() => expect(screen.getByText("Aeland is dreaming")).toBeTruthy());
     expect(screen.queryByTestId("continuity-greeting")).toBeNull();
   });
 
   it("renders nothing when the API fails", async () => {
     const api = { continuity: { load: vi.fn().mockRejectedValue(new Error("down")) } };
-    const { container } = render(<PresenceIndicator characterId="c1" api={api} />);
+    const { container } = render(<MemoryRouter><PresenceIndicator characterId="c1" api={api} /></MemoryRouter>);
     await new Promise((r) => setTimeout(r, 0));
     expect(container.innerHTML).toBe("");
+  });
+
+  it("shows a quiet unread-dream link from recent dreams that have not been opened", async () => {
+    const st = memStorage();
+    const load = vi.fn().mockResolvedValue({
+      presence: "resting",
+      presence_label: "Aeland is resting",
+      state: {
+        recentDreams: [{ id: "d1", fragment: "I kept a lantern.", created_at: "2026-11-10T12:00:00.000Z" }],
+      },
+    });
+    const api = { continuity: { load } };
+    render(
+      <MemoryRouter>
+        <PresenceIndicator characterId="c1" name="Aeland" api={api} storage={st} />
+      </MemoryRouter>,
+    );
+    const link = await screen.findByTestId("unread-dream-indicator");
+    expect(link.getAttribute("href")).toBe("/dreams/c1?name=Aeland");
+    expect(link.textContent).toMatch(/She dreamed/i);
   });
 });
