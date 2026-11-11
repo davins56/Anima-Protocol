@@ -203,8 +203,17 @@ Audio is never stored and goes nowhere but your box. Box or STT server down → 
 Settings live per device in `localStorage["anima.voice.cloudOptIn.v1"]`
 (`artifacts/anima-protocol/src/lib/voicePrefs.js`), so the iPad can opt into
 iOS native speech as its backup without changing other devices. The Settings
-screen toggles are Builder's (V6); until they ship, `setCloudVoiceOptIn()` is
-the API.
+screen toggles are Builder's (V6); until they ship, `setVoicePrefs({...})`,
+`getVoicePrefs()` and `subscribeVoicePrefs(fn)` are the API. `cloud_opt_in`
+for voice notes is `"xai"` if opted into xAI, else `"elevenlabs"`, else omitted.
+
+Consequences until V6 ships the home-box player in chat:
+- With no opt-in, chat replies are **not read aloud** at all (the route
+  chooser returns null; `TODO(V6)` in `Chat.jsx`).
+- Server-initiated voice notes (outreach) carry no opt-in, so they are box-only;
+  with the box down the message goes out as text only.
+- `GET /api/media/capabilities` now returns `voice_clip` (box configured),
+  `voice_clip_local`, `voice_clip_cloud: {xai, elevenlabs}`, `cloud_default:false`.
 
 ## 9. Per-companion voice
 Stored as `kokoro_voice_id` on the companion's own record (`user_entities.data`,
