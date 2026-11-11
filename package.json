@@ -61,7 +61,7 @@
     "@types/node": "catalog:",
     "dotenv": "^18.0.9",
     "drizzle-orm": "catalog:",
-    "postgres": "^4.1.0",
+    "postgres": "^3.4.9",
     "ripgrep": "^0.3.1"
   }
 }

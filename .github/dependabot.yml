@@ -9,6 +9,13 @@ updates:
     # test/wranglerConfig.test.ts). Bump it by hand after checking the deploy guard.
     ignore:
       - dependency-name: wrangler
+      # postgres.js 4 rewrote the pool, protocol and socket layers. With 4.1.0
+      # live on the Worker (Hyperdrive), chat turns failed with "the database
+      # timed out" while /api/healthz/db stayed green. Stay on 3.x until 4.x is
+      # tested against Hyperdrive by hand.
+      - dependency-name: postgres
+        update-types:
+          - version-update:semver-major
     groups:
       npm-security:
         applies-to: security-updates
