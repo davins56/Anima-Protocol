@@ -85,6 +85,6 @@ export default function ChatBackground({ theme, imageUrl }) {
         </div>
       );
     default:
-      return <div className="absolute inset-0 z-0 bg-background" />;
+      return <div data-chat-theme-default="" className="absolute inset-0 z-0 bg-background" />;
   }
 }
