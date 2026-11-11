@@ -334,10 +334,12 @@ function MessageBubble({ message, onRewind, canRewind, onSpeak, character, chara
                 type="button"
                 onClick={onDeleteMessage}
                 disabled={actionsDisabled}
-                className="flex items-center justify-center min-w-[44px] min-h-[44px] text-primary/20 hover:text-red-400 border border-transparent hover:border-red-400/20 font-mono text-xs tracking-widest uppercase transition-all disabled:opacity-40"
+                className="flex items-center justify-center min-w-[44px] min-h-[44px] touch-manipulation text-primary/40 hover:text-red-400 active:text-red-400 border border-transparent hover:border-red-400/20 font-mono text-xs tracking-widest uppercase transition-all disabled:opacity-40"
                 title="Delete message"
+                aria-label="Delete message"
+                data-testid="delete-message"
               >
-                <Trash2 className="w-3 h-3" />
+                <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
             )}
           </div>

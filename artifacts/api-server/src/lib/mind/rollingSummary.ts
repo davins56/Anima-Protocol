@@ -101,6 +101,10 @@ export async function loadSessionSummary(
     `SELECT id, content, payload FROM memory_events
       WHERE user_id = $1 AND character_id = $2 AND conversation_id = $3
         AND event_type = 'note' AND payload ->> 'kind' = $4
+        AND NOT EXISTS (
+          SELECT 1 FROM memory_events r
+           WHERE r.event_type = 'retraction' AND r.user_id = memory_events.user_id
+             AND r.payload ->> 'target_event_id' = memory_events.id::text)
       ORDER BY (payload ->> 'through_seq')::numeric DESC NULLS LAST, occurred_at DESC
       LIMIT 1`,
     [userId, characterId, sessionId, SESSION_SUMMARY_KIND],
