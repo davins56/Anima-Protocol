@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useUser } from "@clerk/react";
 import { toast } from "sonner";
 import { readAppearance, saveAppearance } from "@/lib/appearanceStudio";
+import { exportExperiencePreset, importExperiencePreset } from "@/lib/experiencePresetExchange";
 import {
   EXTRA_DEFAULTS, PRESET_FIELDS, FEATURE_MATRIX,
   loadPresets, writePresets, sanitizePreset,
@@ -78,6 +79,7 @@ export default function ExperienceWorkbench() {
   const [presetName,setPresetName] = useState("");
   const [presets,setPresets] = useState([]);
   const [compare,setCompare] = useState("");
+  const [importing,setImporting] = useState(false);
   useEffect(() => { setPresets(loadPresets(userId)); },[userId]);
   useEffect(() => {
     const refresh = () => setDraft(prev => ({...prev,...readAppearance()}));
@@ -96,6 +98,31 @@ export default function ExperienceWorkbench() {
       const next = writePresets(userId,[...presets,{id,name,values:sanitizePreset(current)}]);
       setPresets(next);setPresetName("");toast.success("Preset saved on this device.");
     } catch(e) { toast.error(e.message); }
+  };
+  const downloadPreset = () => {
+    const json = exportExperiencePreset(presetName || "Anima Theme", current);
+    const url = URL.createObjectURL(new Blob([json], {type:"application/json"}));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "anima-experience-preset.json";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+  const importPreset = async event => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (file.size > 16_384) return toast.error("Preset file is too large.");
+    setImporting(true);
+    try {
+      const imported = importExperiencePreset(await file.text());
+      setDraft(prev => ({...prev,...imported.values}));
+      setPresetName(imported.name);
+      toast.success("Theme loaded into preview. Save it to keep it on this device.");
+    } catch (error) { toast.error(error.message); }
+    finally { setImporting(false); }
   };
   const remove = id => {
     try {setPresets(writePresets(userId,presets.filter(p => p.id !== id)));if(compare === id)setCompare("");}
@@ -125,6 +152,11 @@ export default function ExperienceWorkbench() {
         <div className="flex gap-2 flex-wrap">
           <input aria-label="New preset name" value={presetName} maxLength={60} onChange={e => setPresetName(e.target.value)} placeholder="Preset name" className="min-h-11 flex-1 min-w-32 bg-background border border-border p-2 rounded-lg"/>
           <button type="button" onClick={store} className="rounded-lg border border-primary px-4">Save preset</button>
+          <button type="button" onClick={downloadPreset} className="rounded-lg border border-border px-4">Export theme</button>
+          <label className="cursor-pointer rounded-lg border border-border px-4 py-2 text-sm">
+            Import theme
+            <input type="file" accept=".json,application/json" className="sr-only" disabled={importing} onChange={importPreset} aria-label="Import Anima theme JSON" />
+          </label>
         </div>
         <label className="text-sm flex flex-col gap-1">Compare with saved preset
           <select className="min-h-11 bg-background border border-border p-2 rounded-lg" value={compare} onChange={e => setCompare(e.target.value)}>
@@ -136,11 +168,21 @@ export default function ExperienceWorkbench() {
         </span></div>)}</div>
       </div>
     </div>
+    <div className="rounded-lg border border-border p-3 space-y-2">
+      <h4 className="font-semibold">Connected experience areas</h4>
+      <p className="text-xs text-muted-foreground">Your appearance choices remain separate from identity and runtime data. These sections are managed by Anima itself.</p>
+      <div className="flex flex-wrap gap-2 text-sm">
+        <a className="underline" href="/settings?section=customise-anima">Anima and characters</a>
+        <a className="underline" href="/settings?section=ai">Chat behavior</a>
+        <a className="underline" href="/settings?section=data">Memory and privacy</a>
+        <a className="underline" href="/settings?section=interface">Interface settings</a>
+      </div>
+    </div>
     <div><h4 className="font-semibold mb-2">Implementation ledger</h4>
       <div className="grid sm:grid-cols-2 gap-2">{FEATURE_MATRIX.map(f => <div key={f.name} className="rounded-lg border border-border p-3 text-xs">
         <div className="flex justify-between gap-2 font-medium"><span>{f.name}</span><span className="capitalize text-muted-foreground">{f.status}</span></div>
         <p className="mt-1 text-muted-foreground">{f.detail}</p></div>)}</div>
     </div>
-    <p className="text-xs text-muted-foreground">Scope guarantee: presets contain presentation settings only. Stable personality, session behavior, temporary and durable memory, private/shared context, and multi-Anima entitlement are not read or modified here. Device-local presets are not cloud backed.</p>
+    <p className="text-xs text-muted-foreground">Scope guarantee: presets contain presentation settings only. Stable personality, session behavior, temporary and durable memory, private/shared context, and multi-Anima entitlement are not read or modified here. Device-local presets are not cloud backed. Theme JSON files can be exchanged without transferring private Anima data.</p>
   </section>;
 }
