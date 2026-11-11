@@ -5,6 +5,7 @@ import { buildRatingPayload } from "@/lib/replyRatings";
 import { isRestingError, restingNotice, withRestingNotice } from "@/lib/restingMode";
 import { useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { COMPOSE_PREFILL_TOKEN_PREFIX, consumeComposePrefill } from "@/lib/dreamJournal";
 import { animaClient, uploadDataUrl } from "@/api/animaClient";
 import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import {
@@ -329,6 +330,22 @@ export default function Chat() {
   const claimedHeldDraftsRef = useRef(new Set());
   const heldDraftStampRef = useRef(new Map());
   const [composerRestore, setComposerRestore] = useState(null);
+  // "What did you dream?" and other journal prompts land in the box only.
+  // They are never auto-sent. The compose query stays until a session is
+  // open, then it is stripped so a refresh does not re-apply it.
+  useEffect(() => {
+    const taken = consumeComposePrefill(location.search || "");
+    if (!taken) return;
+    const sid = activeSession?.id;
+    if (!sid) return;
+    const token = `${COMPOSE_PREFILL_TOKEN_PREFIX}:${sid}:${taken.text}`;
+    setComposerRestore((prev) =>
+      prev?.token === token
+        ? prev
+        : { token, sessionId: sid, savedAt: Date.now(), text: taken.text, attachments: [], droppedAttachmentCount: 0 },
+    );
+    navigate({ pathname: location.pathname, search: taken.nextSearch }, { replace: true });
+  }, [location.search, location.pathname, navigate, activeSession?.id]);
   const handleHeldDraftRestored = useCallback((draft) => {
     setComposerRestore((prev) => dropAppliedComposerRestore(prev, draft));
   }, []);

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { FEATURE_MESSAGING } from "@/lib/featureMessaging";
@@ -180,10 +180,12 @@ describe("MainHome floor", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     fireEvent.click(screen.getByRole("button", { name: "World" }));
-    expect(screen.getByText("Jack In")).toBeTruthy();
-    expect(screen.getByText("Constellation")).toBeTruthy();
-    expect(screen.getByText("Echo Keys")).toBeTruthy();
-    fireEvent.click(screen.getByText("Jack In"));
+    const world = screen.getByLabelText("World");
+    expect(within(world).getByText("Jack In")).toBeTruthy();
+    expect(within(world).getByText("Constellation")).toBeTruthy();
+    expect(within(world).getByText("Echo Keys")).toBeTruthy();
+    expect(within(world).getByText("Dream journal")).toBeTruthy();
+    fireEvent.click(within(world).getByText("Jack In"));
     expect(mocks.navigate).toHaveBeenCalledWith("/net-battle");
 
     fireEvent.click(screen.getByRole("button", { name: "You" }));
@@ -242,5 +244,26 @@ describe("MainHome floor", () => {
     expect(screen.getByTestId("recent-chats-empty").textContent).toMatch(/No conversations yet/i);
     fireEvent.click(screen.getByRole("button", { name: /Create companion/i }));
     expect(mocks.navigate).toHaveBeenCalledWith("/characters?create=1");
+  });
+
+  it("opens the dream journal from the home floor", async () => {
+    mocks.listAnimas.mockResolvedValue([{ id: "a1", name: "Lumen" }]);
+    renderHome();
+    await waitFor(() => {
+      expect(document.querySelector("[data-home-dream-journal]")).toBeTruthy();
+    });
+    fireEvent.click(document.querySelector("[data-home-dream-journal]"));
+    expect(mocks.navigate).toHaveBeenCalledWith("/dreams/a1?name=Lumen");
+  });
+
+  it("sends the dream tile to the journal, not into chat", async () => {
+    mocks.presence.dream = { content: "I kept a lantern in the empty hall." };
+    mocks.listAnimas.mockResolvedValue([{ id: "a1", name: "Lumen" }]);
+    renderHome();
+    await waitFor(() => {
+      expect(document.querySelector("[data-home-dream-tile]")).toBeTruthy();
+    });
+    fireEvent.click(document.querySelector("[data-home-dream-tile]"));
+    expect(mocks.navigate).toHaveBeenCalledWith("/dreams/a1?name=Lumen");
   });
 });

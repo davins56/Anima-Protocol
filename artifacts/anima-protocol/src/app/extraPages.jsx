@@ -36,6 +36,7 @@ const PAGES = {
   ConstellationMap: lazy(() => import("../pages/ConstellationMap")),
   CreateScenario: lazy(() => import("../pages/CreateScenario")),
   Disclaimer: lazy(() => import("../pages/Disclaimer")),
+  DreamJournal: lazy(() => import("../pages/DreamJournal")),
   DiscoveryQueue: lazy(() => import("../pages/DiscoveryQueue")),
   EnergyFragments: lazy(() => import("../pages/EnergyFragments")),
   FactionNetwork: lazy(() => import("../pages/FactionNetwork")),
