@@ -49,6 +49,7 @@ export default defineConfig({
       "test/promptBuilder.test.ts",
       "test/companionPromptBudget.test.ts",
       "test/safetyGates.test.ts",
+      "test/characterResearch.test.ts",
     ],
     environment: "node",
     fileParallelism: false,

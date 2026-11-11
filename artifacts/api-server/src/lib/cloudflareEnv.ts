@@ -95,6 +95,7 @@ export const CLOUDFLARE_RUNTIME_ENV_NAMES = [
   "ANIMA_SEARCH_MAX_RESULTS",
   "BRAVE_SEARCH_API_KEY",
   "SERPER_API_KEY",
+  "TAVILY_API_KEY",
   "ANIMA_AGE_PROVIDER",
   // Stripe Checkout (test mode only; see docs/stripe-checkout.md).
   "STRIPE_SECRET_KEY",
