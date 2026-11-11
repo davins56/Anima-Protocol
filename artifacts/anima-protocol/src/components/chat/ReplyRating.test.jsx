@@ -41,8 +41,6 @@ describe("ReplyRating", () => {
     fireEvent.click(screen.getByRole("button", { name: "Good reply" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Good reply" }).getAttribute("aria-pressed")).toBe("false"));
   });
-<<<<<<< HEAD
-=======
   it("tells the user when saving fails instead of failing silently", async () => {
     const onRate = vi.fn().mockRejectedValue(new Error("offline"));
     render(<ReplyRating onRate={onRate} />);
@@ -56,7 +54,6 @@ describe("ReplyRating", () => {
     await waitFor(() => expect(onRate).toHaveBeenCalled());
     expect(screen.getByRole("button", { name: "Good reply" }).getAttribute("aria-pressed")).toBe("true");
   });
->>>>>>> origin/main
 });
 
 describe("buildRatingPayload", () => {
@@ -76,8 +73,7 @@ describe("buildRatingPayload", () => {
     expect(buildRatingPayload({ session: { id: "s1" }, messages, index: 2, rating: -1, note: " Too vague. " }).note).toBe("Too vague.");
     expect(buildRatingPayload({ session: { id: "s1" }, messages, index: 2, rating: 1, note: "x" }).note).toBeUndefined();
   });
-<<<<<<< HEAD
-=======
+
   it("resolves character_id when the reply row has none (corrections are keyed on it)", () => {
     // Chat replies are stored without character_id; the server looks up
     // corrections by character_id, so a null id means she never learns.
@@ -94,5 +90,4 @@ describe("buildRatingPayload", () => {
     const own = buildRatingPayload({ session: { id: "s1", character_id: "c-solo" }, messages: [{ role: "assistant", content: "Hi", character_id: "c9" }], index: 0, rating: 1 });
     expect(own.character_id).toBe("c9");
   });
->>>>>>> origin/main
 });

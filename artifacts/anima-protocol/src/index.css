@@ -618,7 +618,6 @@ html[data-keyboard-open] .fixed-bottom-chrome {
 #algolia-search-host .aa-Form,
 #algolia-search-host input {
   font-family: var(--font-mono), ui-monospace, monospace;
-<<<<<<< HEAD
 }
 
 /* Experience Studio: isolated to authenticated visual preferences. */
@@ -675,6 +674,3 @@ html[data-experience-background="grid"] [data-chat-theme-default] {
 @media (prefers-reduced-motion: reduce) {
   html[data-experience-character] [data-anima-avatar] { transition: none; }
 }
-=======
-}
->>>>>>> origin/main

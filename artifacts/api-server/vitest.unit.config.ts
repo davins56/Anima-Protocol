@@ -49,10 +49,7 @@ export default defineConfig({
       "test/promptBuilder.test.ts",
       "test/companionPromptBudget.test.ts",
       "test/safetyGates.test.ts",
-<<<<<<< HEAD
-=======
       "test/intimacyEngine.test.ts",
->>>>>>> origin/main
       "test/characterResearch.test.ts",
       "test/dialogueVariety.test.ts",
       "test/replyFormatting.test.ts",

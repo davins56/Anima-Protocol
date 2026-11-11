@@ -1711,10 +1711,7 @@ export default function ProtocolApp() {
           <ClerkProviderWithRoutes>
             <AuthProvider>
               <UserActivitySync />
-<<<<<<< HEAD
               <ExperienceRuntimeSync />
-=======
->>>>>>> origin/main
               <ConfirmProvider>
                 <InAppBrowserWarning />
                 <TapTargetValidator />
