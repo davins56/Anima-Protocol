@@ -14,6 +14,10 @@ function isChatTurn(m) {
  * the server reads corrections back by character_id (the id chat.ts sends as
  * assistant_character_id), so a null id means the lesson is never used.
  */
+export function messageRatingId(message, sessionId, index) {
+  return String(message?.id || (message?.turn_id ? `${message.turn_id}:assistant` : `${sessionId}:${index}`));
+}
+
 export function resolveRatingCharacterId(message, session, characters) {
   if (message?.character_id) return String(message.character_id);
   const name = String(message?.character_name || "").trim().toLowerCase();
