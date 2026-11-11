@@ -379,11 +379,12 @@ describe("cut-off replies skip client mining", () => {
   const chat = readFileSync(path.join(process.cwd(), "src/pages/Chat.jsx"), "utf8");
 
   it("does not parse reply image tags or event rows when the server marked the reply cut off", () => {
-    const start = chat.indexOf("const wantsImage = replyCutOff.reply_interrupted");
+    const start = chat.indexOf("const wantsImage =\n");
     expect(start).toBeGreaterThan(-1);
     const block = chat.slice(start, start + 5000);
+    // Server-handled companion photos skip the client pipeline entirely.
     expect(block.startsWith(
-      "const wantsImage = replyCutOff.reply_interrupted\n        ? userRequestedImage(content)\n        : parseImagePrompts(result).length > 0 || userRequestedImage(content);",
+      "const wantsImage =\n        !serverPhoto.handled &&\n        !serverPhotosOn &&\n        (replyCutOff.reply_interrupted\n          ? userRequestedImage(content)\n          : parseImagePrompts(result).length > 0 || userRequestedImage(content));",
     )).toBe(true);
     expect(block).toContain('replyText: replyCutOff.reply_interrupted ? "" : result');
     expect(block).toContain(

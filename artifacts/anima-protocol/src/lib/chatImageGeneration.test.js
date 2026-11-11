@@ -8,6 +8,7 @@ import {
   resolveChatImageAttachments,
   messagesWithImageProgress,
   CHAT_IMAGE_TIMEOUT_MS,
+  serverPhotoFromPayload,
 } from "./chatImageGeneration";
 
 describe("chat image generation", () => {
@@ -128,5 +129,34 @@ describe("chat image generation", () => {
     });
     expect(result.attachments).toEqual([]);
     expect(result.source).toBeNull();
+  });
+});
+
+describe("serverPhotoFromPayload", () => {
+  it("takes the server's companion photo and marks the request handled", () => {
+    const got = serverPhotoFromPayload({
+      photo: { status: "sent" },
+      attachments: [
+        { type: "image", url: "/api/storage/objects/uploads/abc", source: "companion_photo", description: "beach", width: 768, height: 1024 },
+        { type: "image", url: "javascript:alert(1)" },
+      ],
+    });
+    expect(got.handled).toBe(true);
+    expect(got.attachments).toEqual([
+      {
+        type: "image",
+        url: "/api/storage/objects/uploads/abc",
+        name: "Photo",
+        source: "companion_photo",
+        description: "beach",
+        width: 768,
+        height: 1024,
+      },
+    ]);
+  });
+
+  it("a declined or failed photo is still handled; no photo means the client may try", () => {
+    expect(serverPhotoFromPayload({ photo: { status: "declined" } })).toEqual({ handled: true, status: "declined", attachments: [] });
+    expect(serverPhotoFromPayload({ content: "hi" })).toEqual({ handled: false, status: null, attachments: [] });
   });
 });

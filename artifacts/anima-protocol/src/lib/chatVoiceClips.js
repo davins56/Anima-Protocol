@@ -76,7 +76,11 @@ export function voiceClipAvailable(body, prefs = getVoicePrefs()) {
   return Boolean(optIn && body?.voice_clip_cloud?.[optIn] === true);
 }
 
-/** Server body cached per page load; opt-ins are read on every call. `{ voice_clip: false }` on any failure. */
+/**
+ * Server body cached per page load; opt-ins are read on every call.
+ * `chat_photos`: the server generates companion photos in solo chat (so the
+ * client must not run its own [IMAGE:] pipeline there). All false on failure.
+ */
 export async function fetchMediaCapabilities({ fetchImpl = globalThis.fetch, prefs } = {}) {
   if (!capabilitiesPromise) {
     capabilitiesPromise = (async () => {
@@ -92,7 +96,10 @@ export async function fetchMediaCapabilities({ fetchImpl = globalThis.fetch, pre
     })();
   }
   const body = await capabilitiesPromise;
-  return { voice_clip: voiceClipAvailable(body, prefs ?? getVoicePrefs()) };
+  return {
+    voice_clip: voiceClipAvailable(body, prefs ?? getVoicePrefs()),
+    chat_photos: body?.chat_photos === true,
+  };
 }
 
 export function resetMediaCapabilitiesForTests() {

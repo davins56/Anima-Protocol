@@ -183,6 +183,20 @@ import { buildCorrectionsContext } from "../lib/corrections/corrections";
 import { searchContextForTurn } from "../lib/search/searchService";
 import { appendMemoryEvent } from "../lib/memoryCore/memoryCore";
 import {
+  companionPhotoConfig,
+  photoDirective,
+  photoFailureLine,
+  photoMetadata,
+  photoTagIntent,
+  planCompanionPhoto,
+  recordPhotoMemory,
+  settleCompanionPhoto,
+  startCompanionPhoto,
+  stripPhotoTags,
+  type PhotoOutcome,
+  type PhotoPlan,
+} from "../lib/companionPhotos";
+import {
   activeMindProfile,
   factScopeForTurn,
   type FactScope,
@@ -358,11 +372,15 @@ function writeSse(res: Response, payload: unknown) {
 
 function replayFlightOutcome(turn: ChatTurn): ChatTurnFlightOutcome {
   const content = String(turn.assistantContent || "");
+  const meta = asObject(turn.metadata);
+  const attachments = Array.isArray(meta.attachments) ? meta.attachments : null;
   return {
     content,
     done: {
       done: true,
       visible: content,
+      ...(attachments?.length ? { attachments } : {}),
+      ...(meta.companion_photo ? { photo: meta.companion_photo } : {}),
       turn_id: turn.id,
       persistence_status: turn.status,
       replayed: true,
@@ -1148,6 +1166,8 @@ async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
         }
       : null;
   const cutOff = isCutOffReply(metadata);
+  // A companion photo sent with this reply (lib/companionPhotos).
+  const replyAttachments = Array.isArray(metadata.attachments) ? metadata.attachments : [];
   const assistantMessage = {
     id: turn.assistantMessageId,
     role: "assistant",
@@ -1156,9 +1176,11 @@ async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
     character_name: activeCharacterName,
     timestamp: new Date(turn.createdAt.getTime() + 1).toISOString(),
     ...(cutOff ? { reply_interrupted: true, cut_off: true } : {}),
+    ...(replyAttachments.length ? { attachments: replyAttachments } : {}),
     metadata: {
       turn_id: turn.id,
       ...(cutOff ? { reply_interrupted: true, cut_off: true } : {}),
+      ...(replyAttachments.length ? { attachments: replyAttachments, media_kind: "photo" } : {}),
     },
   };
   const wroteMessages = await writeTurnMessagesInOrder(turn, {
@@ -2746,6 +2768,11 @@ router.post("/messages", async (req, res) => {
   let isCrossover = false;
   let preStreamPersist: Promise<void> = Promise.resolve();
   let crisisResourceCard: CrisisResourceCard | null = null;
+  // Companion photo for this turn (lib/companionPhotos): plan → job → outcome.
+  let photoPlan: PhotoPlan = { action: "none" };
+  let photoJob: Promise<PhotoOutcome> | null = null;
+  let photoDeadlineAt = 0;
+  let photoOutcome: PhotoOutcome | null = null;
   const shouldPersist = body.persist !== false;
 
   try {
@@ -3139,6 +3166,46 @@ router.post("/messages", async (req, res) => {
     writeSse(res, { crisis_resource: crisisResourceCard });
   }
 
+  // Companion photos: "send me a selfie" → a generated photo on this reply.
+  // The small intent call only runs when the line could be a photo request;
+  // it overlaps the context work below.
+  const photoCharacter: MsgData | null = activeCharacterId
+    ? characters.find((c) => String(c.id || "") === activeCharacterId) ?? null
+    : null;
+  const photoCompanionName = String(activeCharacterName || activeChar?.name || "Companion");
+  const startPhotoJob = (plan: Extract<PhotoPlan, { action: "send" }>) => {
+    if (!activeCharacterId || !photoCharacter) return;
+    photoDeadlineAt = Date.now() + companionPhotoConfig().timeoutMs;
+    photoJob = startCompanionPhoto({
+      plan,
+      userId,
+      characterId: activeCharacterId,
+      companionName: photoCompanionName,
+      character: photoCharacter,
+      turnId,
+    });
+    writeSse(res, { status: "photo", photo: { state: "pending" } });
+  };
+  const photoPlanArgs = {
+    userId,
+    character: photoCharacter,
+    companionName: photoCompanionName,
+    userMessage: String(content || ""),
+    recent: promptRecentMessages.slice(-8).map((m) => ({
+      role: String(m.role || ""),
+      content: String(m.content || ""),
+    })),
+    mode,
+    isContinue: Boolean(body.is_continue),
+    adultActive,
+    therapy: therapyActive,
+    crisis: Boolean(crisisResourceCard),
+  };
+  const photoPlanPromise: Promise<PhotoPlan> = planCompanionPhoto(photoPlanArgs).catch((error) => {
+    logger.warn({ error, turnId }, "Companion photo planning failed");
+    return { action: "none" } as PhotoPlan;
+  });
+
   intimacyProfile = null;
   intimacyScene = null;
   let intimacyResult: IntimacyTurnResult | null = null;
@@ -3176,6 +3243,9 @@ router.post("/messages", async (req, res) => {
       : null,
   });
   const resolvedCorrections = await correctionsPromise;
+  photoPlan = await photoPlanPromise;
+  if (photoPlan.action === "send") startPhotoJob(photoPlan);
+  const companionPhotoNote = photoDirective(photoPlan);
   // Mind knowledge was recalled for the hinted companion; a different
   // speaker this turn falls back to no long-term block rather than borrow it.
   const mindKnowledge =
@@ -3186,6 +3256,7 @@ router.post("/messages", async (req, res) => {
     ? [
         antiRepetitionNote(recentAssistantReplies(promptRecentMessages)),
         replyLengthNote(String(body.metadata?.response_length ?? profileSettings.ai_response_length ?? "")),
+        companionPhotoNote,
       ]
         .filter(Boolean)
         .join(" ")
@@ -3210,7 +3281,7 @@ router.post("/messages", async (req, res) => {
       memoryCoreContext: [mindProfile ? mindKnowledge : memoryCoreContext, resolvedCorrections]
         .filter(Boolean)
         .join("\n\n"),
-      photoNote,
+      photoNote: [photoNote, mindProfile ? "" : companionPhotoNote].filter(Boolean).join("\n\n"),
       characters: adaptedChars,
       activeCharacter: activeChar,
       memories: promptMemories,
@@ -3983,6 +4054,40 @@ router.post("/messages", async (req, res) => {
     }
 
     streamSucceeded = true;
+    // The companion chose to show something on her own ([IMAGE: …] tag).
+    // Same safety gate and limits as a request; the tag never reaches the bubble.
+    if (photoPlan.action === "none" && !replyCutOff) {
+      const tagIntent = photoTagIntent(fullResponse);
+      if (tagIntent) {
+        photoPlan = await planCompanionPhoto({ ...photoPlanArgs, intent: tagIntent }).catch(
+          () => ({ action: "none" }) as PhotoPlan,
+        );
+        if (photoPlan.action === "send") startPhotoJob(photoPlan);
+      }
+    }
+    if (photoPlan.action !== "none") {
+      const stripped = stripPhotoTags(fullResponse);
+      if (stripped) fullResponse = stripped;
+    }
+    if (photoJob) {
+      photoOutcome = await telemetry.measure(
+        "companion_photo_ms",
+        settleCompanionPhoto(photoJob, photoDeadlineAt),
+      );
+      if (photoOutcome.status === "failed") {
+        logger.warn({ turnId, error: photoOutcome.errorKind }, "Companion photo not sent");
+        const line = photoFailureLine(photoOutcome.errorKind, turnId);
+        const sep = fullResponse.trim() ? "\n\n" : "";
+        fullResponse = `${fullResponse.trimEnd()}${sep}${line}`;
+        writeSse(res, { content: `${sep}${line}` });
+      }
+    }
+    const photoMeta = photoMetadata(photoPlan, photoOutcome);
+    const photoAttachments =
+      photoOutcome?.status === "sent" ? [photoOutcome.attachment] : [];
+    const photoDone = photoMeta
+      ? { photo: photoMeta, ...(photoAttachments.length ? { attachments: photoAttachments } : {}) }
+      : {};
     const evolvedCompanion =
       skipAffect || !companionAffect
         ? null
@@ -4024,6 +4129,8 @@ router.post("/messages", async (req, res) => {
       mood_self_state: skipAffect ? null : evolvedMoodSelfState,
       ...(skipAffect ? { skip_affect: true, reply_action: replyAction } : {}),
       ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
+      ...(photoMeta ? { companion_photo: photoMeta } : {}),
+      ...(photoAttachments.length ? { attachments: photoAttachments, media_kind: "photo" } : {}),
     };
     pipelineMetadata = generatedMetadata;
     // One checkpoint, then `done`. A second attempt waits in the background
@@ -4070,6 +4177,7 @@ router.post("/messages", async (req, res) => {
       persistence_owner: persistenceOwner,
       companion_affect: evolvedAffectSnapshot,
       ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
+      ...photoDone,
     });
     flight.resolve({
       content: fullResponse,
@@ -4094,6 +4202,7 @@ router.post("/messages", async (req, res) => {
         persistence_owner: persistenceOwner,
         companion_affect: evolvedAffectSnapshot,
         ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
+        ...photoDone,
         joined: true,
       },
     });
@@ -4238,6 +4347,17 @@ router.post("/messages", async (req, res) => {
         logger.warn({ error, turnId }, "Background checkpoint retry failed");
       }
 
+      // Remember the photo she sent, whoever persists the messages.
+      if (photoOutcome?.status === "sent" && activeCharacterId && isMemoryCoreEnabled()) {
+        void recordPhotoMemory({
+          userId,
+          characterId: activeCharacterId,
+          sessionId,
+          turnId,
+          attachment: photoOutcome.attachment,
+        }).catch((e) => logger.warn({ error: e, turnId }, "Companion photo memory append failed"));
+      }
+
       const lateClient = clientLeft();
       const serverPersist = persistenceOwner === "server" && shouldPersist;
       if (serverPersist || lateClient) {
@@ -4293,7 +4413,11 @@ router.post("/messages", async (req, res) => {
         userId,
         characterId: activeCharacterId,
         eventType: "turn",
-        content: `User: ${String(content || "").slice(0, 600)}\nMe: ${String(fullResponse || "").slice(0, 900)}`,
+        content: `User: ${String(content || "").slice(0, 600)}\nMe: ${String(fullResponse || "").slice(0, 900)}${
+          photoOutcome?.status === "sent"
+            ? `\n(I sent a photo: ${photoOutcome.attachment.description.slice(0, 240)})`
+            : ""
+        }`,
         payload: { turn_id: turnId, mode, is_crossover: isCrossover },
         emotionalWeight: Math.min(1, Math.max(0, Number(companionAffect?.intensity ?? 0.5) || 0.5)),
         conversationId: sessionId,
