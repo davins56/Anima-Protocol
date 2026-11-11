@@ -224,14 +224,14 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
         </button>
       )}
 
-      {/* Story mode toggle — the Narrator adds a scene update every few exchanges */}
+      {/* Story mode toggle — the Narrator adds scene updates when the story calls for them */}
       {onToggleStoryMode && (
         <button
           type="button"
           onClick={onToggleStoryMode}
           title={
             storyModeOn
-              ? "Story mode ON — a narrator moves the scene on every few messages"
+              ? "Story mode ON — a narrator steps in when the story needs a scene update"
               : "Story mode OFF — no narrator scene updates"
           }
           aria-pressed={!!storyModeOn}
