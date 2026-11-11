@@ -37,6 +37,7 @@ import {
   type SynchroState,
   synchroToMemoryConfig,
   synchroToPromptGuidance,
+  SYNCHRO_LEVEL_LABELS,
 } from "./synchroEngine";
 import {
   type CompanionAffect,
@@ -1455,6 +1456,7 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
         params.intimacyProfile,
         params.intimacyScene || undefined,
         params.intimacyTurnResult || undefined,
+        params.synchroState ? SYNCHRO_LEVEL_LABELS[params.synchroState.level] : null,
       )
     : "";
   // Operator context is untrimmable on the local path (it rides inside mood).
@@ -2872,6 +2874,7 @@ ${sceneExcerpt}
       params.intimacyProfile,
       params.intimacyScene || undefined,
       params.intimacyTurnResult || undefined,
+      params.synchroState ? SYNCHRO_LEVEL_LABELS[params.synchroState.level] : null,
     );
   }
 
