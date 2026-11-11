@@ -35,6 +35,8 @@ from train import GPT, GPTConfig
 # ----------------------------- Config -----------------------------
 
 PREF_DATA = str(ROOT / "data" / "prefs" / "anima_preferences.jsonl")
+# Corrections taught in the app, as chosen/rejected pairs. Optional.
+STEWARD_PREF_DATA = str(ROOT / "data" / "prefs" / "steward_preferences.jsonl")
 SFT_CKPT = str(ROOT / "out" / "anima-sft" / "ckpt.pt")
 OUT_DIR3 = str(ROOT / "out" / "anima-dpo")
 MAX_PAIRS = 5000
@@ -79,16 +81,19 @@ def encode_pair(prompt_messages, reply, block_size):
 
 def load_pairs(block_size):
     pairs = []
-    with open(PREF_DATA, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            d = json.loads(line)
-            ch = encode_pair(d["prompt_messages"], d["chosen"], block_size)
-            rj = encode_pair(d["prompt_messages"], d["rejected"], block_size)
-            if ch and rj:
-                pairs.append((ch, rj))
+    for path in (PREF_DATA, STEWARD_PREF_DATA):
+        if not os.path.isfile(path):
+            continue
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                d = json.loads(line)
+                ch = encode_pair(d["prompt_messages"], d["chosen"], block_size)
+                rj = encode_pair(d["prompt_messages"], d["rejected"], block_size)
+                if ch and rj:
+                    pairs.append((ch, rj))
     random.shuffle(pairs)
     return pairs[:MAX_PAIRS]
 

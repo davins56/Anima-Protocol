@@ -35,6 +35,8 @@ Workers Builds still marks the build failed. The version exists as a preview onl
 
 ## Repo guard
 
+The committed pin is wrangler **4.141.0** (`package.json` devDependency). Its `bin/wrangler.js` still spawns `wrangler-dist/cli.js` with the same `--no-warnings` args as 4.129.1, so the postinstall guard still injects.
+
 `pnpm install` copies `scripts/cloudflare/wrangler-deployments-guard.cjs` next to wrangler's bin and injects `node --require`. On GET `/deployments` or GET `/workers/subdomain` (and the script `/subdomain` settings GET):
 
 1. Retry with `JSON.parse` (recovers valid JSON that jsonc-parser rejected).

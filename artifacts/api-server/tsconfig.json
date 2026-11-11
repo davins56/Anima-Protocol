@@ -20,6 +20,9 @@
     },
     {
       "path": "../../lib/llm"
+    },
+    {
+      "path": "../../lib/sim-core"
     }
   ]
 }

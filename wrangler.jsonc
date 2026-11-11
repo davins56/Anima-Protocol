@@ -95,12 +95,23 @@
     // navigator.userAgent === "Cloudflare-Workers").
     "ANIMA_RUNTIME": "worker",
     // Production chat prefers the self-hosted Anima LLM (anima-chat) via
-    // Secrets Store ANIMA_LOCAL_LLM_BASE_URL. Workers AI DeepSeek is only
+    // Secrets Store ANIMA_LOCAL_LLM_BASE_URL. Workers AI (Llama 3.3 70B) is only
     // used when that URL is unset/unusable. Do NOT put ANIMA_LOCAL_LLM_BASE_URL
     // in vars. ANIMA_LOCAL_LLM_BACKEND stays in vars only (`ollama` is not
     // secret). Binding the same name in secrets_store_secrets fails wrangler
     // deploy: "Bindings must have unique names".
     "ANIMA_LLM_PROVIDER": "custom",
+    // Chat brain runs entirely inside this Worker: Workers AI (AI binding
+    // below) for chat AND background memory jobs, Hyperdrive Postgres for
+    // identity + memory. No Fly.io app, DigitalOcean droplet, VPS or tunnel.
+    // The ANIMA_LOCAL_LLM_* Secrets Store bindings below are ignored while
+    // this is "cloudflare"; set "self-hosted" to go back to that host.
+    // Optional vars: ANIMA_WORKERS_AI_MODEL (@cf/… model id; default
+    // @cf/meta/llama-3.3-70b-instruct-fp8-fast),
+    // ANIMA_WORKERS_AI_LORA (fine-tune name/id), ANIMA_WORKERS_AI_BACKGROUND
+    // ("false" keeps background jobs off to save free-plan neurons).
+    // See docs/chat-brain.md.
+    "ANIMA_CHAT_BRAIN": "cloudflare",
     "ANIMA_LOCAL_LLM_BACKEND": "ollama",
     "ANIMA_OLLAMA_MODEL_STANDARD": "anima-chat",
     // Temporary until Workers Paid / quota recovers. Hop after Workers AI 4006
@@ -119,8 +130,14 @@
   // 1. In Secrets Store a31e40473ef34db896b5bc1e6c1c4b86 create these
   //    secret_name entries if they do not already exist (values only in
   //    the dashboard — never commit them):
-  //      ANIMA_LOCAL_LLM_BASE_URL = https://llm.anima-protocol.com/v1
-  //      ANIMA_LOCAL_LLM_API_KEY  = tunnel / host bearer (same as PROXY_AUTH_TOKEN)
+    //      ANIMA_LOCAL_LLM_BASE_URL = https://llm.anima-protocol.com/v1
+    //      ANIMA_LOCAL_LLM_API_KEY  = tunnel / host bearer (same as PROXY_AUTH_TOKEN)
+    // Optional backup Ollama (same anima-chat model) is
+    // ANIMA_LOCAL_LLM_BACKUP_BASE_URL, read from the process env only.
+    // Do not bind it here until that secret_name exists. A missing binding
+    // fails wrangler deploy. Unset means no hop. Example:
+    // https://llm-backup.anima-protocol.com/v1
+    // Never an OpenRouter or OpenAI fallback.
   //    Do NOT bind ANIMA_LOCAL_LLM_BACKEND here — it is a committed var.
   // 2. The { binding, store_id, secret_name } objects below must match
   //    those names exactly.
@@ -130,7 +147,7 @@
   // MINIMAX_API_KEY`). Do not add it to secrets_store_secrets until that
   // secret_name exists in the store.
   // Custom LLM URL + bearer live in Secrets Store. See wrangler `ai.gateway`
-  // only as the no-host fallback (DeepSeek).
+  // only as the no-host path (Workers AI, Llama 3.3 70B by default).
   "secrets_store_secrets": [
     {
       "binding": "CLERK_SECRET_KEY",
@@ -163,6 +180,29 @@
       "secret_name": "ANIMA_LOCAL_LLM_API_KEY"
     }
   ],
+  // One Durable Object serializes the local Ollama slot across isolates.
+  // Chat turns queue FIFO; background callers skip while it is held or a
+  // chat turn is waiting. The lease TTL is inside the object (no new secret).
+  //
+  // LocalLlmSlot uses the SQLite backend (new_sqlite_classes). Workers Free
+  // includes SQLite-backed Durable Objects, so this migration does not need
+  // Workers Paid. Keep the class in new_sqlite_classes — do not move it to
+  // new_classes. Do not rename LocalLlmSlot without a new migration tag.
+  // The object name in code is getByName("ollama") — one slot for the droplet.
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "LOCAL_LLM_SLOT",
+        "class_name": "LocalLlmSlot"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1-local-llm-slot",
+      "new_sqlite_classes": ["LocalLlmSlot"]
+    }
+  ],
   // Free plan: 10k neurons/day. Exhaustion is Workers AI error 4006 — the
   // AI binding is still present (healthz/llm configured:true). Dàvīn approved
   // temporary OpenRouter failover via ANIMA_OPENROUTER_FALLBACK=true when no
@@ -185,5 +225,12 @@
       "binding": "HYPERDRIVE",
       "id": "bae77549623a4320b10211ca499fdb93"
     }
-  ]
+  ],
+  // Same minute as vercel.json's proactive cron. Drains deferred local-model
+  // jobs (evolution, distilled memory) after the chat quiet window. The
+  // handler does not send proactive pushes.
+  "triggers": {
+    // Quarter-hourly: dream layer (worker.ts DREAM_CRON), inactivity default 30 min.
+    "crons": ["15 * * * *", "0,15,30,45 * * * *"]
+  }
 }

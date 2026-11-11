@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { Heart, TrendingUp, Users, Award } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -17,9 +17,9 @@ export default function CharacterProfileCard({ characterId, sessionId }) {
     setLoading(true);
     try {
       const [char, rels, prof] = await Promise.all([
-        base44.entities.Character.list().then(chars => chars?.find(c => c.id === characterId)),
-        base44.entities.CharacterRelationship.filter({ character_a_id: characterId, session_id: sessionId || '' }),
-        base44.entities.ResonanceProfile.filter({ user_email: '' }).then(ps => ps?.[0]),
+        animaClient.entities.Character.list().then(chars => chars?.find(c => c.id === characterId)),
+        animaClient.entities.CharacterRelationship.filter({ character_a_id: characterId, session_id: sessionId || '' }),
+        animaClient.entities.ResonanceProfile.filter({ user_email: '' }).then(ps => ps?.[0]),
       ]);
       setCharacter(char);
       setRelationships(rels || []);

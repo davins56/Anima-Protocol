@@ -8,6 +8,8 @@ import {
   boolean,
   uniqueIndex,
   index,
+  customType,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
@@ -102,6 +104,11 @@ export type ChatMessage = typeof chatMessages.$inferSelect;
  * Durable chat-turn ledger. A generated reply is checkpointed here before the
  * SSE `done` event, then idempotent message persistence advances it to
  * `committed`. Failed/client-interrupted writes remain retryable.
+ *
+ * `lease_expires_at` is the running-owner lease. A pending turn whose lease
+ * has expired can be claimed by another isolate. `waiting_until` is set by a
+ * retry that is joined to that owner so a disconnect does not abort the slot
+ * while someone is still waiting.
  */
 export const chatTurns = pgTable(
   "chat_turns",
@@ -118,6 +125,8 @@ export const chatTurns = pgTable(
     assistantContent: text("assistant_content").notNull().default(""),
     metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
     lastError: text("last_error"),
+    leaseExpiresAt: timestamp("lease_expires_at"),
+    waitingUntil: timestamp("waiting_until"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
     committedAt: timestamp("committed_at"),
@@ -137,6 +146,32 @@ export const chatTurns = pgTable(
 );
 
 export type ChatTurn = typeof chatTurns.$inferSelect;
+
+/**
+ * Background local-model work that must not be dropped while someone is
+ * chatting (milestone evolution, distilled memories). The proactive cron
+ * drains rows once `chat_turns` shows the quiet window is clear.
+ */
+export const localLlmDeferredJobs = pgTable(
+  "local_llm_deferred_jobs",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    kind: text("kind").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+    attempts: integer("attempts").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    localLlmDeferredKindIdx: index("local_llm_deferred_jobs_kind_idx").on(
+      t.kind,
+      t.createdAt,
+    ),
+  }),
+);
+
+export type LocalLlmDeferredJob = typeof localLlmDeferredJobs.$inferSelect;
 
 export const companionMemories = pgTable(
   "companion_memories",
@@ -200,7 +235,7 @@ export const memoryEmbeddings = pgTable(
 export type MemoryEmbedding = typeof memoryEmbeddings.$inferSelect;
 
 // Generic per-user entity store. One row per (user, entity name, entity id),
-// holding the whole record as JSON. Backs the client's base44 entity CRUD so
+// holding the whole record as JSON. Backs the client's animaClient entity CRUD so
 // that all user progress (characters, chats, journals, inventory, quests, world
 // state, settings, etc.) persists on the server scoped to the Clerk account.
 export const userEntities = pgTable(
@@ -385,3 +420,131 @@ export const uploadedImages = pgTable(
 );
 
 export type UploadedImage = typeof uploadedImages.$inferSelect;
+
+/** Postgres full-text column. Populated in SQL with to_tsvector — not by Drizzle. */
+const tsvector = customType<{ data: string }>({
+  dataType() {
+    return "tsvector";
+  },
+});
+
+/**
+ * PDF text the user shared in a chat or attached to a companion's lore.
+ * Original bytes are in `pdf_file_parts` (512 KiB each) so the chat chip
+ * can open the file. `pdf_chunks.search_vector` is filled at insert time
+ * for Postgres full-text retrieval.
+ */
+export const pdfDocuments = pgTable(
+  "pdf_documents",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    /** "chat" (this conversation) or "lore" (every chat with the companion). */
+    scope: text("scope").notNull(),
+    sessionId: text("session_id"),
+    characterId: text("character_id"),
+    filename: text("filename").notNull(),
+    byteSize: integer("byte_size").notNull().default(0),
+    pageCount: integer("page_count").notNull().default(0),
+    chunkCount: integer("chunk_count").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    pdfDocumentsUserSessionIdx: index("pdf_documents_user_session_idx").on(
+      t.userId,
+      t.scope,
+      t.sessionId,
+    ),
+    pdfDocumentsUserCharacterIdx: index("pdf_documents_user_character_idx").on(
+      t.userId,
+      t.scope,
+      t.characterId,
+    ),
+  }),
+);
+
+export type PdfDocument = typeof pdfDocuments.$inferSelect;
+
+export const pdfChunks = pgTable(
+  "pdf_chunks",
+  {
+    id: text("id").primaryKey(),
+    documentId: text("document_id").notNull(),
+    userId: text("user_id").notNull(),
+    chunkIndex: integer("chunk_index").notNull(),
+    pageStart: integer("page_start").notNull().default(1),
+    pageEnd: integer("page_end").notNull().default(1),
+    content: text("content").notNull(),
+    searchVector: tsvector("search_vector").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    pdfChunksDocumentIdx: index("pdf_chunks_document_idx").on(
+      t.userId,
+      t.documentId,
+      t.chunkIndex,
+    ),
+    pdfChunksSearchIdx: index("pdf_chunks_search_idx").using(
+      "gin",
+      sql`search_vector`,
+    ),
+  }),
+);
+
+export type PdfChunk = typeof pdfChunks.$inferSelect;
+
+/** Raw bytes. Reads and writes go through SQL (encode/decode), not Drizzle. */
+const bytea = customType<{ data: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
+
+/**
+ * Original PDF bytes, 512 KiB per row. Hyperdrive drops a single multi-megabyte
+ * INSERT, so the file is split the same way as own-model weights.
+ */
+export const pdfFileParts = pgTable(
+  "pdf_file_parts",
+  {
+    documentId: text("document_id")
+      .notNull()
+      .references(() => pdfDocuments.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    partIndex: integer("part_index").notNull(),
+    data: bytea("data").notNull(),
+  },
+  (t) => ({
+    pdfFilePartsPk: primaryKey({
+      name: "pdf_file_parts_pk",
+      columns: [t.documentId, t.partIndex],
+    }),
+    pdfFilePartsUserIdx: index("pdf_file_parts_user_idx").on(t.userId, t.documentId),
+  }),
+);
+
+export type PdfFilePart = typeof pdfFileParts.$inferSelect;
+
+/**
+ * Own-model weights: one 512 KiB chunk per row. Must match BLOBS_DDL in
+ * artifacts/api-server/src/lib/ownModel.ts and server/trainer.py.
+ */
+export const ownModelBlobs = pgTable(
+  "own_model_blobs",
+  {
+    version: integer("version").notNull(),
+    kind: text("kind").notNull(),
+    idx: integer("idx").notNull(),
+    data: bytea("data").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    ownModelBlobsPk: primaryKey({
+      name: "own_model_blobs_pk",
+      columns: [t.version, t.kind, t.idx],
+    }),
+  }),
+);
+
+export type OwnModelBlob = typeof ownModelBlobs.$inferSelect;

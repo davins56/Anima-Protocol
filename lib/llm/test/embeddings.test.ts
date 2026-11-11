@@ -1,12 +1,33 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cosineSimilarity,
+  embedTexts,
   hashEmbed,
   rankBySimilarity,
 } from "../src/embeddings";
 import { retrieveRelevantMemories } from "../src/memory/retrieval";
 
 describe("embeddings", () => {
+  const savedEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...savedEnv };
+  });
+
+  it("does not fetch embeddings from the chat host when local-only", async () => {
+    delete process.env.ANIMA_EMBEDDINGS_BASE_URL;
+    delete process.env.ANIMA_LOCAL_LLM_FALLBACK;
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.ANIMA_OPENROUTER_API_KEY;
+    delete process.env.OPEN_ROUTER_API_KEY;
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "http://127.0.0.1:9/v1";
+    const fetchImpl = vi.fn();
+    const result = await embedTexts(["harbor light"], { fetchImpl });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(result.semantic).toBe(false);
+    expect(result.model).toBe("hash-bow-v1");
+    expect(result.embeddings[0]?.length).toBeGreaterThan(0);
+  });
   it("is deterministic and self-similar", () => {
     const a = hashEmbed("chamomile with honey");
     const b = hashEmbed("chamomile with honey");

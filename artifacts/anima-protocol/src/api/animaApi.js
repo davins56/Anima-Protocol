@@ -1,6 +1,7 @@
 import { apiUrl } from '@/lib/apiOrigin';
 import { authHeaders } from './authBridge';
 import { readSseJsonStream } from '@/lib/readSseJsonStream';
+import { streamChatReply } from '@/lib/streamChatReply';
 
 export function chatAuthRequiredError() {
   const err = new Error(
@@ -61,10 +62,14 @@ export async function requireChatAuthHeaders(extra, options = {}) {
  * Must stay above the Worker free-tier open budget (80s) plus first-chunk
  * (50s) plus context slack (10s) so the browser does not abort while
  * DeepSeek R1 is still thinking or OpenRouter is hopping :free models.
+ * `CHAT_STREAM_TIMEOUT_MS` is that free-tier floor (and the server's
+ * repeat-retry clock). The fetch abort is longer: local slot queue 180s
+ * + first token 90s + decode slack 30s + context slack 10s.
  * Keep in lockstep with
- * `artifacts/api-server/src/lib/chatTimeouts.ts` `CHAT_STREAM_TIMEOUT_MS`.
+ * `artifacts/api-server/src/lib/chatTimeouts.ts` `CHAT_FETCH_ABORT_MS`.
  */
 export const CHAT_STREAM_TIMEOUT_MS = 140_000;
+export const CHAT_FETCH_ABORT_MS = 310_000;
 
 function chatStreamTimeoutError() {
   const err = new Error("The companion took too long to reply. Please try again.");
@@ -97,7 +102,7 @@ async function request(path, options = {}) {
 async function* postAuthedSse(path, body) {
   let headers = await requireChatAuthHeaders();
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), CHAT_STREAM_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), CHAT_FETCH_ABORT_MS);
   try {
     const postOnce = (requestHeaders) =>
       fetch(apiUrl(path), {
@@ -119,7 +124,14 @@ async function* postAuthedSse(path, body) {
     yield* readSseJsonStream(res.body);
   } catch (err) {
     if (err?.name === "AbortError" || err?.code === "ABORT_ERR") {
-      throw chatStreamTimeoutError();
+      // The deadline timer is the only caller of controller.abort(). A stop,
+      // a chat switch, or leaving the page aborts the fetch without that signal.
+      if (controller.signal.aborted) {
+        throw chatStreamTimeoutError();
+      }
+      const cancel = err instanceof Error ? err : new Error("The reply was cancelled.");
+      cancel.code = "chat_user_cancel";
+      throw cancel;
     }
     throw err;
   } finally {
@@ -191,6 +203,7 @@ export const animaApi = {
     responseJsonSchema,
     maxTokens,
     stream = true,
+    sidecar = false,
   } = {}) {
     yield* postAuthedSse(
       "/openai/v1/chat/completions",
@@ -202,6 +215,7 @@ export const animaApi = {
         stream: stream !== false,
         ...(responseJsonSchema ? { responseJsonSchema } : {}),
         ...(typeof maxTokens === "number" ? { maxTokens } : {}),
+        ...(sidecar ? { sidecar: true } : {}),
       }),
     );
   },
@@ -258,6 +272,8 @@ export const animaApi = {
       persistenceOwner,
       metadata,
       region,
+      ownModelReply,
+      ownModelVersion,
     }) {
       // Resolve Clerk before arming the stream abort — a late OTP mint must
       // not consume the reply budget (same isolation as ChatSession create).
@@ -279,26 +295,26 @@ export const animaApi = {
           deep_mode: !!deepMode,
           persist,
           turn_id: turnId,
+          idempotency_key: turnId,
           persistence_owner: persistenceOwner,
           metadata,
           region,
+          // Written on this device by the own model (src/lib/ownModel/).
+          ...(typeof ownModelReply === "string"
+            ? { own_model_reply: ownModelReply, own_model_version: ownModelVersion }
+            : {}),
         }),
       );
     },
 
-    completeMessage: async (payload) => {
-      let content = "";
-      let done = null;
-      for await (const event of animaApi.chat.sendMessage(payload)) {
-        if (event.error) throw new Error(event.error);
-        if (event.content) content += event.content;
-        if (event.done) done = event;
-      }
-      return { content, ...done };
-    },
+    completeMessage: (payload) =>
+      streamChatReply(animaApi.chat.sendMessage(payload)),
 
     turnStatus: (turnId) =>
       request(`/chat/turns/${encodeURIComponent(turnId)}`).then((r) => r.json()),
+
+    liveTurn: (sessionId) =>
+      request(`/chat/sessions/${encodeURIComponent(sessionId)}/live-turn`).then((r) => r.json()),
 
     commitTurn: (turnId) =>
       request(`/chat/turns/${encodeURIComponent(turnId)}/commit`, {
@@ -318,6 +334,42 @@ export const animaApi = {
      */
     companionMemory: (characterId) =>
       request(`/chat/memories/${encodeURIComponent(characterId)}`).then((r) => r.json()),
+
+    /**
+     * Correct one episodic, semantic, or user-fact sentence.
+     * Does not call a model and does not change mood or persona.
+     */
+    updateCompanionMemory: (characterId, factId, text) =>
+      request(
+        `/chat/memories/${encodeURIComponent(characterId)}/facts/${encodeURIComponent(factId)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ text }),
+        },
+      ).then((r) => r.json()),
+
+    forgetCompanionMemory: (characterId, factId) =>
+      request(
+        `/chat/memories/${encodeURIComponent(characterId)}/facts/${encodeURIComponent(factId)}`,
+        { method: "DELETE" },
+      ).then((r) => r.json()),
+
+    /** Seed a new companion's backstory + first facts (idempotent on the server). */
+    seedCompanionMemory: (characterId, character) =>
+      request(`/chat/memories/${encodeURIComponent(characterId)}/seed`, {
+        method: "POST",
+        body: JSON.stringify({ character }),
+      }).then((r) => r.json()),
+
+    /**
+     * Accept / reject / edit a protected identity proposal. Accept and edit
+     * append a new identity core version on the server.
+     */
+    resolveIdentityProposal: (characterId, factId, action, text) =>
+      request(
+        `/chat/memories/${encodeURIComponent(characterId)}/proposals/${encodeURIComponent(factId)}`,
+        { method: "POST", body: JSON.stringify(text != null ? { action, text } : { action }) },
+      ).then((r) => r.json()),
   },
 
   /**
@@ -421,5 +473,123 @@ export const animaApi = {
       }).then((r) => r.json()),
     list: () => request("/protocol-upgrade").then((r) => r.json()),
     get: (id) => request(`/protocol-upgrade/${id}`).then((r) => r.json()),
+  },
+
+  /** Model Tutor — the steward teaches their own model (steward-only API). */
+  /** The own model, running on this device (src/lib/ownModel/). */
+  model: {
+    config: () => request("/model/config").then((r) => r.json()),
+    /** One 512 KiB piece of the weights (sent as base64), as an ArrayBuffer. */
+    chunk: (version, idx) =>
+      request(`/model/v/${encodeURIComponent(version)}/inference/${encodeURIComponent(idx)}`)
+        .then((r) => r.text())
+        .then((text) => base64ToBytes(text).buffer),
+    setConsent: (share) =>
+      request("/model/consent", {
+        method: "PUT",
+        body: JSON.stringify({ share_for_training: !!share }),
+      }).then((r) => r.json()),
+    autoLesson: ({ turnId, context }) =>
+      request("/model/auto-lesson", {
+        method: "POST",
+        body: JSON.stringify({ turn_id: turnId, context }),
+      }).then((r) => r.json()),
+  },
+  /** Companion web search: server-side provider, filtered + audited, rate-limited per day. */
+  search: {
+    status: (characterId) =>
+      request(`/search/status?character_id=${encodeURIComponent(characterId)}`).then((r) => r.json()),
+    run: ({ characterId, query, saveAsMemory = false }) =>
+      request("/search", {
+        method: "POST",
+        body: JSON.stringify({ character_id: characterId, query, save_as_memory: saveAsMemory }),
+      }).then((r) => r.json()),
+  },
+  /** Session-start companion state (tone, dreams, presence, greeting) for any surface. */
+  continuity: {
+    load: (characterId, { surface = "chat", name = "" } = {}) => {
+      const q = new URLSearchParams({ surface, tz_offset: String(new Date().getTimezoneOffset()) });
+      if (name) q.set("name", name);
+      return request(`/continuity/${encodeURIComponent(characterId)}?${q}`).then((r) => r.json());
+    },
+  },
+  /** Thumbs up/down + optional better version per reply (append-only on the server). */
+  safety: {
+    status: () => request("/safety/status").then((r) => r.json()),
+    /** Server checks the DOB and stores only an attestation (birth year + age + timestamp). */
+    attestAge: (dob) =>
+      request("/safety/age-attestation", { method: "POST", body: JSON.stringify({ dob, confirm: true }) }).then((r) => r.json()),
+    revokeAge: () => request("/safety/age-attestation/revoke", { method: "POST" }).then((r) => r.json()),
+  },
+
+  billing: {
+    status: () => request("/billing/status").then((r) => r.json()),
+    /** Server picks the price; we only send the offer id. */
+    checkout: (offer) =>
+      request("/billing/checkout", { method: "POST", body: JSON.stringify({ offer }) }).then((r) => r.json()),
+  },
+
+  ratings: {
+    rate: (payload) =>
+      request(`/ratings`, { method: "POST", body: JSON.stringify(payload) }).then((r) => r.json()),
+  },
+
+  tutor: {
+    status: () => request("/tutor/status").then((r) => r.json()),
+    setOwnModelChat: (enabled) =>
+      request("/tutor/preferences", {
+        method: "PUT",
+        body: JSON.stringify({ own_model_chat: !!enabled }),
+      }).then((r) => r.json()),
+    lessons: ({ limit = 100 } = {}) =>
+      request(`/tutor/lessons?limit=${encodeURIComponent(limit)}`).then((r) => r.json()),
+    teach: (lesson) =>
+      request("/tutor/lessons", {
+        method: "POST",
+        body: JSON.stringify(lesson),
+      }).then((r) => r.json()),
+    retry: (lessonId) =>
+      request(`/tutor/lessons/${encodeURIComponent(lessonId)}/retry`, { method: "POST" }).then((r) =>
+        r.json(),
+      ),
+    forget: (lessonId) =>
+      request(`/tutor/lessons/${encodeURIComponent(lessonId)}`, { method: "DELETE" }).then((r) =>
+        r.json(),
+      ),
+    draft: ({ context, rejected, note }) =>
+      request("/tutor/lessons/draft", {
+        method: "POST",
+        body: JSON.stringify({ context, rejected, note }),
+      }).then((r) => r.json()),
+    sync: () => request("/tutor/sync", { method: "POST" }).then((r) => r.json()),
+    learnNow: () => request("/tutor/learn-now", { method: "POST" }).then((r) => r.json()),
+    /** @param {{ answer_everyone?: boolean, always_learning?: boolean, learn_from_opted_in?: boolean }} patch */
+    setSettings: (patch) =>
+      request("/tutor/settings", { method: "PUT", body: JSON.stringify(patch) }).then((r) => r.json()),
+    startUpload: (payload) =>
+      request("/tutor/uploads", { method: "POST", body: JSON.stringify(payload) }).then((r) => r.json()),
+    uploadChunk: (version, kind, idx, bytes) =>
+      request(`/tutor/uploads/${version}/${kind}/${idx}`, {
+        method: "PUT",
+        headers: { "Content-Type": "text/plain" },
+        body: bytesToBase64(bytes),
+      }).then((r) => r.json()),
+    finishUpload: (version) =>
+      request(`/tutor/uploads/${version}/finish`, { method: "POST" }).then((r) => r.json()),
+    cancelUpload: (version) =>
+      request(`/tutor/uploads/${version}`, { method: "DELETE" }).then((r) => r.json()),
+    advice: () => request("/tutor/advice").then((r) => r.json()),
+    addAdvice: (text) =>
+      request("/tutor/advice", {
+        method: "POST",
+        body: JSON.stringify({ text }),
+      }).then((r) => r.json()),
+    removeAdvice: (id) =>
+      request(`/tutor/advice/${encodeURIComponent(id)}`, { method: "DELETE" }).then((r) =>
+        r.json(),
+      ),
+    /** @param {"sft" | "dpo"} format */
+    exportLessons: (format) =>
+      request(`/tutor/export?format=${format === "dpo" ? "dpo" : "sft"}`).then((r) => r.text()),
   },
 };

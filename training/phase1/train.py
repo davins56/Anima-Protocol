@@ -1,6 +1,8 @@
-# Anima Protocol — Phase 1: train a tiny GPT from scratch.
-# Runs on a free Colab T4 in ~30-60 min for a ~10M param model.
-# Expects tokens produced by data_pipeline.py in <repo>/data/anima_tokens
+# Anima Protocol — Phase 1: train a small GPT from scratch.
+# Default config is ~34M params with a 1024-token window; fits a free Colab
+# T4 in fp16 (~1-2 h). Expects tokens from data_pipeline.py in
+# <repo>/data/anima_tokens. Changing block_size or the tokenizer vocab means
+# retraining every phase — old checkpoints will not load.
 
 import json
 import math
@@ -22,16 +24,17 @@ ROOT = Path(__file__).resolve().parents[2]
 @dataclass
 class GPTConfig:
     vocab_size: int = 50257   # overridden from tokenizer meta
-    block_size: int = 256      # context length
-    n_layer: int = 6
-    n_head: int = 6
-    n_embd: int = 384         # 6 layers * 384 dim = ~10M params
+    block_size: int = 1024     # context length: room for history + a full reply
+    n_layer: int = 8
+    n_head: int = 8
+    n_embd: int = 512         # 8 layers * 512 dim = ~34M params with an 8k vocab
     dropout: float = 0.1
-    batch_size: int = 64
-    max_iters: int = 5000
-    lr: float = 3e-4
-    warmup_iters: int = 100
-    eval_interval: int = 500
+    batch_size: int = 16
+    grad_accum_steps: int = 4  # effective batch 64 x 1024 tokens
+    max_iters: int = 6000
+    lr: float = 5e-4
+    warmup_iters: int = 200
+    eval_interval: int = 250
     eval_iters: int = 20
 
 
@@ -49,11 +52,8 @@ class CausalSelfAttention(nn.Module):
         self.qkv = nn.Linear(cfg.n_embd, 3 * cfg.n_embd)
         self.proj = nn.Linear(cfg.n_embd, cfg.n_embd)
         self.n_head = cfg.n_head
+        self.attn_dropout = cfg.dropout
         self.drop = nn.Dropout(cfg.dropout)
-        self.register_buffer(
-            "mask", torch.tril(torch.ones(cfg.block_size, cfg.block_size))
-            .view(1, 1, cfg.block_size, cfg.block_size)
-        )
 
     def forward(self, x):
         B, T, C = x.shape
@@ -61,11 +61,13 @@ class CausalSelfAttention(nn.Module):
         q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
         k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
-        att = (q @ k.transpose(-2, -1)) / math.sqrt(k.size(-1))
-        att = att.masked_fill(self.mask[:, :, :T, :T] == 0, float("-inf"))
-        att = F.softmax(att, dim=-1)
-        att = self.drop(att)
-        y = (att @ v).transpose(1, 2).contiguous().view(B, T, C)
+        # Fused causal attention never materializes the T x T matrix, which is
+        # what lets a 1024-token window fit a T4.
+        y = F.scaled_dot_product_attention(
+            q, k, v, is_causal=True,
+            dropout_p=self.attn_dropout if self.training else 0.0,
+        )
+        y = y.transpose(1, 2).contiguous().view(B, T, C)
         return self.drop(self.proj(y))
 
 
@@ -206,6 +208,15 @@ def train(tok_dir=None, out_dir=None):
     print(f"parameters: {n_params/1e6:.1f}M")
 
     optim = torch.optim.AdamW(model.parameters(), lr=cfg.lr, betas=(0.9, 0.95), weight_decay=0.1)
+    use_amp = device == "cuda"
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+    os.makedirs(out_dir, exist_ok=True)
+    ckpt_path = os.path.join(out_dir, "ckpt.pt")
+    best_val = float("inf")
+
+    def save():
+        torch.save({"model": model.state_dict(), "cfg": cfg.__dict__}, ckpt_path)
+
     for it in range(cfg.max_iters):
         lr = cfg.lr * min((it + 1) / cfg.warmup_iters, 1.0) / max(1, (it + 1) / 3000)
         for g in optim.param_groups:
@@ -214,16 +225,27 @@ def train(tok_dir=None, out_dir=None):
             losses = estimate_loss(model, train_ids, val_ids, cfg, device)
             val_s = f"{losses['val']:.3f}" if "val" in losses else "n/a"
             print(f"step {it:5d} | train {losses['train']:.3f} | val {val_s}")
-        x, y = get_batch(train_ids, cfg, device)
-        _, loss = model(x, y)
+            # Keep the checkpoint with the best held-out loss. A small corpus
+            # overfits in a few thousand steps and the overfit model is the
+            # one that rambles; the best-val one generalizes.
+            score = losses.get("val", losses["train"])
+            if score < best_val:
+                best_val = score
+                save()
         optim.zero_grad(set_to_none=True)
-        loss.backward()
+        for _ in range(cfg.grad_accum_steps):
+            x, y = get_batch(train_ids, cfg, device)
+            with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=use_amp):
+                _, loss = model(x, y)
+            scaler.scale(loss / cfg.grad_accum_steps).backward()
+        scaler.unscale_(optim)
         nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        optim.step()
+        scaler.step(optim)
+        scaler.update()
 
-    os.makedirs(out_dir, exist_ok=True)
-    torch.save({"model": model.state_dict(), "cfg": cfg.__dict__}, os.path.join(out_dir, "ckpt.pt"))
-    print("saved to", out_dir)
+    if best_val == float("inf"):
+        save()
+    print(f"saved best checkpoint (val {best_val:.3f}) to", out_dir)
     return model
 
 

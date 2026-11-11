@@ -1,7 +1,7 @@
 import { Zap, Users, LogIn, Heart, Pencil, Sparkles, History } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { useAuth } from "@/lib/AuthContext";
 import CreateCompanionModal from "./CreateCompanionModal";
 import RecentChats from "./RecentChats";
@@ -34,7 +34,7 @@ export default function WelcomeScreen({
   useEffect(() => {
     let active = true;
 
-    base44.auth.me().then((me) => {
+    animaClient.auth.me().then((me) => {
       if (!active) return;
       if (me?.full_name) {
         const firstName = me.full_name.split(" ")[0];
@@ -45,7 +45,7 @@ export default function WelcomeScreen({
       }
     }).catch(() => {});
 
-    base44.entities.Anima.list("-created_date", 100).then((animas) => {
+    animaClient.entities.Anima.list("-created_date", 100).then((animas) => {
       if (!active) return;
       if (animas && animas.length > 0) {
         let userAnima = animas.find(a => a.assigned_user === userEmail);
@@ -60,7 +60,7 @@ export default function WelcomeScreen({
           const name = userAnima.name || "Anima";
           const personality = userAnima.personality || "";
           const tagline = userAnima.tagline || "";
-          base44.integrations.Core.InvokeLLM({
+          animaClient.integrations.Core.InvokeLLM({
             prompt: `You are ${name}, an AI companion. ${personality ? `Personality: ${personality}.` : ""} ${tagline ? `Your essence: ${tagline}.` : ""}
 Generate a SHORT, unique welcome message (2-3 sentences max) for ${userName || "the user"} who just opened the app. 
 Make it feel alive, personal, and slightly different every time — reference the time of day, a sense of mystery, or something poetic. Stay fully in character. No greetings like "Hello" — start with something unexpected and evocative.`,
@@ -97,7 +97,7 @@ Make it feel alive, personal, and slightly different every time — reference th
     }
     let active = true;
     setFetchedLoading(true);
-    base44.entities.ChatSession.list("-updated_date", RECENT_CHATS_LIMIT, {
+    animaClient.entities.ChatSession.list("-updated_date", RECENT_CHATS_LIMIT, {
       withMessages: false,
     })
       .then((list) => {
@@ -199,7 +199,7 @@ Make it feel alive, personal, and slightly different every time — reference th
       <div className="flex flex-col sm:flex-row gap-3 items-center justify-center mb-6">
         {!isAuthenticated ? (
           <button
-            onClick={() => base44.auth.redirectToLogin(window.location.href)}
+            onClick={() => animaClient.auth.redirectToLogin(window.location.href)}
             className="px-6 sm:px-8 py-2.5 sm:py-3 bg-cyan-500/10 border border-cyan-400/50 text-cyan-400 hover:bg-cyan-500/20 transition-all font-mono text-[10px] sm:text-xs tracking-[0.3em] uppercase hud-corner glow-border flex items-center gap-2"
           >
             <LogIn className="w-4 h-4" />

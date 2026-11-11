@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// The page handler persists changes through base44. Back it with a simple
+// The page handler persists changes through animaClient. Back it with a simple
 // in-memory store so the edit flow can be tested without a server or auth
 // token. update() acts as an upsert, mirroring the real client.
-vi.mock("@/api/base44Client", () => {
+vi.mock("@/api/animaClient", () => {
   const stores = new Map();
   let counter = 0;
   const store = (name) => {
@@ -23,7 +23,21 @@ vi.mock("@/api/base44Client", () => {
     },
     async update(id, data) {
       const existing = store(name).get(id) || { id };
-      const rec = { ...existing, ...data, id };
+      const next = { ...data };
+      if (next.keep_arrivals && Array.isArray(next.messages)) {
+        const ids = new Set(
+          next.messages
+            .map((message) => (message?.id ? String(message.id) : ""))
+            .filter(Boolean),
+        );
+        const extras = (Array.isArray(existing.messages) ? existing.messages : []).filter(
+          (message) => message?.id && !ids.has(String(message.id)),
+        );
+        if (extras.length > 0) next.messages = [...next.messages, ...extras];
+        next.last_message = String(next.messages[next.messages.length - 1]?.content || "").slice(0, 60);
+        delete next.keep_arrivals;
+      }
+      const rec = { ...existing, ...next, id };
       store(name).set(id, rec);
       return { ...rec };
     },
@@ -35,10 +49,10 @@ vi.mock("@/api/base44Client", () => {
     },
   });
   const entities = new Proxy({}, { get: (_, name) => entity(name) });
-  return { base44: { entities }, default: { entities } };
+  return { animaClient: { entities }, default: { entities } };
 });
 
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { editMessageFlow } from "@/lib/chatEditHandlers";
 
 // A short conversation reused across tests:
@@ -54,94 +68,168 @@ function sampleMessages() {
 }
 
 async function makeSession(messages = sampleMessages()) {
-  return base44.entities.ChatSession.create({ title: "Story", messages });
+  return animaClient.entities.ChatSession.create({ title: "Story", messages });
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("editMessageFlow (rewrite a single message in place)", () => {
+describe("editMessageFlow (rewrite his message and request a new reply)", () => {
   it("does nothing when there is no active session", async () => {
     const setActiveSession = vi.fn();
+    const sendMessage = vi.fn();
 
-    await editMessageFlow(2, "edited", { activeSession: null, setActiveSession });
-
-    expect(setActiveSession).not.toHaveBeenCalled();
-  });
-
-  it("replaces only the message at the given index and leaves the rest untouched", async () => {
-    const session = await makeSession();
-    const setActiveSession = vi.fn();
-
-    await editMessageFlow(2, "tell me a different story", {
-      activeSession: session,
+    const result = await editMessageFlow(2, "edited", {
+      activeSession: null,
       setActiveSession,
+      sendMessage,
     });
 
-    // The store reflects the edit at index 2 only; every other message and its
-    // role are unchanged.
-    const stored = await base44.entities.ChatSession.get(session.id);
-    expect(stored.messages).toEqual([
-      { role: "user", content: "hello" },
-      { role: "assistant", content: "hi there" },
-      { role: "user", content: "tell me a different story" },
-      { role: "assistant", content: "once upon a time" },
-      { role: "user", content: "go on" },
-    ]);
-    // The message count is preserved (no messages dropped or added).
+    expect(result.status).toBe("blocked");
+    expect(setActiveSession).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("requests a new reply instead of rewriting the stored text in place", async () => {
+    const session = await makeSession();
+    const setActiveSession = vi.fn();
+    const sendMessage = vi.fn().mockResolvedValue(undefined);
+    const confirm = vi.fn().mockResolvedValue(true);
+
+    const result = await editMessageFlow(2, "tell me a different story", {
+      confirm,
+      activeSession: session,
+      isLoading: false,
+      setActiveSession,
+      sendMessage,
+    });
+
+    expect(result.status).toBe("sent");
+    // Her reply and anything after his message are gone before the send.
+    const stored = await animaClient.entities.ChatSession.get(session.id);
+    expect(stored.messages.map((message) => message.content)).toEqual(["hello", "hi there"]);
+    expect(stored.messages.some((message) => message.content === "once upon a time")).toBe(false);
+    // Exactly one send, marked so mood/memory are not counted again, and the
+    // new wording is the only user line the send path should append.
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    const payload = sendMessage.mock.calls[0][0];
+    expect(payload).toMatchObject({
+      text: "tell me a different story",
+      replyAction: "edit",
+    });
+    expect(payload.history.map((message) => message.content)).toEqual(["hello", "hi there"]);
+    expect(typeof payload).not.toBe("string");
+  });
+
+  it("blocks an empty edit without sending or changing the thread", async () => {
+    const session = await makeSession();
+    const setActiveSession = vi.fn();
+    const sendMessage = vi.fn();
+    const confirm = vi.fn().mockResolvedValue(true);
+
+    const result = await editMessageFlow(2, "   ", {
+      confirm,
+      activeSession: session,
+      isLoading: false,
+      setActiveSession,
+      sendMessage,
+    });
+
+    expect(result.status).toBe("empty");
+    expect(confirm).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
+    const stored = await animaClient.entities.ChatSession.get(session.id);
     expect(stored.messages).toHaveLength(5);
   });
 
-  it("reflects the change in the page view", async () => {
+  it("does nothing when the rewrite is cancelled", async () => {
     const session = await makeSession();
     const setActiveSession = vi.fn();
+    const sendMessage = vi.fn();
+    const confirm = vi.fn().mockResolvedValue(false);
 
-    await editMessageFlow(3, "the end", {
+    const result = await editMessageFlow(2, "a different story", {
+      confirm,
       activeSession: session,
+      isLoading: false,
       setActiveSession,
+      sendMessage,
     });
 
-    expect(setActiveSession).toHaveBeenCalledTimes(1);
-    const updater = setActiveSession.mock.calls[0][0];
-    const next = updater({ ...session });
-    expect(next.messages.map((m) => m.content)).toEqual([
-      "hello",
-      "hi there",
-      "tell me a story",
-      "the end",
-      "go on",
-    ]);
+    expect(result.status).toBe("cancelled");
+    expect(sendMessage).not.toHaveBeenCalled();
+    const stored = await animaClient.entities.ChatSession.get(session.id);
+    expect(stored.messages).toHaveLength(5);
   });
 
-  it("does not mutate the original session's messages array", async () => {
-    const original = sampleMessages();
-    const session = await makeSession(original);
+  it("does not send while she is answering or a message is waiting", async () => {
+    const session = await makeSession();
     const setActiveSession = vi.fn();
+    const sendMessage = vi.fn();
+    const confirm = vi.fn().mockResolvedValue(true);
+
+    const result = await editMessageFlow(2, "a different story", {
+      confirm,
+      activeSession: session,
+      isLoading: () => true,
+      setActiveSession,
+      sendMessage,
+    });
+
+    expect(result.status).toBe("blocked");
+    expect(confirm).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("truncates from an older user message, not only the latest one", async () => {
+    const session = await makeSession();
+    const setActiveSession = vi.fn();
+    const sendMessage = vi.fn().mockResolvedValue(undefined);
 
     await editMessageFlow(0, "HELLO", {
+      confirm: vi.fn().mockResolvedValue(true),
       activeSession: session,
+      isLoading: false,
       setActiveSession,
+      sendMessage,
     });
 
-    // The array passed in as activeSession.messages is not mutated in place.
-    expect(session.messages[0].content).toBe("hello");
-    expect(original[0].content).toBe("hello");
+    const stored = await animaClient.entities.ChatSession.get(session.id);
+    expect(stored.messages).toEqual([]);
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "HELLO", replyAction: "edit", history: [] }),
+    );
   });
 
-  it("is a no-op edit when the index is out of range", async () => {
-    const session = await makeSession();
+  it("keeps a message that arrived after the snapshot when the send cannot start", async () => {
+    const session = await makeSession([
+      { id: "u1", role: "user", content: "hello" },
+      { id: "a1", role: "assistant", content: "hi there" },
+    ]);
     const setActiveSession = vi.fn();
-
-    await editMessageFlow(99, "nowhere", {
-      activeSession: session,
-      setActiveSession,
+    const sendMessage = vi.fn().mockImplementation(async () => {
+      const current = await animaClient.entities.ChatSession.get(session.id);
+      await animaClient.entities.ChatSession.update(session.id, {
+        messages: [
+          ...(current.messages || []),
+          { id: "fresh", role: "user", content: "from another device" },
+        ],
+      });
+      return { started: false };
     });
 
-    // Nothing in range to change, so all messages remain exactly as before.
-    const stored = await base44.entities.ChatSession.get(session.id);
-    expect(stored.messages.map((m) => m.content)).toEqual(
-      sampleMessages().map((m) => m.content)
-    );
+    const result = await editMessageFlow(0, "HELLO", {
+      confirm: vi.fn().mockResolvedValue(true),
+      activeSession: session,
+      isLoading: false,
+      setActiveSession,
+      sendMessage,
+    });
+
+    expect(result.status).toBe("not_started");
+    const stored = await animaClient.entities.ChatSession.get(session.id);
+    expect(stored.messages.map((message) => message.id)).toEqual(["u1", "a1", "fresh"]);
+    expect(stored.last_message).toBe("from another device");
   });
 });

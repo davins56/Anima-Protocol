@@ -147,9 +147,9 @@ class ErrorBoundary extends Component {
           await window.Clerk.signOut();
         }
 
-        // base44
-        if (window.base44?.auth?.logout) {
-          await window.base44.auth.logout();
+        // animaClient
+        if (window.animaClient?.auth?.logout) {
+          await window.animaClient.auth.logout();
         }
       }
 

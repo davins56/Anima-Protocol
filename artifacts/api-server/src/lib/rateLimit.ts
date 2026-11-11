@@ -17,11 +17,78 @@ export type RateLimitOptions = {
   windowMs?: number;
   /** Optional bucket prefix so different route groups don't share counters. */
   name?: string;
+  /** "ip" does not collapse a signed-in user into one bucket. Default prefers the user. */
+  identity?: "user" | "ip";
 };
+
+/**
+ * Drop a trailing port from IPv4:port or [IPv6]:port.
+ * A plain IPv6 address contains colons; stripping `:\d+$` would collapse
+ * `2001:db8::1234` into `2001:db8:` and merge unrelated clients.
+ */
+export function stripIpPort(ip: string): string {
+  const value = String(ip || "").trim();
+  if (!value) return "";
+  const bracketed = /^\[([^\]]+)\](?::\d+)?$/.exec(value);
+  if (bracketed) return bracketed[1] || value;
+  const v4WithPort = /^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/.exec(value);
+  if (v4WithPort) return v4WithPort[1] || value;
+  return value;
+}
+
+/**
+ * True on the Cloudflare Worker (`ANIMA_RUNTIME=worker` in wrangler.jsonc).
+ * Only there is `CF-Connecting-IP` written by Cloudflare's edge; on Node or
+ * Cloud Run a caller can send that header themselves.
+ */
+export function trustsCloudflareIpHeader(env: NodeJS.ProcessEnv = process.env): boolean {
+  return (env.ANIMA_RUNTIME || "").trim().toLowerCase() === "worker";
+}
+
+/**
+ * Best-effort client IP. On the Worker, `CF-Connecting-IP` wins; elsewhere it
+ * is ignored and Express `req.ip` (trust proxy) is used, then forwarding headers.
+ */
+export function clientIp(req: Request, env: NodeJS.ProcessEnv = process.env): string {
+  const cfIp = trustsCloudflareIpHeader(env)
+    ? String(req.headers?.["cf-connecting-ip"] || "").trim()
+    : "";
+  const forwarded = String(req.headers?.["x-forwarded-for"] || "")
+    .split(",")[0]
+    ?.trim();
+  const realIp = String(req.headers?.["x-real-ip"] || "").trim();
+  const ip = stripIpPort(
+    cfIp || req.ip || realIp || forwarded || req.socket?.remoteAddress || "unknown",
+  );
+  return ip || "unknown";
+}
 
 /** Test helper — clears in-memory counters between cases. */
 export function resetRateLimitStateForTests(): void {
   counts.clear();
+  lastSweepAt = 0;
+}
+
+/**
+ * Drop expired buckets so a long-lived isolate does not keep one entry per
+ * visitor forever. Runs at most once per sweep interval and only when the map
+ * has grown, so the hot path stays O(1).
+ */
+const SWEEP_INTERVAL_MS = 60_000;
+const SWEEP_MIN_ENTRIES = 1_000;
+let lastSweepAt = 0;
+
+export function sweepExpiredRateLimits(now = Date.now()): void {
+  if (counts.size < SWEEP_MIN_ENTRIES || now - lastSweepAt < SWEEP_INTERVAL_MS) return;
+  lastSweepAt = now;
+  for (const [key, entry] of counts) {
+    if (now > entry.resetAt) counts.delete(key);
+  }
+}
+
+/** Test helper — current number of tracked buckets. */
+export function rateLimitBucketCountForTests(): number {
+  return counts.size;
 }
 
 /**
@@ -29,32 +96,33 @@ export function resetRateLimitStateForTests(): void {
  * Prefer the signed-in Clerk user so serverless/proxy IP collapse cannot
  * lock every visitor behind one shared bucket.
  */
-export function rateLimitKey(req: Request, name = "default"): string {
-  try {
-    const { userId } = getAuth(req);
-    if (userId) return `${name}:user:${userId}`;
-  } catch {
-    // getAuth throws when Clerk middleware did not run; fall through to IP.
+export function rateLimitKey(
+  req: Request,
+  name = "default",
+  identity: "user" | "ip" = "user",
+): string {
+  if (identity !== "ip") {
+    try {
+      const { userId } = getAuth(req);
+      if (userId) return `${name}:user:${userId}`;
+    } catch {
+      // getAuth throws when Clerk middleware did not run; fall through to IP.
+    }
   }
 
-  const forwarded = String(req.headers["x-forwarded-for"] || "")
-    .split(",")[0]
-    ?.trim();
-  const realIp = String(req.headers["x-real-ip"] || "").trim();
-  const ip = (req.ip || realIp || forwarded || req.socket.remoteAddress || "unknown")
-    // Some proxies append :port — strip so the same client keeps one bucket.
-    .replace(/:\d+$/, "");
-  return `${name}:ip:${ip || "unknown"}`;
+  return `${name}:ip:${clientIp(req)}`;
 }
 
 export function createRateLimit(options: RateLimitOptions = {}) {
   const max = options.max ?? DEFAULT_MAX_REQUESTS;
   const windowMs = options.windowMs ?? DEFAULT_WINDOW_MS;
   const name = options.name ?? "default";
+  const identity = options.identity ?? "user";
 
   return function rateLimit(req: Request, res: Response, next: NextFunction) {
-    const key = rateLimitKey(req, name);
+    const key = rateLimitKey(req, name, identity);
     const now = Date.now();
+    sweepExpiredRateLimits(now);
     const entry = counts.get(key);
 
     if (!entry || now > entry.resetAt) {

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Zap, Heart, Activity, Database, Brain, AlertCircle, CheckCircle2, Loader } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const repairTypes = [
@@ -37,7 +37,7 @@ export default function AnimaSelfRepairPanel({ animaId, onRepairComplete }) {
     try {
       const repairType = selectedRepairs.size === 5 ? 'full' : Array.from(selectedRepairs)[0];
       
-      const response = await base44.functions.invoke('animaSelfRepair', {
+      const response = await animaClient.functions.invoke('animaSelfRepair', {
         anima_id: animaId,
         repair_type: repairType,
       });

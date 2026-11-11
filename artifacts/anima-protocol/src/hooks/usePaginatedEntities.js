@@ -1,6 +1,6 @@
 // @ts-check
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { useEffect, useState } from 'react';
 
 /**
@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react';
  * @param {string} entityName
  * @param {number} [pageSize]
  * @param {string} [sortField]
- * @param {import('@/api/base44Client').ListOptions} [listOpts]
+ * @param {import('@/api/animaClient').ListOptions} [listOpts]
  *   Extra list options merged into every page request (e.g.
  *   `{ withMessages: false }` for metadata-only ChatSession sidebars, or
  *   `{ filters, search }` to scope/search the whole list server-side). `offset`
@@ -48,7 +48,7 @@ export function usePaginatedEntities(
       // Fetch only this page's rows via a real SQL offset, plus one extra row to
       // tell whether another page exists — so paging deep into history never
       // loads every preceding row into memory.
-      const rows = await base44.entities[entityName].list(sortField, pageSize + 1, {
+      const rows = await animaClient.entities[entityName].list(sortField, pageSize + 1, {
         ...(listOpts || {}),
         offset: skip,
       });
@@ -67,7 +67,7 @@ export function usePaginatedEntities(
   const { filters: countFilters, search: countSearch } = listOpts || {};
   const { data: total } = useQuery({
     queryKey: [entityName, 'count', JSON.stringify({ f: countFilters, s: countSearch })],
-    queryFn: () => base44.entities[entityName].count({ filters: countFilters, search: countSearch }),
+    queryFn: () => animaClient.entities[entityName].count({ filters: countFilters, search: countSearch }),
     enabled: countTotal,
     staleTime: 60000, // 1m
   });

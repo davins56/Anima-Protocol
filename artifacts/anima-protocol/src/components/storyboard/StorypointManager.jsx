@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Plus, ChevronDown, Edit2, Trash2, GripVertical } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -19,7 +19,7 @@ export default function StorypointManager({ sessionId, isVisible = true }) {
       loadStorypoints();
 
       // Subscribe to updates
-      const unsubscribe = base44.entities.Storypoint.subscribe((event) => {
+      const unsubscribe = animaClient.entities.Storypoint.subscribe((event) => {
         if (event.data?.session_id === sessionId) {
           loadStorypoints();
         }
@@ -31,7 +31,7 @@ export default function StorypointManager({ sessionId, isVisible = true }) {
 
   const loadStorypoints = async () => {
     try {
-      const data = await base44.entities.Storypoint.filter(
+      const data = await animaClient.entities.Storypoint.filter(
         { session_id: sessionId },
         "order",
         100
@@ -50,7 +50,7 @@ export default function StorypointManager({ sessionId, isVisible = true }) {
         ? Math.max(...storypoints.map(s => s.order || 0)) + 1
         : 1;
 
-      await base44.entities.Storypoint.create({
+      await animaClient.entities.Storypoint.create({
         session_id: sessionId,
         title: "Untitled Story Point",
         summary: "",
@@ -70,7 +70,7 @@ export default function StorypointManager({ sessionId, isVisible = true }) {
 
   const handleUpdateStorypoint = async (id) => {
     try {
-      await base44.entities.Storypoint.update(id, {
+      await animaClient.entities.Storypoint.update(id, {
         title: editTitle,
         summary: editSummary,
       });
@@ -89,7 +89,7 @@ export default function StorypointManager({ sessionId, isVisible = true }) {
     });
     if (!ok) return;
     try {
-      await base44.entities.Storypoint.delete(id);
+      await animaClient.entities.Storypoint.delete(id);
       await loadStorypoints();
     } catch (err) {
       console.error("Error deleting storypoint:", err);
@@ -99,7 +99,7 @@ export default function StorypointManager({ sessionId, isVisible = true }) {
   const handleReorderStorypoints = async (storypoints) => {
     try {
       for (let i = 0; i < storypoints.length; i++) {
-        await base44.entities.Storypoint.update(storypoints[i].id, {
+        await animaClient.entities.Storypoint.update(storypoints[i].id, {
           order: i + 1,
         });
       }

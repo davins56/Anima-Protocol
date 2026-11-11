@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
+import { useLocalOnlyLlmChain } from '@/lib/localOnlyLlm';
 
 export const useLoreKeywordScanning = (sessionId, messages) => {
   const [loreLinks, setLoreLinks] = useState({});
   const [scanning, setScanning] = useState(false);
   const [lastScannedCount, setLastScannedCount] = useState(0);
+  const localOnly = useLocalOnlyLlmChain();
 
   // Auto-scan when messages arrive
   useEffect(() => {
+    if (localOnly) return;
     if (!sessionId || !messages || messages.length === 0) return;
 
     // Only scan if we have new messages
@@ -16,7 +19,7 @@ export const useLoreKeywordScanning = (sessionId, messages) => {
     const scanWithDelay = async () => {
       setScanning(true);
       try {
-        const result = await base44.functions.invoke('scanAndLinkLoreKeywords', {
+        const result = await animaClient.functions.invoke('scanAndLinkLoreKeywords', {
           session_id: sessionId,
           messages: messages.filter(m => m.role !== 'system' && m.character_name !== '__typing__'),
         });
@@ -41,7 +44,7 @@ export const useLoreKeywordScanning = (sessionId, messages) => {
     // Debounce scanning (wait 800ms after last message before scanning)
     const timer = setTimeout(scanWithDelay, 800);
     return () => clearTimeout(timer);
-  }, [sessionId, messages, lastScannedCount]);
+  }, [sessionId, messages, lastScannedCount, localOnly]);
 
   return { loreLinks, scanning };
 };

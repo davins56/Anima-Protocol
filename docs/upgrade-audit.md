@@ -24,7 +24,7 @@ This is a plan, not a rewrite. **P0-1 through P0-4 are implemented** in the foll
 | Constraint | Status |
 |------------|--------|
 | Self-hosted Anima LLM only for chat (Ollama/vLLM) | **Intent, not code.** Live prod uses the named Cloudflare Tunnel. Code + `wrangler.jsonc` still keep OpenRouter as the unbound-local fallback. |
-| No Fly.io GPU budget; home machine + Cloudflare Tunnel | **Live.** `/api/healthz/llm` reports `host=llm.anima-protocol.com`. `scripts/llm/public-v1/` is the matching runbook. `deploy/ollama-fly/` is optional always-on, not required. |
+| No Fly.io GPU budget; home machine + Cloudflare Tunnel | **Live.** `/api/healthz/llm` reports `host=llm.anima-protocol.com`. `scripts/llm/public-v1/` is the matching runbook. `deploy/ollama-fly/` has since been removed; `ANIMA_CHAT_BRAIN=cloudflare` (docs/chat-brain.md) needs no host. |
 | Stay on Cloudflare Workers + React | **Correct.** No Next.js-only blocker found. Incremental upgrades on Express + `worker.ts` + Vite. |
 | Steward collectibles (#374) and Sacred Space voice (#386) | **Shipped.** Do not re-open as product work. Remaining notes are integrity holes / ops, not “build the feature.” |
 
@@ -191,9 +191,9 @@ Affirmations / Hyperdrive / schema inspect (PR #303 era): **healthy on this snap
 
 ### P1-7 — Store export/import still on the 8s budget
 
-**What’s wrong:** Companion create got 20s (#371–373). `exportData` / `bulkImport` / `restoreData` still use `STORE_FETCH_TIMEOUT_MS` (8s) in `base44Client.js`. First authenticated store hit also runs `ensureSchemaOnce()` under that budget.
+**What’s wrong:** Companion create got 20s (#371–373). `exportData` / `bulkImport` / `restoreData` still use `STORE_FETCH_TIMEOUT_MS` (8s) in `animaClient.js`. First authenticated store hit also runs `ensureSchemaOnce()` under that budget.
 
-**Where:** `artifacts/anima-protocol/src/lib/storeTimeouts.js`; `artifacts/anima-protocol/src/api/base44Client.js`; `artifacts/api-server/src/routes/store.ts` (`ensureSchemaMiddleware`).
+**Where:** `artifacts/anima-protocol/src/lib/storeTimeouts.js`; `artifacts/anima-protocol/src/api/animaClient.js`; `artifacts/api-server/src/routes/store.ts` (`ensureSchemaMiddleware`).
 
 **Why it matters:** Large accounts fail backup/restore while creates succeed. Cold-start list can still abort.
 
@@ -246,7 +246,7 @@ Affirmations / Hyperdrive / schema inspect (PR #303 era): **healthy on this snap
 | ID | What’s wrong | Where | Approach | Effort |
 |----|--------------|-------|----------|--------|
 | P2-1 | `AnimaLLM` client unused by api-server; defaults to localhost + `OPENAI_API_KEY` | `lib/llm/src/client.ts` | Mark CLI-only or delete | S |
-| P2-2 | `llmEnsemble.ts` dead; still calls OpenAI chat | `artifacts/api-server/src/lib/llmEnsemble.ts` | Delete; `localEnsemble.ts` is the live multi-draft path | S |
+| P2-2 | `llmEnsemble.ts` dead; still calls OpenAI chat | `artifacts/api-server/src/lib/llmEnsemble.ts` | Deleted with its test; `localEnsemble.ts` is the live multi-draft path | S |
 | P2-3 | `useSeedCharacters.ts` calls nonexistent `/api/seed-characters` | `artifacts/anima-protocol/src/hooks/useSeedCharacters.ts` | Delete | S |
 | P2-4 | Root `pnpm lint` is `echo 'No lint errors'` | `package.json`, `.github/workflows/ci.yml` | Wire ESLint or drop the job | S |
 | P2-5 | CI does not run `@workspace/llm` tests | `.github/workflows/ci.yml` | Add `pnpm --filter @workspace/llm run test` | S |
@@ -274,7 +274,7 @@ Affirmations / Hyperdrive / schema inspect (PR #303 era): **healthy on this snap
 - **Do not** add a `secrets_store_secrets` row for a `secret_name` that does not exist yet — `wrangler deploy` fails and the Worker (the whole site) goes down.
 - **Do not** point `ANIMA_LOCAL_LLM_BASE_URL` at `api.openai.com` / OpenRouter / MiniMax. The client already flags those as `isCloudFlagship`.
 - **Do not** rewrite the app in Next.js / Vercel-only / Anthropic Agents. No blocker was found that only Next solves. Apex is already Workers + Assets + Express.
-- **Do not** fund or require Fly.io GPU for chat. Document the home + named tunnel path; keep `deploy/ollama-fly/` as an optional always-on CPU host if someone later wants it.
+- **Do not** fund or require Fly.io GPU for chat. Document the home + named tunnel path; `deploy/ollama-fly/` was removed in favour of the Cloudflare brain (docs/chat-brain.md).
 - **Do not** re-open steward collectibles (#374) or Sacred Space natural voice (#386) as greenfield features. Only fix remaining holes (client-side grants, VoiceCloneManager).
 - **Do not** create a dedicated Affirmations SQL table. Rows are `user_entities` (`entity_name: "Affirmation"`); schema inspect is already green.
 - **Do not** treat `lib/llm` `AnimaLLM` as the production chat client until it is wired through `llmFailover` (it is not).

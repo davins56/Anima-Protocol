@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { base44, uploadDataUrl } from "@/api/base44Client";
+import { animaClient, uploadDataUrl } from "@/api/animaClient";
 import {
   autoAssignCharacterPhoto,
   shouldAutoAssignCharacterPhoto,
@@ -24,6 +24,8 @@ import AvatarUploadField from "@/components/anima/AvatarUploadField";
 export default function CompanionGenerator() {
   const navigate = useNavigate();
   const [prompt, setPrompt] = useState("");
+  const [researchOnline, setResearchOnline] = useState(true);
+  const [canonVersion, setCanonVersion] = useState("");
   const [generating, setGenerating] = useState(false);
   const [companion, setCompanion] = useState(null);
   const [error, setError] = useState(null);
@@ -68,8 +70,10 @@ export default function CompanionGenerator() {
     setCompanion(null);
 
     try {
-      const result = await base44.functions.invoke("generateCompanionFromPrompt", {
+      const result = await animaClient.functions.invoke("generateCompanionFromPrompt", {
         prompt: prompt.trim(),
+        research_online: researchOnline,
+        canon_version: canonVersion.trim(),
       });
 
       if (result?.success && result.companion) {
@@ -108,7 +112,7 @@ export default function CompanionGenerator() {
         .filter(Boolean)
         .join(" ");
 
-      const result = await base44.integrations.Core.GenerateImage({
+      const result = await animaClient.integrations.Core.GenerateImage({
         prompt: imagePrompt,
       });
       if (!result?.url) {
@@ -161,6 +165,7 @@ export default function CompanionGenerator() {
         memory_depth: resonanceSettings.memory_depth,
         crossover_preference: resonanceSettings.crossover_preference,
         creation_method: "ai_prompt",
+        canon_research: companion.research || null,
         status: "online",
         is_default: false,
       });
@@ -234,7 +239,7 @@ export default function CompanionGenerator() {
             </h1>
           </div>
           <p className="text-primary/60 font-mono text-xs sm:text-sm tracking-wider">
-            Name a real character or describe an original. The AI researches them on the web and prefills their profile — edit anything before adding.
+            Name an established character or describe an original. Look up their portrayal online, then review and edit the profile before adding.
           </p>
         </div>
 
@@ -269,6 +274,18 @@ export default function CompanionGenerator() {
             </motion.div>
           )}
 
+          <label className="flex items-center gap-2 text-xs text-primary/70">
+            <input type="checkbox" checked={researchOnline} onChange={(e) => setResearchOnline(e.target.checked)} />
+            Research character portrayal online
+          </label>
+          <p className="text-[9px] text-primary/50">Sends your description and version to a search service. Turn off for private or original characters.</p>
+          <label className="block text-xs text-primary/70">
+            Version or adaptation (optional)
+            <input value={canonVersion} onChange={(e) => setCanonVersion(e.target.value)} maxLength={160}
+              placeholder="e.g. original novels, animated series, or a particular season"
+              className="block w-full mt-1 bg-black/40 border border-primary/30 p-2 text-primary" />
+          </label>
+
           {/* Tips */}
           <div className="p-3 border border-primary/15 bg-primary/5 rounded space-y-2">
             <p className="text-[9px] font-mono text-primary/60 tracking-widest uppercase">Pro Tips</p>
@@ -289,7 +306,7 @@ export default function CompanionGenerator() {
             {generating ? (
               <>
                 <Loader className="w-4 h-4 animate-spin" />
-                Crafting companion...
+                {researchOnline ? "Researching portrayal and crafting companion..." : "Crafting companion..."}
               </>
             ) : (
               <>
@@ -321,10 +338,25 @@ export default function CompanionGenerator() {
                       Review &amp; edit before adding — every field is yours to refine.
                     </p>
                   </div>
-                  {companion.is_real_character && (
+                  {companion.research?.status === "sources_found" && (
                     <span className="shrink-0 text-[8px] font-mono text-green-400/90 border border-green-400/40 bg-green-400/5 rounded px-2 py-1 tracking-widest uppercase">
-                      🔎 AI Researched
+                      🔎 Sources found
                     </span>
+                  )}
+                </div>
+
+                <div className="px-4 py-3 border-b border-primary/20 text-xs text-primary/70" role="status">
+                  {companion.research?.status === "sources_found" ? (
+                    <>
+                      <p>Research sources — review that these match your character and version. A source match does not guarantee every detail is canon.</p>
+                      <ul className="mt-2 space-y-1">
+                        {companion.research.sources.map((source) => (
+                          <li key={source.url}><a href={source.url} target="_blank" rel="noopener noreferrer" className="underline">{source.title}</a></li>
+                        ))}
+                      </ul>
+                    </>
+                  ) : (
+                    <p>{companion.research?.status === "skipped" ? "Online research off. Created from your description." : "Online research could not confirm this portrayal. This is an unverified draft; check the details before adding."}</p>
                   )}
                 </div>
 

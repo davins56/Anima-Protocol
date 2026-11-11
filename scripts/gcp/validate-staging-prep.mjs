@@ -45,8 +45,11 @@ if (!/^on:\s*\n\s*workflow_dispatch:/m.test(workflow)) {
 if (/^on:[\s\S]*?(push:|pull_request:)/m.test(workflow.split("jobs:")[0] ?? "")) {
   fail("GCP workflow must not run on push or pull_request");
 }
-if (!workflow.includes("google-github-actions/auth@v2")) {
-  fail("GCP workflow must use Workload Identity Federation (google-github-actions/auth)");
+const authMajor = workflow.match(/google-github-actions\/auth@v(\d+)/);
+if (!authMajor || Number(authMajor[1]) < 2) {
+  fail(
+    "GCP workflow must use Workload Identity Federation (google-github-actions/auth@v2 or later)",
+  );
 }
 if (/credentials_json|GCP_SA_KEY|service_account_key/i.test(workflow)) {
   fail("GCP workflow must not use a long-lived service account JSON key");

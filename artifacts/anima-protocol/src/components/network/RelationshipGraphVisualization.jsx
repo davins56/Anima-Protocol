@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { ChevronDown, ZoomIn, ZoomOut, Network } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -24,7 +24,7 @@ export default function RelationshipGraphVisualization({ sessionId, characters }
   const loadRelationshipData = async () => {
     setLoading(true);
     try {
-      const rels = await base44.asServiceRole.entities.CharacterRelationship.filter(
+      const rels = await animaClient.asServiceRole.entities.CharacterRelationship.filter(
         { session_id: sessionId },
         "-updated_date",
         200

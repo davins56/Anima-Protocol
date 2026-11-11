@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { Sparkles, Loader2, X } from "lucide-react";
 import { motion } from "framer-motion";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import {
   companionCreateErrorMessage,
   createCompanionRecord,
@@ -42,7 +42,7 @@ export default function CreateCompanionModal({ onComplete, userEmail, initialSte
       let resolvedEmail = userEmail;
       if (!resolvedEmail) {
         try {
-          const me = await base44.auth.me();
+          const me = await animaClient.auth.me();
           resolvedEmail = me?.email;
         } catch {
           /* ignore auth lookup failure */

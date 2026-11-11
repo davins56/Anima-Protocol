@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { ChevronLeft, Loader, Search } from "lucide-react";
 import { Link } from "react-router-dom";
 import MemoryTimeline from "@/components/character/MemoryTimeline";
@@ -25,7 +25,7 @@ export default function CharacterMemoryMap() {
 
   const loadCharacters = async () => {
     try {
-      const data = await base44.entities.Character.list("-created_date", 100);
+      const data = await animaClient.entities.Character.list("-created_date", 100);
       setCharacters(data || []);
       if (data?.length > 0) {
         setSelectedChar(data[0].id);
@@ -39,15 +39,15 @@ export default function CharacterMemoryMap() {
     setLoading(true);
     try {
       const [memData, relData] = await Promise.all([
-        base44.entities.CharacterMemory.filter({ character_id: selectedChar }, "-created_date", 100),
-        base44.entities.CharacterRelationship.filter({ character_id: selectedChar }, "-created_date", 100),
+        animaClient.entities.CharacterMemory.filter({ character_id: selectedChar }, "-created_date", 100),
+        animaClient.entities.CharacterRelationship.filter({ character_id: selectedChar }, "-created_date", 100),
       ]);
 
       setMemories(memData || []);
       setRelationships(relData || []);
 
       // Get current emotional state if available
-      const emotionalStates = await base44.entities.CharacterEmotionalState.filter(
+      const emotionalStates = await animaClient.entities.CharacterEmotionalState.filter(
         { character_id: selectedChar, is_current: true },
         "-created_date",
         1

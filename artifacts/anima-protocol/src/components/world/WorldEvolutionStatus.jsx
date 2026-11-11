@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Zap, TrendingUp, AlertCircle, Loader } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -18,7 +18,7 @@ export default function WorldEvolutionStatus({ sessionId }) {
 
   const trackEvolution = async () => {
     try {
-      const sessions = await base44.entities.ChatSession.list("-updated_date", 1);
+      const sessions = await animaClient.entities.ChatSession.list("-updated_date", 1);
       const session = sessions?.find(s => s.id === sessionId);
       
       if (!session) return;
@@ -32,7 +32,7 @@ export default function WorldEvolutionStatus({ sessionId }) {
       // Auto-trigger if threshold reached (5+ messages since evolution)
       if (msgSinceEvolution >= 5 && Math.random() < 0.3) {
         setLoading(true);
-        const result = await base44.functions.invoke("worldEvolutionOrchestrator", {
+        const result = await animaClient.functions.invoke("worldEvolutionOrchestrator", {
           session_id: sessionId,
           force: false,
         });

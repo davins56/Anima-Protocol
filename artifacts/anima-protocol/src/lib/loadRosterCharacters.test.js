@@ -31,8 +31,8 @@ const {
   whenBootstrapReady: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("@/api/base44Client", () => ({
-  base44: {
+vi.mock("@/api/animaClient", () => ({
+  animaClient: {
     entities: {
       Character: { list: characterList, filter: characterFilter },
       Anima: { list: animaList },
@@ -204,7 +204,7 @@ describe("loadRosterCharacters", () => {
 
     expect(result.usingBundledSeed).toBe(false);
     expect(result.characters.map((c) => c.name)).toEqual(
-      expect.arrayContaining(["Aelynd", "Korra"]),
+      expect.arrayContaining(["Aeland", "Korra"]),
     );
   });
 

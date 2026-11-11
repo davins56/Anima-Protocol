@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Upload, Loader, X } from "lucide-react";
 import { motion } from "framer-motion";
 import {
@@ -21,7 +21,7 @@ export default function PortraitUploader({ onUploadSuccess, currentUrl }) {
     try {
       const fileUrl = await uploadCharacterAvatar(
         file,
-        (payload) => base44.integrations.Core.UploadFile(payload),
+        (payload) => animaClient.integrations.Core.UploadFile(payload),
       );
       onUploadSuccess(fileUrl);
     } catch (err) {

@@ -7,10 +7,20 @@
  * again inflates prefill and delays first token.
  *
  * Solo turns send only scene extras the server does not have (lore, calendar,
- * injected memories, companion-mode / Lover Matrix, length, image tags).
+ * injected memories, companion-mode / Lover Matrix, length, image tags), plus
+ * a compact [VOICE FINGERPRINT] first so it survives the 2k cap. The server
+ * composePrompt carries the full fingerprint next to CHARACTER.
  */
 
 export const LEAN_SOLO_CLIENT_CONTEXT_MAX = 2000;
+
+/**
+ * Empty send ("continue story"). One short line, first person, user present.
+ * Kept out of the cached system prefix — it rides the user turn and this
+ * per-turn extra. Must match the server CONTINUE_USER_TURN string.
+ */
+export const CONTINUE_IN_FIRST_PERSON =
+  "I'm here with you. Go on in your own first person, then pause for me.";
 
 function trimBlock(value) {
   return String(value || "").trim();
@@ -57,6 +67,7 @@ function packLeanBlocks(leading, trailing, max) {
  * fat lore or behavior block cannot slice them off at the 2k cap.
  */
 export function buildLeanSoloClientContext({
+  voiceFingerprint = "",
   companionModeInstruction = "",
   behaviorInstructions = "",
   adultInstruction = "",
@@ -73,12 +84,10 @@ export function buildLeanSoloClientContext({
   isContinue = false,
   characterName = "",
 } = {}) {
-  const continueLine =
-    isContinue && characterName
-      ? `The user tapped Continue — keep the scene moving as ${characterName}. Take the next natural beat, then stop at a clear pause point so they can react.`
-      : "";
+  const continueLine = isContinue ? CONTINUE_IN_FIRST_PERSON : "";
   return packLeanBlocks(
     [
+      voiceFingerprint,
       companionModeInstruction,
       behaviorInstructions,
       adultInstruction,

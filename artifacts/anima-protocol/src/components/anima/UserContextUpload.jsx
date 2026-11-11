@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { BookOpen, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { toast } from 'sonner';
 
 import { useConfirm } from "@/lib/ConfirmDialog";
@@ -18,9 +18,9 @@ export default function UserContextPanel({ onContextUpdated }) {
 
   const loadContexts = async () => {
     try {
-      const user = await base44.auth.me();
+      const user = await animaClient.auth.me();
       if (user?.email) {
-        const docs = await base44.entities.UserContext.filter({
+        const docs = await animaClient.entities.UserContext.filter({
           user_email: user.email,
         }, '-created_date', 20);
         setContexts(docs || []);
@@ -35,7 +35,7 @@ export default function UserContextPanel({ onContextUpdated }) {
 
   const handleToggleActive = async (docId, isActive) => {
     try {
-      await base44.entities.UserContext.update(docId, { is_active: !isActive });
+      await animaClient.entities.UserContext.update(docId, { is_active: !isActive });
       await loadContexts();
       onContextUpdated?.();
     } catch (err) {
@@ -52,7 +52,7 @@ export default function UserContextPanel({ onContextUpdated }) {
     if (!ok) return;
     setDeleting(docId);
     try {
-      await base44.entities.UserContext.delete(docId);
+      await animaClient.entities.UserContext.delete(docId);
       setContexts(prev => prev.filter(c => c.id !== docId));
       toast.success('Document deleted');
       onContextUpdated?.();

@@ -2,6 +2,7 @@
 
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "./styles/anima-tokens.css";
 
 @layer base {
   /* Dark theme (default) */

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { useAuth } from "@/lib/AuthContext";
 import { isEchoLibrarySteward } from "@/lib/echoKeys/steward.js";
 import {
@@ -31,7 +31,7 @@ export default function useMemoryCrystalTypes() {
       return;
     }
     upgradedRef.current = true;
-    base44.auth
+    animaClient.auth
       .updateMe({
         settings: {
           ...(user?.settings || {}),

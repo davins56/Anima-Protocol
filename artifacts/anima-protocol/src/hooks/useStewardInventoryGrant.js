@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { useAuth } from "@/lib/AuthContext";
 import { loadRosterCharacters } from "@/lib/loadRosterCharacters";
 import {
@@ -61,7 +61,7 @@ export async function ensureStewardCatalogGrant({
   for (const target of targets) {
     const existing = listInventory
       ? await listInventory(target.id)
-      : (await base44.entities.Inventory.filter(
+      : (await animaClient.entities.Inventory.filter(
           { character_id: target.id },
           "-created_date",
           INVENTORY_LIST_LIMIT,
@@ -70,7 +70,7 @@ export async function ensureStewardCatalogGrant({
     for (const item of missing) {
       const payload = catalogItemToInventoryPayload(item, target.id);
       if (createItem) await createItem(payload);
-      else await base44.entities.Inventory.create(payload);
+      else await animaClient.entities.Inventory.create(payload);
       added += 1;
     }
   }
@@ -124,7 +124,7 @@ export default function useStewardInventoryGrant(characterId) {
       user,
       characterId,
       persistGrant: async (settings) => {
-        const updated = await base44.auth.updateMe({ settings });
+        const updated = await animaClient.auth.updateMe({ settings });
         if (setUser && updated) setUser(updated);
         return updated;
       },

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { X, MapPin, BookOpen, Calendar } from "lucide-react";
 
 const DEFAULT_MAP_LOCATIONS = [
@@ -72,9 +72,9 @@ export default function InteractiveLocationsMap({ sessionId }) {
 
     try {
       const [locationLore, entityLocations, allSessions] = await Promise.all([
-        base44.entities.WorldState.filter({ ...query, category: "location", is_active: true }, "-created_date", 100).catch(() => []),
-        base44.entities.Location.list("-created_date", 100).catch(() => []),
-        base44.entities.ChatSession.list("-created_date", 100).catch(() => [])
+        animaClient.entities.WorldState.filter({ ...query, category: "location", is_active: true }, "-created_date", 100).catch(() => []),
+        animaClient.entities.Location.list("-created_date", 100).catch(() => []),
+        animaClient.entities.ChatSession.list("-created_date", 100).catch(() => [])
       ]);
 
       setLoreEntries(locationLore || []);

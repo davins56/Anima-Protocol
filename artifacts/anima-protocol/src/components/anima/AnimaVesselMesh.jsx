@@ -4,6 +4,7 @@ import { MeshTransmissionMaterial, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import useFaceTexture from "@/hooks/useFaceTexture";
 import TesseractLattice from "@/components/battle/TesseractLattice";
+import VesselAura from "@/components/vessel/VesselAura";
 import { wPhaseScale } from "@/lib/tesseract4d";
 import { RENDERER_QUALITY } from "@/lib/rendererQuality";
 import {
@@ -518,9 +519,12 @@ export default function AnimaVesselMesh({
   breathing = true,
   layers,
   sequences,
+  /** Optional emotion vessel-shift (lib/vessel/emotionShift). Additive: omitted = previous behaviour. */
+  shift = null,
 }) {
   const root = useRef(null);
   const halo = useRef(null);
+  const haloT = useRef(0);
 
   const quality =
     qualityProp && typeof qualityProp === "object"
@@ -538,17 +542,18 @@ export default function AnimaVesselMesh({
     return vesselRenderPlan(applied, quality);
   }, [layers, sequences, model?.vessel_layers, model?.sequences, quality]);
 
-  const color = model?.color || "#67e8f9";
-  const accent = model?.accent || "#c4b5fd";
+  const color = shift?.color || model?.color || "#67e8f9";
+  const accent = model?.accent || shift?.accent || "#c4b5fd";
   const gold = model?.gold || "#fde68a";
+  const glow = shift ? shift.glow : 1;
   const faceMap = useFaceTexture(model?.texture_url);
   const resolvedGltf = gltfUrl || model?.gltf_url || model?.body_url || null;
   const dim = 0.55 + Math.max(0, Math.min(1, hpRatio)) * 0.45;
   const headSeg = hd ? 48 : 24;
   const bodySeg = hd ? 24 : 14;
-  const expr = Math.max(0, Math.min(1, Number(expression) || 0));
+  const expr = Math.max(0, Math.min(1, Number(shift ? shift.expression : expression) || 0));
 
-  useFrame((state) => {
+  useFrame((state, dt) => {
     const t = state.clock.elapsedTime;
     const phase = wPhaseScale({ xw: t * 0.42, yw: t * 0.26, zw: t * 0.17 });
     const wPulse = 1 + (phase - 0.85) * 0.07;
@@ -561,14 +566,16 @@ export default function AnimaVesselMesh({
       root.current.position.x = hit;
     }
     if (halo.current) {
-      halo.current.rotation.z = t * 0.48;
+      haloT.current += dt * 0.48 * (shift ? shift.haloSpin : 1);
+      halo.current.rotation.z = shift ? haloT.current : t * 0.48;
       halo.current.rotation.x = 1.05 + Math.sin(t * 1.1) * 0.05;
     }
   });
 
   return (
     <group ref={root}>
-      <pointLight color={color} intensity={hd ? 2.4 : 1.25} distance={hd ? 7 : 3.5} position={[0, 0.9, 0.4]} />
+      <pointLight color={color} intensity={(hd ? 2.4 : 1.25) * glow} distance={hd ? 7 : 3.5} position={[0, 0.9, 0.4]} />
+      {shift && <VesselAura shift={shift} budget={quality.name === "low" ? 24 : hd ? 96 : 48} />}
       <pointLight color={accent} intensity={hd ? 1.1 : 0.45} distance={4.5} position={[0.5, 1.3, 0.6]} />
       <pointLight color={gold} intensity={0.35} distance={3} position={[-0.4, 1.1, 0.3]} />
 

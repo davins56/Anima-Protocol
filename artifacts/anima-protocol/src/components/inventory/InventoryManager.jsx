@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Plus, X, Loader, Filter, TrendingUp } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import InventoryItemCard from "./InventoryItemCard";
@@ -33,7 +33,7 @@ export default function InventoryManager({ characterId, sessionId, onItemsChange
   const loadItems = async () => {
     setLoading(true);
     try {
-      const data = await base44.entities.Inventory.filter(
+      const data = await animaClient.entities.Inventory.filter(
         { character_id: characterId },
         "-created_date",
         INVENTORY_LIST_LIMIT
@@ -51,10 +51,10 @@ export default function InventoryManager({ characterId, sessionId, onItemsChange
     setFormLoading(true);
     try {
       if (editingItem) {
-        await base44.entities.Inventory.update(editingItem.id, formData);
+        await animaClient.entities.Inventory.update(editingItem.id, formData);
         setItems(prev => prev.map(i => i.id === editingItem.id ? { ...i, ...formData } : i));
       } else {
-        const newItem = await base44.entities.Inventory.create({
+        const newItem = await animaClient.entities.Inventory.create({
           ...formData,
           character_id: characterId,
           session_id: sessionId || null,
@@ -97,11 +97,11 @@ export default function InventoryManager({ characterId, sessionId, onItemsChange
       if (!item.equipped && item.slot && item.slot !== "none") {
         const sameSloItems = items.filter(i => i.slot === item.slot && i.equipped);
         await Promise.all(
-          sameSloItems.map(i => base44.entities.Inventory.update(i.id, { equipped: false }))
+          sameSloItems.map(i => animaClient.entities.Inventory.update(i.id, { equipped: false }))
         );
       }
 
-      await base44.entities.Inventory.update(itemId, { equipped: !item.equipped });
+      await animaClient.entities.Inventory.update(itemId, { equipped: !item.equipped });
       
       setItems(prev => prev.map(i => {
         if (i.id === itemId) return { ...i, equipped: !i.equipped };

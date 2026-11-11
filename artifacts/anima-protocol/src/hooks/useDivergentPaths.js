@@ -1,18 +1,21 @@
 import { useState, useEffect, useRef } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
+import { useLocalOnlyLlmChain } from '@/lib/localOnlyLlm';
 
 export const useDivergentPaths = (sessionId, characterId, characterName, messages) => {
   const [paths, setPaths] = useState([]);
   const [showPaths, setShowPaths] = useState(false);
   const [loading, setLoading] = useState(false);
   const messageCheckRef = useRef(0);
+  const localOnly = useLocalOnlyLlmChain();
 
   const generatePaths = async () => {
+    if (localOnly) return;
     if (!sessionId || !characterId || !messages || messages.length < 2) return;
 
     setLoading(true);
     try {
-      const result = await base44.functions.invoke('generateDivergentPaths', {
+      const result = await animaClient.functions.invoke('generateDivergentPaths', {
         session_id: sessionId,
         character_id: characterId,
         character_name: characterName,
@@ -32,7 +35,8 @@ export const useDivergentPaths = (sessionId, characterId, characterName, message
 
   // Auto-trigger path generation after major exchanges
   useEffect(() => {
-    if (!messages || messages.length < 2) return;
+    if (localOnly) return undefined;
+    if (!messages || messages.length < 2) return undefined;
 
     const currentCount = messages.length;
     
@@ -43,10 +47,12 @@ export const useDivergentPaths = (sessionId, characterId, characterName, message
       // Check if last message is from AI (major dialogue)
       const lastMsg = messages[messages.length - 1];
       if (lastMsg?.role === 'assistant' && lastMsg?.character_name !== '__typing__') {
-        setTimeout(() => generatePaths(), 500);
+        const timer = setTimeout(() => generatePaths(), 500);
+        return () => clearTimeout(timer);
       }
     }
-  }, [messages, sessionId, characterId]);
+    return undefined;
+  }, [messages, sessionId, characterId, localOnly]);
 
   const handleSelectPath = async (path) => {
     // Inject path selection as a narrative directive

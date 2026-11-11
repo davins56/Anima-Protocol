@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 
 export function useBackgroundQuestDetection(sessionId, messages, characterEmotions, onQuestsDetected) {
   const checkRef = useRef(0);
@@ -25,7 +25,7 @@ export function useBackgroundQuestDetection(sessionId, messages, characterEmotio
     const detectQuests = async () => {
       try {
         // Get narrative context analysis
-        const contextRes = await base44.functions.invoke("analyzeNarrativeContext", {
+        const contextRes = await animaClient.functions.invoke("analyzeNarrativeContext", {
           recent_messages: messages.slice(-8),
           session_context: "",
           character_emotions: characterEmotions,
@@ -34,7 +34,7 @@ export function useBackgroundQuestDetection(sessionId, messages, characterEmotio
         if (!contextRes?.data) return;
 
         // Detect quests from the narrative context
-        const questRes = await base44.functions.invoke("detectQuestsFromNarrative", {
+        const questRes = await animaClient.functions.invoke("detectQuestsFromNarrative", {
           session_id: sessionId,
           narrative_context: contextRes.data,
           recent_messages: messages.slice(-8).map((m) => ({

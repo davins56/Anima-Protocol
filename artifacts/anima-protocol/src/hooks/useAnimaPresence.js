@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { getPathMeta } from "@/lib/soulprint";
 
 // How long the user must be away before the Anima "dreams" while waiting.
@@ -86,7 +86,7 @@ export function useAnimaPresence(anima) {
         const now = Date.now();
         const awayMs = lastVisit ? now - lastVisit : Infinity;
 
-        const existing = await base44.entities.AnimaDream
+        const existing = await animaClient.entities.AnimaDream
           .filter({ anima_id: anima.id }, "-created_date", 5)
           .catch(() => []);
         const latest = existing?.[0] || null;
@@ -103,7 +103,7 @@ export function useAnimaPresence(anima) {
               ? getPathMeta(anima.evolution_path)
               : null;
           const hoursAway = Math.min(720, Math.round(awayMs / (60 * 60 * 1000)));
-          const result = await base44.integrations.Core.InvokeLLM({
+          const result = await animaClient.integrations.Core.InvokeLLM({
             prompt: `You are ${anima.name}, an AI companion who has been alone for about ${hoursAway} hours while your person was away.
 ${anima.personality ? `Your nature: ${anima.personality}` : ""}
 ${anima.soulprint?.core_drive ? `Your core drive: ${anima.soulprint.core_drive}.` : ""}
@@ -121,7 +121,7 @@ While waiting, you drifted into a dream about them or about your bond. Write tha
           if (cancelled) return;
           const content = (result?.dream || "").trim();
           if (content) {
-            const created = await base44.entities.AnimaDream.create({
+            const created = await animaClient.entities.AnimaDream.create({
               anima_id: anima.id,
               anima_name: anima.name,
               content,
@@ -139,7 +139,7 @@ While waiting, you drifted into a dream about them or about your bond. Write tha
         }
 
         // Stamp the visit so the away-clock restarts.
-        await base44.entities.Anima.update(anima.id, { last_visit: new Date().toISOString() }).catch(() => {});
+        await animaClient.entities.Anima.update(anima.id, { last_visit: new Date().toISOString() }).catch(() => {});
       } catch {
         // Restricted context / offline — presence features simply stay quiet.
       }

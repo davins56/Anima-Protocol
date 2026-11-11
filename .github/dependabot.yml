@@ -5,6 +5,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    # wrangler is pinned on purpose (scripts/cloudflare/workers-builds-deploy.md,
+    # test/wranglerConfig.test.ts). Bump it by hand after checking the deploy guard.
+    ignore:
+      - dependency-name: wrangler
     groups:
       npm-security:
         applies-to: security-updates

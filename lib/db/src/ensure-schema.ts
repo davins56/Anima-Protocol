@@ -19,15 +19,33 @@ export const REQUIRED_TABLES = [
   "chat_turns",
   "companion_memories",
   "memory_embeddings",
+  // Adult mode's server-enforced age gate writes here. It is owned by
+  // supabase/migrations/20261022250000_age_attestations.sql, which is applied
+  // by hand — so a database recovered with ensureSchema had no table, the
+  // attestation POST 503'd and the 18+ toggle could never stay on.
+  "age_attestations",
   "uploaded_images",
+  "pdf_documents",
+  "pdf_chunks",
+  "pdf_file_parts",
   // Companion state used on every /api/chat/messages turn. Missing these
   // previously 500'd the whole reply before the LLM was even called.
   "anima_evolution",
   "anima_relationships",
   "anima_narrative_arcs",
+  "resonance_memories",
 ] as const;
 
 export type RequiredTable = (typeof REQUIRED_TABLES)[number];
+
+/** Created on demand. A missing pair must not replay the rest of the schema. */
+const PDF_SCHEMA_TABLES = ["pdf_documents", "pdf_chunks", "pdf_file_parts"] as const satisfies readonly RequiredTable[];
+
+function isPdfSchemaTable(
+  table: string,
+): table is (typeof PDF_SCHEMA_TABLES)[number] {
+  return (PDF_SCHEMA_TABLES as readonly string[]).includes(table);
+}
 
 export type SchemaInspection = {
   ok: boolean;
@@ -167,7 +185,221 @@ export async function ensureSchema(
   return withTransientDbRetry(() => runEnsureSchema(getPool()));
 }
 
+async function ensurePdfSchema(
+  run: (sql: string, label: string) => Promise<void>,
+): Promise<void> {
+  // Companion / chat PDFs. Text is extracted into pdf_chunks for the prompt.
+  // Original bytes live in pdf_file_parts (512 KiB each) so a chip can open
+  // the file. search_vector is Postgres full-text (no extra model call).
+  await run(
+    `CREATE TABLE IF NOT EXISTS "pdf_documents" (
+      "id" text PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "scope" text NOT NULL,
+      "session_id" text,
+      "character_id" text,
+      "filename" text NOT NULL,
+      "byte_size" integer DEFAULT 0 NOT NULL,
+      "page_count" integer DEFAULT 0 NOT NULL,
+      "chunk_count" integer DEFAULT 0 NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "updated_at" timestamp DEFAULT now() NOT NULL
+    )`,
+    "table:pdf_documents",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "pdf_documents_user_session_idx"
+       ON "pdf_documents" USING btree ("user_id", "scope", "session_id")`,
+    "index:pdf_documents_user_session_idx",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "pdf_documents_user_character_idx"
+       ON "pdf_documents" USING btree ("user_id", "scope", "character_id")`,
+    "index:pdf_documents_user_character_idx",
+  );
+  await run(
+    `CREATE TABLE IF NOT EXISTS "pdf_chunks" (
+      "id" text PRIMARY KEY NOT NULL,
+      "document_id" text NOT NULL,
+      "user_id" text NOT NULL,
+      "chunk_index" integer NOT NULL,
+      "page_start" integer DEFAULT 1 NOT NULL,
+      "page_end" integer DEFAULT 1 NOT NULL,
+      "content" text NOT NULL,
+      "search_vector" tsvector NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL
+    )`,
+    "table:pdf_chunks",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "pdf_chunks_document_idx"
+       ON "pdf_chunks" USING btree ("user_id", "document_id", "chunk_index")`,
+    "index:pdf_chunks_document_idx",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "pdf_chunks_search_idx"
+       ON "pdf_chunks" USING gin ("search_vector")`,
+    "index:pdf_chunks_search_idx",
+  );
+  await run(
+    `DO $$ BEGIN
+       ALTER TABLE "pdf_chunks"
+         ADD CONSTRAINT "pdf_chunks_document_id_fk"
+         FOREIGN KEY ("document_id")
+         REFERENCES "pdf_documents"("id")
+         ON DELETE CASCADE;
+     EXCEPTION
+       WHEN duplicate_object THEN NULL;
+       WHEN undefined_table THEN NULL;
+     END $$`,
+    "fk:pdf_chunks_document_id",
+  );
+  await run(
+    `CREATE TABLE IF NOT EXISTS "pdf_file_parts" (
+      "document_id" text NOT NULL,
+      "user_id" text NOT NULL,
+      "part_index" integer NOT NULL,
+      "data" bytea NOT NULL,
+      CONSTRAINT "pdf_file_parts_pk" PRIMARY KEY ("document_id", "part_index")
+    )`,
+    "table:pdf_file_parts",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "pdf_file_parts_user_idx"
+       ON "pdf_file_parts" USING btree ("user_id", "document_id")`,
+    "index:pdf_file_parts_user_idx",
+  );
+  await run(
+    `DO $$ BEGIN
+       ALTER TABLE "pdf_file_parts"
+         ADD CONSTRAINT "pdf_file_parts_document_id_fk"
+         FOREIGN KEY ("document_id")
+         REFERENCES "pdf_documents"("id")
+         ON DELETE CASCADE;
+     EXCEPTION
+       WHEN duplicate_object THEN NULL;
+       WHEN undefined_table THEN NULL;
+     END $$`,
+    "fk:pdf_file_parts_document_id",
+  );
+}
+
+function tablesCreatedByRun(
+  before: SchemaInspection,
+  after: SchemaInspection,
+): RequiredTable[] {
+  const createdTables: RequiredTable[] = [];
+  for (const table of after.presentTables) {
+    if (before.missingTables.includes(table)) createdTables.push(table);
+  }
+  return createdTables;
+}
+
+/**
+ * Adult-mode age attestation (supabase/migrations/20261022250000_age_attestations.sql).
+ *
+ * Mirrored here because that file is applied by hand and `drizzle-kit push`
+ * skips protected tables on purpose, so nothing else creates it on a blank or
+ * restored database. Append-only, same columns, same latest-row-per-user view;
+ * the data minimisation the migration documents (birth year + age, never the
+ * full date of birth) is enforced by the caller, not the table.
+ *
+ * The immutability trigger is added only when its function already exists,
+ * because that function comes from earlier migrations.
+ */
+async function ensureAgeAttestationSchema(
+  run: (sql: string, label: string) => Promise<void>,
+): Promise<void> {
+  await run(
+    `CREATE TABLE IF NOT EXISTS "age_attestations" (
+      "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      "user_id" text NOT NULL,
+      "status" text NOT NULL CHECK ("status" IN ('attested', 'rejected', 'revoked')),
+      "method" text NOT NULL CHECK ("method" IN ('self_declared_dob', 'provider')),
+      "provider" text,
+      "provider_ref" text,
+      "birth_year" smallint CHECK ("birth_year" IS NULL OR "birth_year" BETWEEN 1900 AND 2100),
+      "age_years" smallint CHECK ("age_years" IS NULL OR "age_years" BETWEEN 0 AND 150),
+      "min_age" smallint NOT NULL DEFAULT 18,
+      "attested_at" timestamptz NOT NULL DEFAULT now()
+    )`,
+    "table:age_attestations",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "age_attestations_user_idx"
+       ON "age_attestations" USING btree ("user_id", "attested_at" DESC)`,
+    "index:age_attestations_user_idx",
+  );
+  await run(
+    `CREATE OR REPLACE VIEW "age_attestation_latest" AS
+       SELECT DISTINCT ON (user_id) *
+       FROM "age_attestations"
+       ORDER BY user_id, attested_at DESC, id DESC`,
+    "view:age_attestation_latest",
+  );
+  await run(
+    `DO $$ BEGIN
+       IF to_regproc('public.anima_forbid_mutation') IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM pg_trigger
+             WHERE tgname IN ('age_attestations_immutable', 'age_attestations_no_truncate')
+               AND tgrelid = 'age_attestations'::regclass
+          ) THEN
+         CREATE TRIGGER age_attestations_immutable
+           BEFORE UPDATE OR DELETE ON "age_attestations"
+           FOR EACH ROW EXECUTE FUNCTION public.anima_forbid_mutation();
+         CREATE TRIGGER age_attestations_no_truncate
+           BEFORE TRUNCATE ON "age_attestations"
+           FOR EACH STATEMENT EXECUTE FUNCTION public.anima_forbid_mutation();
+       END IF;
+     END $$`,
+    "trigger:age_attestations_immutable",
+  );
+}
+
+/**
+ * Existing databases already have `chat_turns` from the fast path, which
+ * skips CREATE TABLE. The lease columns still have to land or a retry join
+ * cannot see the owner across isolates. A complete schema is left untouched.
+ */
+async function ensureChatTurnLeaseColumns(db: Queryable): Promise<void> {
+  let names = new Set<string>();
+  try {
+    const found = await db.query(
+      `SELECT column_name
+         FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'chat_turns'
+          AND column_name IN ('id', 'lease_expires_at', 'waiting_until')`,
+    );
+    names = new Set(
+      (found.rows ?? []).map((row) =>
+        String((row as { column_name?: string }).column_name || ""),
+      ),
+    );
+  } catch {
+    return;
+  }
+  if (!names.has("id")) return;
+  const statements = [
+    !names.has("lease_expires_at")
+      ? `ALTER TABLE "chat_turns" ADD COLUMN IF NOT EXISTS "lease_expires_at" timestamp`
+      : "",
+    !names.has("waiting_until")
+      ? `ALTER TABLE "chat_turns" ADD COLUMN IF NOT EXISTS "waiting_until" timestamp`
+      : "",
+  ].filter(Boolean);
+  for (const statement of statements) {
+    try {
+      await db.query(statement);
+    } catch {
+      // The CREATE TABLE path below includes these columns on a fresh database.
+    }
+  }
+}
+
 async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
+  await ensureChatTurnLeaseColumns(db);
   // Inspect must not gate DDL when it throws (Hyperdrive/postgres.js array-bind
   // used to skip every CREATE IF NOT EXISTS). When inspect succeeds and every
   // required table is already present, skip the ~50 sequential CREATE
@@ -184,6 +416,29 @@ async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
     };
   }
   const errors: string[] = [];
+  const missingPdf = before.missingTables.filter(isPdfSchemaTable);
+  const missingOther = before.missingTables.filter((table) => !isPdfSchemaTable(table));
+  // Opening a chat must not replay every CREATE/INDEX because the PDF tables
+  // are the only ones missing (the first request after they were added).
+  if (missingOther.length === 0 && missingPdf.length > 0) {
+    const run = async (sql: string, label: string): Promise<void> => {
+      try {
+        await db.query(sql);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        errors.push(`${label}: ${message.slice(0, 240)}`);
+      }
+    };
+    await ensurePdfSchema(run);
+    const after = await inspectSchema(db);
+    return {
+      ok: after.ok,
+      missingBefore: before.missingTables,
+      createdTables: tablesCreatedByRun(before, after),
+      hasPgTrgm: before.hasPgTrgm,
+      errors,
+    };
+  }
   const createdTables: RequiredTable[] = [];
 
   const run = async (sql: string, label: string): Promise<void> => {
@@ -199,6 +454,10 @@ async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
     `CREATE EXTENSION IF NOT EXISTS pg_trgm`,
     "extension:pg_trgm",
   );
+
+  // Self-heal the adult-mode age gate before anything that depends on it.
+  // Harmless when the hand-run migration already created it (IF NOT EXISTS).
+  await ensureAgeAttestationSchema(run);
 
   await run(
     `CREATE TABLE IF NOT EXISTS "conversations" (
@@ -289,6 +548,10 @@ async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
     "index:uploaded_images_user_idx",
   );
 
+  if (missingPdf.length > 0) {
+    await ensurePdfSchema(run);
+  }
+
   await run(
     `CREATE TABLE IF NOT EXISTS "chat_sessions" (
       "id" text PRIMARY KEY NOT NULL,
@@ -334,6 +597,8 @@ async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
       "assistant_content" text DEFAULT '' NOT NULL,
       "metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
       "last_error" text,
+      "lease_expires_at" timestamp,
+      "waiting_until" timestamp,
       "created_at" timestamp DEFAULT now() NOT NULL,
       "updated_at" timestamp DEFAULT now() NOT NULL,
       "committed_at" timestamp
@@ -411,6 +676,29 @@ async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
   );
 
   await run(
+    `CREATE TABLE IF NOT EXISTS "resonance_memories" (
+      "id" text PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "anima_id" text NOT NULL,
+      "session_id" text,
+      "title" text DEFAULT '' NOT NULL,
+      "body" text DEFAULT '' NOT NULL,
+      "resonance_snapshot" jsonb DEFAULT '{"intimacy":30,"powerDynamic":0,"spiritualAttunement":20,"primalIntensity":15,"crossoverOpenness":50}'::jsonb NOT NULL,
+      "emotional_tone" text DEFAULT 'neutral' NOT NULL,
+      "tags" jsonb DEFAULT '[]'::jsonb NOT NULL,
+      "intensity" integer DEFAULT 60 NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "last_recalled_at" timestamp
+    )`,
+    "table:resonance_memories",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "resonance_mem_user_anima_idx"
+       ON "resonance_memories" USING btree ("user_id","anima_id","created_at")`,
+    "index:resonance_mem_user_anima_idx",
+  );
+
+  await run(
     `CREATE TABLE IF NOT EXISTS "anima_narrative_arcs" (
       "id" text PRIMARY KEY NOT NULL,
       "user_id" text NOT NULL,
@@ -425,6 +713,24 @@ async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
     `CREATE UNIQUE INDEX IF NOT EXISTS "anima_narrative_arcs_user_anima_uq"
        ON "anima_narrative_arcs" USING btree ("user_id","anima_id")`,
     "index:anima_narrative_arcs_user_anima_uq",
+  );
+
+  await run(
+    `CREATE TABLE IF NOT EXISTS "local_llm_deferred_jobs" (
+      "id" text PRIMARY KEY NOT NULL,
+      "user_id" text NOT NULL,
+      "kind" text NOT NULL,
+      "payload" jsonb DEFAULT '{}'::jsonb NOT NULL,
+      "attempts" integer DEFAULT 0 NOT NULL,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "updated_at" timestamp DEFAULT now() NOT NULL
+    )`,
+    "table:local_llm_deferred_jobs",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "local_llm_deferred_jobs_kind_idx"
+       ON "local_llm_deferred_jobs" USING btree ("kind","created_at")`,
+    "index:local_llm_deferred_jobs_kind_idx",
   );
 
   // Column default added after initial conversations table existed in prod.

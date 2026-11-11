@@ -8,8 +8,8 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const meMock = vi.hoisted(() => vi.fn());
 const updateMeMock = vi.hoisted(() => vi.fn());
 
-vi.mock("@/api/base44Client", () => ({
-  base44: {
+vi.mock("@/api/animaClient", () => ({
+  animaClient: {
     auth: {
       me: meMock,
       updateMe: updateMeMock,

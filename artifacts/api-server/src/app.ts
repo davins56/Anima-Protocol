@@ -12,7 +12,19 @@ import {
   chatCompletionHttpFailure,
   createChatCompletionWithFailover,
 } from "./lib/llmFailover";
-import { llmAiChatOpenTimeoutMs, openStreamAbort } from "./lib/chatTimeouts";
+import { combineAbortSignals, llmAiChatOpenTimeoutMs, openStreamAbort } from "./lib/chatTimeouts";
+import { tryBeginCompanionLlmTurn } from "./lib/sidecarLlm";
+import { acquireLocalLlmBackground } from "./lib/localLlmSlot";
+import { createRateLimit } from "./lib/rateLimit";
+import { isAllowedCorsOrigin } from "./lib/corsPolicy";
+import {
+  AI_CHAT_RATE_LIMIT_MAX,
+  AI_CHAT_RATE_LIMIT_WINDOW_MS,
+  aiChatHasSessionCredential,
+  aiChatProbeAuthorized,
+  aiChatRequiresCredential,
+} from "./lib/aiChatGate";
+import { getAuth } from "@clerk/express";
 import { visibleAssistantReply } from "./lib/visibleAssistantReply";
 import { syncCloudflareRuntimeEnvMiddleware } from "./lib/cloudflareEnv";
 import {
@@ -21,6 +33,7 @@ import {
 } from "./middlewares/clerkProxyMiddleware";
 import { safeClerkMiddleware } from "./middlewares/clerkAuthFallback";
 import clerkWebhookRouter from "./webhooks/clerk";
+import stripeWebhookRouter from "./webhooks/stripe";
 import healthRouter from "./routes/health";
 import router from "./routes";
 import { logger } from "./lib/logger";
@@ -39,9 +52,9 @@ const corsMiddleware = (
   next: NextFunction,
 ) => {
   const origin = req.headers.origin;
-  if (typeof origin === "string") {
+  res.setHeader("Vary", "Origin");
+  if (typeof origin === "string" && isAllowedCorsOrigin(origin, req.headers.host)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Credentials", "true");
   }
   res.setHeader(
@@ -92,6 +105,8 @@ app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 // Webhook route needs the raw request body for svix signature verification, so
 // it must be mounted before the JSON body parser.
 app.use("/api/webhooks", clerkWebhookRouter);
+// Stripe webhook: raw body for signature verification (see webhooks/stripe.ts).
+app.use("/api/webhooks", stripeWebhookRouter);
 
 app.use(corsMiddleware);
 // Limit raised to accommodate base64 image data URLs (e.g. avatar AI edit,
@@ -107,11 +122,72 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// Local / operator chat probe. Public like /api/healthz so a missing Clerk
-// key cannot hide an otherwise-working Ollama host. Same provider chain as
-// signed-in chat (`createChatCompletionWithFailover`). Do not require the
-// Workers AI binding — local Node has none.
+const aiChatRateLimit = createRateLimit({
+  name: "ai-chat",
+  max: AI_CHAT_RATE_LIMIT_MAX,
+  windowMs: AI_CHAT_RATE_LIMIT_WINDOW_MS,
+  identity: "ip",
+});
+
+// Operator chat probe. Same provider chain as signed-in chat. In production
+// a signed-in Clerk user or ANIMA_AI_CHAT_PROBE_KEY is required so the open
+// internet cannot queue the single Ollama slot. `/api/healthz/llm?probe=1`
+// stays public and does not use this route. Local Node stays open.
 app.post("/api/ai/chat", async (req: Request, res: Response) => {
+  if (aiChatRequiresCredential()) {
+    const probeOk = aiChatProbeAuthorized(req);
+    if (!probeOk) {
+      if (!aiChatHasSessionCredential(req)) {
+        res.status(401).json({ error: "Unauthorized", code: "ai_chat_unauthorized" });
+        return;
+      }
+      const userId = await new Promise<string | null>((resolve) => {
+        safeClerkMiddleware()(req, res, () => {
+          if (res.headersSent) {
+            resolve(null);
+            return;
+          }
+          try {
+            resolve(getAuth(req).userId ?? null);
+          } catch {
+            resolve(null);
+          }
+        });
+      });
+      if (res.headersSent) return;
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized", code: "ai_chat_unauthorized" });
+        return;
+      }
+    }
+  }
+
+  await new Promise<void>((resolve) => {
+    aiChatRateLimit(req, res, () => resolve());
+  });
+  if (res.headersSent) return;
+
+  const releaseSlot = tryBeginCompanionLlmTurn();
+  if (!releaseSlot) {
+    res.status(429).json({
+      error: "The companion is using the model. Try again in a moment.",
+      code: "llm_busy",
+    });
+    return;
+  }
+  const background = await acquireLocalLlmBackground("ai-chat", {
+    job: "ai-chat",
+    ledgerOnly: true,
+  });
+  if (!background) {
+    releaseSlot();
+    res.status(429).json({
+      error: "The companion is using the model. Try again in a moment.",
+      code: "llm_busy",
+    });
+    return;
+  }
+
   const { prompt, messages } = req.body ?? {};
   const chatMessages = Array.isArray(messages)
     ? messages
@@ -128,7 +204,7 @@ app.post("/api/ai/chat", async (req: Request, res: Response) => {
       tier: "standard",
       maxTokens: 256,
       messages: chatMessages,
-      signal: open.signal,
+      signal: combineAbortSignals(open.signal, background.signal),
     });
     const content = visibleAssistantReply(result.content);
     if (!String(content).trim()) {
@@ -149,6 +225,8 @@ app.post("/api/ai/chat", async (req: Request, res: Response) => {
     });
   } finally {
     open.cancel();
+    releaseSlot();
+    await background.release();
   }
 });
 

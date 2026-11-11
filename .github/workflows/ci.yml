@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -29,8 +31,14 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Secret scan (no live keys in tracked files)
+        run: pnpm run check:secrets
       - name: Lint
         run: pnpm lint
+      - name: Migration safety (no destructive SQL on memory tables)
+        run: pnpm run check:migrations
+        env:
+          MIGRATION_BASE_REF: ${{ github.event.pull_request.base.sha || 'HEAD~1' }}
 
   typecheck:
     runs-on: ubuntu-latest
@@ -95,6 +103,37 @@ jobs:
         run: pnpm --filter @workspace/db run push
       - name: API tests
         run: pnpm --filter @workspace/api-server run test
+
+  model-server-tests:
+    # server/ (own-model learning, the background trainer, the browser model
+    # format) and the training code it imports. The trainer tests use this
+    # throwaway Postgres.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: anima
+          POSTGRES_PASSWORD: anima_ci
+          POSTGRES_DB: anima_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U anima"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://anima:anima_ci@localhost:5432/anima_ci
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install CPU PyTorch and server deps
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.4,<2.15"
+          .venv/bin/pip install -r server/requirements-test.txt -r server/requirements-trainer.txt
+      - name: Model server tests
+        run: .venv/bin/python -m unittest discover -s server/tests -v
 
   build-api:
     runs-on: ubuntu-latest

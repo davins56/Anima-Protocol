@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { animaClient } from "@/api/animaClient";
 import { Link } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -45,7 +45,7 @@ export default function LoreArchivesDashboard() {
   const init = async () => {
     setLoading(true);
     try {
-      const me = await base44.auth.me();
+      const me = await animaClient.auth.me();
       setUser(me);
       const grantAll = isEchoLibrarySteward(me);
       const crystalTypes = normalizeMemoryCrystalTypes(me.settings?.memory_crystals, {
@@ -56,9 +56,9 @@ export default function LoreArchivesDashboard() {
         grantAll &&
         me.id &&
         !storedCrystalTypesAreFull(me.settings?.memory_crystals, MEMORY_CRYSTAL_TYPE_IDS.length) &&
-        typeof base44.auth.updateMe === "function"
+        typeof animaClient.auth.updateMe === "function"
       ) {
-        base44.auth.updateMe({
+        animaClient.auth.updateMe({
           settings: {
             ...(me.settings || {}),
             memory_crystals: crystalTypes,
@@ -69,20 +69,20 @@ export default function LoreArchivesDashboard() {
       }
 
       const [profiles, myCrystals, mySessions] = await Promise.all([
-        base44.entities.ResonanceProfile.filter({ user_email: me.email }),
-        base44.entities.MemoryCrystal.filter({ user_email: me.email }, "-created_date", 100),
+        animaClient.entities.ResonanceProfile.filter({ user_email: me.email }),
+        animaClient.entities.MemoryCrystal.filter({ user_email: me.email }, "-created_date", 100),
         // Metadata only — no message history is hydrated here.
-        base44.entities.ChatSession.list("-updated_date", 200, { withMessages: false }),
+        animaClient.entities.ChatSession.list("-updated_date", 200, { withMessages: false }),
       ]);
 
       // One lightweight GROUP BY for per-session message counts (XP/rank totals
       // + crystal eligibility) instead of pulling every session's full history.
-      const counts = await base44.messages.counts((mySessions || []).map((s) => s.id));
+      const counts = await animaClient.messages.counts((mySessions || []).map((s) => s.id));
 
       let p = profiles?.[0];
       if (!p) {
         // Bootstrap profile for new user
-        p = await base44.entities.ResonanceProfile.create({
+        p = await animaClient.entities.ResonanceProfile.create({
           user_email: me.email,
           resonance_rank: "Initiate",
           resonance_xp: 0,
@@ -97,7 +97,7 @@ export default function LoreArchivesDashboard() {
         const xp = computeXP(mySessions, myCrystals || [], counts);
         const rank = computeRank(xp);
         const unlocked = computeUnlocks(xp, p.unlocked_chapters || []);
-        p = await base44.entities.ResonanceProfile.update(p.id, {
+        p = await animaClient.entities.ResonanceProfile.update(p.id, {
           total_sessions: mySessions.length,
           total_messages: totalMsgs,
           resonance_xp: xp,
@@ -163,7 +163,7 @@ export default function LoreArchivesDashboard() {
     const inflight = crystalGenLocks.get(email);
     if (inflight) {
       await inflight.catch(() => {});
-      const updated = await base44.entities.MemoryCrystal.filter({ user_email: email }, "-created_date", 100);
+      const updated = await animaClient.entities.MemoryCrystal.filter({ user_email: email }, "-created_date", 100);
       setCrystals(updated || []);
       return;
     }
@@ -172,7 +172,7 @@ export default function LoreArchivesDashboard() {
       // Re-read crystals inside the critical section: another open (or device)
       // may have minted some since this screen first loaded, so we never create
       // a second crystal for a session that already has one.
-      const fresh = await base44.entities.MemoryCrystal.filter({ user_email: email }, "-created_date", 100);
+      const fresh = await animaClient.entities.MemoryCrystal.filter({ user_email: email }, "-created_date", 100);
       const haveCrystal = new Set((fresh || []).map(c => c.session_id));
       const eligible = candidates.filter(s => !haveCrystal.has(s.id));
 
@@ -183,13 +183,13 @@ export default function LoreArchivesDashboard() {
 
         // Fetch full message content only for the (at most 5) sessions actually
         // getting a crystal, instead of hydrating every session's history up front.
-        const msgs = await base44.messages.list(session.id);
+        const msgs = await animaClient.messages.list(session.id);
         const charName = msgs.find(m => m.role === "assistant")?.character_name || "Unknown";
         const excerpt = msgs.find(m => m.role === "assistant" && m.content?.length > 40)?.content?.slice(0, 120) || "";
         const milestoneType = msgs.length >= 50 ? "deep_resonance" : msgs.length >= 20 ? "revelation" : "first_contact";
         const xp = milestoneType === "deep_resonance" ? 150 : milestoneType === "revelation" ? 80 : 50;
 
-        await base44.entities.MemoryCrystal.create({
+        await animaClient.entities.MemoryCrystal.create({
           user_email: email,
           session_id: session.id,
           character_name: charName,
@@ -210,7 +210,7 @@ export default function LoreArchivesDashboard() {
 
       // Reload crystals
       if (created > 0) {
-        const updated = await base44.entities.MemoryCrystal.filter({ user_email: email }, "-created_date", 100);
+        const updated = await animaClient.entities.MemoryCrystal.filter({ user_email: email }, "-created_date", 100);
         setCrystals(updated || []);
       }
     })();

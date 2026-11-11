@@ -6,7 +6,7 @@ Build a **chat LLM you own** — public open weights + local inference — so co
 
 - Prefer a self-hosted Anima model (Ollama/vLLM) — no Gemini/Groq/ChatGPT flagship chain.
 - Optional OpenRouter path for Venice Uncensored (Cognitive Computations × Venice.ai) or free open-weight models when you have no GPU host.
-- Bootstrap on a laptop (Ollama + Qwen2.5 3B → `anima-chat`, or Dolphin → `anima-uncensored`).
+- Bootstrap on a laptop (Ollama + Qwen2.5 0.5B → `anima-chat`, or Dolphin → `anima-uncensored`).
 - Upgrade on GPU (fine-tune Ministral 3 8B → vLLM / GGUF).
 - Export conversation data in ShareGPT / ChatML / Alpaca JSONL.
 - Retrieve long-term memory before every generation.
@@ -91,7 +91,7 @@ export ANIMA_LOCAL_LLM_BASE_URL=http://localhost:8000/v1
 Run SFT/DPO only on a CUDA box (`pnpm llm:gpu-check` first). Full walkthrough:
 [`docs/llm-build.md`](../../docs/llm-build.md).
 
-Registry/CLI: [`lib/llm/README.md`](../../lib/llm/README.md) · Production host: [`deploy/ollama-fly/README.md`](../../deploy/ollama-fly/README.md).
+Registry/CLI: [`lib/llm/README.md`](../../lib/llm/README.md) · Production brain: [`docs/chat-brain.md`](../../docs/chat-brain.md) (Workers AI, no model host).
 
 ## Production (always-on, public HTTPS)
 
@@ -101,12 +101,10 @@ and will not invent `http://localhost:11434/v1`. Set
 `ANIMA_LOCAL_LLM_BASE_URL` to a public HTTPS `…/v1` URL, or bind
 `OPENROUTER_API_KEY` so chat can use OpenRouter.
 
-For a real self-hosted deployment, see
-[`deploy/ollama-fly/`](../../deploy/ollama-fly/README.md): one `fly deploy`
-gets you the same `anima-chat` model behind an authenticated, always-on
-public URL, ready to plug into the Worker as `ANIMA_LOCAL_LLM_BASE_URL`.
+Production does not need a model host: `ANIMA_CHAT_BRAIN=cloudflare` runs
+chat on Workers AI (see [`docs/chat-brain.md`](../../docs/chat-brain.md)).
 
-If Ollama is already running on a CPU host (no GPU / not Fly),
+If Ollama is already running on a CPU host and you want it instead,
 [`public-v1/`](./public-v1/README.md) puts a bearer proxy and a **named**
 Cloudflare Tunnel in front of it (`https://llm.anima-protocol.com/v1`).
 That is still Ollama `anima-chat`, not vLLM. Do not commit `proxy-token` or
@@ -116,7 +114,7 @@ That is still Ollama `anima-chat`, not vLLM. Do not commit `proxy-token` or
 
 | Role | Model | Notes |
 |------|-------|-------|
-| Bootstrap chat | `anima-chat` ← `qwen2.5:3b` | CPU / laptop, ~2 GB |
+| Bootstrap chat | `anima-chat` ← `qwen2.5:0.5b` | CPU / laptop, ~400 MB |
 | Primary GPU chat | Fine-tuned Ministral 3 8B | Q4_K_M / FP8 on ~8–16 GB |
 | Fine-tune base | `mistralai/Ministral-3-8B-Base-2512` | BF16 Base for LoRA/QLoRA |
 | Chat backend | `ANIMA_LOCAL_LLM_BASE_URL` | The only chat backend — no Gemini/Groq/Kimi/Grok/Gateway path exists |
@@ -129,7 +127,7 @@ documented families are:
 | Family | Ollama example | vLLM / Hugging Face example | OpenRouter free example |
 |--------|----------------|-----------------------------|-------------------------|
 | Llama | `llama3.1:8b` | `meta-llama/Llama-3.1-8B-Instruct` | `meta-llama/llama-3.3-70b-instruct:free` |
-| Qwen | `qwen2.5:3b` | `Qwen/Qwen2.5-7B-Instruct` | `qwen/qwen-2.5-7b-instruct:free` |
+| Qwen | `qwen2.5:0.5b` | `Qwen/Qwen2.5-7B-Instruct` | `qwen/qwen-2.5-7b-instruct:free` |
 | Mistral | `mistral:7b` | `mistralai/Ministral-3-8B-Instruct-2512` | `mistralai/mistral-small-3.2-24b-instruct:free` |
 | Gemma | `gemma3:4b` | `google/gemma-3-4b-it` | `google/gemma-3-12b-it:free` |
 | DeepSeek | `deepseek-r1:7b` | `deepseek-ai/DeepSeek-R1-Distill-Qwen-7B` | `deepseek/deepseek-r1:free` |

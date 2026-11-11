@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { base44 } from '@/api/base44Client';
+import { animaClient } from '@/api/animaClient';
 import { Music, Volume2, VolumeX, Pause, Play, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -26,7 +26,7 @@ export default function AmbientAudioPlayer({
 
     setLoading(true);
     try {
-      const result = await base44.functions.invoke('generateAmbientAudioContext', {
+      const result = await animaClient.functions.invoke('generateAmbientAudioContext', {
         location: location || 'unknown',
         emotional_state: Object.values(characterEmotions).reduce((avg, e) => avg + (e?.emotion || ''), '') || '',
         narrative_context: narrativeContext,

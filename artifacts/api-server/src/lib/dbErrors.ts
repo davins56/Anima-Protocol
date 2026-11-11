@@ -103,6 +103,38 @@ export function errorCauseBlob(err: unknown): string {
 }
 
 /**
+ * Postgres `withTimeout` (`DbOperationTimeoutError`, code `ETIMEOUT`).
+ * Worker wall-clock timeouts share `ETIMEOUT`; those stay
+ * `WorkerApiTimeoutError` and are not database failures.
+ */
+export function isDbOperationTimeoutError(err: unknown): boolean {
+  if (isWorkerApiTimeoutError(err)) return false;
+  const seen = new Set<unknown>();
+  let current: unknown = err;
+  for (let depth = 0; depth < 6 && current; depth += 1) {
+    if (seen.has(current)) break;
+    seen.add(current);
+    if (current && typeof current === "object") {
+      const obj = current as { name?: unknown; code?: unknown; message?: unknown };
+      if (obj.name === "DbOperationTimeoutError") return true;
+      const code = typeof obj.code === "string" ? obj.code : "";
+      const message = typeof obj.message === "string" ? obj.message : "";
+      if (
+        code === "ETIMEOUT" &&
+        /database operation aborted due to timeout/i.test(message)
+      ) {
+        return true;
+      }
+    }
+    current =
+      current && typeof current === "object" && "cause" in current
+        ? (current as { cause?: unknown }).cause
+        : undefined;
+  }
+  return false;
+}
+
+/**
  * Worker 20s wall (`WorkerApiTimeoutError`), not a Postgres/Hyperdrive failure.
  * Same `code` (`ETIMEOUT`) as `DbOperationTimeoutError` — distinguish by name
  * or the complete Worker message (a whole line), not an unbounded substring
