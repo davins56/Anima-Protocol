@@ -20,8 +20,10 @@ router.use(["/tts", "/voices"], (req, res, next) => {
   next();
 });
 
-const DEFAULT_VOICE_ID =
-  process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
+// Read per request: on the Worker, secrets are mirrored into process.env at
+// request time, after this module has loaded.
+const FALLBACK_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
+const defaultVoiceId = () => process.env.ELEVENLABS_VOICE_ID || FALLBACK_VOICE_ID;
 
 // Per-emotion expressiveness modifiers applied on top of intensity.
 const EMOTION_TUNE: Record<string, { stability: number; style: number }> = {
@@ -101,7 +103,7 @@ router.post("/tts", async (req, res) => {
   const clean = text.slice(0, 2500);
   try {
     const r = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voice_id || DEFAULT_VOICE_ID}`,
+      `https://api.elevenlabs.io/v1/text-to-speech/${voice_id || defaultVoiceId()}`,
       {
         method: "POST",
         headers: {

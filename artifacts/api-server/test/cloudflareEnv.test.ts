@@ -93,6 +93,17 @@ describe("mirrorCloudflareBindings", () => {
     expect(target.ANIMA_MINIMAX_MODEL).toBe("MiniMax-M2.7");
   });
 
+  it("mirrors a non-enumerable ElevenLabs classic Worker secret for /api/tts", () => {
+    const env: Record<string, unknown> = { NODE_ENV: "production" };
+    Object.defineProperty(env, "ELEVENLABS_API_KEY", {
+      value: "eleven-classic-secret",
+      enumerable: false,
+    });
+    const target: Record<string, string | undefined> = {};
+    mirrorCloudflareBindings(env, target);
+    expect(target.ELEVENLABS_API_KEY).toBe("eleven-classic-secret");
+  });
+
   it("includes every name from the production secret list", () => {
     const listed = readFileSync(
       path.join(repoRoot, "scripts/cloudflare/production-secret-names.txt"),
