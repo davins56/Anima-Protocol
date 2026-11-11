@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronLeft, Zap, BookText, Check, Loader, BookOpen, Sparkles, Palette } from "lucide-react";
+import { ChevronLeft, Zap, BookText, Check, Loader, BookOpen, Sparkles, Palette, ScrollText } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { animaClient } from "@/api/animaClient";
 import MoodIndicator from "@/components/chat/MoodIndicator";
@@ -12,7 +12,7 @@ import {
   llmDisplayTitle,
 } from "@/lib/llmProviderLabel";
 
-export default function ChatHeader({ session, characters, mood, moodIntensity, characterEmotions, onToggleDeepMode, onAvatarClick, llmProvider, llmBrand }) {
+export default function ChatHeader({ session, characters, mood, moodIntensity, characterEmotions, onToggleDeepMode, onToggleStoryMode, storyModeOn, onAvatarClick, llmProvider, llmBrand }) {
   const navigate = useNavigate();
   const [summarizing, setSummarizing] = useState(false);
   const [summarized, setSummarized] = useState(false);
@@ -221,6 +221,29 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
         >
           <Sparkles className="w-2.5 h-2.5" />
           <span className="hidden sm:inline">Deep</span>
+        </button>
+      )}
+
+      {/* Story mode toggle — the Narrator adds a scene update every few exchanges */}
+      {onToggleStoryMode && (
+        <button
+          type="button"
+          onClick={onToggleStoryMode}
+          title={
+            storyModeOn
+              ? "Story mode ON — a narrator moves the scene on every few messages"
+              : "Story mode OFF — no narrator scene updates"
+          }
+          aria-pressed={!!storyModeOn}
+          data-testid="story-mode-toggle"
+          className={`flex items-center gap-1 px-2 py-1 border font-mono text-[8px] sm:text-[9px] tracking-widest uppercase transition-all ${
+            storyModeOn
+              ? "border-primary/60 text-primary bg-primary/10"
+              : "border-primary/20 text-primary/30 hover:text-primary/70 hover:border-primary/40"
+          }`}
+        >
+          <ScrollText className="w-2.5 h-2.5" />
+          <span className="hidden sm:inline">Story</span>
         </button>
       )}
 
