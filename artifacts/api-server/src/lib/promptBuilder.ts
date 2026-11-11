@@ -65,10 +65,7 @@ import {
   formatVoiceAnchors,
   buildCrossoverAwareness,
 } from "./voiceAnchors";
-import {
-  promptHasRegionalWorldKnowledge,
-  upsertRegionalWorldKnowledge,
-} from "./regionalWorldKnowledge";
+import { promptHasRegionalWorldKnowledge } from "./regionalWorldKnowledge";
 import {
   modePolicyPrompt,
   resolveChatModePolicy,
@@ -2603,7 +2600,7 @@ export function firsthandKnowledgeNote(parts: Array<string | null | undefined>):
   return `${FIRSTHAND_NOTE_LABEL}: ${body}`;
 }
 
-/** Below the latest user message (rank 90) so a tight group prefill drops this first. */
+/** Below the latest user message so a tight group prefill drops this first. */
 const IDENTITY_CONCEAL_GROUP_RANK = 75;
 
 /**
@@ -2704,10 +2701,7 @@ ${sceneExcerpt}
   );
   const scenePiece = sceneSplit.scene;
   const firsthandLore = firsthandKnowledgeNote([sceneSplit.lore]);
-  let corePrompt = CORE_BEHAVIOR;
-  if (worldKnowledgeBlock) {
-    corePrompt = upsertRegionalWorldKnowledge(corePrompt, worldKnowledgeBlock);
-  }
+  const corePrompt = CORE_BEHAVIOR;
   const worldKnowledgeAlreadyInCore = promptHasRegionalWorldKnowledge(corePrompt);
   const modePolicy =
     providedModePolicy ||
@@ -2892,10 +2886,8 @@ ${sceneExcerpt}
       ? `${repositoryBlock.slice(0, 5_999)}…`
       : repositoryBlock;
 
-  // Assemble in one authoritative pipeline. Ranks let the prefill cap drop
-  // the scene excerpt before persona, mood, and memory. Safety stays reserved.
-  // PDF is inserted after that base, only in leftover room, and before the
-  // loyalty guardrail.
+  // Keep the character-specific prefix before any per-turn blocks so Ollama
+  // can reuse its KV cache. The dynamic region snapshot must stay out of core.
   const maxChars = options?.maxChars ?? COMPANION_SYSTEM_PROMPT_MAX_CHARS;
   const photoLine = String(photoNote || "").trim();
   const latestUserText = content
@@ -2906,14 +2898,19 @@ ${sceneExcerpt}
   const base = fitCompanionSystemPrompt(
     [
       { rank: 100, text: corePrompt },
+      { rank: 100, text: charDef ? `CHARACTER:\n${charDef}` : "" },
+      // The character, voice, and identity blocks are stable across turns.
+      { rank: 100, text: voiceBlock },
+      { rank: 100, text: voiceFingerprintBlock },
+      { rank: 100, text: crossoverBlock },
+      { rank: 100, text: operatorModelBlock },
+      {
+        rank: mode === "group" ? IDENTITY_CONCEAL_GROUP_RANK : 100,
+        text: identityRuleFor(mainChar ? [mainChar] : characters),
+      },
       { rank: 0, text: scenePiece },
       { rank: 8, text: firsthandLore },
       { rank: 10, text: repositorySection },
-      { rank: 92, text: charDef ? `CHARACTER:\n${charDef}` : "" },
-      // Above CHARACTER (92) so a long character sheet trims first and the
-      // fingerprint's trailing anti-generic rule survives.
-      { rank: 93, text: voiceFingerprintBlock },
-      { rank: 20, text: operatorModelBlock },
       { rank: 78, text: worldKnowledgeAlreadyInCore ? "" : worldKnowledgeBlock },
       { rank: 86, text: resonanceBlock },
       { rank: 88, text: selfStateBlock },
@@ -2928,18 +2925,12 @@ ${sceneExcerpt}
       { rank: 60, text: uncensoredToneBlock },
       { rank: 110, text: careSafetyBlock },
       { rank: 40, text: intimacyBlock },
-      { rank: 30, text: voiceBlock },
-      { rank: 35, text: crossoverBlock },
       { rank: 70, text: historyBlock ? `CONVERSATION CONTEXT:\n${historyBlock}` : "" },
       { rank: 60, text: groupInstruction },
       { rank: 110, text: TURN_TAKING },
       { rank: 110, text: REPLY_FORMAT_GUIDANCE },
       { rank: 80, text: dialogueNoteFor(params) },
       { rank: 110, text: LANGUAGE_QUALITY },
-      {
-        rank: mode === "group" ? IDENTITY_CONCEAL_GROUP_RANK : 110,
-        text: identityRuleFor(mainChar ? [mainChar] : characters),
-      },
       {
         rank: 90,
         text: omitConversationHistory

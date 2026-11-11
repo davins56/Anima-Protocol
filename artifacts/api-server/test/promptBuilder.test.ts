@@ -17,6 +17,7 @@ import {
   LLM_CHAT_HISTORY_MAX_MESSAGES,
   clientSceneExcerpt,
   isDuplicativeClientPrompt,
+  messagesForLocalOllama,
   MEMORY_BACKGROUND_LINE,
   MEMORY_RECALL_LINE,
   memoryBackgroundLine,
@@ -1081,6 +1082,53 @@ describe("composeCompanionChatMessages", () => {
     expect(prompt).not.toContain("CONVERSATION CONTEXT:");
     expect(prompt).not.toContain("LATEST USER MESSAGE:");
     expect(prompt).not.toContain("I miss the garden");
+  });
+
+  it("keeps a byte-identical system prefix across turns for KV-cache reuse", () => {
+    // Ollama only re-reads the prompt from the first differing byte. The
+    // system prompt stays stable while the clock, mood, and turn-scored
+    // memories move into the folded user turn.
+    const turn = (content: string, clock: string, factText: string) =>
+      messagesForLocalOllama(
+        composeCompanionChatMessages({
+          characters: [character],
+          activeCharacter: character,
+          memories: [
+            {
+              characterId: "char-1",
+              summary: "Long bond.",
+              facts: [
+                { type: "emotional", text: factText, created_at: new Date().toISOString() },
+              ],
+              emotionalState: { intimacy: 60 },
+              resonanceNotes: "Warm.",
+            },
+          ],
+          recentMessages: [],
+          mode: "solo",
+          content,
+          companionAffect: initCompanionAffect(null),
+          worldKnowledge: `REAL-WORLD REGION KNOWLEDGE (test):\n<<<USER_REGION>>>\nLocal time: ${clock}\n<<<END_USER_REGION>>>`,
+        }),
+      );
+
+    const a = turn("Take me back there.", "9:01 PM", "User loves rain");
+    const b = turn("What do you see?", "9:02 PM", "User fears the dark");
+    const systemA = a.find((message) => message.role === "system")?.content || "";
+    const systemB = b.find((message) => message.role === "system")?.content || "";
+    const userA = a.at(-1)?.content || "";
+    const userB = b.at(-1)?.content || "";
+
+    expect(systemA).toBe(systemB);
+    expect(systemA).toContain("I live in my own world");
+    expect(systemA).toContain("CHARACTER IDENTITY LOCK");
+    expect(systemA).toContain("Personality: Warm");
+    expect(systemA).toContain("VOICE FINGERPRINT");
+    expect(systemA).toContain("HIGHEST-PRIORITY RULE");
+    expect(systemA).not.toContain("Local time: 9:01 PM");
+    expect(userA).toContain("Local time: 9:01 PM");
+    expect(userB).toContain("Local time: 9:02 PM");
+    expect(userA).not.toBe(userB);
   });
 });
 

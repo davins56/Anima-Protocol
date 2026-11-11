@@ -558,10 +558,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             if method == "HEAD":
                 return
+            # read1, not read: on a chunked body `read(8192)` blocks until 8 KB
+            # or EOF, so native `/api/chat` NDJSON (~120 B/token) reached the
+            # Worker only after ~70 tokens — or all at once at the end of a
+            # short reply. read1 forwards whatever the upstream has flushed.
             while True:
-                # read() waits for the full 8192 bytes (or EOF), so a live
-                # generate arrives in ~60-token bursts. read1 returns the
-                # bytes already buffered, one NDJSON line at a time.
                 chunk = resp.read1(8192)
                 if not chunk:
                     break
