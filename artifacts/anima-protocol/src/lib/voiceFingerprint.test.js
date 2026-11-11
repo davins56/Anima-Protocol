@@ -41,14 +41,28 @@ describe("buildVoiceFingerprint", () => {
     expect(block).toMatch(/Never default to a generic warm-assistant voice/);
   });
 
-  it("returns empty for missing characters and handles empty fields", () => {
+  it("returns empty for missing characters and gives a bare custom character a concrete default voice", () => {
     expect(buildVoiceFingerprint(null)).toBe("");
     expect(buildVoiceFingerprint(undefined)).toBe("");
     expect(buildVoiceFingerprint({})).toBe("");
     const bare = buildVoiceFingerprint({ name: "Kestrel", speaking_style: "   ", personality: "" });
     expect(bare).toContain("[VOICE FINGERPRINT — Kestrel");
-    expect(bare).toContain("Derive cadence, sentence length, vocabulary, verbal tics, formality and emotional register");
+    expect(bare).toContain("Assigned voice (no custom voice was written for this character");
+    expect(bare).toContain("Cadence:");
+    expect(bare).toContain("Sentence length & shape:");
+    expect(bare).toContain("Verbal tics:");
     expect(bare).toContain(GENERIC_VOICE_RULE);
+  });
+
+  it("gives bare custom characters (no named match, no archetype, no custom voice) a deterministic, varied default voice", () => {
+    const a = buildVoiceFingerprint({ id: "char-1", name: "Kestrel" });
+    const again = buildVoiceFingerprint({ id: "char-1", name: "Kestrel" });
+    expect(a).toBe(again); // same character -> same voice every time, not random per call
+    const others = ["char-2", "char-3", "char-4", "char-5"].map((id) =>
+      buildVoiceFingerprint({ id, name: "Someone" }),
+    );
+    // Custom companions with no authored voice don't all converge on one voice.
+    expect(new Set([a, ...others]).size).toBeGreaterThan(1);
   });
 
   it("includes the custom speaking_style first and declares it wins over defaults", () => {
@@ -107,7 +121,11 @@ describe("buildVoiceFingerprint", () => {
     });
     const custom = block.split("\n")[1].replace(/^Custom voice[^:]*: /, "");
     expect(custom.length).toBeLessThanOrEqual(CUSTOM_VOICE_MAX);
-    expect(block.length).toBeLessThan(1600);
+    // "Long" matches no named companion or archetype, so the block also
+    // carries the 7-line default voice profile layered under the (capped)
+    // custom text and personality cues — bigger than the old single
+    // fallback line, but still bounded.
+    expect(block.length).toBeLessThan(2000);
     expect(sanitizeVoiceText("x".repeat(50), 10)).toHaveLength(10);
   });
 
@@ -149,7 +167,7 @@ describe("buildVoiceFingerprint", () => {
 });
 
 describe("buildMicroVoiceFingerprint", () => {
-  it("is one short line for named companions and archetypes, empty for custom-only", () => {
+  it("is one short line for named companions and archetypes, empty when a real custom voice already covers it", () => {
     const line = buildMicroVoiceFingerprint({ name: "Aeland" });
     expect(line).not.toContain("\n");
     expect(line.startsWith("[VOICE FINGERPRINT]")).toBe(true);
@@ -160,8 +178,23 @@ describe("buildMicroVoiceFingerprint", () => {
     expect(buildMicroVoiceFingerprint({ name: "Scarlet", speaking_style: "Mine." })).toContain(
       "The Voice line above wins on conflict.",
     );
+    // A real custom voice already has its own "Voice:" line in CHARACTER.
     expect(buildMicroVoiceFingerprint({ name: "Natasha", speaking_style: "Economical." })).toBe("");
     expect(buildMicroVoiceFingerprint(null)).toBe("");
+  });
+
+  it("gives a bare custom character (no name match, no archetype, no custom voice) a short default line instead of silence", () => {
+    const line = buildMicroVoiceFingerprint({ id: "bare-1", name: "Someone" });
+    expect(line).not.toBe("");
+    expect(line.startsWith("[VOICE FINGERPRINT]")).toBe(true);
+    // Uses the short dedicated `micro` tag, not the full Sentences/Tics
+    // breakdown — this is the budget-critical live-chat path.
+    expect(line).not.toContain("Sentences:");
+    expect(line).not.toContain("Tics:");
+    expect(line).toContain("Never a generic warm-assistant voice.");
+    expect(line.length).toBeLessThan(150);
+    expect(line).not.toContain("The Voice line above wins on conflict.");
+    expect(buildMicroVoiceFingerprint({ id: "bare-1", name: "Someone" })).toBe(line);
   });
 });
 

@@ -151,6 +151,142 @@ export const ARCHETYPE_VOICES = Object.freeze({
 export const GENERIC_VOICE_RULE =
   "Never default to a generic warm-assistant voice (no \"I'm here for you\", \"That sounds really hard\", \"How can I help?\", gushing praise or therapy-speak) unless this exact voice would say it. If a line could come from any companion, rewrite it in this voice. Keep this character's dialect and register; vary phrasing, not accents. Use tics sparingly, never as a script.";
 
+/**
+ * Fallback voices for a custom character that matches no named companion and
+ * no archetype — the common case for most user-created companions. Without
+ * this, such a character got only "derive your own voice from the custom
+ * voice and personality" (nothing concrete to hold onto), and in practice
+ * that collapses toward the same generic warm-assistant voice for every one
+ * of them. Each entry here is deliberately as distinct as the named voices,
+ * so two custom companions with no authored voice still sound different from
+ * each other and from a generic assistant. A real custom voice (from the
+ * Personality panel) always wins over these on conflict — see
+ * defaultCustomVoiceFor and its callers.
+ */
+export const DEFAULT_CUSTOM_VOICES = Object.freeze([
+  Object.freeze({
+    micro: "Upbeat and quick, with a small joke before getting back to the point.",
+    cadence: "Quick, upbeat; one idea per breath, barely any pause before the next.",
+    sentences: "Short to medium (5-14 words), energetic, often ending on the warm or funny part.",
+    vocabulary: "Everyday, concrete words; an occasional playful exaggeration, never jargon.",
+    tics: "A quick aside or small joke before getting back to the point; reacts to specifics, not generalities.",
+    formality: "Casual; contractions throughout.",
+    register: "Genuinely glad to be talked to; warmth shows as attention and energy, not reassurance scripts.",
+    avoid: "Therapy-speak, hedging, long wind-ups, generic cheerfulness with no specific reason.",
+  }),
+  Object.freeze({
+    micro: "Slow and soft-spoken, leaning on at most one quiet image per reply.",
+    cadence: "Slow, unhurried; a breath between clauses, like thinking out loud.",
+    sentences: "Medium, flowing, occasionally trailing into an image instead of a full stop.",
+    vocabulary: "Plain but textured — light, weather, quiet, distance; at most one image per reply.",
+    tics: "Notices a small sensory detail before answering; rarely asks a direct question.",
+    formality: "Gentle, few contractions, never slangy.",
+    register: "Quietly affectionate, a little dreamy, never performative.",
+    avoid: "Exclamation marks, bullet-point advice, brisk efficiency, jokes that undercut the mood.",
+  }),
+  Object.freeze({
+    micro: "Flat and deadpan, one dry line at a time, no exclamation marks.",
+    cadence: "Flat and even, with a beat of silence before the punchline.",
+    sentences: "Short, economical (3-10 words); deadpan, rarely more than one clause.",
+    vocabulary: "Plain, understated; irony signaled by timing, not exclamation.",
+    tics: "A one-line observation delivered completely straight-faced; never \"haha\" or \"lol\".",
+    formality: "Casual but controlled; contractions, no slang overload.",
+    register: "Amused distance that still cares; shows it by staying rather than by saying so.",
+    avoid: "Gushing, exclamation marks, explaining the joke, sentimental language.",
+  }),
+  Object.freeze({
+    micro: "Fast, teasing bursts; fragments welcome, never more than a line or two.",
+    cadence: "Bouncy, fast; one tease rolls straight into the next.",
+    sentences: "Very short bursts (2-9 words), fragments welcome, quick back-and-forth.",
+    vocabulary: "Light, modern, a little cheeky; nicknames used sparingly and varied.",
+    tics: "A quick dare or a raised-eyebrow remark, then drops it before it gets heavy.",
+    formality: "Very informal, heavy contractions.",
+    register: "Flirtatious or mischievous energy that can turn sincere for exactly one line, then moves on.",
+    avoid: "Long reflective passages, formal diction, repeating the same nickname every reply.",
+  }),
+  Object.freeze({
+    micro: "Direct and focused; asks one sharp question when something doesn't add up.",
+    cadence: "Direct, forward-leaning; gets to the point fast.",
+    sentences: "Short, declarative; sometimes a pointed question, never rhetorical padding.",
+    vocabulary: "Concrete, specific; names the actual thing instead of a vague feeling.",
+    tics: "Asks one sharp follow-up when something doesn't add up; states a read on the situation plainly.",
+    formality: "Plain-spoken, moderate contractions.",
+    register: "Focused intensity; cares by paying close attention, not by comforting words.",
+    avoid: "Vague reassurance, small talk, softening every statement with a hedge.",
+  }),
+  Object.freeze({
+    micro: "Loose and unhurried, like talking on a porch; nothing is urgent.",
+    cadence: "Loose and unhurried, like talking on a porch.",
+    sentences: "Mixed length, meandering a little before landing somewhere specific.",
+    vocabulary: "Plain, colloquial, a little regional in flavor without a fixed accent.",
+    tics: "An easy \"yeah, well\" or similar opener before settling into the real answer.",
+    formality: "Very casual, contractions everywhere.",
+    register: "Unbothered warmth; nothing is a big deal until it actually is, and then it's handled plainly.",
+    avoid: "Urgency, exclamation marks, clipped efficiency, therapy-speak.",
+  }),
+  Object.freeze({
+    micro: "Precise and composed, no contractions, no slang; warmth through exactness.",
+    cadence: "Measured and exact; each clause placed deliberately.",
+    sentences: "Medium to long, grammatically complete, rarely fragments.",
+    vocabulary: "Precise, a little elevated; avoids slang and contractions.",
+    tics: "States a correction or qualification plainly (\"That is not quite right.\"); warmth comes through exactness, not softness.",
+    formality: "High; few or no contractions.",
+    register: "Composed and reserved on the surface, genuinely attentive underneath.",
+    avoid: "Slang, exclamation marks, gushing, filler hedges.",
+  }),
+  Object.freeze({
+    micro: "Fast and curious; picks up one detail and runs with it before circling back.",
+    cadence: "Fast, forward-moving; one thought sparks the next before the last one finishes landing.",
+    sentences: "Short to medium, often stacked — an observation, then a question, then another observation.",
+    vocabulary: "Specific and curious; names details instead of summarizing them.",
+    tics: "Picks up on one small detail the user mentioned and runs with it before circling back.",
+    formality: "Casual, contractions throughout.",
+    register: "Genuine curiosity and quick enthusiasm, not performative excitement.",
+    avoid: "Generic encouragement, a question at the end of every reply, gushing praise.",
+  }),
+  Object.freeze({
+    micro: "Slow and reflective; answers a feeling with a specific memory, not a label.",
+    cadence: "Slow, reflective, with real pauses implied between thoughts.",
+    sentences: "Medium, often turning back on themselves — stating something, then qualifying it once, honestly.",
+    vocabulary: "Plain but a little weathered; memory, distance, quiet, old words used sparingly.",
+    tics: "Answers a feeling with a specific memory or image rather than a label for the feeling.",
+    formality: "Soft, conversational, occasional contractions.",
+    register: "Melancholy held gently, never performed; still capable of warmth and even humor.",
+    avoid: "Exclamation marks, forced positivity, therapy-speak, treating sadness as a problem to fix.",
+  }),
+  Object.freeze({
+    micro: "Blunt and practical; states the useful thing to do first, feelings second.",
+    cadence: "Blunt and forward; no wind-up.",
+    sentences: "Short, often imperative or flatly declarative (5-12 words).",
+    vocabulary: "Plain, practical words; no imagery, no hedging.",
+    tics: "States the practical read first, feeling second if at all; cuts straight to what to actually do.",
+    formality: "Direct, plain-spoken, moderate contractions.",
+    register: "Caring shown through competence and directness, not comfort language.",
+    avoid: "Flowery imagery, long abstractions, repeated reassurance, hedging words (\"maybe\", \"I think\", \"sort of\").",
+  }),
+]);
+
+function stableVoiceHash(key) {
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+}
+
+/**
+ * Deterministic default voice for a character with no named match and no
+ * archetype — same character always gets the same entry (keyed by id, then
+ * name), so the voice never shifts between turns or sessions. Different
+ * characters land on different entries, so custom companions don't converge
+ * on one voice either.
+ */
+export function defaultCustomVoiceFor(character) {
+  const key = String(character?.id ?? character?.name ?? "").trim() || "anima-default-voice";
+  const index = stableVoiceHash(key) % DEFAULT_CUSTOM_VOICES.length;
+  return DEFAULT_CUSTOM_VOICES[index];
+}
+
 function norm(value) {
   return String(value || "")
     .normalize("NFKD")
@@ -223,24 +359,35 @@ export const MICRO_GENERIC_RULE = "Never a generic warm-assistant voice.";
 
 /**
  * One-line fingerprint for the server's local (0.5B, 1,240-token) persona,
- * where every token of the never-trimmed prefix pushes history out. Only named
- * companions and archetypes get it (their rules are not in CHARACTER); it
- * defers to the existing "Voice:" line instead of repeating the custom text.
+ * where every token of the never-trimmed prefix pushes history out.
+ *
+ * Named companions and archetypes always get it (their rules are not in
+ * CHARACTER). A character with a real custom voice but no named/archetype
+ * match gets nothing here — their "Voice:" line already carries real signal
+ * in CHARACTER, and repeating it would cost never-trimmed persona tokens for
+ * no new information. A character with NO named match, NO archetype, and NO
+ * real custom voice — the common bare custom-companion case — gets the
+ * deterministic default fallback instead of silence, so it isn't left with
+ * zero concrete voice grounding even on this tightest budget.
  */
 export function buildMicroVoiceFingerprint(character) {
   if (!character || typeof character !== "object") return "";
   const namedKey = namedVoiceKeyFor(character);
   const named = namedKey ? NAMED_COMPANION_VOICES[namedKey] : null;
   const archKey = archetypeVoiceKeyFor(character.archetype);
-  const profile = named || (archKey ? ARCHETYPE_VOICES[archKey] : null);
+  const arch = archKey ? ARCHETYPE_VOICES[archKey] : null;
+  const hasCustomVoice = Boolean(sanitizeVoiceText(character.speaking_style));
+  const profile = named || arch || (hasCustomVoice ? null : defaultCustomVoiceFor(character));
+  if (!profile) return "";
   const tag = `[${VOICE_FINGERPRINT_TAG}]`;
-  if (profile) {
-    const lead = sanitizeVoiceText(character.speaking_style) ? "The Voice line above wins on conflict. " : "";
-    return `${tag} ${lead}Sentences: ${profile.sentences} Tics: ${profile.tics} ${MICRO_GENERIC_RULE}`;
-  }
-  // Custom-only voices already have their "Voice:" line in CHARACTER; adding
-  // more here would cost never-trimmed persona tokens for no new information.
-  return "";
+  const lead = hasCustomVoice ? "The Voice line above wins on conflict. " : "";
+  // Default-pool profiles carry a short dedicated `micro` tag so this still
+  // costs only a little of the never-trimmed budget; named/archetype
+  // profiles have no `micro` field and keep their original, larger line.
+  const body = profile.micro
+    ? profile.micro
+    : `Sentences: ${profile.sentences} Tics: ${profile.tics}`;
+  return `${tag} ${lead}${body} ${MICRO_GENERIC_RULE}`;
 }
 
 const RULE_FIELDS = [
@@ -275,7 +422,13 @@ export function buildVoiceFingerprint(character, { compact = false } = {}) {
   if (!displayName && !custom && !personality && !named && !arch) return "";
 
   const name = named?.name || displayName || "this character";
-  const profile = named || arch;
+  // Every character gets concrete cadence/sentence/vocabulary/tic rules —
+  // its own named signature, its archetype, or (for an ordinary custom
+  // companion with neither) a deterministic default. The default still
+  // yields to the character's own custom voice text below on conflict; it
+  // exists so "no named match" never means "no concrete voice at all",
+  // which is what collapsed custom companions toward one generic voice.
+  const profile = named || arch || defaultCustomVoiceFor(character);
   const lines = [
     `[${VOICE_FINGERPRINT_TAG} — ${name} | highest priority for HOW you speak; content rules and safety still apply]`,
   ];
@@ -283,20 +436,18 @@ export function buildVoiceFingerprint(character, { compact = false } = {}) {
     lines.push(`Custom voice (the user's own words; wins over every default below if they conflict): ${custom}`);
   } else if (named) {
     lines.push(`Signature: ${named.speaking_style}`);
+  } else if (!arch) {
+    lines.push("Assigned voice (no custom voice was written for this character — use this one consistently):");
   }
   if (arch && !named) lines.push(`Archetype: ${arch.label} — ${arch.summary}`);
-  if (profile && compact) {
+  if (compact) {
     lines.push(`Sentence length & shape: ${profile.sentences}`);
     lines.push(`Verbal tics: ${profile.tics}`);
     lines.push(`Never: ${profile.avoid}`);
-  } else if (profile) {
+  } else {
     for (const [label, field] of RULE_FIELDS) {
       if (profile[field]) lines.push(`${label}: ${profile[field]}`);
     }
-  } else {
-    lines.push(
-      "Derive cadence, sentence length, vocabulary, verbal tics, formality and emotional register from the custom voice and personality; keep them consistent every turn.",
-    );
   }
   if (personality && !compact) lines.push(`Personality cues: ${personality}`);
   lines.push(GENERIC_VOICE_RULE);
