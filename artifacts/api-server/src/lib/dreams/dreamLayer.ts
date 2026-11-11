@@ -33,7 +33,7 @@ export type DreamRunSummary = { candidates: number; dreamt: number; skipped: num
 
 function isMissingDreamSchema(err: unknown): boolean {
   const e = err as { code?: string; message?: string };
-  return e?.code === "42P01" || /(dreams|dream_surfacings|dream_recent|memory_events).* does not exist/i.test(String(e?.message || ""));
+  return e?.code === "42P01" || /(dreams|dream_surfacings|dream_recent|dream_settings|memory_events).* does not exist/i.test(String(e?.message || ""));
 }
 
 export async function findDreamCandidates(cfg: DreamConfig): Promise<{ user_id: string; character_id: string; last_at: string }[]> {
@@ -52,6 +52,10 @@ export async function findDreamCandidates(cfg: DreamConfig): Promise<{ user_id: 
          SELECT 1 FROM dreams d
          WHERE d.user_id = l.user_id AND d.character_id = l.character_id
            AND (d.created_at > l.last_at OR d.created_at > now() - ($3::float8 * interval '1 hour'))
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM dream_settings s
+         WHERE s.user_id = l.user_id AND s.character_id = l.character_id AND NOT s.dreaming_enabled
        )
      ORDER BY l.last_at DESC
      LIMIT $4`,
@@ -87,8 +91,23 @@ async function loadDreamMemories(userId: string, characterId: string, cfg: Dream
     .filter((m) => m.embedding.length);
 }
 
+/** Per-companion "Let her dream" setting. No row (or no table yet) means enabled. */
+export async function dreamingEnabledFor(userId: string, characterId: string): Promise<boolean> {
+  try {
+    const { rows } = await getPool().query<{ dreaming_enabled: boolean }>(
+      `SELECT dreaming_enabled FROM dream_settings WHERE user_id = $1 AND character_id = $2`,
+      [userId, characterId],
+    );
+    return rows[0]?.dreaming_enabled !== false;
+  } catch (err) {
+    if ((err as { code?: string })?.code === "42P01") return true;
+    throw err;
+  }
+}
+
 /** Dream once for one companion. Returns the new dream id, or null when skipped. */
 export async function dreamFor(userId: string, characterId: string, cfg = dreamConfig()): Promise<string | null> {
+  if (!(await dreamingEnabledFor(userId, characterId))) return null;
   const memories = await loadDreamMemories(userId, characterId, cfg);
   if (memories.length < cfg.minEvents) return null;
   const cluster = pickDreamCluster(clusterMemories(memories, cfg.clusterThreshold));

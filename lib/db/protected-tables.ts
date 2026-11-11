@@ -32,6 +32,8 @@ export const PROTECTED_SQL_TABLES = [
   "dreams",
   "dream_surfacings",
   "dream_recent",
+  "dream_reads",
+  "dream_settings",
   "companion_state_snapshots",
   "search_audit",
   "tool_user_settings",

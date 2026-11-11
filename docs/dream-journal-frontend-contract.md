@@ -1,7 +1,7 @@
 # Dream journal frontend contract
 
 This document is for Anima Backend Data. The dream-journal UI is built against
-these routes and shapes. **None of them exist on the server yet.** The client
+these routes and shapes. **They are implemented in `artifacts/api-server/src/routes/dreams.ts`.** The client
 treats a missing route (HTML/empty 404), `501`, or `503` with
 `code: "dream_schema_missing"` as “not available yet.” Do not implement these
 routes or migrations in the frontend PR.
