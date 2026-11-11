@@ -93,6 +93,7 @@ function MessageBubble({ message, onRewind, canRewind, onSpeak, character, chara
           onClick={() => character && onAvatarClick?.(character)}
           disabled={!character || !onAvatarClick}
           title={character ? `View ${character.name} bio sheet` : undefined}
+          data-anima-avatar=""
           className="flex-shrink-0 w-6 sm:w-8 h-6 sm:h-8 border border-primary/40 overflow-hidden bg-primary/10 flex items-center justify-center self-start mt-2 sm:mt-4 disabled:cursor-default hover:enabled:border-primary/70 hover:enabled:ring-1 hover:enabled:ring-primary/40 transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
         >
           {avatarUrl ? (
