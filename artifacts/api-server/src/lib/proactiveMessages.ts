@@ -1,4 +1,5 @@
-import webpush, { type PushSubscription as WebPushSubscription } from "web-push";
+import * as webpush from "web-push";
+import type { PushSubscription as WebPushSubscription } from "web-push";
 import { dueThread, extractOpenThreads, threadFollowUpInstruction } from "./agencyThreads";
 import { isKernelFeatureEnabled } from "./kernelFeatures";
 import { recordAgencyOutcome, runAgencyTick } from "./kernel/agencyRuntime";
