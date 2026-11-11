@@ -459,7 +459,7 @@ The steward's device reports what it chooses to share; the server never reaches 
 
 v1 consumer: the agency tick waits (`steward_busy`) during a calendar block or focus mode. Calendar titles never enter a prompt. Weather is not a sense: the server already fetches it for the steward's region (`regionalWorldKnowledge`, Open-Meteo).
 
-A browser can share timezone, online and battery. Calendar and focus mode come from a native shell (iOS wrapper, EventKit / Focus status) posting the same JSON. The in-app opt-in toggle is not built yet; `setSensesOptIn(true)` is the hook for it.
+A browser can share timezone, online and battery. Calendar and focus mode come from a native shell (iOS wrapper, EventKit / Focus status) posting the same JSON. The in-app opt-in lives in Settings → Interface → Day rhythm and calls `setSensesOptIn(true)` before PUTting a snapshot.
 
 ---
 
