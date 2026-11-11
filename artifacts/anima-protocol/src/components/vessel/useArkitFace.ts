@@ -5,7 +5,7 @@ import type { Object3D } from "three";
 import type { Expression } from "@/lib/vessel/emotion";
 import { applyArkitWeights, arkitFaceWeights, findArkitMeshes, type ArkitFaceWeights } from "@/lib/vessel/arkitFace";
 import { createBlinker } from "@/lib/vessel/vrmExpressions";
-import { speechOpenness } from "@/lib/vessel/vrmVisemes";
+import { speechOpenness, visemeWeights } from "@/lib/vessel/vrmVisemes";
 
 export function useArkitFace(
   scene: Object3D | null | undefined,
@@ -27,10 +27,14 @@ export function useArkitFace(
     if (!bindings.length) return;
     const { expression, speaking = false, audioLevel, override } = o.current;
     const dt = Math.min(0.1, delta);
-    const open = speechOpenness(clock.elapsedTime * 1000, speaking, audioLevel ? audioLevel() : null);
+    const tMs = clock.elapsedTime * 1000;
+    const open = speechOpenness(tMs, speaking, audioLevel ? audioLevel() : null);
+    // Rounded-lip share of the current viseme (ou/oh) shapes funnel/pucker on rigs that have them.
+    const vw = speaking ? visemeWeights(tMs, 1, null) : null;
+    const round = vw ? Math.min(1, (vw.ou ?? 0) + (vw.oh ?? 0)) : 0;
     jaw.current += (open - jaw.current) * Math.min(1, dt / 0.05);
     const blink = blinker.update(dt, expression ? Math.max(0, expression.smile) : 0);
-    applyArkitWeights(bindings, { ...arkitFaceWeights({ blink, openness: jaw.current, expression }), ...(override ?? {}) });
+    applyArkitWeights(bindings, { ...arkitFaceWeights({ blink, openness: jaw.current, expression, round }), ...(override ?? {}) });
     // Demand-frameloop hosts: keep frames coming while a blink or jaw move is in
     // flight so they stay smooth, then let the canvas rest.
     if (blink > 0 || speaking || Math.abs(open - jaw.current) > 0.002) invalidate();
