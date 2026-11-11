@@ -7,7 +7,21 @@
 import type { Object3D, Mesh } from "three";
 import type { Expression } from "./emotion";
 
-export const ARKIT_FACE_DRIVEN = ["eyeBlinkLeft", "eyeBlinkRight", "jawOpen", "mouthSmileLeft", "mouthSmileRight"] as const;
+export const ARKIT_FACE_DRIVEN = [
+  "eyeBlinkLeft",
+  "eyeBlinkRight",
+  "jawOpen",
+  "mouthSmileLeft",
+  "mouthSmileRight",
+  // Lifelike bases (and any full ARKit rig) also carry these; meshes without them just skip them.
+  "mouthFunnel",
+  "mouthPucker",
+  "browInnerUp",
+  "browDownLeft",
+  "browDownRight",
+  "mouthFrownLeft",
+  "mouthFrownRight",
+] as const;
 export type ArkitFaceName = (typeof ARKIT_FACE_DRIVEN)[number];
 export type ArkitFaceWeights = Partial<Record<ArkitFaceName, number>>;
 
@@ -17,17 +31,33 @@ const c01 = (v: number) => Math.max(0, Math.min(1, Number.isFinite(v) ? v : 0));
  * blink: 0..1 from the blinker; openness: 0..1 speech openness;
  * expression: the procedural Expression (eyeOpen < ~0.85 droops the lids, smile > 0 smiles).
  */
-export function arkitFaceWeights(input: { blink: number; openness: number; expression?: Expression | null }): Record<ArkitFaceName, number> {
+export function arkitFaceWeights(input: {
+  blink: number;
+  openness: number;
+  expression?: Expression | null;
+  /** Rounded-lip share of the current viseme (ou / oh), 0..1. */
+  round?: number;
+}): Record<ArkitFaceName, number> {
   const e = input.expression;
   const droop = e ? c01((0.85 - e.eyeOpen) / 0.85) * 0.6 : 0;
   const lids = c01(Math.max(droop, input.blink));
   const smile = e ? c01(e.smile) * 0.75 : 0;
+  const frown = e ? c01(-e.smile) * 0.6 : 0;
+  const open = c01(input.openness);
+  const round = c01(input.round ?? 0) * open;
   return {
     eyeBlinkLeft: lids,
     eyeBlinkRight: lids,
-    jawOpen: c01(input.openness) * 0.7,
-    mouthSmileLeft: smile,
-    mouthSmileRight: smile,
+    jawOpen: open * 0.7 * (1 - round * 0.4),
+    mouthSmileLeft: smile * (1 - round),
+    mouthSmileRight: smile * (1 - round),
+    mouthFunnel: round * 0.7,
+    mouthPucker: round * 0.35,
+    browInnerUp: e ? c01(e.brow) * 0.6 : 0,
+    browDownLeft: e ? c01(-e.brow) * 0.7 : 0,
+    browDownRight: e ? c01(-e.brow) * 0.7 : 0,
+    mouthFrownLeft: frown,
+    mouthFrownRight: frown,
   };
 }
 
