@@ -128,6 +128,10 @@ export const CLOUDFLARE_RUNTIME_ENV_NAMES = [
   "ADMIN_MIGRATION_SECRET",
   "DATABASE_URL",
   "DEFAULT_OBJECT_STORAGE_BUCKET_ID",
+  // Per-message voice replay (POST /api/tts) and voice clips. Classic Worker
+  // secret: not enumerable on `env`, so it must be listed here by name.
+  "ELEVENLABS_API_KEY",
+  "ELEVENLABS_VOICE_ID",
   "DEEPSEEK_PUBLISHABLE_KEY",
   "DEEPSHI_API_KEY",
   // Photo generator (fal.ai) — see supabase/migrations/*_photo_generator.sql.
