@@ -12,6 +12,9 @@ env:
   VITE_CLERK_PROXY_URL: ""
   VITE_MIXPANEL_TOKEN: ""
 
+permissions:
+  contents: read
+
 jobs:
   lint:
     runs-on: ubuntu-latest
