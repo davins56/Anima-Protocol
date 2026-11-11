@@ -43,6 +43,7 @@ const DeviceScanPanel = lazy(() => import("@/components/anima/DeviceScanPanel"))
 const KnowledgeGraphViewer = lazy(() => import("@/components/anima/KnowledgeGraphViewer"));
 const ModelTutorPanel = lazy(() => import("@/components/tutor/ModelTutorPanel"));
 const ProactiveMessageSettings = lazy(() => import("@/components/settings/ProactiveMessageSettings"));
+const DayRhythmSettings = lazy(() => import("@/components/settings/DayRhythmSettings"));
 const AppearanceStudio = lazy(() => import("@/components/settings/AppearanceStudio"));
 const AnimaForge = lazy(() => import("@/components/settings/AnimaForge"));
 const ForgeProfiles = lazy(() => import("@/components/settings/ForgeProfiles"));
@@ -992,6 +993,9 @@ export default function Settings() {
 
                 <SectionTitle>Notifications</SectionTitle>
                 <Suspense fallback={<SectionSkeleton />}><ProactiveMessageSettings /></Suspense>
+
+                <SectionTitle>Day rhythm</SectionTitle>
+                <Suspense fallback={<SectionSkeleton />}><DayRhythmSettings /></Suspense>
 
                 <SectionTitle>Theme</SectionTitle>
                 <div className="border border-primary/15 bg-black/40 p-5">

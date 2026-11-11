@@ -43,6 +43,7 @@ import { ConfirmProvider } from "@/lib/ConfirmDialog";
 import BottomTabBar from "@/components/layout/BottomTabBar";
 import MobileHeader from "@/components/layout/MobileHeader";
 import { useKeyboardAvoidance } from "@/hooks/useKeyboardAvoidance";
+import { useSensesReporter } from "@/hooks/useSensesReporter";
 import {
   bootstrapUserData,
   mergeLeftoverLocalData,
@@ -771,6 +772,7 @@ const AuthenticatedApp = () => {
   const appContainerRef = useRef(null);
   useKeyboardAvoidance(appContainerRef);
   const reduceMotion = useReducedMotion();
+  useSensesReporter(isAuthenticated);
 
   // Initialize color scheme on mount
   useEffect(() => {
