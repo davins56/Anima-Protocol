@@ -1,9 +1,8 @@
 /**
  * Client-side prechecks. The server enforces the same limits
- * (artifacts/api-server/src/lib/pdf/limits.ts). 4 MB decoded keeps two
- * uploads inside a Worker isolate's 128 MB memory limit.
+ * (artifacts/api-server/src/lib/pdf/limits.ts).
  */
-export const PDF_MAX_BYTES = 4 * 1024 * 1024;
+export const PDF_MAX_BYTES = 100 * 1024 * 1024;
 export const PDF_MAX_PAGES = 80;
 
 export function pdfFileRejection(file) {
@@ -16,6 +15,6 @@ export function pdfFileRejection(file) {
     name.toLowerCase().endsWith(".pdf");
   if (!looksPdf) return "That file isn't a PDF. Choose a .pdf file.";
   if (!file.size) return "That PDF is empty.";
-  if (file.size > PDF_MAX_BYTES) return "That PDF is too large. The limit is 4 MB.";
+  if (file.size > PDF_MAX_BYTES) return "That PDF is too large. The limit is 100 MB.";
   return null;
 }

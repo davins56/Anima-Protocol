@@ -38,9 +38,9 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
         return;
       }
 
-      const maxSize = 10 * 1024 * 1024;
+      const maxSize = 100 * 1024 * 1024;
       if (selectedFile.size > maxSize) {
-        setError('File must be under 10MB.');
+        setError('File must be under 100 MB.');
         return;
       }
 
@@ -253,7 +253,7 @@ export default function UserContextUploadModal({ isOpen, onClose, onUploadComple
             </label>
           </div>
           <p className="text-[8px] font-mono text-purple-400/40">
-            Supported: .txt, .md, .pdf, .docx, .epub, images (max 10MB)
+            Supported: .txt, .md, .pdf, .docx, .epub, images (max 100 MB)
           </p>
         </div>
 
