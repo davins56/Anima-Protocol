@@ -166,6 +166,14 @@ export const CLOUDFLARE_RUNTIME_ENV_NAMES = [
   "ANIMA_VOICE_MODEL",
   "ANIMA_VOICE_SHARE_MEMORY",
   "ANIMA_VOICE_TOKEN_TTL_S",
+  // Self-hosted voice on the home box (docs/voice-local.md). The URL and key
+  // are Secrets Store entries; create them before adding any binding.
+  "ANIMA_LOCAL_VOICE",
+  "ANIMA_LOCAL_VOICE_BASE_URL",
+  "ANIMA_LOCAL_VOICE_API_KEY",
+  "ANIMA_LOCAL_VOICE_DEFAULT",
+  "ANIMA_LOCAL_STT_MODEL",
+  "ANIMA_VOICE_SLOT_WAIT_MS",
 ] as const;
 
 const mirroredRuntimeEnv: Record<string, string> = {};

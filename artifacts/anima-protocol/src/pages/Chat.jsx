@@ -44,6 +44,7 @@ import {
   stripVoiceTags,
   voiceClipTagInstruction,
 } from "@/lib/chatVoiceClips";
+import { chooseSpeechRoute, chooseStoryRoute, getVoicePrefs } from "@/lib/voicePrefs";
 import {
   beginOpenSession,
   loadOpenChatSession,
@@ -500,24 +501,28 @@ export default function Chat() {
     },
   });
 
-  // Override speakMessage to prefer native TTS when inside WKWebView
+  // Auto-speak. Her voice runs on the home box; native iOS speech,
+  // ElevenLabs and Web Speech are opt-in only (lib/voicePrefs.js, all off by
+  // default), so there is no automatic native -> ElevenLabs -> Web Speech
+  // cascade any more. Home-box playback in chat is the Builder's V6.
   const speakMessageNative = useCallback((content, charName) => {
-    if (isNative && speakNative(content)) return; // handed off to native AVSpeechSynthesizer
-    // Fallback to existing web TTS
     const char = characters.find((c) => c.name === charName);
     const voiceId = char?.elevenlabs_voice_id;
     const charEmotion = characterEmotions[char?.id];
     const emotion = charEmotion?.emotion || 'neutral';
     const intensity = charEmotion?.intensity || 5;
-    // ElevenLabs falls back to the server default voice when the character has
-    // no cloned voice assigned, so auto-speak works even without a voice clone.
-    if (emotionalTTS.isEnabled) {
-      emotionalTTS.speakWithEmotion(content, voiceId, emotion, intensity);
-    } else if (elTTS.isEnabled) {
-      elTTS.speak(content, voiceId, intensity, emotion);
-    } else if (tts.isEnabled) {
-      tts.speak(content);
-    }
+    const route = chooseSpeechRoute({
+      prefs: getVoicePrefs(),
+      isNative,
+      emotionalEnabled: emotionalTTS.isEnabled,
+      elevenEnabled: elTTS.isEnabled,
+      webEnabled: tts.isEnabled,
+    });
+    if (route === 'native') speakNative(content); // on-device AVSpeechSynthesizer
+    else if (route === 'emotional') emotionalTTS.speakWithEmotion(content, voiceId, emotion, intensity);
+    else if (route === 'elevenlabs') elTTS.speak(content, voiceId, intensity, emotion);
+    else if (route === 'webSpeech') tts.speak(content);
+    // route null: TODO(V6) play the home-box /api/voice/:id/speak stream here.
   }, [isNative, speakNative, characters, emotionalTTS, elTTS, tts, characterEmotions]);
 
   const questManager = useAutoQuestManager({
@@ -875,16 +880,17 @@ export default function Chat() {
     const emotion = charEmotion?.emotion || 'neutral';
     const intensity = charEmotion?.intensity || 5;
     
-    // Use emotional TTS with voice emotion adjustment if available.
-    // ElevenLabs falls back to the server default voice when the character
-    // has no cloned voice assigned, so voice still works out of the box.
-    if (emotionalTTS.isEnabled) {
-      emotionalTTS.speakWithEmotion(content, voiceId, emotion, intensity);
-    } else if (elTTS.isEnabled) {
-      elTTS.speak(content, voiceId, intensity, emotion);
-    } else if (tts.isEnabled) {
-      tts.speak(content);
-    }
+    // Cloud voices only when opted in (lib/voicePrefs.js, off by default).
+    const route = chooseSpeechRoute({
+      prefs: getVoicePrefs(),
+      emotionalEnabled: emotionalTTS.isEnabled,
+      elevenEnabled: elTTS.isEnabled,
+      webEnabled: tts.isEnabled,
+    });
+    if (route === 'emotional') emotionalTTS.speakWithEmotion(content, voiceId, emotion, intensity);
+    else if (route === 'elevenlabs') elTTS.speak(content, voiceId, intensity, emotion);
+    else if (route === 'webSpeech') tts.speak(content);
+    // route null: TODO(V6) home-box playback.
   }, [characters, emotionalTTS, elTTS, tts, characterEmotions]);
 
   const handleReadStory = async () => {
@@ -914,11 +920,15 @@ export default function Chat() {
       : null;
     const voiceId = activeChar?.elevenlabs_voice_id;
 
-    if (voiceId && elTTS.isEnabled) {
-      elTTS.speak(fullStoryText, voiceId);
-    } else if (tts.isEnabled) {
-      tts.speak(fullStoryText);
-    }
+    const storyRoute = chooseStoryRoute({
+      prefs: getVoicePrefs(),
+      voiceId,
+      elevenEnabled: elTTS.isEnabled,
+      webEnabled: tts.isEnabled,
+    });
+    if (storyRoute === 'elevenlabs') elTTS.speak(fullStoryText, voiceId);
+    else if (storyRoute === 'webSpeech') tts.speak(fullStoryText);
+    // storyRoute null: TODO(V6) home-box playback.
     
     setIsReadingStory(false);
   };
