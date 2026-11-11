@@ -37,7 +37,10 @@ export default function UserContextSettings() {
           </button>
         </div>
         <p className="text-[8px] font-mono text-purple-400/50">
-          Upload your novels, essays, or personal writings to give the Anima deeper context about who you are
+          Save notes, essays or personal writing (.txt, .md or images) and get a short summary of each.
+        </p>
+        <p className="text-[8px] font-mono text-yellow-300/70" data-testid="user-context-chat-notice">
+          Background documents are not yet used in chat. Your companions can't see them yet; that comes with the new book upload pipeline, along with PDF support.
         </p>
       </div>
 

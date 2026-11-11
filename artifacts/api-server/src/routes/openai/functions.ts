@@ -413,8 +413,14 @@ export function parseContextAnalysis(raw: string): ContextAnalysis {
   }
 }
 
+/**
+ * Only the first CONTEXT_ANALYSIS_MAX_CHARS characters of a text upload go to
+ * the one summary call. The Background card says so when a document is longer.
+ */
+export const CONTEXT_ANALYSIS_MAX_CHARS = 12_000;
+
 async function analyzeTextContext(text: string): Promise<ContextAnalysis> {
-  const raw = await llm(CONTEXT_SYSTEM_PROMPT, text.slice(0, 12000), 1500, {
+  const raw = await llm(CONTEXT_SYSTEM_PROMPT, text.slice(0, CONTEXT_ANALYSIS_MAX_CHARS), 1500, {
     job: "context-analysis",
   });
   if (!raw.trim()) {
@@ -458,6 +464,107 @@ async function analyzeImageContext(dataUrl: string): Promise<ContextAnalysis> {
   }
 }
 
+/** Whitespace-separated word count of the text the server actually received. */
+export function countContextWords(text: string): number {
+  const trimmed = String(text || "").trim();
+  if (!trimmed) return 0;
+  return trimmed.split(/\s+/).filter(Boolean).length;
+}
+
+function analysisHasContent(a: ContextAnalysis): boolean {
+  return Boolean(
+    a.extracted_summary ||
+      a.extracted_text ||
+      a.key_themes.length ||
+      a.personal_values.length ||
+      a.characters_mentioned.length,
+  );
+}
+
+/**
+ * A processUserContext failure the client can show on the card. The row is
+ * marked failed with the same code and message before this is thrown, so the
+ * Background screen never shows "complete" for an upload that read nothing.
+ */
+export class UserContextProcessingError extends Error {
+  readonly code: string;
+  readonly status: number;
+  readonly retryable: boolean;
+  constructor(message: string, code: string, status: number, retryable: boolean) {
+    super(message);
+    this.name = "UserContextProcessingError";
+    this.code = code;
+    this.status = status;
+    this.retryable = retryable;
+  }
+}
+
+export const USER_CONTEXT_PDF_NOT_SUPPORTED =
+  "No text received. This screen can't read PDFs yet, so nothing from the file reached the server. Re-upload when book uploads are available.";
+export const USER_CONTEXT_NO_TEXT =
+  "No text received. Nothing from the file reached the server. Re-upload when book uploads are available, or upload a .txt or .md file.";
+
+// Shallow-merge fields onto the caller's own UserContext row. Returns null if
+// the row doesn't exist for this user (deleted, or someone else's id).
+async function patchUserContextRow(
+  userId: string,
+  entityId: string,
+  patch: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+  const where = and(
+    eq(userEntities.userId, userId),
+    eq(userEntities.entityName, "UserContext"),
+    eq(userEntities.entityId, entityId),
+  );
+  const [row] = await db.select().from(userEntities).where(where).limit(1);
+  if (!row) return null;
+  const existing = (row.data as Record<string, unknown>) ?? {};
+  const merged = { ...existing, ...patch, updated_date: new Date().toISOString() };
+  await db.update(userEntities).set({ data: merged, updatedAt: new Date() }).where(where);
+  notifyUser(userId);
+  return merged;
+}
+
+async function readUserContextRow(
+  userId: string,
+  entityId: string,
+): Promise<Record<string, unknown> | null> {
+  const [row] = await db
+    .select()
+    .from(userEntities)
+    .where(
+      and(
+        eq(userEntities.userId, userId),
+        eq(userEntities.entityName, "UserContext"),
+        eq(userEntities.entityId, entityId),
+      ),
+    )
+    .limit(1);
+  return row ? ((row.data as Record<string, unknown>) ?? {}) : null;
+}
+
+async function markUserContextFailed(
+  userId: string,
+  entityId: string,
+  error: UserContextProcessingError,
+): Promise<UserContextProcessingError> {
+  if (entityId) {
+    await patchUserContextRow(userId, entityId, {
+      processing_complete: false,
+      processing_status: "failed",
+      processing_error: {
+        code: error.code,
+        message: error.message,
+        retryable: error.retryable,
+      },
+      processing_failed_at: new Date().toISOString(),
+    }).catch((err) => {
+      logger.warn({ err, entityId }, "Could not mark UserContext row failed");
+    });
+  }
+  return error;
+}
+
 // Merge the extracted analysis onto the user's existing UserContext row (the
 // record was created client-side at upload time). Goes straight to the store
 // table since this runs server-side; notifyUser nudges the user's open devices
@@ -467,6 +574,7 @@ async function persistContextAnalysis(
   userId: string,
   entityId: string,
   analysis: ContextAnalysis,
+  extra?: Record<string, unknown>,
 ): Promise<boolean> {
   const where = and(
     eq(userEntities.userId, userId),
@@ -476,7 +584,15 @@ async function persistContextAnalysis(
   const [row] = await db.select().from(userEntities).where(where).limit(1);
   if (!row) return false;
   const existing = (row.data as Record<string, unknown>) ?? {};
-  const merged = { ...existing, ...analysis, processing_complete: true };
+  const merged = {
+    ...existing,
+    ...analysis,
+    ...(extra ?? {}),
+    processing_complete: true,
+    processing_status: "complete",
+    processing_error: null,
+    updated_date: new Date().toISOString(),
+  };
   await db.update(userEntities).set({ data: merged, updatedAt: new Date() }).where(where);
   notifyUser(userId);
   return true;
@@ -1890,27 +2006,117 @@ router.post("/invoke/:fnName", async (req, res) => {
         const entityId =
           typeof data.user_context_id === "string" ? data.user_context_id : "";
         const isImage = Boolean(data.is_image);
-        const fileContent =
+        const isPdf = Boolean(data.is_pdf);
+        let fileContent =
           typeof data.file_content === "string" ? data.file_content : "";
         const imageDataUrl =
           typeof data.image_data_url === "string" ? data.image_data_url : "";
 
+        // Retry from the card: no file in the request, so analyse the excerpt
+        // this row stored on its first attempt (the exact text the model saw).
+        const existing = entityId ? await readUserContextRow(userId, entityId) : null;
+        let wordCount: number | null = null;
+        let sourceChars: number | null = null;
+        if (!fileContent.trim() && !(isImage && imageDataUrl.startsWith("data:")) && existing) {
+          const stored = typeof existing.analysis_input === "string" ? existing.analysis_input : "";
+          if (stored.trim()) {
+            fileContent = stored;
+            wordCount = typeof existing.word_count === "number" ? existing.word_count : null;
+            sourceChars =
+              typeof existing.source_char_count === "number" ? existing.source_char_count : null;
+          }
+        }
+
+        const hasImage = isImage && imageDataUrl.startsWith("data:");
+        const hasText = Boolean(fileContent.trim());
+        if (!hasImage && !hasText) {
+          // A PDF from the old modal (bytes never sent) or an empty file.
+          // Fail loudly instead of marking the row complete with nothing.
+          throw await markUserContextFailed(
+            userId,
+            entityId,
+            new UserContextProcessingError(
+              isPdf ? USER_CONTEXT_PDF_NOT_SUPPORTED : USER_CONTEXT_NO_TEXT,
+              isPdf ? "pdf_not_supported" : "no_text_received",
+              422,
+              false,
+            ),
+          );
+        }
+
+        const textMeta: Record<string, unknown> = {};
+        if (hasText && !hasImage) {
+          const chars = sourceChars ?? fileContent.length;
+          textMeta.word_count = wordCount ?? countContextWords(fileContent);
+          textMeta.source_char_count = chars;
+          textMeta.analyzed_char_count = Math.min(chars, CONTEXT_ANALYSIS_MAX_CHARS);
+          textMeta.analysis_truncated = chars > CONTEXT_ANALYSIS_MAX_CHARS;
+          textMeta.analysis_input = fileContent.slice(0, CONTEXT_ANALYSIS_MAX_CHARS);
+          textMeta.source_kind = "text";
+        } else if (hasImage) {
+          textMeta.source_kind = "image";
+          textMeta.word_count = null;
+        }
+        if (entityId) {
+          await patchUserContextRow(userId, entityId, {
+            ...textMeta,
+            processing_complete: false,
+            processing_status: "processing",
+            processing_error: null,
+            processing_started_at: new Date().toISOString(),
+          });
+        }
+
         let analysis: ContextAnalysis;
-        if (isImage && imageDataUrl.startsWith("data:")) {
-          analysis = await analyzeImageContext(imageDataUrl);
-        } else if (fileContent.trim()) {
-          analysis = await analyzeTextContext(fileContent);
-        } else {
-          // No usable input here (e.g. a PDF — uploads aren't persisted to
-          // fetchable storage, so the server can't read it — or an empty file).
-          analysis = emptyAnalysis();
+        try {
+          analysis = hasImage
+            ? await analyzeImageContext(imageDataUrl)
+            : await analyzeTextContext(fileContent);
+        } catch (err) {
+          const busy =
+            err instanceof LocalModelHeldForChatError ||
+            (err && typeof err === "object" && (err as { code?: unknown }).code === "llm_busy");
+          logger.warn({ err, entityId }, "processUserContext analysis failed");
+          throw await markUserContextFailed(
+            userId,
+            entityId,
+            busy
+              ? new UserContextProcessingError(
+                  "The companion is using the model. Try again in a moment.",
+                  "llm_busy",
+                  429,
+                  true,
+                )
+              : new UserContextProcessingError(
+                  "The analysis didn't finish because the model call failed. Try again.",
+                  "analysis_failed",
+                  502,
+                  true,
+                ),
+          );
+        }
+        if (!analysisHasContent(analysis)) {
+          throw await markUserContextFailed(
+            userId,
+            entityId,
+            new UserContextProcessingError(
+              "The model returned no usable analysis. Try again.",
+              "analysis_empty",
+              502,
+              true,
+            ),
+          );
         }
 
         let persisted = false;
         if (entityId) {
-          persisted = await persistContextAnalysis(userId, entityId, analysis);
+          persisted = await persistContextAnalysis(userId, entityId, analysis, textMeta);
         }
-        result = { data: { ...analysis, processing_complete: true, persisted } };
+        const { analysis_input: _input, ...publicMeta } = textMeta;
+        void _input;
+        result = {
+          data: { ...analysis, ...publicMeta, processing_complete: true, persisted },
+        };
         break;
       }
 
@@ -2515,7 +2721,11 @@ router.post("/invoke/:fnName", async (req, res) => {
         ? String((err as { code?: unknown }).code || "")
         : "";
     if (!res.headersSent) {
-      if (code === "llm_busy") {
+      if (err instanceof UserContextProcessingError) {
+        res
+          .status(err.status)
+          .json({ error: err.message, code: err.code, retryable: err.retryable });
+      } else if (code === "llm_busy") {
         res.status(429).json({ error: msg, code });
       } else {
         res.status(500).json({ error: msg });

@@ -64,6 +64,8 @@ vi.mock("openai", () => {
 import functionsRouter, {
   parseContextAnalysis,
   buildContextPromptString,
+  countContextWords,
+  CONTEXT_ANALYSIS_MAX_CHARS,
 } from "../src/routes/openai/functions";
 import { setLocalChatActivityProbeForTests } from "../src/lib/localLlmPriority";
 import { db, userEntities } from "@workspace/db";
@@ -319,7 +321,7 @@ describe("processUserContext", () => {
     expect(createMock).not.toHaveBeenCalled();
   });
 
-  it("does nothing destructive when there is no usable input", async () => {
+  it("fails loudly (422, row marked failed) when there is no usable input", async () => {
     const u = user("empty");
     const id = "ctx_empty_1";
     await seedContext(u, id, {
@@ -335,13 +337,214 @@ describe("processUserContext", () => {
       file_content: "   ",
     });
 
-    expect(res.status).toBe(200);
-    expect(res.json.result.data.extracted_summary).toBe("");
+    expect(res.status).toBe(422);
+    expect(res.json.code).toBe("no_text_received");
+    expect(res.json.retryable).toBe(false);
     expect(createMock).not.toHaveBeenCalled();
     const stored = await readContext(u, id);
-    // Marked processed (so the UI stops spinning) but no fabricated content.
-    expect(stored?.processing_complete).toBe(true);
+    // Not "complete with nothing": the card can say what happened.
+    expect(stored?.processing_complete).toBe(false);
+    expect(stored?.processing_status).toBe("failed");
+    expect((stored?.processing_error as any)?.code).toBe("no_text_received");
     expect(stored?.extracted_summary ?? "").toBe("");
+  });
+
+  it("marks an old-modal PDF row (no bytes sent) as pdf_not_supported, not complete", async () => {
+    const u = user("pdf");
+    const id = "ctx_pdf_1";
+    // Exactly the row the old modal saved for the user's novels.
+    await seedContext(u, id, {
+      title: "the-slipthk-way-TRADE",
+      document_type: "novel",
+      file_url: "",
+      is_active: true,
+      user_email: "u@example.com",
+      processing_complete: false,
+    });
+
+    const res = await invoke(u, "processUserContext", {
+      user_context_id: id,
+      file_url: "",
+      file_content: "",
+      is_pdf: true,
+      is_image: false,
+      image_data_url: "",
+      document_type: "novel",
+      title: "the-slipthk-way-TRADE",
+    });
+
+    expect(res.status).toBe(422);
+    expect(res.json.code).toBe("pdf_not_supported");
+    expect(res.json.error).toMatch(/No text received/);
+    expect(res.json.error).toMatch(/book uploads are available/);
+    expect(createMock).not.toHaveBeenCalled();
+    const stored = await readContext(u, id);
+    expect(stored?.processing_complete).toBe(false);
+    expect((stored?.processing_error as any)?.code).toBe("pdf_not_supported");
+    expect(stored?.title).toBe("the-slipthk-way-TRADE");
+  });
+
+  it("stores a real word count and the analysed excerpt for a text upload", async () => {
+    const u = user("words");
+    const id = "ctx_words_1";
+    await seedContext(u, id, { title: "Short", document_type: "essay", is_active: true });
+    const text = "One two  three\nfour\tfive six.";
+
+    const res = await invoke(u, "processUserContext", {
+      user_context_id: id,
+      file_content: text,
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.json.result.data.word_count).toBe(6);
+    expect(res.json.result.data.analysis_truncated).toBe(false);
+    // The excerpt is stored on the row for Retry but not echoed back.
+    expect(res.json.result.data.analysis_input).toBeUndefined();
+    const stored = await readContext(u, id);
+    expect(stored?.word_count).toBe(6);
+    expect(stored?.source_char_count).toBe(text.length);
+    expect(stored?.analyzed_char_count).toBe(text.length);
+    expect(stored?.analysis_truncated).toBe(false);
+    expect(stored?.analysis_input).toBe(text);
+    expect(stored?.processing_status).toBe("complete");
+    expect(stored?.processing_error).toBeNull();
+    expect(stored?.source_kind).toBe("text");
+  });
+
+  it("flags truncation when a document is longer than the 12,000-char summary input", async () => {
+    const u = user("long");
+    const id = "ctx_long_1";
+    await seedContext(u, id, { title: "Long", document_type: "novel", is_active: true });
+    const text = "word ".repeat(5000).trim(); // 24,999 chars, 5,000 words
+
+    const res = await invoke(u, "processUserContext", {
+      user_context_id: id,
+      file_content: text,
+    });
+
+    expect(res.status).toBe(200);
+    const sent = (createMock.mock.calls[0]?.[0] as any).messages[1].content as string;
+    expect(sent.length).toBe(CONTEXT_ANALYSIS_MAX_CHARS);
+    const stored = await readContext(u, id);
+    expect(stored?.word_count).toBe(5000);
+    expect(stored?.source_char_count).toBe(text.length);
+    expect(stored?.analyzed_char_count).toBe(CONTEXT_ANALYSIS_MAX_CHARS);
+    expect(stored?.analysis_truncated).toBe(true);
+    expect((stored?.analysis_input as string).length).toBe(CONTEXT_ANALYSIS_MAX_CHARS);
+  });
+
+  it("records a model failure on the row (502, retryable) and Retry re-runs on the stored excerpt", async () => {
+    const u = user("retry");
+    const id = "ctx_retry_1";
+    await seedContext(u, id, { title: "Flaky", document_type: "journal", is_active: true });
+    const text = "A journal entry about courage and patience.";
+
+    createMock.mockRejectedValueOnce(new Error("upstream 500"));
+    // Failover may try more than one provider; fail them all for this call.
+    createMock.mockRejectedValueOnce(new Error("upstream 500"));
+    createMock.mockRejectedValueOnce(new Error("upstream 500"));
+    const first = await invoke(u, "processUserContext", {
+      user_context_id: id,
+      file_content: text,
+    });
+    expect(first.status).toBe(502);
+    expect(first.json.code).toBe("analysis_failed");
+    expect(first.json.retryable).toBe(true);
+    let stored = await readContext(u, id);
+    expect(stored?.processing_complete).toBe(false);
+    expect(stored?.processing_status).toBe("failed");
+    expect((stored?.processing_error as any)?.code).toBe("analysis_failed");
+    expect(stored?.word_count).toBe(7);
+
+    createMock.mockReset();
+    createMock.mockImplementation(async () => ({
+      choices: [{ message: { content: JSON.stringify(MODEL_ANALYSIS) } }],
+    }));
+    // The card's Retry sends no file: the server uses the stored excerpt.
+    const retry = await invoke(u, "processUserContext", {
+      user_context_id: id,
+      file_content: "",
+      is_image: false,
+    });
+    expect(retry.status).toBe(200);
+    const sent = (createMock.mock.calls[0]?.[0] as any).messages[1].content as string;
+    expect(sent).toBe(text);
+    stored = await readContext(u, id);
+    expect(stored?.processing_complete).toBe(true);
+    expect(stored?.processing_status).toBe("complete");
+    expect(stored?.processing_error).toBeNull();
+    expect(stored?.word_count).toBe(7);
+    expect(stored?.extracted_summary).toContain("resilience");
+  });
+
+  it("treats an unparseable model reply as a failure, not an empty success", async () => {
+    const u = user("garbage");
+    const id = "ctx_garbage_1";
+    await seedContext(u, id, { title: "Odd", document_type: "other", is_active: true });
+    createMock.mockImplementationOnce(async () => ({
+      choices: [{ message: { content: "sorry, I can't help with that" } }],
+    }));
+    const res = await invoke(u, "processUserContext", {
+      user_context_id: id,
+      file_content: "Some text to analyse.",
+    });
+    expect(res.status).toBe(502);
+    expect(res.json.code).toBe("analysis_empty");
+    const stored = await readContext(u, id);
+    expect(stored?.processing_complete).toBe(false);
+    expect((stored?.processing_error as any)?.code).toBe("analysis_empty");
+  });
+
+  it("never reads or writes another user's row through user_context_id", async () => {
+    const owner = user("owner");
+    const intruder = user("intruder");
+    const id = "ctx_owned_1";
+    await seedContext(owner, id, {
+      title: "Private",
+      document_type: "journal",
+      is_active: true,
+      analysis_input: "owner's private excerpt",
+    });
+    const res = await invoke(intruder, "processUserContext", {
+      user_context_id: id,
+      file_content: "",
+    });
+    // The intruder has no row and sent no text: nothing to analyse.
+    expect(res.status).toBe(422);
+    expect(createMock).not.toHaveBeenCalled();
+    const stored = await readContext(owner, id);
+    expect(stored?.processing_error).toBeUndefined();
+    expect(stored?.processing_status).toBeUndefined();
+  });
+
+  it("records llm_busy on the row so the card offers Retry", async () => {
+    const u = user("busy2");
+    const id = "ctx_busy_2";
+    await seedContext(u, id, { title: "Later", document_type: "essay", is_active: true });
+    setLocalChatActivityProbeForTests(async () => true);
+    try {
+      const res = await invoke(u, "processUserContext", {
+        user_context_id: id,
+        file_content: "An essay that should wait.",
+      });
+      expect(res.status).toBe(429);
+      expect(res.json.code).toBe("llm_busy");
+      const stored = await readContext(u, id);
+      expect((stored?.processing_error as any)?.code).toBe("llm_busy");
+      expect((stored?.processing_error as any)?.retryable).toBe(true);
+      expect(stored?.analysis_input).toBe("An essay that should wait.");
+    } finally {
+      setLocalChatActivityProbeForTests(null);
+    }
+  });
+});
+
+describe("countContextWords", () => {
+  it("counts whitespace-separated words", () => {
+    expect(countContextWords("")).toBe(0);
+    expect(countContextWords("   ")).toBe(0);
+    expect(countContextWords("one")).toBe(1);
+    expect(countContextWords(" one\n\ntwo\tthree  ")).toBe(3);
   });
 });
 

@@ -17,6 +17,7 @@ import { tryBeginCompanionLlmTurn } from "./lib/sidecarLlm";
 import { acquireLocalLlmBackground } from "./lib/localLlmSlot";
 import { createRateLimit } from "./lib/rateLimit";
 import { isAllowedCorsOrigin } from "./lib/corsPolicy";
+import { payloadTooLargeMessage } from "./lib/payloadTooLarge";
 import {
   AI_CHAT_RATE_LIMIT_MAX,
   AI_CHAT_RATE_LIMIT_WINDOW_MS,
@@ -256,7 +257,7 @@ app.use(
         /entity too large|request entity too large/i.test(message);
       if (payloadTooLarge) {
         res.status(413).json({
-          error: "That image is too large. Try a smaller photo.",
+          error: payloadTooLargeMessage(req.path || req.originalUrl || ""),
           code: "payload_too_large",
         });
         return;

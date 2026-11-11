@@ -187,7 +187,7 @@ export default function KnowledgeGraphViewer() {
 
       {!graph && !loading && (
         <p className="text-[8px] font-mono text-cyan-400/50 text-center py-4">
-          Upload documents to build the knowledge graph
+          No graph yet. REBUILD maps your companions, memories, world state and relationships. Background documents aren't part of the graph.
         </p>
       )}
     </motion.div>

@@ -2,7 +2,9 @@
 
 ## Overview
 
-The User Context system allows you to upload personal documents—novels, essays, journals, biographies, or any writing—to give the Anima deeper understanding of who you are. This context is then automatically injected into all companion interactions, making the Anima's responses more personally attuned.
+The User Context system lets you save personal writing (essays, journals, notes) and photos of pages, and gives each one a short AI summary.
+
+> **Current state (Phase 0 of `book-lore-plan`):** Background documents are **not used in chat yet**. No chat path reads `UserContext` rows (`buildUserContextPrompt` has no live caller), and the Knowledge Graph does not read them either. PDFs, Word and EPUB files are blocked on this screen until the new book upload pipeline ships; the old modal saved an empty card for a PDF without sending its bytes.
 
 ## How It Works
 
@@ -10,7 +12,7 @@ The User Context system allows you to upload personal documents—novels, essays
 
 Go to **Settings > Background** and click **Upload Document**.
 
-- **Supported formats**: .txt, .md, .pdf (up to 5MB)
+- **Supported formats**: .txt, .md and images (up to 10MB). PDFs, .docx and .epub are refused with a message.
 - **Document types**: 
   - Novel/Story
   - Biography
@@ -101,6 +103,13 @@ You are the Anima, a companion guide. Use the user's background context above to
 - `personal_values` - Inferred values
 - `is_active` - Whether context is used
 - `processing_complete` - AI analysis complete
+- `processing_status` - `processing` | `complete` | `failed`
+- `processing_error` - `{code, message, retryable}` when analysis failed (`pdf_not_supported`, `no_text_received`, `llm_busy`, `analysis_failed`, `analysis_empty`, or client-side `request_failed`)
+- `processing_started_at` - last attempt; a row still processing after 5 minutes shows as Stalled (or "No text received" when nothing is stored to retry)
+- `word_count` - computed server-side from the full text the server received
+- `source_char_count`, `analyzed_char_count`, `analysis_truncated` - only the first 12,000 characters are summarised; the card says so
+- `analysis_input` - the first 12,000 characters, kept so Retry can re-run without the file
+- `source_kind` (`text` | `image`), `file_name`
 
 ### Backend Functions
 
