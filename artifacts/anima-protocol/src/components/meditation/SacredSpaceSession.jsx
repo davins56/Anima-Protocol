@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { animaClient } from "@/api/animaClient";
 import { recordSacredSpaceCheckIn } from "@/lib/sacredSpaceCheckIn";
 import { useSacredSpaceVoice } from "@/hooks/useSacredSpaceVoice";
@@ -171,10 +172,10 @@ Respond as ${character.name}. 2-4 sentences. Be real, not theatrical.`,
 
   const accentColor = focusConfig.color;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex flex-col"
-      style={{ background: "linear-gradient(160deg, #0d0520 0%, #12052e 50%, #0a0a1a 100%)" }}
+      className="fixed inset-0 z-[200] flex flex-col"
+      style={{ paddingTop: "env(safe-area-inset-top)", background: "linear-gradient(160deg, #0d0520 0%, #12052e 50%, #0a0a1a 100%)" }}
     >
       {/* Ambient glow */}
       <div className="absolute inset-0 pointer-events-none">
@@ -433,6 +434,7 @@ Respond as ${character.name}. 2-4 sentences. Be real, not theatrical.`,
           </div>
         </>
       )}
-    </div>
+    </div>,
+    document.body
   );
 }
