@@ -39,6 +39,8 @@ export default defineConfig({
       "test/mindIdentity.test.ts",
       // Long replies: hosted output room, Workers AI cap detection, clean ends.
       "test/replyCutoff.test.ts",
+      // Deleting a message: what the mind forgets (mocked pool).
+      "test/mindForgetMessage.test.ts",
     ],
     environment: "node",
     fileParallelism: false,

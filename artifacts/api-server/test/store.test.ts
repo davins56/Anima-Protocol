@@ -1966,3 +1966,69 @@ describe("memory crystals are unique per session even under concurrent creates",
     expect(list.filter((c) => c.session_id === "reopen_sess_1")).toHaveLength(1);
   });
 });
+
+describe("delete one chat message (trash can)", () => {
+  async function seed(U: string, sid: string, n: number) {
+    const ids: string[] = [];
+    for (let i = 0; i < n; i++) {
+      const r = await call(U, "POST", "/messages", {
+        session_id: sid,
+        message: { role: i % 2 ? "assistant" : "user", content: `m${i}` },
+      });
+      ids.push(r.json.id);
+    }
+    return ids;
+  }
+
+  it("deletes only that row, fast, on a long chat, and it stays gone after a refetch", async () => {
+    const U = user("msg_delete");
+    const sid = "sess_delete";
+    const ids = await seed(U, sid, 120);
+
+    const started = Date.now();
+    const del = await call(U, "DELETE", `/messages/${ids[57]}?session_id=${sid}`);
+    expect(del.status).toBe(200);
+    expect(del.json).toMatchObject({ deleted: true, id: ids[57], seq: 57 });
+    // One DELETE, not a 120-row rewrite: well inside the client's 8s budget.
+    expect(Date.now() - started).toBeLessThan(2000);
+
+    const list = (await call(U, "GET", `/messages?session_id=${sid}`)).json as Json[];
+    expect(list).toHaveLength(119);
+    expect(list.some((m) => m.id === ids[57])).toBe(false);
+    expect(list.map((m) => m.content)).not.toContain("m57");
+
+    // A second tap is a 404, not an error.
+    expect((await call(U, "DELETE", `/messages/${ids[57]}?session_id=${sid}`)).status).toBe(404);
+  });
+
+  it("is scoped to the owner and the session", async () => {
+    const A = user("msg_delete_owner");
+    const B = user("msg_delete_other");
+    const [id] = await seed(A, "sess_owner", 1);
+
+    expect((await call(B, "DELETE", `/messages/${id}?session_id=sess_owner`)).status).toBe(404);
+    expect((await call(A, "DELETE", `/messages/${id}?session_id=other_session`)).status).toBe(404);
+    expect((await call(A, "DELETE", `/messages/${id}`)).status).toBe(400);
+    const list = (await call(A, "GET", `/messages?session_id=sess_owner`)).json as Json[];
+    expect(list.map((m) => m.id)).toEqual([id]);
+  });
+
+  it("restore (undo) puts the row back in its old place", async () => {
+    const U = user("msg_restore");
+    const sid = "sess_restore";
+    const ids = await seed(U, sid, 3);
+    const before = (await call(U, "GET", `/messages?session_id=${sid}`)).json as Json[];
+
+    await call(U, "DELETE", `/messages/${ids[1]}?session_id=${sid}`);
+    const back = await call(U, "POST", "/messages/restore", {
+      session_id: sid,
+      message: { ...before[1], is_streaming: true },
+    });
+    expect(back.status).toBe(201);
+    expect(back.json.is_streaming).toBeUndefined();
+
+    const list = (await call(U, "GET", `/messages?session_id=${sid}`)).json as Json[];
+    expect(list.map((m) => m.id)).toEqual(ids);
+    expect(list.map((m) => m.seq)).toEqual([0, 1, 2]);
+  });
+});

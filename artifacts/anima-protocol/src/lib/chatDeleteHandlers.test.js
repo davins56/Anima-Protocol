@@ -44,7 +44,13 @@ vi.mock("@/api/animaClient", () => {
     },
   });
   const entities = new Proxy({}, { get: (_, name) => entity(name) });
-  return { animaClient: { entities }, default: { entities } };
+  // Per-message rows, like the real /store/messages endpoints.
+  const messages = {
+    remove: vi.fn(),
+    restore: vi.fn(),
+    list: vi.fn(),
+  };
+  return { animaClient: { entities, messages }, default: { entities, messages } };
 });
 
 import { toast } from "sonner";
@@ -145,7 +151,32 @@ describe("deleteSessionFlow (confirm-and-delete a chat session)", () => {
   });
 });
 
+// A tiny stand-in for React's setState so tests can read the page view.
+function viewOf(session) {
+  let state = session;
+  const setActiveSession = vi.fn((next) => {
+    state = typeof next === "function" ? next(state) : next;
+  });
+  return { setActiveSession, view: () => state };
+}
+
+const longSession = () => ({
+  id: "s1",
+  messages: [
+    { id: "m1", seq: 0, role: "user", content: "first", turn_id: "t1" },
+    { id: "m2", seq: 1, role: "assistant", content: "second", turn_id: "t1" },
+    { id: "m3", seq: 2, role: "user", content: "third", turn_id: "t2" },
+  ],
+});
+
 describe("deleteMessageFlow (delete one message in the active session)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    animaClient.messages.remove.mockResolvedValue({ deleted: true, id: "m2", seq: 1 });
+    animaClient.messages.restore.mockImplementation(async (_s, m) => ({ ...m }));
+    animaClient.messages.list.mockResolvedValue([]);
+  });
+
   it("does nothing when there is no active session", async () => {
     const setActiveSession = vi.fn();
 
@@ -155,25 +186,108 @@ describe("deleteMessageFlow (delete one message in the active session)", () => {
     expect(toast).not.toHaveBeenCalled();
   });
 
-  it("deletes the message and reflects it in the active session view", async () => {
-    const session = await animaClient.entities.ChatSession.create({
-      title: "Session",
-      messages: [
-        { role: "user", content: "first" },
-        { role: "assistant", content: "second" },
-        { role: "user", content: "third" },
-      ],
-    });
-    const setActiveSession = vi.fn();
+  it("deletes ONE row by id (never rewrites the history) and drops the bubble", async () => {
+    const session = longSession();
+    const { setActiveSession, view } = viewOf(session);
 
     await deleteMessageFlow(1, { activeSession: session, setActiveSession });
 
-    // The message is gone from the store...
-    const current = await animaClient.entities.ChatSession.get(session.id);
-    expect(current.messages.map((m) => m.content)).toEqual(["first", "third"]);
-    // ...the page view was updated, and an Undo affordance showed.
-    expect(setActiveSession).toHaveBeenCalled();
+    expect(animaClient.messages.remove).toHaveBeenCalledWith("s1", "m2");
+    expect(view().messages.map((m) => m.id)).toEqual(["m1", "m3"]);
     const opts = toast.mock.calls[toast.mock.calls.length - 1][1];
     expect(opts.action.label).toBe("Undo");
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("removes the bubble before the server answers", async () => {
+    const session = longSession();
+    const { setActiveSession, view } = viewOf(session);
+    let finish;
+    animaClient.messages.remove.mockReturnValue(new Promise((r) => { finish = r; }));
+
+    const pending = deleteMessageFlow(0, { activeSession: session, setActiveSession });
+    expect(view().messages.map((m) => m.id)).toEqual(["m2", "m3"]);
+    finish({ deleted: true, id: "m1", seq: 0 });
+    await pending;
+  });
+
+  it("puts the bubble back and says so when the delete fails", async () => {
+    const session = longSession();
+    const { setActiveSession, view } = viewOf(session);
+    animaClient.messages.remove.mockRejectedValue(new Error("Request timed out"));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await deleteMessageFlow(1, { activeSession: session, setActiveSession });
+
+    expect(view().messages.map((m) => m.id)).toEqual(["m1", "m2", "m3"]);
+    expect(toast.error).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("deletes the message the user tapped even when older pages are not loaded", async () => {
+    // The page holds only the newest rows; the index is into what is shown.
+    const session = { id: "s1", messages: [
+      { id: "m501", seq: 500, role: "user", content: "a" },
+      { id: "m502", seq: 501, role: "assistant", content: "b" },
+    ] };
+    const { setActiveSession } = viewOf(session);
+
+    await deleteMessageFlow(1, { activeSession: session, setActiveSession });
+
+    expect(animaClient.messages.remove).toHaveBeenCalledWith("s1", "m502");
+  });
+
+  it("Undo restores the stored row in seq order", async () => {
+    const session = longSession();
+    const { setActiveSession, view } = viewOf(session);
+
+    await deleteMessageFlow(1, { activeSession: session, setActiveSession });
+    await lastUndoAction()();
+
+    expect(animaClient.messages.restore).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({ id: "m2", seq: 1 }),
+    );
+    expect(view().messages.map((m) => m.id)).toEqual(["m1", "m2", "m3"]);
+    expect(toast.success).toHaveBeenCalled();
+  });
+
+  it("falls back to the stored row for the same turn when the bubble id is client-only", async () => {
+    const session = { id: "s1", messages: [
+      { id: "local-1", role: "assistant", content: "hello", turn_id: "t9" },
+    ] };
+    const { setActiveSession, view } = viewOf(session);
+    animaClient.messages.remove
+      .mockResolvedValueOnce({ deleted: false, missing: true, id: "local-1" })
+      .mockResolvedValueOnce({ deleted: true, id: "srv-1", seq: 7 });
+    animaClient.messages.list.mockResolvedValue([
+      { id: "srv-0", role: "user", content: "hi", turn_id: "t9", seq: 6 },
+      { id: "srv-1", role: "assistant", content: "hello", turn_id: "t9", seq: 7 },
+    ]);
+
+    await deleteMessageFlow(0, { activeSession: session, setActiveSession });
+
+    expect(animaClient.messages.remove).toHaveBeenLastCalledWith("s1", "srv-1");
+    expect(view().messages).toEqual([]);
+  });
+
+  it("a bubble that was never saved is only removed from the view", async () => {
+    const session = { id: "s1", messages: [{ role: "assistant", content: "typing" }] };
+    const { setActiveSession, view } = viewOf(session);
+
+    await deleteMessageFlow(0, { activeSession: session, setActiveSession });
+
+    expect(animaClient.messages.remove).not.toHaveBeenCalled();
+    expect(view().messages).toEqual([]);
+  });
+
+  it("leaves another session's view alone if the user switched chats", async () => {
+    const session = longSession();
+    const other = { id: "s2", messages: [{ id: "x", role: "user", content: "x" }] };
+    const { setActiveSession, view } = viewOf(other);
+
+    await deleteMessageFlow(0, { activeSession: session, setActiveSession });
+
+    expect(view()).toBe(other);
   });
 });
