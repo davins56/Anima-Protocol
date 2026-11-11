@@ -6,6 +6,7 @@ import {
   EXTRA_DEFAULTS, PRESET_FIELDS, FEATURE_MATRIX,
   loadPresets, writePresets, sanitizePreset,
 } from "@/lib/experiencePresets";
+import { readActiveExtras, saveActiveExtras } from "@/lib/experienceRuntime";
 
 const GROUPS = [
   ["theme","Colour scheme"],["layout","Layout"],["background","Background"],
@@ -13,7 +14,6 @@ const GROUPS = [
   ["character","Character presentation"],["hud","NetNavi interface"],
   ["radius","Corners"],["scale","Text size"],["motion","Animation"],
 ];
-import { readActiveExtras, saveActiveExtras } from "@/lib/experienceRuntime";
 const SCREENS = ["Chat","Home","Character","Cyberworld"];
 const COLORS = {
   original:["#081320","#22d3ee"],nebula:["#190f39","#a78bfa"],
@@ -79,7 +79,7 @@ export default function ExperienceWorkbench() {
   const [presetName,setPresetName] = useState("");
   const [presets,setPresets] = useState([]);
   const [compare,setCompare] = useState("");
-  useEffect(() => { setPresets(loadPresets(userId));setDraft({...deviceValue(),...readActiveExtras(userId)}); },[userId]);
+  useEffect(() => { setPresets(loadPresets(userId)); setDraft({ ...deviceValue(), ...readActiveExtras(userId) }); }, [userId]);
   useEffect(() => {
     const refresh = () => setDraft(prev => ({...prev,...readAppearance()}));
     window.addEventListener("anima:appearance",refresh);

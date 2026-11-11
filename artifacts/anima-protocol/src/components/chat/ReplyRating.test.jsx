@@ -41,6 +41,22 @@ describe("ReplyRating", () => {
     fireEvent.click(screen.getByRole("button", { name: "Good reply" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Good reply" }).getAttribute("aria-pressed")).toBe("false"));
   });
+<<<<<<< HEAD
+=======
+  it("tells the user when saving fails instead of failing silently", async () => {
+    const onRate = vi.fn().mockRejectedValue(new Error("offline"));
+    render(<ReplyRating onRate={onRate} />);
+    fireEvent.click(screen.getByRole("button", { name: "Good reply" }));
+    expect(await screen.findByRole("alert")).toBeTruthy();
+  });
+  it("shows a pressed thumb once a rating saves", async () => {
+    const onRate = vi.fn().mockResolvedValue({});
+    render(<ReplyRating onRate={onRate} />);
+    fireEvent.click(screen.getByRole("button", { name: "Good reply" }));
+    await waitFor(() => expect(onRate).toHaveBeenCalled());
+    expect(screen.getByRole("button", { name: "Good reply" }).getAttribute("aria-pressed")).toBe("true");
+  });
+>>>>>>> origin/main
 });
 
 describe("buildRatingPayload", () => {
@@ -60,4 +76,23 @@ describe("buildRatingPayload", () => {
     expect(buildRatingPayload({ session: { id: "s1" }, messages, index: 2, rating: -1, note: " Too vague. " }).note).toBe("Too vague.");
     expect(buildRatingPayload({ session: { id: "s1" }, messages, index: 2, rating: 1, note: "x" }).note).toBeUndefined();
   });
+<<<<<<< HEAD
+=======
+  it("resolves character_id when the reply row has none (corrections are keyed on it)", () => {
+    // Chat replies are stored without character_id; the server looks up
+    // corrections by character_id, so a null id means she never learns.
+    const solo = buildRatingPayload({ session: { id: "s1", mode: "solo", character_id: "c-solo" }, messages, index: 2, rating: -1, note: "x" });
+    expect(solo.character_id).toBe("c-solo");
+    const byName = buildRatingPayload({
+      session: { id: "s1", mode: "group", group_character_ids: ["c1", "c2"] },
+      characters: [{ id: "c1", name: "Nova" }, { id: "c2", name: "Scarlet" }],
+      messages,
+      index: 2,
+      rating: 1,
+    });
+    expect(byName.character_id).toBe("c2");
+    const own = buildRatingPayload({ session: { id: "s1", character_id: "c-solo" }, messages: [{ role: "assistant", content: "Hi", character_id: "c9" }], index: 0, rating: 1 });
+    expect(own.character_id).toBe("c9");
+  });
+>>>>>>> origin/main
 });

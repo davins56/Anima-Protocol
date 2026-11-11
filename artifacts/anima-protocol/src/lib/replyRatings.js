@@ -9,11 +9,25 @@ function isChatTurn(m) {
   return m && (m.role === "user" || m.role === "assistant") && !m.type && m.character_name !== "__typing__" && m.character_name !== "__thinking__";
 }
 
-export function messageRatingId(message, sessionId, index) {
-  return String(message?.id || (message?.turn_id ? `${message.turn_id}:assistant` : `${sessionId}:${index}`));
+/**
+ * Companion id for a reply. Chat rows usually carry only character_name, but
+ * the server reads corrections back by character_id (the id chat.ts sends as
+ * assistant_character_id), so a null id means the lesson is never used.
+ */
+export function resolveRatingCharacterId(message, session, characters) {
+  if (message?.character_id) return String(message.character_id);
+  const name = String(message?.character_name || "").trim().toLowerCase();
+  const list = Array.isArray(characters) ? characters : [];
+  if (name) {
+    const groupIds = Array.isArray(session?.group_character_ids) ? session.group_character_ids : [];
+    const named = list.filter((c) => c?.id && String(c.name || "").trim().toLowerCase() === name);
+    const match = named.find((c) => groupIds.includes(c.id) || c.id === session?.character_id) || named[0];
+    if (match) return String(match.id);
+  }
+  return session?.character_id ? String(session.character_id) : null;
 }
 
-export function buildRatingPayload({ session, messages, index, rating, betterReply, note }) {
+export function buildRatingPayload({ session, messages, characters, index, rating, betterReply, note }) {
   const list = Array.isArray(messages) ? messages : [];
   const message = list[index];
   if (!message || message.role !== "assistant") return null;
@@ -30,7 +44,7 @@ export function buildRatingPayload({ session, messages, index, rating, betterRep
     session_id: String(session?.id || ""),
     message_id: messageRatingId(message, session?.id, index),
     turn_id: message.turn_id || null,
-    character_id: message.character_id || null,
+    character_id: resolveRatingCharacterId(message, session, characters),
     character_name: message.character_name || null,
     rating,
     reply,

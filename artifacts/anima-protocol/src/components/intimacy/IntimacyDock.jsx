@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Flame, ShieldAlert, Zap, Heart } from "lucide-react";
 import { fetchIntimacyProfile, patchIntimacyProfile } from "@/lib/intimacyClient";
 
-export default function IntimacyDock({ characterId, conversationId, onProfileUpdate }) {
+export default function IntimacyDock({ characterId, conversationId, refreshKey, onProfileUpdate }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [triggeringSafeword, setTriggeringSafeword] = useState(false);
@@ -21,6 +21,27 @@ export default function IntimacyDock({ characterId, conversationId, onProfileUpd
     };
   }, [characterId, conversationId]);
 
+  // Heat is written server-side after each reply is persisted. Re-read it when
+  // a turn settles (refreshKey changes) so the meter rises during the scene
+  // instead of only after reopening the chat. Two reads cover the async save.
+  useEffect(() => {
+    if (!characterId || refreshKey == null) return;
+    let active = true;
+    const pull = () =>
+      fetchIntimacyProfile(characterId).then((p) => {
+        if (active && p) {
+          setProfile(p);
+          if (onProfileUpdate) onProfileUpdate(p);
+        }
+      });
+    const t1 = setTimeout(pull, 800);
+    const t2 = setTimeout(pull, 3000);
+    return () => {
+      active = false;
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [characterId, refreshKey]);
   if (!characterId || !profile) return null;
 
   const toggleIntimacy = async () => {
