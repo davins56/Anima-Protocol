@@ -229,6 +229,7 @@ export function lastReplyActionIndexes(messages) {
     const message = list[i];
     if (!message || isPlaceholder(message)) continue;
     if (message.type === "event" || message.role === "system") continue;
+    if (message.type === "narration" || message.character_name === "Narrator") continue;
     if (message.type === "crisis_resource" || message.type === "ai_notice") continue;
     if (lastAssistant < 0 && message.role === "assistant") lastAssistant = i;
     if (lastUser < 0 && message.role === "user") lastUser = i;
