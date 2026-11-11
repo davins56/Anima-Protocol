@@ -89,7 +89,7 @@ pnpm --filter @workspace/scripts run verify:clerk-oauth -- --fix-redirects
 
 `VITE_CLERK_PUBLISHABLE_KEY` must be set at **build** time on Vercel (not only `CLERK_PUBLISHABLE_KEY` for the API).
 
-Optional: `ELEVENLABS_API_KEY` for TTS routes.
+Optional: `ELEVENLABS_API_KEY` for TTS routes and the Sacred Space live voice agent (`/api/voice-agent/*`, `src/components/meditation/LiveVoiceAgent.jsx`). On the Worker it is a classic secret (`wrangler secret put ELEVENLABS_API_KEY`), mirrored into `process.env` via `CLOUDFLARE_RUNTIME_ENV_NAMES` — do not add it to `secrets_store_secrets` unless that `secret_name` exists in the store. The agent is private (signed URLs only); `ELEVENLABS_AGENT_ID` overrides the default id in `artifacts/api-server/src/lib/elevenlabsClient.ts`, and `ELEVENLABS_VOICE_ID` overrides the TTS voice.
 
 Optional: `CURSOR_API_KEY` (alias `CURSOR_CLOUD_API_KEY`) lets Serenity launch Cursor Cloud Agents that upgrade Anima Protocol source when the steward asks for an interface or system weave. Default repo is `https://github.com/davins56/Anima-Protocol`. Restrict stewards with `PROTOCOL_UPGRADE_ADMIN_EMAILS` (defaults to `davins56@gmail.com,davins56@hotmail.com`).
 
@@ -280,6 +280,7 @@ All new events must follow these conventions.
 | `device_scan_completed` | Anima finishes a permission-gated scan of this device for leftover / junk data | `flag_count`, `has_folder_grant`, `is_anima` | `src/lib/animaDeviceScan.js`, `src/components/anima/DeviceScanPanel.jsx` |
 | `echo_key_discovered` | Operator finds, synthesises, or evolves an Echo Key in story mode | `source` (`virtual` / `field` / `synthesis` / `evolution`), `site`, `tier`, `is_outdoor` | `src/components/echoKeys/EchoStoryMode.jsx`, `src/pages/NetBattle.jsx` |
 | `model_lesson_taught` | Steward saves a correction for their own model from a chat reply (fires after the lesson is saved) | `has_note`, `is_drafted`, `is_own_model_reply`, `is_trainer_started` | `src/components/tutor/TeachDialog.jsx` |
+| `voice_agent_session_started` | Live ElevenLabs voice conversation connects in Sacred Space (fires on connect, not on tap) | `ritual_focus` | `src/components/meditation/LiveVoiceAgent.jsx` |
 | `story_mode_toggled` | User turns the story-mode Narrator on or off for a chat (fires after the session update succeeds; never offered in therapy) | `session_mode`, `is_enabled` | `src/pages/Chat.jsx` |
 
 > **Activation funnel:** `sign_up_completed` → `onboarding_completed` → `message_sent` → `first_reply_received` → `subscription_upgrade_started`. See `docs/analytics-funnel.md`.

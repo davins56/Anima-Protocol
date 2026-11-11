@@ -1,17 +1,22 @@
 import { Router } from "express";
 import { getAuth } from "@clerk/express";
 import { rateLimit } from "../lib/rateLimit";
+import {
+  getElevenLabsClient,
+  isElevenLabsConfigured,
+  sacredSpaceAgentId,
+} from "../lib/elevenlabsClient";
 
 const router = Router();
 // Scope the limiter to this router's own paths. This router is mounted without a
 // path prefix, so an unscoped `router.use(rateLimit)` would run for every /api
 // request passing through (e.g. /api/store/*) and exhaust the shared IP budget.
-router.use(["/tts", "/voices"], rateLimit);
+router.use(["/tts", "/voices", "/voice-agent"], rateLimit);
 
 // Both endpoints proxy to the paid ElevenLabs API using the server's own key —
 // require a signed-in user so an anonymous caller can't burn the account's
 // TTS quota/billing.
-router.use(["/tts", "/voices"], (req, res, next) => {
+router.use(["/tts", "/voices", "/voice-agent"], (req, res, next) => {
   const { userId } = getAuth(req);
   if (!userId) {
     res.status(401).json({ error: "Unauthorized" });
@@ -130,6 +135,33 @@ router.post("/tts", async (req, res) => {
   } catch (err) {
     res.status(500).json({
       error: err instanceof Error ? err.message : String(err),
+    });
+  }
+});
+
+// Live voice conversation with the Sacred Space agent. The agent is private,
+// so the browser needs a short-lived signed URL; the API key never leaves
+// the server.
+router.get("/voice-agent/status", (_req, res) => {
+  res.json({ configured: isElevenLabsConfigured() });
+});
+
+router.post("/voice-agent/session", async (_req, res) => {
+  const client = getElevenLabsClient();
+  if (!client) {
+    res.status(503).json({ error: "ElevenLabs API key not configured." });
+    return;
+  }
+  try {
+    const { signedUrl } = await client.conversationalAi.conversations.getSignedUrl({
+      agentId: sacredSpaceAgentId(),
+    });
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ signedUrl });
+  } catch (err) {
+    const status = Number((err as { statusCode?: number })?.statusCode) || 502;
+    res.status(status >= 400 && status < 600 ? status : 502).json({
+      error: "Could not start the voice session.",
     });
   }
 });

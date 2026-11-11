@@ -1,9 +1,14 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, lazy, Suspense } from "react";
 import { animaClient } from "@/api/animaClient";
 import { recordSacredSpaceCheckIn } from "@/lib/sacredSpaceCheckIn";
 import { useSacredSpaceVoice } from "@/hooks/useSacredSpaceVoice";
+import { isVoiceAgentAvailable } from "@/lib/voiceAgentSession";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, Sparkles, X, Check, Volume2, VolumeX } from "lucide-react";
+
+// Loaded only when the live voice is available, so the ElevenLabs client
+// stays out of the main bundle.
+const LiveVoiceAgent = lazy(() => import("./LiveVoiceAgent"));
 
 const RITUAL_FOCUSES = [
   { id: "healing", label: "Healing", glyph: "◉", color: "#34D399" },
@@ -25,6 +30,9 @@ export default function SacredSpaceSession({ character, user, onClose, onComplet
   const [savingImpact, setSavingImpact] = useState(false);
   const [impactSaved, setImpactSaved] = useState(false);
   const [impactResult, setImpactResult] = useState(null);
+  const [voiceAgentReady, setVoiceAgentReady] = useState(false);
+  const [liveVoice, setLiveVoice] = useState(false);
+  const [liveVoiceError, setLiveVoiceError] = useState("");
   const scrollRef = useRef(null);
   const lastSpokenRef = useRef("");
   const {
@@ -41,8 +49,27 @@ export default function SacredSpaceSession({ character, user, onClose, onComplet
   }, [messages, loading]);
 
   useEffect(() => {
+    let cancelled = false;
+    isVoiceAgentAvailable().then((ok) => {
+      if (!cancelled) setVoiceAgentReady(ok);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (liveVoice) stopVoice();
+  }, [liveVoice, stopVoice]);
+
+  useEffect(() => {
     const last = messages[messages.length - 1];
     if (last?.role !== "assistant" || !last.content) return;
+    // Lines from the live voice agent were already spoken aloud by it.
+    if (last.live) {
+      lastSpokenRef.current = last.content;
+      return;
+    }
     if (last.content === lastSpokenRef.current) return;
     lastSpokenRef.current = last.content;
     speak(last.content);
@@ -409,15 +436,38 @@ Respond as ${character.name}. 2-4 sentences. Be real, not theatrical.`,
             <div ref={scrollRef} />
           </div>
 
+          {liveVoiceError && (
+            <p role="status" className="relative z-10 px-4 pt-2 font-mono text-[10px]" style={{ color: "#FCA5A5" }}>
+              {liveVoiceError}
+            </p>
+          )}
           {/* Input */}
           <div className="relative z-10 border-t px-4 py-3 flex gap-3"
             style={{ borderColor: `${accentColor}15`, background: "rgba(13,5,32,0.9)" }}>
+            {voiceAgentReady && (
+              <Suspense fallback={null}>
+                <LiveVoiceAgent
+                  character={character}
+                  ritualFocus={ritualFocus}
+                  accentColor={accentColor}
+                  onLiveChange={setLiveVoice}
+                  onError={setLiveVoiceError}
+                  onTranscript={(msg) =>
+                    setMessages((prev) => [
+                      ...prev,
+                      msg.role === "assistant"
+                        ? { ...msg, live: true, character_name: character.name }
+                        : { ...msg, live: true },
+                    ])}
+                />
+              </Suspense>
+            )}
             <input
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === "Enter" && !e.shiftKey && sendMessage()}
-              placeholder="Speak from your heart..."
-              disabled={loading}
+              placeholder={liveVoice ? "Listening… speak out loud" : "Speak from your heart..."}
+              disabled={loading || liveVoice}
               className="flex-1 bg-black/40 border font-mono text-xs px-3 py-2 focus:outline-none transition-all disabled:opacity-50"
               style={{ borderColor: `${accentColor}20`, color: "#E0D9FF" }}
             />
