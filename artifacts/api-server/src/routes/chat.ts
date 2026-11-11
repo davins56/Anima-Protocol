@@ -3290,6 +3290,7 @@ router.post("/messages", async (req, res) => {
       sharedMemory: promptSharedMemory,
       mode,
       content,
+      replyAction,
       isCrossover,
       synchroState,
       companionAffect,
