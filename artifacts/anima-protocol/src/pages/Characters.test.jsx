@@ -140,9 +140,9 @@ describe("Characters New Character image upload", () => {
       newBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    expect(container.textContent).toMatch(/\/\/ New Character/);
+    expect(document.body.textContent).toMatch(/\/\/ New Character/);
 
-    const fileInput = container.querySelector('input[type="file"]');
+    const fileInput = document.body.querySelector('input[type="file"]');
     expect(fileInput).toBeTruthy();
     const file = new File(["fake"], "korra.png", { type: "image/png" });
 
@@ -157,12 +157,12 @@ describe("Characters New Character image upload", () => {
     });
 
     expect(uploadFileMock).toHaveBeenCalledWith({ file });
-    const preview = container.querySelector('img[alt="avatar"]');
+    const preview = document.body.querySelector('img[alt="avatar"]');
     expect(preview?.getAttribute("src")).toBe(
       "/api/storage/objects/uploads/new-char",
     );
 
-    const nameInput = Array.from(container.querySelectorAll("input")).find(
+    const nameInput = Array.from(document.body.querySelectorAll("input")).find(
       (el) => el.getAttribute("placeholder") === "e.g. Serenity",
     );
     await act(async () => {
@@ -174,7 +174,7 @@ describe("Characters New Character image upload", () => {
       nameInput.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
-    const createBtn = Array.from(container.querySelectorAll("button")).find(
+    const createBtn = Array.from(document.body.querySelectorAll("button")).find(
       (btn) => btn.textContent?.trim() === "Create",
     );
     await act(async () => {
@@ -205,7 +205,7 @@ describe("Characters New Character image upload", () => {
       newBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    const fileInput = container.querySelector('input[type="file"]');
+    const fileInput = document.body.querySelector('input[type="file"]');
     const file = new File(["fake"], "korra.png", { type: "image/png" });
     await act(async () => {
       Object.defineProperty(fileInput, "files", {
@@ -217,7 +217,7 @@ describe("Characters New Character image upload", () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toMatch(/not available|not found|Upload failed/i);
-    expect(container.querySelector('img[alt="avatar"]')).toBeNull();
+    expect(document.body.textContent).toMatch(/not available|not found|Upload failed/i);
+    expect(document.body.querySelector('img[alt="avatar"]')).toBeNull();
   });
 });
