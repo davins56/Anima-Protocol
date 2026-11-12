@@ -13,8 +13,8 @@ export default function StoryDocumentUpload({ sessionId, onDocumentProcessed }) 
     if (!files) return;
 
     for (const file of files) {
-      if (file.size > 10 * 1024 * 1024) {
-        setError('File must be under 10MB');
+      if (file.size > 100 * 1024 * 1024) {
+        setError('File must be under 100 MB');
         continue;
       }
 

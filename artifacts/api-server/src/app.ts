@@ -112,8 +112,9 @@ app.use(corsMiddleware);
 // Limit raised to accommodate base64 image data URLs (e.g. avatar AI edit,
 // which posts the source image inline). Individual routes enforce their own
 // byte caps on the decoded buffer.
-app.use(express.json({ limit: "25mb" }));
-app.use(express.urlencoded({ extended: true, limit: "25mb" }));
+// 140 MB fits a 100 MB file as base64 JSON (~134 MB) plus fields.
+app.use(express.json({ limit: "140mb" }));
+app.use(express.urlencoded({ extended: true, limit: "140mb" }));
 
 // Health checks must remain public so platform startup probes (/api/healthz)
 // can distinguish service availability from auth configuration problems.

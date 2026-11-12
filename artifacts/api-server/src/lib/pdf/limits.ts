@@ -9,19 +9,18 @@
  */
 
 /**
- * Decoded file size. An 8 MB PDF is about 11 MB of base64 JSON. V8 holds that
- * string as UTF-16 (~22 MB), then extraction copies the decoded bytes again
- * before pdf.js parses them. That spike is fine for one request, but the
- * Worker isolate is 128 MB shared across concurrent requests, so two 8 MB
- * uploads on top of the API can cross it. 4 MB decoded is about 5.4 MB of
- * JSON and stays inside that limit. The request-body cap (100 MB on Free and
- * Pro) and the 30s paid CPU budget are not the binding constraint.
+ * Decoded file size: 100 MB. The upload is base64 JSON (~134 MB for a full
+ * 100 MB file), so the express body limit in app.ts is sized to match.
+ * Caution: on the Cloudflare Worker the isolate has 128 MB of memory and the
+ * edge rejects request bodies over 100 MB (Free/Pro), so very large PDFs can
+ * still fail there before or during extraction. The page and extracted-text
+ * caps below still apply.
  */
-export const PDF_MAX_BYTES = 4 * 1024 * 1024;
+export const PDF_MAX_BYTES = 100 * 1024 * 1024;
 
 /**
  * Original PDF bytes are stored in Postgres so a chat chip can open the file.
- * One 4 MB parameterized INSERT is dropped by Hyperdrive, so the file is
+ * One multi-MB parameterized INSERT is dropped by Hyperdrive, so the file is
  * split into 512 KiB parts (the same size as own-model weight chunks).
  */
 export const PDF_FILE_PART_BYTES = 512 * 1024;
