@@ -5,7 +5,7 @@
  * input without a `capture` attribute so iPhone offers the camera and the library.
  */
 
-export const CHAT_PHOTO_MAX_SOURCE_BYTES = 15 * 1024 * 1024;
+export const CHAT_PHOTO_MAX_SOURCE_BYTES = 100 * 1024 * 1024;
 export const CHAT_PHOTO_MAX_COUNT = 4;
 
 /** `image/*` is what makes iOS offer the camera and the photo library. */
@@ -36,7 +36,7 @@ export function chatPhotoRejection(file) {
   if (!typeOk) return "Choose a JPEG, PNG, WebP, or HEIC photo.";
   if (!file.size) return "That photo is empty.";
   if (file.size > CHAT_PHOTO_MAX_SOURCE_BYTES) {
-    return "That photo is too large. The limit is 15 MB.";
+    return "That photo is too large. The limit is 100 MB.";
   }
   return null;
 }
