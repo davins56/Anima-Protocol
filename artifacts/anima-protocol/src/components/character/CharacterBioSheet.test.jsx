@@ -73,20 +73,20 @@ describe("CharacterBioSheet", () => {
 
   it("renders bio sections from character fields", () => {
     const { container } = renderSheet();
-    expect(container.textContent).toContain("Bio Sheet");
-    expect(container.textContent).toContain("Korra");
-    expect(container.textContent).toContain("Biological Makeup");
-    expect(container.textContent).toContain("Backstory");
-    expect(container.textContent).toContain("Rap Sheet");
-    expect(container.textContent).toContain("Uniques & Details");
-    expect(container.textContent).toContain("Southern Water Tribe");
-    expect(container.textContent).toContain("Behavioral Profile");
-    expect(container.textContent).toContain("impulsive");
+    expect(document.body.textContent).toContain("Bio Sheet");
+    expect(document.body.textContent).toContain("Korra");
+    expect(document.body.textContent).toContain("Biological Makeup");
+    expect(document.body.textContent).toContain("Backstory");
+    expect(document.body.textContent).toContain("Rap Sheet");
+    expect(document.body.textContent).toContain("Uniques & Details");
+    expect(document.body.textContent).toContain("Southern Water Tribe");
+    expect(document.body.textContent).toContain("Behavioral Profile");
+    expect(document.body.textContent).toContain("impulsive");
   });
 
   it("calls onClose when Close Dossier is pressed", () => {
     const { container, onClose } = renderSheet();
-    const closeBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+    const closeBtn = Array.from(document.body.querySelectorAll("button")).find((b) =>
       b.textContent?.includes("Close Dossier"),
     );
     expect(closeBtn).toBeTruthy();
@@ -98,6 +98,6 @@ describe("CharacterBioSheet", () => {
 
   it("returns nothing without a character", () => {
     const { container } = renderSheet({ character: null });
-    expect(container.textContent).toBe("");
+    expect(document.body.textContent).toBe("");
   });
 });

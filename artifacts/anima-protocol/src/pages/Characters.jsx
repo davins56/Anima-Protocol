@@ -22,6 +22,7 @@ import { whenBootstrapReady } from "@/lib/syncBootstrap";
 import AddSeriesCharactersModal from "@/components/characters/AddSeriesCharactersModal";
 import CharacterBioSheet from "@/components/character/CharacterBioSheet";
 import CompanionLoreFiles from "@/components/pdf/CompanionLoreFiles";
+import AppModalOverlay from "@/components/common/AppModalOverlay";
 import AvatarUploadField from "@/components/anima/AvatarUploadField";
 import IntimacyEditor from "@/components/intimacy/IntimacyEditor";
 import { characterCreatePayload } from "@/lib/characterAvatarUpload";
@@ -579,8 +580,8 @@ export default function Characters() {
 
       {/* Form Modal */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-2xl bg-background border border-primary/30 hud-corner glow-border max-h-[90vh] flex flex-col">
+        <AppModalOverlay className="items-center justify-center p-4">
+          <div className="w-full max-w-2xl bg-background border border-primary/30 hud-corner glow-border max-h-full min-h-0 flex flex-col">
             <div className="flex items-center justify-between p-6 border-b border-primary/20">
               <h2 className="font-mono text-primary glow-text tracking-[0.2em] uppercase">
                 {editingChar ? "// Edit Character" : "// New Character"}
@@ -705,8 +706,8 @@ export default function Characters() {
                 {saving ? "Saving..." : editingChar ? "Update" : "Create"}
               </button>
             </div>
-            </div>
-            )}
+        </AppModalOverlay>
+      )}
 
       <AddSeriesCharactersModal
         open={showSeriesModal}
@@ -719,7 +720,7 @@ export default function Characters() {
 
       {/* Delete All Confirmation Modal */}
       {showDeleteAll && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <AppModalOverlay className="items-center justify-center p-4">
           <div className="w-full max-w-sm bg-background border border-destructive/40 hud-corner p-6 space-y-4">
             <div className="flex items-center gap-3">
               <Trash2 className="w-5 h-5 text-destructive flex-shrink-0" />
@@ -745,7 +746,7 @@ export default function Characters() {
               </button>
             </div>
           </div>
-        </div>
+        </AppModalOverlay>
       )}
 
       <CharacterBioSheet

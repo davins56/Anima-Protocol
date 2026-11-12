@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 import { X, Fingerprint, BookOpen, ScrollText, Sparkles } from "lucide-react";
 import CompanionLoreFiles from "@/components/pdf/CompanionLoreFiles";
 import { motion, AnimatePresence } from "framer-motion";
@@ -102,14 +103,23 @@ export default function CharacterBioSheet({ character, open = true, onClose }) {
     character.is_starter && { label: "Roster", value: "Starter cast" },
   ].filter(Boolean);
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  // Portal to <body> so the page header, overflow-hidden layout chrome and the
+  // z-[999] bottom tab bar cannot clip the top/bottom of the dossier.
+  return createPortal(
     <AnimatePresence>
       {open && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4"
+          className="fixed inset-0 z-[1002] flex items-center justify-center bg-black/80 backdrop-blur-sm px-3 sm:p-4"
+          style={{
+            zIndex: 1002,
+            paddingTop: "max(env(safe-area-inset-top, 0px), 12px)",
+            paddingBottom: "max(env(safe-area-inset-bottom, 0px), 12px)",
+          }}
           onClick={onClose}
           role="dialog"
           aria-modal="true"
@@ -120,7 +130,7 @@ export default function CharacterBioSheet({ character, open = true, onClose }) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 16, scale: 0.98 }}
             transition={{ duration: 0.2 }}
-            className="w-full sm:max-w-lg max-h-[92vh] sm:max-h-[90vh] bg-background border border-primary/30 sm:rounded-lg shadow-2xl overflow-hidden flex flex-col"
+            className="w-full sm:max-w-lg max-h-full bg-background border border-primary/30 rounded-lg shadow-2xl overflow-hidden flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header / mugshot */}
@@ -264,6 +274,7 @@ export default function CharacterBioSheet({ character, open = true, onClose }) {
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }
