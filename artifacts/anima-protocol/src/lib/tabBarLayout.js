@@ -11,6 +11,13 @@
  */
 
 export const TAB_BAR_SELECTOR = ".tab-bar";
+/** Side rail (Appearance Studio → Navigation: Rail). Not a bottom bar. */
+export const NAV_RAIL_SELECTOR = ".nav-rail";
+/**
+ * With the rail there is no bottom bar, so the in-flow chat composer only
+ * reserves the home indicator (keyboard-open still zeroes it).
+ */
+export const RAIL_BOTTOM_RESERVATION = "env(safe-area-inset-bottom, 0px)";
 
 /**
  * @typedef {{
@@ -104,6 +111,10 @@ export function syncReservedTabBarHeight(root, options = {}) {
       : null;
   const tabBar = fromRoot || doc.querySelector(TAB_BAR_SELECTOR);
   const measurement = measureVisibleTabBarHeight(tabBar);
+  if (!measurement.present && !options.keyboardOpen && doc.querySelector(NAV_RAIL_SELECTOR)) {
+    root.style.setProperty("--tab-bar-height", RAIL_BOTTOM_RESERVATION);
+    return measurement;
+  }
   applyReservedTabBarHeight(root, measurement, options);
   return measurement;
 }
