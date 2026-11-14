@@ -63,6 +63,14 @@ vi.mock("@/components/chat/LivingPresence", () => ({
   ),
 }));
 
+vi.mock("@/lib/AuthContext", () => ({
+  useAuth: () => ({ logout: vi.fn() }),
+}));
+
+vi.mock("@/hooks/useModelTutor", () => ({
+  useModelTutor: () => ({ isSteward: false }),
+}));
+
 HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
   clearRect: vi.fn(),
   beginPath: vi.fn(),
@@ -100,7 +108,7 @@ describe("MainHome floor", () => {
     mocks.updateMe.mockResolvedValue({});
   });
 
-  it("is a place with a wake line, stage, and four-item dock — not a chat dashboard", async () => {
+  it("is a place with a wake line, stage, and five-item dock — not a chat dashboard", async () => {
     renderHome();
     await waitFor(() => {
       expect(document.querySelector("[data-home-dock]")).toBeTruthy();
@@ -110,6 +118,9 @@ describe("MainHome floor", () => {
     expect(text).toMatch(/People/);
     expect(text).toMatch(/World/);
     expect(text).toMatch(/You/);
+    expect(text).toMatch(/Moments/);
+    expect(text).not.toMatch(/Companions/);
+    expect(text).not.toMatch(/\bCHAT\b/);
     expect(text).toMatch(FEATURE_MESSAGING.IDENTITY_DEFAULT);
     expect(text).not.toMatch(/Start Chatting/i);
     expect(text).not.toMatch(/Continue Session/i);
@@ -202,12 +213,15 @@ describe("MainHome floor", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     fireEvent.click(screen.getByRole("button", { name: "World" }));
-    const world = screen.getByLabelText("World");
-    expect(within(world).getByText("Jack In")).toBeTruthy();
-    expect(within(world).getByText("Constellation")).toBeTruthy();
-    expect(within(world).getByText("Echo Keys")).toBeTruthy();
-    expect(within(world).getByText("Dream journal")).toBeTruthy();
-    fireEvent.click(within(world).getByText("Jack In"));
+    const explore = screen.getByTestId("explore-menu");
+    expect(explore).toBeTruthy();
+    expect(within(explore).getByText("// Explore")).toBeTruthy();
+    expect(within(explore).getByText("Home")).toBeTruthy();
+    expect(within(explore).getByText("NetBattle")).toBeTruthy();
+    expect(within(explore).getByText("Constellation")).toBeTruthy();
+    expect(within(explore).getByText("Echo Keys")).toBeTruthy();
+    expect(within(explore).getByText("Dream journal")).toBeTruthy();
+    fireEvent.click(within(explore).getByText("NetBattle"));
     expect(mocks.navigate).toHaveBeenCalledWith("/net-battle");
 
     fireEvent.click(screen.getByRole("button", { name: "You" }));

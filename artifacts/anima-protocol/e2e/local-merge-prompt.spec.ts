@@ -37,7 +37,7 @@ test.describe.configure({ mode: "serial" });
 
 // The analytics consent banner is persisted via mixpanel (not localStorage),
 // so it can reappear; dismiss it if present. dispatchEvent fires the React
-// onClick directly, immune to the BottomTabBar overlapping its bottom strip.
+// onClick directly, immune to the app dock overlapping its bottom strip.
 async function dismissOverlays(p: Page): Promise<void> {
   const consentAccept = p
     .getByRole("dialog", { name: /Analytics consent/i })

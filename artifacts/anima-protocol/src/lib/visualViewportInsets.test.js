@@ -117,7 +117,7 @@ describe("keyboardPaddingForShell", () => {
 
 describe("in-flow composer vs fixed tab bar (keyboard closed)", () => {
   it("reserves --tab-bar-height once and does not add --safe-bottom again", () => {
-    // CSS: --tab-bar-height = 56px + env(safe-area-inset-bottom)
+    // CSS: --tab-bar-height = 72px + env(safe-area-inset-bottom)
     const tabBarContentPx = 56;
     const safeBottomPx = 34;
     const tabBarHeightPx = tabBarContentPx + safeBottomPx;
