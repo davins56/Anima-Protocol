@@ -73,7 +73,7 @@ export default function ChatToolbar({
   }, [showActionsPanel]);
 
   return (
-    <div className="flex flex-col border-b border-primary/20 bg-black/60 backdrop-blur-md flex-shrink-0 relative">
+    <div data-glass-surface="header" className="flex flex-col border-b border-primary/20 bg-black/60 backdrop-blur-md flex-shrink-0 relative">
       {/* Stack navigation on narrow screens; never let header actions overlap. */}
       <div className="flex flex-col lg:flex-row lg:items-center min-w-0">
         <div className="min-w-0 w-full lg:flex-1 overflow-x-auto overscroll-x-contain">

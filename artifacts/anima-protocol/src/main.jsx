@@ -9,6 +9,7 @@ import "./styles/anima-forge.css";
 import { applyForge } from "./lib/animaForge";
 applyForge();
 import "./styles/appearance-studio.css";
+import "./styles/glass-shells.css";
 import { applyAppearance } from "./lib/appearanceStudio";
 import { initializeColorScheme } from "./lib/colorScheme";
 applyAppearance();
