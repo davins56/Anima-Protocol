@@ -10,8 +10,9 @@
  * "elevenlabs") is the steward's explicit opt-in from Settings; without it a
  * down box is a 503 voice_offline with cloudFallback:false.
  *
- * In-chat clips are not capped (the steward asked for them, or the Anima chose
- * to speak in a live conversation); the shared rate limiter still applies.
+ * In-chat clips on the home box are not capped (the steward asked for them, or
+ * the Anima chose to speak in a live conversation); cloud clips are metered as
+ * voice units (lib/billing/meter.ts). The shared rate limiter still applies.
  * Proactive media is capped in lib/media/outreachMedia.ts.
  */
 import { getAuth } from "@clerk/express";
@@ -20,6 +21,14 @@ import { isKernelFeatureEnabled } from "../lib/kernelFeatures";
 import { parseCloudOptIn } from "../lib/media/voiceClipCore";
 import { synthesizeVoiceClip, voiceClipKeys } from "../lib/media/voiceClip";
 import { rateLimit } from "../lib/rateLimit";
+import {
+  chargeUsage,
+  refundUsage,
+  sendMeterDenied,
+  ttsUnitsForText,
+  type Charge,
+  type MeterDenied,
+} from "../lib/billing/meter";
 import { companionPhotosAvailable } from "../lib/companionPhotos";
 
 const router = Router();
@@ -64,9 +73,26 @@ router.post("/voice-clip", async (req, res) => {
     res.status(400).json({ error: "characterId and text are required" });
     return;
   }
+  // Cloud voices (opt-in) are metered as voice units right before the paid
+  // call; the home box (Kokoro) stays free (security audit 2026-11-14 H1).
+  let charge: Charge | null = null;
+  let meterDenied: MeterDenied | null = null;
   try {
     const cloudOptIn = parseCloudOptIn(body.cloud_opt_in);
-    const clip = await synthesizeVoiceClip({ userId, characterId, text, cloudOptIn });
+    const clip = await synthesizeVoiceClip({
+      userId,
+      characterId,
+      text,
+      cloudOptIn,
+      beforeCloudCall: async () => {
+        const metered = await chargeUsage({ userId, kind: "voice", units: ttsUnitsForText(text) });
+        if (!metered.ok) {
+          meterDenied = metered.denied;
+          throw new Error("metered");
+        }
+        charge = metered.charge;
+      },
+    });
     res.json({
       url: clip.url,
       content_type: clip.contentType,
@@ -74,6 +100,11 @@ router.post("/voice-clip", async (req, res) => {
       provider: clip.provider,
     });
   } catch (err) {
+    await refundUsage(charge);
+    if (meterDenied) {
+      sendMeterDenied(res, meterDenied);
+      return;
+    }
     const e = err as { status?: number; message?: string; code?: string; reason?: string; cloudFallback?: boolean };
     const status = e?.status && e.status >= 400 && e.status < 600 ? e.status : 500;
     if (e?.code) {

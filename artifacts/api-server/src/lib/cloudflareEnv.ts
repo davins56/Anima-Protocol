@@ -113,6 +113,21 @@ export const CLOUDFLARE_RUNTIME_ENV_NAMES = [
   "STRIPE_VOICE_MINUTES_PER_PACK",
   "STRIPE_DEEP_MODE_DAYS",
   "BILLING_APP_ORIGIN",
+  // Metering + durable per-user limits (security audit 2026-11-14 H1;
+  // lib/billing/meter.ts, lib/usage/userRateLimit.ts).
+  "ANIMA_METERING",
+  "ANIMA_METERING_EXEMPT_USER_IDS",
+  "ANIMA_FREE_PHOTOS_PER_DAY",
+  "ANIMA_FREE_VOICE_UNITS_PER_DAY",
+  "ANIMA_VOICE_SESSION_UNITS",
+  "ANIMA_RL_CHAT_PROXY_PER_MIN",
+  "ANIMA_RL_CHAT_PROXY_PER_DAY",
+  "ANIMA_RL_INVOKE_PER_MIN",
+  "ANIMA_RL_INVOKE_PER_DAY",
+  "ANIMA_RL_PHOTO_PER_MIN",
+  "ANIMA_RL_PHOTO_PER_DAY",
+  "ANIMA_RL_VOICE_PER_MIN",
+  "ANIMA_RL_VOICE_PER_DAY",
   // Public app origin for background jobs (Anima media photo signing).
   "ANIMA_APP_ORIGIN",
   // Calendar awareness (Settings > Day Rhythm): busy/free only. See
