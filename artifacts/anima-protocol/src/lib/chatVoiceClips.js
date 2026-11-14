@@ -86,7 +86,7 @@ export async function fetchMediaCapabilities({ fetchImpl = globalThis.fetch, pre
     capabilitiesPromise = (async () => {
       try {
         const headers = await authHeaders();
-        const res = await fetchImpl(apiUrl("/api/media/capabilities"), { headers });
+        const res = await fetchImpl(apiUrl("/media/capabilities"), { headers });
         if (!res.ok) return null;
         return await res.json();
       } catch {
@@ -109,7 +109,7 @@ export function resetMediaCapabilitiesForTests() {
 export async function requestVoiceClip({ characterId, text, fetchImpl = globalThis.fetch, signal, prefs }) {
   const headers = await authHeaders({ "Content-Type": "application/json" });
   const cloudOptIn = cloudOptInForClip(prefs ?? getVoicePrefs());
-  const res = await fetchImpl(apiUrl("/api/media/voice-clip"), {
+  const res = await fetchImpl(apiUrl("/media/voice-clip"), {
     method: "POST",
     headers,
     body: JSON.stringify(cloudOptIn ? { characterId, text, cloud_opt_in: cloudOptIn } : { characterId, text }),
