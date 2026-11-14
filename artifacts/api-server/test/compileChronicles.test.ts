@@ -11,14 +11,18 @@ import {
   db,
   ensureSchemaOnce,
   userEntities,
+  userProfiles,
 } from "@workspace/db";
 import {
   CHARACTER_ENTITY,
   CHARACTER_JOURNAL,
   CHRONICLES_CRON,
+  DEFAULT_CHRONICLE_TIMEZONE,
   chronicleDateFor,
   compileChroniclesForUser,
   extractiveChronicleDraft,
+  loadChronicleTimeZone,
+  resolveChronicleTimeZone,
   runChroniclesCycle,
   type ChronicleGenerateInput,
 } from "../src/lib/chronicles/compileChronicles";
@@ -167,6 +171,8 @@ beforeAll(async () => {
 afterAll(async () => {
   await db.delete(userEntities).where(eq(userEntities.userId, owner));
   await db.delete(userEntities).where(eq(userEntities.userId, other));
+  await db.delete(userProfiles).where(eq(userProfiles.userId, owner));
+  await db.delete(userProfiles).where(eq(userProfiles.userId, other));
 });
 
 describe("compileChroniclesForUser", () => {
@@ -395,6 +401,15 @@ describe("chronicle date helpers and wiring", () => {
     expect(TODAY).toBe(YESTERDAY === "2026-11-12" ? "2026-11-13" : TODAY);
   });
 
+  it("keeps 8 PM Eastern on that Eastern calendar day by default", () => {
+    // 8:00 PM EST on 13 Nov 2026 is 01:00 UTC on the 14th. UTC would roll
+    // over; America/New_York, the fallback, must not.
+    const eightPmEt = new Date("2026-11-14T01:00:00.000Z");
+    expect(chronicleDateFor(eightPmEt, "America/New_York")).toBe("2026-11-13");
+    expect(chronicleDateFor(eightPmEt)).toBe("2026-11-13");
+    expect(DEFAULT_CHRONICLE_TIMEZONE).toBe("America/New_York");
+  });
+
   it("registers the 3-hour cron on the Worker and in wrangler", () => {
     const w = readFileSync(new URL("../src/worker.ts", import.meta.url), "utf8");
     const wr = readFileSync(new URL("../../../wrangler.jsonc", import.meta.url), "utf8");
@@ -409,5 +424,133 @@ describe("chronicle date helpers and wiring", () => {
     // request-body messages and never writes CharacterJournal.
     expect(fn).toMatch(/case "compileDailyChronicles"\s*:/);
     expect(fn).toContain("compileChroniclesForUser");
+  });
+});
+
+describe("resolveChronicleTimeZone", () => {
+  it("falls back to America/New_York when nothing is saved", () => {
+    expect(resolveChronicleTimeZone(null)).toBe("America/New_York");
+    expect(resolveChronicleTimeZone({})).toBe("America/New_York");
+    expect(resolveChronicleTimeZone({ settings: { user_profile: { timezone: "not-a-zone" } } })).toBe(
+      "America/New_York",
+    );
+  });
+
+  it("uses the rhythm/senses timezone when no profile timezone is saved", () => {
+    expect(
+      resolveChronicleTimeZone({
+        senses: { timezone: "Asia/Tokyo" },
+      }),
+    ).toBe("Asia/Tokyo");
+  });
+
+  it("lets the saved profile timezone win over senses", () => {
+    expect(
+      resolveChronicleTimeZone({
+        settings: { user_profile: { timezone: "UTC" } },
+        senses: { timezone: "America/New_York" },
+      }),
+    ).toBe("UTC");
+  });
+});
+
+describe("compileChroniclesForUser uses the resolved timezone", () => {
+  const eightPmEt = "2026-11-14T01:00:00.000Z"; // 8:00 PM EST, 13 Nov 2026
+  const now = new Date("2026-11-14T02:00:00.000Z"); // 9:00 PM EST, still the 13th
+  const tzUsers: string[] = [];
+
+  async function seedTzUser(suffix: string, profile?: Record<string, unknown>) {
+    const userId = `${PREFIX}tz_${suffix}`;
+    const characterId = `${userId}_char`;
+    const sessionId = `${userId}_sess`;
+    const messageId = `${userId}_msg`;
+    tzUsers.push(userId);
+    await db.insert(userEntities).values([
+      {
+        userId,
+        entityName: CHARACTER_ENTITY,
+        entityId: characterId,
+        data: { id: characterId, name: "Asami Sato" },
+      },
+      {
+        userId,
+        entityName: CHAT_SESSION,
+        entityId: sessionId,
+        data: { id: sessionId, title: "Evening chat", character_id: characterId, mode: "solo" },
+      },
+      {
+        userId,
+        entityName: CHAT_MESSAGE,
+        entityId: messageId,
+        data: {
+          id: messageId,
+          session_id: sessionId,
+          role: "user",
+          content: "It's eight in the evening here.",
+          created_date: eightPmEt,
+        },
+        createdAt: new Date(eightPmEt),
+        updatedAt: new Date(eightPmEt),
+      },
+    ]);
+    if (profile) {
+      await db.insert(userProfiles).values({ userId, data: profile });
+    }
+    return userId;
+  }
+
+  afterAll(async () => {
+    for (const userId of tzUsers) {
+      await db.delete(userEntities).where(eq(userEntities.userId, userId));
+      await db.delete(userProfiles).where(eq(userProfiles.userId, userId));
+    }
+  });
+
+  async function compileAndDate(userId: string) {
+    const stats = await compileChroniclesForUser(userId, {
+      now,
+      generate: async (input) => ({
+        title: `Day ${input.chronicle_date}`,
+        content: "Evening notes.",
+        character_insights: "",
+        key_moments: [],
+        emotional_tone: "peaceful",
+      }),
+    });
+    const rows = await db
+      .select()
+      .from(userEntities)
+      .where(and(eq(userEntities.userId, userId), eq(userEntities.entityName, CHARACTER_JOURNAL)));
+    return {
+      stats,
+      date: (rows[0]?.data as Record<string, unknown> | undefined)?.chronicle_date,
+    };
+  }
+
+  it("keeps an 8 PM ET chat on that ET day when no timezone is saved", async () => {
+    const userId = await seedTzUser("fallback");
+    expect(await loadChronicleTimeZone(userId)).toBe("America/New_York");
+    const result = await compileAndDate(userId);
+    expect(result.stats.compiled).toBe(1);
+    expect(result.date).toBe("2026-11-13");
+  });
+
+  it("uses the senses/rhythm timezone when no profile timezone is saved", async () => {
+    const userId = await seedTzUser("senses", { senses: { timezone: "Asia/Tokyo" } });
+    expect(await loadChronicleTimeZone(userId)).toBe("Asia/Tokyo");
+    const result = await compileAndDate(userId);
+    expect(result.stats.compiled).toBe(1);
+    expect(result.date).toBe("2026-11-14");
+  });
+
+  it("lets the saved timezone win over senses and the fallback", async () => {
+    const userId = await seedTzUser("saved", {
+      settings: { user_profile: { timezone: "UTC" } },
+      senses: { timezone: "America/New_York" },
+    });
+    expect(await loadChronicleTimeZone(userId)).toBe("UTC");
+    const result = await compileAndDate(userId);
+    expect(result.stats.compiled).toBe(1);
+    expect(result.date).toBe("2026-11-14");
   });
 });
