@@ -28,7 +28,7 @@ export const INSPECT_RADIUS = 3;
 export const JACK_RADIUS = 4;
 
 export type ExploreEvent =
-  | { type: "scan"; found: number; best: Rarity | null; at: number }
+  | { type: "scan"; found: number; best: Rarity | null; at: number; boosted?: boolean }
   | { type: "scan-cooldown"; remainingMs: number; at: number }
   | { type: "collect"; loot: LootDef; firstTime: boolean; at: number }
   | { type: "inspect"; loot: LootDef; at: number }
@@ -75,6 +75,15 @@ export function collectible(state: ExploreState, nodes: readonly DataNode[], pos
   return nearestNode(nodes, pos, COLLECT_RADIUS, (n) => state.revealed.includes(n.id) && !state.progress.collected.includes(n.id));
 }
 
+/** Inventory id of the Data Bazaar Scan Booster (see market/economy SHOP). */
+export const SCAN_BOOSTER_ID = "shop:scan-booster";
+
+function spendOne(inv: Record<string, number>, id: string): Record<string, number> {
+  const out = { ...inv, [id]: (inv[id] ?? 0) - 1 };
+  if (out[id] <= 0) delete out[id];
+  return out;
+}
+
 const RARITY_ORDER: Rarity[] = ["common", "uncommon", "rare", "epic", "legendary"];
 
 export function exploreReducer(state: ExploreState, a: ExploreAction): ExploreState {
@@ -89,7 +98,10 @@ export function exploreReducer(state: ExploreState, a: ExploreAction): ExploreSt
       return { ...state, inspecting: null };
     case "scan": {
       if (a.now < state.scanReadyAt) return { ...state, last: { type: "scan-cooldown", remainingMs: state.scanReadyAt - a.now, at: a.now } };
-      const hits = a.nodes.filter((n) => dist(n.position, a.pos) <= SCAN_RADIUS && !state.progress.collected.includes(n.id));
+      // A Scan Booster (Data Bazaar) widens one scan by 50% and is used up.
+      const boosters = state.progress.inventory[SCAN_BOOSTER_ID] ?? 0;
+      const radius = boosters > 0 ? SCAN_RADIUS * 1.5 : SCAN_RADIUS;
+      const hits = a.nodes.filter((n) => dist(n.position, a.pos) <= radius && !state.progress.collected.includes(n.id));
       const fresh = hits.filter((n) => !state.revealed.includes(n.id));
       let best: Rarity | null = null;
       for (const n of hits) if (!best || RARITY_ORDER.indexOf(n.loot.rarity) > RARITY_ORDER.indexOf(best)) best = n.loot.rarity;
@@ -97,7 +109,8 @@ export function exploreReducer(state: ExploreState, a: ExploreAction): ExploreSt
         ...state,
         revealed: [...state.revealed, ...fresh.map((n) => n.id)],
         scanReadyAt: a.now + SCAN_COOLDOWN_MS,
-        last: { type: "scan", found: hits.length, best, at: a.now },
+        progress: boosters > 0 ? { ...state.progress, inventory: spendOne(state.progress.inventory, SCAN_BOOSTER_ID) } : state.progress,
+        last: { type: "scan", found: hits.length, best, at: a.now, boosted: boosters > 0 },
       };
     }
     case "collect": {
@@ -135,6 +148,8 @@ export type AvailabilityInput = {
   canInspect: boolean;
   nearPortal: boolean;
   hasCompanion: boolean;
+  /** Standing at the Data Bazaar vendor terminal: Inspect opens the market. */
+  nearVendor?: boolean;
 };
 
 /** Which actions are enabled right now, with a reason when not. */
@@ -143,7 +158,7 @@ export function actionAvailability(i: AvailabilityInput): Record<ActionId, { ena
   return {
     scan: cooling ? { enabled: false, reason: `Recharging ${Math.ceil((i.scanReadyAt - i.now) / 1000)}s` } : { enabled: true },
     collect: i.canCollect ? { enabled: true } : { enabled: false, reason: "Stand on a revealed node" },
-    inspect: i.canInspect ? { enabled: true } : { enabled: false, reason: "Get close to a revealed node" },
+    inspect: i.canInspect || i.nearVendor ? { enabled: true } : { enabled: false, reason: "Get close to a revealed node or a vendor" },
     jack: i.nearPortal ? { enabled: true } : { enabled: false, reason: "Find a gate" },
     accompany: i.hasCompanion ? { enabled: true } : { enabled: false, reason: "No Anima to bring" },
     log: { enabled: true },

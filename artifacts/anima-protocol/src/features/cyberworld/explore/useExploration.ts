@@ -3,7 +3,8 @@ import type { PlayerTelemetry, SceneCommands, SceneNode } from "../CyberworldSce
 import type { Area, Vec2 } from "../layout";
 import { JACK_RADIUS, actionAvailability, collectible, exploreReducer, initialExploreState, nearestNode, INSPECT_RADIUS } from "./actions";
 import { RARITY } from "./loot";
-import { loadProgress, saveProgress } from "./progress";
+import { loadProgress, saveProgress, type Progress } from "./progress";
+import { nearVendor } from "../market/area";
 import type { RegionContext } from "./region";
 import { generateNodes } from "./spawns";
 
@@ -20,7 +21,7 @@ const RARITY_TIER = { common: 0, uncommon: 1, rare: 2, epic: 3, legendary: 4 } a
 /** Exploration loop glue: daily nodes, reducer, persistence, proximity and actions. */
 export function useExploration({ area, region, telemetry, commands, hasCompanion }: Opts) {
   const [state, dispatch] = useReducer(exploreReducer, undefined, () => initialExploreState(loadProgress(region.dayKey)));
-  const [prox, setProx] = useState({ canCollect: false, canInspect: false, portalId: null as string | null });
+  const [prox, setProx] = useState({ canCollect: false, canInspect: false, nearVendor: false, portalId: null as string | null });
   const [now, setNow] = useState(() => performance.now());
 
   const nodes = useMemo(
@@ -39,6 +40,7 @@ export function useExploration({ area, region, telemetry, commands, hasCompanion
       const pos: Vec2 = [telemetry.current.x, telemetry.current.z];
       const canCollect = !!collectible(state, nodes, pos);
       const canInspect = !!nearestNode(nodes, pos, INSPECT_RADIUS, (n) => state.revealed.includes(n.id) && !state.progress.collected.includes(n.id));
+      const atVendor = nearVendor(area.id, pos);
       let portalId: string | null = null;
       let bd = JACK_RADIUS;
       for (const g of area.portals) {
@@ -48,7 +50,7 @@ export function useExploration({ area, region, telemetry, commands, hasCompanion
           portalId = g.id;
         }
       }
-      setProx((p) => (p.canCollect === canCollect && p.canInspect === canInspect && p.portalId === portalId ? p : { canCollect, canInspect, portalId }));
+      setProx((p) => (p.canCollect === canCollect && p.canInspect === canInspect && p.nearVendor === atVendor && p.portalId === portalId ? p : { canCollect, canInspect, nearVendor: atVendor, portalId }));
       // Only tick the clock while the scanner is recharging (drives the countdown label).
       const t = performance.now();
       if (t < state.scanReadyAt + 300) setNow(t);
@@ -63,6 +65,8 @@ export function useExploration({ area, region, telemetry, commands, hasCompanion
     [nodes, telemetry],
   );
   const closeInspect = useCallback(() => dispatch({ t: "close-inspect" }), []);
+  /** Replace progress (Data Bazaar purchases / trades / gifts); persisted like everything else. */
+  const setProgress = useCallback((progress: Progress) => dispatch({ t: "load", progress }), []);
   const jack = useCallback(() => {
     const g = area.portals.find((p) => p.id === prox.portalId);
     if (g) commands.current.walkTo = g.position;
@@ -81,9 +85,10 @@ export function useExploration({ area, region, telemetry, commands, hasCompanion
     scanReadyAt: state.scanReadyAt,
     canCollect: prox.canCollect,
     canInspect: prox.canInspect,
+    nearVendor: prox.nearVendor,
     nearPortal: !!prox.portalId,
     hasCompanion,
   });
 
-  return { state, nodes, sceneNodes, availability, scan, collect, inspect, closeInspect, jack, rarityTier: RARITY_TIER };
+  return { state, nodes, sceneNodes, availability, scan, collect, inspect, closeInspect, jack, setProgress, nearVendor: prox.nearVendor, rarityTier: RARITY_TIER };
 }
