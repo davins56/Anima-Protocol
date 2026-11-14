@@ -5,6 +5,7 @@ import * as THREE from "three";
 import useFaceTexture from "@/hooks/useFaceTexture";
 import TesseractLattice from "@/components/battle/TesseractLattice";
 import VesselAura from "@/components/vessel/VesselAura";
+import PresentationTreatment from "@/components/vessel/PresentationTreatment";
 import { wPhaseScale } from "@/lib/tesseract4d";
 import { RENDERER_QUALITY } from "@/lib/rendererQuality";
 import {
@@ -521,6 +522,8 @@ export default function AnimaVesselMesh({
   sequences,
   /** Optional emotion vessel-shift (lib/vessel/emotionShift). Additive: omitted = previous behaviour. */
   shift = null,
+  /** Character presentation: rim only (no outline shells) for crowded scenes. */
+  presentationLite = false,
 }) {
   const root = useRef(null);
   const halo = useRef(null);
@@ -579,74 +582,77 @@ export default function AnimaVesselMesh({
       <pointLight color={accent} intensity={hd ? 1.1 : 0.45} distance={4.5} position={[0.5, 1.3, 0.6]} />
       <pointLight color={gold} intensity={0.35} distance={3} position={[-0.4, 1.1, 0.3]} />
 
-      {plan.showHalo !== false && (
-        <mesh ref={halo} position={[0, 1.62, -0.02]}>
-          <torusGeometry args={[0.2, hd ? 0.014 : 0.016, hd ? 16 : 10, hd ? 64 : 32]} />
-          <Emissive
-            color={plan.haloBoost ? "#a78bfa" : gold}
-            emissiveIntensity={1.6 + plan.haloBoost * 0.7}
-            metalness={0.6}
-          />
-        </mesh>
-      )}
+      {/* Appearance Studio "Character presentation" (portrait | hologram | netnavi). */}
+      <PresentationTreatment tier={quality.name} lite={presentationLite}>
+        {plan.showHalo !== false && (
+          <mesh ref={halo} position={[0, 1.62, -0.02]}>
+            <torusGeometry args={[0.2, hd ? 0.014 : 0.016, hd ? 16 : 10, hd ? 64 : 32]} />
+            <Emissive
+              color={plan.haloBoost ? "#a78bfa" : gold}
+              emissiveIntensity={1.6 + plan.haloBoost * 0.7}
+              metalness={0.6}
+            />
+          </mesh>
+        )}
 
-      {resolvedGltf ? (
-        <Suspense
-          fallback={
-            <ProceduralBody
-              color={color}
-              accent={accent}
-              gold={gold}
-              hd={hd}
-              faceMap={faceMap}
-              bodySeg={bodySeg}
-              headSeg={headSeg}
-              expression={expr}
-              breathScale={breathOn ? 1 : 0}
-              hairCount={hairCount}
-              wingLayers={wingLayers}
-              showLattice={(hd || showLattice) && plan.showLattice}
-              plan={plan}
-            />
-          }
-        >
-          <GltfBody url={resolvedGltf} color={color} hd={hd} />
-          {(hd || showLattice) && (
-            <TesseractLattice
-              color={accent}
-              scale={1.2}
-              speed={0.8}
-              opacity={0.45}
-              position={[0, 0.9, 0]}
-            />
-          )}
-          {plan.showWings !== false && (
-            <VesselWings
-              color={plan.wingBoost ? "#c4b5fd" : color}
-              accent={plan.wingBoost ? "#fbcfe8" : accent}
-              hd={hd}
-              layers={wingLayers + plan.wingBoost}
-              expression={expr + plan.wingBoost * 0.2}
-            />
-          )}
-        </Suspense>
-      ) : (
-        <ProceduralBody
-          color={color}
-          accent={accent}
-          gold={gold}
-          hd={hd}
-          faceMap={faceMap}
-          bodySeg={bodySeg}
-          headSeg={headSeg}
-          expression={expr}
-          breathScale={breathOn ? 1 : 0}
-          hairCount={hairCount}
-          wingLayers={wingLayers}
-          showLattice={(hd || showLattice) && plan.showLattice}
-          plan={plan}
-        />
-      )}
+        {resolvedGltf ? (
+          <Suspense
+            fallback={
+              <ProceduralBody
+                color={color}
+                accent={accent}
+                gold={gold}
+                hd={hd}
+                faceMap={faceMap}
+                bodySeg={bodySeg}
+                headSeg={headSeg}
+                expression={expr}
+                breathScale={breathOn ? 1 : 0}
+                hairCount={hairCount}
+                wingLayers={wingLayers}
+                showLattice={(hd || showLattice) && plan.showLattice}
+                plan={plan}
+              />
+            }
+          >
+            <GltfBody url={resolvedGltf} color={color} hd={hd} />
+            {(hd || showLattice) && (
+              <TesseractLattice
+                color={accent}
+                scale={1.2}
+                speed={0.8}
+                opacity={0.45}
+                position={[0, 0.9, 0]}
+              />
+            )}
+            {plan.showWings !== false && (
+              <VesselWings
+                color={plan.wingBoost ? "#c4b5fd" : color}
+                accent={plan.wingBoost ? "#fbcfe8" : accent}
+                hd={hd}
+                layers={wingLayers + plan.wingBoost}
+                expression={expr + plan.wingBoost * 0.2}
+              />
+            )}
+          </Suspense>
+        ) : (
+          <ProceduralBody
+            color={color}
+            accent={accent}
+            gold={gold}
+            hd={hd}
+            faceMap={faceMap}
+            bodySeg={bodySeg}
+            headSeg={headSeg}
+            expression={expr}
+            breathScale={breathOn ? 1 : 0}
+            hairCount={hairCount}
+            wingLayers={wingLayers}
+            showLattice={(hd || showLattice) && plan.showLattice}
+            plan={plan}
+          />
+        )}
+      </PresentationTreatment>
     </group>
   );
 }

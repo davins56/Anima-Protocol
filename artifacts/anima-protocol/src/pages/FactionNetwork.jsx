@@ -2,6 +2,7 @@
 import { useSearchParams } from "react-router-dom";
 import FactionNetworkGraph from "@/components/network/FactionNetworkGraph";
 import { ChevronLeft } from "lucide-react";
+import { NetHudFrame } from "@/components/hud/NetHud";
 import { useNavigate } from "react-router-dom";
 
 export default function FactionNetwork() {
@@ -10,7 +11,8 @@ export default function FactionNetwork() {
   const navigate = useNavigate();
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto bg-background p-4 sm:p-6">
+    <div className="relative flex-1 min-h-0 overflow-y-auto bg-background p-4 sm:p-6" data-net-hud="network">
+      <NetHudFrame surface="network" detail="Faction graph" />
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center gap-4">
@@ -33,7 +35,7 @@ export default function FactionNetwork() {
         {sessionId ? (
           <FactionNetworkGraph sessionId={sessionId} />
         ) : (
-          <div className="flex items-center justify-center h-96 border border-primary/20 bg-black/30 rounded">
+          <div data-net-hud-panel className="flex items-center justify-center h-96 border border-primary/20 bg-black/30 rounded">
             <div className="text-center space-y-3">
               <p className="font-mono text-lg text-primary/60 tracking-widest uppercase">
                 Select a Session
@@ -46,7 +48,7 @@ export default function FactionNetwork() {
         )}
 
         {/* Info */}
-        <div className="p-4 border border-primary/15 bg-black/40 rounded space-y-2">
+        <div data-net-hud-panel className="p-4 border border-primary/15 bg-black/40 rounded space-y-2">
           <p className="font-mono text-[9px] text-primary/40 tracking-widest uppercase">
             💡 How it works
           </p>
