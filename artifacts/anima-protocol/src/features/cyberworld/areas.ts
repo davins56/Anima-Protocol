@@ -10,7 +10,7 @@ import {
   buildWorldLayout,
   DEFAULT_THEME,
   HUB_AREA_ID,
-  hubFreeAngle,
+  hubFreeAngles,
   MAX_HOMES,
   PORTAL_RADIUS,
   PATH_WIDTH,
@@ -21,6 +21,7 @@ import {
   type World,
   type WorldAnima,
 } from "./layout";
+import { buildMarketArea, HUB_MARKET_GATE_ID, MARKET_AREA_ID, MARKET_GATE_ID } from "./market/area";
 
 export const LANDING_AREA_ID = "landing";
 
@@ -28,17 +29,25 @@ export const HUB_GATE_RADIUS = 4.2;
 
 /** Gates in the plaza, placed between spokes (see hubFreeAngle). */
 function hubPortals(homeCount: number): Portal[] {
-  const a = hubFreeAngle(homeCount);
-  const position: Vec2 = [Math.round(Math.cos(a) * HUB_GATE_RADIUS * 1000) / 1000, Math.round(Math.sin(a) * HUB_GATE_RADIUS * 1000) / 1000];
+  const [a, b] = hubFreeAngles(homeCount);
+  const at = (ang: number): Vec2 => [Math.round(Math.cos(ang) * HUB_GATE_RADIUS * 1000) / 1000, Math.round(Math.sin(ang) * HUB_GATE_RADIUS * 1000) / 1000];
   return [
-  {
-    id: "hub:to-landing",
-    label: "Landing Page",
-    position,
-    radius: PORTAL_RADIUS,
-    color: "#F472B6",
-    to: { area: LANDING_AREA_ID, portal: "landing:to-hub" },
-  },
+    {
+      id: "hub:to-landing",
+      label: "Landing Page",
+      position: at(a),
+      radius: PORTAL_RADIUS,
+      color: "#F472B6",
+      to: { area: LANDING_AREA_ID, portal: "landing:to-hub" },
+    },
+    {
+      id: HUB_MARKET_GATE_ID,
+      label: "Data Bazaar",
+      position: at(b ?? a + Math.PI),
+      radius: PORTAL_RADIUS,
+      color: "#FF9A3C",
+      to: { area: MARKET_AREA_ID, portal: MARKET_GATE_ID },
+    },
   ];
 }
 
@@ -100,7 +109,7 @@ export function buildLandingArea(): Area {
 
 export type AreaBuilder = (animas: readonly WorldAnima[]) => Area;
 
-export const AREA_BUILDERS: readonly AreaBuilder[] = [(animas) => buildWorldLayout(animas, hubPortals(Math.min(animas.length, MAX_HOMES))), () => buildLandingArea()];
+export const AREA_BUILDERS: readonly AreaBuilder[] = [(animas) => buildWorldLayout(animas, hubPortals(Math.min(animas.length, MAX_HOMES))), () => buildLandingArea(), () => buildMarketArea()];
 
 export function buildWorld(animas: readonly WorldAnima[]): World {
   return { areas: AREA_BUILDERS.map((b) => b(animas)), start: HUB_AREA_ID };
