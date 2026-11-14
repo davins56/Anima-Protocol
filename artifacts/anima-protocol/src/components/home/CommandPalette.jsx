@@ -33,6 +33,8 @@ export default function CommandPalette({ open, onClose, onSelect }) {
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
   const inputRef = useRef(/** @type {HTMLInputElement | null} */ (null));
+  const dialogRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const returnFocusRef = useRef(/** @type {HTMLElement | null} */ (null));
   const listId = useId();
   const modules = useMemo(() => exploreModules(EXPLORE_MODULES, { isSteward }), [isSteward]);
   const entries = useMemo(() => commandEntries(DOCK_TABS, modules, query), [modules, query]);
@@ -42,16 +44,48 @@ export default function CommandPalette({ open, onClose, onSelect }) {
     if (!open) {
       setQuery("");
       setIndex(0);
-      return;
+      return undefined;
     }
+    // Remember the trigger, focus the search field, and hand focus back on close.
+    const active = document.activeElement;
+    returnFocusRef.current = active instanceof HTMLElement && active !== document.body ? active : null;
     inputRef.current?.focus();
+    return () => {
+      const back = returnFocusRef.current;
+      if (back && back.isConnected) back.focus();
+    };
   }, [open]);
 
   useEffect(() => {
     setIndex(0);
   }, [query]);
 
+  // Keep the keyboard selection visible in the scrolling list.
+  useEffect(() => {
+    if (!open) return;
+    const el = document.getElementById(`${listId}-opt-${index}`);
+    el?.scrollIntoView?.({ block: "nearest" });
+  }, [open, index, listId]);
+
   if (!open) return null;
+
+  /** Trap Tab inside the modal palette. @param {import("react").KeyboardEvent<HTMLDivElement>} e */
+  const trapTab = (e) => {
+    if (e.key !== "Tab" || !dialogRef.current) return;
+    const items = Array.from(
+      dialogRef.current.querySelectorAll("input, button, [href], [tabindex]:not([tabindex='-1'])"),
+    ).filter((el) => el instanceof HTMLElement && !el.hasAttribute("disabled"));
+    if (items.length === 0) return;
+    const first = /** @type {HTMLElement} */ (items[0]);
+    const last = /** @type {HTMLElement} */ (items[items.length - 1]);
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
 
   /** @param {import("@/lib/navigationPattern").CommandEntry} entry */
   const isCurrent = (entry) =>
@@ -86,6 +120,8 @@ export default function CommandPalette({ open, onClose, onSelect }) {
     <>
       <div className="fixed inset-0 z-[1000] bg-black/80 backdrop-blur-sm" data-no-swipe onClick={onClose} />
       <div
+        ref={dialogRef}
+        onKeyDown={trapTab}
         role="dialog"
         aria-modal="true"
         aria-label="Go to"
@@ -93,7 +129,7 @@ export default function CommandPalette({ open, onClose, onSelect }) {
         data-glass-surface="modal"
         data-no-swipe
         className="fixed left-1/2 z-[1001] w-[92%] max-w-lg -translate-x-1/2 border border-border bg-card text-foreground shadow-2xl"
-        style={{ top: "calc(env(safe-area-inset-top, 0px) + 10vh)" }}
+        style={{ top: "calc(env(safe-area-inset-top, 0px) + var(--app-height, 100dvh) * 0.08)" }}
       >
         <div className="flex items-center gap-2 border-b border-border px-3 py-2">
           <Search className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
@@ -120,7 +156,10 @@ export default function CommandPalette({ open, onClose, onSelect }) {
             <X className="h-4 w-4" />
           </button>
         </div>
-        <ul id={listId} role="listbox" aria-label="Destinations" className="max-h-[55dvh] overflow-y-auto overscroll-contain py-1">
+        <ul id={listId} role="listbox" aria-label="Destinations" className="overflow-y-auto overscroll-contain py-1"
+          // --app-height tracks the keyboard-visible viewport on iOS, so the
+          // list never runs behind the software keyboard.
+          style={{ maxHeight: "min(55dvh, calc(var(--app-height, 100dvh) * 0.92 - var(--app-height, 100dvh) * 0.08 - 4.5rem))" }}>
           {entries.length === 0 && (
             <li className="px-4 py-6 text-center font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
               No pages match “{query.trim()}”
