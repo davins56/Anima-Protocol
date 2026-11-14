@@ -24,6 +24,11 @@ export const REQUIRED_TABLES = [
   // by hand — so a database recovered with ensureSchema had no table, the
   // attestation POST 503'd and the 18+ toggle could never stay on.
   "age_attestations",
+  // Identity core + current view are owned by supabase/migrations
+  // (20261022160000 and later vessel/voice ALTERs). drizzle-kit push skips
+  // those protected tables, so CI and a recovered database had no
+  // character_identity_current and chat logged "relation does not exist".
+  "character_identity_core",
   "uploaded_images",
   "pdf_documents",
   "pdf_chunks",
@@ -357,6 +362,64 @@ async function ensureAgeAttestationSchema(
   );
 }
 
+
+/**
+ * Identity core and the current-version view
+ * (supabase/migrations/20261022160000_memory_identity_core.sql, plus
+ * vessel_version / voice_version from later migrations).
+ *
+ * Mirrored here because those files are applied by hand and `drizzle-kit push`
+ * skips protected tables, so the CI test database and a recovered database
+ * had no `character_identity_current` for `currentIdentity()`.
+ */
+async function ensureIdentitySchema(
+  run: (sql: string, label: string) => Promise<void>,
+): Promise<void> {
+  await run(
+    `CREATE TABLE IF NOT EXISTS "character_identity_core" (
+      "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      "user_id" text NOT NULL,
+      "character_id" text NOT NULL,
+      "version" integer NOT NULL CHECK ("version" >= 1),
+      "name" text NOT NULL,
+      "personality_matrix" jsonb NOT NULL DEFAULT '{}'::jsonb,
+      "voice" jsonb NOT NULL DEFAULT '{}'::jsonb,
+      "core_traits" jsonb NOT NULL DEFAULT '[]'::jsonb,
+      "relationships" jsonb NOT NULL DEFAULT '{}'::jsonb,
+      "backstory" text NOT NULL DEFAULT '',
+      "source" text NOT NULL DEFAULT 'app',
+      "change_note" text NOT NULL DEFAULT '',
+      "created_at" timestamptz NOT NULL DEFAULT now(),
+      "vessel_version" integer,
+      "voice_version" integer,
+      CONSTRAINT character_identity_core_version_uq UNIQUE ("user_id", "character_id", "version")
+    )`,
+    "table:character_identity_core",
+  );
+  await run(
+    `ALTER TABLE "character_identity_core"
+       ADD COLUMN IF NOT EXISTS "vessel_version" integer`,
+    "column:character_identity_core.vessel_version",
+  );
+  await run(
+    `ALTER TABLE "character_identity_core"
+       ADD COLUMN IF NOT EXISTS "voice_version" integer`,
+    "column:character_identity_core.voice_version",
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS "character_identity_core_lookup_idx"
+       ON "character_identity_core" ("user_id", "character_id", "version" DESC)`,
+    "index:character_identity_core_lookup_idx",
+  );
+  await run(
+    `CREATE OR REPLACE VIEW "character_identity_current" AS
+       SELECT DISTINCT ON (user_id, character_id) *
+       FROM "character_identity_core"
+       ORDER BY user_id, character_id, version DESC`,
+    "view:character_identity_current",
+  );
+}
+
 /**
  * Existing databases already have `chat_turns` from the fast path, which
  * skips CREATE TABLE. The lease columns still have to land or a retry join
@@ -458,6 +521,8 @@ async function runEnsureSchema(db: Queryable): Promise<EnsureSchemaResult> {
   // Self-heal the adult-mode age gate before anything that depends on it.
   // Harmless when the hand-run migration already created it (IF NOT EXISTS).
   await ensureAgeAttestationSchema(run);
+  // Same for the identity view chat reads on every turn.
+  await ensureIdentitySchema(run);
 
   await run(
     `CREATE TABLE IF NOT EXISTS "conversations" (
