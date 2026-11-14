@@ -44,9 +44,9 @@ describe("visual-only experience presets", () => {
     })),storage)).toHaveLength(30);
   });
   it("labels runtime styling separately from advanced production mechanics", () => {
-    for (const name of ["Navigation patterns"]) {
-      expect(FEATURE_MATRIX.find(feature => feature.name === name)?.status).toBe("partial");
-    }
+    const stillPartial = FEATURE_MATRIX.filter(feature => feature.status === "partial").map(feature => feature.name);
+    expect(stillPartial).not.toContain("Navigation patterns");
+    expect(stillPartial.filter(name => name !== "Frosted / glass shells")).toEqual([]);
   });
   it("marks character presentation and the NetNavi HUD implemented across 3D and gameplay surfaces", () => {
     for (const name of ["Character presentation","NetNavi-inspired HUD"]) {
