@@ -7,10 +7,10 @@ import { MOCK_ANIMAS } from "./mockAnimas";
 const residents = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `a${i}`, name: `A${i}` }));
 
 describe("world registry", () => {
-  it("has a hub start area and a landing page, one builder each", () => {
+  it("has a hub start area, a landing page and the Data Bazaar, one builder each", () => {
     const world = buildWorld(MOCK_ANIMAS);
     expect(world.start).toBe(HUB_AREA_ID);
-    expect(world.areas.map((a) => a.id)).toEqual([HUB_AREA_ID, LANDING_AREA_ID]);
+    expect(world.areas.map((a) => a.id)).toEqual([HUB_AREA_ID, LANDING_AREA_ID, "market"]);
     expect(AREA_BUILDERS).toHaveLength(world.areas.length);
   });
 
