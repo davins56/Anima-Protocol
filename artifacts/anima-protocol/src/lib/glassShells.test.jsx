@@ -86,16 +86,45 @@ describe("frosted / glass shells: tokens", () => {
     expect(css).toMatch(/html\.light\[data-experience-shell="glass"\]/);
   });
 
-  it("keeps body text AA (4.5:1) over a worst-case white or black backdrop in Dark and Light", () => {
-    const dark = { card: hslToRgb(220, 20, 6), fg: hslToRgb(185, 100, 80) };
-    const light = { card: [255, 255, 255], fg: hslToRgb(220, 25, 12), muted: hslToRgb(220, 16, 32) };
+  it("keeps body, muted and primary text AA (4.5:1) on every Color Theme over a worst-case backdrop", () => {
+    // Every theme token set: base Dark, base Light, and each Studio preset.
+    const index = readSrc("index.css");
+    const studio = readSrc("styles/appearance-studio.css");
+    const block = (src, start) => src.slice(src.indexOf(start), src.indexOf("}", src.indexOf(start)));
+    const themes = { original: block(index, ":root {"), light: block(index, ":root.light {") };
+    for (const m of studio.matchAll(/:root\[data-appearance-theme="([^"]+)"\] \{([^}]*--card:[^}]*)\}/g)) themes[m[1]] = m[2];
+    expect(Object.keys(themes).length).toBeGreaterThanOrEqual(14);
+    const token = (b, name) => {
+      const m = b.match(new RegExp(`--${name}:\\s*([^;]+);`));
+      return hslToRgb(...m[1].trim().split(/\s+/).map(parseFloat));
+    };
+    // --glass-tone: contrast(c) brightness(b) applied to the backdrop.
+    const toneOf = (selector) => {
+      const b = css.slice(css.indexOf(selector + " {")).split("}")[0];
+      const [, c, br] = b.match(/--glass-tone:\s*contrast\(([\d.]+)\)\s*brightness\(([\d.]+)\)/);
+      return (v) => Math.min(255, Math.max(0, ((v / 255 - 0.5) * Number(c) + 0.5) * Number(br) * 255));
+    };
+    const failures = [];
     for (const shell of ["frosted", "glass"]) {
-      const d = tint(`html[data-experience-shell="${shell}"]`);
-      const l = tint(`html.light[data-experience-shell="${shell}"]`);
-      expect(contrast(dark.fg, over(dark.card, [255, 255, 255], d)), `dark ${shell}`).toBeGreaterThanOrEqual(4.5);
-      expect(contrast(light.fg, over(light.card, [0, 0, 0], l)), `light ${shell}`).toBeGreaterThanOrEqual(4.5);
-      expect(contrast(light.muted, over(light.card, [0, 0, 0], l)), `light muted ${shell}`).toBeGreaterThanOrEqual(4.5);
+      const darkSel = `html[data-experience-shell="${shell}"]`;
+      const lightSel = `html.light[data-experience-shell="${shell}"]`;
+      for (const [name, b] of Object.entries(themes)) {
+        const card = token(b, "card");
+        const isLight = lum(card) > 0.5;
+        const sel = isLight ? lightSel : darkSel;
+        const tone = toneOf(sel);
+        const worst = (isLight ? [0, 0, 0] : [255, 255, 255]).map(tone);
+        const surface = over(card, worst, tint(sel));
+        for (const role of ["card-foreground", "muted-foreground", "primary"]) {
+          const fg = token(b, role);
+          // Only hold glass to AA where the solid surface already meets it.
+          if (contrast(fg, card) < 4.5) continue;
+          const ratio = contrast(fg, surface);
+          if (ratio < 4.5) failures.push(`${shell} ${name} ${role} ${ratio.toFixed(2)}`);
+        }
+      }
     }
+    expect(failures).toEqual([]);
   });
 
   it("falls back to a solid surface without backdrop-filter or when transparency is reduced", () => {
@@ -108,6 +137,12 @@ describe("frosted / glass shells: tokens", () => {
     for (const sel of ["[data-glass-surface]", ".bg-card", ".bg-card\\/80", ".bg-card\\/90", ".bg-popover", "[data-message-bubble]"]) {
       expect(css, sel).toContain(sel);
     }
+    // Fields keep their solid fill and focus borders; the shell never
+    // rewrites borders (accent edges, focus:border-* stay visible).
+    expect(css).toContain(":not(input, textarea, select)");
+    expect(css).not.toMatch(/^\s*border-color:/m);
+    // The user bubble keeps its primary wash over the glass tint.
+    expect(css).toMatch(/\[data-message-bubble\]\.bg-primary\\\/10 \{[^}]*color-mix\(in srgb, hsl\(var\(--primary\)\) 10%, hsl\(var\(--card\) \/ var\(--glass-tint\)\)\)/s);
     expect(css).toMatch(/::before \{[^}]*backdrop-filter: blur\(var\(--glass-blur\)\)/s);
     expect(css).toMatch(/@layer components \{[^}]*position: relative;\s*isolation: isolate;/s);
     expect(css).toMatch(/backdrop-filter: none;/);
