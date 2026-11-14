@@ -67,7 +67,8 @@ describe("ensureStewardCatalogGrant", () => {
   it("creates every missing catalog item for the steward", async () => {
     const created = [];
     const result = await ensureStewardCatalogGrant({
-      user: { id: "user_davin", email: "davins56@gmail.com", settings: {} },
+      user: { id: "user_davin", email: "davins56@gmail.com",
+      is_steward: true, settings: {} },
       characterId: "char-1",
       createItem: async (payload) => {
         created.push(payload);
@@ -87,7 +88,8 @@ describe("ensureStewardCatalogGrant", () => {
 
   it("skips catalog ids the bag already holds", async () => {
     const result = await ensureStewardCatalogGrant({
-      user: { id: "user_davin", email: "davins56@gmail.com", settings: {} },
+      user: { id: "user_davin", email: "davins56@gmail.com",
+      is_steward: true, settings: {} },
       characterId: "char-1",
       createItem: createMock,
       listInventory: async () => ATTAINABLE_ITEMS.map((i) => ({ catalog_id: i.id, name: i.name })),
@@ -118,7 +120,8 @@ describe("useStewardInventoryGrant", () => {
   });
 
   it("grants the catalog when the steward opens inventory", async () => {
-    authState.user = { id: "user_davin", email: "davins56@gmail.com", settings: {} };
+    authState.user = { id: "user_davin", email: "davins56@gmail.com",
+      is_steward: true, settings: {} };
     const { result } = renderHook(() => useStewardInventoryGrant("char-1"));
     await waitFor(() => expect(result.current.done).toBe(true));
     expect(createMock).toHaveBeenCalledTimes(ATTAINABLE_ITEMS.length);

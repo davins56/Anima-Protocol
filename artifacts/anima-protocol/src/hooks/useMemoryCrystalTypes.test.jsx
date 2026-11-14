@@ -42,6 +42,7 @@ describe("useMemoryCrystalTypes", () => {
     authState.user = {
       id: "user_davin",
       email: "davins56@gmail.com",
+      is_steward: true,
       settings: { memory_crystals: { granted_all_types: false, unlocked_types: [] } },
     };
     const { result } = renderHook(() => useMemoryCrystalTypes());

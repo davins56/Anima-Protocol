@@ -8,10 +8,38 @@ describe("isAllowedCorsOrigin", () => {
     expect(isAllowedCorsOrigin("https://clerk.anima-protocol.com/")).toBe(true);
   });
 
-  it("allows local dev and native shells", () => {
-    expect(isAllowedCorsOrigin("http://localhost:5173")).toBe(true);
-    expect(isAllowedCorsOrigin("http://127.0.0.1:8080")).toBe(true);
-    expect(isAllowedCorsOrigin("capacitor://localhost")).toBe(true);
+  it("allows local dev and native shells outside production", () => {
+    const dev = { NODE_ENV: "development" } as NodeJS.ProcessEnv;
+    expect(isAllowedCorsOrigin("http://localhost:5173", null, dev)).toBe(true);
+    expect(isAllowedCorsOrigin("http://127.0.0.1:8080", null, dev)).toBe(true);
+    expect(isAllowedCorsOrigin("http://[::1]:3000", null, dev)).toBe(true);
+    expect(isAllowedCorsOrigin("capacitor://localhost", null, dev)).toBe(true);
+  });
+
+  it("refuses loopback origins in production (audit L1) but keeps native shells", () => {
+    const prod = { NODE_ENV: "production" } as NodeJS.ProcessEnv;
+    expect(isAllowedCorsOrigin("http://localhost:3000", null, prod)).toBe(false);
+    expect(isAllowedCorsOrigin("https://localhost", null, prod)).toBe(false);
+    expect(isAllowedCorsOrigin("http://127.0.0.1:8080", null, prod)).toBe(false);
+    expect(isAllowedCorsOrigin("http://[::1]:3000", null, prod)).toBe(false);
+    expect(isAllowedCorsOrigin("capacitor://localhost", null, prod)).toBe(true);
+    expect(isAllowedCorsOrigin("ionic://localhost", null, prod)).toBe(true);
+    expect(isAllowedCorsOrigin("https://anima-protocol.com", null, prod)).toBe(true);
+  });
+
+  it("lets ANIMA_CORS_ALLOW_LOOPBACK override the environment default", () => {
+    expect(
+      isAllowedCorsOrigin("http://localhost:3000", null, {
+        NODE_ENV: "production",
+        ANIMA_CORS_ALLOW_LOOPBACK: "1",
+      } as NodeJS.ProcessEnv),
+    ).toBe(true);
+    expect(
+      isAllowedCorsOrigin("http://localhost:3000", null, {
+        NODE_ENV: "development",
+        ANIMA_CORS_ALLOW_LOOPBACK: "false",
+      } as NodeJS.ProcessEnv),
+    ).toBe(false);
   });
 
   it("allows same-origin requests on any host, including previews", () => {

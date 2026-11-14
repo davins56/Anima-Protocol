@@ -278,6 +278,10 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | `BASE_PATH` | Frontend, mockup | `/` for main app, `/__mockup` for sandbox |
 | `CLERK_PUBLISHABLE_KEY` | API | Fallback publishable key for Clerk middleware |
 | `CLERK_SECRET_KEY` | API | Server-side Clerk session verification |
+| `ANIMA_ADMIN_USER_IDS` | API | Optional comma-separated Clerk user ids shown admin UI (server-decided via `GET /api/account/role`). The steward is always admin. Replaces the old client-side `VITE_ADMIN_EMAILS`, which must not be set any more |
+| `ANIMA_ADMIN_EMAILS` | API | Optional comma-separated admin emails, matched on the server against the caller's Clerk email. Server env only, never a `VITE_` var |
+| `ANIMA_CORS_ALLOWED_ORIGINS` | API | Optional extra exact CORS origins (comma-separated) |
+| `ANIMA_CORS_ALLOW_LOOPBACK` | API | `localhost`/`127.0.0.1` origins get CORS only outside production. Set `1` to allow them in production on purpose (default off when `NODE_ENV=production`) |
 | `VITE_CLERK_PUBLISHABLE_KEY` | Frontend | Vite-exposed Clerk publishable key |
 | `VITE_CLERK_PROXY_URL` | Frontend | Empty string in local development unless proxying Clerk |
 | `VITE_MIXPANEL_TOKEN` | Frontend | Mixpanel project token |
