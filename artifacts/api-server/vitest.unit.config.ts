@@ -6,6 +6,7 @@ export default defineConfig({
       "test/clerkDiagnostics.test.ts",
       "test/imageUploads.test.ts",
       "test/companionPhotos.test.ts",
+      "test/sceneImages.test.ts",
       "test/consumeLlmStream.test.ts",
       "test/chatTelemetry.test.ts",
       "test/chatFailureTypes.sync.test.ts",
@@ -36,6 +37,8 @@ export default defineConfig({
       "test/mindRecall.test.ts",
       // Sacred Space reward math (pure; the DB path is covered by sacredSpaceRoute.test.ts).
       "test/sacredSpaceResonance.test.ts",
+      "test/synchroEngine.test.ts",
+      "test/synchroDelta.test.ts",
       "test/mindFactsSummary.test.ts",
       "test/mindGuards.test.ts",
       "test/mindPrompt.test.ts",

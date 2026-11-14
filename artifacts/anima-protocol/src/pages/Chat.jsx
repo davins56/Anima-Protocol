@@ -2129,6 +2129,8 @@ export default function Chat() {
     let terminalReason = "reply_finished";
     let skipHeldFlush = false;
     let settled = false;
+    let shouldFollowAddressQueue = false;
+    let addressFollowUpHistory = null;
     const settleTurn = (reason, { skipFlush = false } = {}) => {
       if (settled) return;
       settled = true;
@@ -2547,7 +2549,7 @@ ${lewdityGuide}`;
           prompt = `Continue this story naturally:\n${conversationHistory}\n\nRespond with vivid, immersive prose. ${lengthGuide}${adultInstruction}\n${userProfileContext}${worldKnowledgeContext}\n${INTELLIGENCE_GUIDANCE}\n\n${turnTakingClause({ isContinue })}\n\n${loyaltyGuardrailClause()}`;
         } else {
 
-          // Instant Scene Mind heuristics (force / @address / least-recent /
+          // Instant Scene Mind heuristics (force / address queue / random /
           // interrupt). Skip the extra /scene-mind HTTP + director LLM so the
           // companion can start processing the user message immediately.
           const intimacyEligibleChars = filterIntimacyEligibleSpeakers(groupChars, {
@@ -2578,6 +2580,15 @@ ${lewdityGuide}`;
             })
           ) {
             finalNextChar = intimacyEligibleChars[0] || finalNextChar;
+          }
+
+          if (
+            speakerPick.reason === "addressed" &&
+            Array.isArray(speakerPick.speakers) &&
+            speakerPick.speakers.length > 1 &&
+            finalNextChar?.id === speakerPick.character?.id
+          ) {
+            shouldFollowAddressQueue = true;
           }
 
           currentGroupSpeakerRef.current = finalNextChar;
@@ -3066,6 +3077,9 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         // Client `turn_*` ids are still on screen. Drop any deferred remote
         // refresh so store history that lacks this turn cannot replace it.
         pendingRemoteSyncRef.current = false;
+      }
+      if (shouldFollowAddressQueue && !replyCutOff.reply_interrupted) {
+        addressFollowUpHistory = finalMessages;
       }
       loadSessions().catch(() => {});
 
@@ -3906,6 +3920,18 @@ Return JSON:
     } finally {
       settleTurn(terminalReason, { skipFlush: skipHeldFlush });
     }
+    if (
+      addressFollowUpHistory &&
+      terminalReason === "reply_finished" &&
+      sendSessionId &&
+      openSessionIdRef.current === sendSessionId
+    ) {
+      const followHistory = addressFollowUpHistory;
+      queueMicrotask(() => {
+        if (openSessionIdRef.current !== sendSessionId) return;
+        handleSendMessageRef.current?.({ text: "", history: followHistory });
+      });
+    }
     };
   handleSendMessageRef.current = handleSendMessage;
 
@@ -4044,11 +4070,16 @@ Return JSON:
             />
             {activeSession?.mode === "solo" && activeSession?.character_id && (
               <div className="px-3 py-1 flex items-center justify-between bg-black/40 border-b border-primary/10">
-                <ResonanceField value={resonance.value} label={resonance.label} />
+                <ResonanceField
+                  value={resonance.value}
+                  label={resonance.label}
+                  resetKey={`${activeSession.character_id}:${resonance.source}`}
+                />
                 <IntimacyDock
                   characterId={activeSession.character_id}
                   conversationId={activeSession.id}
                   refreshKey={isLoading ? null : activeSession.messages?.length || 0}
+                  liveSynchroStrength={companionAffect?.synchro_strength ?? null}
                 />
               </div>
             )}

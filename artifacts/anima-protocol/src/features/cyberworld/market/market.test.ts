@@ -11,7 +11,9 @@ import { HUB_AREA_ID, homeZoneId } from "../layout";
 import { MOCK_ANIMAS } from "../mockAnimas";
 import { buildMarketArea, HUB_MARKET_GATE_ID, MARKET_AREA_ID, nearVendor, VENDOR_POINT } from "./area";
 import { buy, canAfford, dailyOffers, give, giftables, payBits, PRICE, SHOP, swap, toggleEquip, tradeUp, walletBits, BOOSTER_SCANS } from "./economy";
-import { GIFT_ACTIVITY, receiveGift } from "./gift";
+import { GIFT_ACTIVITY, receiveGift, recordGift } from "./gift";
+import { localStorageSink, multiSink } from "../journey/log";
+import { createBackendSink, DAILY_CAP, nextBatch } from "../journey/sync";
 
 const withInv = (inventory: Record<string, number>): Progress => ({ ...emptyProgress(), inventory });
 
@@ -118,6 +120,33 @@ describe("gifts", () => {
     const row = toMemoryEventRow(r.event, "u1");
     expect(row.event_type).toBe("cyberworld_journey");
     expect(row.payload).toMatchObject({ activity: GIFT_ACTIVITY, target_id: "shop:music-box" });
+  });
+});
+
+describe("gift sync", () => {
+  it("a gift reaches the backend sync queue as a cyberworld_journey row and counts toward the daily cap", async () => {
+    const mem = new Map<string, string>();
+    const store = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v) };
+    const now = Date.UTC(2026, 10, 14, 3);
+    const sent: unknown[][] = [];
+    const backend = createBackendSink({ transport: async (rows) => (sent.push(rows), { status: 200, body: { inserted: rows.length, duplicates: 0, rejected: [] } }), getToken: async () => "t", store, now: () => now });
+    const world = buildWorld(MOCK_ANIMAS);
+    const real = { ...initTraveller(world, MOCK_ANIMAS[0], "2026-11-14", now)!, id: "char-1", name: "Ada" };
+    const mock = initTraveller(world, MOCK_ANIMAS[1], "2026-11-14", now)!;
+    const sink = multiSink(localStorageSink(store), backend);
+    const r = recordGift([real, mock], "char-1", { itemId: "shop:data-bouquet", itemName: "Data Bouquet", areaId: MARKET_AREA_ID, strength: 0.7, now }, sink);
+    recordGift(r.travellers, mock.id, { itemId: "shop:music-box", itemName: "Music Box", areaId: MARKET_AREA_ID, strength: 0.7, now: now + 1 }, sink);
+    expect(sink.list("char-1")).toHaveLength(1);
+    const q = backend.state().queue;
+    expect(q).toHaveLength(1); // the mock companion's gift never leaves the browser
+    expect(q[0]).toMatchObject({ character_id: "char-1", event_type: "cyberworld_journey", payload: { activity: GIFT_ACTIVITY, motive: "social", target_id: "shop:data-bouquet" } });
+    expect(q[0]).not.toHaveProperty("user_id");
+    await backend.flush();
+    expect(sent).toHaveLength(1);
+    expect(backend.state().sent["char-1"]).toBe(1);
+    // Gifts share the per-companion daily cap with journeys.
+    const capped = { ...backend.state(), sent: { "char-1": DAILY_CAP }, queue: q };
+    expect(nextBatch(capped, now)).toBeNull();
   });
 });
 

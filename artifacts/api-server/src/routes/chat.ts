@@ -152,6 +152,7 @@ import {
   type SceneMindCharacter,
   type SceneMindDecision,
 } from "../lib/sceneMind";
+import { builtInAliasesFor } from "../lib/companions/builtIn";
 import { createChatCompletionWithFailover } from "../lib/llmFailover";
 import {
   fetchRegionalWorldKnowledge,
@@ -191,6 +192,7 @@ import {
   companionPhotoConfig,
   photoDirective,
   photoFailureLine,
+  spontaneousPhotoDirective,
   photoMetadata,
   photoTagIntent,
   planCompanionPhoto,
@@ -2034,6 +2036,34 @@ router.post("/memories/:characterId/proposals/:factId", async (req, res) => {
   res.json({ review: result.review, changed: result.changed, identity_version: result.identity_version ?? null });
 });
 
+function uniqueAliasTerms(values: unknown[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const term = String(value ?? "").trim();
+    if (!term) continue;
+    const key = term.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(term);
+  }
+  return out;
+}
+
+function characterAliases(character: MsgData): string[] {
+  const raw: unknown[] = [
+    character.nickname,
+    character.aka,
+    ...(Array.isArray(character.aliases)
+      ? character.aliases
+      : character.aliases
+        ? [character.aliases]
+        : []),
+    ...builtInAliasesFor(character.name),
+  ];
+  return uniqueAliasTerms(raw);
+}
+
 function toSceneMindCharacters(characters: MsgData[]): SceneMindCharacter[] {
   return characters
     .map((c) => ({
@@ -2041,6 +2071,9 @@ function toSceneMindCharacters(characters: MsgData[]): SceneMindCharacter[] {
       name: String(c.name || ""),
       universe: c.universe ? String(c.universe) : null,
       personality: c.personality ? String(c.personality) : null,
+      nickname: c.nickname ? String(c.nickname) : null,
+      aka: c.aka ? String(c.aka) : null,
+      aliases: characterAliases(c),
     }))
     .filter((c) => c.id && c.name);
 }
@@ -3196,6 +3229,11 @@ router.post("/messages", async (req, res) => {
       companionName: photoCompanionName,
       character: photoCharacter,
       turnId,
+      sessionId,
+      recent: photoPlanArgs.recent,
+      userMessage: photoPlanArgs.userMessage,
+      userName: userDisplayName,
+      identityText: memoryCoreContext,
     });
     writeSse(res, { status: "photo", photo: { state: "pending" } });
   };
@@ -3204,7 +3242,7 @@ router.post("/messages", async (req, res) => {
     character: photoCharacter,
     companionName: photoCompanionName,
     userMessage: String(content || ""),
-    recent: promptRecentMessages.slice(-8).map((m) => ({
+    recent: promptRecentMessages.slice(-12).map((m) => ({
       role: String(m.role || ""),
       content: String(m.content || ""),
     })),
@@ -3213,6 +3251,8 @@ router.post("/messages", async (req, res) => {
     adultActive,
     therapy: therapyActive,
     crisis: Boolean(crisisResourceCard),
+    characterId: activeCharacterId || undefined,
+    sessionId,
   };
   const photoPlanPromise: Promise<PhotoPlan> = planCompanionPhoto(photoPlanArgs).catch((error) => {
     logger.warn({ error, turnId }, "Companion photo planning failed");
@@ -3258,7 +3298,20 @@ router.post("/messages", async (req, res) => {
   const resolvedCorrections = await correctionsPromise;
   photoPlan = await photoPlanPromise;
   if (photoPlan.action === "send") startPhotoJob(photoPlan);
-  const companionPhotoNote = photoDirective(photoPlan);
+  const companionPhotoNote = [
+    photoDirective(photoPlan),
+    spontaneousPhotoDirective({
+      plan: photoPlan,
+      userId,
+      characterId: activeCharacterId || undefined,
+      sessionId,
+      mode,
+      crisis: Boolean(crisisResourceCard),
+      isContinue: Boolean(body.is_continue),
+    }),
+  ]
+    .filter(Boolean)
+    .join(" ");
   // Mind knowledge was recalled for the hinted companion; a different
   // speaker this turn falls back to no long-term block rather than borrow it.
   const mindKnowledge =
@@ -4080,18 +4133,18 @@ router.post("/messages", async (req, res) => {
     streamSucceeded = true;
     // The companion chose to show something on her own ([IMAGE: …] tag).
     // Same safety gate and limits as a request; the tag never reaches the bubble.
-    if (photoPlan.action === "none" && !replyCutOff) {
-      const tagIntent = photoTagIntent(fullResponse);
-      if (tagIntent) {
+    const tagIntent = photoTagIntent(fullResponse);
+    if (tagIntent) {
+      // Always strip the marker so it never reaches the bubble, even if the
+      // photo is skipped (cooldown, limits, or the kill switch).
+      const stripped = stripPhotoTags(fullResponse);
+      if (stripped) fullResponse = stripped;
+      if (photoPlan.action === "none" && !replyCutOff) {
         photoPlan = await planCompanionPhoto({ ...photoPlanArgs, intent: tagIntent }).catch(
           () => ({ action: "none" }) as PhotoPlan,
         );
         if (photoPlan.action === "send") startPhotoJob(photoPlan);
       }
-    }
-    if (photoPlan.action !== "none") {
-      const stripped = stripPhotoTags(fullResponse);
-      if (stripped) fullResponse = stripped;
     }
     if (photoJob) {
       photoOutcome = await telemetry.measure(
@@ -4118,11 +4171,19 @@ router.post("/messages", async (req, res) => {
         : replyCutOff
           ? companionAffect
           : evolveCompanionAffectFromCompanion(companionAffect, fullResponse);
+    // Report the bond as the post-process will persist it: the user's pass
+    // plus the companion's reply. Reading synchroState alone left the meter a
+    // turn behind and hid the reply's share of the change.
+    const turnSynchro = synchroState
+      ? replyCutOff
+        ? synchroState
+        : evolveSynchroFromCompanion(synchroState, fullResponse)
+      : null;
     const evolvedAffectSnapshot = evolvedCompanion
       ? toCompanionAffectSnapshot(
           evolvedCompanion,
-          synchroState
-            ? synchroStrengthFromEmotionalState(serializeSynchroState(synchroState))
+          turnSynchro
+            ? synchroStrengthFromEmotionalState(serializeSynchroState(turnSynchro))
             : null,
         )
       : null;

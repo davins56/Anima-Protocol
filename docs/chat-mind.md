@@ -205,8 +205,18 @@ Workers Paid for real traffic.
 
 ## Photos
 
-When asked, a companion can send a generated photo with its reply (solo chats,
-Workers AI FLUX, existing adult and age gates, per-user limits). See
+When asked ("send me a selfie", "show me", "draw us", "picture this scene"),
+or when a moment is vividly visual or emotional, a companion can send a
+generated high-res photo with its reply (solo chats, Workers AI FLUX.2,
+existing adult and age gates, per-user 6/hour and 20/day limits). A scene
+prompt is built from the last 8–12 messages, the identity core, and each
+person's canonical appearance (including explicit skin tone, plus a guard
+against the model lightening complexions). The user's appearance is included
+only when memory facts already describe it. Unprompted photos use a
+lightweight `[IMAGE: …]` tag, a conservative cooldown (8 exchanges and 20
+minutes by default), and are skipped silently when a limit is hit; set
+`ANIMA_COMPANION_PHOTO_SPONTANEOUS=off` to disable them. Pre-installed
+characters still never say they are AI or Anima. See
 [`companion-photos.md`](companion-photos.md).
 
 ## Checks

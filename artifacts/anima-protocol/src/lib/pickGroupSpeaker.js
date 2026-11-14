@@ -1,45 +1,53 @@
 /**
- * Instant group-speaker selection (force / @address / least-recent / interrupt).
- * Mirrors the heuristic path of server Scene Mind so Chat does not wait on an
- * extra HTTP round-trip or director LLM before the companion processes the turn.
+ * Instant group-speaker selection (force / address queue / random / interrupt).
+ * Uses pickNextSpeakers so Chat does not wait on an extra HTTP round-trip or
+ * director LLM before the companion processes the turn.
  *
- * Interrupt is OFF by default: a 35% random out-of-turn swap made companions
- * feel like they ignored what the user said. Pass interruptChance explicitly
- * to re-enable it.
+ * Interrupt is OFF by default. Pass interruptChance explicitly to re-enable it.
  */
+import { builtInCompanionFor } from "@/lib/companions/builtInCompanions";
+import { isCharacterAddressed, pickNextSpeakers } from "./pickNextSpeakers";
 
-function escapeRegExp(value) {
-  return String(value || "").replace(/[.*+?^${}()|[]\\]/g, "\\$&");
+export { isCharacterAddressed, pickNextSpeakers };
+
+function asList(value) {
+  if (value == null || value === "") return [];
+  return Array.isArray(value) ? value : [value];
 }
 
-/** True when the user message clearly addresses this character. */
-export function isCharacterAddressed(userMessage, characterName) {
-  const name = String(characterName || "").trim();
-  const text = String(userMessage || "");
-  if (!name || !text.trim()) return false;
-  const escaped = escapeRegExp(name);
-  return new RegExp(`@${escaped}\\b`, "i").test(text) || new RegExp(`\\b${escaped}\\b`, "i").test(text);
+function uniqueTerms(values) {
+  const seen = new Set();
+  const out = [];
+  for (const value of values) {
+    const term = String(value || "").trim();
+    if (!term) continue;
+    const key = term.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(term);
+  }
+  return out;
 }
 
-function recentAssistantNames(recentMessages = []) {
-  return new Set(
-    (recentMessages || [])
-      .slice(-6)
-      .filter(
-        (m) =>
-          m?.role === "assistant" &&
-          m.character_name !== "Narrator" &&
-          m.character_name !== "__typing__" &&
-          m.character_name !== "__thinking__" &&
-          !m.is_streaming,
-      )
-      .map((m) => m.character_name)
-      .filter(Boolean),
-  );
+/** Nickname / alias fields plus built-in companion aliases when the name matches. */
+export function aliasesForParticipant(character) {
+  if (!character) return [];
+  const builtin = builtInCompanionFor(character);
+  return uniqueTerms([
+    character.nickname,
+    character.aka,
+    ...asList(character.aliases),
+    ...(builtin?.aliases || []),
+  ]);
+}
+
+function withAliases(character) {
+  if (!character) return character;
+  return { ...character, aliases: aliasesForParticipant(character) };
 }
 
 /**
- * @returns {{ character: object | null, interrupted: boolean, reason: string }
+ * @returns {{ character: object | null, interrupted: boolean, reason: string, speakers: object[] }}
  */
 export function pickGroupSpeaker({
   groupChars = [],
@@ -51,40 +59,51 @@ export function pickGroupSpeaker({
   random = Math.random,
   interruptChance = 0,
 } = {}) {
-  const participants = (groupChars || []).filter((c) => c?.id && c?.name);
+  const participants = (groupChars || []).filter((c) => c?.id && c?.name).map(withAliases);
   if (!participants.length) {
-    return { character: null, interrupted: false, reason: "fallback" };
+    return { character: null, interrupted: false, reason: "fallback", speakers: [] };
   }
 
-  const forced = forceCharacterId
-    ? participants.find((c) => c.id === forceCharacterId)
-    : null;
-  if (forced) {
-    return { character: forced, interrupted: false, reason: "forced" };
-  }
+  const eligibleIds = (eligibleChars?.length ? eligibleChars : [])
+    .map((c) => c?.id)
+    .filter(Boolean);
 
-  const pool = (eligibleChars?.length ? eligibleChars : participants).filter(
-    (c) => c?.id && c?.name,
-  );
-  const usable = pool.length ? pool : participants;
+  const pick = pickNextSpeakers({
+    participants,
+    latestMessage: userMessage,
+    recentMessages,
+    forceCharacterId,
+    eligibleCharacterIds: eligibleIds.length ? eligibleIds : null,
+    rng: random,
+  });
 
-  if (String(userMessage || "").trim() && !isContinue) {
-    const addressed = usable.filter((c) => isCharacterAddressed(userMessage, c.name));
-    if (addressed.length === 1) {
-      return { character: addressed[0], interrupted: false, reason: "addressed" };
-    }
-  }
-
-  const recentNames = recentAssistantNames(recentMessages);
-  const preferred = usable.find((c) => !recentNames.has(c.name)) || usable[0];
-
-  const allowInterrupt = !isContinue && usable.length >= 2 && random() < interruptChance;
+  // Optional out-of-turn reaction, off by default. Never interrupts a forced
+  // pin or a character who was just addressed.
+  const chance =
+    typeof interruptChance === "number" ? Math.min(1, Math.max(0, interruptChance)) : 0;
+  const allowInterrupt =
+    !isContinue &&
+    pick.reason === "random" &&
+    participants.length >= 2 &&
+    chance > 0 &&
+    random() < chance;
   if (allowInterrupt) {
-    const interrupter = usable.find((c) => c.id !== preferred.id);
+    const preferred = pick.next;
+    const interrupter = participants.find((c) => c.id !== preferred?.id);
     if (interrupter) {
-      return { character: interrupter, interrupted: true, reason: "interrupt" };
+      return {
+        character: interrupter,
+        interrupted: true,
+        reason: "interrupt",
+        speakers: [interrupter],
+      };
     }
   }
 
-  return { character: preferred, interrupted: false, reason: "least_recent" };
+  return {
+    character: pick.next,
+    interrupted: false,
+    reason: pick.reason,
+    speakers: pick.speakers,
+  };
 }
