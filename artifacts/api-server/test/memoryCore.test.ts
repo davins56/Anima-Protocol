@@ -44,6 +44,28 @@ describe("memory core session block", () => {
     expect(formatMemoryCoreBlock(null, [], now)).toBe("");
   });
 
+  it("labels cyberworld journey memories so chat can surface I went to X because Y", () => {
+    const block = formatMemoryCoreBlock(
+      null,
+      [
+        {
+          id: "j",
+          event_type: "cyberworld_journey",
+          content: "Echo went to the Landing Page signs because they were curious about the Landing Page signs.",
+          payload: { kind: "journey", area_id: "landing", target_id: "title", activity: "read the new signs", reason: "curious about the Landing Page signs", motive: "curiosity", journey_event_id: "echo:1" },
+          conversation_id: null,
+          occurred_at: "2026-10-22T12:00:00Z",
+          emotional_weight: 0.2,
+          similarity: 0.7,
+          recency: 1,
+          score: 0.6,
+        },
+      ],
+      now,
+    );
+    expect(block).toContain("(today, journey) Echo went to the Landing Page signs because they were curious about the Landing Page signs.");
+  });
+
   it("is on by default and can be switched off", () => {
     expect(isMemoryCoreEnabled({} as NodeJS.ProcessEnv)).toBe(true);
     expect(isMemoryCoreEnabled({ ANIMA_MEMORY_CORE: "off" } as NodeJS.ProcessEnv)).toBe(false);
