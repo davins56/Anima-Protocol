@@ -19,7 +19,10 @@ import {
   db,
   makeId,
   userEntities,
+  userProfiles,
 } from "@workspace/db";
+import { SENSES_PROFILE_KEY } from "../kernel/senses";
+import { regionHintsFromProfile } from "../regionalWorldKnowledge";
 import { parseJsonLoose } from "../exploreInsights";
 import { createChatCompletionWithFailover } from "../llmFailover";
 import { logger } from "../logger";
@@ -31,6 +34,9 @@ export const CHARACTER_ENTITY = "Character";
 
 /** Cloudflare cron: every 3 hours, same minute as the hourly drain. */
 export const CHRONICLES_CRON = "15 0,3,6,9,12,15,18,21 * * *";
+
+/** Calendar-day fallback when the user has no saved or senses timezone. */
+export const DEFAULT_CHRONICLE_TIMEZONE = "America/New_York";
 
 /** Include today and yesterday so a late-evening chat still updates after midnight. */
 export const DEFAULT_LOOKBACK_DAYS = 2;
@@ -112,7 +118,7 @@ function asStringArray(value: unknown): string[] {
   return value.map((item) => asString(item)).filter(Boolean);
 }
 
-export function chronicleDateFor(at: Date, timeZone = "UTC"): string {
+export function chronicleDateFor(at: Date, timeZone = DEFAULT_CHRONICLE_TIMEZONE): string {
   const fmt = new Intl.DateTimeFormat("en-CA", {
     timeZone,
     year: "numeric",
@@ -122,7 +128,7 @@ export function chronicleDateFor(at: Date, timeZone = "UTC"): string {
   return fmt.format(at);
 }
 
-export function startOfChronicleDay(dateKey: string, timeZone = "UTC"): Date {
+export function startOfChronicleDay(dateKey: string, timeZone = DEFAULT_CHRONICLE_TIMEZONE): Date {
   // Interpret YYYY-MM-DD as midnight in the given zone.
   const probe = new Date(`${dateKey}T12:00:00.000Z`);
   // Walk backward from noon UTC until the zoned calendar date matches, then
@@ -295,6 +301,59 @@ function existingSourceIds(data: Record<string, unknown>): Set<string> {
   return new Set(asStringArray(data.source_message_ids));
 }
 
+export function validChronicleTimeZone(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const zone = value.trim();
+  if (!zone || zone.length > 64) return null;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone });
+    return zone;
+  } catch {
+    return null;
+  }
+}
+
+function timezoneFromSavedProfile(data: unknown): string | null {
+  return validChronicleTimeZone(regionHintsFromProfile(data)?.timezone);
+}
+
+function timezoneFromSenses(data: unknown): string | null {
+  const root =
+    data && typeof data === "object" && !Array.isArray(data)
+      ? (data as Record<string, unknown>)
+      : {};
+  const senses = root[SENSES_PROFILE_KEY];
+  const snap =
+    senses && typeof senses === "object" && !Array.isArray(senses)
+      ? (senses as Record<string, unknown>)
+      : {};
+  // Use the stored IANA zone even if the senses snapshot is stale — we only
+  // need the calendar day, not a live "busy now" reading.
+  return validChronicleTimeZone(snap.timezone);
+}
+
+/**
+ * Saved profile timezone wins, then the rhythm/senses timezone, then
+ * America/New_York. Invalid values are skipped.
+ */
+export function resolveChronicleTimeZone(profileData: unknown): string {
+  return (
+    timezoneFromSavedProfile(profileData) ||
+    timezoneFromSenses(profileData) ||
+    DEFAULT_CHRONICLE_TIMEZONE
+  );
+}
+
+export async function loadChronicleTimeZone(userId: string): Promise<string> {
+  if (!userId) return DEFAULT_CHRONICLE_TIMEZONE;
+  const [row] = await db
+    .select({ data: userProfiles.data })
+    .from(userProfiles)
+    .where(eq(userProfiles.userId, userId))
+    .limit(1);
+  return resolveChronicleTimeZone(row?.data ?? null);
+}
+
 /**
  * Compile chronicle entries for one signed-in Clerk user.
  * Never accepts a client-supplied user id — callers must pass the session id.
@@ -307,7 +366,7 @@ export async function compileChroniclesForUser(
   if (!userId) return stats;
 
   const now = opts.now ?? new Date();
-  const timeZone = opts.timeZone || "UTC";
+  const timeZone = opts.timeZone || (await loadChronicleTimeZone(userId));
   const lookbackDays = opts.lookbackDays ?? DEFAULT_LOOKBACK_DAYS;
   const generate = opts.generate ?? defaultGenerateChronicle;
   const since = lookbackStart(now, lookbackDays, timeZone);
@@ -550,9 +609,10 @@ export async function runChroniclesCycle(
   opts: CompileChroniclesOptions & { generate?: ChronicleGenerator } = {},
 ): Promise<ChronicleStats & { users: number }> {
   const now = opts.now ?? new Date();
-  const timeZone = opts.timeZone || "UTC";
   const lookbackDays = opts.lookbackDays ?? DEFAULT_LOOKBACK_DAYS;
-  const since = lookbackStart(now, lookbackDays, timeZone);
+  // One extra UTC day so a far-east or far-west local "yesterday" is still
+  // visible when we later split days in each user's own timezone.
+  const since = lookbackStart(now, lookbackDays + 1, "UTC");
 
   const rows = await db
     .selectDistinct({ userId: userEntities.userId })
@@ -581,7 +641,6 @@ export async function runChroniclesCycle(
       const one = await compileChroniclesForUser(row.userId, {
         ...opts,
         now,
-        timeZone,
         lookbackDays,
       });
       totals.compiled += one.compiled;
