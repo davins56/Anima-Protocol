@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronLeft, Zap, BookText, Check, Loader, BookOpen, Sparkles, Palette, ScrollText } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { animaClient } from "@/api/animaClient";
@@ -6,13 +6,15 @@ import MoodIndicator from "@/components/chat/MoodIndicator";
 import VesselPortrait from "@/components/vessel/VesselPortrait";
 import MemoryHealth from "@/components/memory/MemoryHealth";
 import PresenceIndicator from "@/components/continuity/PresenceIndicator";
+import { useDriftingEmotions } from "@/hooks/useDriftingEmotions";
+import { latestActivityAt } from "@/lib/continuity";
 import {
   llmDisplayBadgeClass,
   llmDisplayLabel,
   llmDisplayTitle,
 } from "@/lib/llmProviderLabel";
 
-export default function ChatHeader({ session, characters, mood, moodIntensity, characterEmotions, onToggleDeepMode, onToggleStoryMode, storyModeOn, onAvatarClick, llmProvider, llmBrand }) {
+export default function ChatHeader({ session, characters, mood, moodIntensity, characterEmotions, onToggleDeepMode, onToggleStoryMode, storyModeOn, onAvatarClick, llmProvider, llmBrand, replying = false }) {
   const navigate = useNavigate();
   const [summarizing, setSummarizing] = useState(false);
   const [summarized, setSummarized] = useState(false);
@@ -21,7 +23,10 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
   const charIds = isGroup ? (session.group_character_ids || []) : (session?.character_id ? [session.character_id] : []);
   const activeChars = characters.filter((c) => charIds.includes(c.id));
   const primaryChar = activeChars[0];
-  const primaryEmotion = primaryChar?.id ? characterEmotions?.[primaryChar.id] : null;
+  // Each companion's own felt state, easing back toward her baseline while quiet.
+  const shownEmotions = useDriftingEmotions(characterEmotions);
+  const primaryEmotion = primaryChar?.id ? shownEmotions?.[primaryChar.id] : null;
+  const activeAt = useMemo(() => latestActivityAt(session?.messages), [session?.messages]);
 
   const handleSummarize = async () => {
     if (!session?.id || summarizing) return;
@@ -137,7 +142,14 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
           {session?.title || (isGroup ? "Group" : primaryChar?.name || "Session")}
         </h2>
         {!isGroup && primaryChar?.id && (
-          <PresenceIndicator characterId={primaryChar.id} name={primaryChar.name} surface="chat" showGreeting />
+          <PresenceIndicator
+            characterId={primaryChar.id}
+            name={primaryChar.name}
+            surface="chat"
+            showGreeting
+            activeAt={activeAt}
+            replying={replying}
+          />
         )}
         <div className="flex items-center gap-1.5 sm:gap-3 mt-0.5 flex-wrap">
           <div className="flex items-center gap-1">
@@ -147,31 +159,61 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
             </span>
           </div>
           {!isGroup && primaryEmotion && (
-            <div className="hidden md:flex items-center gap-2 text-[8px] sm:text-[9px] font-mono">
+            <div className="hidden md:flex items-center gap-2 text-[8px] sm:text-[9px] font-mono" data-testid="header-felt-state">
               <div className="flex items-center gap-1">
                 <span className="text-primary/50 tracking-widest">Feeling:</span>
-                <span className={`tracking-widest uppercase ${getEmotionColor(primaryEmotion.emotion)}`}>
+                <span
+                  key={`feeling-${primaryEmotion.emotion}`}
+                  data-testid="header-feeling"
+                  className={`tracking-widest uppercase transition-colors duration-700 animate-in fade-in duration-700 motion-reduce:animate-none ${getEmotionColor(primaryEmotion.emotion)}`}
+                >
                   {primaryEmotion.emotion}
                 </span>
               </div>
               <div className="flex items-center gap-1">
                 <span className="text-primary/50 tracking-widest">Level:</span>
-                <span className="uppercase tracking-widest text-primary/70">
+                <span
+                  key={`level-${primaryEmotion.emotion_level || primaryEmotion.level || "balanced"}`}
+                  data-testid="header-level"
+                  className="uppercase tracking-widest text-primary/70 animate-in fade-in duration-700 motion-reduce:animate-none"
+                >
                   {primaryEmotion.emotion_level || primaryEmotion.level || 'Balanced'}
                 </span>
               </div>
               <div className="flex items-center gap-1">
                 <span className="text-primary/50 tracking-widest">Arousal:</span>
-                <span className="uppercase tracking-widest text-primary/70">
+                <span className="uppercase tracking-widest text-primary/70 tabular-nums" data-testid="header-arousal">
                   {emotionArousalLabel || '—'}
                 </span>
               </div>
               <div className="w-12 h-0.5 border border-primary/20 bg-primary/10">
                 <div
-                  className="h-full bg-primary/60 transition-all"
+                  className="h-full bg-primary/60 transition-all duration-700 ease-out motion-reduce:transition-none"
                   style={{ width: `${emotionIntensityPct}%` }}
                 />
               </div>
+            </div>
+          )}
+          {isGroup && activeChars.some((c) => shownEmotions?.[c.id]?.emotion) && (
+            <div className="hidden md:flex items-center gap-2 text-[8px] sm:text-[9px] font-mono" data-testid="header-group-felt-states">
+              {activeChars.slice(0, 4).map((c) => {
+                const e = shownEmotions?.[c.id];
+                if (!e?.emotion) return null;
+                return (
+                  <span key={c.id} className="flex items-center gap-1" data-testid={`header-felt-${c.id}`} title={`${c.name} feels ${e.emotion}`}>
+                    <span className="text-primary/50 tracking-widest truncate max-w-[6rem]">{c.name}:</span>
+                    <span
+                      key={`g-feeling-${c.id}-${e.emotion}`}
+                      className={`tracking-widest uppercase transition-colors duration-700 animate-in fade-in duration-700 motion-reduce:animate-none ${getEmotionColor(e.emotion)}`}
+                    >
+                      {e.emotion}
+                    </span>
+                    {(e.emotion_level || e.level) && (
+                      <span className="uppercase tracking-widest text-primary/50">· {e.emotion_level || e.level}</span>
+                    )}
+                  </span>
+                );
+              })}
             </div>
           )}
           {!isGroup && mood && <MoodIndicator mood={mood} intensity={moodIntensity} />}

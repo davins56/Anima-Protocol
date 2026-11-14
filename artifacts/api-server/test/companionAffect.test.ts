@@ -78,7 +78,12 @@ describe("detectAffectCue / evolve from conversation", () => {
         updatedAt: "2026-09-14T00:00:00.000Z",
       },
     });
-    state = evolveCompanionAffectFromUser(state, "ok, why though?");
+    // A minute later, not months: quiet-time drift is covered separately.
+    state = evolveCompanionAffectFromUser(
+      state,
+      "ok, why though?",
+      "2026-09-14T00:01:00.000Z",
+    );
     expect(state.primary).toBe("romantic");
   });
 

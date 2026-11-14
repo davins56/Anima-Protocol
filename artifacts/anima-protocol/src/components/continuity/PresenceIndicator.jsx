@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useCompanionContinuity } from "@/hooks/useCompanionContinuity";
-import { greetingSeen, markGreetingSeen, presenceStyle } from "@/lib/continuity";
+import { greetingSeen, livePresence, markGreetingSeen, presenceStyle } from "@/lib/continuity";
 import { dreamJournalPagePath, readDreamIds, unreadDreamsFromContinuity } from "@/lib/dreamJournal";
 
 /**
@@ -13,8 +13,11 @@ import { dreamJournalPagePath, readDreamIds, unreadDreamsFromContinuity } from "
  * sits under the label. The dreaming pose itself belongs to 3D Visual;
  * `useIsDreaming` exposes the flag without changing this indicator's presence
  * mapping.
+ *
+ * `activeAt` (ms of the newest message in this chat) and `replying` let a
+ * live conversation override the presence loaded when the chat opened.
  */
-export default function PresenceIndicator({ characterId, name = "", surface = "chat", showGreeting = false, api, storage }) {
+export default function PresenceIndicator({ characterId, name = "", surface = "chat", showGreeting = false, api, storage, activeAt = null, replying = false }) {
   const data = useCompanionContinuity(characterId, { surface, name, api });
   const [greeting, setGreeting] = useState(null);
 
@@ -30,14 +33,15 @@ export default function PresenceIndicator({ characterId, name = "", surface = "c
     [data, characterId, storage],
   );
 
-  if (!data?.presence) return null;
-  const style = presenceStyle(data.presence);
+  const shown = livePresence(data, { activeAt, replying, name });
+  if (!shown) return null;
+  const style = presenceStyle(shown.presence);
   const journalHref = dreamJournalPagePath(characterId, name);
   return (
     <div className="flex flex-col gap-1 min-w-0" data-testid="presence-indicator">
-      <span className="inline-flex items-center gap-1.5 font-mono text-[10px] tracking-[0.18em] uppercase text-primary/45" title={data.presence_label}>
+      <span className="inline-flex items-center gap-1.5 font-mono text-[10px] tracking-[0.18em] uppercase text-primary/45" title={shown.presence_label} data-presence={shown.presence}>
         <span className={`inline-block w-1.5 h-1.5 rounded-full ${style.dot} ${style.pulse ? "animate-pulse motion-reduce:animate-none" : ""}`} aria-hidden="true" />
-        <span className="truncate">{data.presence_label}</span>
+        <span className="truncate">{shown.presence_label}</span>
       </span>
       {unreadDreams.length > 0 && (
         <Link
