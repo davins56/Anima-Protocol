@@ -58,7 +58,7 @@ export function buildLandingArea(): Area {
     zones: [
       rectZone({ id: "landing:hero", kind: "site", label: "Hero", center: [0, -6], size: [16, 9], color: pink }),
       rectZone({ id: "landing:features", kind: "site", label: "Features", center: [0, 4], size: [14, 4], color: violet }),
-      rectZone({ id: "landing:footer", kind: "site", label: "Footer", center: [0, 11], size: [9, 5], color: "#00EAFF" }),
+      rectZone({ id: "landing:footer", kind: "site", label: "Footer", center: [0, 11], size: [9, 5], color: "#00EAFF", journey: { needs: { rest: 0.4 }, topics: ["quiet"], activity: "sit by the footer links" } }),
     ],
     paths: [
       { id: "landing:hero-features", from: "landing:hero", to: "landing:features", width: PATH_WIDTH * 1.5, color: pink },
@@ -76,15 +76,23 @@ export function buildLandingArea(): Area {
       },
     ],
     decor: [
-      { kind: "billboard", id: "title", text: "LANDING PAGE", position: [0, 3.4, -10], color: pink, height: 1.4 },
+      { kind: "billboard", id: "title", text: "LANDING PAGE", position: [0, 3.4, -10], color: pink, height: 1.4, journey: { needs: { curiosity: 0.8 }, topics: ["signs", "news", "construction"], activity: "read the new signs", label: "the Landing Page signs" } },
       { kind: "billboard", id: "sub", text: "area under construction", position: [0, 2.3, -10], color: "#F1F5F9", height: 0.5 },
       // nav bar
       ...[-4.5, -1.5, 1.5, 4.5].map((x, i) => ({ kind: "panel" as const, id: `nav${i}`, position: [x, 4.6, -10.2] as const, size: [2.4, 0.5] as const, color: violet, lines: 0 })),
       // hero CTA + image block
       { kind: "panel", id: "cta", position: [-3, 1.4, -7], size: [3.2, 0.9], color: pink, lines: 0 },
-      { kind: "panel", id: "hero-img", position: [4, 2, -8], size: [4, 2.6], color: "#00EAFF", lines: 3 },
+      { kind: "panel", id: "hero-img", position: [4, 2, -8], size: [4, 2.6], color: "#00EAFF", lines: 3, journey: { needs: { creativity: 0.8, curiosity: 0.3 }, topics: ["art", "design", "images", "photos"], activity: "sketch from the hero image", label: "the hero image" } },
       // feature cards
-      ...[-4.5, 0, 4.5].map((x, i) => ({ kind: "panel" as const, id: `card${i}`, position: [x, 1.4, 3] as const, size: [3, 1.8] as const, color: violet, lines: 3 })),
+      ...[-4.5, 0, 4.5].map((x, i) => ({
+        kind: "panel" as const,
+        id: `card${i}`,
+        position: [x, 1.4, 3] as const,
+        size: [3, 1.8] as const,
+        color: violet,
+        lines: 3,
+        ...(i === 1 ? { journey: { needs: { curiosity: 0.7 }, topics: ["features", "tech", "learning", "books"], activity: "read the feature panels", label: "the feature panels" } } : {}),
+      })),
     ],
     spawn: [0, 9.5],
   };
