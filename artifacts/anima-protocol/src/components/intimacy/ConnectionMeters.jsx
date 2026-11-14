@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Flame, Link2 } from "lucide-react";
+import { formatMeterDelta, useMeterDelta } from "@/hooks/useMeterDelta";
 
 // Mirrors SYNCHRO_THRESHOLDS in api-server synchroEngine.ts.
 export const SYNCHRO_TIERS = [
@@ -39,7 +40,7 @@ export function useIsMobileLayout() {
   return mobile;
 }
 
-function Meter({ id, icon, name, caption, valueLabel, value, ticks, barClass, mobile }) {
+function Meter({ id, icon, name, caption, valueLabel, value, ticks, barClass, mobile, delta = null }) {
   const v = clamp(value);
   return (
     <div className={mobile ? "w-full" : "min-w-[9rem]"} data-meter={id}>
@@ -48,7 +49,16 @@ function Meter({ id, icon, name, caption, valueLabel, value, ticks, barClass, mo
           {icon}
           {name}
         </span>
-        <span className="text-[9px] uppercase tracking-wider text-primary/90">
+        <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-primary/90">
+          {delta != null && (
+            <span
+              data-testid={`${id}-delta`}
+              aria-live="polite"
+              className={`animate-pulse ${delta > 0 ? "text-cyan-300" : "text-rose-300"}`}
+            >
+              {formatMeterDelta(delta)}
+            </span>
+          )}
           {valueLabel} · {v}
         </span>
       </div>
@@ -62,7 +72,7 @@ function Meter({ id, icon, name, caption, valueLabel, value, ticks, barClass, mo
         className="relative mt-0.5 h-2 overflow-hidden rounded-full border border-primary/20 bg-black/80"
       >
         <div
-          className={`h-full transition-all duration-500 ${barClass}`}
+          className={`h-full transition-[width,background-color] duration-700 ease-out motion-reduce:transition-none ${barClass}`}
           style={{ width: `${v}%` }}
         />
         {ticks.map((t) => (
@@ -84,11 +94,14 @@ function Meter({ id, icon, name, caption, valueLabel, value, ticks, barClass, mo
  *  - Heat: short-term intimacy intensity; rises and cools within scenes.
  * Mobile stacks them full width with short captions; desktop sits them side by side.
  */
-export default function ConnectionMeters({ synchro, heat, showHeat = false, mobile: forcedMobile }) {
+export default function ConnectionMeters({ synchro, heat, showHeat = false, mobile: forcedMobile, resetKey = null }) {
   const detected = useIsMobileLayout();
   const mobile = forcedMobile ?? detected;
-  const hasSynchro = synchro && Number.isFinite(Number(synchro.strength));
+  const hasSynchro = Boolean(synchro) && Number.isFinite(Number(synchro.strength));
   const tier = hasSynchro ? synchroTierFor(synchro.strength) : null;
+  const { delta: synchroDelta } = useMeterDelta(hasSynchro ? clamp(synchro.strength) : null, {
+    resetKey,
+  });
   const heatValue = clamp(heat);
   const heatBar =
     heatValue >= 80 ? "bg-rose-500" : heatValue >= 40 ? "bg-amber-500" : heatValue >= 15 ? "bg-yellow-500" : "bg-primary/30";
@@ -111,6 +124,7 @@ export default function ConnectionMeters({ synchro, heat, showHeat = false, mobi
           ticks={SYNCHRO_TIERS.filter((t) => t.min > 0).map((t) => t.min)}
           barClass="bg-gradient-to-r from-cyan-600 to-cyan-300"
           mobile={mobile}
+          delta={synchroDelta}
         />
       )}
       {showHeat && (

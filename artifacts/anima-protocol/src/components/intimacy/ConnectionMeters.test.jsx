@@ -67,3 +67,15 @@ describe.each([
     expect(container.innerHTML).toBe("");
   });
 });
+
+describe("ConnectionMeters synchro change flash", () => {
+  it("shows the per-turn change and resets for another companion", () => {
+    setViewport(false);
+    const { rerender } = render(<ConnectionMeters synchro={{ strength: 40 }} resetKey="a" />);
+    expect(screen.queryByTestId("synchro-delta")).toBeNull();
+    rerender(<ConnectionMeters synchro={{ strength: 42 }} resetKey="a" />);
+    expect(screen.getByTestId("synchro-delta").textContent).toBe("+2");
+    rerender(<ConnectionMeters synchro={{ strength: 75 }} resetKey="b" />);
+    expect(screen.queryByTestId("synchro-delta")).toBeNull();
+  });
+});
