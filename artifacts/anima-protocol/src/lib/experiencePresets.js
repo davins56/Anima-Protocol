@@ -63,7 +63,7 @@ export const FEATURE_MATRIX = Object.freeze([
   {name:"Chat background choices",status:"implemented",detail:"ChatBackground and Settings"},
   {name:"Chat bubble variants",status:"implemented",detail:"Applied to real chat message bubbles"},
   {name:"Frosted / glass shells",status:"implemented",detail:"Chat bubbles, cards, sheets, dialogs, headers, the floating dock, Explore and panels; solid fallback"},
-  {name:"Navigation patterns",status:"partial",detail:"Real tab bar appearance; alternate navigation mechanics pending"},
+  {name:"Navigation patterns",status:"implemented",detail:"Tabs (floating dock), Rail (side rail on iPad and wider) and Command (command bar + ⌘K / Ctrl+K palette)"},
   {name:"Character presentation",status:"implemented",detail:"Chat avatars, 3D vessels (Vessel Studio, NetBattle, arena, Sovereign Presence, Cyberworld) and HUD character labels"},
   {name:"NetNavi-inspired HUD",status:"implemented",detail:"Chat accents plus Cyberworld (map, journeys, Data Bazaar), NetBattle, arena and Net panels"},
   {name:"Device-local named presets",status:"implemented",detail:"Per-signed-in-user browser storage"},

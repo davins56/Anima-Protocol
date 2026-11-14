@@ -48,10 +48,11 @@ describe("visual-only experience presets", () => {
     expect(row?.status).toBe("implemented");
     expect(row?.detail).not.toMatch(/pending/i);
   });
-  it("labels runtime styling separately from advanced production mechanics", () => {
-    for (const name of ["Navigation patterns"]) {
-      expect(FEATURE_MATRIX.find(feature => feature.name === name)?.status).toBe("partial");
-    }
+  it("marks navigation patterns implemented and leaves nothing partial", () => {
+    const row = FEATURE_MATRIX.find(feature => feature.name === "Navigation patterns");
+    expect(row?.status).toBe("implemented");
+    expect(row?.detail).not.toMatch(/pending/i);
+    expect(FEATURE_MATRIX.filter(feature => feature.status === "partial").map(feature => feature.name)).toEqual([]);
   });
   it("marks character presentation and the NetNavi HUD implemented across 3D and gameplay surfaces", () => {
     for (const name of ["Character presentation","NetNavi-inspired HUD"]) {
