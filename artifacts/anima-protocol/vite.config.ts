@@ -236,7 +236,24 @@ export default defineConfig({
           groups: [
             {
               name: "vendor-three",
-              test: /[\\/]node_modules[\\/](three|@react-three|postprocessing|three-stdlib|three-mesh-bvh|troika-[^\\/]+|maath|camera-controls|meshline|stats-gl|@monogrid)[\\/]/,
+              test: /[\\/]node_modules[\\/](three|@react-three|postprocessing|three-stdlib|three-mesh-bvh|troika-[^\\/]+|maath|camera-controls|meshline|stats-gl|@monogrid|n8ao)[\\/]/,
+            },
+            {
+              // R3F's own runtime deps. Left ungrouped, Rolldown folded them into
+              // a shared chunk with VesselAura.tsx, which imports three: that made
+              // vendor-three ⇄ VesselAura a chunk cycle, so loading /cyberworld
+              // first ran `new THREE.Matrix4()` before three was initialised
+              // ("undefined is not a constructor (evaluating 'new a')").
+              // Its own group has no three import, so no cycle (see
+              // scripts/assertNoChunkCycles.mjs, run after every build).
+              name: "vendor-r3f-runtime",
+              test: /[\\/]node_modules[\\/](zustand|suspend-react|its-fine|react-use-measure)[\\/]/,
+            },
+            {
+              // Babel helpers shared by drei and app code; kept apart so neither
+              // the app shell nor vendor-three has to import the other's chunk.
+              name: "vendor-babel-helpers",
+              test: /[\\/]node_modules[\\/]@babel[\\/]runtime[\\/]/,
             },
             {
               name: "vendor-graph",
@@ -245,6 +262,12 @@ export default defineConfig({
             {
               name: "vendor-map",
               test: /[\\/]node_modules[\\/](leaflet|react-leaflet|@react-leaflet)[\\/]/,
+            },
+            {
+              // recharts' runtime deps; ungrouped they were folded into the
+              // Insights page chunk, making vendor-charts ⇄ Insights a cycle.
+              name: "vendor-charts-runtime",
+              test: /[\\/]node_modules[\\/](es-toolkit|redux-thunk|react-redux|eventemitter3|tiny-invariant|react-is|use-sync-external-store)[\\/]/,
             },
             {
               name: "vendor-charts",

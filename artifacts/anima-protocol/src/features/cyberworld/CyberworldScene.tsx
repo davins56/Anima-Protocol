@@ -25,6 +25,7 @@ import { pathEndpoints, zoneEdgeDistance, type Area, type AreaDecor, type Portal
 import { NEON, roofZone } from "./voxel/voxel";
 import { STREET_Y, VoxelCity } from "./voxel/VoxelCity";
 import { nearestTraveller, type Traveller } from "./journey/journeys";
+import { FeatureBoundary } from "./gl/FeatureBoundary";
 import { clampDpr, GL_TIERS, isIOSLike, type GLTier } from "./gl/glLadder";
 
 /** Night-city palette from the voxel reference: deep indigo sky, violet haze, orange/pink/cyan neon. */
@@ -490,11 +491,17 @@ function Resident({ home, anima, near, quality, travellers, areaId, thought }: {
         <group ref={turn} rotation={[0, yaw0, 0]} scale={1.25}>
           {/* Own boundary so a resident's GLTF/face texture loading never re-suspends the world. */}
           <Suspense fallback={null}>
-            <SerenityFigure model={model} anchored quality={quality} expression={near ? 0.6 : 0.15} />
+            <FeatureBoundary name={`figure for ${anima.name}`}>
+              <SerenityFigure model={model} anchored quality={quality} expression={near ? 0.6 : 0.15} />
+            </FeatureBoundary>
           </Suspense>
         </group>
         <NameTag text={home?.label ?? `${anima.name}.EXE`} color={color} position={[0, 2.75, 0]} bright={near} height={0.55} />
-        {thought && <NameTag text={thought.length > 60 ? `${thought.slice(0, 57)}…` : thought} color="#F1F5F9" position={[0, 3.4, 0]} bright height={0.36} upper={false} />}
+        {thought && (
+          <FeatureBoundary name="thought text">
+            <NameTag text={thought.length > 60 ? `${thought.slice(0, 57)}…` : thought} color="#F1F5F9" position={[0, 3.4, 0]} bright height={0.36} upper={false} />
+          </FeatureBoundary>
+        )}
       </group>
     </>
   );
@@ -649,7 +656,9 @@ function Follower({ anima, telemetry, quality }: { anima: WorldAnima; telemetry:
     <group ref={g}>
       <group scale={0.95}>
         <Suspense fallback={null}>
-          <SerenityFigure model={model} anchored quality={quality} expression={0.4} />
+          <FeatureBoundary name="companion figure">
+            <SerenityFigure model={model} anchored quality={quality} expression={0.4} />
+          </FeatureBoundary>
         </Suspense>
       </group>
       <NameTag text={anima.name} color={model.color} position={[0, 2.1, 0]} bright={false} height={0.32} />
@@ -881,7 +890,11 @@ function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, 
       {companion && <Follower anima={companion} telemetry={telemetry} quality={quality} />}
 
       <PlayerNavi group={player} visor={playerStyle?.visor} />
-      {playerStyle?.trail && <PlayerTrail group={player} color={playerStyle.trail} />}
+      {playerStyle?.trail && (
+        <FeatureBoundary name="neon trail">
+          <PlayerTrail group={player} color={playerStyle.trail} />
+        </FeatureBoundary>
+      )}
       <mesh ref={marker} visible={false}>
         <boxGeometry args={[0.6, 0.04, 0.6]} />
         <meshBasicMaterial color="#FACC15" toneMapped={false} />
@@ -900,9 +913,11 @@ function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, 
       />
 
       {quality.postprocessing && (glTier ?? GL_TIERS[0]).bloom && (
+        <FeatureBoundary name="bloom">
         <EffectComposer enableNormalPass={false} multisampling={0}>
           <Bloom intensity={1.05} luminanceThreshold={0.32} luminanceSmoothing={0.25} mipmapBlur />
         </EffectComposer>
+        </FeatureBoundary>
       )}
     </>
   );
