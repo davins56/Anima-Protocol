@@ -4,12 +4,15 @@
  *
  * PUT    store the latest snapshot (refused while the switch is off)
  * GET    non-identifying summary of what is stored (never calendar titles)
- * DELETE forget the snapshot
+ * DELETE forget the snapshot, calendar busy blocks, and every calendar
+ *        connection (tokens revoked where the provider allows, then deleted)
  */
 import { getAuth } from "@clerk/express";
 import { Router, type Request, type Response } from "express";
 import { summarizeSenses } from "../lib/kernel/senses";
 import { clearSenses, loadSenses, saveSenses } from "../lib/kernel/sensesStore";
+import { loadCalendarBusy } from "../lib/calendar/calendarStore";
+import { disconnectCalendar } from "../lib/calendar/calendarSync";
 import { isKernelFeatureEnabled } from "../lib/kernelFeatures";
 
 const router = Router();
@@ -29,8 +32,8 @@ router.get("/", async (req, res) => {
   if (!userId) return;
   try {
     const enabled = isKernelFeatureEnabled("senses");
-    const snap = enabled ? await loadSenses(userId) : null;
-    res.json({ enabled, ...summarizeSenses(snap) });
+    const [snap, busy] = enabled ? await Promise.all([loadSenses(userId), loadCalendarBusy(userId)]) : [null, null];
+    res.json({ enabled, ...summarizeSenses(snap, Date.now(), busy) });
   } catch (err) {
     console.error("GET /api/senses failed:", err);
     res.status(500).json({ error: "Failed to load senses" });
@@ -54,7 +57,8 @@ router.put("/", async (req, res) => {
   }
   try {
     const snap = await saveSenses(userId, req.body);
-    res.json({ enabled: true, ...summarizeSenses(snap) });
+    const busy = await loadCalendarBusy(userId).catch(() => null);
+    res.json({ enabled: true, ...summarizeSenses(snap, Date.now(), busy) });
   } catch (err) {
     console.error("PUT /api/senses failed:", err);
     res.status(500).json({ error: "Failed to save senses" });
@@ -66,7 +70,9 @@ router.delete("/", async (req, res) => {
   if (!userId) return;
   try {
     await clearSenses(userId);
-    res.json({ ok: true });
+    // "Forget my rhythm data" covers calendar awareness too.
+    const calendar = await disconnectCalendar(userId);
+    res.json({ ok: true, calendarDisconnected: calendar.removed.map((r) => r.provider) });
   } catch (err) {
     console.error("DELETE /api/senses failed:", err);
     res.status(500).json({ error: "Failed to clear senses" });
