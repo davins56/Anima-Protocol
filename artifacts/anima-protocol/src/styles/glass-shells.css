@@ -1,0 +1,142 @@
+/*
+ * Appearance Studio — Surface shell (Solid / Frosted / Glass).
+ *
+ * Driven by <html data-experience-shell> (experienceRuntime). "solid" (the
+ * default) adds nothing, so every surface keeps its current opaque look.
+ *
+ * Tokens (all themes, Light and Dark from Color Theme):
+ *   --glass-tint      surface opacity over whatever is behind it
+ *   --glass-blur      backdrop blur radius
+ *   --glass-saturate  backdrop saturation
+ *   --glass-border    border opacity
+ *   --glass-highlight inner top highlight
+ * The tint is always the theme's own --card / --popover colour, so Light
+ * glass is a pale frost and Dark glass a smoked pane, and the chosen Chat
+ * Background (Nebula, Matrix, Grid, photo) shows through instead of being
+ * recoloured. Tint floors keep body text at WCAG AA (4.5:1) even over a
+ * pure white or pure black backdrop (see glassShells.test.js).
+ *
+ * Surfaces:
+ *   1. Chrome that opts in with [data-glass-surface]: floating dock, headers,
+ *      sheets, dialogs/modals, popovers, the Explore menu. These get the tint
+ *      and backdrop-filter directly (most already used backdrop-blur).
+ *   2. Every other card/panel painted with the shared surface utilities
+ *      (.bg-card, .bg-popover, .bg-card/80, .bg-card/90 and the legacy
+ *      #090912 / #050505 chrome). They get the tint, and the blur is drawn on
+ *      an ::before layer so a card never becomes the containing block for
+ *      position:fixed children (inline modals keep covering the viewport).
+ *   Nested surfaces only add tint, never a second blur (iPad GPU budget).
+ *   Selectors start with html:root:is(...)[data-experience-shell] so they
+ *   outrank the Light remaps of legacy dark chrome in index.css.
+ *
+ * Fallbacks: no backdrop-filter support, prefers-reduced-transparency,
+ * prefers-contrast: more and forced-colors all force --glass-tint: 1, i.e.
+ * the plain solid surface.
+ */
+
+html[data-experience-shell="frosted"] {
+  --glass-tint: 0.85;
+  --glass-blur: 12px;
+  --glass-saturate: 120%;
+  --glass-border: 0.6;
+  --glass-highlight: 0.04;
+}
+html[data-experience-shell="glass"] {
+  --glass-tint: 0.72;
+  --glass-blur: 22px;
+  --glass-saturate: 150%;
+  --glass-border: 0.45;
+  --glass-highlight: 0.08;
+}
+/* Light surfaces are white: keep more of them so muted text stays AA. */
+html.light[data-experience-shell="frosted"] { --glass-tint: 0.9; }
+html.light[data-experience-shell="glass"] { --glass-tint: 0.8; }
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  html[data-experience-shell][data-experience-shell] { --glass-tint: 1; --glass-blur: 0px; }
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
+  html[data-experience-shell][data-experience-shell] { --glass-tint: 1; --glass-blur: 0px; }
+}
+
+/* 1. Opt-in chrome. */
+html:root:is([data-experience-shell="frosted"], [data-experience-shell="glass"])[data-experience-shell] [data-glass-surface] {
+  background-color: hsl(var(--card) / var(--glass-tint));
+  border-color: hsl(var(--border) / var(--glass-border));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / var(--glass-highlight)), 0 8px 32px rgb(0 0 0 / 0.18);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+html:root:is([data-experience-shell="frosted"], [data-experience-shell="glass"])[data-experience-shell] :is([data-glass-surface="popover"], [data-glass-surface="menu"]) {
+  background-color: hsl(var(--popover) / var(--glass-tint));
+}
+/* The dock wrapper itself is transparent; only the bar is glass. */
+html:root:is([data-experience-shell="frosted"], [data-experience-shell="glass"])[data-experience-shell] [data-glass-surface="dock"] {
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / var(--glass-highlight)), 0 10px 36px rgb(0 0 0 / 0.28);
+}
+
+/* 2. Shared card / panel utilities (not the active/selected state of a tile). */
+html:root:is([data-experience-shell="frosted"], [data-experience-shell="glass"])[data-experience-shell]
+  :is(.bg-card, .bg-card\/80, .bg-card\/90, .bg-\[\#090912\], .bg-\[\#050505\]):not([data-glass-surface]):not([data-glass-surface-off]):not([aria-current]):not([aria-selected="true"]):not([data-state="active"]) {
+  background-color: hsl(var(--card) / var(--glass-tint));
+  border-color: hsl(var(--border) / var(--glass-border));
+}
+html:root:is([data-experience-shell="frosted"], [data-experience-shell="glass"])[data-experience-shell]
+  .bg-popover:not([data-glass-surface]):not([data-glass-surface-off]) {
+  background-color: hsl(var(--popover) / var(--glass-tint));
+  border-color: hsl(var(--border) / var(--glass-border));
+}
+html:root:is([data-experience-shell="frosted"], [data-experience-shell="glass"])[data-experience-shell]
+  :is(.bg-card, .bg-card\/80, .bg-card\/90, .bg-popover, .bg-\[\#090912\], .bg-\[\#050505\]):not([data-glass-surface]):not([data-glass-surface-off]):not([class*="before:"])::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+/*
+ * The ::before needs a positioned, isolated host. Kept in the components
+ * layer so Tailwind's .fixed / .absolute / .sticky utilities still win.
+ */
+@layer components {
+  html:root:is([data-experience-shell="frosted"], [data-experience-shell="glass"])[data-experience-shell]
+    :is(.bg-card, .bg-card\/80, .bg-card\/90, .bg-popover, .bg-\[\#090912\], .bg-\[\#050505\]):not([data-glass-surface]):not([data-glass-surface-off]):not([class*="before:"]) {
+    position: relative;
+    isolation: isolate;
+  }
+}
+
+/* Nested surfaces: tint only, a single blur per stack. */
+html:root:is([data-experience-shell="frosted"], [data-experience-shell="glass"])[data-experience-shell]
+  :is([data-glass-surface], .bg-card, .bg-card\/80, .bg-card\/90, .bg-popover)
+  :is(.bg-card, .bg-card\/80, .bg-card\/90, .bg-popover, .bg-\[\#090912\], .bg-\[\#050505\])::before,
+html:root:is([data-experience-shell="frosted"], [data-experience-shell="glass"])[data-experience-shell]
+  :is([data-glass-surface], .bg-card, .bg-card\/80, .bg-card\/90, .bg-popover) [data-glass-surface] {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* Chat bubbles follow the same tokens (were fixed rgba, wrong in Light). */
+html:root:is([data-experience-shell="frosted"], [data-experience-shell="glass"])[data-experience-shell] [data-message-bubble] {
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+html:root[data-experience-shell="glass"][data-experience-shell] [data-message-bubble] {
+  background-color: hsl(var(--card) / var(--glass-tint));
+}
+
+/* Solid fallback: when tint is 1 there is nothing to see through, skip blur. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  html:root:is([data-experience-shell="frosted"], [data-experience-shell="glass"])[data-experience-shell] [data-glass-surface] { box-shadow: none; }
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
+  html:root:is([data-experience-shell="frosted"], [data-experience-shell="glass"])[data-experience-shell] [data-glass-surface],
+  html:root:is([data-experience-shell="frosted"], [data-experience-shell="glass"])[data-experience-shell] [data-message-bubble],
+  html:root:is([data-experience-shell="frosted"], [data-experience-shell="glass"])[data-experience-shell] :is(.bg-card, .bg-card\/80, .bg-card\/90, .bg-popover)::before {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}

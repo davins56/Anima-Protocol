@@ -43,6 +43,11 @@ describe("visual-only experience presets", () => {
       id:String(i),name:"x".repeat(100),values:EXTRA_DEFAULTS
     })),storage)).toHaveLength(30);
   });
+  it("marks frosted / glass shells implemented across every surface", () => {
+    const row = FEATURE_MATRIX.find(feature => feature.name === "Frosted / glass shells");
+    expect(row?.status).toBe("implemented");
+    expect(row?.detail).not.toMatch(/pending/i);
+  });
   it("labels runtime styling separately from advanced production mechanics", () => {
     for (const name of ["Navigation patterns"]) {
       expect(FEATURE_MATRIX.find(feature => feature.name === name)?.status).toBe("partial");
