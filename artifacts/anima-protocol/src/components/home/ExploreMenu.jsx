@@ -71,7 +71,7 @@ export default function ExploreMenu({ open, onClose }) {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.94, y: 8 }}
               transition={{ type: "spring", damping: 28, stiffness: 360 }}
-              className="fixed left-1/2 top-1/2 z-[1001] w-[88%] max-w-xs -translate-x-1/2 -translate-y-1/2 bg-[#090912] border border-cyan-400/30 shadow-[0_0_30px_rgba(34,211,238,0.15)]"
+              className="fixed left-1/2 top-1/2 z-[1001] w-[88%] max-w-xs -translate-x-1/2 -translate-y-1/2 bg-card border border-cyan-400/30 shadow-[0_0_30px_rgba(34,211,238,0.15)]"
               role="alertdialog"
               aria-modal="true"
               aria-labelledby="signout-title"
@@ -123,7 +123,7 @@ export default function ExploreMenu({ open, onClose }) {
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: "100%", opacity: 0 }}
               transition={{ type: "spring", damping: 30, stiffness: 320 }}
-              className="fixed bottom-0 left-0 right-0 z-50 bg-[#090912] border-t border-cyan-400/20 max-h-[80dvh] overflow-y-auto overscroll-contain"
+              className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-cyan-400/20 max-h-[80dvh] overflow-y-auto overscroll-contain"
               role="dialog"
               aria-modal="true"
               aria-label="Explore"
@@ -162,7 +162,7 @@ export default function ExploreMenu({ open, onClose }) {
                     }
                   }}
                   data-testid="explore-filter"
-                  className="w-full bg-black/60 border border-cyan-400/20 text-cyan-100/80 placeholder-cyan-400/25 font-mono text-base sm:text-xs px-3 py-2 focus:outline-none focus:border-cyan-400/50"
+                  className="w-full bg-input border border-border text-cyan-100/80 placeholder-cyan-400/25 font-mono text-base sm:text-xs px-3 py-2 focus:outline-none focus:border-cyan-400/50"
                 />
               </div>
               <div
@@ -171,7 +171,7 @@ export default function ExploreMenu({ open, onClose }) {
                 data-no-swipe
               >
                 {shownModules.length === 0 && (
-                  <p className="col-span-3 bg-[#090912] py-6 text-center font-mono text-[10px] tracking-widest uppercase text-cyan-400/40">
+                  <p className="col-span-3 bg-card py-6 text-center font-mono text-[10px] tracking-widest uppercase text-cyan-400/40">
                     No pages match “{filter.trim()}”
                   </p>
                 )}
@@ -182,7 +182,7 @@ export default function ExploreMenu({ open, onClose }) {
                       key={signOut ? "sign-out" : `${label}-${path}`}
                       type="button"
                       onClick={signOut ? handleSignOut : () => { navigate(path); onClose(); }}
-                      className={`flex flex-col items-center justify-center gap-2 py-5 px-3 bg-[#090912] transition-all ${
+                      className={`flex flex-col items-center justify-center gap-2 py-5 px-3 bg-card transition-all ${
                         isActive ? "bg-cyan-400/10 text-cyan-300" : "text-cyan-400/40 hover:bg-cyan-400/5 hover:text-cyan-300/80"
                       }`}
                     >
