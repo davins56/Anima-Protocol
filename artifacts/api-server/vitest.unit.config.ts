@@ -60,6 +60,7 @@ export default defineConfig({
       "test/companionPromptBudget.test.ts",
       "test/safetyGates.test.ts",
       "test/intimacyEngine.test.ts",
+      "test/heatIntensity.test.ts",
       "test/characterResearch.test.ts",
       "test/dialogueVariety.test.ts",
       "test/replyFormatting.test.ts",

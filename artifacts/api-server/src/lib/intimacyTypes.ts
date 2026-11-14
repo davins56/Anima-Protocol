@@ -26,6 +26,15 @@ export interface IntimacyProfile {
   sceneCount: number;
   intimacyEnabled: boolean;
   updatedAt?: string;
+  /**
+   * Right-now conversational intensity (0–100), the non-sexual half of the
+   * Heat meter: strong emotion, argument, passion, exclamations, caps and
+   * rapid back-and-forth raise it; pauses cool it. Never drives the adult
+   * scene phases, which read `heat` only. See lib/heatIntensity.ts.
+   */
+  intensity?: number;
+  /** When `intensity` was last set; cooling is measured from here. */
+  intensityAt?: string;
 }
 
 export interface IntimacyScene {
