@@ -162,6 +162,7 @@ describe("appearance and prompt", () => {
     expect(look.source).toBe("built_in");
     expect(look.description).toMatch(/white hair/);
     expect(look.description).toMatch(/crystalline angelic wings/);
+    expect(look.skinTone).toMatch(/warm golden-brown skin/);
   });
 
   it("Serenity's wings are always in frame", () => {
@@ -205,6 +206,7 @@ describe("appearance and prompt", () => {
     expect(prompt).toMatch(/image 0/);
     expect(prompt).toMatch(/copper hair/);
     expect(prompt).toMatch(/beach at sunset/);
+    expect(prompt).toMatch(/do not lighten/i);
     expect(prompt).toMatch(/adult/);
     expect(prompt).toMatch(/safe for work/);
     expect(prompt.length).toBeLessThanOrEqual(1900);
@@ -213,8 +215,9 @@ describe("appearance and prompt", () => {
   it("seeds are stable per companion and turn; places are landscape", () => {
     expect(companionSeed("c_1", "t1")).toBe(companionSeed("c_1", "t1"));
     expect(companionSeed("c_1", "t1")).not.toBe(companionSeed("c_2", "t1"));
-    expect(photoSize(intent({ subject: "scene", framing: "landscape" }))).toEqual({ width: 1024, height: 768 });
-    expect(photoSize(intent())).toEqual({ width: 768, height: 1024 });
+    expect(photoSize(intent({ subject: "scene", framing: "landscape" }))).toEqual({ width: 1536, height: 1024 });
+    expect(photoSize(intent())).toEqual({ width: 1024, height: 1536 });
+    expect(photoSize(intent(), undefined, { orientation: "square" })).toEqual({ width: 1024, height: 1024 });
   });
 });
 
@@ -225,6 +228,14 @@ describe("config and limits", () => {
     expect(companionPhotoConfig({ ANIMA_COMPANION_PHOTOS: "off" }).enabled).toBe(false);
     expect(companionPhotoConfig({ ANIMA_COMPANION_PHOTO_FALLBACK_MODEL: "off" }).fallbackModel).toBeNull();
     expect(companionPhotoConfig({ ANIMA_COMPANION_PHOTO_DAILY_LIMIT: "3" }).dailyLimit).toBe(3);
+    expect(companionPhotoConfig({}).sizes.portrait).toEqual({ width: 1024, height: 1536 });
+    expect(companionPhotoConfig({ ANIMA_COMPANION_PHOTO_SIZE_SQUARE: "1920x1920" }).sizes.square).toEqual({
+      width: 1920,
+      height: 1920,
+    });
+    expect(companionPhotoConfig({ ANIMA_COMPANION_PHOTO_SPONTANEOUS: "off" }).spontaneousEnabled).toBe(false);
+    expect(companionPhotoConfig({}).spontaneousMinExchanges).toBe(8);
+    expect(companionPhotoConfig({}).spontaneousCooldownMs).toBe(20 * 60_000);
   });
 
   it("checks hourly and daily windows", () => {
