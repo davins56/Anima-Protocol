@@ -6,6 +6,7 @@ export default defineConfig({
       "test/clerkDiagnostics.test.ts",
       "test/imageUploads.test.ts",
       "test/companionPhotos.test.ts",
+      "test/sceneImages.test.ts",
       "test/consumeLlmStream.test.ts",
       "test/chatTelemetry.test.ts",
       "test/chatFailureTypes.sync.test.ts",
