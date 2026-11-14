@@ -59,7 +59,8 @@ describe("animaSenses", () => {
     const ok = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ enabled: true, present: true }) }));
     expect(await reportSenses({ fetchImpl: ok, storage, nav: {}, force: true })).toEqual({ enabled: true, present: true });
     const [url, init] = ok.mock.calls[0];
-    expect(url).toContain("/api/senses");
+    expect(new URL(url, "http://localhost").pathname).toBe("/api/senses");
+    expect(url).not.toContain("/api/api/");
     expect(init.method).toBe("PUT");
     expect(JSON.parse(init.body).calendar).toEqual([]);
 

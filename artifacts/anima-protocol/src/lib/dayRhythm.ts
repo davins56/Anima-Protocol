@@ -135,7 +135,7 @@ export async function loadSensesStatus({
 } = {}): Promise<DayRhythmLoad> {
   try {
     const headers = await requireChatAuthHeaders();
-    const res = await fetchImpl(apiUrl("/api/senses"), { method: "GET", headers });
+    const res = await fetchImpl(apiUrl("/senses"), { method: "GET", headers });
     if (res.status === 401) {
       return { ok: false, kind: "unauthorized", message: "Sign in to manage day rhythm." };
     }
