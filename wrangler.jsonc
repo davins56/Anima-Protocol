@@ -94,6 +94,9 @@
     // Never invent localhost on this isolate (belt-and-suspenders with
     // navigator.userAgent === "Cloudflare-Workers").
     "ANIMA_RUNTIME": "worker",
+    // Day rhythm (Settings > Day Rhythm, /api/senses, calendar awareness).
+    // Without it the screen says "Day rhythm is turned off on the server".
+    "ANIMA_KERNEL_SENSES": "1",
     // Production chat prefers the self-hosted Anima LLM (anima-chat) via
     // Secrets Store ANIMA_LOCAL_LLM_BASE_URL. Workers AI (Llama 3.3 70B) is only
     // used when that URL is unset/unusable. Do NOT put ANIMA_LOCAL_LLM_BASE_URL
