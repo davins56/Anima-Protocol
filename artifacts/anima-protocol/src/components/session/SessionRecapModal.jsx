@@ -1,11 +1,15 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Download, Share2, Loader, BookOpen } from "lucide-react";
 import { animaClient } from "@/api/animaClient";
+import { buildSessionRecapExport, normalizeSessionRecap } from "@/lib/sessionRecap";
 
 export default function SessionRecapModal({ isOpen, sessionId, onClose }) {
   const [recap, setRecap] = useState(null);
   const [loading, setLoading] = useState(false);
+  // Only the newest request may update the modal, so a slow recap for a
+  // previous session (or an earlier Try again) cannot overwrite this one.
+  const requestRef = useRef(0);
 
   useEffect(() => {
     if (isOpen && sessionId) {
@@ -14,97 +18,33 @@ export default function SessionRecapModal({ isOpen, sessionId, onClose }) {
   }, [isOpen, sessionId]);
 
   const generateRecap = async () => {
+    const requestId = ++requestRef.current;
+    const isCurrent = () => requestId === requestRef.current;
     setLoading(true);
+    setRecap(null);
     try {
-      // Fetch the session data
-      const sessions = await animaClient.entities.ChatSession.list("-updated_date", 1);
-      const session = sessions.find(s => s.id === sessionId);
-
-      if (!session) {
-        setLoading(false);
-        return;
-      }
-
-      // Generate session summary and daily journal compilation in parallel
-      const [summaryRes, journalRes] = await Promise.all([
-        animaClient.functions.invoke("generateSessionSummary", { session_id: sessionId }),
-        animaClient.functions.invoke("dailyJournalCompilation", { session_id: sessionId }),
-      ]);
-
-      // Compile the recap
-      const compiledRecap = {
-        originalTitle: session.title || "Untitled Session",
-        title: summaryRes?.data?.title || session.title || "Session",
-        date: new Date().toLocaleDateString("en-US", {
-          weekday: "long",
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-        }),
-        time: new Date().toLocaleTimeString("en-US", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-        messageCount: session.messages?.length || 0,
-        summary: summaryRes?.data?.summary || "A narrative journey unfolds...",
-        keyMoments: summaryRes?.data?.key_moments || [],
-        characters: summaryRes?.data?.characters_involved || [],
-        emotionalArc: summaryRes?.data?.emotional_arc || "Undefined",
-        journalEntry: journalRes?.data?.compiled_entry || "",
-        reflections: journalRes?.data?.reflections || [],
-        emotionalProgression: journalRes?.data?.emotional_progression || {},
-      };
-
-      setRecap(compiledRecap);
+      // The recap is for THIS session, not whichever session was updated last.
+      // (list("-updated_date", 1) returned only the newest session, so a recap
+      // opened from any other chat found nothing.) Metadata is enough here; the
+      // server reads the messages itself.
+      const session = await animaClient.entities.ChatSession.get(sessionId, {
+        withMessages: false,
+      }).catch(() => null);
+      const summaryRes = await animaClient.functions.invoke("generateSessionSummary", {
+        session_id: sessionId,
+      });
+      if (isCurrent()) setRecap(normalizeSessionRecap(summaryRes, session));
     } catch (err) {
       console.error("Error generating recap:", err);
+      if (isCurrent()) setRecap(normalizeSessionRecap(null, null));
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   };
 
   const handleDownload = () => {
     if (!recap) return;
-
-    const content = `
-═══════════════════════════════════════════════════════════════
-                    SESSION JOURNAL RECAP
-═══════════════════════════════════════════════════════════════
-
-Title: ${recap.title}
-Date: ${recap.date} at ${recap.time}
-Messages: ${recap.messageCount}
-
-───────────────────────────────────────────────────────────────
-SUMMARY
-───────────────────────────────────────────────────────────────
-${recap.summary}
-
-───────────────────────────────────────────────────────────────
-KEY MOMENTS
-───────────────────────────────────────────────────────────────
-${recap.keyMoments.map((m, i) => `${i + 1}. ${m}`).join("\n")}
-
-───────────────────────────────────────────────────────────────
-EMOTIONAL ARC
-───────────────────────────────────────────────────────────────
-${recap.emotionalArc}
-
-───────────────────────────────────────────────────────────────
-JOURNAL ENTRY
-───────────────────────────────────────────────────────────────
-${recap.journalEntry}
-
-───────────────────────────────────────────────────────────────
-REFLECTIONS
-───────────────────────────────────────────────────────────────
-${Object.entries(recap.reflections).map(([key, value]) => `${key}: ${value}`).join("\n")}
-
-═══════════════════════════════════════════════════════════════
-Generated by Resonance.AI
-═══════════════════════════════════════════════════════════════
-    `.trim();
-
+    const content = buildSessionRecapExport(recap);
     const element = document.createElement("a");
     element.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(content));
     element.setAttribute("download", `session-recap-${new Date().toISOString().split("T")[0]}.txt`);
@@ -176,20 +116,40 @@ Generated by Resonance.AI
                     </div>
                   </motion.div>
 
-                  {/* Summary */}
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 }}
-                    className="p-4 border border-primary/20 bg-primary/5 space-y-2"
-                  >
-                    <p className="text-[9px] font-mono text-primary/40 tracking-widest uppercase">
-                      Summary
-                    </p>
-                    <p className="font-mono text-sm leading-relaxed text-primary/80">
-                      {recap.summary}
-                    </p>
-                  </motion.div>
+                  {/* Summary (or why there is none) */}
+                  {recap.generated ? (
+                    <motion.div
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.1 }}
+                      className="p-4 border border-primary/20 bg-primary/5 space-y-2"
+                    >
+                      <p className="text-[9px] font-mono text-primary/40 tracking-widest uppercase">
+                        Summary
+                      </p>
+                      <p className="font-mono text-sm leading-relaxed text-primary/80">
+                        {recap.summary}
+                      </p>
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.1 }}
+                      role="alert"
+                      className="p-4 border border-amber-400/30 bg-amber-400/5 space-y-3"
+                    >
+                      <p className="font-mono text-sm leading-relaxed text-amber-300/90">
+                        {recap.error}
+                      </p>
+                      <button
+                        onClick={generateRecap}
+                        className="px-4 py-1.5 border border-amber-400/40 text-amber-300 hover:bg-amber-400/10 font-mono text-[10px] tracking-widest uppercase transition-all"
+                      >
+                        Try again
+                      </button>
+                    </motion.div>
+                  )}
 
                   {/* Key Moments */}
                   {recap.keyMoments.length > 0 && (
@@ -217,19 +177,21 @@ Generated by Resonance.AI
                   )}
 
                   {/* Emotional Arc */}
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.3 }}
-                    className="p-4 border border-cyan-400/30 bg-cyan-400/5 space-y-2"
-                  >
-                    <p className="text-[9px] font-mono text-cyan-400/60 tracking-widest uppercase">
-                      Emotional Arc
-                    </p>
-                    <p className="font-mono text-sm text-cyan-400/80 leading-relaxed">
-                      {recap.emotionalArc}
-                    </p>
-                  </motion.div>
+                  {recap.emotionalArc && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.3 }}
+                      className="p-4 border border-cyan-400/30 bg-cyan-400/5 space-y-2"
+                    >
+                      <p className="text-[9px] font-mono text-cyan-400/60 tracking-widest uppercase">
+                        Emotional Arc
+                      </p>
+                      <p className="font-mono text-sm text-cyan-400/80 leading-relaxed">
+                        {recap.emotionalArc}
+                      </p>
+                    </motion.div>
+                  )}
 
                   {/* Journal Entry */}
                   {recap.journalEntry && (
@@ -249,7 +211,7 @@ Generated by Resonance.AI
                   )}
 
                   {/* Reflections */}
-                  {Object.keys(recap.reflections).length > 0 && (
+                  {recap.reflections.length > 0 && (
                     <motion.div
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -260,12 +222,9 @@ Generated by Resonance.AI
                         Session Reflections
                       </p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {Object.entries(recap.reflections).map(([key, value]) => (
-                          <div key={key} className="p-3 border border-primary/15 bg-black/40">
-                            <p className="text-[8px] font-mono text-primary/40 tracking-widest uppercase mb-1">
-                              {key}
-                            </p>
-                            <p className="font-mono text-[10px] text-primary/80">{value}</p>
+                        {recap.reflections.map((reflection, idx) => (
+                          <div key={idx} className="p-3 border border-primary/15 bg-black/40">
+                            <p className="font-mono text-[10px] text-primary/80">{reflection}</p>
                           </div>
                         ))}
                       </div>
