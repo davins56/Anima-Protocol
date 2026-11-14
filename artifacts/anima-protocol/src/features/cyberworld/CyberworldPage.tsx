@@ -268,7 +268,9 @@ export default function CyberworldPage() {
   };
 
   return (
-    <div className="relative flex-1 min-h-0 flex flex-col bg-black text-foreground" data-net-hud="cyberworld">
+    // data-no-swipe: walking, orbiting and the d-pad are drags, so the app-wide
+    // swipe-back / swipe-home gesture must not fire anywhere in the world.
+    <div className="relative flex-1 min-h-0 flex flex-col bg-black text-foreground" data-net-hud="cyberworld" data-no-swipe>
       <div className="relative flex-1 min-h-[60vh]">
         <GLHost>
           {(gl) => (

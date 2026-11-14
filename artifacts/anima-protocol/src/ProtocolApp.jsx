@@ -35,6 +35,7 @@ import { dark } from "@clerk/themes";
 import { Suspense, lazy, useRef, useEffect, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { useSwipeGestures } from "@/hooks/useSwipeGestures";
+import { APP_SWIPE_EXCLUDE } from "@/lib/swipeNav";
 import useViewportHeight from "@/hooks/useViewportHeight";
 import { initializeColorScheme } from "@/lib/colorScheme";
 import { applyActiveExtras, EXTRAS_EVENT } from "@/lib/experienceRuntime";
@@ -901,7 +902,7 @@ const AuthenticatedApp = () => {
   useSwipeGestures({
     onSwipeRight: handleSwipeRight,
     onSwipeLeft: handleSwipeLeft,
-    excludeSelector: "input, textarea, [data-no-swipe]",
+    excludeSelector: APP_SWIPE_EXCLUDE,
   });
   // Gate the first-run tutorial behind the AI disclaimer so the two modals
   // never stack. The disclaimer fires onAccept on mount when already accepted,
