@@ -16,6 +16,11 @@ import {
   jsonApiErrorResponse,
 } from "./lib/workerApiGuard";
 import { apexRedirectForWww } from "./lib/wwwHostRedirect";
+import {
+  httpsRedirectFor,
+  securityHeaderKindForPath,
+  withSecurityHeaders,
+} from "./lib/securityHeaders";
 import { setAiBinding } from "./lib/aiBinding";
 import { setAssetsBinding } from "./lib/assetsBinding";
 import {
@@ -52,6 +57,13 @@ export default {
   ): Promise<Response> {
     const url = new URL(request.url);
 
+    // Plain http → https (301 GET/HEAD, 308 otherwise) for every path this
+    // Worker sees. Static documents not in run_worker_first never reach the
+    // Worker, so the zone's "Always Use HTTPS" is still the edge-wide switch
+    // (needs Dàvīn's OK); HSTS in public/_headers covers repeat visits.
+    const httpsRedirect = httpsRedirectFor(request);
+    if (httpsRedirect) return httpsRedirect;
+
     // GitHub's document callback is clerk.{apex}. That hostname is a
     // CNAME to Clerk (Safari ITP cloaking). Terminate it here so we can
     // inject Domain=apex `__client` and never render 403 JSON.
@@ -80,15 +92,23 @@ export default {
       const forwarded = new Request(request, { headers });
       try {
         await applyCloudflareRequestEnv(env);
-        return await fetchApiThroughExpress(forwarded, env, ctx, expressHandler);
+        // Express sets these too; the guard's own timeout JSON does not.
+        return withSecurityHeaders(
+          await fetchApiThroughExpress(forwarded, env, ctx, expressHandler),
+          securityHeaderKindForPath(url.pathname),
+        );
       } catch (err) {
-        return jsonApiErrorResponse(err, 503, url.pathname);
+        return withSecurityHeaders(jsonApiErrorResponse(err, 503, url.pathname), "api");
       } finally {
         clearWorkerWaitUntil(backgroundToken);
       }
     }
 
-    return fetchAssetsRejectingSpaHtml(request, env.ASSETS);
+    // /assets/* (run_worker_first). public/_headers covers Assets-direct paths.
+    return withSecurityHeaders(
+      await fetchAssetsRejectingSpaHtml(request, env.ASSETS),
+      "document",
+    );
   },
 
   /**

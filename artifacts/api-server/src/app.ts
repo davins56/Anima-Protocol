@@ -35,6 +35,8 @@ import { safeClerkMiddleware } from "./middlewares/clerkAuthFallback";
 import clerkWebhookRouter from "./webhooks/clerk";
 import stripeWebhookRouter from "./webhooks/stripe";
 import healthRouter from "./routes/health";
+import cspReportRouter from "./routes/cspReport";
+import { securityHeadersMiddleware } from "./lib/securityHeaders";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { classifyDbError } from "./lib/dbErrors";
@@ -76,6 +78,11 @@ const corsMiddleware = (
 // which surfaces as "Too many requests" after a single chat send.
 app.set("trust proxy", 1);
 
+// HSTS, nosniff, Referrer-Policy, X-Frame-Options and a locked-down CSP on
+// every API response (security audit 2026-11-14, H2). The Clerk proxy only
+// gets the transport headers. See lib/securityHeaders.ts.
+app.use(securityHeadersMiddleware);
+
 // Re-apply Worker secrets onto process.env on every request. cloudflare:node
 // may snapshot or reset process.env after fetch() mirroring; Clerk/DB readers
 // then see empty keys and 503 "API is misconfigured".
@@ -101,6 +108,9 @@ app.use((_req, _res, next) => {
 // streams raw request bytes. It self-guards and is only active in production /
 // pk_live; otherwise it returns a deterministic 503. Keys are read per request.
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
+
+// CSP report-only violations (own parser: application/csp-report bodies).
+app.use("/api", cspReportRouter);
 
 // Webhook route needs the raw request body for svix signature verification, so
 // it must be mounted before the JSON body parser.
