@@ -10,8 +10,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useNavigate } from "react-router-dom";
 import { animaClient } from "@/api/animaClient";
 import { companionLookHref, updateCompanionRecord } from "@/lib/listPersonalAnimas";
-import { hasWebGL } from "@/lib/webglSupport";
-import WebGLFallback from "@/components/battle/WebGLFallback";
+import { GLHost } from "./gl/GLHost";
 import { areaById, buildWorld, travel } from "./areas";
 import { homeZoneId, type Portal, type Vec2, type WorldAnima } from "./layout";
 import Minimap from "./Minimap";
@@ -38,14 +37,6 @@ const DPAD: ReadonlyArray<readonly [string, string, MoveInput]> = [
   ["▼", "col-start-2 row-start-3", { x: 0, z: -1 }],
 ];
 
-function NoWebGL() {
-  return (
-    <div className="absolute inset-0 grid place-items-center p-6 text-center font-mono text-xs text-cyan-300/70">
-      This device can’t open a WebGL context, so the cyberworld can’t render here.
-    </div>
-  );
-}
-
 export default function CyberworldPage() {
   const navigate = useNavigate();
   const { animas, source } = useCyberworldAnimas();
@@ -60,7 +51,6 @@ export default function CyberworldPage() {
   const touchMove = useRef<MoveInput>({ x: 0, z: 0 });
   const telemetry = useRef<PlayerTelemetry>({ x: spawn[0], z: spawn[1], heading: Math.PI, moving: false });
   const commands = useRef<SceneCommands>({ walkTo: null });
-  const webgl = useMemo(() => hasWebGL(), []);
   const { muted, toggleMuted, sfx } = useCyberworldAudio();
 
   // ── Exploration: real-world region → daily data nodes, actions, progress.
@@ -279,8 +269,8 @@ export default function CyberworldPage() {
   return (
     <div className="relative flex-1 min-h-0 flex flex-col bg-black text-foreground">
       <div className="relative flex-1 min-h-[60vh]">
-        {webgl ? (
-          <WebGLFallback fallback={<NoWebGL />}>
+        <GLHost>
+          {(gl) => (
             <Suspense fallback={<div className="absolute inset-0 grid place-items-center font-mono text-xs text-cyan-300/60">Jacking in…</div>}>
               <CyberworldScene
                 area={area}
@@ -300,12 +290,12 @@ export default function CyberworldPage() {
                 travellers={travellers}
                 thoughts={thoughts}
                 playerStyle={playerStyle}
+                glTier={gl.tier}
+                onGLLost={gl.onLost}
               />
             </Suspense>
-          </WebGLFallback>
-        ) : (
-          <NoWebGL />
-        )}
+          )}
+        </GLHost>
 
         <div className="pointer-events-none absolute top-2 left-2 right-2 flex items-center gap-2 font-mono text-[10px] uppercase tracking-widest">
           <button type="button" onClick={() => navigate(-1)} className="pointer-events-auto border border-cyan-300/40 bg-black/60 px-2 py-1.5 text-cyan-200">
