@@ -186,6 +186,8 @@ describe("Cloudflare wrangler config", () => {
     expect(vars.ANIMA_CHAT_BRAIN).toBe("cloudflare");
     expect(vars.ANIMA_OPENROUTER_FREE).toBe("true");
     expect(vars.ANIMA_OPENROUTER_FALLBACK).toBe("true");
+    // Non-secret feature flag: turns on Day Rhythm (/api/senses, /api/calendar).
+    expect(vars.ANIMA_KERNEL_SENSES).toBe("1");
     // Public tunnel URL stays out of committed vars. Bind it only via
     // Secrets Store (see wrangler.jsonc runbook).
     expect(vars).not.toHaveProperty("ANIMA_LOCAL_LLM_BASE_URL");
@@ -195,6 +197,7 @@ describe("Cloudflare wrangler config", () => {
     expect(Object.keys(vars).sort()).toEqual(
       [
         "ANIMA_CHAT_BRAIN",
+        "ANIMA_KERNEL_SENSES",
         "ANIMA_LLM_PROVIDER",
         "ANIMA_LOCAL_LLM_BACKEND",
         "ANIMA_OLLAMA_MODEL_STANDARD",
