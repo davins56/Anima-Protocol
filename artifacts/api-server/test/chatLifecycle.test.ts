@@ -133,6 +133,16 @@ function installHelloStream() {
   }));
 }
 
+/** True when this is the user's turn, optionally followed by a photo note (#720). */
+function isUserTurn(
+  content: string,
+  message: { role: string; content?: string } | undefined,
+): boolean {
+  if (!message || message.role !== "user") return false;
+  const text = String(message.content ?? "");
+  return text === content || text.startsWith(`${content}\n\n`);
+}
+
 function sseEvents(text: string): Array<Record<string, unknown>> {
   return text
     .split("\n")
@@ -237,7 +247,7 @@ describe("chat lifecycle", () => {
       maxTokens?: number;
       signal?: AbortSignal;
     };
-    expect(sent.messages?.some((message) => message.role === "user" && message.content === "Hello")).toBe(
+    expect(sent.messages?.some((message) => isUserTurn("Hello", message))).toBe(
       true,
     );
     expect(COMPANION_CHAT_TEMPERATURE).toBe(0.65);
@@ -247,7 +257,7 @@ describe("chat lifecycle", () => {
       content:
         "Answer Mara's last message first, directly, in Aria's own voice. Stay on what they said. Continue that scene in your own first person. Do not introduce yourself or retell your past unless they asked. Bring in memories or lore only when they help answer it.",
     });
-    expect(sent.messages?.at(-1)).toEqual({ role: "user", content: "Hello" });
+    expect(isUserTurn("Hello", sent.messages?.at(-1))).toBe(true);
     expect(sent.maxTokens).toBe(1024);
     expect(sent.signal).toBeInstanceOf(AbortSignal);
 
