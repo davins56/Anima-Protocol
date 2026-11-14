@@ -22,6 +22,7 @@ import modelTutorRouter from "./modelTutor";
 import ownModelRouter from "./ownModel";
 import photoRouter from "./photo";
 import memoryCoreRouter from "./memoryCore";
+import journeyMemoryRouter from "./journeyMemory";
 import vesselRouter from "./vessel";
 import resonanceRouter from "./resonance";
 import voiceRouter from "./voice";
@@ -58,6 +59,7 @@ router.use("/repo-codespace", repoCodespaceRouter);
 router.use("/tutor", modelTutorRouter);
 router.use("/model", ownModelRouter);
 router.use("/memory-core", memoryCoreRouter);
+router.use("/memory", journeyMemoryRouter);
 router.use("/vessel", vesselRouter);
 router.use("/resonance", resonanceRouter);
 // Self-hosted voice first: its /local/* paths must not reach voice.ts /:characterId.
