@@ -165,7 +165,7 @@
   --app-height-max: 100lvh;
   /*
    * Space reserved for the fixed tab bar. Includes the home indicator
-   * because BottomTabBar is `position: fixed; bottom: 0` with its own
+   * because the fixed HomeDock is `position: fixed; bottom: 0` with its own
    * `--safe-bottom` padding. Do not also pad `.app-shell` with
    * `--safe-bottom` — that double-counts the inset and lifts in-flow
    * chrome (chat composer) away from the tab bar.
@@ -176,7 +176,7 @@
    * CHAT / BOARD / MAP / MORE. JS overwrites with the painted height
    * when measurable, and zeroes it while `html[data-keyboard-open]`.
    */
-  --tab-bar-height: calc(56px + env(safe-area-inset-bottom, 0px));
+  --tab-bar-height: calc(72px + env(safe-area-inset-bottom, 0px));
 }
 
 .safe-top { padding-top: env(safe-area-inset-top, 0px); }
@@ -642,7 +642,7 @@ html[data-experience-navigation="command"] [data-testid="bottom-tab-bar"] {
 html[data-experience-navigation="rail"] [data-testid="bottom-tab-bar"] {
   border-top-width: 3px; background: rgba(8,20,34,.96);
 }
-html[data-experience-navigation="rail"] [data-testid="bottom-tab-bar"] > button {
+html[data-experience-navigation="rail"] [data-testid="bottom-tab-bar"] button {
   border-right: 1px solid rgba(34,211,238,.12);
 }
 html[data-experience-character="hologram"] [data-anima-avatar] {
