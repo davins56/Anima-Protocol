@@ -103,6 +103,23 @@ describe("fixed app dock (chat and other routes)", () => {
     expect(screen.getByTestId("explore-menu")).toBeTruthy();
   });
 
+  it("lists Settings in Explore and navigates to /settings", () => {
+    renderDock("/chat");
+    fireEvent.click(screen.getByRole("button", { name: "World" }));
+    const menu = screen.getByTestId("explore-menu");
+    expect(within(menu).getByText("Settings")).toBeTruthy();
+    fireEvent.click(within(menu).getByText("Settings"));
+    expect(mocks.navigate).toHaveBeenCalledWith("/settings");
+  });
+
+  it("marks You active on /settings", () => {
+    renderDock("/settings");
+    const dock = screen.getByTestId("bottom-tab-bar");
+    expect(within(dock).getByRole("button", { name: "You" }).getAttribute("aria-current")).toBe(
+      "page",
+    );
+  });
+
   it("navigates from the dock to the tab roots", () => {
     renderDock("/chat");
     fireEvent.click(screen.getByRole("button", { name: "People" }));
