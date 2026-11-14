@@ -46,6 +46,8 @@ const KnowledgeGraphViewer = lazy(() => import("@/components/anima/KnowledgeGrap
 const ModelTutorPanel = lazy(() => import("@/components/tutor/ModelTutorPanel"));
 const ProactiveMessageSettings = lazy(() => import("@/components/settings/ProactiveMessageSettings"));
 const DayRhythmSettings = lazy(() => import("@/components/settings/DayRhythmSettings"));
+// Renders nothing unless the server reports the bot bridge enabled.
+const BotBridgeSettings = lazy(() => import("@/components/botBridge/BotBridgeSettings"));
 const AppearanceStudio = lazy(() => import("@/components/settings/AppearanceStudio"));
 const AnimaForge = lazy(() => import("@/components/settings/AnimaForge"));
 const ForgeProfiles = lazy(() => import("@/components/settings/ForgeProfiles"));
@@ -1069,6 +1071,8 @@ export default function Settings() {
 
                 <SectionTitle>Day rhythm</SectionTitle>
                 <Suspense fallback={<SectionSkeleton />}><DayRhythmSettings /></Suspense>
+
+                <Suspense fallback={null}><BotBridgeSettings /></Suspense>
 
                 <SectionTitle>Theme</SectionTitle>
                 <div className="border border-primary/15 bg-card p-5">
