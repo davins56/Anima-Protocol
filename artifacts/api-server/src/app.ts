@@ -35,6 +35,7 @@ import { safeClerkMiddleware } from "./middlewares/clerkAuthFallback";
 import clerkWebhookRouter from "./webhooks/clerk";
 import stripeWebhookRouter from "./webhooks/stripe";
 import healthRouter from "./routes/health";
+import botBridgeWebhookRouter from "./webhooks/botBridge";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { classifyDbError } from "./lib/dbErrors";
@@ -107,6 +108,9 @@ app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 app.use("/api/webhooks", clerkWebhookRouter);
 // Stripe webhook: raw body for signature verification (see webhooks/stripe.ts).
 app.use("/api/webhooks", stripeWebhookRouter);
+// Grok Bot → Anima bridge: HMAC over the raw body, behind ANIMA_BOT_BRIDGE
+// (off by default; 503 bridge_disabled). See webhooks/botBridge.ts.
+app.use("/api/webhooks/bot-bridge", botBridgeWebhookRouter);
 
 app.use(corsMiddleware);
 // Limit raised to accommodate base64 image data URLs (e.g. avatar AI edit,
