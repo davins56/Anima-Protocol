@@ -115,6 +115,15 @@ export const CLOUDFLARE_RUNTIME_ENV_NAMES = [
   "BILLING_APP_ORIGIN",
   // Public app origin for background jobs (Anima media photo signing).
   "ANIMA_APP_ORIGIN",
+  // Calendar awareness (Settings > Day Rhythm): busy/free only. See
+  // docs/calendar-awareness.md. Secrets, not wrangler.jsonc vars.
+  "ANIMA_CALENDAR_TOKEN_KEY",
+  "ANIMA_CALENDAR_REDIRECT_ORIGIN",
+  "GOOGLE_CALENDAR_CLIENT_ID",
+  "GOOGLE_CALENDAR_CLIENT_SECRET",
+  "MICROSOFT_CALENDAR_CLIENT_ID",
+  "MICROSOFT_CALENDAR_CLIENT_SECRET",
+  "MICROSOFT_CALENDAR_TENANT",
   // Forward Kernel roadmap kill switches. Unset is off. See kernelFeatures.ts.
   // Classic Worker secrets (`wrangler secret put`), not wrangler.jsonc vars.
   "ANIMA_KERNEL_AGENCY",

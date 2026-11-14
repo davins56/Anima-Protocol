@@ -20,7 +20,8 @@ import {
   type AgencyDecision,
   type AgencyPercept,
 } from "./agencyTick";
-import { readStoredSenses, SENSES_PROFILE_KEY, sensesPercept } from "./senses";
+import { CALENDAR_BUSY_PROFILE_KEY, readStoredSenses, SENSES_PROFILE_KEY, sensesPercept } from "./senses";
+import { maybeRefreshCalendarBusy } from "../calendar/calendarSync";
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
@@ -66,7 +67,12 @@ export async function perceiveForCandidate(args: {
 
   const affect = initCompanionAffect(asRecord(memoryRow?.emotionalState), new Date(now).toISOString());
   const profile = asRecord(profileRow?.data);
-  const senses = isKernelFeatureEnabled("senses") ? readStoredSenses(profile[SENSES_PROFILE_KEY], now) : null;
+  const sensesOn = isKernelFeatureEnabled("senses");
+  const senses = sensesOn ? readStoredSenses(profile[SENSES_PROFILE_KEY], now) : null;
+  // Connected calendars (busy/free only): refreshed here when older than 30 min.
+  const calendarBusy = sensesOn
+    ? await maybeRefreshCalendarBusy(args.userId, profile[CALENDAR_BUSY_PROFILE_KEY], { now })
+    : null;
   const timezone = regionHintsFromProfile(profile)?.timezone || senses?.timezone || null;
   const last = args.recentMessages[args.recentMessages.length - 1];
   const lastRole = latest?.role ?? (last?.role === "user" || last?.role === "assistant" ? String(last.role) : null);
@@ -86,7 +92,7 @@ export async function perceiveForCandidate(args: {
       openLoops: affect.openLoops.length,
       lastActedAt: affect.lastActedAt,
     },
-    senses: sensesPercept(senses, now),
+    senses: sensesPercept(senses, now, calendarBusy),
     frequencyHours: Math.max(1, args.frequencyHours),
   };
 }
