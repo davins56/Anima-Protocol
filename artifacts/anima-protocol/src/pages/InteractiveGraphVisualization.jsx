@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { animaClient } from "@/api/animaClient";
 import { Loader, X, ZoomIn, ZoomOut, Share2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import NetworkGraphVisualization, { GRAPH_SIZE, NODE_COLORS } from "@/components/graph/NetworkGraphVisualization";
+import NetworkGraphVisualization, { NODE_COLORS, layoutGraph } from "@/components/graph/NetworkGraphVisualization";
 import NodeDetailsPanel from "@/components/graph/NodeDetailsPanel";
 
 export default function InteractiveGraphVisualization() {
@@ -20,10 +20,18 @@ export default function InteractiveGraphVisualization() {
   const svgRef = useRef(null);
 
   useEffect(() => {
-    loadGraphData();
+    // Ignore a slower, older load when the session changes mid-flight.
+    let current = true;
+    loadGraphData(() => current);
+    return () => {
+      current = false;
+    };
   }, [sessionId]);
 
-  const loadGraphData = async () => {
+  const layout = useMemo(() => (data ? layoutGraph(data) : null), [data]);
+  const size = layout?.size ?? 1000;
+
+  const loadGraphData = async (isCurrent = () => true) => {
     setLoading(true);
     try {
       const [chars, factions, locs, rels, memories, lore] = await Promise.all([
@@ -33,11 +41,15 @@ export default function InteractiveGraphVisualization() {
         // Without a session, show every relationship so the network still has edges.
         sessionId
           ? animaClient.entities.CharacterRelationship.filter({ session_id: sessionId })
-          : animaClient.entities.CharacterRelationship.list("-created_date", 300).catch(() => []),
+          : animaClient.entities.CharacterRelationship.list("-created_date", 300).catch((err) => {
+              console.warn("Graph: relationships unavailable, drawing nodes only:", err);
+              return [];
+            }),
         sessionId ? animaClient.entities.CharacterMemory.filter({ session_id: sessionId }) : Promise.resolve([]),
         sessionId ? animaClient.entities.WorldState.filter({ session_id: sessionId, is_active: true }) : Promise.resolve([]),
       ]);
 
+      if (!isCurrent()) return;
       setData({
         characters: chars || [],
         factions: factions || [],
@@ -49,7 +61,7 @@ export default function InteractiveGraphVisualization() {
     } catch (err) {
       console.error("Error loading graph data:", err);
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   };
 
@@ -129,16 +141,17 @@ export default function InteractiveGraphVisualization() {
           ref={svgRef}
           width="100%"
           height="100%"
-          viewBox={`0 0 ${GRAPH_SIZE} ${GRAPH_SIZE}`}
+          viewBox={`0 0 ${size} ${size}`}
           preserveAspectRatio="xMidYMid meet"
           className="bg-black/40"
           style={{ cursor: selectedNode ? "pointer" : "grab" }}
           data-testid="graph-svg"
         >
           {/* Zoom about the centre of the drawing, not its top-left corner. */}
-          <g transform={`translate(${GRAPH_SIZE / 2} ${GRAPH_SIZE / 2}) scale(${zoom}) translate(${-GRAPH_SIZE / 2} ${-GRAPH_SIZE / 2})`}>
+          <g transform={`translate(${size / 2} ${size / 2}) scale(${zoom}) translate(${-size / 2} ${-size / 2})`}>
             <NetworkGraphVisualization
               data={data}
+              layout={layout}
               selectedNode={selectedNode}
               onNodeClick={handleNodeClick}
             />

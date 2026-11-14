@@ -1,8 +1,7 @@
 import { useMemo } from "react";
 
-/** Square drawing space the layout uses; the page's <svg> viewBox matches it. */
+/** Smallest square drawing space; a crowded graph grows it (see layoutGraph). */
 export const GRAPH_SIZE = 1000;
-const CENTER = GRAPH_SIZE / 2;
 
 export const NODE_COLORS = {
   character: "#06b6d4",
@@ -10,66 +9,69 @@ export const NODE_COLORS = {
   location: "#22c55e",
 };
 
-const RADIUS = { character: 15, faction: 18, location: 16 };
+// Sized for a ~1000-unit view drawn into a 360–700px canvas.
+const RADIUS = { character: 22, faction: 26, location: 24 };
+/** Arc length per node on a ring: circle plus its name label. */
+const NODE_SPACING = 120;
+const FIRST_RING = 170;
+const RING_GAP = 120;
+const MARGIN = 110;
 
 /**
- * Even spacing on a ring (radius 0 = the centre). The start angle is offset
- * per ring so rings do not line their nodes up on one spoke.
- */
-function ring(count, radius, offset) {
-  return Array.from({ length: count }, (_, i) => {
-    const a = offset + (i / count) * Math.PI * 2 - Math.PI / 2;
-    return { x: CENTER + Math.cos(a) * radius, y: CENTER + Math.sin(a) * radius };
-  });
-}
-
-/**
- * Pure layout for the relationship network: characters on the inner ring,
- * factions on the middle ring, locations on the outer ring, all centred in a
- * GRAPH_SIZE square. Only the rings that have nodes are drawn, and the
- * inner ring takes the free space, so a world with only characters still
- * fills the view instead of packing into a corner grid. Edges are kept only
- * when both ends exist (dangling relationship rows are skipped).
+ * Pure layout for the relationship network: concentric rings around the
+ * centre, characters innermost, then factions, then locations. A ring only
+ * holds as many nodes as fit at NODE_SPACING, so a crowded group spills onto
+ * further rings instead of overlapping, and the drawing space (`size`, the
+ * <svg> viewBox) grows to fit. Edges are kept only when both ends exist and
+ * once per pair.
  *
  * @param {{ characters?: any[], factions?: any[], locations?: any[], relationships?: any[] }} data
+ * @returns {{ nodes: any[], edges: any[], size: number }}
  */
 export function layoutGraph(data) {
-  const characters = Array.isArray(data?.characters) ? data.characters : [];
-  const factions = Array.isArray(data?.factions) ? data.factions : [];
-  const locations = Array.isArray(data?.locations) ? data.locations : [];
-  const relationships = Array.isArray(data?.relationships) ? data.relationships : [];
-
+  const list = (v) => (Array.isArray(v) ? v : []);
   const groups = [
-    ["character", characters],
-    ["faction", factions],
-    ["location", locations],
-  ].filter(([, list]) => list.length > 0);
+    ["character", list(data?.characters)],
+    ["faction", list(data?.factions)],
+    ["location", list(data?.locations)],
+  ].filter(([, items]) => items.length > 0);
+  const total = groups.reduce((n, [, items]) => n + items.length, 0);
 
-  const outer = CENTER - 70;
-  const nodes = [];
-  groups.forEach(([type, list], gi) => {
-    // One group: a single ring at ~70% of the space. Several: spread from the
-    // inner ring out to the edge.
-    const radius = groups.length === 1 ? outer * 0.8 : outer * ((gi + 1) / groups.length);
-    const points = ring(list.length, list.length === 1 && groups.length === 1 ? 0 : radius, gi * 0.35);
-    list.forEach((item, i) => {
-      const name = typeof item?.name === "string" && item.name.trim() ? item.name.trim() : "?";
-      nodes.push({
-        id: item.id,
-        type,
-        name,
-        x: points[i].x,
-        y: points[i].y,
-        color: NODE_COLORS[type],
-        radius: RADIUS[type],
+  /** @type {{ type: string, item: any, r: number, a: number }[]} */
+  const placed = [];
+  let r = total === 1 ? 0 : FIRST_RING;
+  groups.forEach(([type, items], gi) => {
+    let i = 0;
+    while (i < items.length) {
+      const capacity = r === 0 ? 1 : Math.max(3, Math.floor((2 * Math.PI * r) / NODE_SPACING));
+      const onRing = items.slice(i, i + capacity);
+      // Offset each ring's start so neighbouring rings don't share spokes.
+      const offset = gi * 0.35 + (r / RING_GAP) * 0.2;
+      onRing.forEach((item, k) => {
+        placed.push({ type, item, r, a: offset + (k / onRing.length) * Math.PI * 2 - Math.PI / 2 });
       });
-    });
+      i += onRing.length;
+      r = r === 0 ? FIRST_RING : r + RING_GAP;
+    }
   });
+  const maxR = placed.reduce((m, p) => Math.max(m, p.r), 0);
+  const size = Math.max(GRAPH_SIZE, Math.ceil(2 * (maxR + MARGIN)));
+  const c = size / 2;
+
+  const nodes = placed.map(({ type, item, r: pr, a }) => ({
+    id: item?.id,
+    type,
+    name: typeof item?.name === "string" && item.name.trim() ? item.name.trim() : "?",
+    x: c + Math.cos(a) * pr,
+    y: c + Math.sin(a) * pr,
+    color: NODE_COLORS[type],
+    radius: RADIUS[type],
+  }));
 
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const seen = new Set();
   const edges = [];
-  for (const rel of relationships) {
+  for (const rel of list(data?.relationships)) {
     const from = byId.get(rel?.character_id);
     const to = byId.get(rel?.related_character_id);
     if (!from || !to || from === to) continue;
@@ -79,7 +81,7 @@ export function layoutGraph(data) {
     edges.push({ key, from, to, score: Number(rel.score) || 0, tier: rel.tier || "neutral" });
   }
 
-  return { nodes, edges };
+  return { nodes, edges, size };
 }
 
 const TIER_COLORS = {
@@ -95,8 +97,13 @@ function shortLabel(name) {
   return name.length > 14 ? `${name.slice(0, 13)}…` : name;
 }
 
-export default function NetworkGraphVisualization({ data, selectedNode, onNodeClick }) {
-  const { nodes, edges } = useMemo(() => layoutGraph(data), [data]);
+/**
+ * Draws a layoutGraph() result. Pass `layout` when the parent already
+ * computed it (it needs `size` for the viewBox); otherwise it is derived.
+ */
+export default function NetworkGraphVisualization({ data, layout, selectedNode, onNodeClick }) {
+  const own = useMemo(() => (layout ? null : layoutGraph(data)), [layout, data]);
+  const { nodes, edges } = layout || own;
 
   return (
     <>
@@ -110,7 +117,7 @@ export default function NetworkGraphVisualization({ data, selectedNode, onNodeCl
           x2={edge.to.x}
           y2={edge.to.y}
           stroke={TIER_COLORS[edge.tier] || TIER_COLORS.neutral}
-          strokeWidth={Math.max(1.5, Math.abs(edge.score) / 30)}
+          strokeWidth={Math.max(2.5, Math.abs(edge.score) / 15)}
           opacity={edge.score > 0 ? 0.7 : 0.4}
         />
       ))}
@@ -122,7 +129,17 @@ export default function NetworkGraphVisualization({ data, selectedNode, onNodeCl
           <g
             key={`${node.type}:${node.id}`}
             data-graph-node={node.type}
+            role="button"
+            tabIndex={0}
+            aria-label={`${node.name} (${node.type})`}
+            aria-pressed={selected}
             onClick={() => onNodeClick(node)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onNodeClick(node);
+              }
+            }}
             style={{ cursor: "pointer" }}
           >
             <title>{node.name}</title>
@@ -133,7 +150,7 @@ export default function NetworkGraphVisualization({ data, selectedNode, onNodeCl
               fill={node.color}
               opacity={selected ? 1 : 0.8}
               stroke={selected ? "#ffffff" : "none"}
-              strokeWidth={selected ? 2 : 0}
+              strokeWidth={selected ? 3 : 0}
               style={{ transition: "all 0.2s ease" }}
             />
             <text
@@ -141,7 +158,8 @@ export default function NetworkGraphVisualization({ data, selectedNode, onNodeCl
               y={node.y}
               textAnchor="middle"
               dominantBaseline="middle"
-              fontSize="10"
+              fontSize="20"
+              fontWeight="bold"
               fontFamily="monospace"
               fill="#000"
               pointerEvents="none"
@@ -150,9 +168,9 @@ export default function NetworkGraphVisualization({ data, selectedNode, onNodeCl
             </text>
             <text
               x={node.x}
-              y={node.y + node.radius + 13}
+              y={node.y + node.radius + 24}
               textAnchor="middle"
-              fontSize="11"
+              fontSize="20"
               fontFamily="monospace"
               fill={node.color}
               opacity="0.85"
