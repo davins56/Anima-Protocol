@@ -116,8 +116,10 @@ app.use(corsMiddleware);
 app.use(express.json({ limit: "140mb" }));
 app.use(express.urlencoded({ extended: true, limit: "140mb" }));
 
-// Health checks must remain public so platform startup probes (/api/healthz)
-// can distinguish service availability from auth configuration problems.
+// Health mounts before Clerk. `/api/healthz` (liveness) stays public so
+// platform startup probes can tell service availability from auth problems;
+// the detailed diagnostics and live `?probe=1` calls need the ops bearer
+// (see routes/health.ts).
 app.use("/api", healthRouter);
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
@@ -133,7 +135,7 @@ const aiChatRateLimit = createRateLimit({
 // Operator chat probe. Same provider chain as signed-in chat. In production
 // a signed-in Clerk user or ANIMA_AI_CHAT_PROBE_KEY is required so the open
 // internet cannot queue the single Ollama slot. `/api/healthz/llm?probe=1`
-// stays public and does not use this route. Local Node stays open.
+// is ops-bearer only and does not use this route. Local Node stays open.
 app.post("/api/ai/chat", async (req: Request, res: Response) => {
   if (aiChatRequiresCredential()) {
     const probeOk = aiChatProbeAuthorized(req);
