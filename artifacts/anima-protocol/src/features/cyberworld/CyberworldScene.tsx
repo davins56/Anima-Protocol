@@ -24,6 +24,7 @@ import { footstepInterval } from "./audio";
 import { pathEndpoints, zoneEdgeDistance, type Area, type AreaDecor, type Portal, type Vec2, type WorldAnima, type Zone } from "./layout";
 import { NEON, roofZone } from "./voxel/voxel";
 import { STREET_Y, VoxelCity } from "./voxel/VoxelCity";
+import { nearestTraveller, type Traveller } from "./journey/journeys";
 
 /** Night-city palette from the voxel reference: deep indigo sky, violet haze, orange/pink/cyan neon. */
 export const SKY = "#0B0820";
@@ -60,6 +61,10 @@ type SceneProps = {
   scanPulseAt?: number;
   /** Anima walking with the player (hidden from their homepage meanwhile). */
   companion?: WorldAnima | null;
+  /** Live journey state (positions per frame); when absent residents stay home. */
+  travellers?: MutableRefObject<Traveller[]>;
+  /** Current thought bubble per resident id. */
+  thoughts?: Record<string, string | null>;
   /** Live on-screen joystick / d-pad vector, camera-relative (x right, z forward). */
   touchMove: MutableRefObject<MoveInput>;
   nearAnimaId: string | null;
@@ -130,6 +135,18 @@ function PortalGate({ portal }: { portal: Portal }) {
 
 /** Generic data-driven set dressing (see AreaDecor): billboards and voxel screen slabs. */
 function Decor({ item }: { item: AreaDecor }) {
+  if (item.kind === "spot") {
+    if (item.prop !== "sofa") return null;
+    const [x, , z] = item.position;
+    // Small voxel sofa beside the spot (companions rest here on journeys).
+    return (
+      <group position={[x, 0, z - 0.9]}>
+        <Vox p={[0, 0.2, 0]} s={[1.4, 0.4, 0.6]} color="#4B3A78" />
+        <Vox p={[0, 0.5, -0.24]} s={[1.4, 0.4, 0.14]} color="#4B3A78" />
+        <Vox p={[0, 0.015, 0]} s={[1.6, 0.02, 0.8]} color={NEON.violet} glow opacity={0.5} />
+      </group>
+    );
+  }
   if (item.kind === "billboard") {
     return <NameTag text={item.text} color={item.color} position={[...item.position]} bright height={item.height} />;
   }
@@ -280,12 +297,12 @@ function trimToEdges(a: Vec2, b: Vec2, za: Zone | undefined, zb: Zone | undefine
  * up with nearest filtering, so labels look like the voxel signage. No DOM
  * overlay roots and no font download, so it works offline too.
  */
-function NameTag({ text, color, position, bright, height = 0.46 }: { text: string; color: string; position: [number, number, number]; bright: boolean; height?: number }) {
+function NameTag({ text, color, position, bright, height = 0.46, upper = true }: { text: string; color: string; position: [number, number, number]; bright: boolean; height?: number; upper?: boolean }) {
   const { texture, aspect } = useMemo(() => {
     const c = document.createElement("canvas");
     const g = c.getContext("2d");
     const font = "bold 11px ui-monospace, SFMono-Regular, Menlo, monospace";
-    const label = text.toUpperCase();
+    const label = upper ? text.toUpperCase() : text;
     let w = 80;
     if (g) {
       g.font = font;
@@ -311,7 +328,7 @@ function NameTag({ text, color, position, bright, height = 0.46 }: { text: strin
     t.minFilter = THREE.NearestFilter;
     t.generateMipmaps = false;
     return { texture: t, aspect: c.width / c.height };
-  }, [text, color]);
+  }, [text, color, upper]);
   useEffect(() => () => texture.dispose(), [texture]);
   const h = height;
   return (
@@ -323,28 +340,72 @@ function NameTag({ text, color, position, bright, height = 0.46 }: { text: strin
 
 /* ── Characters ───────────────────────────────────────────────────────── */
 
-function Resident({ zone, anima, near, quality }: { zone: Zone; anima: WorldAnima; near: boolean; quality: Quality }) {
+/**
+ * A resident Anima. With journeys on, its position/heading come from the live
+ * traveller state (smoothed per frame) and it only shows in its current area;
+ * the stand pad stays on its homepage. A thought bubble shows why it's going
+ * somewhere / what it's doing.
+ */
+function Resident({ home, anima, near, quality, travellers, areaId, thought }: { home: Zone | null; anima: WorldAnima; near: boolean; quality: Quality; travellers?: MutableRefObject<Traveller[]>; areaId: string; thought?: string | null }) {
+  const color = home?.color ?? anima.color ?? CYAN;
   const { vessel } = useCharacterVessel(anima.mock ? null : anima.id);
   const model = useMemo(() => {
     const m = vesselToBattleModel(vessel?.config, anima.name);
-    return vessel ? m : { ...m, color: zone.color };
-  }, [vessel, anima.name, zone.color]);
-  const [sx, sz] = animaStandPoint(zone);
-  // Face the hub.
-  const yaw = Math.atan2(-sx, -sz);
+    return vessel ? m : { ...m, color };
+  }, [vessel, anima.name, color]);
+  const body = useRef<THREE.Group>(null);
+  const turn = useRef<THREE.Group>(null);
+  const ready = useRef(false);
+  const stand = home ? animaStandPoint(home) : null;
+  useFrame((_, dt) => {
+    const g = body.current;
+    if (!g) return;
+    const t = travellers?.current.find((x) => x.id === anima.id);
+    if (!t) {
+      g.visible = !!stand;
+      if (stand) g.position.set(stand[0], PLATFORM_Y, stand[1]);
+      return;
+    }
+    g.visible = t.areaId === areaId;
+    if (!g.visible) {
+      ready.current = false;
+      return;
+    }
+    if (!ready.current) {
+      g.position.set(t.pos[0], PLATFORM_Y, t.pos[1]);
+      ready.current = true;
+    }
+    // Sim ticks at 4 Hz; ease toward it so motion reads smooth.
+    const k = 1 - Math.pow(0.004, dt);
+    g.position.x += (t.pos[0] - g.position.x) * k;
+    g.position.z += (t.pos[1] - g.position.z) * k;
+    if (turn.current) {
+      const cur = turn.current.rotation.y;
+      const d = Math.atan2(Math.sin(t.heading - cur), Math.cos(t.heading - cur));
+      turn.current.rotation.y = cur + d * Math.min(1, dt * 6);
+    }
+  });
+  const yaw0 = stand ? Math.atan2(-stand[0], -stand[1]) : 0;
   return (
-    <group position={[sx, PLATFORM_Y, sz]}>
-      <group rotation={[0, yaw, 0]} scale={1.25}>
-        {/* Own boundary so a resident's GLTF/face texture loading never re-suspends the world. */}
-        <Suspense fallback={null}>
-          <SerenityFigure model={model} anchored quality={quality} expression={near ? 0.6 : 0.15} />
-        </Suspense>
+    <>
+      {stand && (
+        <group position={[stand[0], PLATFORM_Y, stand[1]]}>
+          {/* Voxel stand pad (their spot at home). */}
+          <Vox p={[0, 0.06, 0]} s={[1.6, 0.12, 1.6]} color="#2E2560" />
+          <Vox p={[0, 0.125, 0]} s={[1.5, 0.02, 1.5]} color={color} glow opacity={near ? 0.9 : 0.4} />
+        </group>
+      )}
+      <group ref={body} position={stand ? [stand[0], PLATFORM_Y, stand[1]] : [0, -100, 0]}>
+        <group ref={turn} rotation={[0, yaw0, 0]} scale={1.25}>
+          {/* Own boundary so a resident's GLTF/face texture loading never re-suspends the world. */}
+          <Suspense fallback={null}>
+            <SerenityFigure model={model} anchored quality={quality} expression={near ? 0.6 : 0.15} />
+          </Suspense>
+        </group>
+        <NameTag text={home?.label ?? `${anima.name}.EXE`} color={color} position={[0, 2.75, 0]} bright={near} height={0.55} />
+        {thought && <NameTag text={thought.length > 60 ? `${thought.slice(0, 57)}…` : thought} color="#F1F5F9" position={[0, 3.4, 0]} bright height={0.36} upper={false} />}
       </group>
-      {/* Voxel stand pad. */}
-      <Vox p={[0, 0.06, 0]} s={[1.6, 0.12, 1.6]} color="#2E2560" />
-      <Vox p={[0, 0.125, 0]} s={[1.5, 0.02, 1.5]} color={zone.color} glow opacity={near ? 0.9 : 0.4} />
-      <NameTag text={zone.label} color={zone.color} position={[0, 2.75, 0]} bright={near} height={0.55} />
-    </group>
+    </>
   );
 }
 
@@ -513,7 +574,7 @@ const CAMERA_FOV = 34;
 
 const SKYLINE_COUNT: Record<string, number> = { low: 60, medium: 120, high: 170 };
 
-function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, onStep, nearAnimaId, onNearChange, quality, tint, nodes, scanPulseAt = 0, companion }: SceneProps & { quality: Quality }) {
+function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, onStep, nearAnimaId, onNearChange, quality, tint, nodes, scanPulseAt = 0, companion, travellers, thoughts }: SceneProps & { quality: Quality }) {
   const player = useRef<THREE.Group>(null);
   const pos = useRef<Vec2>(spawn);
   const route = useRef<Vec2[]>([]);
@@ -628,8 +689,9 @@ function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, 
       onPortal(gate);
     }
 
-    const near = nearestAnima(area, animas, next);
-    const id = near ? near.anima.id : null;
+    const id = travellers
+      ? (nearestTraveller(travellers.current, area.id, next, 2.6, companion?.id)?.id ?? null)
+      : (nearestAnima(area, animas, next)?.anima.id ?? null);
     if (id !== nearId.current) {
       nearId.current = id;
       onNearChange(id);
@@ -671,9 +733,12 @@ function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, 
           <HomeSign key={zone.id} zone={zone} />
         ) : null,
       )}
-      {area.zones.map((zone) => {
-        const anima = zone.animaId ? animas.find((a) => a.id === zone.animaId) : null;
-        return anima && anima.id !== companion?.id ? <Resident key={zone.id} zone={zone} anima={anima} near={anima.id === nearAnimaId} quality={quality} /> : null;
+      {animas.map((anima) => {
+        if (anima.id === companion?.id) return null;
+        const home = area.zones.find((z) => z.animaId === anima.id) ?? null;
+        // Without journeys, residents only exist on their homepage.
+        if (!travellers && !home) return null;
+        return <Resident key={anima.id} home={home} anima={anima} near={anima.id === nearAnimaId} quality={quality} travellers={travellers} areaId={area.id} thought={thoughts?.[anima.id]} />;
       })}
       {area.portals.map((portal) => (
         <PortalGate key={portal.id} portal={portal} />
