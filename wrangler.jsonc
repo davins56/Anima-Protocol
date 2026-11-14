@@ -231,6 +231,8 @@
   // handler does not send proactive pushes.
   "triggers": {
     // Quarter-hourly: dream layer (worker.ts DREAM_CRON), inactivity default 30 min.
-    "crons": ["15 * * * *", "0,15,30,45 * * * *"]
+    // Every 3 hours at :15: CharacterJournal chronicles (worker.ts CHRONICLES_CRON).
+    // Hours are spelled out so a star-slash step does not break this file's JSONC tests.
+    "crons": ["15 * * * *", "0,15,30,45 * * * *", "15 0,3,6,9,12,15,18,21 * * *"]
   }
 }
