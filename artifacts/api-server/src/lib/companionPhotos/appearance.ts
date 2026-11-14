@@ -21,7 +21,26 @@ export type CompanionLook = {
   source: "appearance_prompts" | "card" | "built_in" | "mined" | "none";
   /** Features that must show in every photo of her (built-in Animas). */
   signature?: string;
+  /** Canonical skin-tone phrase, taken verbatim from the profile when known. */
+  skinTone: string;
 };
+
+/**
+ * Injected into every image prompt so FLUX does not lighten or shift
+ * complexions (a known issue with the hosted models).
+ */
+export const SKIN_TONE_GUARD =
+  "Keep each person's skin tone and complexion exactly as described; do not lighten, whiten, pale, or shift undertones.";
+
+/** Pull a skin-tone / complexion phrase out of free text or a dedicated field. */
+export function extractSkinTone(text: string, promptsSkin?: string): string {
+  const fromPrompt = clean(promptsSkin, 80);
+  if (fromPrompt) return /skin|complexion|undertone/i.test(fromPrompt) ? fromPrompt : `${fromPrompt} skin`;
+  const m = String(text || "").match(
+    /\b((?:[\w-]+(?:[\s-]+|\s+and\s+)){0,5}(?:skin(?:\s+tone)?|complexion))\b/i,
+  );
+  return m ? clean(m[1], 80) : "";
+}
 
 /**
  * The model drops small-in-frame features (wings in a selfie) unless told
@@ -66,16 +85,17 @@ function clean(v: unknown, max: number): string {
     .slice(0, max);
 }
 
-function fromAppearancePrompts(raw: unknown): { text: string; style: string } {
-  if (!raw || typeof raw !== "object") return { text: "", style: "" };
+function fromAppearancePrompts(raw: unknown): { text: string; style: string; skin: string } {
+  if (!raw || typeof raw !== "object") return { text: "", style: "", skin: "" };
   const p = raw as Record<string, unknown>;
+  const skin = extractSkinTone("", p.skin ? String(p.skin) : "");
   const parts = [
-    p.skin && `${clean(p.skin, 80)} skin`,
+    skin,
     p.hair && clean(p.hair, 120),
     p.eyes && clean(p.eyes, 80),
     p.outfit && `wearing ${clean(p.outfit, 140)}`,
   ].filter(Boolean) as string[];
-  return { text: parts.join(", "), style: clean(p.style, 120) };
+  return { text: parts.join(", "), style: clean(p.style, 120), skin };
 }
 
 /** Sentences from free text that describe how someone looks. */
@@ -103,21 +123,53 @@ export function companionLook(character: Record<string, unknown> | null | undefi
   return look;
 }
 
+function withSkin(look: Omit<CompanionLook, "skinTone">, promptsSkin?: string): CompanionLook {
+  return { ...look, skinTone: extractSkinTone(look.description, promptsSkin) };
+}
+
 function baseLook(character: Record<string, unknown> | null | undefined): CompanionLook {
   const c = (character || {}) as Record<string, unknown>;
   const prompts = fromAppearancePrompts(c.appearance_prompts);
-  if (prompts.text) return { description: prompts.text, style: prompts.style, source: "appearance_prompts" };
+  if (prompts.text) return withSkin({ description: prompts.text, style: prompts.style, source: "appearance_prompts" }, prompts.skin);
   for (const field of CARD_FIELDS) {
     const v = clean(c[field], 400);
-    if (v) return { description: v, style: prompts.style, source: "card" };
+    if (v) return withSkin({ description: v, style: prompts.style, source: "card" }, prompts.skin);
   }
   const key = builtInKeyFor(c.name);
   if (key && (c._isAnima === true || !/^seed_/i.test(String(c.id ?? "")))) {
-    return { description: BUILT_IN_LOOKS[key], style: prompts.style, source: "built_in" };
+    return withSkin({ description: BUILT_IN_LOOKS[key], style: prompts.style, source: "built_in" }, prompts.skin);
   }
   const mined = minedLookSentences(`${String(c.backstory ?? "")} ${String(c.personality ?? "")}`);
-  if (mined) return { description: mined, style: prompts.style, source: "mined" };
-  return { description: "", style: prompts.style, source: "none" };
+  if (mined) return withSkin({ description: mined, style: prompts.style, source: "mined" }, prompts.skin);
+  return withSkin({ description: "", style: prompts.style, source: "none" }, prompts.skin);
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * The user's appearance, only when memory facts (or a memory-core block)
+ * actually describe how they look. Never invent a face or likeness.
+ */
+export function userAppearanceFromFacts(
+  facts: Array<string | { fact?: string }> | string,
+  userName?: string,
+): string {
+  const texts = Array.isArray(facts)
+    ? facts.map((f) => (typeof f === "string" ? f : String(f?.fact ?? "")))
+    : String(facts || "")
+        .split(/\n+/)
+        .map((l) => l.replace(/^[-*]\s*/, "").trim());
+  const name = clean(userName, 60);
+  const nameRe = name ? new RegExp(`\\b${escapeRegExp(name)}\\b`, "i") : null;
+  const relevant = texts.filter((t) => {
+    if (!LOOK_WORDS.test(t)) return false;
+    if (nameRe && nameRe.test(t)) return true;
+    // Third-person user facts ("He has short dark hair") or a memory line.
+    return /\b(hair|eyes?|skin|complexion|freckles?|beard|tall|short|petite|wears|wearing)\b/i.test(t);
+  });
+  return minedLookSentences(relevant.join(" "), 320);
 }
 
 export type ReferenceImage = { bytes: Uint8Array; contentType: string };
