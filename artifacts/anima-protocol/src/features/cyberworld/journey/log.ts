@@ -78,7 +78,7 @@ export function localStorageSink(store: Store | null = typeof localStorage === "
   };
 }
 
-/** Fan out to several sinks (e.g. localStorage + a future backend adapter). */
+/** Fan out to several sinks (localStorage + the backend queue in ./sync.ts). */
 export function multiSink(...sinks: JourneySink[]): JourneySink {
   return {
     record: (events) => sinks.forEach((s) => s.record(events)),
@@ -90,14 +90,10 @@ export function multiSink(...sinks: JourneySink[]): JourneySink {
  * Shape of a public.memory_events row for this event (see
  * supabase/migrations/20261022160100_memory_events.sql). Pure; not sent anywhere.
  *
- * TODO(Anima Backend Data): to persist journey events —
- *  1. add a `cyberworld_journey` row to public.memory_event_types (plain INSERT),
- *  2. expose an authenticated, append-only API route that inserts these rows
- *     (user_id from the session, never from the client), upserting on
- *     (user_id, dedupe_key),
- *  3. implement a JourneySink that batches toMemoryEventRow() output to it and
- *     add it via multiSink(localStorageSink(), backendSink).
- *  Mock residents (ids starting "mock-") must not be sent.
+ * Sent (minus user_id) by the backend sink in ./sync.ts, registered next to
+ * localStorageSink via multiSink in useJourneys; the server (#724) takes
+ * user_id from the session and upserts on (user_id, dedupe_key).
+ * Mock residents (ids starting "mock-") are never sent.
  */
 export function toMemoryEventRow(e: JourneyEvent, userId: string) {
   return {
