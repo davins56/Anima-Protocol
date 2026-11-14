@@ -8,7 +8,7 @@ import { falResult, falStatusStream, falSubmit, firstImage, hasFalKey } from "./
 import { composePhotoPrompt, negativePrompt, photoAnatomy, type Refinement, type SceneSpec } from "./promptComposer";
 import { aiBinding } from "../aiBinding";
 import { loadCharacterRecord } from "../voice/voiceStore";
-import { anatomyTexts } from "../companionPhotos/appearance";
+import { anatomyLoreTexts, anatomyTexts } from "../companionPhotos/appearance";
 import { anatomySummary, hasAtypicalAnatomy } from "../companionPhotos/anatomy";
 import {
   anatomyCheckConfig,
@@ -91,6 +91,8 @@ async function extraReference(req: GenerateRequest): Promise<string | null> {
   return req.extraReferenceUrl && /^https:\/\//i.test(req.extraReferenceUrl) ? req.extraReferenceUrl : null;
 }
 
+const GENERATOR_RETRY_BUDGET_MS = 120_000;
+
 function dataUrlToBytes(dataUrl: string): { bytes: Uint8Array; contentType: string } {
   const m = /^data:([^;]+);base64,(.+)$/s.exec(dataUrl);
   if (!m) throw Object.assign(new Error("Provider returned malformed image data."), { status: 502 });
@@ -109,7 +111,11 @@ export async function generatePhoto(req: GenerateRequest, emit: (e: PhotoEvent) 
   const descriptor = { ...(identity?.descriptor || {}), extra: [...(identity?.descriptor?.extra || []), ...(req.extraDescriptor || [])] };
   // Body plan: the locked descriptor first, then the character card (read only).
   const characterRecord = await (req.loadCharacter ?? loadCharacterRecord)(req.userId, req.characterId).catch(() => null);
-  const anatomy = photoAnatomy(descriptor, characterRecord ? anatomyTexts(characterRecord) : []);
+  const anatomy = photoAnatomy(
+    descriptor,
+    characterRecord ? anatomyTexts(characterRecord) : [],
+    characterRecord ? anatomyLoreTexts(characterRecord) : [],
+  );
   const characterName = identity?.character_name || req.characterName || "the companion";
 
   const prompt = composePhotoPrompt({
@@ -223,14 +229,23 @@ export async function generatePhoto(req: GenerateRequest, emit: (e: PhotoEvent) 
       bytesOf: async (r) => {
         if (r.bytes && r.contentType) return { bytes: r.bytes, contentType: r.contentType };
         if (!r.url) return null;
-        const res = await fetch(r.url).catch(() => null);
-        if (!res?.ok) return null;
-        const type = (res.headers.get("content-type") || "image/jpeg").split(";")[0].trim();
-        return { bytes: new Uint8Array(await res.arrayBuffer()), contentType: type };
+        try {
+          const res = await fetch(r.url);
+          if (!res.ok) return null;
+          // Skip the check rather than buffer an oversized image (verifier cap is 4 MiB).
+          if (Number(res.headers.get("content-length") || 0) > 4 * 1024 * 1024) return null;
+          const type = (res.headers.get("content-type") || "image/jpeg").split(";")[0].trim();
+          return { bytes: new Uint8Array(await res.arrayBuffer()), contentType: type };
+        } catch {
+          return null;
+        }
       },
       verify,
       skip: !checkConfig.enabled || !hasAtypicalAnatomy(anatomy),
       maxRetries: checkConfig.maxRetries,
+      verifyBudgetMs: checkConfig.timeoutMs,
+      // Interactive / outreach generations: retries never push the whole request past ~2 minutes.
+      deadlineAt: Date.now() + GENERATOR_RETRY_BUDGET_MS,
       onRetry: ({ attempt }) =>
         emit({ type: "status", status: "IN_PROGRESS", log: `Anatomy check: re-rendering (attempt ${attempt + 1})…` }),
     });

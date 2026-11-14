@@ -81,6 +81,18 @@ describe("anatomy reader", () => {
     expect(hasAtypicalAnatomy(serenity.anatomy)).toBe(false);
   });
 
+  it("lore idioms never change the body; explicit lore counts of three or more do", () => {
+    expect(hasAtypicalAnatomy(anatomyFrom([], ["She longs to spread her wings and trusts her third eye."]))).toBe(false);
+    expect(anatomyFrom([], ["A pair of wings would set her free."]).counts.wings).toBeUndefined();
+    expect(anatomyFrom([], ["Born with four arms, she was feared."]).counts.arms).toBe(4);
+    expect(anatomyFrom(["a fox girl who has a fluffy tail"]).counts.tails).toBe(1);
+    expect(anatomyFrom(["she has a tail"]).counts.tails).toBe(1);
+  });
+
+  it("states a horn count even when nothing else is unusual", () => {
+    expect(anatomyClause("Ash", anatomyFrom(["two curved horns"]))).toContain("exactly two horns");
+  });
+
   it("keeps the arm count even when Customise Anima set only skin and hair", () => {
     const look = companionLook(fourArmed);
     expect(look.source).toBe("appearance_prompts");
@@ -232,7 +244,8 @@ describe("anatomy check", () => {
     expect(judgeAnatomy(spec, ["arms"], { arms: 6, torso_fully_visible: false }).status).toBe("mismatch");
     expect(judgeAnatomy(spec, ["arms"], { arms: 2, torso_fully_visible: false }).status).toBe("pass");
     expect(judgeAnatomy(spec, ["arms"], { arms: 2, torso_fully_visible: true }).status).toBe("mismatch");
-    expect(judgeAnatomy(spec, ["arms"], { arms: null }).status).toBe("pass");
+    expect(judgeAnatomy(spec, ["arms"], { arms: null }).status).toBe("skipped");
+    expect(judgeAnatomy(spec, ["arms"], {}).status).toBe("skipped");
     expect(judgeAnatomy(spec, ["arms"], null).status).toBe("skipped");
   });
 
@@ -317,6 +330,19 @@ describe("render, check, regenerate", () => {
     });
     expect(verify).not.toHaveBeenCalled();
     expect(out).toMatchObject({ result: "img", attempts: 1, check: "skipped" });
+  });
+
+  it("a retry that runs past the deadline is abandoned for the best render", async () => {
+    vi.useFakeTimers();
+    try {
+      const render = vi.fn((attempt: number) => (attempt ? new Promise<string>(() => {}) : Promise.resolve("img0")));
+      const verify = vi.fn().mockResolvedValue(mismatch(2));
+      const p = renderWithAnatomyCheck({ render, bytesOf: () => bytes, verify, maxRetries: 1, deadlineAt: Date.now() + 30_000 });
+      await vi.advanceTimersByTimeAsync(31_000);
+      await expect(p).resolves.toMatchObject({ result: "img0", check: "failed", attempts: 1 });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps the best render when a retry throws (flagged / quota)", async () => {

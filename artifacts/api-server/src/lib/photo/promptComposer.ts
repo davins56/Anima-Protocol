@@ -99,8 +99,8 @@ export function descriptorTexts(d: VisualDescriptor | null | undefined): string[
 }
 
 /** Body plan from the locked descriptor first, then any extra character text. */
-export function photoAnatomy(d: VisualDescriptor | null | undefined, extraTexts: string[] = []): AnatomySpec {
-  return anatomyFrom([...descriptorTexts(d), ...extraTexts]);
+export function photoAnatomy(d: VisualDescriptor | null | undefined, extraTexts: string[] = [], lore: string[] = []): AnatomySpec {
+  return anatomyFrom([...descriptorTexts(d), ...extraTexts], lore);
 }
 
 export function composePhotoPrompt(input: {

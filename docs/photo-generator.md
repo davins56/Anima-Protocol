@@ -40,8 +40,10 @@ applies negatives with `true_cfg > 1` (`FAL_PULID_TRUE_CFG`, default 1, about 2x
 Flux LoRA, Kontext and Gemini take no negative prompt at all. With
 `ANIMA_PHOTO_ANATOMY_CHECK=on` the finished image is checked by the Workers AI vision model
 and re-rendered on a mismatch (new seed, same `generated_images` row; see
-`docs/companion-photos.md`). Each fal retry is another fal render billed to the fal account;
-the user is not charged a photo credit (generation does not consume `photo_credits`).
+`docs/companion-photos.md`). Retries stop after `ANIMA_PHOTO_ANATOMY_RETRIES` or about two
+minutes. Each retry is another fal (or Gemini) render billed to that provider account, and each
+check is one Workers AI vision call. The user is not charged a photo credit (generation does
+not consume `photo_credits`).
 
 ## Streaming
 `POST /api/photo/generate` → SSE `accepted → status* → image → done` (or `error`), relayed from

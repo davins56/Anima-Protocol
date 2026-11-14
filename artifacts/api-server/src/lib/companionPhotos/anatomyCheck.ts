@@ -105,7 +105,9 @@ export function judgeAnatomy(
       score += Math.abs(n - want);
     }
   }
-  return mismatches.length ? { status: "mismatch", observed, mismatches, score } : { status: "pass", observed };
+  if (mismatches.length) return { status: "mismatch", observed, mismatches, score };
+  // No usable count at all (empty / malformed answer, or every part cut off): unchecked, not a pass.
+  return Object.keys(observed).length ? { status: "pass", observed } : { status: "skipped", reason: "unreadable" };
 }
 
 /** A verifier bound to the Workers AI binding, or one that always skips. */
@@ -207,12 +209,25 @@ export async function renderWithAnatomyCheck<T>(args: {
     }
     args.onRetry?.({ attempt: attempts, mismatches: verdict.mismatches });
     try {
-      current = await args.render(attempts);
+      current = await withinDeadline(args.render(attempts), args.deadlineAt == null ? null : args.deadlineAt - now());
     } catch {
+      // Flagged, quota, outage, or the retry ran past the deadline: keep the best render so far.
       return { result: best.result, attempts, check: "failed", observed: best.observed };
     }
     attempts += 1;
   }
+}
+
+function withinDeadline<T>(work: Promise<T>, ms: number | null): Promise<T> {
+  if (ms == null) return work;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("anatomy retry ran past the photo deadline")), Math.max(0, ms));
+  });
+  work.catch(() => {});
+  return Promise.race([work, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
 }
 
 export function anatomyCheckMetadata(spec: AnatomySpec, outcome: Pick<AnatomyCheckResult<unknown>, "attempts" | "check" | "observed">) {

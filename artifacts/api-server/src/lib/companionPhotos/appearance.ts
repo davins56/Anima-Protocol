@@ -136,12 +136,17 @@ export function anatomyTexts(character: Record<string, unknown> | null | undefin
   });
   const key = builtInKeyFor(c.name);
   const builtIn = key && (c._isAnima === true || !/^seed_/i.test(String(c.id ?? ""))) ? [BUILT_IN_LOOKS[key]] : [];
-  const lore = [clean(c.backstory, 2000), clean(c.personality, 2000)];
-  return [...fromPrompts, ...card, ...builtIn, ...lore].filter(Boolean);
+  return [...fromPrompts, ...card, ...builtIn].filter(Boolean);
+}
+
+/** Backstory / personality: only explicit counts of three or more are read from these. */
+export function anatomyLoreTexts(character: Record<string, unknown> | null | undefined): string[] {
+  const c = (character || {}) as Record<string, unknown>;
+  return [clean(c.backstory, 2000), clean(c.personality, 2000)].filter(Boolean);
 }
 
 export function companionLook(character: Record<string, unknown> | null | undefined): CompanionLook {
-  const look = { ...baseLook(character), anatomy: anatomyFrom(anatomyTexts(character)) };
+  const look = { ...baseLook(character), anatomy: anatomyFrom(anatomyTexts(character), anatomyLoreTexts(character)) };
   const c = (character || {}) as Record<string, unknown>;
   const key = builtInKeyFor(c.name);
   if (key && look.source !== "appearance_prompts" && (c._isAnima === true || !/^seed_/i.test(String(c.id ?? "")))) {

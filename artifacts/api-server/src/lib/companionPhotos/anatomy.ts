@@ -62,8 +62,13 @@ function clean(v: unknown): string {
     .trim();
 }
 
-/** First explicit count for one part in one text, or null. */
-export function countIn(text: string, part: AnatomyPart): number | null {
+/**
+ * First explicit count for one part in one text, or null. `strict` (used for
+ * backstory / personality) accepts only plain numbers and "-armed" forms, so
+ * idioms like "her third eye" or "a pair of wings to fly free" in lore never
+ * change the body.
+ */
+export function countIn(text: string, part: AnatomyPart, opts: { strict?: boolean } = {}): number | null {
   const t = ` ${clean(text).toLowerCase()} `;
   const noun = PART_NOUN[part];
   const adj = PART_ADJ[part];
@@ -72,6 +77,15 @@ export function countIn(text: string, part: AnatomyPart): number | null {
   if (part === "wings" || part === "tails") {
     const stem = part === "wings" ? "wing" : "tail";
     if (new RegExp(`\\b(?:no|without|never\\s+any)\\s+(?:[a-z]+\\s+){0,2}?${stem}s?\\b|\\b${stem}less\\b`).test(t)) return 0;
+  }
+  if (opts.strict) {
+    for (const hit of t.matchAll(new RegExp(`\\b${WORD}[\\s-]+(?:[a-z]+[\\s-]+){0,2}?${noun}\\b(?!\\s+(?:of\\s+the|taller|shorter|above|below|away)\\b)`, "g"))) {
+      const n = num(hit[1]);
+      if (n && n > 2) return n;
+    }
+    const adjHit = new RegExp(`\\b${WORD}[\\s-]${adj}\\b`).exec(t);
+    const n = adjHit ? num(adjHit[1]) : null;
+    return n && n > 2 ? n : null;
   }
   // "two pairs of arms", "three sets of wings"
   let m = new RegExp(`\\b${WORD}\\s+(?:pairs|sets)\\s+of\\s+(?:[a-z-]+\\s+){0,2}${noun}\\b`).exec(t);
@@ -107,15 +121,20 @@ function mentions(text: string, part: "wings" | "tails"): boolean {
   if (part === "wings") {
     return /\b(?:her|his|their|its|large|huge|great|feathered|feathery|angelic|bat|leathery|crystalline|dragon|butterfly|gossamer)\s+wings\b|\bhas\s+wings\b/.test(t);
   }
-  return /\b(?:her|his|their|its|long|fluffy|lashing|swishing|fox|cat|dragon|demon|scaled|prehensile)\s+tail\b/.test(t);
+  return /\b(?:her|his|their|its|long|fluffy|lashing|swishing|fox|cat|dragon|demon|scaled|prehensile)\s+tail\b|\b(?:has|with)\s+an?\s+(?:[a-z-]+\s+){0,2}?tail\b/.test(t);
 }
 
 /**
  * One spec from many texts in priority order: the first text that states a
  * count for a part wins, so Customise Anima fields beat card text beat lore.
  */
-export function anatomyFrom(texts: Array<string | null | undefined>): AnatomySpec {
+export function anatomyFrom(
+  texts: Array<string | null | undefined>,
+  /** Lower-priority narrative text (backstory, personality): explicit counts of 3+ only. */
+  lore: Array<string | null | undefined> = [],
+): AnatomySpec {
   const list = texts.map(clean).filter(Boolean);
+  const loreList = lore.map(clean).filter(Boolean);
   const counts: AnatomySpec["counts"] = {};
   for (const part of ANATOMY_PARTS) {
     for (const text of list) {
@@ -128,6 +147,16 @@ export function anatomyFrom(texts: Array<string | null | undefined>): AnatomySpe
   }
   if (counts.wings == null && list.some((t) => mentions(t, "wings"))) counts.wings = 2;
   if (counts.tails == null && list.some((t) => mentions(t, "tails"))) counts.tails = 1;
+  for (const part of ANATOMY_PARTS) {
+    if (counts[part] != null) continue;
+    for (const text of loreList) {
+      const n = countIn(text, part, { strict: true });
+      if (n != null) {
+        counts[part] = n;
+        break;
+      }
+    }
+  }
   const spec: AnatomySpec = { counts };
   for (const text of list) {
     const m = new RegExp(`\\b${WORD}\\s+(?:[a-z]+\\s+){0,2}?horns\\b`).exec(` ${text.toLowerCase()} `);
@@ -179,7 +208,7 @@ export function anatomyClause(
   opts: { framing?: string } = {},
 ): string {
   const atypical = atypicalParts(spec);
-  if (!spec || !atypical.length) return "";
+  if (!spec || (!atypical.length && typeof spec.horns !== "number")) return "";
   const who = clean(name).slice(0, 60) || "The character";
   const c = spec.counts;
   const bits: string[] = [];
