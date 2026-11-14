@@ -64,7 +64,11 @@ export type AreaDecor =
   | { kind: "billboard"; id: string; text: string; position: readonly [number, number, number]; color: string; height?: number; journey?: JourneyTags }
   | { kind: "panel"; id: string; position: readonly [number, number, number]; size: Vec2; color: string; yaw?: number; lines?: number; journey?: JourneyTags }
   /** A journey destination on the floor; `prop` optionally draws small furniture there. */
-  | { kind: "spot"; id: string; position: readonly [number, number, number]; prop?: "sofa"; journey: JourneyTags };
+  | { kind: "spot"; id: string; position: readonly [number, number, number]; prop?: "sofa"; journey: JourneyTags }
+  /** Voxel market furniture (Data Bazaar); purely visual unless it carries journey tags. */
+  | { kind: "prop"; id: string; prop: MarketPropKind; position: readonly [number, number, number]; color: string; yaw?: number; label?: string; journey?: JourneyTags };
+
+export type MarketPropKind = "stall" | "kiosk" | "terminal" | "crates" | "priceboard";
 
 export type AreaTheme = { accent: string; gridCell: string; gridSection: string };
 
@@ -211,12 +215,18 @@ function hubSpots(homeCount: number): AreaDecor[] {
  * spoke never brushes a portal by accident.
  */
 export function hubFreeAngle(homeCount: number): number {
+  return hubFreeAngles(homeCount)[0];
+}
+
+/** All between-spoke angles, best (farthest from the south spawn) first; used to place several gates. */
+export function hubFreeAngles(homeCount: number): number[] {
   const n = Math.min(Math.max(0, homeCount), MAX_HOMES);
   const candidates =
     n <= 1 ? [0, Math.PI] : Array.from({ length: n }, (_, k) => -Math.PI / 2 + Math.PI / n + (k * 2 * Math.PI) / n);
   const south = Math.PI / 2;
   const off = (a: number) => Math.abs(Math.atan2(Math.sin(a - south), Math.cos(a - south)));
-  return candidates.reduce((best, a) => (off(a) > off(best) + 1e-9 ? a : best), candidates[0]);
+  // Stable sort: ties keep their candidate order (so the first gate never moves).
+  return candidates.map((a, i) => ({ a, i })).sort((x, y) => off(y.a) - off(x.a) > 1e-9 ? 1 : off(x.a) - off(y.a) > 1e-9 ? -1 : x.i - y.i).map((x) => x.a);
 }
 
 export function zoneById(layout: WorldLayout, id: string): Zone | undefined {

@@ -65,6 +65,8 @@ type SceneProps = {
   travellers?: MutableRefObject<Traveller[]>;
   /** Current thought bubble per resident id. */
   thoughts?: Record<string, string | null>;
+  /** Data Bazaar cosmetics: visor tint and an optional light trail colour. */
+  playerStyle?: { visor?: string; trail?: string };
   /** Live on-screen joystick / d-pad vector, camera-relative (x right, z forward). */
   touchMove: MutableRefObject<MoveInput>;
   nearAnimaId: string | null;
@@ -147,6 +149,7 @@ function Decor({ item }: { item: AreaDecor }) {
       </group>
     );
   }
+  if (item.kind === "prop") return <MarketProp item={item} />;
   if (item.kind === "billboard") {
     return <NameTag text={item.text} color={item.color} position={[...item.position]} bright height={item.height} />;
   }
@@ -160,6 +163,89 @@ function Decor({ item }: { item: AreaDecor }) {
       {Array.from({ length: lines }, (_, i) => (
         <Vox key={i} p={[-w * 0.08, h * 0.3 - (i * h * 0.6) / Math.max(1, lines - 1), 0.03]} s={[w * (0.7 - i * 0.12), h * 0.08, 0.02]} color={item.color} glow />
       ))}
+    </group>
+  );
+}
+
+/** Data Bazaar furniture, built from a few voxels each (see market/area). */
+function MarketProp({ item }: { item: Extract<AreaDecor, { kind: "prop" }> }) {
+  const board = useRef<THREE.Group>(null);
+  useFrame(({ clock }) => {
+    if (board.current) board.current.position.y = item.position[1] + Math.sin(clock.elapsedTime * 1.1 + item.position[0]) * 0.08;
+  });
+  const c = item.color;
+  const dark = "#241C46";
+  const body = (() => {
+    switch (item.prop) {
+      case "stall":
+        return (
+          <>
+            <Vox p={[0, 0.45, 0]} s={[2.4, 0.9, 0.9]} color={dark} />
+            <Vox p={[0, 0.5, 0.46]} s={[2.2, 0.08, 0.02]} color={c} glow />
+            {[-1.15, 1.15].map((x) => (
+              <Vox key={x} p={[x, 1.25, -0.35]} s={[0.12, 2.5, 0.12]} color={dark} />
+            ))}
+            <Vox p={[0, 2.5, 0]} s={[2.7, 0.14, 1.4]} color={c} />
+            <Vox p={[0, 2.42, 0.71]} s={[2.7, 0.06, 0.04]} color={c} glow />
+            {[-0.7, 0, 0.7].map((x, i) => (
+              <Vox key={x} p={[x, 1.05, 0]} s={[0.3, 0.3, 0.3]} color={i === 1 ? "#FFFFFF" : c} glow opacity={0.85} />
+            ))}
+          </>
+        );
+      case "kiosk":
+        return (
+          <>
+            <Vox p={[0, 0.5, 0]} s={[1.6, 1, 1.6]} color={dark} />
+            <Vox p={[0, 1.02, 0]} s={[1.7, 0.06, 1.7]} color={c} glow />
+            <Vox p={[0, 1.7, 0]} s={[0.12, 1.4, 0.12]} color={dark} />
+            <Vox p={[0, 2.45, 0]} s={[2.6, 0.14, 2.6]} color={c} />
+            {[[-1.4, 0.6], [1.4, 0.6], [0, 1.5]].map(([x, z]) => (
+              <Vox key={`${x}${z}`} p={[x, 0.25, z]} s={[0.45, 0.5, 0.45]} color="#4B3A78" />
+            ))}
+            <Vox p={[0.3, 1.18, 0.2]} s={[0.22, 0.26, 0.22]} color="#FFFFFF" glow />
+          </>
+        );
+      case "terminal":
+        return (
+          <>
+            <Vox p={[0, 0.75, 0]} s={[0.8, 1.5, 0.55]} color={dark} />
+            <Vox p={[0, 1.15, 0.29]} s={[0.62, 0.5, 0.02]} color={c} glow opacity={0.85} />
+            <Vox p={[0, 1.65, 0]} s={[0.9, 0.08, 0.65]} color={c} glow />
+            <Vox p={[0, 0.02, 0.6]} s={[1.8, 0.03, 1.4]} color={c} glow opacity={0.35} />
+          </>
+        );
+      case "crates":
+        return (
+          <>
+            <Vox p={[0, 0.35, 0]} s={[0.7, 0.7, 0.7]} color="#3B2F5C" />
+            <Vox p={[0.75, 0.3, 0.1]} s={[0.6, 0.6, 0.6]} color="#2E2650" />
+            <Vox p={[0.3, 0.95, 0]} s={[0.5, 0.5, 0.5]} color="#3B2F5C" />
+            <Vox p={[0, 0.35, 0.36]} s={[0.5, 0.06, 0.02]} color={c} glow />
+            <Vox p={[0.3, 0.95, 0.26]} s={[0.34, 0.05, 0.02]} color={c} glow />
+          </>
+        );
+      case "priceboard":
+        return (
+          <group ref={board}>
+            <Vox p={[0, 0, 0]} s={[2.4, 1.3, 0.03]} color={c} glow opacity={0.22} />
+            <Vox p={[0, 0.7, 0]} s={[2.5, 0.07, 0.05]} color={c} glow />
+            {[0, 1, 2, 3].map((i) => (
+              <group key={i}>
+                <Vox p={[-0.55, 0.38 - i * 0.26, 0.02]} s={[1.0, 0.1, 0.02]} color={c} glow />
+                <Vox p={[0.75, 0.38 - i * 0.26, 0.02]} s={[0.4, 0.1, 0.02]} color={i % 2 ? "#7CFFB2" : "#FF4FA3"} glow />
+              </group>
+            ))}
+          </group>
+        );
+    }
+  })();
+  if (item.prop === "priceboard") {
+    return <group position={[item.position[0], 0, item.position[2]]} rotation={[0, item.yaw ?? 0, 0]}>{body}</group>;
+  }
+  return (
+    <group position={[...item.position]} rotation={[0, item.yaw ?? 0, 0]}>
+      {body}
+      {item.label && <NameTag text={item.label} color={c} position={[0, item.prop === "terminal" ? 2.2 : 3, 0]} bright />}
     </group>
   );
 }
@@ -410,7 +496,7 @@ function Resident({ home, anima, near, quality, travellers, areaId, thought }: {
 }
 
 /** The player's own navi: a little voxel figure in protocol blue, faces its walk direction. */
-function PlayerNavi({ group }: { group: RefObject<THREE.Group | null> }) {
+function PlayerNavi({ group, visor = CYAN }: { group: RefObject<THREE.Group | null>; visor?: string }) {
   const body = useRef<THREE.Group>(null);
   useFrame(({ clock }) => {
     if (body.current) body.current.position.y = Math.abs(Math.sin(clock.elapsedTime * 3)) * 0.06;
@@ -426,12 +512,50 @@ function PlayerNavi({ group }: { group: RefObject<THREE.Group | null> }) {
           <Vox key={`a${x}`} p={[x, 0.9, 0]} s={[0.18, 0.56, 0.22]} color="#1E40AF" />
         ))}
         <Vox p={[0, 1.5, 0]} s={[0.56, 0.5, 0.5]} color="#1E3A8A" />
-        <Vox p={[0, 1.52, 0.26]} s={[0.46, 0.12, 0.04]} color={CYAN} glow />
+        <Vox p={[0, 1.52, 0.26]} s={[0.46, 0.12, 0.04]} color={visor} glow />
         <Vox p={[0, 0.95, 0.21]} s={[0.16, 0.16, 0.04]} color="#FACC15" glow />
         <Vox p={[0, 1.8, 0]} s={[0.12, 0.14, 0.12]} color={CYAN} glow />
       </group>
       <Vox p={[0, 0.015, 0]} s={[0.9, 0.02, 0.9]} color={CYAN} glow opacity={0.3} />
     </group>
+  );
+}
+
+const TRAIL_LEN = 8;
+
+/** Neon Trail cosmetic: fading light cubes dropped behind the player while walking. */
+function PlayerTrail({ group, color }: { group: RefObject<THREE.Group | null>; color: string }) {
+  const cubes = useRef<(THREE.Mesh | null)[]>([]);
+  const pts = useRef<THREE.Vector3[]>([]);
+  const acc = useRef(0);
+  useFrame((_, dt) => {
+    const g = group.current;
+    if (!g) return;
+    acc.current += dt;
+    const last = pts.current[0];
+    if (acc.current > 0.07) {
+      acc.current = 0;
+      if (!last || last.distanceToSquared(g.position) > 0.04) pts.current.unshift(g.position.clone());
+      else pts.current.pop();
+      if (pts.current.length > TRAIL_LEN) pts.current.length = TRAIL_LEN;
+    }
+    cubes.current.forEach((m, i) => {
+      if (!m) return;
+      const p = pts.current[i + 1];
+      m.visible = !!p;
+      if (!p) return;
+      m.position.set(p.x, p.y + 0.25, p.z);
+      m.scale.setScalar(0.24 * (1 - i / TRAIL_LEN));
+    });
+  });
+  return (
+    <>
+      {Array.from({ length: TRAIL_LEN }, (_, i) => (
+        <mesh key={i} ref={(m) => { cubes.current[i] = m; }} geometry={UNIT_BOX} visible={false}>
+          <meshBasicMaterial color={color} toneMapped={false} transparent opacity={0.75 - i * 0.08} depthWrite={false} />
+        </mesh>
+      ))}
+    </>
   );
 }
 
@@ -574,7 +698,7 @@ const CAMERA_FOV = 34;
 
 const SKYLINE_COUNT: Record<string, number> = { low: 60, medium: 120, high: 170 };
 
-function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, onStep, nearAnimaId, onNearChange, quality, tint, nodes, scanPulseAt = 0, companion, travellers, thoughts }: SceneProps & { quality: Quality }) {
+function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, onStep, nearAnimaId, onNearChange, quality, tint, nodes, scanPulseAt = 0, companion, travellers, thoughts, playerStyle }: SceneProps & { quality: Quality }) {
   const player = useRef<THREE.Group>(null);
   const pos = useRef<Vec2>(spawn);
   const route = useRef<Vec2[]>([]);
@@ -751,7 +875,8 @@ function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, 
       <ScanPulse at={scanPulseAt} telemetry={telemetry} color={tint?.accent ?? area.theme.accent} />
       {companion && <Follower anima={companion} telemetry={telemetry} quality={quality} />}
 
-      <PlayerNavi group={player} />
+      <PlayerNavi group={player} visor={playerStyle?.visor} />
+      {playerStyle?.trail && <PlayerTrail group={player} color={playerStyle.trail} />}
       <mesh ref={marker} visible={false}>
         <boxGeometry args={[0.6, 0.04, 0.6]} />
         <meshBasicMaterial color="#FACC15" toneMapped={false} />

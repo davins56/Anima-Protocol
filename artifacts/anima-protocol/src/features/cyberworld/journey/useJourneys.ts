@@ -5,11 +5,12 @@
  * mode freezes the companion's journey; dismissing it sends them home from
  * wherever you are. Journey events go to the pluggable sink (localStorage).
  */
-import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import type { PlayerTelemetry } from "../CyberworldScene";
 import type { Vec2, World, WorldAnima } from "../layout";
 import { NO_HINTS, type InterestHints } from "./choose";
 import { initTraveller, releaseAt, statusLine, tickTraveller, type JourneyMode, type Traveller } from "./journeys";
+import { recordGift } from "../market/gift";
 import { backendJourneySink, journeyInterests } from "./api";
 import { localStorageSink, multiSink, type JourneyEvent, type JourneySink } from "./log";
 
@@ -92,5 +93,15 @@ export function useJourneys({ world, animas, areaId, dayKey, telemetry, companio
     return () => clearInterval(id);
   }, [world, telemetry, logSink]);
 
-  return { travellers, views };
+  /** Give a gift (Data Bazaar): updates the companion's motives/thought and logs the event. */
+  const gift = useCallback(
+    (companionId: string, g: { itemId: string; itemName: string; areaId: string; strength: number }) => {
+      const r = recordGift(travellers.current, companionId, { ...g, now: Date.now() }, logSink);
+      travellers.current = r.travellers;
+      return r.event;
+    },
+    [logSink],
+  );
+
+  return { travellers, views, gift };
 }
