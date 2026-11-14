@@ -144,7 +144,7 @@ export async function pushSensesSnapshot({
   try {
     const headers = await requireChatAuthHeaders({ "Content-Type": "application/json" });
     const body = JSON.stringify(await buildBrowserSensesSnapshot(nav, { timezone, storage }));
-    const res = await fetchImpl(apiUrl("/api/senses"), { method: "PUT", headers, body });
+    const res = await fetchImpl(apiUrl("/senses"), { method: "PUT", headers, body });
     if (res.status === 409) return { ok: false, serverOff: true };
     if (!res.ok) return { ok: false, status: res.status };
     return { ok: true, summary: await res.json() };
@@ -160,7 +160,7 @@ export async function forgetSenses({ fetchImpl = globalThis.fetch, storage = glo
   lastReportAt = 0;
   try {
     const headers = await requireChatAuthHeaders();
-    const res = await fetchImpl(apiUrl("/api/senses"), { method: "DELETE", headers });
+    const res = await fetchImpl(apiUrl("/senses"), { method: "DELETE", headers });
     if (!res.ok) return { ok: false, status: res.status };
     return { ok: true };
   } catch (error) {
