@@ -4070,11 +4070,16 @@ Return JSON:
             />
             {activeSession?.mode === "solo" && activeSession?.character_id && (
               <div className="px-3 py-1 flex items-center justify-between bg-black/40 border-b border-primary/10">
-                <ResonanceField value={resonance.value} label={resonance.label} />
+                <ResonanceField
+                  value={resonance.value}
+                  label={resonance.label}
+                  resetKey={`${activeSession.character_id}:${resonance.source}`}
+                />
                 <IntimacyDock
                   characterId={activeSession.character_id}
                   conversationId={activeSession.id}
                   refreshKey={isLoading ? null : activeSession.messages?.length || 0}
+                  liveSynchroStrength={companionAffect?.synchro_strength ?? null}
                 />
               </div>
             )}
