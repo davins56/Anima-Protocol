@@ -1,13 +1,17 @@
 import { useState, useEffect, useRef } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { animaClient } from "@/api/animaClient";
 import { Loader, X, ZoomIn, ZoomOut, Share2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import NetworkGraphVisualization from "@/components/graph/NetworkGraphVisualization";
+import NetworkGraphVisualization, { GRAPH_SIZE, NODE_COLORS } from "@/components/graph/NetworkGraphVisualization";
 import NodeDetailsPanel from "@/components/graph/NodeDetailsPanel";
 
 export default function InteractiveGraphVisualization() {
-  const { sessionId } = useParams();
+  const params = useParams();
+  const [searchParams] = useSearchParams();
+  // /graph-visualization/:sessionId, or ?session= from the Flowchart /
+  // Branching links (they pass the session as a query string).
+  const sessionId = params.sessionId || searchParams.get("session") || null;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedNode, setSelectedNode] = useState(null);
@@ -26,7 +30,10 @@ export default function InteractiveGraphVisualization() {
         animaClient.entities.Character.list("-created_date", 100),
         animaClient.entities.Faction.list("-created_date", 100),
         animaClient.entities.Location.list("-created_date", 100),
-        sessionId ? animaClient.entities.CharacterRelationship.filter({ session_id: sessionId }) : Promise.resolve([]),
+        // Without a session, show every relationship so the network still has edges.
+        sessionId
+          ? animaClient.entities.CharacterRelationship.filter({ session_id: sessionId })
+          : animaClient.entities.CharacterRelationship.list("-created_date", 300).catch(() => []),
         sessionId ? animaClient.entities.CharacterMemory.filter({ session_id: sessionId }) : Promise.resolve([]),
         sessionId ? animaClient.entities.WorldState.filter({ session_id: sessionId, is_active: true }) : Promise.resolve([]),
       ]);
@@ -122,10 +129,14 @@ export default function InteractiveGraphVisualization() {
           ref={svgRef}
           width="100%"
           height="100%"
+          viewBox={`0 0 ${GRAPH_SIZE} ${GRAPH_SIZE}`}
+          preserveAspectRatio="xMidYMid meet"
           className="bg-black/40"
           style={{ cursor: selectedNode ? "pointer" : "grab" }}
+          data-testid="graph-svg"
         >
-          <g style={{ transform: `scale(${zoom})`, transformOrigin: "0 0" }}>
+          {/* Zoom about the centre of the drawing, not its top-left corner. */}
+          <g transform={`translate(${GRAPH_SIZE / 2} ${GRAPH_SIZE / 2}) scale(${zoom}) translate(${-GRAPH_SIZE / 2} ${-GRAPH_SIZE / 2})`}>
             <NetworkGraphVisualization
               data={data}
               selectedNode={selectedNode}
@@ -156,18 +167,16 @@ export default function InteractiveGraphVisualization() {
         {/* Legend */}
         <div className="absolute bottom-4 left-4 p-3 border border-primary/20 bg-black/80 space-y-2 text-[9px] font-mono">
           <p className="text-primary/40 tracking-widest uppercase">Legend</p>
-          <div className="flex items-center gap-2">
-            <div className="w-2.5 h-2.5 bg-cyan-400 rounded-full" />
-            <span className="text-primary/60">Characters</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-2.5 h-2.5 bg-yellow-400 rounded-full" />
-            <span className="text-primary/60">Factions</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-2.5 h-2.5 bg-green-400 rounded-full" />
-            <span className="text-primary/60">Locations</span>
-          </div>
+          {[
+            ["character", "Characters", data?.characters?.length ?? 0],
+            ["faction", "Factions", data?.factions?.length ?? 0],
+            ["location", "Locations", data?.locations?.length ?? 0],
+          ].map(([type, label, count]) => (
+            <div key={type} className="flex items-center gap-2" data-legend={type}>
+              <div className="w-2.5 h-2.5 rounded-full" style={{ background: NODE_COLORS[type] }} />
+              <span className="text-primary/60">{label} · {count}</span>
+            </div>
+          ))}
         </div>
       </div>
 
