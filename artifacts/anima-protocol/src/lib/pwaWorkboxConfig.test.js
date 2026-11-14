@@ -15,8 +15,19 @@ describe("PWA Workbox config", () => {
     expect(viteConfig).toContain("navigateFallbackDenylist");
     const globPatterns =
       viteConfig.match(/globPatterns:\s*\[([\s\S]*?)\]/)?.[1] ?? "";
-    expect(globPatterns).toContain("**/*.{js,css,");
+    expect(globPatterns).toContain("**/*.{svg,png,");
     expect(globPatterns).not.toMatch(/html/);
+    // Hashed ES modules / CSS must not be precached (Safari module-script
+    // failure when the SW intercepts /assets/*.js).
+    expect(globPatterns).not.toMatch(/\{js,css,/);
+    expect(globPatterns).not.toMatch(/\*\.js/);
+    expect(globPatterns).not.toMatch(/\*\.css/);
+  });
+
+  it("fetches hashed JS and CSS network-only so the SW cannot intercept modules", () => {
+    expect(viteConfig).toContain('url.pathname.startsWith("/assets/")');
+    expect(viteConfig).toContain("(?:m?js|css)");
+    expect(viteConfig).toContain('handler: "NetworkOnly"');
   });
 
   it("denies SW navigation fallback for /api and /assets so dead hashes cannot loop", () => {
