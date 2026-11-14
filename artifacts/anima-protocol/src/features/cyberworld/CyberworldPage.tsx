@@ -24,6 +24,9 @@ import { companionLine, systemLine } from "./explore/companion";
 import { ActionBar, InspectCard, LocationExplainer, LogPanel, RegionChip, SpeechBubble } from "./explore/ExploreHud";
 import { useJourneys } from "./journey/useJourneys";
 import { useExploration } from "./explore/useExploration";
+import { cosmeticsOf, give, giftName, SHOP_BY_ID } from "./market/economy";
+import { MarketPanel } from "./market/MarketPanel";
+import type { Progress } from "./explore/progress";
 import { useRegionContext } from "./explore/useRegionContext";
 
 const CyberworldScene = lazy(() => import("./CyberworldScene"));
@@ -67,13 +70,14 @@ export default function CyberworldPage() {
   const explore = useExploration({ area, region, telemetry, commands, hasCompanion: animas.length > 0 });
   const [explainerOpen, setExplainerOpen] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
+  const [marketOpen, setMarketOpen] = useState(false);
   const [bubble, setBubble] = useState<{ text: string; speaker?: string; color: string } | null>(null);
   const pendingScan = useRef(false);
   const tint = useMemo(() => biomeTint(region.biome, region.timeOfDay), [region.biome, region.timeOfDay]);
   const { state: exploreState, scan, collect, inspect, closeInspect, jack } = explore;
 
   // ── Journeys: residents travel on purpose (motives → destination → activity), on- and off-screen.
-  const { travellers, views: journeyViews } = useJourneys({ world, animas, areaId: area.id, dayKey: region.dayKey, telemetry, companionId });
+  const { travellers, views: journeyViews, gift: giveToTraveller } = useJourneys({ world, animas, areaId: area.id, dayKey: region.dayKey, telemetry, companionId });
   const areaLabels = useMemo(() => Object.fromEntries(world.areas.map((a) => [a.id, a.label])), [world]);
   const thoughts = useMemo(() => Object.fromEntries(journeyViews.map((v) => [v.id, v.thought])), [journeyViews]);
 
@@ -81,6 +85,36 @@ export default function CyberworldPage() {
   // Home zone lives in the hub even when the companion is met elsewhere on a journey.
   const nearZone = near ? world.areas.flatMap((a) => a.zones).find((z) => z.id === homeZoneId(near.id)) : null;
   const nearStatus = near ? journeyViews.find((v) => v.id === near.id)?.status : null;
+
+  // ── Data Bazaar: cosmetics on the player navi; gifts go to the companion you're with (or the one beside you).
+  const cosmetics = cosmeticsOf(exploreState.progress);
+  const playerStyle = useMemo(
+    () => ({ visor: SHOP_BY_ID[cosmetics.equipped.visor ?? ""]?.color, trail: SHOP_BY_ID[cosmetics.equipped.trail ?? ""]?.color }),
+    [cosmetics.equipped.visor, cosmetics.equipped.trail],
+  );
+  const giftTarget = companion ?? near;
+  const { setProgress } = explore;
+  const onGift = useCallback(
+    (itemId: string) => {
+      if (!giftTarget) return;
+      const r = give(exploreState.progress, itemId);
+      if (!r.ok) return;
+      setProgress(r.progress);
+      const itemName = giftName(itemId);
+      giveToTraveller(giftTarget.id, { itemId, itemName, areaId: area.id, strength: r.strength });
+      sfx.collect(1);
+      setBubble({ text: `For me? ${itemName}… thank you. ♡`, speaker: giftTarget.name, color: giftTarget.color || "#F472B6" });
+    },
+    [giftTarget, exploreState.progress, setProgress, giveToTraveller, area.id, sfx],
+  );
+  const onMarketChange = useCallback(
+    (progress: Progress, message: string) => {
+      setProgress(progress);
+      sfx.blip();
+      setToast(message);
+    },
+    [setProgress, sfx],
+  );
 
   useEffect(() => {
     if (nearId) sfx.near();
@@ -181,7 +215,11 @@ export default function CyberworldPage() {
           collect();
           break;
         case "inspect":
-          inspect();
+          // At the Bazaar vendor terminal, Inspect opens the market instead.
+          if (explore.nearVendor) {
+            sfx.blip();
+            setMarketOpen(true);
+          } else inspect();
           break;
         case "jack":
           sfx.blip();
@@ -206,7 +244,7 @@ export default function CyberworldPage() {
           break;
       }
     },
-    [explore.availability, choice, regionStatus, scan, collect, inspect, jack, sfx, companionId, companion, near, animas, region.biome],
+    [explore.availability, explore.nearVendor, choice, regionStatus, scan, collect, inspect, jack, sfx, companionId, companion, near, animas, region.biome],
   );
 
   // Keyboard shortcuts for the action bar (WASD stays movement).
@@ -216,11 +254,12 @@ export default function CyberworldPage() {
       if (e.repeat || (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable))) return;
       if (e.code === "Escape") {
         setLogOpen(false);
+        setMarketOpen(false);
         closeInspect();
         if (explainerOpen) finishExplainer(null);
         return;
       }
-      if (explainerOpen) return;
+      if (explainerOpen || marketOpen) return;
       const a = ACTIONS.find((x) => x.code === e.code);
       if (!a || (logOpen && a.id !== "log")) return;
       e.preventDefault();
@@ -228,7 +267,7 @@ export default function CyberworldPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [runAction, logOpen, explainerOpen, finishExplainer, closeInspect]);
+  }, [runAction, logOpen, marketOpen, explainerOpen, finishExplainer, closeInspect]);
 
   const press = (v: MoveInput) => () => {
     touchMove.current = v;
@@ -260,6 +299,7 @@ export default function CyberworldPage() {
                 companion={companion}
                 travellers={travellers}
                 thoughts={thoughts}
+                playerStyle={playerStyle}
               />
             </Suspense>
           </WebGLFallback>
@@ -333,6 +373,25 @@ export default function CyberworldPage() {
           onAction={runAction}
           accompanying={!!companionId}
           className="absolute bottom-3 left-3 sm:left-1/2 sm:-translate-x-1/2"
+        />
+
+        {explore.nearVendor && !marketOpen && (
+          <button
+            type="button"
+            onClick={() => setMarketOpen(true)}
+            className="absolute bottom-[64px] left-3 z-10 border border-orange-300/60 bg-black/80 px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-orange-200 sm:bottom-[4.5rem] sm:left-1/2 sm:-translate-x-1/2"
+          >
+            ⌂ Vendor · press F to trade
+          </button>
+        )}
+        <MarketPanel
+          open={marketOpen}
+          progress={exploreState.progress}
+          dayKey={region.dayKey}
+          giftTarget={giftTarget ? { name: giftTarget.name, color: giftTarget.color } : null}
+          onChange={onMarketChange}
+          onGift={onGift}
+          onClose={() => setMarketOpen(false)}
         />
 
         <LogPanel

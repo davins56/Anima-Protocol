@@ -23,6 +23,8 @@ export type Progress = {
   /** itemId → day first found. */
   codexItems: Record<string, string>;
   regions: Record<string, RegionEntry>;
+  /** Data Bazaar cosmetics (owned ids + equipped per slot). Optional for older saves. */
+  cosmetics?: { owned: string[]; equipped: Partial<Record<"visor" | "trail", string>> };
 };
 
 export function emptyProgress(): Progress {
@@ -50,6 +52,13 @@ export function parseProgress(raw: string | null | undefined, dayKey?: string): 
       if (isRecord(v) && typeof v.label === "string" && typeof v.biome === "string" && typeof v.firstSeen === "string" && typeof v.lastSeen === "string")
         out.regions[k] = { key: k, label: v.label, biome: v.biome as BiomeId, firstSeen: v.firstSeen, lastSeen: v.lastSeen, days: typeof v.days === "number" ? v.days : 1 };
     }
+  if (isRecord(data.cosmetics)) {
+    const c = data.cosmetics;
+    const owned = Array.isArray(c.owned) ? c.owned.filter((x): x is string => typeof x === "string") : [];
+    const equipped: Partial<Record<"visor" | "trail", string>> = {};
+    if (isRecord(c.equipped)) for (const slot of ["visor", "trail"] as const) if (typeof c.equipped[slot] === "string" && owned.includes(c.equipped[slot] as string)) equipped[slot] = c.equipped[slot] as string;
+    out.cosmetics = { owned, equipped };
+  }
   return out;
 }
 
