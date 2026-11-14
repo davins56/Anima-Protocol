@@ -42,6 +42,13 @@ export function footstepInterval(speed: number): number {
 
 type Ctx = AudioContext;
 
+/** AudioContext constructor if this browser has one (Safari < 14.1 only has webkitAudioContext); null otherwise. */
+export function audioContextCtor(win: unknown): (new () => AudioContext) | null {
+  const w = win as { AudioContext?: unknown; webkitAudioContext?: unknown } | undefined;
+  const AC = w?.AudioContext ?? w?.webkitAudioContext;
+  return typeof AC === "function" ? (AC as new () => AudioContext) : null;
+}
+
 export class CyberworldAudio {
   private ctx: Ctx | null = null;
   private master: GainNode | null = null;
@@ -61,7 +68,16 @@ export class CyberworldAudio {
   /** Call from a user gesture. Builds the graph once; no-op while muted. */
   unlock() {
     if (this.muted) return;
-    if (!this.ctx) this.build();
+    if (!this.ctx) {
+      try {
+        this.build();
+      } catch (e) {
+        console.warn("[cyberworld] audio disabled:", e);
+        void this.ctx?.close().catch(() => undefined);
+        this.ctx = this.master = this.sfxBus = null;
+        return;
+      }
+    }
     if (this.ctx?.state === "suspended") void this.ctx.resume();
     this.scheduleChirp();
   }
@@ -90,9 +106,16 @@ export class CyberworldAudio {
   }
 
   private build() {
-    const AC = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    // Sound is optional: no constructor, or one that throws, just means silence.
+    const AC = audioContextCtor(typeof window === "undefined" ? undefined : window);
     if (!AC) return;
-    const ctx = new AC();
+    let ctx: AudioContext;
+    try {
+      ctx = new AC();
+    } catch (e) {
+      console.warn("[cyberworld] audio disabled:", e);
+      return;
+    }
     const master = ctx.createGain();
     master.gain.value = 0;
     master.connect(ctx.destination);
