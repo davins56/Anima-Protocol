@@ -14,6 +14,107 @@ export type PhotoLimitResult = { allowed: true } | { allowed: false; window: "ho
 
 const inflight = new Map<string, number>();
 const recent = new Map<string, number[]>();
+/** In-isolate last unprompted (tag) photo, keyed by user:character:session. */
+const lastSpontaneous = new Map<string, number>();
+
+export function spontaneousKey(userId: string, characterId: string, sessionId = ""): string {
+  return `${userId}:${characterId}:${sessionId}`;
+}
+
+export function noteSpontaneousSent(userId: string, characterId: string, sessionId = "", now = Date.now()): void {
+  lastSpontaneous.set(spontaneousKey(userId, characterId, sessionId), now);
+}
+
+export function spontaneousRecentlySent(
+  userId: string,
+  characterId: string,
+  sessionId: string,
+  cooldownMs: number,
+  now = Date.now(),
+): boolean {
+  const at = lastSpontaneous.get(spontaneousKey(userId, characterId, sessionId));
+  return at != null && now - at < cooldownMs;
+}
+
+export type SpontaneousState = {
+  lastAt: number | null;
+  exchangesSince: number;
+  /** False when the ledger query failed and exchange count is unknown. */
+  exchangesKnown: boolean;
+};
+
+export function checkSpontaneousCooldown(
+  state: SpontaneousState | null | undefined,
+  limits: { spontaneousMinExchanges: number; spontaneousCooldownMs: number },
+  now = Date.now(),
+): boolean {
+  if (!state || state.lastAt == null) return true;
+  if (now - state.lastAt < limits.spontaneousCooldownMs) return false;
+  if (!state.exchangesKnown) return true;
+  if (state.exchangesSince < limits.spontaneousMinExchanges) return false;
+  return true;
+}
+
+export async function spontaneousState(
+  userId: string,
+  characterId: string,
+  sessionId: string,
+  _now = Date.now(),
+): Promise<SpontaneousState> {
+  const localAt = lastSpontaneous.get(spontaneousKey(userId, characterId, sessionId)) ?? null;
+  try {
+    const { rows } = await getPool().query<{ last_at: Date | string | null; exchanges: string | number }>(
+      `SELECT (
+                SELECT created_at
+                  FROM chat_turns
+                 WHERE user_id = $1
+                   AND session_id = $2
+                   AND metadata ->> 'active_character_id' = $3
+                   AND metadata -> 'companion_photo' ->> 'status' = 'sent'
+                   AND (
+                     metadata -> 'companion_photo' ->> 'source' = 'tag'
+                     OR metadata -> 'companion_photo' ->> 'trigger' = 'spontaneous'
+                   )
+                 ORDER BY created_at DESC
+                 LIMIT 1
+              ) AS last_at,
+              (
+                SELECT count(*)
+                  FROM chat_turns later
+                 WHERE later.user_id = $1
+                   AND later.session_id = $2
+                   AND later.created_at > COALESCE(
+                     (
+                       SELECT created_at
+                         FROM chat_turns
+                        WHERE user_id = $1
+                          AND session_id = $2
+                          AND metadata ->> 'active_character_id' = $3
+                          AND metadata -> 'companion_photo' ->> 'status' = 'sent'
+                          AND (
+                            metadata -> 'companion_photo' ->> 'source' = 'tag'
+                            OR metadata -> 'companion_photo' ->> 'trigger' = 'spontaneous'
+                          )
+                        ORDER BY created_at DESC
+                        LIMIT 1
+                     ),
+                     '-infinity'::timestamp
+                   )
+              ) AS exchanges`,
+      [userId, sessionId, characterId],
+    );
+    const row = rows[0];
+    const lastAt = row?.last_at ? new Date(row.last_at).getTime() : localAt;
+    const exchanges = row?.last_at ? Number(row.exchanges) : (localAt ? 0 : Number.POSITIVE_INFINITY);
+    return {
+      lastAt: Number.isFinite(lastAt as number) ? (lastAt as number) : localAt,
+      exchangesSince: Number.isFinite(exchanges) ? exchanges : 0,
+      exchangesKnown: true,
+    };
+  } catch {
+    return { lastAt: localAt, exchangesSince: 0, exchangesKnown: false };
+  }
+}
 
 export function notePhotoStarted(userId: string): () => void {
   inflight.set(userId, (inflight.get(userId) || 0) + 1);
@@ -68,4 +169,5 @@ export function checkPhotoLimit(usage: PhotoUsage, limits: { hourlyLimit: number
 export function resetPhotoLimitsForTests(): void {
   inflight.clear();
   recent.clear();
+  lastSpontaneous.clear();
 }

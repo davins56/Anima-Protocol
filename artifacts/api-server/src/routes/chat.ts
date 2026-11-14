@@ -191,6 +191,7 @@ import {
   companionPhotoConfig,
   photoDirective,
   photoFailureLine,
+  spontaneousPhotoDirective,
   photoMetadata,
   photoTagIntent,
   planCompanionPhoto,
@@ -3196,6 +3197,11 @@ router.post("/messages", async (req, res) => {
       companionName: photoCompanionName,
       character: photoCharacter,
       turnId,
+      sessionId,
+      recent: photoPlanArgs.recent,
+      userMessage: photoPlanArgs.userMessage,
+      userName: userDisplayName,
+      identityText: memoryCoreContext,
     });
     writeSse(res, { status: "photo", photo: { state: "pending" } });
   };
@@ -3204,7 +3210,7 @@ router.post("/messages", async (req, res) => {
     character: photoCharacter,
     companionName: photoCompanionName,
     userMessage: String(content || ""),
-    recent: promptRecentMessages.slice(-8).map((m) => ({
+    recent: promptRecentMessages.slice(-12).map((m) => ({
       role: String(m.role || ""),
       content: String(m.content || ""),
     })),
@@ -3213,6 +3219,8 @@ router.post("/messages", async (req, res) => {
     adultActive,
     therapy: therapyActive,
     crisis: Boolean(crisisResourceCard),
+    characterId: activeCharacterId || undefined,
+    sessionId,
   };
   const photoPlanPromise: Promise<PhotoPlan> = planCompanionPhoto(photoPlanArgs).catch((error) => {
     logger.warn({ error, turnId }, "Companion photo planning failed");
@@ -3258,7 +3266,20 @@ router.post("/messages", async (req, res) => {
   const resolvedCorrections = await correctionsPromise;
   photoPlan = await photoPlanPromise;
   if (photoPlan.action === "send") startPhotoJob(photoPlan);
-  const companionPhotoNote = photoDirective(photoPlan);
+  const companionPhotoNote = [
+    photoDirective(photoPlan),
+    spontaneousPhotoDirective({
+      plan: photoPlan,
+      userId,
+      characterId: activeCharacterId || undefined,
+      sessionId,
+      mode,
+      crisis: Boolean(crisisResourceCard),
+      isContinue: Boolean(body.is_continue),
+    }),
+  ]
+    .filter(Boolean)
+    .join(" ");
   // Mind knowledge was recalled for the hinted companion; a different
   // speaker this turn falls back to no long-term block rather than borrow it.
   const mindKnowledge =
@@ -4080,18 +4101,18 @@ router.post("/messages", async (req, res) => {
     streamSucceeded = true;
     // The companion chose to show something on her own ([IMAGE: …] tag).
     // Same safety gate and limits as a request; the tag never reaches the bubble.
-    if (photoPlan.action === "none" && !replyCutOff) {
-      const tagIntent = photoTagIntent(fullResponse);
-      if (tagIntent) {
+    const tagIntent = photoTagIntent(fullResponse);
+    if (tagIntent) {
+      // Always strip the marker so it never reaches the bubble, even if the
+      // photo is skipped (cooldown, limits, or the kill switch).
+      const stripped = stripPhotoTags(fullResponse);
+      if (stripped) fullResponse = stripped;
+      if (photoPlan.action === "none" && !replyCutOff) {
         photoPlan = await planCompanionPhoto({ ...photoPlanArgs, intent: tagIntent }).catch(
           () => ({ action: "none" }) as PhotoPlan,
         );
         if (photoPlan.action === "send") startPhotoJob(photoPlan);
       }
-    }
-    if (photoPlan.action !== "none") {
-      const stripped = stripPhotoTags(fullResponse);
-      if (stripped) fullResponse = stripped;
     }
     if (photoJob) {
       photoOutcome = await telemetry.measure(

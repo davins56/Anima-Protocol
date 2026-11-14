@@ -46,11 +46,31 @@ const STRONG_SELF_RE =
   /\b(send|show|give|take|snap|share)\b.{0,24}\b(selfie|pic(ture)?\s+of\s+(you|yourself)|photo\s+of\s+(you|yourself))\b|\b(send|show)\s+me\s+(a\s+)?(selfie|pic|photo|picture)\b|\bselfie\s+(please|pls|for\s+me)\b/i;
 const STRONG_SCENE_RE =
   /\b(send|show|share)\s+(me|us)\s+(a\s+)?(photo|pic|picture|snap)\s+of\s+(.{3,120})/i;
+/** "draw us", "picture this scene", "show me this moment" — a picture of the current scene. */
+const STRONG_MOMENT_RE =
+  /\b(draw|paint|sketch|illustrate|picture|show(\s+me)?|send(\s+me)?|snap)\s+(us|this\s+scene|the\s+scene|this\s+moment|the\s+moment|this\s+picture)\b/i;
 
 /** Fallback when the classifier is unavailable: only unmistakable asks. */
 export function heuristicPhotoIntent(userText: string): PhotoIntent | null {
   const text = String(userText || "").replace(/\s+/g, " ").trim();
   if (!text) return null;
+  const moment = STRONG_MOMENT_RE.exec(text);
+  if (moment) {
+    const what = moment[0].toLowerCase();
+    const together = /\bus\b/.test(what);
+    return {
+      sendPhoto: true,
+      subject: "scene",
+      framing: together ? "portrait" : "landscape",
+      description: together
+        ? "the two of you in this moment, as it is right now"
+        : "this scene as it is right now",
+      explicitness: lexicalExplicitness(text),
+      minor: false,
+      realPerson: false,
+      source: "heuristic",
+    };
+  }
   const scene = STRONG_SCENE_RE.exec(text);
   if (scene && !/^(you|yourself)\b/i.test(scene[5])) {
     return {
@@ -111,8 +131,9 @@ export function buildIntentMessages(args: {
       content:
         `You decide whether the user is asking ${name} (a chat companion who can text photos) to SEND A PICTURE in this message, and if so what the picture shows. ` +
         "Requests count when they want to see something: a selfie, a photo of the companion, of where they are, of something they mentioned (their room, the beach there, their outfit, food, a pet). " +
-        "Talking ABOUT photos, describing a picture the user took, asking the companion to imagine or describe something in words, or figures of speech (\"picture this\", \"I see what you mean\") are NOT requests. " +
-        `If it is a request, write "description": one or two concrete visual sentences of what ${name} would actually photograph right now, grounded in the conversation and ${name}'s world (place, time of day, outfit, mood). For a selfie or a photo of ${name}, subject is "self". Do not describe ${name}'s face or body; that is added later. ` +
+        "Talking ABOUT photos, describing a picture the user took, asking the companion to imagine or describe something in words, or figures of speech used to tell a story (\"picture this:\" as a preface, \"I see what you mean\") are NOT requests. " +
+        'Direct asks to depict the current moment ARE requests: \"show me\", \"draw us\", \"picture this scene\", \"show me this moment\". For \"us\" / \"this scene\" with both people, subject is \"scene\" (do not set real_person just because the user is in the scene). ' +
+        `If it is a request, write "description": one or two concrete visual sentences of what ${name} would actually photograph right now, grounded in the conversation and ${name}'s world (place, time of day, outfit, mood, who is there). For a selfie or a photo of ${name}, subject is "self". Do not describe ${name}'s face, body, or skin; that is added later. ` +
         '"explicitness": "explicit" for nudity or sexual acts, "suggestive" for lingerie, swimwear, sexy or bedroom poses, otherwise "none". ' +
         '"minor": true if the picture would sexualize or show anyone under 18, or the user asks for a child-like look. "real_person": true if they want a real, identifiable person (a celebrity, a public figure, or the user themselves). ' +
         'Reply with JSON only: {"send_photo":bool,"subject":"self|scene|object","framing":"selfie|portrait|full_body|landscape|closeup","description":"...","explicitness":"none|suggestive|explicit","minor":bool,"real_person":bool}',
@@ -128,7 +149,7 @@ const SUBJECTS: PhotoSubject[] = ["self", "scene", "object"];
 const FRAMINGS: PhotoFraming[] = ["selfie", "portrait", "full_body", "landscape", "closeup"];
 const LEVELS: Explicitness[] = ["none", "suggestive", "explicit"];
 
-function firstJsonObject(raw: string): Record<string, unknown> | null {
+export function firstJsonObject(raw: string): Record<string, unknown> | null {
   const text = String(raw || "").replace(/```(?:json)?/gi, "");
   const start = text.indexOf("{");
   if (start < 0) return null;
@@ -189,18 +210,20 @@ export function parsePhotoIntent(raw: string, userText = ""): PhotoIntent | null
 }
 
 /** `[IMAGE: …]` / `[PHOTO: …]` the companion chose to emit on her own. */
-export const PHOTO_TAG_RE = /\[(?:IMAGE|PHOTO|SELFIE):\s*([^\]]{3,600})\]/gi;
+export const PHOTO_TAG_RE = /\[(?:IMAGE|PHOTO|SELFIE|SCENE):\s*([^\]]{3,600})\]/gi;
 
 export function photoTagIntent(reply: string): PhotoIntent | null {
   const re = new RegExp(PHOTO_TAG_RE.source, "i");
   const m = re.exec(String(reply || ""));
   if (!m) return null;
   const description = clip(m[1], 400);
-  const selfie = /\b(selfie|me|myself|i\s+am|i'm)\b/i.test(description);
+  const tag = (m[0] || "").toUpperCase();
+  const selfie = tag.startsWith("[SELFIE:") || /\b(selfie|me|myself|i\s+am|i'm)\b/i.test(description);
+  const together = /\b(us|we|together|both)\b/i.test(description);
   return {
     sendPhoto: true,
-    subject: selfie ? "self" : "scene",
-    framing: selfie ? "selfie" : "landscape",
+    subject: selfie && !together ? "self" : "scene",
+    framing: selfie ? "selfie" : together ? "portrait" : "landscape",
     description,
     explicitness: lexicalExplicitness(description),
     minor: false,

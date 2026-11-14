@@ -16,11 +16,22 @@ import { isPreinstalledCharacter } from "../companions/builtIn";
 import { storeUploadedImage, UPLOADS_PATH_PREFIX } from "../imageUploads";
 import { appendMemoryEvent } from "../memoryCore/memoryCore";
 import { extractWorkersAiText, workersAiBackgroundModel } from "../workersAi";
-import { companionLook, loadReferenceImage, type CompanionLook } from "./appearance";
+import { companionLook, loadReferenceImage, userAppearanceFromFacts, type CompanionLook } from "./appearance";
 import { companionPhotoConfig, isMultipartImageModel, type CompanionPhotoConfig } from "./config";
-import { buildImagePrompt, companionSeed, photoSize } from "./imagePrompt";
+import { companionSeed, photoSize } from "./imagePrompt";
 import { classifyPhotoIntent, type IntentCompleter, type IntentMessage, type PhotoIntent } from "./intent";
-import { checkPhotoLimit, notePhotoSent, notePhotoStarted, photoUsage } from "./rateLimit";
+import {
+  checkPhotoLimit,
+  checkSpontaneousCooldown,
+  notePhotoSent,
+  notePhotoStarted,
+  noteSpontaneousSent,
+  photoUsage,
+  spontaneousRecentlySent,
+  spontaneousState,
+  type SpontaneousState,
+} from "./rateLimit";
+import { buildSceneImagePrompt, composeSceneImagePrompt } from "./scenePrompt";
 import { characterIsMinor, decidePhotoSafety, type PhotoBlockReason } from "./safety";
 import { classifyImageError, generateCompanionImage, type ImageErrorKind } from "./workersAiImage";
 
@@ -107,6 +118,10 @@ export async function planCompanionPhoto(input: {
   usage?: (userId: string) => Promise<{ hour: number; day: number }>;
   /** Already-known intent (the companion's own [IMAGE: …] tag): skip classification. */
   intent?: PhotoIntent | null;
+  characterId?: string;
+  sessionId?: string;
+  /** Override for tests; default reads the chat-turn ledger. */
+  spontaneous?: SpontaneousState | (() => Promise<SpontaneousState>);
 }): Promise<PhotoPlan> {
   const config = input.config ?? companionPhotoConfig();
   const binding = input.binding ?? aiBinding;
@@ -121,6 +136,12 @@ export async function planCompanionPhoto(input: {
       complete: input.complete === undefined ? workersAiIntentCompleter(binding) : input.complete,
     }));
   if (!intent) return { action: "none" };
+  const spontaneous = intent.source === "tag";
+  if (spontaneous && !config.spontaneousEnabled) return { action: "none" };
+  if (spontaneous) {
+    const state = await resolveSpontaneousState(input);
+    if (!checkSpontaneousCooldown(state, config)) return { action: "none" };
+  }
   const preinstalled = isPreinstalledCharacter(input.character);
   const safety = decidePhotoSafety({
     intent,
@@ -130,13 +151,62 @@ export async function planCompanionPhoto(input: {
     preinstalled,
     characterMinor: characterIsMinor(input.character),
   });
-  if (!safety.allow) return { action: "decline", intent, reason: safety.reason, preinstalled };
+  // Spontaneous tags: skip silently on a safety block (the reply already streamed).
+  if (!safety.allow) {
+    return spontaneous ? { action: "none" } : { action: "decline", intent, reason: safety.reason, preinstalled };
+  }
   const usage = await (input.usage ?? photoUsage)(input.userId);
   const limit = checkPhotoLimit(usage, config);
   if (!limit.allowed) {
+    if (spontaneous) return { action: "none" };
     return { action: "decline", intent, reason: limit.window === "day" ? "limit_day" : "limit_hour", preinstalled };
   }
   return { action: "send", intent, level: safety.level, look: companionLook(input.character), preinstalled };
+}
+
+async function resolveSpontaneousState(input: {
+  userId: string;
+  characterId?: string;
+  sessionId?: string;
+  spontaneous?: SpontaneousState | (() => Promise<SpontaneousState>);
+}): Promise<SpontaneousState> {
+  if (typeof input.spontaneous === "function") return input.spontaneous();
+  if (input.spontaneous) return input.spontaneous;
+  if (!input.characterId || !input.sessionId) {
+    return { lastAt: null, exchangesSince: Number.POSITIVE_INFINITY, exchangesKnown: false };
+  }
+  return spontaneousState(input.userId, input.characterId, input.sessionId);
+}
+
+/**
+ * Short instruction so the chat mind may emit one [IMAGE: …] tag on a vivid
+ * or emotional moment. Omitted when unprompted photos are off or a cooldown
+ * is known to be in effect in this isolate.
+ */
+export function spontaneousPhotoDirective(input: {
+  config?: CompanionPhotoConfig;
+  plan: PhotoPlan;
+  userId: string;
+  characterId?: string;
+  sessionId?: string;
+  mode?: string;
+  crisis?: boolean;
+  isContinue?: boolean;
+}): string {
+  const config = input.config ?? companionPhotoConfig();
+  if (!config.enabled || !config.spontaneousEnabled) return "";
+  if (input.plan.action !== "none") return "";
+  if (input.mode && input.mode !== "solo") return "";
+  if (input.crisis || input.isContinue) return "";
+  if (input.characterId && input.sessionId && spontaneousRecentlySent(input.userId, input.characterId, input.sessionId, config.spontaneousCooldownMs)) {
+    return "";
+  }
+  return (
+    "PHOTO: If this moment is vividly visual or emotionally charged, you may end your message with a single tag on its own line, " +
+    "[IMAGE: one concrete sentence of the scene, setting, who is present, and the mood], so a photo of that moment can be sent with your reply. " +
+    "Use this rarely, never in ordinary chat, and never for nudity, anyone under 18, or a real celebrity. " +
+    "Do not mention the tag or that you can send photos."
+  );
 }
 
 const NO_META =
@@ -177,6 +247,12 @@ export function startCompanionPhoto(input: {
   binding?: WorkersAiBinding;
   loadReference?: typeof loadReferenceImage;
   store?: typeof storeUploadedImage;
+  recent?: IntentMessage[];
+  userMessage?: string;
+  userName?: string;
+  identityText?: string;
+  complete?: IntentCompleter | null;
+  sessionId?: string;
 }): Promise<PhotoOutcome> {
   const config = input.config ?? companionPhotoConfig();
   const binding = input.binding ?? aiBinding;
@@ -197,15 +273,42 @@ export function startCompanionPhoto(input: {
       level: plan.level,
       preinstalled: plan.preinstalled,
     };
-    const { width, height } = photoSize(plan.intent);
+    const sceneArgs = {
+      companionName: input.companionName,
+      userName: input.userName,
+      userMessage: input.userMessage,
+      recent: input.recent ?? [],
+      intent: plan.intent,
+      identityText: input.identityText,
+      look: plan.look,
+      userAppearance: userAppearanceFromFacts(input.identityText || "", input.userName),
+      universe: base.universe,
+      level: plan.level,
+      preinstalled: plan.preinstalled,
+      complete: input.complete === undefined ? workersAiIntentCompleter(binding) : input.complete,
+    };
+    const withRef = await buildSceneImagePrompt({ ...sceneArgs, hasReference: Boolean(reference) });
+    const withoutRefPrompt = composeSceneImagePrompt({
+      companionName: input.companionName,
+      userName: input.userName,
+      universe: base.universe,
+      look: plan.look,
+      userAppearance: sceneArgs.userAppearance,
+      intent: plan.intent,
+      brief: withRef.brief,
+      level: plan.level,
+      preinstalled: plan.preinstalled,
+      hasReference: false,
+    });
+    const { width, height } = photoSize(plan.intent, config.sizes, withRef.brief);
     let image;
     try {
       image = await generateCompanionImage({
         binding,
         model: config.model,
         fallbackModel: config.fallbackModel,
-        prompt: buildImagePrompt({ ...base, hasReference: Boolean(reference) }),
-        promptWithoutReference: buildImagePrompt({ ...base, hasReference: false }),
+        prompt: withRef.prompt,
+        promptWithoutReference: withoutRefPrompt,
         width,
         height,
         seed: companionSeed(input.characterId, input.turnId),
@@ -224,6 +327,9 @@ export function startCompanionPhoto(input: {
       return { status: "failed", errorKind: "storage", ms: Date.now() - startedAt };
     }
     notePhotoSent(input.userId);
+    if (plan.intent.source === "tag") {
+      noteSpontaneousSent(input.userId, input.characterId, input.sessionId || "");
+    }
     return {
       status: "sent",
       usedReference: image.usedReference,
@@ -286,20 +392,24 @@ export function photoFailureLine(kind: PhotoFailureKind, salt: string): string {
 /** Turn ledger / done-payload summary (no prompt text, no secrets). */
 export function photoMetadata(plan: PhotoPlan, outcome: PhotoOutcome | null): Record<string, unknown> | null {
   if (plan.action === "none") return null;
-  if (plan.action === "decline") return { status: "declined", reason: plan.reason, source: plan.intent.source };
-  if (!outcome) return { status: "pending", source: plan.intent.source };
+  const trigger = plan.intent.source === "tag" ? "spontaneous" : "requested";
+  if (plan.action === "decline") return { status: "declined", reason: plan.reason, source: plan.intent.source, trigger };
+  if (!outcome) return { status: "pending", source: plan.intent.source, trigger };
   if (outcome.status === "sent") {
     return {
       status: "sent",
       source: plan.intent.source,
+      trigger,
       level: plan.level,
       model: outcome.attachment.model,
       used_reference: outcome.usedReference,
       url: outcome.attachment.url,
+      width: outcome.attachment.width,
+      height: outcome.attachment.height,
       ms: outcome.ms,
     };
   }
-  return { status: "failed", source: plan.intent.source, error: outcome.errorKind, ms: outcome.ms };
+  return { status: "failed", source: plan.intent.source, trigger, error: outcome.errorKind, ms: outcome.ms };
 }
 
 /** Memory stream note so the companion remembers what she sent. */
