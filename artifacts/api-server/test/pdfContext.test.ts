@@ -75,7 +75,7 @@ describe("PDF extraction", () => {
     await expect(extractPdfPages(bytes)).rejects.toMatchObject({
       code: "pdf_too_large",
       status: 413,
-      message: "That PDF is too large. The limit is 4 MB.",
+      message: `That PDF is too large. The limit is ${PDF_MAX_BYTES / (1024 * 1024)} MB.`,
     });
   });
 });
