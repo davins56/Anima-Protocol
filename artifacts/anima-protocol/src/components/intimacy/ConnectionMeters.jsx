@@ -91,7 +91,8 @@ function Meter({ id, icon, name, caption, valueLabel, value, ticks, barClass, mo
 /**
  * Two deliberately separate meters:
  *  - Synchro: long-term resonance earned over time (chat, Sacred Space). Tiered.
- *  - Heat: short-term intimacy intensity; rises and cools within scenes.
+ *  - Heat: right-now intensity (heated, emotional or intimate moments); rises
+ *    within a scene and cools over a pause.
  * Mobile stacks them full width with short captions; desktop sits them side by side.
  */
 export default function ConnectionMeters({ synchro, heat, showHeat = false, mobile: forcedMobile, resetKey = null }) {
@@ -103,6 +104,7 @@ export default function ConnectionMeters({ synchro, heat, showHeat = false, mobi
     resetKey,
   });
   const heatValue = clamp(heat);
+  const { delta: heatDelta } = useMeterDelta(showHeat ? heatValue : null, { resetKey });
   const heatBar =
     heatValue >= 80 ? "bg-rose-500" : heatValue >= 40 ? "bg-amber-500" : heatValue >= 15 ? "bg-yellow-500" : "bg-primary/30";
 
@@ -138,6 +140,7 @@ export default function ConnectionMeters({ synchro, heat, showHeat = false, mobi
           ticks={[15, 40, 80]}
           barClass={heatBar}
           mobile={mobile}
+          delta={heatDelta}
         />
       )}
     </div>

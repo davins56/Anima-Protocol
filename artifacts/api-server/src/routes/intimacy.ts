@@ -8,6 +8,7 @@ import {
   listRecentScenes,
 } from "../lib/intimacyStore";
 import { decayHeat } from "../lib/intimacyEngine";
+import { displayHeat, lowerHeatTo } from "../lib/heatIntensity";
 import type { IntimacyProfile } from "../lib/intimacyTypes";
 
 const router = Router();
@@ -31,6 +32,10 @@ function patchProfile(base: IntimacyProfile, body: Record<string, unknown>): Int
   if (Array.isArray(body.kinks)) next.kinks = body.kinks.map(String).slice(0, 24);
   if (Array.isArray(body.limits)) next.limits = body.limits.map(String).slice(0, 24);
   if (Array.isArray(body.softLimits)) next.softLimits = body.softLimits.map(String).slice(0, 24);
+  // The safeword button sends a lower heat; it can only ever lower it.
+  if (typeof body.heat === "number" && Number.isFinite(body.heat)) {
+    Object.assign(next, lowerHeatTo(next, body.heat));
+  }
   if (body.anatomy && typeof body.anatomy === "object") {
     next.anatomy = { ...next.anatomy, ...(body.anatomy as IntimacyProfile["anatomy"]) };
   }
@@ -54,7 +59,9 @@ router.get("/:characterId", async (req, res) => {
     }
   }
   const scenes = await listRecentScenes(userId, characterId, 6);
-  res.json({ profile, scenes });
+  // display_heat is what the Heat meter shows: sensual heat or right-now
+  // intensity (cooled to now), whichever is higher.
+  res.json({ profile: { ...profile, display_heat: displayHeat(profile) }, scenes });
 });
 
 router.patch("/:characterId", async (req, res) => {
@@ -68,7 +75,7 @@ router.patch("/:characterId", async (req, res) => {
   const current = await loadIntimacyProfile(userId, characterId);
   const next = patchProfile(current.characterId ? current : defaultProfile(userId, characterId), req.body || {});
   await saveIntimacyProfile(next);
-  res.json({ profile: next });
+  res.json({ profile: { ...next, display_heat: displayHeat(next) } });
 });
 
 router.get("/:characterId/scene/:conversationId", async (req, res) => {
