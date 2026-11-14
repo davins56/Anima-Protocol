@@ -1,18 +1,191 @@
 // @ts-check
 /**
- * Slim mobile navigation (UI only). Five primary tabs first; everything else
- * lives behind Explore. Codespace / Repo Workspace are steward-only in the
- * menu — the API still enforces its own checks; this only hides the entry.
+ * App dock (UI only). Five tabs — Talk, People, World, You, Moments.
+ *
+ * Explore (the searchable module menu from the old six-tab bar) is folded
+ * into World so the footer stays five tabs and still fits a phone or iPad
+ * with the home indicator. World opens Explore; World is also the active
+ * tab on /explore and other world routes.
+ *
+ * Route → tab:
+ *   /chat                        → Talk
+ *   /animas, companions          → People
+ *   /explore, world routes       → World
+ *   /settings, /profile          → You
+ *   /memories, /moments          → Moments
+ *   / (home floor)               → none (home is reached from Explore)
+ *
+ * Codespace / Repo Workspace stay steward-only in Explore — the API still
+ * enforces its own checks; this only hides the entry.
  */
-export const PRIMARY_TABS = [
-  { path: "/chat", label: "Chat", key: "chat" },
-  { path: "/animas", label: "Companions", key: "companions" },
-  { path: "/memories", label: "Memories", key: "memories" },
-  { path: "/", label: "Home", key: "home" },
-  { path: "/settings", label: "Settings", key: "settings" },
+
+/**
+ * @typedef {{ id: string, label: string, path?: string, opensExplore?: boolean }} DockTab
+ */
+
+/** @type {DockTab[]} */
+export const DOCK_TABS = [
+  { id: "talk", label: "Talk", path: "/chat" },
+  { id: "people", label: "People", path: "/animas" },
+  { id: "world", label: "World", opensExplore: true },
+  { id: "you", label: "You", path: "/settings" },
+  { id: "moments", label: "Moments", path: "/memories" },
 ];
 
+/**
+ * Dock destinations hidden from the Explore grid (World has no single path).
+ * Kept as PRIMARY_TABS so existing exploreModules callers keep working.
+ * @type {{ path: string, label: string, key: string }[]}
+ */
+export const PRIMARY_TABS = DOCK_TABS.filter((tab) => tab.path).map((tab) => ({
+  path: tab.path,
+  label: tab.label,
+  key: tab.id,
+}));
+
+const PEOPLE_PREFIXES = [
+  "/animas",
+  "/characters",
+  "/groups",
+  "/companion-generator",
+  "/customise-anima",
+  "/customize",
+];
+
+const MOMENTS_PREFIXES = [
+  "/memories",
+  "/moments",
+  "/memory-crystals",
+  "/memory-map",
+  "/what-she-remembers",
+  "/journals",
+  "/dreams",
+];
+
+const YOU_PREFIXES = [
+  "/settings",
+  "/profile",
+  "/check-in",
+  "/subscription",
+  "/therapy",
+  "/reflection-log",
+  "/reflections",
+  "/insights",
+  "/ai-behavior",
+];
+
+const WORLD_PREFIXES = [
+  "/explore",
+  "/cyberworld",
+  "/worldmap",
+  "/worldcodex",
+  "/world-pulse",
+  "/world-timeline",
+  "/world-calendar-dashboard",
+  "/worldcalendar",
+  "/integrated-calendar",
+  "/constellation",
+  "/origins",
+  "/net-battle",
+  "/storyboard",
+  "/lorebook",
+  "/chronicles",
+  "/quest-journal",
+  "/echo-keys",
+  "/energy-fragments",
+  "/inventory",
+  "/codespace",
+  "/repo-codespace",
+  "/book-of-echoes",
+  "/what-if",
+  "/narrative",
+  "/flowchart",
+  "/locationsmap",
+  "/wiki",
+  "/globalwiki",
+  "/meditation",
+];
+
+/**
+ * @param {string} pathname
+ * @param {string[]} prefixes
+ */
+function pathMatches(pathname, prefixes) {
+  return prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+/**
+ * @param {string} [pathname]
+ * @param {{ exploreOpen?: boolean }} [opts]
+ * @returns {string | null}
+ */
+export function dockTabForPath(pathname, opts = {}) {
+  if (opts.exploreOpen) return "world";
+  const path = pathname || "/";
+  if (path === "/chat" || path.startsWith("/chat/")) return "talk";
+  if (pathMatches(path, PEOPLE_PREFIXES)) return "people";
+  if (pathMatches(path, MOMENTS_PREFIXES)) return "moments";
+  if (pathMatches(path, YOU_PREFIXES)) return "you";
+  if (pathMatches(path, WORLD_PREFIXES)) return "world";
+  return null;
+}
+
+/**
+ * Routes that should not show the fixed app dock. Home (`/`) is handled by
+ * the caller — it uses the same dock in-flow instead of the fixed bar.
+ * @param {string} [pathname]
+ * @returns {boolean}
+ */
+export function hidesAppDock(pathname) {
+  if (!pathname) return true;
+  if (pathname.startsWith("/sign-in") || pathname.startsWith("/sign-up")) return true;
+  if (pathname === "/onboarding" || pathname.startsWith("/onboarding/")) return true;
+  if (pathname === "/legacy-onboarding" || pathname.startsWith("/legacy-onboarding/")) return true;
+  return false;
+}
+
 export const STEWARD_ONLY_PATHS = new Set(["/codespace", "/repo-codespace"]);
+
+/**
+ * Full Explore catalogue (Home is included because it is no longer a dock tab).
+ * @type {{ label: string, path: string, icon: string, signOut?: boolean }[]}
+ */
+export const EXPLORE_MODULES = [
+  { label: "Home", path: "/", icon: "⌂" },
+  { label: "Hall of Origins", path: "/origins", icon: "✨" },
+  { label: "Memory Crystals", path: "/memory-crystals", icon: "💎" },
+  { label: "Constellation", path: "/constellation", icon: "🌌" },
+  { label: "Book of Echoes", path: "/book-of-echoes", icon: "📖" },
+  { label: "Dream journal", path: "/dreams", icon: "🌙" },
+  { label: "Codespace", path: "/codespace", icon: "⌨" },
+  { label: "Repo Workspace", path: "/repo-codespace", icon: "🖥" },
+  { label: "NetBattle", path: "/net-battle", icon: "⚔" },
+  { label: "Cyberworld", path: "/cyberworld", icon: "⌗" },
+  { label: "Storyboard", path: "/storyboard", icon: "📋" },
+  { label: "Narrative", path: "/narrative", icon: "📊" },
+  { label: "Flowchart", path: "/flowchart", icon: "⧖" },
+  { label: "What-If", path: "/what-if", icon: "✦" },
+  { label: "Quest Journal", path: "/quest-journal", icon: "📜" },
+  { label: "World Map", path: "/worldmap", icon: "🌐" },
+  { label: "Locations", path: "/locationsmap", icon: "📍" },
+  { label: "Calendar", path: "/integrated-calendar", icon: "📅" },
+  { label: "Chronicles", path: "/chronicles", icon: "⏳" },
+  { label: "World Codex", path: "/worldcodex", icon: "📖" },
+  { label: "Lore Book", path: "/lorebook", icon: "📚" },
+  { label: "Journals", path: "/journals", icon: "📔" },
+  { label: "Session Wiki", path: "/wiki", icon: "🗂" },
+  { label: "Global Wiki", path: "/globalwiki", icon: "🌍" },
+  { label: "Memory Map", path: "/memory-map", icon: "🧠" },
+  { label: "Inventory", path: "/inventory", icon: "🎒" },
+  { label: "Energy Fragments", path: "/energy-fragments", icon: "⬡" },
+  { label: "Echo Keys", path: "/echo-keys", icon: "🔑" },
+  { label: "Characters", path: "/characters", icon: "👥" },
+  { label: "Customise Anima", path: "/customise-anima?tab=look", icon: "✦" },
+  { label: "Check-In", path: "/check-in", icon: "✚" },
+  { label: "Therapy Mode", path: "/therapy", icon: "♡" },
+  { label: "Reflect Log", path: "/reflection-log", icon: "📝" },
+  { label: "Sign Out", path: "/", icon: "⎋", signOut: true },
+];
 
 /**
  * @template {{ path: string, signOut?: boolean }} T
@@ -24,8 +197,9 @@ export function exploreModules(modules, { isSteward = false } = {}) {
   const primary = new Set(PRIMARY_TABS.map((t) => t.path));
   return (Array.isArray(modules) ? modules : []).filter((m) => {
     if (!m || typeof m.path !== "string") return false;
-    if (!m.signOut && primary.has(m.path)) return false;
-    if (STEWARD_ONLY_PATHS.has(m.path) && !isSteward) return false;
+    const pathOnly = m.path.split("?")[0];
+    if (!m.signOut && primary.has(pathOnly)) return false;
+    if (STEWARD_ONLY_PATHS.has(pathOnly) && !isSteward) return false;
     return true;
   });
 }

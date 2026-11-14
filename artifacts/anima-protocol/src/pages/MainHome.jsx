@@ -372,9 +372,14 @@ export default function MainHome() {
         <HomeDock
           onTalk={handleTalk}
           onPeople={() => setPanel("people")}
-          onWorld={() => setPanel("world")}
           onYou={() => setPanel("you")}
-          onMoments={anima?.id ? () => navigate(`/moments/${encodeURIComponent(anima.id)}`) : undefined}
+          onMoments={() =>
+            navigate(
+              anima?.id
+                ? `/moments/${encodeURIComponent(anima.id)}`
+                : "/memories",
+            )
+          }
         />
       </div>
 

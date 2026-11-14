@@ -43,7 +43,8 @@ import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import UserNotRegisteredError from "@/components/UserNotRegisteredError";
 import { ConfirmProvider } from "@/lib/ConfirmDialog";
-import BottomTabBar from "@/components/layout/BottomTabBar";
+import HomeDock from "@/components/home/HomeDock";
+import { hidesAppDock } from "@/lib/mobileNav";
 import MobileHeader from "@/components/layout/MobileHeader";
 import { useKeyboardAvoidance } from "@/hooks/useKeyboardAvoidance";
 import { useSensesReporter } from "@/hooks/useSensesReporter";
@@ -962,6 +963,7 @@ const AuthenticatedApp = () => {
     !pathname.startsWith("/sign-in") &&
     !pathname.startsWith("/sign-up");
   const isHomeFloor = pathname === "/";
+  const showFixedDock = showChrome && !isHomeFloor && !hidesAppDock(pathname);
 
   return (
     <>
@@ -981,7 +983,7 @@ const AuthenticatedApp = () => {
           className="app-shell-main flex-1 min-h-0 flex flex-col"
           style={{
             paddingBottom:
-              showChrome && !isHomeFloor ? "var(--tab-bar-height, 0px)" : 0,
+              showFixedDock ? "var(--tab-bar-height, 0px)" : 0,
           }}
         >
           <ErrorBoundary resetKey={location.pathname}>
@@ -1697,7 +1699,7 @@ const AuthenticatedApp = () => {
             </Suspense>
           </ErrorBoundary>
         </div>
-      {showChrome && !isHomeFloor && <BottomTabBar />}
+      {showFixedDock && <HomeDock variant="fixed" />}
     </>
   );
 };
@@ -1726,7 +1728,7 @@ export default function ProtocolApp() {
                   style={{
                     paddingTop: "env(safe-area-inset-top, 0px)",
                     // Bottom inset is owned by `--tab-bar-height` on
-                    // `.app-shell-main` (56px + home indicator). Do not also
+                    // `.app-shell-main` (dock + home indicator). Do not also
                     // pad `--safe-bottom` here — that double-counted the
                     // home indicator and lifted the in-flow chat composer
                     // away from the fixed tab bar. Keyboard-open still
