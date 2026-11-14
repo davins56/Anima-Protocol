@@ -456,6 +456,18 @@ export default function Chat() {
   const narratorBusyRef = useRef(null);
   const [characterEvolutions, setCharacterEvolutions] = useState({});
   const [characterEmotions, setCharacterEmotions] = useState({}); // keyed by character_id: {emotion, intensity, trigger}
+  // The header's Feeling / Level / Arousal for one companion, from the server
+  // felt-state snapshot of a turn she spoke. Keyed by her id so group chats
+  // keep each companion's own values.
+  const applyAffectToHeader = useCallback((snapshot, characterId) => {
+    const fromAffect = characterEmotionFromAffect(snapshot);
+    if (!fromAffect || !characterId) return;
+    setCharacterEmotions((prev) => ({
+      ...prev,
+      [characterId]: { ...(prev[characterId] || {}), ...fromAffect },
+    }));
+  }, []);
+
   const [worldEvent, setWorldEvent] = useState(null); // current system event
   const [calendar, setCalendar] = useState(null); // in-game calendar
   const [choices, setChoices] = useState([]); // narrative choice options
@@ -1159,7 +1171,7 @@ export default function Chat() {
     setInventoryItems([]);
     loadRelationships(id);
     loadLore(id);
-    loadCharacterEmotions(id, session.character_id);
+    loadCharacterEmotions(id, session.character_id, session);
     animaClient.entities.Calendar.filter({ session_id: id }).then((cals) => {
       if (!stillOpen(id)) return;
       if (cals?.length > 0) setCalendar(cals[0]);
@@ -1210,7 +1222,7 @@ export default function Chat() {
     setInventoryItems(data || []);
   };
 
-  const loadCharacterEmotions = async (sid, characterId) => {
+  const loadCharacterEmotions = async (sid, characterId, sessionForAffect = null) => {
     const states = await animaClient.entities.CharacterEmotionalState.filter({ session_id: sid, is_current: true }, "-created_date", 50);
     const map = {};
     (states || []).forEach((s) => {
@@ -1227,6 +1239,26 @@ export default function Chat() {
     if (!stillOpen(sid)) return;
     setCharacterEmotions(map);
 
+    // Group chats: each companion's header values come from her own saved
+    // felt state, not the first character's.
+    const openSession = sessionForAffect || activeSessionRef.current;
+    if (openSession?.id === sid && openSession?.mode === "group") {
+      const groupIds = (openSession.group_character_ids || []).slice(0, 8);
+      await Promise.all(
+        groupIds.map(async (gid) => {
+          try {
+            const payload = await animaApi.chat.companionMemory(gid);
+            if (!stillOpen(sid)) return;
+            const snapshot = parseCompanionAffectSnapshot(payload?.companion_affect);
+            if (snapshot) applyAffectToHeader(snapshot, gid);
+          } catch {
+            // Store-backed CharacterEmotionalState is enough until her next turn.
+          }
+        }),
+      );
+      return;
+    }
+
     const characterIdForAffect = characterId || activeSessionRef.current?.character_id;
     if (!characterIdForAffect) return;
     try {
@@ -1236,13 +1268,7 @@ export default function Chat() {
       if (!snapshot) return;
       setCompanionAffect(snapshot);
       setCurrentMood(snapshot.primary);
-      const fromAffect = characterEmotionFromAffect(snapshot);
-      if (fromAffect) {
-        setCharacterEmotions((prev) => ({
-          ...prev,
-          [characterIdForAffect]: { ...(prev[characterIdForAffect] || {}), ...fromAffect },
-        }));
-      }
+      applyAffectToHeader(snapshot, characterIdForAffect);
     } catch {
       // Store-backed CharacterEmotionalState is enough until the next turn.
     }
@@ -1259,6 +1285,12 @@ export default function Chat() {
   // Mirror activeSession in a ref so the async sync can read the latest committed
   // state (after its await) without depending on a stale render closure.
   const activeSessionRef = useRef(null);
+  // Late / recovered replies: the turn names its speaker; a solo chat has one.
+  const affectSpeakerIdFor = useCallback((turnLike) => {
+    if (turnLike?.active_character_id) return String(turnLike.active_character_id);
+    const s = activeSessionRef.current;
+    return s?.mode !== "group" && s?.character_id ? s.character_id : null;
+  }, []);
   activeSessionRef.current = activeSession;
 
   // Fetch the open thread's messages from the server and apply them, but never
@@ -1752,6 +1784,7 @@ export default function Chat() {
         if (lateAffect) {
           setCompanionAffect(lateAffect);
           setCurrentMood(lateAffect.primary);
+          applyAffectToHeader(lateAffect, affectSpeakerIdFor(turn));
         }
         setActiveSession((prev) => {
           if (!prev || prev.id !== sid) return prev;
@@ -1847,7 +1880,7 @@ export default function Chat() {
     return () => {
       cancelled = true;
     };
-  }, [activeSession?.id, setActiveSession]);
+  }, [activeSession?.id, setActiveSession, applyAffectToHeader, affectSpeakerIdFor]);
 
   useEffect(() => {
     const onVisibility = () => {
@@ -1910,6 +1943,7 @@ export default function Chat() {
         if (lateAffect) {
           setCompanionAffect(lateAffect);
           setCurrentMood(lateAffect.primary);
+          applyAffectToHeader(lateAffect, affectSpeakerIdFor(live));
         }
         setActiveSession((prev) => {
           if (!prev || (sessionId && prev.id !== sessionId)) return prev;
@@ -1929,7 +1963,7 @@ export default function Chat() {
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [setActiveSession, setCompanionAffect, setCurrentMood]);
+  }, [setActiveSession, setCompanionAffect, setCurrentMood, applyAffectToHeader, affectSpeakerIdFor]);
 
   const armConversationBusyRetry = (sessionId) => {
     const token = ++busyRetryTokenRef.current;
@@ -1959,6 +1993,7 @@ export default function Chat() {
         if (lateAffect) {
           setCompanionAffect(lateAffect);
           setCurrentMood(lateAffect.primary);
+          applyAffectToHeader(lateAffect, affectSpeakerIdFor(live));
         }
         setActiveSession((prev) => {
           if (!prev || prev.id !== sessionId) return prev;
@@ -2156,6 +2191,7 @@ export default function Chat() {
     // when a turn fails after the stream has started.
     let streamedSoFar = "";
     let replySpeakerName = "Character";
+    let replySpeakerId = null;
     let userMessagePersisted = false;
 
     // In "continue" mode, skip adding a user message — just advance the speaker
@@ -2697,6 +2733,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       }
 
       replySpeakerName = charName;
+      replySpeakerId = activeChar?.id || null;
       lateTurnRef.current = {
         ...(lateTurnRef.current || {}),
         key: lateKey,
@@ -2972,13 +3009,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         if (affectSnapshot) {
           setCompanionAffect(affectSnapshot);
           setCurrentMood(affectSnapshot.primary);
-          const fromAffect = characterEmotionFromAffect(affectSnapshot);
-          if (fromAffect && activeChar?.id) {
-            setCharacterEmotions((prev) => ({
-              ...prev,
-              [activeChar.id]: { ...(prev[activeChar.id] || {}), ...fromAffect },
-            }));
-          }
+          applyAffectToHeader(affectSnapshot, activeChar?.id);
         } else if (!replyCutOff.reply_interrupted) {
           setCurrentMood(detectMood(result));
         }
@@ -3844,6 +3875,7 @@ Return JSON:
           if (!skipAffect && lateAffect) {
             setCompanionAffect(lateAffect);
             setCurrentMood(lateAffect.primary);
+            applyAffectToHeader(lateAffect, affectSpeakerIdFor(late) || replySpeakerId);
           }
           if (lateTurnRef.current?.turnId === watchedTurnId) lateTurnRef.current = null;
           toast.dismiss("companion-could-not-reply");
@@ -4029,6 +4061,7 @@ Return JSON:
               currentMood={currentMood}
               moodIntensity={companionAffect?.intensity}
               characterEmotions={characterEmotions}
+              replying={isLoading}
               inventoryItems={inventoryItems}
               serenity={serenity}
               showMentalLine={showMentalLine}
