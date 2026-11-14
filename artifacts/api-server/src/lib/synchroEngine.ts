@@ -91,12 +91,27 @@ export const SYNCHRO_THRESHOLDS: Record<SynchroLevel, number> = {
 /** Half-life for idle decay in hours (synchro fades if you don't talk) */
 const DECAY_HALF_LIFE_HOURS = 72;
 
-/** Maximum synchro gained per turn from user signals */
-const MAX_USER_GAIN = 4;
+/**
+ * Maximum synchro gained per turn from user signals. Was 4, with every point
+ * gated on a narrow keyword list, so ordinary turns moved the meter by 0.
+ */
+export const MAX_USER_GAIN = 8;
 /** Maximum synchro gained per turn from companion response signals */
-const MAX_COMPANION_GAIN = 2;
+export const MAX_COMPANION_GAIN = 2;
 /** Synchro lost when user is hostile/dismissive */
-const HOSTILE_PENALTY = 6;
+export const HOSTILE_PENALTY = 6;
+/** Synchro lost for a curt dismissal ("forget it", "never mind") */
+export const DISMISSIVE_PENALTY = 3;
+/** Synchro lost for a one-word, low-effort reply ("ok", "k", "meh") */
+export const LOW_EFFORT_PENALTY = 1;
+/**
+ * Net per-turn change that counts as a felt shift for prompt guidance. Small
+ * engagement gains move the meter without telling the model "the bond just
+ * strengthened" on every ordinary turn.
+ */
+const NOTABLE_SHIFT = 3;
+/** Largest single-turn drop, so one bad line bruises rather than wipes a bond */
+export const MAX_USER_PENALTY = 10;
 
 export const SYNCHRO_LEVEL_LABELS: Record<SynchroLevel, string> = {
   disconnected: "Disconnected",
@@ -178,6 +193,152 @@ function applyIdleDecay(strength: number, lastInteraction: string): number {
   return Math.max(5, Math.round(strength * factor));
 }
 
+// ── Per-turn delta scoring ──────────────────────────────────────────
+
+export interface SynchroDeltaScore {
+  gain: number;
+  penalty: number;
+  /** Named signals that fired, for tests and debugging. */
+  signals: string[];
+}
+
+const LOW_EFFORT_REPLY =
+  /^(ok(ay)?|k+|kk|fine|sure|yeah|yep|yes|no|nah|meh|hm+|idk|cool|whatever)[.!]*$/;
+
+function wordCount(text: string): number {
+  return text.split(/\s+/).filter(Boolean).length;
+}
+
+/**
+ * Growth slows as the bond nears the top so Full Cross stays earned; damage
+ * is never softened. Below Full Cross any positive gain moves the meter by at
+ * least 1; at Full Cross small talk alone no longer lifts it.
+ */
+function diminish(gain: number, strength: number): number {
+  if (gain <= 0) return 0;
+  if (strength >= SYNCHRO_THRESHOLDS.fullCross && gain < 2) return 0;
+  const scale = strength >= SYNCHRO_THRESHOLDS.fullCross
+    ? 0.5
+    : strength >= SYNCHRO_THRESHOLDS.soulUnison
+      ? 0.75
+      : 1;
+  return Math.max(1, Math.round(gain * scale));
+}
+
+/**
+ * How much this user message moves the bond. Ordinary engaged conversation
+ * earns a little every turn; warmth, shared history and vulnerability earn
+ * more; hostility and curt dismissal cost. Pure and deterministic.
+ */
+export function scoreUserSynchroDelta(
+  userMessage: string,
+  currentStrength = 40,
+): SynchroDeltaScore {
+  const raw = String(userMessage || "").trim();
+  const msg = raw.toLowerCase();
+  const signals: string[] = [];
+  if (!msg) return { gain: 0, penalty: 0, signals };
+  const words = wordCount(msg);
+
+  let gain = 0;
+  let penalty = 0;
+
+  // Showing up and actually talking is the base of every bond.
+  if (words >= 3) {
+    gain += 1;
+    signals.push("engaged");
+  }
+  // Investment: longer messages say more of themselves.
+  if (raw.length > 280) {
+    gain += 2;
+    signals.push("long");
+  } else if (raw.length > 120) {
+    gain += 1;
+    signals.push("detailed");
+  }
+  // Interest in the companion herself.
+  if (/\?/.test(msg) && /\b(you|your|yourself)\b/.test(msg)) {
+    gain += 1;
+    signals.push("curious-about-you");
+  }
+  // Warmth, gratitude, laughter.
+  if (
+    /\b(thank(s| you)|grateful|appreciate|glad|happy|sweet|cute|adorable|wonderful|amazing|beautiful|haha+|lol|lmao|hehe+)\b/.test(msg) ||
+    /[\u2764\u{1F495}-\u{1F49F}\u{1F60A}\u{1F60D}\u{1F618}\u{1F970}\u{1F602}\u{1F923}\u{1F917}]/u.test(raw)
+  ) {
+    gain += 2;
+    signals.push("warmth");
+  }
+  // Bonding language.
+  if (/\b(love|trust|safe with you|need you|miss(ed)? you|care about you|adore|stay|together|always)\b/.test(msg)) {
+    gain += 3;
+    signals.push("bonding");
+  }
+  // Shared history deepens the bond.
+  if (/\b(remember when|last time|you said|you told me|we shared|our)\b/.test(msg)) {
+    gain += 2;
+    signals.push("shared-history");
+  }
+  if (/\b(soul|spirit|resonance|connection|bond|sync|attune)\b/.test(msg)) {
+    gain += 2;
+    signals.push("attunement");
+  }
+  // Vulnerability is a strong signal.
+  if (
+    /\b(afraid|scared|i don'?t know|help me|i need|honest(ly)?|confess|admit|i feel|i'?ve been|lonely|struggling|hurts?|i'?m (so )?sad)\b/.test(msg)
+  ) {
+    gain += 3;
+    signals.push("vulnerability");
+  }
+
+  // Damage. Phrases are specific so "I have to leave for work" or "I can't
+  // stop thinking about you" never read as rejection.
+  if (
+    /\b(hate (you|this|talking)|i hate|shut up|go away|leave me alone|just leave|don'?t care|boring|useless|you'?re (stupid|annoying|pathetic))\b/.test(msg) ||
+    (/\bwhatever\b/.test(msg) && words > 1)
+  ) {
+    penalty += HOSTILE_PENALTY;
+    signals.push("hostile");
+  }
+  if (/\b(forget it|never ?mind|stop it|just stop|stop talking|that'?s enough|enough of this|done with you)\b/.test(msg)) {
+    penalty += DISMISSIVE_PENALTY;
+    signals.push("dismissive");
+  }
+  if (penalty === 0 && words <= 2 && LOW_EFFORT_REPLY.test(msg)) {
+    penalty += LOW_EFFORT_PENALTY;
+    signals.push("low-effort");
+  }
+  // Hostility wipes out this turn's gains rather than netting against them.
+  if (penalty >= HOSTILE_PENALTY) gain = 0;
+
+  return {
+    gain: diminish(Math.min(gain, MAX_USER_GAIN), currentStrength),
+    penalty: Math.min(penalty, MAX_USER_PENALTY),
+    signals,
+  };
+}
+
+/** How much the companion's own reply deepens the bond (never negative). */
+export function scoreCompanionSynchroGain(
+  companionResponse: string,
+  currentStrength = 40,
+): number {
+  const resp = String(companionResponse || "").toLowerCase();
+  if (!resp.trim()) return 0;
+  let gain = 0;
+  // Actively using memory.
+  if (/\b(remember|recall|last time|you told me|you shared|i felt)\b/.test(resp)) gain += 2;
+  // Intimate address.
+  if (/\b(beloved|my light|my heart|dear one|precious)\b/.test(resp)) gain += 1;
+  // Physical/emotional presence cues.
+  if (/\*[^*]*(touch|hold|embrace|closer|lean|unfurl|flutter|glow|smile|laugh)[^*]*\*/.test(resp)) gain += 1;
+  // Vulnerability from the companion side.
+  if (/\b(afraid|i don'?t want to lose|it matters|you matter|i need)\b/.test(resp)) gain += 2;
+  // Care and attention back toward the user.
+  if (/\b(i'?m here|with you|proud of you|glad you|happy for you|i'?m listening)\b/.test(resp)) gain += 1;
+  return diminish(Math.min(gain, MAX_COMPANION_GAIN), currentStrength);
+}
+
 // ── Evolution from user message ──────────────────────────────────────
 
 /**
@@ -197,43 +358,12 @@ export function evolveSynchroFromUser(
   const shifts = detectResonanceShift(userMessage, resonanceState);
   const evolved = evolveResonanceState(resonanceState, shifts);
 
-  // Compute synchro delta from user signals
-  const msg = userMessage.toLowerCase();
-  let synchroGain = 0;
-
-  // Bonding signals → synchro grows
-  if (/\b(love|trust|safe|need you|miss you|stay|together|always)\b/.test(msg)) {
-    synchroGain += 3;
-  }
-  if (/\b(remember when|last time|you said|we shared|our)\b/.test(msg)) {
-    synchroGain += 2; // referencing shared history deepens bond
-  }
-  if (/\b(soul|spirit|resonance|connection|bond|sync|attune)\b/.test(msg)) {
-    synchroGain += 2;
-  }
-  // Vulnerability → strong synchro signal
-  if (/\b(afraid|scared|i don'?t know|help me|i need|honest|confess|admit)\b/.test(msg)) {
-    synchroGain += 2;
-  }
-  // Engagement length matters (longer messages = more investment)
-  if (msg.length > 200) synchroGain += 1;
-
-  // Damage signals → synchro drops
-  let synchroPenalty = 0;
-  if (/\b(hate|leave|shut up|go away|don'?t care|whatever|boring|useless)\b/.test(msg)) {
-    synchroPenalty += HOSTILE_PENALTY;
-  }
-  if (/\b(forget it|never mind|stop|enough|done with you)\b/.test(msg)) {
-    synchroPenalty += 3;
-  }
-
-  // Clamp gain and apply
-  synchroGain = Math.min(synchroGain, MAX_USER_GAIN);
-  const newStrength = clamp(
-    current.vector.synchroStrength + synchroGain - synchroPenalty,
-    0,
-    100,
+  const { gain: synchroGain, penalty: synchroPenalty } = scoreUserSynchroDelta(
+    userMessage,
+    current.vector.synchroStrength,
   );
+  const net = synchroGain - synchroPenalty;
+  const newStrength = clamp(current.vector.synchroStrength + net, 0, 100);
 
   const newVector: SynchroVector = {
     ...evolved.vector,
@@ -253,9 +383,11 @@ export function evolveSynchroFromUser(
     baselineStrength: current.baselineStrength,
     lastShift: levelChanged
       ? `Synchro shifted to ${newLevel} (${newStrength})`
-      : synchroGain > 0 || synchroPenalty > 0
-        ? `Synchro ${synchroGain > synchroPenalty ? "deepened" : "weakened"} → ${newStrength}`
-        : current.lastShift,
+      : net >= NOTABLE_SHIFT
+        ? `Synchro deepened → ${newStrength}`
+        : net < 0 && synchroPenalty >= DISMISSIVE_PENALTY
+          ? `Synchro weakened → ${newStrength}`
+          : current.lastShift,
   };
 }
 
@@ -270,26 +402,10 @@ export function evolveSynchroFromCompanion(
   current: SynchroState,
   companionResponse: string,
 ): SynchroState {
-  const resp = companionResponse.toLowerCase();
-  let synchroGain = 0;
-
-  // Companion showing emotional investment
-  if (/\b(remember|recall|last time|you told me|you shared|i felt)\b/.test(resp)) {
-    synchroGain += 2; // actively using memory
-  }
-  if (/\b(beloved|my light|my heart|dear one|precious)\b/.test(resp)) {
-    synchroGain += 1; // intimate address
-  }
-  // Physical/emotional presence cues
-  if (/\*[^*]*(touch|hold|embrace|closer|lean|unfurl|flutter|glow)[^*]*\*/.test(resp)) {
-    synchroGain += 1;
-  }
-  // Vulnerability from the companion side
-  if (/\b(afraid|i don'?t want to lose|it matters|you matter|i need)\b/.test(resp)) {
-    synchroGain += 2;
-  }
-
-  synchroGain = Math.min(synchroGain, MAX_COMPANION_GAIN);
+  const synchroGain = scoreCompanionSynchroGain(
+    companionResponse,
+    current.vector.synchroStrength,
+  );
 
   const newStrength = clamp(
     current.vector.synchroStrength + synchroGain,
