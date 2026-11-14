@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { CyberworldAudio, footstepInterval, initialMuted, MUTE_STORAGE_KEY, readInitialMuted, writeMuted } from "./audio";
+import { describe, expect, it, vi } from "vitest";
+import { audioContextCtor, CyberworldAudio, footstepInterval, initialMuted, MUTE_STORAGE_KEY, readInitialMuted, writeMuted } from "./audio";
 
 describe("cyberworld audio prefs", () => {
   it("stored choice wins; otherwise mute when reduced motion is preferred", () => {
@@ -32,5 +32,33 @@ describe("cyberworld audio prefs", () => {
     engine.portal();
     expect(engine.isMuted).toBe(true);
     engine.dispose();
+  });
+
+  it("feature-detects AudioContext, falls back to webkitAudioContext, else null", () => {
+    class A {}
+    class W {}
+    expect(audioContextCtor({ AudioContext: A, webkitAudioContext: W })).toBe(A);
+    expect(audioContextCtor({ webkitAudioContext: W })).toBe(W);
+    expect(audioContextCtor({})).toBeNull();
+    expect(audioContextCtor(undefined)).toBeNull();
+    expect(audioContextCtor({ AudioContext: {} })).toBeNull();
+  });
+
+  it("a throwing AudioContext only disables sound", () => {
+    const orig = (window as unknown as { AudioContext?: unknown }).AudioContext;
+    (window as unknown as { AudioContext?: unknown }).AudioContext = class {
+      constructor() {
+        throw new Error("not allowed");
+      }
+    };
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const engine = new CyberworldAudio(false);
+      expect(() => engine.unlock()).not.toThrow();
+      expect(() => engine.blip()).not.toThrow();
+    } finally {
+      warn.mockRestore();
+      (window as unknown as { AudioContext?: unknown }).AudioContext = orig;
+    }
   });
 });
