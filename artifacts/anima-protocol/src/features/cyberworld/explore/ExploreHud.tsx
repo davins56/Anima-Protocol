@@ -18,6 +18,7 @@ export function RegionChip({ region, status, onClick, className = "" }: { region
     <button
       type="button"
       onClick={onClick}
+      data-net-hud-panel
       className={`pointer-events-auto border bg-black/70 px-2 py-1 text-left font-mono text-[10px] uppercase tracking-widest backdrop-blur-sm ${className}`}
       style={{ borderColor: `${b.accent}88`, color: b.accent }}
       aria-label="Region and location settings"
@@ -36,7 +37,7 @@ export function LocationExplainer({ open, status, onGeo, onTimezone, onClose }: 
   if (!open) return null;
   return (
     <div className="absolute inset-0 z-40 grid place-items-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-label="Use your real-world area?">
-      <div className="w-full max-w-sm space-y-3 border border-cyan-300/50 bg-black/90 p-4 font-mono text-cyan-100 shadow-[0_0_24px_#00eaff33]">
+      <div data-net-hud-panel className="w-full max-w-sm space-y-3 border border-cyan-300/50 bg-black/90 p-4 font-mono text-cyan-100 shadow-[0_0_24px_#00eaff33]">
         <p className="text-[10px] uppercase tracking-[0.3em] text-cyan-300">Real-world sync</p>
         <p className="text-sm">Let where you are shape what you find in the Cyberworld.</p>
         <ul className="list-disc space-y-1 pl-4 text-[11px] text-muted-foreground">
@@ -75,7 +76,7 @@ export function ActionBar({
   className?: string;
 }) {
   return (
-    <div className={`pointer-events-auto grid grid-cols-3 gap-1 sm:flex sm:gap-1.5 ${className}`} role="toolbar" aria-label="Explore actions">
+    <div data-net-hud-panel="toolbar" className={`pointer-events-auto grid grid-cols-3 gap-1 sm:flex sm:gap-1.5 ${className}`} role="toolbar" aria-label="Explore actions">
       {ACTIONS.map((a) => {
         const av = availability[a.id];
         const active = a.id === "accompany" && accompanying;
@@ -107,7 +108,7 @@ export function InspectCard({ lootId, progress, onClose, className = "" }: { loo
   const r = RARITY[def.rarity];
   const conds = [def.time?.join("/"), def.weather?.join("/"), def.season?.join("/")].filter(Boolean).join(" · ");
   return (
-    <div className={`pointer-events-auto border bg-black/85 p-3 font-mono backdrop-blur-sm ${className}`} style={{ borderColor: r.color }} role="dialog" aria-label={`Inspect ${def.name}`}>
+    <div data-net-hud-panel className={`pointer-events-auto border bg-black/85 p-3 font-mono backdrop-blur-sm ${className}`} style={{ borderColor: r.color }} role="dialog" aria-label={`Inspect ${def.name}`}>
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="text-[9px] uppercase tracking-[0.3em]" style={{ color: r.color }}>
@@ -136,7 +137,7 @@ export function LogPanel({ open, progress, region, onClose, onInspect }: { open:
   const regions = Object.values(progress.regions).sort((a, b) => b.lastSeen.localeCompare(a.lastSeen));
   return (
     <div className="absolute inset-0 z-30 grid place-items-center bg-black/60 p-3" role="dialog" aria-modal="true" aria-label="Explorer log">
-      <div className="flex max-h-[80vh] w-full max-w-md flex-col border border-cyan-300/50 bg-black/90 font-mono text-cyan-100">
+      <div data-net-hud-panel className="flex max-h-[80vh] w-full max-w-md flex-col border border-cyan-300/50 bg-black/90 font-mono text-cyan-100">
         <div className="flex items-center gap-1 border-b border-cyan-300/30 p-2 text-[10px] uppercase tracking-widest">
           {(["inventory", "codex", "regions"] as const).map((t) => (
             <button key={t} type="button" onClick={() => setTab(t)} className={`px-2 py-1 ${tab === t ? "bg-cyan-400/15 text-cyan-200" : "text-muted-foreground"}`}>
@@ -214,9 +215,9 @@ export function LogPanel({ open, progress, region, onClose, onInspect }: { open:
 export function SpeechBubble({ text, speaker, color, className = "" }: { text: string | null; speaker?: string; color: string; className?: string }) {
   if (!text) return null;
   return (
-    <div className={`pointer-events-none border bg-black/80 px-3 py-1.5 font-mono text-[11px] text-cyan-50 backdrop-blur-sm ${className}`} style={{ borderColor: `${color}aa` }} aria-live="polite">
+    <div data-net-hud-panel className={`pointer-events-none border bg-black/80 px-3 py-1.5 font-mono text-[11px] text-cyan-50 backdrop-blur-sm ${className}`} style={{ borderColor: `${color}aa` }} aria-live="polite">
       {speaker && (
-        <span className="mr-1.5 uppercase tracking-widest" style={{ color }}>
+        <span className="mr-1.5 uppercase tracking-widest" style={{ color }} data-hud-character>
           {speaker}:
         </span>
       )}

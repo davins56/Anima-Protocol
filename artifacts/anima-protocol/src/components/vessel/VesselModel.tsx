@@ -13,6 +13,7 @@ import { computeVesselShift, type VesselShift } from "@/lib/vessel/emotionShift"
 import { NEUTRAL_EMOTION } from "@/lib/vessel/emotionState";
 import { traitsFor } from "@/lib/vessel/vesselTraits";
 import VesselAura from "./VesselAura";
+import PresentationTreatment from "./PresentationTreatment";
 
 /** Calm flame shift for a saved `effects.aura: "flame"` vessel when no live emotion drives it. */
 function useStaticFlameShift(config: VesselConfig, active: boolean): VesselShift | null {
@@ -355,12 +356,17 @@ class AssetBoundary extends Component<{ fallback: ReactNode; children: ReactNode
 export default function VesselModel(props: Props) {
   const procedural = <ProceduralVessel {...props} />;
   const { kind, url } = props.config.model;
-  if (kind === "procedural" || !url) return procedural;
-  return (
-    <AssetBoundary fallback={procedural}>
-      <Suspense fallback={procedural}>
-        <GltfVessel url={url} />
-      </Suspense>
-    </AssetBoundary>
-  );
+  const body =
+    kind === "procedural" || !url ? (
+      procedural
+    ) : (
+      <AssetBoundary fallback={procedural}>
+        <Suspense fallback={procedural}>
+          <GltfVessel url={url} />
+        </Suspense>
+      </AssetBoundary>
+    );
+  // Appearance Studio "Character presentation": portraits / background
+  // (non-tracking) vessels get the rim-only variant, full views the outline too.
+  return <PresentationTreatment lite={props.track === false}>{body}</PresentationTreatment>;
 }

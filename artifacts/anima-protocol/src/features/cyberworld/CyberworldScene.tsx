@@ -14,6 +14,7 @@ import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber"
 import { OrbitControls, PerformanceMonitor, Stars } from "@react-three/drei";
 import { Bloom, EffectComposer } from "@react-three/postprocessing";
 import * as THREE from "three";
+import PresentationTreatment from "@/components/vessel/PresentationTreatment";
 import { SerenityFigure } from "@/components/battle/BattleFigures3D";
 import { useCharacterVessel } from "@/hooks/useCharacterVessel";
 import { useRendererQuality } from "@/hooks/useRendererQuality";
@@ -492,7 +493,7 @@ function Resident({ home, anima, near, quality, travellers, areaId, thought }: {
           {/* Own boundary so a resident's GLTF/face texture loading never re-suspends the world. */}
           <Suspense fallback={null}>
             <FeatureBoundary name={`figure for ${anima.name}`}>
-              <SerenityFigure model={model} anchored quality={quality} expression={near ? 0.6 : 0.15} />
+              <SerenityFigure model={model} anchored quality={quality} expression={near ? 0.6 : 0.15} presentationLite={!near} />
             </FeatureBoundary>
           </Suspense>
         </group>
@@ -515,19 +516,22 @@ function PlayerNavi({ group, visor = CYAN }: { group: RefObject<THREE.Group | nu
   });
   return (
     <group ref={group}>
-      <group ref={body}>
-        {[-0.15, 0.15].map((x) => (
-          <Vox key={x} p={[x, 0.3, 0]} s={[0.22, 0.6, 0.26]} color="#0B2F6B" />
-        ))}
-        <Vox p={[0, 0.92, 0]} s={[0.62, 0.66, 0.4]} color="#1D4ED8" />
-        {[-0.4, 0.4].map((x) => (
-          <Vox key={`a${x}`} p={[x, 0.9, 0]} s={[0.18, 0.56, 0.22]} color="#1E40AF" />
-        ))}
-        <Vox p={[0, 1.5, 0]} s={[0.56, 0.5, 0.5]} color="#1E3A8A" />
-        <Vox p={[0, 1.52, 0.26]} s={[0.46, 0.12, 0.04]} color={visor} glow />
-        <Vox p={[0, 0.95, 0.21]} s={[0.16, 0.16, 0.04]} color="#FACC15" glow />
-        <Vox p={[0, 1.8, 0]} s={[0.12, 0.14, 0.12]} color={CYAN} glow />
-      </group>
+      {/* Character presentation: voxel faces have split normals, so rim/hologram only (no outline shell). */}
+      <PresentationTreatment lite>
+        <group ref={body}>
+          {[-0.15, 0.15].map((x) => (
+            <Vox key={x} p={[x, 0.3, 0]} s={[0.22, 0.6, 0.26]} color="#0B2F6B" />
+          ))}
+          <Vox p={[0, 0.92, 0]} s={[0.62, 0.66, 0.4]} color="#1D4ED8" />
+          {[-0.4, 0.4].map((x) => (
+            <Vox key={`a${x}`} p={[x, 0.9, 0]} s={[0.18, 0.56, 0.22]} color="#1E40AF" />
+          ))}
+          <Vox p={[0, 1.5, 0]} s={[0.56, 0.5, 0.5]} color="#1E3A8A" />
+          <Vox p={[0, 1.52, 0.26]} s={[0.46, 0.12, 0.04]} color={visor} glow />
+          <Vox p={[0, 0.95, 0.21]} s={[0.16, 0.16, 0.04]} color="#FACC15" glow />
+          <Vox p={[0, 1.8, 0]} s={[0.12, 0.14, 0.12]} color={CYAN} glow />
+        </group>
+      </PresentationTreatment>
       <Vox p={[0, 0.015, 0]} s={[0.9, 0.02, 0.9]} color={CYAN} glow opacity={0.3} />
     </group>
   );

@@ -20,6 +20,7 @@ import {
 import { hasWebGL } from "@/lib/webglSupport";
 import useResolvedBattleModels from "@/hooks/useResolvedBattleModels";
 import WebGLFallback from "@/components/battle/WebGLFallback";
+import { NetHudFrame } from "@/components/hud/NetHud";
 
 const NetBattleScene3D = lazy(() => import("./NetBattleScene3D"));
 
@@ -38,11 +39,14 @@ const DIRS = {
   D: [1, 0],
 };
 
-function HpBar({ label, hp, maxHp, color, align = "left" }) {
+function HpBar({ label, hp, maxHp, color, align = "left", character = false }) {
   const pct = maxHp > 0 ? Math.max(0, (hp / maxHp) * 100) : 0;
   return (
     <div className={`min-w-0 ${align === "right" ? "text-right" : ""}`}>
-      <p className="font-mono text-[9px] tracking-[0.25em] uppercase text-primary/50 truncate">
+      <p
+        className="font-mono text-[9px] tracking-[0.25em] uppercase text-primary/50 truncate"
+        data-hud-character={character ? "" : undefined}
+      >
         {label}
       </p>
       <div className="mt-1 h-2 bg-black/70 border border-white/10 overflow-hidden">
@@ -121,6 +125,7 @@ function BattleField2D({ state, dispatch, aura, dominant, fxAt }) {
                     <img
                       src={state.player.avatar_url}
                       alt=""
+                      data-hud-character-avatar=""
                       className="w-8 h-8 sm:w-10 sm:h-10 object-cover border"
                       style={{ borderColor: aura }}
                     />
@@ -297,14 +302,15 @@ export default function NetBattleArena({
   };
 
   return (
-    <div className="relative flex flex-col h-full min-h-0 bg-[#05050c]">
-      <div className="flex items-center gap-3 px-3 sm:px-4 py-2 border-b border-primary/15 bg-black/70">
+    <div className="relative flex flex-col h-full min-h-0 bg-[#05050c]" data-net-hud="netbattle">
+      <div data-net-hud-panel="toolbar" className="flex items-center gap-3 px-3 sm:px-4 py-2 border-b border-primary/15 bg-black/70">
         <div className="flex-1 min-w-0">
           <HpBar
             label={state.player.name}
             hp={state.player.hp}
             maxHp={state.player.maxHp}
             color={aura}
+            character
           />
         </div>
         <div className="flex-shrink-0 text-center px-2">
@@ -375,6 +381,7 @@ export default function NetBattleArena({
             background: `radial-gradient(ellipse at 30% 50%, ${aura}22, transparent 55%), radial-gradient(ellipse at 75% 50%, ${state.enemy.color}22, transparent 55%)`,
           }}
         />
+        <NetHudFrame surface="netbattle" detail={state.player.name} />
         {webgl ? (
           <WebGLFallback fallback={field2d}>
             <Suspense fallback={field2d}>
@@ -399,6 +406,7 @@ export default function NetBattleArena({
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 24 }}
+              data-net-hud-panel=""
               className="absolute inset-x-3 bottom-2 sm:inset-x-8 sm:bottom-6 z-20 border border-primary/30 bg-[#090912]/95 p-3 sm:p-4 shadow-[0_0_40px_rgba(34,211,238,0.2)]"
             >
               <div className="flex items-center justify-between mb-3">
@@ -437,7 +445,7 @@ export default function NetBattleArena({
               animate={{ opacity: 1 }}
               className="absolute inset-0 z-30 flex items-center justify-center bg-black/75 backdrop-blur-sm"
             >
-              <div className="border border-primary/30 bg-[#090912] px-8 py-7 text-center space-y-4 max-w-sm">
+              <div data-net-hud-panel="" className="border border-primary/30 bg-[#090912] px-8 py-7 text-center space-y-4 max-w-sm">
                 <p className="font-mono text-[10px] tracking-[0.3em] uppercase text-primary/50">
                   {state.phase === "victory" ? "// Enemy Deleted" : "// You Were Deleted"}
                 </p>
@@ -469,7 +477,7 @@ export default function NetBattleArena({
         </AnimatePresence>
       </div>
 
-      <div className="border-t border-primary/15 bg-black/80 px-3 sm:px-4 py-3 space-y-3 pb-[calc(var(--tab-bar-height,64px)+0.75rem)]">
+      <div data-net-hud-panel="toolbar" className="border-t border-primary/15 bg-black/80 px-3 sm:px-4 py-3 space-y-3 pb-[calc(var(--tab-bar-height,64px)+0.75rem)]">
         <div className="flex items-center gap-3">
           <span className="font-mono text-[8px] tracking-[0.25em] uppercase text-primary/40 w-14">
             Custom
@@ -536,7 +544,7 @@ export default function NetBattleArena({
             className="absolute inset-0 z-40 flex flex-col bg-[#03040c]"
           >
             <div className="flex items-center justify-between px-3 sm:px-4 py-2 border-b border-primary/15 bg-black/70">
-              <p className="font-mono text-[9px] tracking-[0.28em] uppercase text-primary/60">
+              <p className="font-mono text-[9px] tracking-[0.28em] uppercase text-primary/60" data-hud-character="">
                 {state.player.name} · 4D vessel
               </p>
               <button

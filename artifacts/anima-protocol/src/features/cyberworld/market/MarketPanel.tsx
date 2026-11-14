@@ -41,7 +41,7 @@ export function MarketPanel({
   const btn = "border px-2 py-1 text-[10px] uppercase tracking-widest disabled:opacity-40";
   return (
     <div className="absolute inset-x-2 bottom-[108px] z-30 sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-20 sm:w-[26rem] sm:-translate-x-1/2" role="dialog" aria-label="Data Bazaar vendor">
-      <div className="flex max-h-[55vh] flex-col border border-orange-300/60 bg-black/90 font-mono text-orange-50 sm:max-h-[70vh]">
+      <div data-net-hud-panel className="flex max-h-[55vh] flex-col border border-orange-300/60 bg-black/90 font-mono text-orange-50 sm:max-h-[70vh]">
         <div className="flex items-center gap-1 border-b border-orange-300/30 p-2 text-[10px] uppercase tracking-widest">
           {(["shop", "exchange", "gift"] as const).map((t) => (
             <button key={t} type="button" onClick={() => { setTab(t); setNote(null); }} className={`px-2 py-1 ${tab === t ? "bg-orange-400/15 text-orange-200" : "text-muted-foreground"}`}>
@@ -126,7 +126,7 @@ export function MarketPanel({
                 return list.length ? (
                   <>
                     <p className="mb-1.5 text-muted-foreground">
-                      Give something to <span style={{ color: giftTarget.color || "#F472B6" }}>{giftTarget.name}</span>:
+                      Give something to <span style={{ color: giftTarget.color || "#F472B6" }} data-hud-character>{giftTarget.name}</span>:
                     </p>
                     <ul className="grid grid-cols-2 gap-1.5">
                       {list.map((g) => (

@@ -71,6 +71,7 @@ export default function Minimap({ area, animas, travellers, areaLabels, telemetr
 
   return (
     <div
+      data-net-hud-panel
       className={`pointer-events-auto border border-cyan-300/40 bg-black/70 backdrop-blur-sm ${className}`}
       style={{ boxShadow: `0 0 14px ${area.theme.accent}33` }}
     >
@@ -178,7 +179,7 @@ export default function Minimap({ area, animas, travellers, areaLabels, telemetr
         <ul className="border-t border-cyan-300/20 px-1.5 py-1 font-mono text-[9px] leading-tight text-muted-foreground" aria-label="Residents elsewhere">
           {away.map((t) => (
             <li key={t.id} className="truncate">
-              <span className="text-cyan-100/80">{t.name}</span> · {t.where}
+              <span className="text-cyan-100/80" data-hud-character>{t.name}</span> · {t.where}
             </li>
           ))}
         </ul>
