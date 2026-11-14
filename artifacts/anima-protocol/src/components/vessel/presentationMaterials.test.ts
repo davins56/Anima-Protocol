@@ -10,6 +10,7 @@ import {
   materialKind,
   outlineEligible,
   patchMaterial,
+  subtreeSignature,
   syncTreatment,
   uniformsFor,
   unpatchMaterial,
@@ -120,6 +121,40 @@ describe("outline shells", () => {
     expect(outlineEligible(new THREE.Mesh(new THREE.SphereGeometry(0.2), new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.3 })))).toBe(false);
     expect(outlineEligible(new THREE.Mesh(new THREE.SphereGeometry(0.2), new THREE.MeshStandardMaterial({ blending: THREE.AdditiveBlending })))).toBe(false);
     expect(outlineEligible(new THREE.InstancedMesh(new THREE.SphereGeometry(0.2), new THREE.MeshStandardMaterial(), 4))).toBe(false);
+    // see-through or transmissive surfaces (AnimaVesselMesh crystal parts) never get a shell
+    expect(outlineEligible(new THREE.Mesh(new THREE.SphereGeometry(0.2), new THREE.MeshPhysicalMaterial({ transparent: true, opacity: 0.92 })))).toBe(false);
+    expect(outlineEligible(new THREE.Mesh(new THREE.SphereGeometry(0.2), new THREE.MeshPhysicalMaterial({ transmission: 0.15 })))).toBe(false);
+  });
+
+  it("releases materials that were replaced since the last pass", () => {
+    const root = new THREE.Group();
+    const a = body();
+    root.add(a);
+    const s = createTreatmentState(presentationTreatment("netnavi"));
+    syncTreatment(root, s);
+    const old = a.material as THREE.Material;
+    expect(isPatched(old)).toBe(true);
+    a.material = new THREE.MeshStandardMaterial();
+    syncTreatment(root, s);
+    expect(isPatched(old)).toBe(false);
+    expect(isPatched(a.material as THREE.Material)).toBe(true);
+    expect(s.materials.size).toBe(1);
+    disposeTreatmentState(s);
+  });
+
+  it("fingerprints structure so late children are treated on the next frame", () => {
+    const root = new THREE.Group();
+    root.add(body());
+    const s = createTreatmentState(presentationTreatment("netnavi"));
+    syncTreatment(root, s);
+    expect(subtreeSignature(root)).toBe(s.signature); // own outline shells don't count
+    const late = body();
+    root.add(late);
+    expect(subtreeSignature(root)).not.toBe(s.signature);
+    syncTreatment(root, s);
+    expect(late.children).toHaveLength(1);
+    expect(subtreeSignature(root)).toBe(s.signature);
+    disposeTreatmentState(s);
   });
 
   it("sync adds one shell per eligible mesh, skips opted-out subtrees, and cleans up", () => {
