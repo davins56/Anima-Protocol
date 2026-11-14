@@ -56,6 +56,11 @@ import {
   type GraphNode,
 } from "../../lib/exploreInsights";
 import { compileChroniclesForUser } from "../../lib/chronicles/compileChronicles";
+import {
+  generateSessionRecap,
+  loadRecapMessages,
+  RECAP_LLM_TIMEOUT_MS,
+} from "../../lib/sessionRecap";
 
 /**
  * Partial test mocks omit this export and throw on access.
@@ -1194,7 +1199,22 @@ router.post("/invoke/:fnName", async (req, res) => {
     let result: unknown = null;
 
     switch (fnName) {
-      case "generateSessionSummary":
+      // Session Recap posts only { session_id } and reads result.data.summary /
+      // result.data.emotional_arc. Load the session's own messages server-side
+      // and return that shape (see lib/sessionRecap.ts).
+      case "generateSessionSummary": {
+        const recapUserId = auth.userId || "";
+        const recapSessionId =
+          typeof data.session_id === "string" ? data.session_id.trim() : "";
+        const recap = await generateSessionRecap(recapUserId, recapSessionId, {
+          loadMessages: loadRecapMessages,
+          complete: (system, user) =>
+            llm(system, user, 1200, { timeoutMs: RECAP_LLM_TIMEOUT_MS }),
+        });
+        result = { data: recap };
+        break;
+      }
+
       case "generateStorySummary": {
         const msgs = (data.messages as { role: string; content: string; character_name?: string }[]) ?? [];
         const history = msgs.slice(-20).map(m => `${m.character_name || m.role}: ${m.content}`).join("\n");
