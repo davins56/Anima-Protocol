@@ -41,6 +41,17 @@ describe("normalizeSessionRecap", () => {
   });
 });
 
+describe("message count", () => {
+  it("uses the server's visible-message count, even when it is 0", () => {
+    const recap = normalizeSessionRecap(
+      { data: { generated: false, error: "This session has no messages to recap yet.", message_count: 0 } },
+      { messages: [{ role: "assistant", content: "...", character_name: "__typing__" }] },
+      NOW,
+    );
+    expect(recap.messageCount).toBe(0);
+  });
+});
+
 describe("buildSessionRecapExport", () => {
   it("carries exactly the recap the modal shows", () => {
     const recap = normalizeSessionRecap(SERVER_RESULT, null, NOW);

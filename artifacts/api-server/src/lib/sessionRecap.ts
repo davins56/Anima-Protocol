@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db, userEntities, CHAT_MESSAGE, CHAT_SESSION, sessionIdEq } from "@workspace/db";
 import { parseJsonLoose } from "./exploreInsights";
+import { logger } from "./logger";
 
 // Session Recap (SessionRecapModal / ChapterRecap) posts only `{ session_id }`.
 // The old invoke case summarised `data.messages` (never sent), so the model saw
@@ -47,7 +48,7 @@ export function recapLines(messages: RecapMessage[]): string[] {
     const role = text(m.role);
     const name = text(m.character_name);
     const content = text(m.content);
-    if (!content || content === "..." || name === "__typing__") continue;
+    if (!content || name === "__typing__") continue;
     if (role === "system") continue;
     const speaker = role === "user" ? "User" : name || "Companion";
     const body =
@@ -127,10 +128,14 @@ export function parseRecapResponse(
 > {
   const parsed = parseJsonLoose<Record<string, unknown> | null>(raw, null);
   const obj = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  const trimmed = text(raw);
+  // Output that looks like JSON but does not parse is a broken reply, not a
+  // summary; leave summary empty so the caller reports a failure.
+  const looksJson = /^(```|\{|\[)/.test(trimmed);
   if (!obj) {
     return {
       title: "",
-      summary: text(raw),
+      summary: looksJson ? "" : trimmed,
       key_moments: [],
       characters_involved: [],
       emotional_arc: "",
@@ -168,13 +173,18 @@ export type RecapDeps = {
   complete: (system: string, user: string) => Promise<string>;
 };
 
-/** Messages stored as ChatMessage rows, with the legacy ChatSession blob as fallback. Read-only. */
+/**
+ * Messages stored as ChatMessage rows (by seq), plus any legacy
+ * ChatSession.messages blob entries not yet migrated, appended after them the
+ * same way migrateSessionsMessages would (blob ids already stored as rows are
+ * skipped). Read-only: the recap never runs the migration itself.
+ */
 export async function loadRecapMessages(
   userId: string,
   sessionId: string,
 ): Promise<RecapMessage[]> {
   const rows = await db
-    .select({ data: userEntities.data })
+    .select({ entityId: userEntities.entityId, data: userEntities.data })
     .from(userEntities)
     .where(
       and(
@@ -184,7 +194,7 @@ export async function loadRecapMessages(
       ),
     )
     .orderBy(sql`(${userEntities.data} ->> 'seq')::numeric asc`);
-  if (rows.length > 0) return rows.map((r) => (r.data ?? {}) as RecapMessage);
+  const messages = rows.map((r) => (r.data ?? {}) as RecapMessage);
 
   const legacy = await db
     .select({ data: userEntities.data })
@@ -197,8 +207,21 @@ export async function loadRecapMessages(
       ),
     )
     .limit(1);
-  const blob = (legacy[0]?.data as { messages?: unknown } | undefined)?.messages;
-  return Array.isArray(blob) ? (blob as RecapMessage[]) : [];
+  const session = (legacy[0]?.data ?? {}) as { messages?: unknown; messages_migrated?: unknown };
+  if (session.messages_migrated || !Array.isArray(session.messages)) return messages;
+
+  const seen = new Set(rows.map((r) => String(r.entityId)));
+  for (const raw of session.messages as unknown[]) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const msg = raw as RecapMessage & { id?: unknown };
+    if (msg.id != null) {
+      const id = String(msg.id);
+      if (seen.has(id)) continue;
+      seen.add(id);
+    }
+    messages.push(msg);
+  }
+  return messages;
 }
 
 function emptyRecap(messageCount: number, error: string): SessionRecap {
@@ -234,7 +257,11 @@ export async function generateSessionRecap(
       RECAP_SYSTEM_PROMPT,
       `Session transcript (${lines.length} messages):\n\n${transcript}`,
     );
-  } catch {
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err), sessionId },
+      "session recap model call failed",
+    );
     raw = "";
   }
   const parsed = parseRecapResponse(raw);
