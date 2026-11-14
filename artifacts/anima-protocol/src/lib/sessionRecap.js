@@ -29,9 +29,11 @@ export function normalizeSessionRecap(result, session, now = new Date()) {
   const summary = asText(data.summary);
   const generated = data.generated !== false && Boolean(summary);
   const sessionTitle = asText(session?.title);
-  const serverCount = Number(data.message_count);
+  // The server counts only visible chat lines; trust it whenever it answered.
+  const serverCount =
+    typeof data.message_count === "number" ? data.message_count : Number.NaN;
   const messageCount =
-    Number.isFinite(serverCount) && serverCount > 0
+    Number.isFinite(serverCount) && serverCount >= 0
       ? serverCount
       : Array.isArray(session?.messages)
         ? session.messages.length

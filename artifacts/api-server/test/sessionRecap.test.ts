@@ -15,6 +15,7 @@ const createMock = vi.hoisted(() => vi.fn(async (_args: unknown) => ({ content: 
 vi.mock("../src/lib/llmFailover", () => ({
   createChatCompletionWithFailover: createMock,
   isLocalOnlyProviderChain: () => false,
+  LocalModelHeldForChatError: class LocalModelHeldForChatError extends Error {},
 }));
 
 import { db, userEntities } from "@workspace/db";
@@ -48,8 +49,10 @@ describe("sessionRecap helpers", () => {
       { role: "system", content: "hidden" },
       { role: "assistant", content: "Hey you.", character_name: "Natasha Romanoff" },
       { role: "assistant", content: "   " },
+      { role: "user", content: "..." },
     ]);
-    expect(lines).toEqual(["User: Hi Nat", "Natasha Romanoff: Hey you."]);
+    // A user's own "..." is a real turn; only the typing placeholder is dropped.
+    expect(lines).toEqual(["User: Hi Nat", "Natasha Romanoff: Hey you.", "User: ..."]);
   });
 
   it("covers the whole session, not just the last 20 messages", () => {
@@ -59,7 +62,13 @@ describe("sessionRecap helpers", () => {
       content: `message number ${i} ${"x".repeat(200)}`,
     }));
     const transcript = buildRecapTranscript(messages, 8_000);
-    expect(transcript.length).toBeLessThanOrEqual(8_000 + 2_000);
+    // Kept lines fit the budget; only the short "omitted" markers are extra.
+    const kept = transcript
+      .split("\n")
+      .filter((l) => !l.startsWith("[…"))
+      .reduce((n, l) => n + l.length + 1, 0);
+    expect(kept).toBeLessThanOrEqual(8_000);
+    expect(transcript.length).toBeLessThanOrEqual(8_000 + 40 * 30);
     expect(transcript).toContain("message number 0 ");
     expect(transcript).toContain("message number 100 ");
     // Something from the middle survives, and the gap is marked.
@@ -75,6 +84,9 @@ describe("sessionRecap helpers", () => {
     expect(parsed.emotional_arc).toContain("Guarded");
     expect(parsed.key_moments).toHaveLength(2);
     expect(parseRecapResponse("Just a sentence.").summary).toBe("Just a sentence.");
+    // Broken JSON is a failed reply, never shown as the summary.
+    expect(parseRecapResponse('{"title": "Cut off", "summary": "Nat').summary).toBe("");
+    expect(parseRecapResponse("```json\n{\"summary\": ").summary).toBe("");
   });
 
   it("sends the loaded messages to the model and never invents a fallback", async () => {
@@ -153,12 +165,13 @@ describe("POST /openai/invoke/generateSessionSummary", () => {
   }
 
   it("summarises the stored session messages when the client sends only session_id", async () => {
-    await seedMessage(USER, 0, { role: "user", content: "Nat, the mission went sideways." });
+    // Inserted out of order: the transcript must follow seq, not insert order.
     await seedMessage(USER, 1, {
       role: "assistant",
       content: "I know. Meet me on the roof.",
       character_name: "Natasha Romanoff",
     });
+    await seedMessage(USER, 0, { role: "user", content: "Nat, the mission went sideways." });
     await seedMessage(OTHER, 0, { role: "user", content: "someone else's secret" });
 
     const res = await invoke(USER, { session_id: SESSION });
@@ -176,7 +189,9 @@ describe("POST /openai/invoke/generateSessionSummary", () => {
 
     const prompt = JSON.stringify(createMock.mock.calls[0][0]);
     expect(prompt).toContain("the mission went sideways");
-    expect(prompt).toContain("Natasha Romanoff: I know. Meet me on the roof.");
+    expect(prompt).toContain(
+      "User: Nat, the mission went sideways.\\nNatasha Romanoff: I know. Meet me on the roof.",
+    );
     expect(prompt).not.toContain("No messages yet");
     expect(prompt).not.toContain("someone else's secret");
   });
@@ -198,6 +213,35 @@ describe("POST /openai/invoke/generateSessionSummary", () => {
     expect(rows).toHaveLength(0); // read-only: no lazy migration from the recap
   });
 
+  it("merges unmigrated legacy blob messages after existing rows, skipping duplicates", async () => {
+    await seedMessage(USER, 0, { role: "user", content: "row one" });
+    await db.insert(userEntities).values({
+      userId: USER,
+      entityName: "ChatSession",
+      entityId: SESSION,
+      data: {
+        id: SESSION,
+        messages: [
+          { id: `${USER}_m0`, role: "user", content: "row one" },
+          { id: "blob-2", role: "assistant", content: "blob only reply", character_name: "Natasha Romanoff" },
+        ],
+      },
+    });
+    const res = await invoke(USER, { session_id: SESSION });
+    expect(res.json.result?.data.message_count).toBe(2);
+    const prompt = JSON.stringify(createMock.mock.calls[0][0]);
+    expect(prompt).toContain("User: row one\\nNatasha Romanoff: blob only reply");
+
+    // Once the session is flagged migrated, a stale blob is ignored.
+    await db
+      .update(userEntities)
+      .set({ data: { id: SESSION, messages_migrated: true, messages: [{ role: "user", content: "stale" }] } })
+      .where(and(eq(userEntities.userId, USER), eq(userEntities.entityName, "ChatSession")));
+    createMock.mockClear();
+    await invoke(USER, { session_id: SESSION });
+    expect(JSON.stringify(createMock.mock.calls[0][0])).not.toContain("stale");
+  });
+
   it("reports an empty session without calling the model", async () => {
     const res = await invoke(USER, { session_id: "missing" });
     expect(res.status).toBe(200);
@@ -215,5 +259,7 @@ describe("POST /openai/invoke/generateSessionSummary", () => {
     expect(res.status).toBe(200);
     expect(res.json.result?.data.generated).toBe(false);
     expect(res.json.result?.data.summary).toBe("");
+    expect(res.json.result?.data.error).toMatch(/did not answer.*try again/i);
+    expect(res.json.result?.data.message_count).toBe(1);
   });
 });

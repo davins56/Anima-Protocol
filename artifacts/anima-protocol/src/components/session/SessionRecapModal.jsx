@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Download, Share2, Loader, BookOpen } from "lucide-react";
 import { animaClient } from "@/api/animaClient";
@@ -7,6 +7,9 @@ import { buildSessionRecapExport, normalizeSessionRecap } from "@/lib/sessionRec
 export default function SessionRecapModal({ isOpen, sessionId, onClose }) {
   const [recap, setRecap] = useState(null);
   const [loading, setLoading] = useState(false);
+  // Only the newest request may update the modal, so a slow recap for a
+  // previous session (or an earlier Try again) cannot overwrite this one.
+  const requestRef = useRef(0);
 
   useEffect(() => {
     if (isOpen && sessionId) {
@@ -15,6 +18,8 @@ export default function SessionRecapModal({ isOpen, sessionId, onClose }) {
   }, [isOpen, sessionId]);
 
   const generateRecap = async () => {
+    const requestId = ++requestRef.current;
+    const isCurrent = () => requestId === requestRef.current;
     setLoading(true);
     setRecap(null);
     try {
@@ -28,12 +33,12 @@ export default function SessionRecapModal({ isOpen, sessionId, onClose }) {
       const summaryRes = await animaClient.functions.invoke("generateSessionSummary", {
         session_id: sessionId,
       });
-      setRecap(normalizeSessionRecap(summaryRes, session));
+      if (isCurrent()) setRecap(normalizeSessionRecap(summaryRes, session));
     } catch (err) {
       console.error("Error generating recap:", err);
-      setRecap(normalizeSessionRecap(null, null));
+      if (isCurrent()) setRecap(normalizeSessionRecap(null, null));
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   };
 

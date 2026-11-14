@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { animaClient } from '@/api/animaClient';
 import { BookOpen, ChevronDown, Loader } from 'lucide-react';
 
@@ -6,26 +6,41 @@ export default function ChapterRecap({ sessionId, isVisible }) {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const latestSession = useRef(sessionId);
+  latestSession.current = sessionId;
 
+  // A new session starts with no recap. Nothing runs automatically:
+  // generateSessionSummary now reads the whole session with the model, which
+  // is too heavy to fire on every chat open. The Session Recap modal is the
+  // user-started entry point.
   useEffect(() => {
-    if (sessionId && isVisible) {
-      generateRecap();
-    }
+    setSummary(null);
+    setExpanded(false);
+    setLoading(false);
   }, [sessionId]);
 
   const generateRecap = async () => {
+    if (!sessionId || loading) return;
+    const requestedFor = sessionId;
     setLoading(true);
     try {
       const result = await animaClient.functions.invoke('generateSessionSummary', {
-        session_id: sessionId
+        session_id: requestedFor,
       });
-      if (result?.data?.summary) {
-        setSummary(result.data.summary);
+      if (requestedFor !== latestSession.current) return;
+      const data = result?.data;
+      if (data?.generated && data.summary) {
+        setSummary({
+          synopsis: data.summary,
+          key_moments: Array.isArray(data.key_moments) ? data.key_moments : [],
+          emotional_arc: data.emotional_arc || '',
+        });
+        setExpanded(true);
       }
     } catch (err) {
       console.error('Error generating recap:', err);
     } finally {
-      setLoading(false);
+      if (requestedFor === latestSession.current) setLoading(false);
     }
   };
 
@@ -44,6 +59,9 @@ export default function ChapterRecap({ sessionId, isVisible }) {
     );
   }
 
+  // Idle: render nothing, as before. (On main this strip auto-ran a recap on
+  // every chat open and, because of the response-shape bug, always rendered
+  // nothing.) Whether to surface it as a tap-to-recap strip is a product call.
   if (!summary) {
     return null;
   }
