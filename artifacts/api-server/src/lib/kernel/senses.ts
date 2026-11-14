@@ -126,14 +126,95 @@ export function readStoredSenses(raw: unknown, now = Date.now()): SensesSnapshot
   return { ...snap, receivedAt: new Date(received).toISOString() };
 }
 
+/**
+ * Server-fetched calendar busy blocks (Google freeBusy / Microsoft Graph
+ * calendarView with start/end/showAs only). Stored on
+ * `user_profiles.data.calendar_busy`, separate from the device snapshot so a
+ * device PUT (which sends `calendar: []` from a browser) never wipes them.
+ * Start and end only: no titles, ever. Same 6-hour expiry as the snapshot.
+ */
+export const CALENDAR_BUSY_PROFILE_KEY = "calendar_busy";
+const MAX_BUSY_BLOCKS = 16;
+
+export type BusyBlock = { startsAt: string; endsAt: string };
+
+export type CalendarBusySnapshot = {
+  schema: typeof SENSES_SCHEMA_VERSION;
+  receivedAt: string;
+  providers: Array<"google" | "microsoft">;
+  busy: BusyBlock[];
+};
+
+/** Clamp, drop noise, sort and merge overlapping blocks. Never keeps any other field. */
+export function normalizeBusyBlocks(raw: unknown, now = Date.now()): BusyBlock[] {
+  const list = Array.isArray(raw) ? raw.slice(0, 256) : [];
+  const spans: Array<[number, number]> = [];
+  for (const item of list) {
+    if (!item || typeof item !== "object") continue;
+    const e = item as Record<string, unknown>;
+    const s = Date.parse(String(isoOrNull(e.startsAt ?? e.start) ?? ""));
+    const en = Date.parse(String(isoOrNull(e.endsAt ?? e.end) ?? ""));
+    if (!Number.isFinite(s) || !Number.isFinite(en)) continue;
+    if (en <= s || en - s > MAX_BLOCK_MS) continue;
+    if (en < now || s > now + MAX_LOOKAHEAD_MS) continue;
+    spans.push([s, en]);
+  }
+  spans.sort((a, b) => a[0] - b[0]);
+  const merged: Array<[number, number]> = [];
+  for (const span of spans) {
+    const last = merged[merged.length - 1];
+    if (last && span[0] <= last[1]) last[1] = Math.max(last[1], span[1]);
+    else merged.push([span[0], span[1]]);
+  }
+  return merged.slice(0, MAX_BUSY_BLOCKS).map(([s, en]) => ({
+    startsAt: new Date(s).toISOString(),
+    endsAt: new Date(en).toISOString(),
+  }));
+}
+
+export function buildCalendarBusySnapshot(
+  providers: Array<"google" | "microsoft">,
+  blocks: unknown,
+  now = Date.now(),
+): CalendarBusySnapshot {
+  const unique = [...new Set(providers.filter((p) => p === "google" || p === "microsoft"))].sort();
+  return {
+    schema: SENSES_SCHEMA_VERSION,
+    receivedAt: new Date(now).toISOString(),
+    providers: unique,
+    busy: normalizeBusyBlocks(blocks, now),
+  };
+}
+
+/** Read stored busy blocks back; null when missing, malformed, or older than 6 hours. */
+export function readStoredCalendarBusy(raw: unknown, now = Date.now()): CalendarBusySnapshot | null {
+  if (!raw || typeof raw !== "object") return null;
+  const src = raw as Record<string, unknown>;
+  const received = typeof src.receivedAt === "string" ? Date.parse(src.receivedAt) : NaN;
+  if (!Number.isFinite(received) || now - received > SENSES_MAX_AGE_MS || received > now + 60_000) return null;
+  const providers = Array.isArray(src.providers)
+    ? (src.providers.filter((p) => p === "google" || p === "microsoft") as Array<"google" | "microsoft">)
+    : [];
+  return {
+    schema: SENSES_SCHEMA_VERSION,
+    receivedAt: new Date(received).toISOString(),
+    providers,
+    busy: normalizeBusyBlocks(src.busy, now),
+  };
+}
+
 /** What the agency tick needs from the senses: is the steward busy now? */
 export function sensesPercept(
   snap: SensesSnapshot | null,
   now = Date.now(),
+  calendarBusy: CalendarBusySnapshot | null = null,
 ): { busyNow: boolean; busyForMinutes: number | null } | null {
-  if (!snap) return null;
-  if (snap.device.focusMode === true) return { busyNow: true, busyForMinutes: 60 };
-  const current = snap.calendar.find((b) => Date.parse(b.startsAt) <= now && Date.parse(b.endsAt) > now);
+  if (!snap && !calendarBusy) return null;
+  if (snap?.device.focusMode === true) return { busyNow: true, busyForMinutes: 60 };
+  const blocks: BusyBlock[] = [...(snap?.calendar ?? []), ...(calendarBusy?.busy ?? [])];
+  const current = blocks
+    .filter((b) => Date.parse(b.startsAt) <= now && Date.parse(b.endsAt) > now)
+    .sort((a, b) => Date.parse(b.endsAt) - Date.parse(a.endsAt))[0];
   if (!current) return { busyNow: false, busyForMinutes: null };
   return { busyNow: true, busyForMinutes: Math.ceil((Date.parse(current.endsAt) - now) / 60_000) };
 }
@@ -142,17 +223,44 @@ export function sensesPercept(
  * Non-identifying summary safe to show back to the steward (Settings) or log.
  * Never includes calendar titles.
  */
-export function summarizeSenses(snap: SensesSnapshot | null, now = Date.now()) {
-  if (!snap) return { present: false as const };
-  const next = snap.calendar.find((b) => Date.parse(b.startsAt) > now) ?? null;
-  const percept = sensesPercept(snap, now);
+export function summarizeSenses(
+  snap: SensesSnapshot | null,
+  now = Date.now(),
+  calendarBusy: CalendarBusySnapshot | null = null,
+) {
+  const calendarSummary = calendarBusy
+    ? {
+        calendarSync: {
+          receivedAt: calendarBusy.receivedAt,
+          providers: calendarBusy.providers,
+          busyBlocks: calendarBusy.busy.length,
+        },
+      }
+    : {};
+  if (!snap) {
+    if (!calendarBusy) return { present: false as const };
+    const percept = sensesPercept(null, now, calendarBusy);
+    const nextBusy = calendarBusy.busy.find((b) => Date.parse(b.startsAt) > now) ?? null;
+    return {
+      present: false as const,
+      busyNow: percept?.busyNow ?? false,
+      nextBlockInMinutes: nextBusy ? Math.round((Date.parse(nextBusy.startsAt) - now) / 60_000) : null,
+      ...calendarSummary,
+    };
+  }
+  const blocks: BusyBlock[] = [...snap.calendar, ...(calendarBusy?.busy ?? [])];
+  const next = blocks
+    .filter((b) => Date.parse(b.startsAt) > now)
+    .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt))[0] ?? null;
+  const percept = sensesPercept(snap, now, calendarBusy);
   return {
     present: true as const,
     receivedAt: snap.receivedAt,
     timezone: snap.timezone,
-    calendarBlocks: snap.calendar.length,
+    calendarBlocks: snap.calendar.length + (calendarBusy?.busy.length ?? 0),
     busyNow: percept?.busyNow ?? false,
     nextBlockInMinutes: next ? Math.round((Date.parse(next.startsAt) - now) / 60_000) : null,
     device: snap.device,
+    ...calendarSummary,
   };
 }
