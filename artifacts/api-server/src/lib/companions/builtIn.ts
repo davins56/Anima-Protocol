@@ -29,6 +29,12 @@ export function builtInKeyFor(name: unknown): BuiltInKey | null {
   return null;
 }
 
+/** Canonical plus legacy aliases for a built-in companion name, else empty. */
+export function builtInAliasesFor(name: unknown): readonly string[] {
+  const key = builtInKeyFor(name);
+  return key ? ALIASES[key] : [];
+}
+
 export function isLegacyAelandName(name: unknown): boolean {
   const n = norm(name);
   return (AELAND_LEGACY_ALIASES as readonly string[]).includes(n);
