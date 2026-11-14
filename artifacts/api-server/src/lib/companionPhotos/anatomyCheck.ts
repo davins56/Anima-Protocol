@@ -168,6 +168,8 @@ export async function renderWithAnatomyCheck<T>(args: {
   verify: AnatomyVerifier;
   /** Known up front that no check will run (off / human body plan): render once, no byte reads. */
   skip?: boolean;
+  /** Upper bound of one check; a check that could not finish before `deadlineAt` is not started. */
+  verifyBudgetMs?: number;
   maxRetries: number;
   deadlineAt?: number;
   now?: () => number;
@@ -181,7 +183,14 @@ export async function renderWithAnatomyCheck<T>(args: {
   let current = first;
   let attempts = 1;
   let perAttemptMs = 0;
+  const verifyBudget = args.verifyBudgetMs ?? 0;
   for (;;) {
+    // Never let the check itself turn a finished photo into a timeout.
+    if (args.deadlineAt != null && args.deadlineAt - now() < verifyBudget) {
+      return best
+        ? { result: best.result, attempts, check: "failed", observed: best.observed }
+        : { result: current, attempts, check: "skipped" };
+    }
     const image = await args.bytesOf(current);
     const verdict: AnatomyVerdict = image ? await args.verify(image) : { status: "skipped", reason: "unreadable" };
     if (attempts === 1) perAttemptMs = now() - started;
@@ -193,7 +202,7 @@ export async function renderWithAnatomyCheck<T>(args: {
     if (verdict.status === "pass") return { result: current, attempts, check: "passed", observed: verdict.observed };
     if (!best || verdict.score < best.score) best = { result: current, score: verdict.score, observed: verdict.observed };
     const timeLeft = args.deadlineAt == null ? Number.POSITIVE_INFINITY : args.deadlineAt - now();
-    if (attempts > args.maxRetries || timeLeft < perAttemptMs * 1.2) {
+    if (attempts > args.maxRetries || timeLeft < perAttemptMs * 1.2 + verifyBudget) {
       return { result: best.result, attempts, check: "failed", observed: best.observed };
     }
     args.onRetry?.({ attempt: attempts, mismatches: verdict.mismatches });

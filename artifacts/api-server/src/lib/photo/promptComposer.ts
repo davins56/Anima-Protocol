@@ -4,7 +4,7 @@
  * anchors; the scene (user language + structured chips) varies around it.
  */
 
-import { anatomyClause, anatomyFrom, anatomyNegativeTerms, type AnatomySpec } from "../companionPhotos/anatomy";
+import { anatomyClause, anatomyFrom, anatomyNegativeTerms, fitPrompt, type AnatomySpec } from "../companionPhotos/anatomy";
 
 export type VisualDescriptor = {
   age_range?: string;
@@ -132,17 +132,14 @@ export function composePhotoPrompt(input: {
   // Explicit counts right after the subject: FLUX ignores most negative prompts,
   // so "exactly four arms" has to be said positively and early.
   const anatomy = anatomyClause(clean(input.characterName, 60), input.anatomy ?? photoAnatomy(d));
-  return [
-    `Portrait photo of ${anchor}.`,
-    anatomy,
-    refinementClause(input.refinement),
-    sceneBits.join(", "),
-    "Identity must match the reference face exactly: same facial structure, eye color, skin tone and hairline.",
-    style,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .slice(0, MAX);
+  // A long anchor (many extra descriptors) is shortened so the body plan always fits.
+  const anchorRoom = Math.max(200, MAX - anatomy.length - 400);
+  return fitPrompt(
+    [`Portrait photo of ${anchor.length > anchorRoom ? anchor.slice(0, anchorRoom).trim() : anchor}.`, anatomy],
+    [refinementClause(input.refinement), sceneBits.join(", ")],
+    ["Identity must match the reference face exactly: same facial structure, eye color, skin tone and hairline.", style],
+    MAX,
+  );
 }
 
 export function negativePrompt(extra?: string, anatomy?: AnatomySpec): string {

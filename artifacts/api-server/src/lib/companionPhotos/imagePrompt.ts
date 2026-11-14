@@ -5,7 +5,7 @@
  */
 import type { PhotoFraming, PhotoIntent } from "./intent";
 import { SKIN_TONE_GUARD, type CompanionLook } from "./appearance";
-import { anatomyClause } from "./anatomy";
+import { anatomyClause, fitPrompt } from "./anatomy";
 import { DEFAULT_PHOTO_SIZES, type PhotoOrientation, type PhotoSizes } from "./config";
 import { safetyClause } from "./safety";
 
@@ -70,15 +70,15 @@ export function buildImagePrompt(input: ImagePromptInput): string {
   const scene = clean(input.intent.description, 400);
   const style = styleFor(input);
   const ofCompanion = input.intent.subject === "self";
+  const head: string[] = [];
   const parts: string[] = [];
   if (ofCompanion) {
     const who = input.hasReference
       ? `${name}, the exact same character as in image 0 (same face, hair, features, colors and outfit style)`
       : name;
-    parts.push(`${FRAMING[input.intent.framing] || FRAMING.selfie} of ${who}.`);
-    // Body plan right after the subject, before anything long can push it past the cap.
-    const anatomy = anatomyClause(name, input.look.anatomy, { framing: input.intent.framing });
-    if (anatomy) parts.push(anatomy);
+    head.push(`${FRAMING[input.intent.framing] || FRAMING.selfie} of ${who}.`);
+    // Body plan right after the subject; the cap never cuts it (see fitPrompt).
+    head.push(anatomyClause(name, input.look.anatomy, { framing: input.intent.framing }));
     if (look) parts.push(`${name}: ${look}.`);
     const skin = clean(input.look.skinTone, 80);
     if (skin) parts.push(`${name}'s skin tone, exactly: ${skin}.`);
@@ -86,16 +86,14 @@ export function buildImagePrompt(input: ImagePromptInput): string {
     if (signature) parts.push(`Always visible: ${signature}.`);
     if (scene) parts.push(`Scene: ${scene}.`);
   } else {
-    parts.push(
+    head.push(
       `${FRAMING[input.intent.framing] || FRAMING.landscape} taken by ${name} on their phone, from their point of view: ${scene || "what they see right now"}.`,
     );
     parts.push("Candid and personal, like a photo sent to someone close.");
     if (input.hasReference) parts.push("Image 0 shows the photographer; use it only for the world's art style and colors.");
   }
-  parts.push(SKIN_TONE_GUARD);
-  parts.push(style.text);
-  parts.push(safetyClause(input.level, ofCompanion));
-  return parts.join(" ").slice(0, MAX_PROMPT);
+  // Guards and the safety clause always survive the length cap.
+  return fitPrompt(head, parts, [SKIN_TONE_GUARD, style.text, safetyClause(input.level, ofCompanion)], MAX_PROMPT);
 }
 
 /** Stable per companion, so photos keep a consistent look between requests. */

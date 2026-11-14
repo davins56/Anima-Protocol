@@ -72,6 +72,15 @@ describe("anatomy reader", () => {
     expect(hasAtypicalAnatomy(anatomyFrom([""]))).toBe(false);
   });
 
+  it("an explicit removal in a higher-priority field beats lore and built-in wings", () => {
+    expect(countIn("casual clothes, no wings", "wings")).toBe(0);
+    expect(countIn("a wingless fae", "wings")).toBe(0);
+    expect(anatomyFrom(["casual clothes, no wings", "large crystalline angelic wings"]).counts.wings).toBe(0);
+    const serenity = companionLook({ id: "anima_1", name: "Serenity", _isAnima: true, appearance_prompts: { outfit: "jeans and a hoodie, no wings" } });
+    expect(serenity.anatomy?.counts.wings).toBe(0);
+    expect(hasAtypicalAnatomy(serenity.anatomy)).toBe(false);
+  });
+
   it("keeps the arm count even when Customise Anima set only skin and hair", () => {
     const look = companionLook(fourArmed);
     expect(look.source).toBe("appearance_prompts");
@@ -136,7 +145,53 @@ describe("anatomy clause", () => {
   });
 });
 
+describe("length cap", () => {
+  it("never cuts the safety clause or the anatomy, only the middle", () => {
+    const long = { ...fourArmed, appearance_prompts: { ...fourArmed.appearance_prompts, outfit: "y ".repeat(300) } };
+    const look = { ...companionLook(long), description: "z ".repeat(400), signature: "w ".repeat(150) };
+    const brief: SceneBrief = {
+      scene: "x ".repeat(200),
+      setting: "s ".repeat(120),
+      present: ["Vashti", "Sam"],
+      mood: "warm",
+      orientation: "portrait",
+      framing: "selfie",
+      source: "template",
+    };
+    const p = composeSceneImagePrompt({
+      companionName: "Vashti",
+      userName: "Sam",
+      look,
+      userAppearance: "short dark hair, " + "q ".repeat(150),
+      intent: intent(),
+      brief,
+      level: "sfw",
+      preinstalled: false,
+      hasReference: true,
+    });
+    expect(p.length).toBeLessThanOrEqual(1900);
+    expect(p).toContain("exactly four (4) arms");
+    expect(p).toContain("do not lighten");
+    expect(p.endsWith(".")).toBe(true);
+  });
+
+  it("human prompts are unchanged when they fit", () => {
+    const look = companionLook({ id: "c", name: "Mia", appearance: "short red hair, green eyes" });
+    const p = buildImagePrompt({ companionName: "Mia", look, intent: intent(), level: "sfw", preinstalled: false, hasReference: false });
+    expect(p).not.toContain("Anatomy");
+    expect(p.startsWith("A casual smartphone selfie taken at arm's length, looking into the camera of Mia. Mia: short red hair")).toBe(true);
+  });
+});
+
 describe("photo generator prompt (fal / Gemini)", () => {
+  it("keeps the body plan even with a very long identity anchor", () => {
+    const extra = Array.from({ length: 24 }, (_, i) => `descriptor ${i} ` + "k".repeat(110));
+    const p = composePhotoPrompt({ characterName: "Vashti", descriptor: { extra }, anatomy: anatomyFrom(["four arms"]) });
+    expect(p.length).toBeLessThanOrEqual(1800);
+    expect(p).toContain("exactly four (4) arms");
+    expect(p).toContain("Identity must match the reference face exactly");
+  });
+
   it("puts the body plan right after the identity anchor", () => {
     const anatomy = photoAnatomy({ distinguishing_marks: ["four arms"] });
     const p = composePhotoPrompt({ characterName: "Vashti", descriptor: { hair_color: "black" }, userPrompt: "at the beach", anatomy });
@@ -243,6 +298,25 @@ describe("render, check, regenerate", () => {
     const out = await renderWithAnatomyCheck({ render, bytesOf: () => bytes, verify, maxRetries: 2, deadlineAt: 30_000, now });
     expect(render).toHaveBeenCalledTimes(1);
     expect(out.check).toBe("failed");
+  });
+
+  it("does not start a check that cannot finish before the deadline", async () => {
+    let t = 0;
+    const verify = vi.fn();
+    const out = await renderWithAnatomyCheck({
+      render: async () => {
+        t = 40_000;
+        return "img";
+      },
+      bytesOf: () => bytes,
+      verify,
+      maxRetries: 2,
+      verifyBudgetMs: 8_000,
+      deadlineAt: 43_000,
+      now: () => t,
+    });
+    expect(verify).not.toHaveBeenCalled();
+    expect(out).toMatchObject({ result: "img", attempts: 1, check: "skipped" });
   });
 
   it("keeps the best render when a retry throws (flagged / quota)", async () => {

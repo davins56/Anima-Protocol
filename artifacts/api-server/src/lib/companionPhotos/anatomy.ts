@@ -67,6 +67,12 @@ export function countIn(text: string, part: AnatomyPart): number | null {
   const t = ` ${clean(text).toLowerCase()} `;
   const noun = PART_NOUN[part];
   const adj = PART_ADJ[part];
+  // Explicit removal ("no wings", "without her tail", "wingless") is a count of zero,
+  // so a customised look beats the lore or built-in default it overrides.
+  if (part === "wings" || part === "tails") {
+    const stem = part === "wings" ? "wing" : "tail";
+    if (new RegExp(`\\b(?:no|without|never\\s+any)\\s+(?:[a-z]+\\s+){0,2}?${stem}s?\\b|\\b${stem}less\\b`).test(t)) return 0;
+  }
   // "two pairs of arms", "three sets of wings"
   let m = new RegExp(`\\b${WORD}\\s+(?:pairs|sets)\\s+of\\s+(?:[a-z-]+\\s+){0,2}${noun}\\b`).exec(t);
   if (m && num(m[1])) return Math.min(MAX_COUNT, num(m[1])! * 2);
@@ -220,4 +226,25 @@ export function anatomySummary(spec: AnatomySpec | null | undefined): Record<str
   if (!spec) return out;
   for (const p of ANATOMY_PARTS) if (spec.counts[p] != null) out[p] = spec.counts[p]!;
   return out;
+}
+
+/**
+ * Join prompt parts under `max` characters without ever cutting the head
+ * (subject + body plan) or the tail (skin-tone guard, style, safety clause):
+ * only the middle (scene, look, setting) is shortened when space runs out.
+ */
+export function fitPrompt(head: string[], middle: string[], tail: string[], max: number): string {
+  const join = (xs: string[]) => xs.filter(Boolean).join(" ");
+  const t = join(tail);
+  let h = join(head);
+  if (h.length + t.length + 1 > max) h = h.slice(0, Math.max(0, max - t.length - 1)).trim();
+  const room = max - h.length - t.length - (h ? 1 : 0) - (t ? 1 : 0);
+  let m = join(middle);
+  if (m.length > room) {
+    m = room > 0 ? m.slice(0, room) : "";
+    const cut = m.lastIndexOf(" ");
+    if (m && cut > room * 0.6) m = m.slice(0, cut);
+    m = m.trim();
+  }
+  return join([h, m, t]).slice(0, max);
 }

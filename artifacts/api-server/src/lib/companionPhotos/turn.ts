@@ -345,7 +345,9 @@ export function startCompanionPhoto(input: {
         bytesOf: (img) => img,
         verify,
         maxRetries: anatomyConfig.maxRetries,
-        deadlineAt: startedAt + config.timeoutMs,
+        verifyBudgetMs: anatomyConfig.timeoutMs,
+        // The chat route's own wait starts just before this job; keep a margin for storing.
+        deadlineAt: startedAt + config.timeoutMs - 2_000,
       });
       image = checked.result;
     } catch (err) {
