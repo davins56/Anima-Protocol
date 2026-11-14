@@ -63,7 +63,7 @@ export default function MobileHeader() {
   if (!title) return null;
 
   return (
-    <div className="lg:hidden flex items-center h-11 px-2 border-b border-primary/20 bg-black/80 backdrop-blur-md z-40 flex-shrink-0">
+    <div data-glass-surface="header" className="lg:hidden flex items-center h-11 px-2 border-b border-primary/20 bg-black/80 backdrop-blur-md z-40 flex-shrink-0">
       <button
         onClick={() => navigate(-1)}
         className="flex items-center gap-1 px-2 py-2 text-primary/60 hover:text-primary transition-colors touch-target"

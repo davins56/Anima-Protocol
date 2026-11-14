@@ -310,6 +310,7 @@ export default function HomeDock({
   const bar = (
     <nav
       data-home-dock
+      data-glass-surface="dock"
       data-testid={isFixed ? "app-dock" : "home-dock"}
       aria-label={isFixed ? "Main" : "Home"}
       className="flex w-full max-w-2xl items-stretch border border-border bg-card/80 backdrop-blur-md text-foreground"

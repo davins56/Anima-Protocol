@@ -114,10 +114,15 @@ export default defineConfig({
     // precache manifest installs a new SW, which then WAITS (no skipWaiting)
     // until the reader taps Reload in UpdateAvailablePrompt — deferred while a
     // reply is streaming (src/lib/swUpdate.js). The old autoUpdate +
-    // skipWaiting could reload mid-reply. Kept deliberately minimal: precache the
-    // built assets only (`navigateFallback: null`), so it never intercepts
-    // /api calls, /assets/* hashes (EchoKeys-*.js), or the prerendered route
-    // HTML. Disabled in dev to avoid interfering with HMR. The existing
+    // skipWaiting could reload mid-reply. Kept deliberately minimal:
+    // navigations are network-only (`navigateFallback: null`) and hashed
+    // /assets/*.js + /assets/*.css are NOT precached, so the SW never
+    // intercepts ES module requests. (Workbox precacheAndRoute would otherwise
+    // serve those modules from Cache Storage; on Safari/iPad that surfaces as
+    // "Importing a module script failed" even when the network response is
+    // 200 text/javascript. Hashed assets are already immutable at the HTTP
+    // cache, and JS precache cannot help offline because HTML is network-only.)
+    // Disabled in dev to avoid interfering with HMR. The existing
     // public/manifest.json is reused (manifest: false), and registration
     // happens in src/main.jsx.
     VitePWA({
@@ -128,7 +133,10 @@ export default defineConfig({
         importScripts: ["/push-notifications-sw.js"],
         globDirectory: path.resolve(import.meta.dirname, "dist/public"),
         globPatterns: [
-          "**/*.{js,css,svg,png,ico,webp,woff,woff2,jpg,jpeg,json}",
+          // Images, fonts, and manifests only. Do not precache JS or CSS —
+          // those are ES modules / styles under /assets/* and must be fetched
+          // from the network (see runtimeCaching NetworkOnly below).
+          "**/*.{svg,png,ico,webp,woff,woff2,jpg,jpeg,json}",
         ],
         // The one HTML file that is precached: the static offline page. It is
         // not a route and prerender never rewrites it, so it cannot go stale
@@ -157,6 +165,15 @@ export default defineConfig({
             options: {
               precacheFallback: { fallbackURL: "/offline.html" },
             },
+          },
+          {
+            // Hashed JS/CSS must never be served from the SW. Safari treats a
+            // SW-handled module request as a CORS module load and can fail
+            // with "Importing a module script failed".
+            urlPattern: ({ url }) =>
+              url.pathname.startsWith("/assets/") &&
+              /\.(?:m?js|css)$/.test(url.pathname),
+            handler: "NetworkOnly",
           },
           {
             urlPattern: /^https?:\/\/.*\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/i,

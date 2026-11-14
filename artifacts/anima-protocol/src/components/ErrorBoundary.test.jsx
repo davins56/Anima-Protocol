@@ -334,6 +334,46 @@ describe("ErrorBoundary", () => {
     expect(container.textContent).toContain("Something went wrong");
   });
 
+  it("hard-recovers Safari module-script failures instead of remounting", () => {
+    recoverStaleChunk.mockClear();
+    function ChunkBoom() {
+      throw new TypeError("Importing a module script failed.");
+    }
+
+    act(() => {
+      root.render(
+        <ErrorBoundary resetKey="/book-of-echoes">
+          <ChunkBoom />
+        </ErrorBoundary>,
+      );
+    });
+
+    expect(recoverStaleChunk).toHaveBeenCalledTimes(1);
+    expect(container.textContent).not.toContain("Something went wrong");
+  });
+
+  it("hard-recovers a Safari module-script rejection from unhandledrejection", () => {
+    recoverStaleChunk.mockClear();
+    act(() => {
+      root.render(
+        <ErrorBoundary resetKey="/repo-codespace">
+          <div data-testid="ok">ok</div>
+        </ErrorBoundary>,
+      );
+    });
+
+    act(() => {
+      window.dispatchEvent(
+        new PromiseRejectionEvent("unhandledrejection", {
+          promise: Promise.resolve(),
+          reason: new TypeError("Importing a module script failed."),
+        }),
+      );
+    });
+
+    expect(recoverStaleChunk).toHaveBeenCalledTimes(1);
+  });
+
   it("reports uncaught runtime errors for diagnosis", () => {
     act(() => {
       root.render(
