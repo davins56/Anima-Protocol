@@ -21,6 +21,7 @@ export const MEMORY_EVENT_TYPES = [
   "battle_outcome",
   "document_chunk",
   "web_result",
+  "cyberworld_journey",
 ] as const;
 export type MemoryEventType = (typeof MEMORY_EVENT_TYPES)[number] | (string & {});
 

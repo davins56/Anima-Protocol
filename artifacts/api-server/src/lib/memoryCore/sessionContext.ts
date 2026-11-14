@@ -40,9 +40,10 @@ export function formatMemoryCoreBlock(identity: IdentityCore | null, memories: R
       // Corrupted (net-battle) memories surface only as an obscured fragment until purified.
       const shown = corrupted ? obscuredMemory(text, Number(corrupted.severity) || 0.5, m.id) : text;
       const doc = m.event_type === "document_chunk" ? documentRecallLabel(m.payload) : null;
+      const journey = m.event_type === "cyberworld_journey";
       const line = doc
         ? `- (${doc}, shared ${ago(m.occurred_at, now)}) ${shown.slice(0, 360)}`
-        : `- (${ago(m.occurred_at, now)}${m.emotional_weight >= 0.8 ? ", deeply felt" : ""}) ${shown}`;
+        : `- (${ago(m.occurred_at, now)}${journey ? ", journey" : ""}${m.emotional_weight >= 0.8 ? ", deeply felt" : ""}) ${shown}`;
       if (lines.join("\n").length + line.length > BLOCK_CHAR_BUDGET) break;
       lines.push(line);
     }
