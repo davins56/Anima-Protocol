@@ -128,7 +128,7 @@ export default function HomeDock({
       data-home-dock
       data-testid={isFixed ? "app-dock" : "home-dock"}
       aria-label={isFixed ? "Main" : "Home"}
-      className="flex w-full max-w-2xl items-stretch border border-cyan-400/20 bg-black/70 backdrop-blur-md"
+      className="flex w-full max-w-2xl items-stretch border border-border bg-card/80 backdrop-blur-md text-foreground"
     >
       {DOCK_TABS.map(({ id, label }) => {
         const Icon = ICONS[id];
@@ -145,8 +145,8 @@ export default function HomeDock({
             aria-controls={isWorld ? "explore-menu" : undefined}
             className={`flex min-w-0 flex-1 flex-col items-center justify-center gap-1 py-3 transition-colors ${
               active
-                ? "bg-cyan-400/10 text-cyan-300"
-                : "text-cyan-400/70 hover:bg-cyan-400/5 hover:text-cyan-300"
+                ? "bg-primary/10 text-primary"
+                : "text-muted-foreground hover:bg-primary/5 hover:text-primary"
             }`}
           >
             <Icon className="h-[18px] w-[18px]" strokeWidth={active ? 2 : 1.6} />

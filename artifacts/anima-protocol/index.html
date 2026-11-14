@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon.ico" />
@@ -9,7 +9,25 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
     />
-    <meta name="theme-color" content="#00e5e5" />
+    <meta name="theme-color" content="#080A0C" />
+    <script>
+      (function () {
+        try {
+          var theme = localStorage.getItem("app-color-scheme") === "light" ? "light" : "dark";
+          var appearance = {};
+          try { appearance = JSON.parse(localStorage.getItem("anima-appearance-v1") || "{}") || {}; } catch (e) {}
+          if (appearance.theme && appearance.theme !== "original") {
+            theme = appearance.theme === "celestial" ? "light" : "dark";
+          }
+          var root = document.documentElement;
+          root.classList.toggle("light", theme === "light");
+          root.classList.toggle("dark", theme !== "light");
+          root.style.colorScheme = theme;
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute("content", theme === "light" ? "#F2F4F7" : "#080A0C");
+        } catch (e) {}
+      })();
+    </script>
     <link rel="manifest" href="/manifest.json" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
