@@ -55,8 +55,12 @@ export function useResonance({
         : null;
     const value = fromBond ?? computed;
     const tier = resonanceTier(value);
+    // "bond" = the server's persisted synchro; "estimate" = the local formula
+    // used until the server snapshot arrives. Meters reset their change flash
+    // when the source flips so the swap never reads as a jump in the bond.
+    const source = fromBond == null ? "estimate" : "bond";
 
-    return { value, tier: tier.name, label: tier.label };
+    return { value, tier: tier.name, label: tier.label, source };
   }, [messageCount, relationship, emotion, synchroStrength]);
 }
 

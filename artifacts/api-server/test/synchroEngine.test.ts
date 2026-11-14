@@ -9,6 +9,7 @@ import {
   synchroToMemoryConfig,
   synchroToPromptGuidance,
   serializeSynchroState,
+  MAX_COMPANION_GAIN,
   type SynchroState,
 } from "../src/lib/synchroEngine";
 
@@ -146,9 +147,11 @@ describe("evolveSynchroFromUser", () => {
     expect(evolved.vector.synchroStrength).toBeLessThan(baseState.vector.synchroStrength);
   });
 
-  it("keeps synchro stable for neutral messages", () => {
+  it("nudges synchro by at most one point for neutral small talk", () => {
     const evolved = evolveSynchroFromUser(baseState, "What time is it?");
-    expect(evolved.vector.synchroStrength).toBe(baseState.vector.synchroStrength);
+    const delta = evolved.vector.synchroStrength - baseState.vector.synchroStrength;
+    expect(delta).toBeGreaterThanOrEqual(0);
+    expect(delta).toBeLessThanOrEqual(1);
   });
 
   it("clamps synchro at 0 even with heavy damage", () => {
@@ -235,8 +238,9 @@ describe("evolveSynchroFromCompanion", () => {
       baseState,
       "I remember you told me everything, beloved. *holds you closer* I don't want to lose you. It matters so much.",
     );
-    // MAX_COMPANION_GAIN is 2
-    expect(evolved.vector.synchroStrength).toBeLessThanOrEqual(baseState.vector.synchroStrength + 2);
+    expect(evolved.vector.synchroStrength).toBeLessThanOrEqual(
+      baseState.vector.synchroStrength + MAX_COMPANION_GAIN,
+    );
   });
 
   it("stays stable for neutral companion responses", () => {

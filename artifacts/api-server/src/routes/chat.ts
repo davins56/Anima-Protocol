@@ -4171,11 +4171,19 @@ router.post("/messages", async (req, res) => {
         : replyCutOff
           ? companionAffect
           : evolveCompanionAffectFromCompanion(companionAffect, fullResponse);
+    // Report the bond as the post-process will persist it: the user's pass
+    // plus the companion's reply. Reading synchroState alone left the meter a
+    // turn behind and hid the reply's share of the change.
+    const turnSynchro = synchroState
+      ? replyCutOff
+        ? synchroState
+        : evolveSynchroFromCompanion(synchroState, fullResponse)
+      : null;
     const evolvedAffectSnapshot = evolvedCompanion
       ? toCompanionAffectSnapshot(
           evolvedCompanion,
-          synchroState
-            ? synchroStrengthFromEmotionalState(serializeSynchroState(synchroState))
+          turnSynchro
+            ? synchroStrengthFromEmotionalState(serializeSynchroState(turnSynchro))
             : null,
         )
       : null;
