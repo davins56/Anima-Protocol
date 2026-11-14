@@ -427,6 +427,8 @@ export default function Chat() {
   const [loreEntries, setLoreEntries] = useState([]); // WorldState entries for active session
   const [currentMood, setCurrentMood] = useState("neutral");
   const [companionAffect, setCompanionAffect] = useState(null);
+  // Heat value the last reply reported (done.pulse_heat), for the Heat meter.
+  const [livePulseHeat, setLivePulseHeat] = useState(null);
   const [characterMemories, setCharacterMemories] = useState([]); // cross-session memories
   const [inventoryItems, setInventoryItems] = useState([]);
   const [showInventory, setShowInventory] = useState(false);
@@ -1167,6 +1169,7 @@ export default function Chat() {
     setMode(session.mode || "solo");
     setCurrentMood("neutral");
     setCompanionAffect(null);
+    setLivePulseHeat(null);
     setCharacterMemories([]);
     setInventoryItems([]);
     loadRelationships(id);
@@ -3004,6 +3007,13 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
 
       // Felt state from the server is authoritative; keyword detectMood is fallback.
       // Retry and edit already counted this turn. Do not shift mood again.
+      if (
+        !skipAffect &&
+        typeof resultPayload?.pulse_heat === "number" &&
+        Number.isFinite(resultPayload.pulse_heat)
+      ) {
+        setLivePulseHeat({ value: resultPayload.pulse_heat, turnId });
+      }
       if (!skipAffect) {
         const affectSnapshot = parseCompanionAffectSnapshot(resultPayload.companion_affect);
         if (affectSnapshot) {
@@ -4113,6 +4123,7 @@ Return JSON:
                   conversationId={activeSession.id}
                   refreshKey={isLoading ? null : activeSession.messages?.length || 0}
                   liveSynchroStrength={companionAffect?.synchro_strength ?? null}
+                  livePulseHeat={livePulseHeat}
                 />
               </div>
             )}

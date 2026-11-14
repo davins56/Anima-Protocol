@@ -102,6 +102,24 @@ export async function saveIntimacyProfile(profile: IntimacyProfile): Promise<voi
   }
 }
 
+/**
+ * Write only the right-now intensity onto the stored profile. Re-reads first so
+ * a Pulse toggle or safeword saved during the turn is never overwritten.
+ */
+export async function savePulseIntensity(
+  userId: string,
+  characterId: string,
+  intensity: number,
+  intensityAt: string,
+): Promise<void> {
+  const current = await loadIntimacyProfile(userId, characterId);
+  if (!current.intimacyEnabled) return;
+  const at = current.intensityAt ? Date.parse(current.intensityAt) : NaN;
+  // A newer turn already wrote; keep it.
+  if (Number.isFinite(at) && at > Date.parse(intensityAt)) return;
+  await saveIntimacyProfile({ ...current, intensity, intensityAt });
+}
+
 export async function loadIntimacyScene(
   userId: string,
   conversationId: string,
