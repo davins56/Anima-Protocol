@@ -29,3 +29,21 @@ describe("useResonance", () => {
     expect(result.current.label).toBe("DISTANT");
   });
 });
+
+describe("useResonance render path", () => {
+  it("regression: follows each new synchro_strength the chat reply reports", () => {
+    const { result, rerender } = renderHook((props) => useResonance(props), {
+      initialProps: { messageCount: 10, synchroStrength: 30 },
+    });
+    expect(result.current).toMatchObject({ value: 30, label: "ATTUNED", source: "bond" });
+    rerender({ messageCount: 12, synchroStrength: 33 });
+    expect(result.current.value).toBe(33);
+    rerender({ messageCount: 14, synchroStrength: 52 });
+    expect(result.current).toMatchObject({ value: 52, label: "BONDED" });
+  });
+
+  it("labels the local formula as an estimate", () => {
+    const { result } = renderHook(() => useResonance({ messageCount: 4 }));
+    expect(result.current.source).toBe("estimate");
+  });
+});

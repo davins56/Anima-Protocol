@@ -10,8 +10,9 @@ import type { PlayerTelemetry } from "../CyberworldScene";
 import type { Vec2, World, WorldAnima } from "../layout";
 import { NO_HINTS, type InterestHints } from "./choose";
 import { initTraveller, releaseAt, statusLine, tickTraveller, type JourneyMode, type Traveller } from "./journeys";
-import { receiveGift } from "../market/gift";
-import { localStorageSink, type JourneyEvent, type JourneySink } from "./log";
+import { recordGift } from "../market/gift";
+import { backendJourneySink, journeyInterests } from "./api";
+import { localStorageSink, multiSink, type JourneyEvent, type JourneySink } from "./log";
 
 const FINE_MS = 250;
 const COARSE_EVERY = 4; // off-screen: every 4th tick (1 s)
@@ -35,9 +36,15 @@ type Options = {
 export function useJourneys({ world, animas, areaId, dayKey, telemetry, companionId, hintsFor, sink }: Options) {
   const travellers = useRef<Traveller[]>([]);
   const [views, setViews] = useState<TravellerView[]>([]);
-  const logSink = useMemo(() => sink ?? localStorageSink(), [sink]);
-  const live = useRef({ areaId, companionId, hintsFor });
-  live.current = { areaId, companionId, hintsFor };
+  // Local log (list/history) + backend queue (#724; silent no-op when signed out or not deployed).
+  const logSink = useMemo(() => sink ?? multiSink(localStorageSink(), backendJourneySink()), [sink]);
+  useEffect(() => {
+    if (!sink) void backendJourneySink().flush();
+  }, [sink]);
+  // Interests from chat/memory steer destination choice (cached per companion).
+  const hintSource = hintsFor ?? (sink ? undefined : journeyInterests.get);
+  const live = useRef({ areaId, companionId, hintsFor: hintSource });
+  live.current = { areaId, companionId, hintsFor: hintSource };
 
   // (Re)build when the residents or the day change; keep existing state by id.
   useEffect(() => {
@@ -89,16 +96,9 @@ export function useJourneys({ world, animas, areaId, dayKey, telemetry, companio
   /** Give a gift (Data Bazaar): updates the companion's motives/thought and logs the event. */
   const gift = useCallback(
     (companionId: string, g: { itemId: string; itemName: string; areaId: string; strength: number }) => {
-      const now = Date.now();
-      let event: JourneyEvent | null = null;
-      travellers.current = travellers.current.map((t) => {
-        if (t.id !== companionId) return t;
-        const r = receiveGift(t, { ...g, now });
-        event = r.event;
-        return r.t;
-      });
-      if (event) logSink.record([event]);
-      return event as JourneyEvent | null;
+      const r = recordGift(travellers.current, companionId, { ...g, now: Date.now() }, logSink);
+      travellers.current = r.travellers;
+      return r.event;
     },
     [logSink],
   );

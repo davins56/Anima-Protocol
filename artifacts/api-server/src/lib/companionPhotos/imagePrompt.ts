@@ -4,7 +4,8 @@
  * companion + the safety clause. Deterministic, no model call.
  */
 import type { PhotoFraming, PhotoIntent } from "./intent";
-import type { CompanionLook } from "./appearance";
+import { SKIN_TONE_GUARD, type CompanionLook } from "./appearance";
+import { DEFAULT_PHOTO_SIZES, type PhotoOrientation, type PhotoSizes } from "./config";
 import { safetyClause } from "./safety";
 
 export type PhotoStyleKind = "illustrated" | "photoreal" | "custom" | "reference";
@@ -75,6 +76,8 @@ export function buildImagePrompt(input: ImagePromptInput): string {
       : name;
     parts.push(`${FRAMING[input.intent.framing] || FRAMING.selfie} of ${who}.`);
     if (look) parts.push(`${name}: ${look}.`);
+    const skin = clean(input.look.skinTone, 80);
+    if (skin) parts.push(`${name}'s skin tone, exactly: ${skin}.`);
     const signature = clean(input.look.signature, 200);
     if (signature) parts.push(`Always visible: ${signature}.`);
     if (scene) parts.push(`Scene: ${scene}.`);
@@ -85,6 +88,7 @@ export function buildImagePrompt(input: ImagePromptInput): string {
     parts.push("Candid and personal, like a photo sent to someone close.");
     if (input.hasReference) parts.push("Image 0 shows the photographer; use it only for the world's art style and colors.");
   }
+  parts.push(SKIN_TONE_GUARD);
   parts.push(style.text);
   parts.push(safetyClause(input.level, ofCompanion));
   return parts.join(" ").slice(0, MAX_PROMPT);
@@ -101,8 +105,31 @@ export function companionSeed(characterId: string, salt: string | number = 0): n
   return h % 2_147_483_647;
 }
 
-/** Portrait for people, landscape for places. */
-export function photoSize(intent: PhotoIntent): { width: number; height: number } {
-  if (intent.subject !== "self" && intent.framing === "landscape") return { width: 1024, height: 768 };
-  return { width: 768, height: 1024 };
+export function orientationOf(
+  intent: PhotoIntent,
+  brief?: { orientation?: PhotoOrientation } | null,
+): PhotoOrientation {
+  if (brief?.orientation === "portrait" || brief?.orientation === "landscape" || brief?.orientation === "square") {
+    return brief.orientation;
+  }
+  if (intent.framing === "landscape" && intent.subject !== "self") return "landscape";
+  if (
+    intent.framing === "selfie" ||
+    intent.framing === "portrait" ||
+    intent.framing === "closeup" ||
+    intent.framing === "full_body"
+  ) {
+    return "portrait";
+  }
+  return "square";
+}
+
+/** Largest configured size for the scene's orientation (portrait / landscape / square). */
+export function photoSize(
+  intent: PhotoIntent,
+  sizes: PhotoSizes = DEFAULT_PHOTO_SIZES,
+  brief?: { orientation?: PhotoOrientation } | null,
+): { width: number; height: number } {
+  const kind = orientationOf(intent, brief);
+  return sizes[kind] ?? sizes.square;
 }

@@ -126,7 +126,7 @@ export default function LivingPresenceStage({
 
       {resonance && (
         <div className="relative z-10 w-full max-w-md shrink-0 px-6 pb-2">
-          <ResonanceField value={resonance.value} label={resonance.label} />
+          <ResonanceField value={resonance.value} label={resonance.label} resetKey={resonance.source ?? null} />
         </div>
       )}
 

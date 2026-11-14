@@ -1,14 +1,27 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ShieldAlert, Heart } from "lucide-react";
 import { fetchIntimacyProfile, patchIntimacyProfile } from "@/lib/intimacyClient";
 import { fetchSynchro } from "@/lib/synchroClient";
 import ConnectionMeters from "./ConnectionMeters";
 
-export default function IntimacyDock({ characterId, conversationId, refreshKey, onProfileUpdate }) {
+/** How long a live reply value outranks a re-read of the stored bond. */
+export const LIVE_SYNCHRO_WINDOW_MS = 6000;
+
+/**
+ * `liveSynchroStrength` is the bond value the chat reply just reported
+ * (companion_affect.synchro_strength). It updates the Synchro meter the moment
+ * a reply lands, so it agrees with the Resonance Field instead of waiting on
+ * the delayed re-read below.
+ */
+export default function IntimacyDock({ characterId, conversationId, refreshKey, onProfileUpdate, liveSynchroStrength = null }) {
   const [profile, setProfile] = useState(null);
   const [synchro, setSynchro] = useState(null);
   const [loading, setLoading] = useState(false);
   const [triggeringSafeword, setTriggeringSafeword] = useState(false);
+  // Last live value from a reply. The turn's bond write lands after the reply
+  // finishes, so a re-read right after can still return the previous value;
+  // within this window the live value wins over a fetched one.
+  const liveRef = useRef({ characterId: null, strength: null, at: 0 });
 
   useEffect(() => {
     if (!characterId) return;
@@ -36,7 +49,13 @@ export default function IntimacyDock({ characterId, conversationId, refreshKey, 
     let active = true;
     const pull = () => {
       fetchSynchro(characterId).then((s) => {
-        if (active && s) setSynchro(s);
+        if (!active || !s) return;
+        const live = liveRef.current;
+        const liveIsFresh =
+          live.characterId === characterId &&
+          typeof live.strength === "number" &&
+          Date.now() - live.at < LIVE_SYNCHRO_WINDOW_MS;
+        setSynchro(liveIsFresh ? { ...s, strength: live.strength } : s);
       });
       return fetchIntimacyProfile(characterId).then((p) => {
         if (active && p) {
@@ -53,6 +72,14 @@ export default function IntimacyDock({ characterId, conversationId, refreshKey, 
       clearTimeout(t2);
     };
   }, [characterId, refreshKey]);
+  useEffect(() => {
+    if (!characterId) return;
+    if (typeof liveSynchroStrength !== "number" || !Number.isFinite(liveSynchroStrength)) return;
+    const strength = Math.max(0, Math.min(100, Math.round(liveSynchroStrength)));
+    liveRef.current = { characterId, strength, at: Date.now() };
+    setSynchro((prev) => (prev?.strength === strength ? prev : { ...(prev || {}), strength }));
+  }, [characterId, liveSynchroStrength]);
+
   if (!characterId || (!profile && !synchro)) return null;
 
   const toggleIntimacy = async () => {
@@ -86,7 +113,7 @@ export default function IntimacyDock({ characterId, conversationId, refreshKey, 
 
   return (
     <div className="flex w-full flex-col gap-2 border border-primary/20 bg-black/60 px-3 py-1.5 font-mono text-xs hud-corner sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
-      <ConnectionMeters synchro={synchro} heat={heat} showHeat={isEnabled} />
+      <ConnectionMeters synchro={synchro} heat={heat} showHeat={isEnabled} resetKey={characterId} />
 
       {profile && (
         <div className="flex items-center gap-2 sm:gap-3">

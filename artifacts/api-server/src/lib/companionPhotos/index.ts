@@ -6,3 +6,4 @@ export * from "./imagePrompt";
 export * from "./rateLimit";
 export * from "./workersAiImage";
 export * from "./turn";
+export * from "./scenePrompt";
