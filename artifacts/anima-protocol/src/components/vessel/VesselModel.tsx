@@ -36,6 +36,8 @@ type Props = {
   onFrame?: () => void;
   /** Emotion vessel-shift; overrides the face weights and adds the companion aura. */
   shift?: VesselShift | null;
+  /** Renderer quality tier of the host ("low" drops character-presentation outline shells). */
+  presentationTier?: string;
 };
 
 const BODY: Record<string, { w: number; hip: number; h: number }> = {
@@ -368,5 +370,9 @@ export default function VesselModel(props: Props) {
     );
   // Appearance Studio "Character presentation": portraits / background
   // (non-tracking) vessels get the rim-only variant, full views the outline too.
-  return <PresentationTreatment lite={props.track === false}>{body}</PresentationTreatment>;
+  return (
+    <PresentationTreatment lite={props.track === false} tier={props.presentationTier}>
+      {body}
+    </PresentationTreatment>
+  );
 }

@@ -34,6 +34,8 @@ export type TreatmentState = {
   materials: Set<THREE.Material>;
   outlines: Map<THREE.Mesh, THREE.Mesh>;
   frame: number;
+  /** subtreeSignature at the last sync. */
+  signature: number;
 };
 
 type Saved = {
@@ -106,6 +108,7 @@ export function createTreatmentState(treatment: PresentationTreatment): Treatmen
     materials: new Set(),
     outlines: new Map(),
     frame: 0,
+    signature: -1,
   };
 }
 
@@ -290,7 +293,9 @@ export function outlineEligible(mesh: THREE.Mesh): boolean {
   const m = mesh.material as THREE.Material;
   if (!m || m.userData?.[OUTLINE_FLAG]) return false;
   if ((m as THREE.MeshBasicMaterial).isMeshBasicMaterial || (m as THREE.ShaderMaterial).isShaderMaterial) return false;
-  if (m.blending === THREE.AdditiveBlending || m.depthWrite === false || m.opacity < 0.6 || m.visible === false) return false;
+  // Opaque surfaces only: a shell behind a see-through or transmissive surface would tint the body.
+  if (m.transparent || m.blending === THREE.AdditiveBlending || m.depthWrite === false || m.visible === false) return false;
+  if (((m as THREE.MeshPhysicalMaterial).transmission ?? 0) > 0) return false;
   const g = mesh.geometry;
   if (!g?.attributes?.normal || !g.attributes.position) return false;
   if (!g.boundingSphere) g.computeBoundingSphere();
@@ -332,13 +337,16 @@ function walk(obj: THREE.Object3D, visit: (o: THREE.Object3D) => void) {
 /** Bring the subtree in line with the state (idempotent; cheap to call every ~30 frames). */
 export function syncTreatment(root: THREE.Object3D, s: TreatmentState) {
   const seen = new Set<THREE.Mesh>();
+  const seenMats = new Set<THREE.Material>();
   walk(root, (obj) => {
     const mesh = obj as THREE.Mesh;
     if (!mesh.isMesh) return;
     seen.add(mesh);
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     for (const m of mats) {
-      if (m && !s.materials.has(m) && patchMaterial(m, s)) s.materials.add(m);
+      if (!m) continue;
+      seenMats.add(m);
+      if (!s.materials.has(m) && patchMaterial(m, s)) s.materials.add(m);
     }
     if (!s.outlineMaterial) return;
     const existing = s.outlines.get(mesh);
@@ -363,6 +371,33 @@ export function syncTreatment(root: THREE.Object3D, s: TreatmentState) {
       s.outlines.delete(mesh);
     }
   }
+  // Materials replaced since the last pass (colour/quality changes, glTF swap): release them.
+  for (const m of s.materials) {
+    if (!seenMats.has(m)) {
+      unpatchMaterial(m, s);
+      s.materials.delete(m);
+    }
+  }
+  s.signature = subtreeSignature(root);
+}
+
+/**
+ * Cheap structural fingerprint of the subtree (mesh + material identities).
+ * Checked every rendered frame so late children (Suspense glTF swaps) are
+ * treated on the very next frame, including in demand frameloops.
+ */
+export function subtreeSignature(root: THREE.Object3D): number {
+  let sig = 0;
+  let n = 0;
+  walk(root, (obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    n++;
+    const mat = mesh.material as THREE.Material | THREE.Material[];
+    const mid = Array.isArray(mat) ? mat.reduce((a, m) => a + (m?.id ?? 0), 0) : (mat?.id ?? 0);
+    sig = (sig * 31 + mesh.id * 7 + mid + mesh.geometry.id) % 2147483647;
+  });
+  return sig * 1024 + n;
 }
 
 export function disposeTreatmentState(s: TreatmentState) {

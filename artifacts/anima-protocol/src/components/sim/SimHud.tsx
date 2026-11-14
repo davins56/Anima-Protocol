@@ -79,7 +79,7 @@ export default function SimHud(props: {
       </div>
       <WGauge state={state} previewW={previewW} />
       <div className="flex items-center gap-2">
-        <span style={{ color: sig.band.color }} data-hud-character>{companionName}:</span>
+        <span style={{ color: sig.band.color }}><span data-hud-character>{companionName}</span>:</span>
         <span className="truncate" style={{ opacity: 0.45 + 0.55 * sig.clarity }}>{comms}</span>
         <span className="ml-auto tabular-nums" style={{ color: sig.band.color }}>clarity {Math.round(sig.clarity * 100)}% · ×{sig.chipPower.toFixed(2)}</span>
       </div>

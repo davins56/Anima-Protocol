@@ -14,7 +14,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import type * as THREE from "three";
 import { useExperienceExtras } from "@/hooks/useExperienceExtras";
 import { isIdentityTreatment, presentationTreatment, type CharacterPresentation } from "@/lib/vessel/presentation";
-import { createTreatmentState, disposeTreatmentState, syncTreatment, tickTreatment, type TreatmentState } from "./presentationMaterials";
+import { createTreatmentState, disposeTreatmentState, subtreeSignature, syncTreatment, tickTreatment, type TreatmentState } from "./presentationMaterials";
 
 type Props = {
   children: ReactNode;
@@ -28,7 +28,8 @@ type Props = {
   option?: CharacterPresentation;
 };
 
-const RESYNC_EVERY = 30;
+/** Full re-sync cadence (visibility / geometry changes); structure changes sync immediately. */
+const RESYNC_EVERY = 60;
 
 export default function PresentationTreatment({ children, tier, lite = false, accent = null, option }: Props) {
   const extras = useExperienceExtras();
@@ -61,8 +62,9 @@ export default function PresentationTreatment({ children, tier, lite = false, ac
     const s = state.current;
     if (!s || !group.current) return;
     tickTreatment(s, clock.elapsedTime);
-    // Pick up late children (Suspense glTF swap, quality changes) without per-frame traversal.
-    if (s.frame++ % RESYNC_EVERY === 0) syncTreatment(group.current, s);
+    // Late children (Suspense glTF swap, quality changes) are caught by the cheap
+    // structural signature on the next rendered frame; a full pass runs periodically.
+    if (++s.frame % RESYNC_EVERY === 0 || subtreeSignature(group.current) !== s.signature) syncTreatment(group.current, s);
   });
 
   return (
