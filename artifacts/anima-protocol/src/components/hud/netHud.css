@@ -1,0 +1,94 @@
+/*
+ * NetNavi-inspired HUD on gameplay / network surfaces. Keyed off the same
+ * <html> data attributes as the chat HUD accents (experienceRuntime), so
+ * "minimal" (default) changes nothing. Only CSS: no extra layers or WebGL.
+ */
+
+/* ── Frame (rendered by <NetHudFrame> only when the style is not minimal) ── */
+[data-net-hud-frame] [data-net-hud-corner] {
+  position: absolute; width: 18px; height: 18px;
+  border-color: hsl(var(--primary) / .85); border-style: solid; border-width: 0;
+}
+[data-net-hud-frame] [data-net-hud-corner="tl"] { top: 4px; left: 4px; border-top-width: 2px; border-left-width: 2px; }
+[data-net-hud-frame] [data-net-hud-corner="tr"] { top: 4px; right: 4px; border-top-width: 2px; border-right-width: 2px; }
+[data-net-hud-frame] [data-net-hud-corner="bl"] { bottom: 4px; left: 4px; border-bottom-width: 2px; border-left-width: 2px; }
+[data-net-hud-frame] [data-net-hud-corner="br"] { bottom: 4px; right: 4px; border-bottom-width: 2px; border-right-width: 2px; }
+[data-net-hud-frame] [data-net-hud-label] {
+  position: absolute; left: 7px; top: 50%;
+  transform: translateY(-50%) rotate(180deg); writing-mode: vertical-rl;
+  white-space: nowrap; font: 600 8px/1 ui-monospace, SFMono-Regular, monospace;
+  letter-spacing: .3em; text-transform: uppercase; color: hsl(var(--primary) / .55);
+}
+[data-net-hud-frame="battle-network"] {
+  box-shadow: inset 0 0 0 1px hsl(var(--primary) / .18), inset 0 0 28px hsl(var(--primary) / .10);
+}
+[data-net-hud-frame="battle-network"]::after {
+  /* slow PET scan sweep */
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(180deg, transparent 0, hsl(var(--primary) / .06) 50%, transparent 100%);
+  background-size: 100% 220px; background-repeat: no-repeat;
+  animation: anima-net-hud-sweep 7s linear infinite;
+}
+[data-net-hud-frame="tactical"] [data-net-hud-corner] { width: 12px; height: 12px; border-color: hsl(var(--primary) / .7); }
+[data-net-hud-frame="tactical"] [data-net-hud-corner="tl"],
+[data-net-hud-frame="tactical"] [data-net-hud-corner="tr"],
+[data-net-hud-frame="tactical"] [data-net-hud-corner="bl"],
+[data-net-hud-frame="tactical"] [data-net-hud-corner="br"] { border-width: 0; }
+[data-net-hud-frame="tactical"] [data-net-hud-corner="tl"] { border-top-width: 1px; border-left-width: 1px; }
+[data-net-hud-frame="tactical"] [data-net-hud-corner="tr"] { border-top-width: 1px; border-right-width: 1px; }
+[data-net-hud-frame="tactical"] [data-net-hud-corner="bl"] { border-bottom-width: 1px; border-left-width: 1px; }
+[data-net-hud-frame="tactical"] [data-net-hud-corner="br"] { border-bottom-width: 1px; border-right-width: 1px; }
+@keyframes anima-net-hud-sweep {
+  from { background-position: 0 -220px; }
+  to { background-position: 0 calc(100% + 220px); }
+}
+[data-net-hud-frame][data-reduced-motion]::after { animation: none; background: none; }
+@media (prefers-reduced-motion: reduce) {
+  [data-net-hud-frame]::after { animation: none; background: none; }
+}
+
+/* ── Panels ── */
+html[data-experience-hud="battle-network"] [data-net-hud-panel] {
+  /* PET panel: bright top edge, data-strip header glow, chamfered corners */
+  box-shadow: inset 0 2px 0 hsl(var(--primary)), inset 0 0 18px hsl(var(--primary) / .12);
+  background-image: linear-gradient(180deg, hsl(var(--primary) / .16), transparent 26px);
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+}
+html[data-experience-hud="battle-network"] [data-net-hud-panel="toolbar"] {
+  clip-path: none; background-image: none;
+  box-shadow: inset 0 -2px 0 hsl(var(--primary) / .7);
+}
+html[data-experience-hud="tactical"] [data-net-hud-panel] {
+  /* tactical: left rail + corner ticks drawn as background layers */
+  border-left: 2px solid hsl(var(--primary));
+  background-image:
+    linear-gradient(hsl(var(--primary)), hsl(var(--primary))),
+    linear-gradient(hsl(var(--primary)), hsl(var(--primary))),
+    linear-gradient(hsl(var(--primary)), hsl(var(--primary))),
+    linear-gradient(hsl(var(--primary)), hsl(var(--primary)));
+  background-size: 10px 1px, 1px 10px, 10px 1px, 1px 10px;
+  background-position: top right, top right, bottom right, bottom right;
+  background-repeat: no-repeat;
+}
+html[data-experience-hud="tactical"] [data-net-hud-panel="toolbar"] {
+  border-left: 0; background-image: none;
+  box-shadow: inset 0 -1px 0 hsl(var(--primary) / .6);
+}
+
+/* ── Character displays inside HUDs (follow "Character presentation") ── */
+html[data-experience-character="hologram"] [data-hud-character] {
+  color: #a5f3fc; text-shadow: 0 0 6px rgba(34,211,238,.85), 0 0 14px rgba(34,211,238,.35);
+}
+html[data-experience-character="netnavi"] [data-hud-character]::before {
+  content: "▸ "; color: rgb(34,211,238);
+}
+html[data-experience-character="netnavi"] [data-hud-character] {
+  letter-spacing: .08em;
+}
+html[data-experience-character="hologram"] [data-hud-character-avatar] {
+  border-radius: 50%; box-shadow: 0 0 14px rgba(34,211,238,.55); filter: saturate(1.3);
+}
+html[data-experience-character="netnavi"] [data-hud-character-avatar] {
+  border-radius: .2rem; outline: 1px solid rgba(34,211,238,.45); outline-offset: 2px;
+  box-shadow: inset 0 0 10px rgba(34,211,238,.2), 0 0 12px rgba(34,211,238,.25);
+}

@@ -312,7 +312,7 @@ export default function FactionNetworkGraph({ sessionId }) {
 
   if (loading) {
     return (
-      <div className="w-full h-96 border border-primary/20 bg-black/30 rounded flex items-center justify-center">
+      <div data-net-hud-panel="" className="w-full h-96 border border-primary/20 bg-black/30 rounded flex items-center justify-center">
         <div className="text-center space-y-2">
           <Loader className="w-6 h-6 text-primary/60 animate-spin mx-auto" />
           <p className="font-mono text-[9px] text-primary/40 tracking-widest uppercase">
@@ -329,7 +329,7 @@ export default function FactionNetworkGraph({ sessionId }) {
       animate={{ opacity: 1 }}
       className="space-y-3"
     >
-      <div className="flex items-center justify-between px-3 py-2 border border-primary/20 bg-primary/5 rounded flex-wrap gap-2">
+      <div data-net-hud-panel="toolbar" className="flex items-center justify-between px-3 py-2 border border-primary/20 bg-primary/5 rounded flex-wrap gap-2">
         <span className="font-mono text-[9px] text-primary/40 tracking-widest uppercase">
           🕸️ Faction Network ({nodes.length} characters)
         </span>
@@ -374,7 +374,7 @@ export default function FactionNetworkGraph({ sessionId }) {
       </div>
 
       {/* Canvas */}
-      <div className="relative border border-primary/20 bg-black/30 rounded overflow-hidden">
+      <div data-net-hud-panel="" className="relative border border-primary/20 bg-black/30 rounded overflow-hidden">
         <canvas
           ref={canvasRef}
           width={900}
@@ -406,7 +406,7 @@ export default function FactionNetworkGraph({ sessionId }) {
       </div>
 
       {/* Info */}
-      <div className="p-2 bg-black/40 border border-primary/10 rounded text-[8px] font-mono text-primary/50 space-y-0.5">
+      <div data-net-hud-panel="" className="p-2 bg-black/40 border border-primary/10 rounded text-[8px] font-mono text-primary/50 space-y-0.5">
         <div>• Scroll to zoom | Drag to pan</div>
         <div>• Edge thickness shows relationship strength</div>
         <div>• Yellow highlight = search match</div>

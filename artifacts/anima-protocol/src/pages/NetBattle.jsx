@@ -251,7 +251,7 @@ export default function NetBattle() {
   if (gated) {
     return (
       <div className="w-full h-full min-h-0 flex items-center justify-center bg-[#05070f] text-cyan-100 p-6">
-        <div className="max-w-md border border-cyan-900/50 bg-[#090d18] px-6 py-8 text-center space-y-4">
+        <div data-net-hud-panel className="max-w-md border border-cyan-900/50 bg-[#090d18] px-6 py-8 text-center space-y-4">
           <p className="font-mono text-[10px] tracking-[0.35em] uppercase text-cyan-400/70">
             No live jack-in
           </p>

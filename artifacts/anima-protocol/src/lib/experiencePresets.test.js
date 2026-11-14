@@ -44,8 +44,15 @@ describe("visual-only experience presets", () => {
     })),storage)).toHaveLength(30);
   });
   it("labels runtime styling separately from advanced production mechanics", () => {
-    for (const name of ["Navigation patterns","Character presentation","NetNavi-inspired HUD"]) {
+    for (const name of ["Navigation patterns"]) {
       expect(FEATURE_MATRIX.find(feature => feature.name === name)?.status).toBe("partial");
+    }
+  });
+  it("marks character presentation and the NetNavi HUD implemented across 3D and gameplay surfaces", () => {
+    for (const name of ["Character presentation","NetNavi-inspired HUD"]) {
+      const row = FEATURE_MATRIX.find(feature => feature.name === name);
+      expect(row?.status).toBe("implemented");
+      expect(row?.detail).not.toMatch(/pending/i);
     }
   });
 });

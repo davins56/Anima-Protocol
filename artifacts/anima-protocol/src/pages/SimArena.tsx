@@ -7,6 +7,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import SimHud from "@/components/sim/SimHud";
 import ChipSelect from "@/components/sim/ChipSelect";
 import SovereignPresenceStage from "@/components/anima/SovereignPresenceStage";
+import { NetHudFrame } from "@/components/hud/NetHud";
 import { useCharacterVessel } from "@/hooks/useCharacterVessel";
 import { useSimBattle } from "@/lib/sim/useSimBattle";
 import { createSimSession, localSimConfig } from "@/lib/sim/simApi";
@@ -86,11 +87,12 @@ export default function SimArena() {
   const open = state.corruptions.filter((c) => !c.restored).length;
 
   return (
-    <div className="relative flex-1 min-h-0 flex flex-col bg-black text-foreground">
+    <div className="relative flex-1 min-h-0 flex flex-col bg-black text-foreground" data-net-hud="arena">
       <div className="relative flex-1 min-h-[52vh]">
         <Suspense fallback={<div className="absolute inset-0 grid place-items-center font-mono text-xs text-cyan-300/60">Compiling arena…</div>}>
           <SimArena3D state={state} fx={fx} model={model} previewW={previewW} shift={shift} />
         </Suspense>
+        <NetHudFrame surface="arena" detail={name} />
         {/* visual noise = 1 − clarity */}
         <div
           aria-hidden
@@ -111,7 +113,7 @@ export default function SimArena() {
         {state.custom.open && <ChipSelect state={state} onConfirm={(picks) => dispatch({ t: "custom_pick", picks })} />}
         {state.outcome && (
           <div className="absolute inset-0 z-30 grid place-items-center bg-black/70">
-            <div className="text-center space-y-3 font-mono">
+            <div data-net-hud-panel className="text-center space-y-3 font-mono p-4">
               <p className="text-2xl tracking-[0.3em]" style={{ color: state.outcome === "win" ? "#8B5CF6" : "#B91C1C" }}>
                 {state.outcome === "win" ? "DELETED" : "LOGGED OUT"}
               </p>
@@ -127,7 +129,7 @@ export default function SimArena() {
           </div>
         )}
       </div>
-      <div className="p-3 border-t border-border bg-black/70 space-y-2">
+      <div data-net-hud-panel="toolbar" className="p-3 border-t border-border bg-black/70 space-y-2">
         <SimHud state={state} previewW={previewW} setPreviewW={setPreviewW} onPhase={phase} companionName={name} />
         <div className="grid grid-cols-6 gap-2 font-mono text-[11px] uppercase">
           {([["▲", { t: "move", dc: 0, dr: -1 }], ["▼", { t: "move", dc: 0, dr: 1 }], ["◀", { t: "move", dc: -1, dr: 0 }], ["▶", { t: "move", dc: 1, dr: 0 }]] as const).map(([l, a]) => (
