@@ -15,6 +15,16 @@ import {
   optOutAndForgetRhythm,
 } from "./dayRhythm";
 
+/**
+ * apiUrl() already prefixes "/api". Calling apiUrl("/api/senses") produced
+ * /api/api/senses, which Express answers with 404, so Day Rhythm showed
+ * "Could not share your rhythm snapshot." Pin the exact path.
+ */
+function expectSensesUrl(url: string) {
+  expect(new URL(url, "http://localhost").pathname).toBe("/api/senses");
+  expect(url).not.toContain("/api/api/");
+}
+
 function memoryStorage() {
   const m = new Map<string, string>();
   return {
@@ -56,7 +66,8 @@ describe("dayRhythm client", () => {
     });
     expect(load.status).not.toHaveProperty("title");
     expect(SensesStatusSchema.parse(load.status).timezone).toBe("America/New_York");
-    expect(JSON.stringify(fetchImpl.mock.calls)).toContain("/api/senses");
+    const getUrl = String((fetchImpl.mock.calls[0] as unknown as [string])[0]);
+    expectSensesUrl(getUrl);
   });
 
   it("treats an empty snapshot as present:false", async () => {
@@ -111,7 +122,7 @@ describe("dayRhythm client", () => {
     expect(storage.getItem("anima_senses_opt_in")).toBe("1");
     expect(storage.getItem("anima_senses_timezone")).toBe("UTC");
     const putCall = ok.mock.calls[0] as unknown as [string, { method: string; body: string }];
-    expect(String(putCall[0])).toContain("/api/senses");
+    expectSensesUrl(String(putCall[0]));
     expect(putCall[1].method).toBe("PUT");
     expect(JSON.parse(putCall[1].body).timezone).toBe("UTC");
     expect(JSON.parse(putCall[1].body).calendar).toEqual([]);
@@ -142,7 +153,7 @@ describe("dayRhythm client", () => {
     expect(storage.getItem("anima_senses_opt_in")).toBeNull();
     expect(storage.getItem("anima_senses_timezone")).toBeNull();
     const deleteCall = fetchImpl.mock.calls[0] as unknown as [string, { method: string }];
-    expect(String(deleteCall[0])).toContain("/api/senses");
+    expectSensesUrl(String(deleteCall[0]));
     expect(deleteCall[1].method).toBe("DELETE");
   });
 });
