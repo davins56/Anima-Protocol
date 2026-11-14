@@ -7,17 +7,31 @@
  *
  * Selection policy (first match wins):
  *   1. forceCharacterId (orchestrator / UI pin) when it is a participant
- *   2. Explicit @mention or whole-name address in the latest user message
+ *   2. Addressed speakers in order (name, nickname/alias, @mention, or a
+ *      vocative / message starting with their name), whether the user or
+ *      another character did the addressing. Remaining addressees speak
+ *      on subsequent turns, then the picker returns to random.
  *   3. Optional LLM director (when askDirector is provided and succeeds)
- *   4. Least-recently-spoken among eligible participants
- *   5. Optional interrupt (~35%) that swaps to another eligible speaker
+ *   4. Uniform random among eligible participants, never the same character
+ *      twice in a row unless they are the only option
+ *   5. Optional interrupt (off by default) that swaps to another eligible speaker
+ *
+ * Core heuristics live in pickNextSpeakers (mirrored on the client).
  */
 
-export interface SceneMindCharacter {
+import {
+  pickNextSpeakers,
+  type SpeakerParticipant,
+} from "./pickNextSpeakers";
+
+export interface SceneMindCharacter extends SpeakerParticipant {
   id: string;
   name: string;
   universe?: string | null;
   personality?: string | null;
+  nickname?: string | null;
+  aka?: string | null;
+  aliases?: string[] | string | null;
 }
 
 export interface SceneMindMessage {
@@ -33,6 +47,7 @@ export type SceneMindReason =
   | "forced"
   | "addressed"
   | "director"
+  | "random"
   | "least_recent"
   | "interrupt"
   | "fallback";
@@ -42,10 +57,12 @@ export interface SceneMindDecision {
   characterName: string;
   reason: SceneMindReason;
   interrupted: boolean;
-  /** Character the director (or least-recent rule) preferred before interrupt. */
+  /** Character the director (or random rule) preferred before interrupt. */
   preferredCharacterId: string | null;
   lastSpeakerId: string | null;
   lastSpeakerName: string | null;
+  /** Remaining addressed speakers after the one chosen for this turn. */
+  pendingCharacterIds: string[];
 }
 
 export interface SelectNextSpeakerParams {
@@ -65,7 +82,7 @@ export interface SelectNextSpeakerParams {
   random?: () => number;
   /**
    * Optional LLM director. Receives a prompt and should return a character
-   * name (exact). Failures / unknown names fall through to least-recent.
+   * name (exact). Failures / unknown names fall through to random.
    */
   askDirector?: (prompt: string) => Promise<string | null>;
   /** Skip the LLM director even when askDirector is set. */
@@ -81,24 +98,7 @@ function normalizeName(value: unknown): string {
   return value == null ? "" : String(value).trim();
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[]\\]/g, "\\$&");
-}
-
-/** True when the user message clearly addresses this character. */
-export function isCharacterAddressed(
-  userMessage: string,
-  characterName: string,
-): boolean {
-  const name = normalizeName(characterName);
-  const text = String(userMessage || "");
-  if (!name || !text.trim()) return false;
-  const escaped = escapeRegExp(name);
-  // @Name or whole-word Name (case-insensitive)
-  const atMention = new RegExp(`@${escaped}\\b`, "i");
-  const wholeWord = new RegExp(`\\b${escaped}\\b`, "i");
-  return atMention.test(text) || wholeWord.test(text);
-}
+export { isCharacterAddressed } from "./pickNextSpeakers";
 
 export function findCharacterByName(
   characters: SceneMindCharacter[],
@@ -231,19 +231,6 @@ Rules:
 - Reply with ONLY the character's exact name — nothing else${continueNote}`;
 }
 
-function pickLeastRecent(
-  pool: SceneMindCharacter[],
-  recentSpeakerNames: Set<string>,
-): SceneMindCharacter {
-  const lower = new Set(
-    [...recentSpeakerNames].map((n) => n.toLowerCase()),
-  );
-  return (
-    pool.find((c) => !lower.has(normalizeName(c.name).toLowerCase())) ||
-    pool[0]!
-  );
-}
-
 function pickInterrupter(
   pool: SceneMindCharacter[],
   preferred: SceneMindCharacter,
@@ -302,47 +289,56 @@ export async function selectNextSpeaker(
     speakers.map((s) => s.name).filter(Boolean) as string[],
   );
 
-  // 1) Forced speaker (must be a participant)
-  const forced = findCharacterById(characters, params.forceCharacterId);
-  if (forced) {
-    return {
-      characterId: forced.id,
-      characterName: forced.name,
-      reason: "forced",
-      interrupted: false,
-      preferredCharacterId: forced.id,
-      lastSpeakerId: last?.id ?? null,
-      lastSpeakerName: last?.name ?? null,
-    };
+  const userMessage = String(params.userMessage || "");
+  const heuristic = pickNextSpeakers({
+    participants: characters,
+    lastSpeakerId: last?.id ?? null,
+    latestMessage: userMessage,
+    recentMessages,
+    forceCharacterId: params.forceCharacterId,
+    eligibleCharacterIds: params.eligibleCharacterIds,
+    rng: random,
+  });
+
+  const lastSpeakerId = heuristic.lastSpeakerId ?? last?.id ?? null;
+  const lastSpeakerName =
+    (lastSpeakerId && findCharacterById(characters, lastSpeakerId)?.name) ||
+    last?.name ||
+    null;
+
+  const decision = (
+    chosen: SceneMindCharacter,
+    reason: SceneMindReason,
+    extras: {
+      interrupted?: boolean;
+      preferredCharacterId?: string | null;
+      pendingCharacterIds?: string[];
+    } = {},
+  ): SceneMindDecision => ({
+    characterId: chosen.id,
+    characterName: chosen.name,
+    reason,
+    interrupted: Boolean(extras.interrupted),
+    preferredCharacterId: extras.preferredCharacterId ?? chosen.id,
+    lastSpeakerId,
+    lastSpeakerName,
+    pendingCharacterIds: extras.pendingCharacterIds ?? [],
+  });
+
+  if (!heuristic.next) return null;
+
+  if (heuristic.reason === "forced" || heuristic.reason === "addressed") {
+    return decision(heuristic.next, heuristic.reason, {
+      pendingCharacterIds: heuristic.speakers.slice(1).map((c) => c.id),
+    });
   }
 
   const pool = resolveEligiblePool(characters, params.eligibleCharacterIds);
-  const userMessage = String(params.userMessage || "");
 
-  // 2) Explicit address / @mention in the user message
-  if (userMessage.trim() && !params.isContinue) {
-    const addressed = pool.filter((c) =>
-      isCharacterAddressed(userMessage, c.name),
-    );
-    // Prefer a single clear addressee; if several match, keep going to director/least-recent
-    if (addressed.length === 1) {
-      const chosen = addressed[0]!;
-      return {
-        characterId: chosen.id,
-        characterName: chosen.name,
-        reason: "addressed",
-        interrupted: false,
-        preferredCharacterId: chosen.id,
-        lastSpeakerId: last?.id ?? null,
-        lastSpeakerName: last?.name ?? null,
-      };
-    }
-  }
-
-  // 3) Optional LLM director
-  let preferred: SceneMindCharacter | null = null;
-  let reason: SceneMindReason = "least_recent";
-
+  // Optional LLM director — only when no one was addressed and the caller
+  // opted in. Failures fall through to the random heuristic.
+  let preferred: SceneMindCharacter | null = heuristic.next;
+  let reason: SceneMindReason = heuristic.reason;
   const shouldAskDirector =
     params.useDirector !== false &&
     typeof params.askDirector === "function" &&
@@ -353,7 +349,7 @@ export async function selectNextSpeaker(
       const prompt = buildDirectorPrompt({
         characters: pool,
         recentMessages,
-        lastSpeakerName: last?.name ?? null,
+        lastSpeakerName,
         userMessage,
         isContinue: params.isContinue,
       });
@@ -364,19 +360,16 @@ export async function selectNextSpeaker(
         reason = "director";
       }
     } catch {
-      // fall through to least-recent
+      // fall through to random
     }
   }
 
-  // 4) Least-recently-spoken fallback
-  if (!preferred) {
-    preferred = pickLeastRecent(pool, recentSpeakerNames);
-    reason = "least_recent";
-  }
+  if (!preferred) return null;
 
-  // 5) Interrupt / out-of-turn reaction — off by default so the companion
+  // Interrupt / out-of-turn reaction — off by default so the companion
   // answers the user's actual message instead of a random side character cutting in.
-  const allowInterrupt = !params.isContinue && pool.length >= 2 && random() < interruptChance;
+  const allowInterrupt =
+    !params.isContinue && pool.length >= 2 && random() < interruptChance;
 
   if (allowInterrupt) {
     const interrupter = pickInterrupter(
@@ -386,25 +379,12 @@ export async function selectNextSpeaker(
       recentSpeakerNames,
     );
     if (interrupter) {
-      return {
-        characterId: interrupter.id,
-        characterName: interrupter.name,
-        reason: "interrupt",
+      return decision(interrupter, "interrupt", {
         interrupted: true,
         preferredCharacterId: preferred.id,
-        lastSpeakerId: last?.id ?? null,
-        lastSpeakerName: last?.name ?? null,
-      };
+      });
     }
   }
 
-  return {
-    characterId: preferred.id,
-    characterName: preferred.name,
-    reason,
-    interrupted: false,
-    preferredCharacterId: preferred.id,
-    lastSpeakerId: last?.id ?? null,
-    lastSpeakerName: last?.name ?? null,
-  };
+  return decision(preferred, reason);
 }

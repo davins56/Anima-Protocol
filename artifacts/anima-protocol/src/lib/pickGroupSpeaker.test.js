@@ -39,7 +39,7 @@ describe("pickGroupSpeaker", () => {
     expect(pick.character.id).toBe("b");
   });
 
-  it("falls back to least-recent among eligible speakers", () => {
+  it("falls back to random among eligible speakers and skips the last speaker", () => {
     const pick = pickGroupSpeaker({
       groupChars: cast,
       recentMessages: [
@@ -49,8 +49,9 @@ describe("pickGroupSpeaker", () => {
       interruptChance: 0,
       random: () => 0.99,
     });
-    expect(pick.reason).toBe("least_recent");
+    expect(pick.reason).toBe("random");
     expect(pick.character.id).toBe("c");
+    expect(pick.character.id).not.toBe("b");
   });
 
   it("can interrupt to another eligible speaker", () => {
