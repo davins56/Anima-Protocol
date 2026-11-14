@@ -15,6 +15,8 @@
  * source when Keys land.
  */
 
+import { scoreUserSynchroDelta } from "./synchroEngine";
+
 export const COMPANION_AFFECT_VERSION = 1 as const;
 export const COMPANION_AFFECT_SOURCE = "companion_affect" as const;
 export const SELF_STATE_KEY = "selfState" as const;
@@ -57,6 +59,19 @@ export interface CompanionAffect {
   lastActedAt: string | null;
   silenceReason: string | null;
   updatedAt: string;
+  /**
+   * Where this companion rests when nothing is happening: her personality's
+   * resting feeling and energy. Feeling and energy drift back here between
+   * turns and over quiet time. Missing means the neutral default.
+   */
+  baseline?: AffectBaseline;
+}
+
+/** A companion's resting feeling, from her personality when one is known. */
+export interface AffectBaseline {
+  primary: CompanionPrimaryEmotion;
+  intensity: number;
+  energy: number;
 }
 
 /** Stable wire shape for SSE `done`, GET memories, and the client UI. */
@@ -70,6 +85,10 @@ export interface CompanionAffectSnapshot {
   intent: string;
   updated_at: string;
   synchro_strength: number | null;
+  /** Resting feeling the UI drifts back toward between turns. */
+  baseline_primary?: CompanionPrimaryEmotion;
+  /** Resting energy (0–100) the UI drifts back toward between turns. */
+  baseline_energy?: number;
 }
 
 /**
@@ -95,8 +114,22 @@ const PRIMARY_SET = new Set<string>(COMPANION_PRIMARY_EMOTIONS);
 const REST_INTENSITY = 22;
 const REST_ENERGY = 48;
 const MAX_OPEN_LOOPS = 8;
-const SWITCH_BASE = 20;
+/** Leaving a held feeling costs more the stronger it is (hysteresis). */
+const SWITCH_HELD = 12;
+/** Leaving a resting feeling is easy: ordinary conversation can do it. */
+const SWITCH_FROM_REST = 10;
 const PROMPT_BUDGET = 480;
+/** Quiet time is measured in whole steps so replays give the same result. */
+export const AFFECT_DRIFT_STEP_MINUTES = 15;
+const DRIFT_INTENSITY_PER_STEP = 4;
+const DRIFT_ENERGY_PER_STEP = 3;
+const MAX_DRIFT_STEPS = 96;
+
+export const DEFAULT_AFFECT_BASELINE: AffectBaseline = {
+  primary: "neutral",
+  intensity: REST_INTENSITY,
+  energy: REST_ENERGY,
+};
 
 const DEFAULT_AFFECT: CompanionAffect = {
   version: COMPANION_AFFECT_VERSION,
@@ -113,6 +146,8 @@ const DEFAULT_AFFECT: CompanionAffect = {
 };
 
 type AffectCue = {
+  /** Named reason for tests and debugging. */
+  signal?: string;
   primary: CompanionPrimaryEmotion;
   pull: number;
   focus?: string;
@@ -162,6 +197,22 @@ const VALENCE: Record<CompanionPrimaryEmotion, number> = {
   neutral: 0,
 };
 
+/** How much each feeling lifts (or settles) her energy per strong turn. */
+const ENERGY_PUSH: Record<CompanionPrimaryEmotion, number> = {
+  happy: 5,
+  playful: 6,
+  romantic: 4,
+  tender: -2,
+  curious: 3,
+  watchful: -2,
+  anxious: 5,
+  sad: -4,
+  fearful: 7,
+  hostile: 7,
+  cold: -4,
+  neutral: 0,
+};
+
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
@@ -195,7 +246,13 @@ function moodLabel(
   if (primary === "romantic" && intensity >= 45) return "tender-open";
   if (primary === "tender" && intensity >= 55) return "tender-aching";
   if (primary === "tender") return "tender";
+  if (primary === "curious" && intensity < 40) return "interested";
   if (primary === "playful" && intensity >= 60) return "stirred";
+  if (primary === "playful") return "light-hearted";
+  if (primary === "happy" && intensity >= 65) return "radiant";
+  if (primary === "happy" && intensity < 45) return "warm";
+  if (primary === "anxious") return "uneasy";
+  if (primary === "fearful" && intensity >= 55) return "alarmed";
   if (primary === "neutral" && energy < 35) return "quiet";
   if (primary === "neutral") return "quiet-watchful";
   if (primary === "sad" && intensity >= 55) return "aching";
@@ -281,7 +338,10 @@ function strongestCue(candidates: AffectCue[]): AffectCue | null {
  * Lightweight heuristic cues from a turn. No extra LLM — stays off the
  * SSE-open / first-token path.
  */
-export function detectAffectCue(text: string): AffectCue | null {
+export function detectAffectCue(
+  text: string,
+  options: { source?: "user" | "companion" } = {},
+): AffectCue | null {
   if (!text) return null;
   const msg = text.toLowerCase();
   const candidates: AffectCue[] = [];
@@ -365,7 +425,60 @@ export function detectAffectCue(text: string): AffectCue | null {
     });
   }
 
+  // Same conversation signals the Synchro meter reads (PR #722), so the
+  // header feeling and the bond meters move off one reading of the turn.
+  // Only the user's words count here: a reply is always "engaged".
+  if (options.source !== "companion") {
+    candidates.push(...synchroSignalCues(text));
+  }
+
   return strongestCue(candidates);
+}
+
+/**
+ * Cues from the Synchro signals: warmth, bonding, shared history,
+ * vulnerability, interest in her, rejection, and plain engagement. Each is
+ * a gentle pull; the explicit phrase cues above still win when they fire.
+ */
+function synchroSignalCues(text: string): AffectCue[] {
+  const { signals } = scoreUserSynchroDelta(text, 40);
+  const has = (name: string) => signals.includes(name);
+  const cues: AffectCue[] = [];
+  if (has("hostile")) {
+    cues.push({ signal: "hostile", primary: "sad", pull: 24, intent: "hold-boundary" });
+  }
+  if (has("dismissive")) {
+    cues.push({ signal: "dismissive", primary: "cold", pull: 18, intent: "withdraw" });
+  }
+  if (has("hostile") || has("dismissive")) return cues;
+  if (has("vulnerability")) {
+    cues.push({ signal: "vulnerability", primary: "tender", pull: 21, intent: "comfort", focus: "steward" });
+  }
+  if (has("warmth")) {
+    cues.push({ signal: "warmth", primary: "happy", pull: 18, intent: "play" });
+  }
+  if (has("bonding")) {
+    cues.push({ signal: "bonding", primary: "tender", pull: 17, intent: "draw-close" });
+  }
+  if (has("shared-history")) {
+    cues.push({ signal: "shared-history", primary: "tender", pull: 15, intent: "comfort" });
+  }
+  if (has("curious-about-you")) {
+    cues.push({ signal: "curious-about-you", primary: "curious", pull: 15, intent: "answer" });
+  }
+  if (has("low-effort")) {
+    cues.push({ signal: "low-effort", primary: "watchful", pull: 11, intent: "attend" });
+  }
+  if (cues.length === 0 && has("engaged")) {
+    // Plain engaged talk: she leans in. Longer messages pull harder.
+    const pull = 11 + (has("long") ? 5 : has("detailed") ? 3 : 0);
+    cues.push({ signal: "engaged", primary: "curious", pull, intent: "answer" });
+  }
+  return cues;
+}
+
+function baselineOf(state: Pick<CompanionAffect, "baseline">): AffectBaseline {
+  return state.baseline ?? DEFAULT_AFFECT_BASELINE;
 }
 
 function applyCue(
@@ -373,25 +486,33 @@ function applyCue(
   cue: AffectCue | null,
   now: string,
 ): CompanionAffect {
+  const base = baselineOf(current);
   let primary = current.primary;
-  let intensity = approach(current.intensity, REST_INTENSITY, 3);
-  let energy = approach(current.energy, REST_ENERGY, 2);
+  let intensity = approach(current.intensity, base.intensity, 3);
+  let energy = approach(current.energy, base.energy, 2);
   const openLoops = [...current.openLoops];
 
   if (cue) {
     if (cue.primary === primary) {
       intensity = clamp(intensity + Math.round(cue.pull * 0.65), 0, 100);
     } else {
-      const switchCost = SWITCH_BASE + Math.round(current.intensity * 0.18);
+      const atRest =
+        current.primary === base.primary ||
+        current.intensity <= base.intensity + 6;
+      const switchCost = atRest
+        ? SWITCH_FROM_REST
+        : SWITCH_HELD + Math.round(current.intensity * 0.2);
       if (cue.pull >= switchCost) {
         primary = cue.primary;
         intensity = clamp(26 + Math.round(cue.pull * 0.55), 0, 100);
       } else {
-        intensity = clamp(intensity - 4, REST_INTENSITY - 8, 100);
+        intensity = clamp(intensity - 4, base.intensity - 8, 100);
       }
     }
+    const push = ENERGY_PUSH[cue.primary] ?? 0;
     energy = clamp(
-      energy + (cue.pull >= 22 ? 6 : cue.pull >= 14 ? 2 : -1),
+      energy + Math.round(push * Math.min(1.25, Math.max(0.5, cue.pull / 22))) +
+        (cue.signal === "low-effort" ? -3 : 0),
       8,
       100,
     );
@@ -401,6 +522,9 @@ function applyCue(
         openLoops.push(loop);
       }
     }
+  } else if (primary !== base.primary && intensity <= base.intensity + 3) {
+    // Nothing new this turn and the feeling has faded: she settles back.
+    primary = base.primary;
   }
 
   const next: CompanionAffect = {
@@ -417,6 +541,98 @@ function applyCue(
     updatedAt: now,
   };
   return next;
+}
+
+/**
+ * Quiet-time drift: every whole AFFECT_DRIFT_STEP_MINUTES since the last
+ * update, intensity and energy ease back toward her baseline, and once the
+ * feeling has faded she returns to her resting feeling. Pure; a replay of the
+ * same turn lands on the same values.
+ */
+export function driftCompanionAffect(
+  current: CompanionAffect,
+  now = new Date().toISOString(),
+): CompanionAffect {
+  const from = Date.parse(current.updatedAt);
+  const to = Date.parse(now);
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) return current;
+  const steps = Math.min(
+    MAX_DRIFT_STEPS,
+    Math.floor((to - from) / (AFFECT_DRIFT_STEP_MINUTES * 60_000)),
+  );
+  if (steps <= 0) return current;
+  const base = baselineOf(current);
+  const intensity = approach(current.intensity, base.intensity, steps * DRIFT_INTENSITY_PER_STEP);
+  const energy = approach(current.energy, base.energy, steps * DRIFT_ENERGY_PER_STEP);
+  const primary =
+    current.primary !== base.primary && intensity <= base.intensity + 3
+      ? base.primary
+      : current.primary;
+  return {
+    ...current,
+    primary,
+    intensity,
+    energy,
+    mood: moodLabel(primary, intensity, energy),
+    intent: primary === current.primary ? current.intent : intentFor(primary),
+  };
+}
+
+const PERSONALITY_BASELINES: Array<{ re: RegExp; baseline: AffectBaseline }> = [
+  {
+    re: /\b(cheerful|bubbly|energetic|exuberant|playful|mischievous|witty|quippy|goofy|humorous|sunny)\b/,
+    baseline: { primary: "playful", intensity: REST_INTENSITY, energy: 60 },
+  },
+  {
+    re: /\b(warm|kind|gentle|nurturing|caring|compassionate|empathetic|soft-spoken|tender)\b/,
+    baseline: { primary: "tender", intensity: REST_INTENSITY, energy: 44 },
+  },
+  {
+    re: /\b(curious|inquisitive|brilliant|analytical|scholarly|inventive)\b/,
+    baseline: { primary: "curious", intensity: REST_INTENSITY, energy: 52 },
+  },
+  {
+    re: /\b(stoic|reserved|guarded|aloof|walled-off|measured|disciplined|composed|vigilant|cool reserve)\b/,
+    baseline: { primary: "watchful", intensity: REST_INTENSITY, energy: 40 },
+  },
+  {
+    re: /\b(confident|bold|fierce|determined|driven|commanding|proud)\b/,
+    baseline: { primary: "neutral", intensity: REST_INTENSITY, energy: 56 },
+  },
+];
+
+/**
+ * A companion's resting feeling from her personality text: the trait family
+ * with the most matching words wins, ties go to the earlier family. No
+ * personality, or nothing recognisable, rests at the neutral default.
+ */
+export function affectBaselineFromPersonality(
+  ...texts: Array<string | null | undefined>
+): AffectBaseline {
+  const text = texts.filter(Boolean).join(" ").toLowerCase();
+  if (!text.trim()) return { ...DEFAULT_AFFECT_BASELINE };
+  let best: AffectBaseline | null = null;
+  let bestHits = 0;
+  for (const { re, baseline } of PERSONALITY_BASELINES) {
+    const hits = text.match(new RegExp(re.source, "g"))?.length ?? 0;
+    if (hits > bestHits) {
+      best = baseline;
+      bestHits = hits;
+    }
+  }
+  return { ...(best ?? DEFAULT_AFFECT_BASELINE) };
+}
+
+function normalizeBaseline(raw: unknown): AffectBaseline | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const src = raw as Record<string, unknown>;
+  const primary = typeof src.primary === "string" && isPrimary(src.primary) ? src.primary : null;
+  if (!primary) return undefined;
+  return {
+    primary,
+    intensity: clamp(asFiniteNumber(src.intensity, REST_INTENSITY), 0, 100),
+    energy: clamp(asFiniteNumber(src.energy, REST_ENERGY), 0, 100),
+  };
 }
 
 function readStored(raw: Record<string, unknown> | null | undefined): unknown {
@@ -463,6 +679,7 @@ export function normalizeCompanionAffect(
           ? src.silence_reason
           : null,
     updatedAt: asString(src.updatedAt ?? src.updated_at, now),
+    ...(normalizeBaseline(src.baseline) ? { baseline: normalizeBaseline(src.baseline) } : {}),
   };
 }
 
@@ -474,16 +691,25 @@ export function normalizeCompanionAffect(
 export function initCompanionAffect(
   emotionalState?: Record<string, unknown> | null,
   now = new Date().toISOString(),
+  baseline?: AffectBaseline | null,
 ): CompanionAffect {
   const stored = readStored(emotionalState ?? null);
   if (!stored) {
+    const base = baseline ?? DEFAULT_AFFECT_BASELINE;
     return {
       ...DEFAULT_AFFECT,
+      primary: base.primary,
+      intensity: base.intensity,
+      energy: base.energy,
+      intent: intentFor(base.primary),
       updatedAt: now,
-      mood: moodLabel("neutral", REST_INTENSITY, REST_ENERGY),
+      mood: moodLabel(base.primary, base.intensity, base.energy),
+      ...(baseline ? { baseline: { ...baseline } } : {}),
     };
   }
-  return normalizeCompanionAffect(stored, now);
+  const restored = normalizeCompanionAffect(stored, now);
+  // A personality baseline known this turn replaces a stored one.
+  return baseline ? { ...restored, baseline: { ...baseline } } : restored;
 }
 
 export function evolveCompanionAffectFromUser(
@@ -491,7 +717,9 @@ export function evolveCompanionAffectFromUser(
   userMessage: string,
   now = new Date().toISOString(),
 ): CompanionAffect {
-  return applyCue(current, detectAffectCue(userMessage), now);
+  // Quiet time since her last update eases her back toward baseline first.
+  const settled = driftCompanionAffect(current, now);
+  return applyCue(settled, detectAffectCue(userMessage, { source: "user" }), now);
 }
 
 export function evolveCompanionAffectFromCompanion(
@@ -499,7 +727,7 @@ export function evolveCompanionAffectFromCompanion(
   companionResponse: string,
   now = new Date().toISOString(),
 ): CompanionAffect {
-  const cue = detectAffectCue(companionResponse);
+  const cue = detectAffectCue(companionResponse, { source: "companion" });
   if (!cue) {
     return {
       ...current,
@@ -526,6 +754,7 @@ export function serializeCompanionAffect(
     lastActedAt: state.lastActedAt,
     silenceReason: state.silenceReason,
     updatedAt: state.updatedAt,
+    ...(state.baseline ? { baseline: { ...state.baseline } } : {}),
   };
 }
 
@@ -609,6 +838,8 @@ export function toCompanionAffectSnapshot(
       typeof synchroStrength === "number" && Number.isFinite(synchroStrength)
         ? clamp(Math.round(synchroStrength), 0, 100)
         : null,
+    baseline_primary: baselineOf(state).primary,
+    baseline_energy: Math.round(baselineOf(state).energy),
   };
 }
 

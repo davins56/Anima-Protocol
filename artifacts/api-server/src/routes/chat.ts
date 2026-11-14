@@ -135,6 +135,7 @@ import {
 } from "../lib/synchroEngine";
 import {
   initCompanionAffect,
+  affectBaselineFromPersonality,
   evolveCompanionAffectFromUser,
   evolveCompanionAffectFromCompanion,
   serializeCompanionAffect,
@@ -2260,6 +2261,8 @@ function turnStatusPayload(turn: ChatTurn) {
     user_message_id: turn.userMessageId,
     companion_affect: metadata.companion_affect ?? null,
     active_character_name: metadata.active_character_name ?? null,
+    // Whose felt state companion_affect is: the header updates that companion.
+    active_character_id: metadata.active_character_id ?? null,
     ...(isCutOffReply(metadata) ? { reply_interrupted: true, cut_off: true } : {}),
   };
 }
@@ -3157,6 +3160,12 @@ router.post("/messages", async (req, res) => {
     );
     companionAffect = initCompanionAffect(
       (memForChar?.emotionalState as Record<string, unknown> | null) ?? null,
+      undefined,
+      // Her personality sets where Feeling and energy rest and drift back to.
+      affectBaselineFromPersonality(
+        activeChar.personality ? String(activeChar.personality) : null,
+        activeChar.speaking_style ? String(activeChar.speaking_style) : null,
+      ),
     );
     if (content) {
       companionAffect = evolveCompanionAffectFromUser(companionAffect, content);

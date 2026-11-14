@@ -46,6 +46,7 @@ export default function ChatToolbar({
   llmProvider,
   onOpenStage,
   onOpenHistory,
+  replying = false,
 }) {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -87,6 +88,7 @@ export default function ChatToolbar({
             storyModeOn={storyModeOn}
             onAvatarClick={onAvatarClick}
             llmProvider={llmProvider}
+            replying={replying}
           />
         </div>
 
