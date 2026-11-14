@@ -35,6 +35,7 @@ import continuityRouter from "./continuity";
 import dreamsRouter from "./dreams";
 import searchRouter from "./search";
 import sensesRouter from "./senses";
+import calendarRouter from "./calendar";
 import mediaRouter from "./media";
 
 const router: IRouter = Router();
@@ -73,6 +74,7 @@ router.use("/continuity", continuityRouter);
 router.use("/dreams", dreamsRouter);
 router.use("/search", searchRouter);
 router.use("/senses", sensesRouter);
+router.use("/calendar", calendarRouter);
 router.use("/media", mediaRouter);
 router.use("/store", storeRouter);
 router.use(photoRouter);

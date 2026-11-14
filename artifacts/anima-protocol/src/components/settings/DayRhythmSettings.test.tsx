@@ -38,6 +38,17 @@ vi.mock("@/lib/animaSenses", async () => {
   };
 });
 
+const calendarMocks = vi.hoisted(() => ({
+  loadCalendarStatus: vi.fn(),
+  startCalendarConnect: vi.fn(),
+  disconnectCalendarProvider: vi.fn(),
+}));
+
+vi.mock("@/lib/calendarAwareness", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/calendarAwareness")>("@/lib/calendarAwareness");
+  return { ...actual, ...calendarMocks };
+});
+
 import DayRhythmSettings from "./DayRhythmSettings";
 
 describe("DayRhythmSettings", () => {
@@ -50,6 +61,10 @@ describe("DayRhythmSettings", () => {
     vi.clearAllMocks();
     localStorage.clear();
     rhythmMocks.isDayRhythmOptedIn.mockReturnValue(false);
+    calendarMocks.loadCalendarStatus.mockResolvedValue({
+      ok: true,
+      status: { enabled: true, providers: { google: true, microsoft: false }, connections: [], busy: null },
+    });
     rhythmMocks.sensesTimezoneOverride.mockReturnValue(null);
     rhythmMocks.getRhythmSettings.mockResolvedValue({
       connected: false,
@@ -110,13 +125,25 @@ describe("DayRhythmSettings", () => {
     ).toEqual([]);
   });
 
-  it("shows calendar awareness as coming soon and does not start OAuth", async () => {
+  it("shows calendar awareness with busy/free-only copy and per-provider connect", async () => {
     render(<DayRhythmSettings />);
-    expect(await screen.findByText(/coming soon/i)).toBeTruthy();
-    const calendar = screen.getByRole("switch", { name: "Calendar awareness (coming soon)" });
-    expect(calendar).toHaveProperty("disabled", true);
-    expect(calendar.getAttribute("aria-checked")).toBe("false");
-    expect(screen.queryByText(/sign in with google|oauth|connect calendar/i)).toBeNull();
+    expect(await screen.findByText(/never event titles/i)).toBeTruthy();
+    expect(screen.queryByText(/coming soon/i)).toBeNull();
+    expect(await screen.findByText("Google Calendar")).toBeTruthy();
+    expect(screen.getByText("Not set up on the server yet.")).toBeTruthy();
+    const connects = screen.getAllByRole("button", { name: "Connect" });
+    expect(connects).toHaveLength(2);
+    expect(connects[0]).toHaveProperty("disabled", false);
+    expect(connects[1]).toHaveProperty("disabled", true);
+    expect(calendarMocks.startCalendarConnect).not.toHaveBeenCalled();
+  });
+
+  it("reloads calendar status after forgetting rhythm data", async () => {
+    render(<DayRhythmSettings />);
+    await waitFor(() => expect(calendarMocks.loadCalendarStatus).toHaveBeenCalledTimes(1));
+    fireEvent.click(await screen.findByRole("button", { name: "Forget my rhythm data" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm forget" }));
+    await waitFor(() => expect(calendarMocks.loadCalendarStatus).toHaveBeenCalledTimes(2));
   });
 
   it("forgets rhythm data through DELETE after confirm", async () => {

@@ -18,6 +18,7 @@ import {
   sensesTimezoneOverride,
   setSensesTimezoneOverride,
 } from "@/lib/animaSenses";
+import CalendarAwarenessSection from "@/components/settings/CalendarAwarenessSection";
 
 const WEEKDAYS = [
   { value: 0, label: "Sun" },
@@ -88,6 +89,8 @@ export default function DayRhythmSettings() {
   );
   const [draft, setDraft] = useState<RhythmSettingsDraft>(DEFAULT_RHYTHM_DRAFT);
   const [confirmForget, setConfirmForget] = useState(false);
+  // Forget / opt-out also disconnects calendars on the server; reload that section.
+  const [calendarRefresh, setCalendarRefresh] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -145,6 +148,7 @@ export default function DayRhythmSettings() {
       setBusy(false);
       if (result.ok) {
         setOptedIn(false);
+        setCalendarRefresh((n) => n + 1);
         setStatus((current) => ({
           enabled: current?.enabled ?? false,
           present: false,
@@ -178,6 +182,7 @@ export default function DayRhythmSettings() {
     setConfirmForget(false);
     if (result.ok) {
       setOptedIn(false);
+      setCalendarRefresh((n) => n + 1);
       setStatus((current) => ({
         enabled: current?.enabled ?? false,
         present: false,
@@ -425,33 +430,16 @@ export default function DayRhythmSettings() {
         </div>
       </div>
 
-      <div className="space-y-2 border-t border-primary/10 pt-4">
-        <p className="font-mono text-xs text-primary/70 tracking-wider uppercase">
-          Calendar awareness
-        </p>
-        <div className="flex items-start justify-between gap-4">
-          <p className="text-[9px] font-mono text-primary/35 leading-relaxed max-w-md">
-            Coming soon. This browser cannot read your calendar, and there is
-            no calendar sign-in here. When a connection exists, she will only
-            see busy or free blocks — not event titles.
-          </p>
-          <ToggleSwitch
-            id="day-rhythm-calendar"
-            label="Calendar awareness (coming soon)"
-            checked={false}
-            disabled
-            onToggle={() => {}}
-          />
-        </div>
-      </div>
+      <CalendarAwarenessSection refreshKey={calendarRefresh} />
 
       <div className="border-t border-primary/10 pt-4">
         <p className="font-mono text-xs text-primary/70 tracking-wider uppercase">
           Forget my rhythm data
         </p>
         <p className="text-[9px] font-mono text-primary/35 mt-1 leading-relaxed">
-          Deletes the snapshot stored on the server and stops this device from
-          sending another until you opt in again.
+          Deletes the snapshot stored on the server, disconnects any calendar
+          (and deletes its sign-in token), and stops this device from sending
+          another until you opt in again.
         </p>
         {confirmForget ? (
           <div className="flex flex-wrap gap-2 mt-3">

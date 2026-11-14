@@ -40,4 +40,5 @@ export const PROTECTED_SQL_TABLES = [
   "tool_permissions",
   "tool_pending_confirmations",
   "tool_action_log",
+  "calendar_connections",
 ] as const;
