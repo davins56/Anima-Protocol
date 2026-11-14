@@ -39,6 +39,9 @@ export default defineConfig({
       "test/sacredSpaceResonance.test.ts",
       "test/synchroEngine.test.ts",
       "test/synchroDelta.test.ts",
+      // Header Feeling / Level / energy per turn and quiet-time drift (pure).
+      "test/companionAffect.test.ts",
+      "test/companionAffectShift.test.ts",
       "test/mindFactsSummary.test.ts",
       "test/mindGuards.test.ts",
       "test/mindPrompt.test.ts",

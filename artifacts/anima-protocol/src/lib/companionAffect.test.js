@@ -44,6 +44,10 @@ describe("characterEmotionFromAffect", () => {
       emotion_level: "stirred",
       arousal: 60,
       source: COMPANION_AFFECT_SOURCE,
+      intensity_pct: 73,
+      felt_at: "",
+      baseline_primary: "neutral",
+      baseline_energy: 48,
     });
   });
 });

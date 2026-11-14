@@ -33,6 +33,8 @@ function isRecord(value) {
  *   intent: string,
  *   updated_at: string,
  *   synchro_strength: number | null,
+ *   baseline_primary: string,
+ *   baseline_energy: number,
  * }}
  */
 export function parseCompanionAffectSnapshot(raw) {
@@ -54,6 +56,14 @@ export function parseCompanionAffectSnapshot(raw) {
       typeof raw.synchro_strength === "number" && Number.isFinite(raw.synchro_strength)
         ? Math.max(0, Math.min(100, Math.round(raw.synchro_strength)))
         : null,
+    baseline_primary:
+      typeof raw.baseline_primary === "string" && raw.baseline_primary.trim()
+        ? raw.baseline_primary.trim().toLowerCase()
+        : "neutral",
+    baseline_energy:
+      typeof raw.baseline_energy === "number" && Number.isFinite(raw.baseline_energy)
+        ? Math.max(0, Math.min(100, Math.round(raw.baseline_energy)))
+        : REST_ENERGY,
   };
 }
 
@@ -71,6 +81,84 @@ export function characterEmotionFromAffect(snapshot) {
     emotion_level: snapshot.mood,
     arousal: snapshot.energy,
     source: COMPANION_AFFECT_SOURCE,
+    // Drift inputs: the 0–100 values and her resting point.
+    intensity_pct: snapshot.intensity,
+    felt_at: snapshot.updated_at || "",
+    baseline_primary: snapshot.baseline_primary || "neutral",
+    baseline_energy: snapshot.baseline_energy ?? REST_ENERGY,
+  };
+}
+
+const REST_INTENSITY = 22;
+const REST_ENERGY = 48;
+/** Must match AFFECT_DRIFT_STEP_MINUTES and the per-step easing on the server. */
+export const AFFECT_DRIFT_STEP_MINUTES = 15;
+const DRIFT_INTENSITY_PER_STEP = 4;
+const DRIFT_ENERGY_PER_STEP = 3;
+const MAX_DRIFT_STEPS = 96;
+
+/**
+ * Same Level words the server picks (api-server lib/companionAffect.ts
+ * moodLabel), so a drifted header never shows a label the server can't.
+ */
+export function affectLevelLabel(primary, intensity, energy) {
+  if (primary === "curious" && energy < 40) return "quiet-watchful";
+  if (primary === "curious" && intensity >= 55) return "stirred";
+  if (primary === "watchful") return "quiet-watchful";
+  if (primary === "romantic" && intensity >= 45) return "tender-open";
+  if (primary === "tender" && intensity >= 55) return "tender-aching";
+  if (primary === "tender") return "tender";
+  if (primary === "curious" && intensity < 40) return "interested";
+  if (primary === "playful" && intensity >= 60) return "stirred";
+  if (primary === "playful") return "light-hearted";
+  if (primary === "happy" && intensity >= 65) return "radiant";
+  if (primary === "happy" && intensity < 45) return "warm";
+  if (primary === "anxious") return "uneasy";
+  if (primary === "fearful" && intensity >= 55) return "alarmed";
+  if (primary === "neutral" && energy < 35) return "quiet";
+  if (primary === "neutral") return "quiet-watchful";
+  if (primary === "sad" && intensity >= 55) return "aching";
+  if (primary === "hostile" && intensity >= 60) return "sharp";
+  if (primary === "cold") return "withdrawn";
+  return primary;
+}
+
+function easeToward(value, target, step) {
+  if (value > target) return Math.max(target, value - step);
+  if (value < target) return Math.min(target, value + step);
+  return value;
+}
+
+/**
+ * Slow drift back toward her baseline while the chat is quiet, in the same
+ * whole 15-minute steps the server applies on the next turn. Only entries
+ * that came from the server felt state drift; anything else is returned as is.
+ *
+ * @param {Record<string, any> | null | undefined} emotion
+ * @param {number} [now]
+ */
+export function driftCharacterEmotion(emotion, now = Date.now()) {
+  if (!emotion || emotion.source !== COMPANION_AFFECT_SOURCE) return emotion;
+  const from = Date.parse(emotion.felt_at || "");
+  if (!Number.isFinite(from) || now <= from) return emotion;
+  const steps = Math.min(MAX_DRIFT_STEPS, Math.floor((now - from) / (AFFECT_DRIFT_STEP_MINUTES * 60_000)));
+  if (steps <= 0) return emotion;
+  const basePrimary = emotion.baseline_primary || "neutral";
+  const baseEnergy = Number.isFinite(emotion.baseline_energy) ? emotion.baseline_energy : REST_ENERGY;
+  const startPct = Number.isFinite(emotion.intensity_pct) ? emotion.intensity_pct : Number(emotion.intensity || 0) * 10;
+  const startEnergy = Number.isFinite(Number(emotion.arousal)) ? Number(emotion.arousal) : REST_ENERGY;
+  const pct = easeToward(startPct, REST_INTENSITY, steps * DRIFT_INTENSITY_PER_STEP);
+  const energy = easeToward(startEnergy, baseEnergy, steps * DRIFT_ENERGY_PER_STEP);
+  const primary = emotion.emotion !== basePrimary && pct <= REST_INTENSITY + 3 ? basePrimary : emotion.emotion;
+  if (pct === startPct && energy === startEnergy && primary === emotion.emotion) return emotion;
+  return {
+    ...emotion,
+    emotion: primary,
+    intensity: Math.round(pct / 10),
+    intensity_pct: pct,
+    arousal: energy,
+    emotion_level: affectLevelLabel(primary, pct, energy),
+    drifted: true,
   };
 }
 
