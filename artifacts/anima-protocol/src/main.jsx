@@ -10,7 +10,9 @@ import { applyForge } from "./lib/animaForge";
 applyForge();
 import "./styles/appearance-studio.css";
 import { applyAppearance } from "./lib/appearanceStudio";
+import { initializeColorScheme } from "./lib/colorScheme";
 applyAppearance();
+initializeColorScheme();
 
 // Mixpanel + Algolia stay off the HTML entry chunk. Consent still gates
 // tracking inside analytics.js after this loads.

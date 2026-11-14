@@ -34,6 +34,7 @@ export default function ChatBackground({ theme, imageUrl }) {
   if (theme === "custom" && imageUrl) {
     return (
       <div
+        data-chat-background-layer=""
         className="absolute inset-0 z-0"
         style={{
           backgroundImage: `url(${imageUrl})`,
@@ -49,7 +50,7 @@ export default function ChatBackground({ theme, imageUrl }) {
   switch (theme) {
     case "matrix":
       return (
-        <div className="absolute inset-0 z-0 bg-gradient-to-b from-green-950 to-background overflow-hidden">
+        <div data-chat-background-layer="" className="absolute inset-0 z-0 bg-gradient-to-b from-green-950 to-[#06140c] overflow-hidden">
           <div className="absolute inset-0 opacity-20">
             {Array.from({ length: 20 }).map((_, i) => (
               <div
@@ -67,14 +68,14 @@ export default function ChatBackground({ theme, imageUrl }) {
       );
     case "nebula":
       return (
-        <div className="absolute inset-0 z-0 bg-gradient-to-b from-purple-900 via-blue-900 to-background overflow-hidden">
+        <div data-chat-background-layer="" className="absolute inset-0 z-0 bg-gradient-to-b from-purple-900 via-blue-900 to-[#0c0920] overflow-hidden">
           <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse" />
           <div className="absolute top-1/2 right-1/4 w-96 h-96 bg-blue-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse" style={{ animationDelay: "2s" }} />
         </div>
       );
     case "grid":
       return (
-        <div className="absolute inset-0 z-0 bg-background overflow-hidden">
+        <div data-chat-background-layer="" className="absolute inset-0 z-0 bg-background overflow-hidden">
           <div
             className="absolute inset-0 opacity-10"
             style={{
@@ -85,6 +86,6 @@ export default function ChatBackground({ theme, imageUrl }) {
         </div>
       );
   default:
-    return <div data-chat-theme-default="" className="absolute inset-0 z-0 bg-background" />;
+    return <div data-chat-background-layer="" data-chat-theme-default="" className="absolute inset-0 z-0 bg-background" />;
   }
 }
