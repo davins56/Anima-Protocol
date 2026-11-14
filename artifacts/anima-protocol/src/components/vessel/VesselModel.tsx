@@ -13,6 +13,7 @@ import { computeVesselShift, type VesselShift } from "@/lib/vessel/emotionShift"
 import { NEUTRAL_EMOTION } from "@/lib/vessel/emotionState";
 import { traitsFor } from "@/lib/vessel/vesselTraits";
 import VesselAura from "./VesselAura";
+import PresentationTreatment from "./PresentationTreatment";
 
 /** Calm flame shift for a saved `effects.aura: "flame"` vessel when no live emotion drives it. */
 function useStaticFlameShift(config: VesselConfig, active: boolean): VesselShift | null {
@@ -35,6 +36,8 @@ type Props = {
   onFrame?: () => void;
   /** Emotion vessel-shift; overrides the face weights and adds the companion aura. */
   shift?: VesselShift | null;
+  /** Renderer quality tier of the host ("low" drops character-presentation outline shells). */
+  presentationTier?: string;
 };
 
 const BODY: Record<string, { w: number; hip: number; h: number }> = {
@@ -355,12 +358,21 @@ class AssetBoundary extends Component<{ fallback: ReactNode; children: ReactNode
 export default function VesselModel(props: Props) {
   const procedural = <ProceduralVessel {...props} />;
   const { kind, url } = props.config.model;
-  if (kind === "procedural" || !url) return procedural;
+  const body =
+    kind === "procedural" || !url ? (
+      procedural
+    ) : (
+      <AssetBoundary fallback={procedural}>
+        <Suspense fallback={procedural}>
+          <GltfVessel url={url} />
+        </Suspense>
+      </AssetBoundary>
+    );
+  // Appearance Studio "Character presentation": portraits / background
+  // (non-tracking) vessels get the rim-only variant, full views the outline too.
   return (
-    <AssetBoundary fallback={procedural}>
-      <Suspense fallback={procedural}>
-        <GltfVessel url={url} />
-      </Suspense>
-    </AssetBoundary>
+    <PresentationTreatment lite={props.track === false} tier={props.presentationTier}>
+      {body}
+    </PresentationTreatment>
   );
 }

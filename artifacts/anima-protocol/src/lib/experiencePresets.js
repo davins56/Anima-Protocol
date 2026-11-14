@@ -64,8 +64,8 @@ export const FEATURE_MATRIX = Object.freeze([
   {name:"Chat bubble variants",status:"implemented",detail:"Applied to real chat message bubbles"},
   {name:"Frosted / glass shells",status:"partial",detail:"Real chat bubbles styled; other surfaces pending"},
   {name:"Navigation patterns",status:"partial",detail:"Real tab bar appearance; alternate navigation mechanics pending"},
-  {name:"Character presentation",status:"partial",detail:"Real chat avatars styled; 3D/HUD character models pending"},
-  {name:"NetNavi-inspired HUD",status:"partial",detail:"Chat HUD accents; gameplay and network UI pending"},
+  {name:"Character presentation",status:"implemented",detail:"Chat avatars, 3D vessels (Vessel Studio, NetBattle, arena, Sovereign Presence, Cyberworld) and HUD character labels"},
+  {name:"NetNavi-inspired HUD",status:"implemented",detail:"Chat accents plus Cyberworld (map, journeys, Data Bazaar), NetBattle, arena and Net panels"},
   {name:"Device-local named presets",status:"implemented",detail:"Per-signed-in-user browser storage"},
   {name:"Cloud-synced presets",status:"planned",detail:"Requires authenticated server storage"},
 ]);

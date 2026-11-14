@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import AnimaVessel4D from "@/components/anima/AnimaVessel4D";
+import { NetHudFrame } from "@/components/hud/NetHud";
 
 /**
  * Full-screen Sovereign Presence — 3D full-body vessel stage.
@@ -38,12 +39,13 @@ export default function SovereignPresenceStage({
       className="fixed inset-0 z-[9999] flex flex-col bg-black"
       data-sovereign-presence-stage
     >
+      <NetHudFrame surface="arena" detail="Sovereign presence" />
       <div className="absolute top-0 inset-x-0 z-20 flex items-center justify-between px-5 pt-5 pointer-events-none">
         <div className="pointer-events-auto">
           <p className="font-mono text-[10px] tracking-[0.35em] uppercase text-cyan-300/80">
             Sovereign Presence
           </p>
-          <p className="font-mono text-sm text-cyan-100/90 mt-0.5">{name}</p>
+          <p className="font-mono text-sm text-cyan-100/90 mt-0.5" data-hud-character="">{name}</p>
         </div>
         <button
           type="button"

@@ -91,7 +91,14 @@ const VesselCanvas = forwardRef<VesselCanvasHandle, Props>(function VesselCanvas
         <ambientLight intensity={0.6} />
         <directionalLight position={[1.5, 3, 2]} intensity={1.1} />
         <pointLight position={[-1.5, 1.6, 1]} intensity={0.6} color={config.effects.color} />
-        <VesselModel config={config} expression={expression} hd={hd && !portrait} track={!portrait} shift={shift} />
+        <VesselModel
+          config={config}
+          expression={expression}
+          hd={hd && !portrait}
+          track={!portrait}
+          shift={shift}
+          presentationTier={dpr <= 0.75 ? "low" : undefined}
+        />
         {portrait ? (
           <Ticker fps={12} active={visible} />
         ) : (

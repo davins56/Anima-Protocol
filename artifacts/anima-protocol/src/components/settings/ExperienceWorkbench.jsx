@@ -131,7 +131,7 @@ export default function ExperienceWorkbench() {
   };
   return <section aria-label="Experience Design Workbench" className="rounded-xl border border-primary/25 p-4 space-y-5 bg-card">
     <header><h3 className="text-lg font-semibold">Experience Design Workbench</h3>
-      <p className="text-sm text-muted-foreground">Design safely in a preview. Applying updates supported global appearance and lightweight chat, navigation, and avatar presentation. Advanced navigation mechanics and 3D character models remain planned.</p></header>
+      <p className="text-sm text-muted-foreground">Design safely in a preview. Applying updates supported global appearance and lightweight chat, navigation, and avatar presentation. Character presentation also reaches 3D vessels and gameplay HUDs. Advanced navigation mechanics remain planned.</p></header>
     <div className="grid gap-5 lg:grid-cols-[minmax(210px,1fr)_minmax(280px,1.6fr)]">
       <div className="space-y-3">
         {GROUPS.map(([field,label]) => <label key={field} className="flex flex-col gap-1 text-sm"><span className="font-medium">{label}</span>

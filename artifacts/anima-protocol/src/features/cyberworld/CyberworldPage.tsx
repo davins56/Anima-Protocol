@@ -27,6 +27,7 @@ import { cosmeticsOf, give, giftName, SHOP_BY_ID } from "./market/economy";
 import { MarketPanel } from "./market/MarketPanel";
 import type { Progress } from "./explore/progress";
 import { useRegionContext } from "./explore/useRegionContext";
+import { NetHudFrame } from "@/components/hud/NetHud";
 
 const CyberworldScene = lazy(() => import("./CyberworldScene"));
 
@@ -267,7 +268,7 @@ export default function CyberworldPage() {
   };
 
   return (
-    <div className="relative flex-1 min-h-0 flex flex-col bg-black text-foreground">
+    <div className="relative flex-1 min-h-0 flex flex-col bg-black text-foreground" data-net-hud="cyberworld">
       <div className="relative flex-1 min-h-[60vh]">
         <GLHost>
           {(gl) => (
@@ -296,6 +297,7 @@ export default function CyberworldPage() {
             </Suspense>
           )}
         </GLHost>
+        <NetHudFrame surface="cyberworld" detail={area.label} />
 
         <div className="pointer-events-none absolute top-2 left-2 right-2 flex items-center gap-2 font-mono text-[10px] uppercase tracking-widest">
           <button type="button" onClick={() => navigate(-1)} className="pointer-events-auto border border-cyan-300/40 bg-black/60 px-2 py-1.5 text-cyan-200">
@@ -332,7 +334,7 @@ export default function CyberworldPage() {
         />
 
         {toast && (
-          <p className="pointer-events-none absolute left-1/2 top-11 -translate-x-1/2 border border-cyan-300/40 bg-black/70 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-cyan-200">
+          <p data-net-hud-panel className="pointer-events-none absolute left-1/2 top-11 -translate-x-1/2 border border-cyan-300/40 bg-black/70 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-cyan-200">
             {toast}
           </p>
         )}
@@ -406,14 +408,15 @@ export default function CyberworldPage() {
           <div
             role="dialog"
             aria-label={`${near.name} homepage`}
+            data-net-hud-panel
             className="absolute bottom-[108px] left-3 right-[172px] border bg-black/80 p-3 font-mono backdrop-blur-sm sm:bottom-auto sm:left-1/2 sm:right-auto sm:top-12 sm:w-[320px] sm:-translate-x-1/2"
             style={{ borderColor: nearZone.color, boxShadow: `0 0 18px ${nearZone.color}55` }}
           >
             <p className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">Homepage</p>
-            <p className="text-base tracking-widest" style={{ color: nearZone.color }}>
+            <p className="text-base tracking-widest" style={{ color: nearZone.color }} data-hud-character>
               {nearZone.label}
             </p>
-            {nearStatus && <p className="mt-1 text-[11px] text-cyan-100/80">{nearStatus}</p>}
+            {nearStatus && <p className="mt-1 text-[11px] text-cyan-100/80" data-journey-status>{nearStatus}</p>}
             {near.mock ? (
               <div className="mt-2 space-y-2">
                 <p className="text-[11px] text-muted-foreground">Demo resident. Sign in or wake a companion to move them in here.</p>
