@@ -9,12 +9,17 @@ import type { MutableRefObject } from "react";
 import { animaStandPoint, approachPoint } from "./collision";
 import { areaBounds, pathEndpoints, zoneHalfExtents, zoneShape, type Area, type Vec2, type WorldAnima } from "./layout";
 import type { PlayerTelemetry, SceneNode } from "./CyberworldScene";
+import type { TravellerView } from "./journey/useJourneys";
 
 type Props = {
   area: Area;
   animas: readonly WorldAnima[];
   telemetry: MutableRefObject<PlayerTelemetry>;
   nearAnimaId: string | null;
+  /** Journey snapshot: residents show where they are now; ones in other areas are listed below the map. */
+  travellers?: readonly TravellerView[];
+  /** Area id → label, for the "elsewhere" list. */
+  areaLabels?: Record<string, string>;
   /** Exploration nodes; revealed ones show as small rarity dots. */
   nodes?: readonly SceneNode[];
   onPick: (point: Vec2, label: string) => void;
@@ -29,7 +34,7 @@ function hexPoints(cx: number, cz: number, r: number): string {
   }).join(" ");
 }
 
-export default function Minimap({ area, animas, telemetry, nearAnimaId, nodes = [], onPick, className = "" }: Props) {
+export default function Minimap({ area, animas, travellers, areaLabels, telemetry, nearAnimaId, nodes = [], onPick, className = "" }: Props) {
   const player = useRef<SVGGElement>(null);
   const b = useMemo(() => {
     const raw = areaBounds(area, 2.5);
@@ -60,6 +65,9 @@ export default function Minimap({ area, animas, telemetry, nearAnimaId, nodes = 
     .filter((z) => z.kind === "home" && z.animaId)
     .map((z) => ({ zone: z, anima: animas.find((a) => a.id === z.animaId) }))
     .filter((r): r is { zone: (typeof r)["zone"]; anima: WorldAnima } => !!r.anima);
+
+  // "Where is everyone": residents currently in other areas.
+  const away = (travellers ?? []).filter((t) => t.areaId !== area.id).map((t) => ({ ...t, where: areaLabels?.[t.areaId] ?? t.areaId }));
 
   return (
     <div
@@ -126,17 +134,33 @@ export default function Minimap({ area, animas, telemetry, nearAnimaId, nodes = 
             <circle cx={g.position[0]} cy={g.position[1]} r={unit * 7} fill="transparent" />
           </g>
         ))}
-        {residents.map(({ zone, anima }) => {
-          const [x, z] = animaStandPoint(zone);
-          const near = anima.id === nearAnimaId;
-          return (
-            <g key={anima.id} className="cursor-pointer" onClick={() => onPick(approachPoint(zone), anima.name)} role="button" aria-label={`Walk to ${anima.name}`}>
-              <circle cx={x} cy={z} r={unit * (near ? 3.6 : 2.8)} fill={zone.color} stroke="#F1F5F9" strokeWidth={unit * (near ? 0.9 : 0.4)} />
-              {/* generous invisible hit target for touch */}
-              <circle cx={x} cy={z} r={unit * 8} fill="transparent" />
-            </g>
-          );
-        })}
+        {travellers
+          ? travellers
+              .filter((t) => t.areaId === area.id)
+              .map((t) => {
+                const anima = animas.find((a) => a.id === t.id);
+                const color = residents.find((r) => r.anima.id === t.id)?.zone.color ?? anima?.color ?? "#00EAFF";
+                const near = t.id === nearAnimaId;
+                const [x, z] = t.pos;
+                // They pause to greet once you're close, so walking to where they are is enough.
+                return (
+                  <g key={t.id} className="cursor-pointer" onClick={() => onPick(t.pos, t.name)} role="button" aria-label={`Walk to ${t.name}`}>
+                    <circle cx={x} cy={z} r={unit * (near ? 3.6 : 2.8)} fill={color} stroke="#F1F5F9" strokeWidth={unit * (near ? 0.9 : 0.4)} />
+                    <circle cx={x} cy={z} r={unit * 8} fill="transparent" />
+                  </g>
+                );
+              })
+          : residents.map(({ zone, anima }) => {
+              const [x, z] = animaStandPoint(zone);
+              const near = anima.id === nearAnimaId;
+              return (
+                <g key={anima.id} className="cursor-pointer" onClick={() => onPick(approachPoint(zone), anima.name)} role="button" aria-label={`Walk to ${anima.name}`}>
+                  <circle cx={x} cy={z} r={unit * (near ? 3.6 : 2.8)} fill={zone.color} stroke="#F1F5F9" strokeWidth={unit * (near ? 0.9 : 0.4)} />
+                  {/* generous invisible hit target for touch */}
+                  <circle cx={x} cy={z} r={unit * 8} fill="transparent" />
+                </g>
+              );
+            })}
         {nodes
           .filter((n) => n.revealed)
           .map((n) => (
@@ -150,6 +174,15 @@ export default function Minimap({ area, animas, telemetry, nearAnimaId, nodes = 
           <polygon points={`0,${unit * 4} ${-unit * 2.6},${-unit * 2.6} 0,${-unit * 1.2} ${unit * 2.6},${-unit * 2.6}`} fill="#FACC15" />
         </g>
       </svg>
+      {away.length > 0 && (
+        <ul className="border-t border-cyan-300/20 px-1.5 py-1 font-mono text-[9px] leading-tight text-muted-foreground" aria-label="Residents elsewhere">
+          {away.map((t) => (
+            <li key={t.id} className="truncate">
+              <span className="text-cyan-100/80">{t.name}</span> · {t.where}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

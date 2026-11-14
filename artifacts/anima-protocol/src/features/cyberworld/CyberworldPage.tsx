@@ -22,6 +22,7 @@ import { ACTIONS, type ActionId } from "./explore/actions";
 import { biomeTint, BIOMES } from "./explore/biomes";
 import { companionLine, systemLine } from "./explore/companion";
 import { ActionBar, InspectCard, LocationExplainer, LogPanel, RegionChip, SpeechBubble } from "./explore/ExploreHud";
+import { useJourneys } from "./journey/useJourneys";
 import { useExploration } from "./explore/useExploration";
 import { useRegionContext } from "./explore/useRegionContext";
 
@@ -71,8 +72,15 @@ export default function CyberworldPage() {
   const tint = useMemo(() => biomeTint(region.biome, region.timeOfDay), [region.biome, region.timeOfDay]);
   const { state: exploreState, scan, collect, inspect, closeInspect, jack } = explore;
 
+  // ── Journeys: residents travel on purpose (motives → destination → activity), on- and off-screen.
+  const { travellers, views: journeyViews } = useJourneys({ world, animas, areaId: area.id, dayKey: region.dayKey, telemetry, companionId });
+  const areaLabels = useMemo(() => Object.fromEntries(world.areas.map((a) => [a.id, a.label])), [world]);
+  const thoughts = useMemo(() => Object.fromEntries(journeyViews.map((v) => [v.id, v.thought])), [journeyViews]);
+
   const near: WorldAnima | null = useMemo(() => animas.find((a) => a.id === nearId) ?? null, [animas, nearId]);
-  const nearZone = near ? area.zones.find((z) => z.id === homeZoneId(near.id)) : null;
+  // Home zone lives in the hub even when the companion is met elsewhere on a journey.
+  const nearZone = near ? world.areas.flatMap((a) => a.zones).find((z) => z.id === homeZoneId(near.id)) : null;
+  const nearStatus = near ? journeyViews.find((v) => v.id === near.id)?.status : null;
 
   useEffect(() => {
     if (nearId) sfx.near();
@@ -250,6 +258,8 @@ export default function CyberworldPage() {
                 nodes={explore.sceneNodes}
                 scanPulseAt={exploreState.last?.type === "scan" ? exploreState.last.at : 0}
                 companion={companion}
+                travellers={travellers}
+                thoughts={thoughts}
               />
             </Suspense>
           </WebGLFallback>
@@ -282,6 +292,8 @@ export default function CyberworldPage() {
         <Minimap
           area={area}
           animas={animas}
+          travellers={journeyViews}
+          areaLabels={areaLabels}
           telemetry={telemetry}
           nearAnimaId={nearId}
           nodes={explore.sceneNodes}
@@ -352,6 +364,7 @@ export default function CyberworldPage() {
             <p className="text-base tracking-widest" style={{ color: nearZone.color }}>
               {nearZone.label}
             </p>
+            {nearStatus && <p className="mt-1 text-[11px] text-cyan-100/80">{nearStatus}</p>}
             {near.mock ? (
               <div className="mt-2 space-y-2">
                 <p className="text-[11px] text-muted-foreground">Demo resident. Sign in or wake a companion to move them in here.</p>

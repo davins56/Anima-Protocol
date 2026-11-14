@@ -26,7 +26,19 @@ export type Zone = {
   color: string;
   /** Anima that lives in this homepage, when kind === "home". */
   animaId?: string;
+  /** What companions come here for (journeys). Untagged zones get defaults by kind. */
+  journey?: JourneyTags;
 };
+
+/** Companion needs a place or prop can satisfy (see journey/motives). */
+export type Need = "rest" | "curiosity" | "social" | "creativity";
+
+/**
+ * Data-driven journey tags: which needs a destination serves (0..1), what
+ * topics it relates to (matched against interest hints), and what the
+ * companion does there.
+ */
+export type JourneyTags = { needs: Partial<Record<Need, number>>; topics?: readonly string[]; activity: string; label?: string };
 
 export type DataPath = {
   id: string;
@@ -49,8 +61,10 @@ export type Portal = {
 
 /** Data-only set dressing so a new area needs no new scene code. */
 export type AreaDecor =
-  | { kind: "billboard"; id: string; text: string; position: readonly [number, number, number]; color: string; height?: number }
-  | { kind: "panel"; id: string; position: readonly [number, number, number]; size: Vec2; color: string; yaw?: number; lines?: number };
+  | { kind: "billboard"; id: string; text: string; position: readonly [number, number, number]; color: string; height?: number; journey?: JourneyTags }
+  | { kind: "panel"; id: string; position: readonly [number, number, number]; size: Vec2; color: string; yaw?: number; lines?: number; journey?: JourneyTags }
+  /** A journey destination on the floor; `prop` optionally draws small furniture there. */
+  | { kind: "spot"; id: string; position: readonly [number, number, number]; prop?: "sofa"; journey: JourneyTags };
 
 export type AreaTheme = { accent: string; gridCell: string; gridSection: string };
 
@@ -170,10 +184,25 @@ export function buildWorldLayout(animas: readonly WorldAnima[], portals: Portal[
     zones: [hub, ...homes],
     paths,
     portals,
-    decor: [],
+    decor: hubSpots(n),
     theme: DEFAULT_THEME,
     spawn: [0, HUB_RADIUS * 0.55],
   };
+}
+
+/** Journey destinations in the plaza: the data core and a lounge set off the spokes and gate. */
+function hubSpots(homeCount: number): AreaDecor[] {
+  const a = hubFreeAngle(homeCount) + Math.PI * 0.6;
+  return [
+    { kind: "spot", id: "hub:core", position: [1.6, 0, -1.2], journey: { needs: { curiosity: 0.6, creativity: 0.5 }, topics: ["data", "science", "music", "code"], activity: "listen to the data core", label: "the data core" } },
+    {
+      kind: "spot",
+      id: "hub:lounge",
+      position: [round(Math.cos(a) * 3.6), 0, round(Math.sin(a) * 3.6)],
+      prop: "sofa",
+      journey: { needs: { rest: 0.75, social: 0.2 }, topics: ["quiet", "sleep", "tired"], activity: "rest on the plaza sofa", label: "the plaza lounge" },
+    },
+  ];
 }
 
 /**
