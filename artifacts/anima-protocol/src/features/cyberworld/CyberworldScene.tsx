@@ -25,6 +25,7 @@ import { pathEndpoints, zoneEdgeDistance, type Area, type AreaDecor, type Portal
 import { NEON, roofZone } from "./voxel/voxel";
 import { STREET_Y, VoxelCity } from "./voxel/VoxelCity";
 import { nearestTraveller, type Traveller } from "./journey/journeys";
+import { clampDpr, GL_TIERS, isIOSLike, type GLTier } from "./gl/glLadder";
 
 /** Night-city palette from the voxel reference: deep indigo sky, violet haze, orange/pink/cyan neon. */
 export const SKY = "#0B0820";
@@ -67,6 +68,10 @@ type SceneProps = {
   thoughts?: Record<string, string | null>;
   /** Data Bazaar cosmetics: visor tint and an optional light trail colour. */
   playerStyle?: { visor?: string; trail?: string };
+  /** WebGL tier to create the context with (see gl/glLadder); defaults to the first tier. */
+  glTier?: GLTier;
+  /** Context lost and not restored: the host remounts on the next tier. */
+  onGLLost?: (reason: string) => void;
   /** Live on-screen joystick / d-pad vector, camera-relative (x right, z forward). */
   touchMove: MutableRefObject<MoveInput>;
   nearAnimaId: string | null;
@@ -698,7 +703,7 @@ const CAMERA_FOV = 34;
 
 const SKYLINE_COUNT: Record<string, number> = { low: 60, medium: 120, high: 170 };
 
-function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, onStep, nearAnimaId, onNearChange, quality, tint, nodes, scanPulseAt = 0, companion, travellers, thoughts, playerStyle }: SceneProps & { quality: Quality }) {
+function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, onStep, nearAnimaId, onNearChange, quality, tint, nodes, scanPulseAt = 0, companion, travellers, thoughts, playerStyle, glTier }: SceneProps & { quality: Quality }) {
   const player = useRef<THREE.Group>(null);
   const pos = useRef<Vec2>(spawn);
   const route = useRef<Vec2[]>([]);
@@ -894,7 +899,7 @@ function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, 
         dampingFactor={0.12}
       />
 
-      {quality.postprocessing && (
+      {quality.postprocessing && (glTier ?? GL_TIERS[0]).bloom && (
         <EffectComposer enableNormalPass={false} multisampling={0}>
           <Bloom intensity={1.05} luminanceThreshold={0.32} luminanceSmoothing={0.25} mipmapBlur />
         </EffectComposer>
@@ -903,20 +908,81 @@ function World({ area, spawn, animas, touchMove, telemetry, commands, onPortal, 
   );
 }
 
+/** Create the context ourselves for the chosen tier so a failure names the tier (and the host can step down). */
+function createTierRenderer(canvas: HTMLCanvasElement, tier: GLTier): THREE.WebGLRenderer {
+  const context = canvas.getContext(tier.context, tier.attributes) as WebGL2RenderingContext | null;
+  if (!context) throw new Error(`getContext("${tier.context}") returned null`);
+  if (context.isContextLost()) throw new Error("context was lost at creation");
+  return new THREE.WebGLRenderer({ canvas, context, ...tier.attributes });
+}
+
+/**
+ * Keeps the drawing buffer within MAX_RENDERBUFFER_SIZE (and the iOS / tier DPR
+ * caps) as the canvas resizes, and handles context loss: preventDefault so the
+ * browser may restore it; if it isn't restored soon, ask the host to remount.
+ */
+function GLGuard({ tier, qualityMax, onLost }: { tier: GLTier; qualityMax: number; onLost?: (reason: string) => void }) {
+  const gl = useThree((s) => s.gl);
+  const size = useThree((s) => s.size);
+  const setDpr = useThree((s) => s.setDpr);
+  const maxRb = useMemo(() => {
+    try {
+      return gl.getContext().getParameter(gl.getContext().MAX_RENDERBUFFER_SIZE) as number;
+    } catch {
+      return null;
+    }
+  }, [gl]);
+  useEffect(() => {
+    const dpr = clampDpr({ deviceDpr: window.devicePixelRatio, tier, ios: isIOSLike(navigator), qualityMax, cssW: size.width, cssH: size.height, maxRenderbuffer: maxRb });
+    setDpr(dpr);
+  }, [size.width, size.height, tier, qualityMax, maxRb, setDpr]);
+  const lostCb = useRef(onLost);
+  lostCb.current = onLost;
+  useEffect(() => {
+    const canvas = gl.domElement;
+    let t: ReturnType<typeof setTimeout> | null = null;
+    const lost = (e: Event) => {
+      e.preventDefault();
+      if (t) clearTimeout(t);
+      t = setTimeout(() => lostCb.current?.("WebGL context lost and not restored"), 2500);
+    };
+    const restored = () => {
+      if (t) clearTimeout(t);
+      t = null;
+    };
+    canvas.addEventListener("webglcontextlost", lost);
+    canvas.addEventListener("webglcontextrestored", restored);
+    return () => {
+      if (t) clearTimeout(t);
+      canvas.removeEventListener("webglcontextlost", lost);
+      canvas.removeEventListener("webglcontextrestored", restored);
+    };
+  }, [gl]);
+  return null;
+}
+
 export default function CyberworldScene(props: SceneProps) {
   const { quality, handleDecline, handleIncline } = useRendererQuality();
+  const tier = props.glTier ?? GL_TIERS[0];
   const [sx, sz] = props.spawn;
+  const qualityMax = (quality.dpr as [number, number])[1];
+  // First-frame DPR before GLGuard knows MAX_RENDERBUFFER_SIZE (assumes a conservative 4096).
+  const initialDpr = useMemo(
+    () => clampDpr({ deviceDpr: typeof window === "undefined" ? 1 : window.devicePixelRatio, tier, ios: typeof navigator !== "undefined" && isIOSLike(navigator), qualityMax, cssW: typeof window === "undefined" ? 1 : window.innerWidth, cssH: typeof window === "undefined" ? 1 : window.innerHeight }),
+    [tier, qualityMax],
+  );
   return (
     <Canvas
       camera={{ position: [sx + CAMERA_OFFSET[0], CAMERA_OFFSET[1], sz + CAMERA_OFFSET[2]], fov: CAMERA_FOV, near: 0.5, far: 320 }}
-      gl={{ alpha: false, antialias: quality.antialias, powerPreference: "high-performance", preserveDrawingBuffer: false }}
-      dpr={quality.dpr as [number, number]}
+      gl={(defaults) => createTierRenderer(defaults.canvas as HTMLCanvasElement, tier)}
+      dpr={initialDpr}
       style={{ width: "100%", height: "100%", display: "block", background: SKY, touchAction: "none" }}
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = 1.15;
       }}
     >
+      <GLGuard tier={tier} qualityMax={qualityMax} onLost={props.onGLLost} />
       <PerformanceMonitor flipflops={3} onDecline={handleDecline} onIncline={handleIncline}>
         {/* Keyed per visit so arriving through a portal is a clean respawn. */}
         <World key={`${props.area.id}:${props.spawn[0]},${props.spawn[1]}`} {...props} quality={quality} />

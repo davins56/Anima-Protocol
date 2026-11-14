@@ -1,3 +1,4 @@
+import { webglProbe } from "./webglSupport";
 export const RENDERER_QUALITY = Object.freeze({
   low: Object.freeze({
     name: "low",
@@ -58,11 +59,20 @@ export function detectRendererCapabilities(source = globalThis) {
   }
 
   let webgl2 = true;
-  try {
-    const canvas = source?.document?.createElement?.("canvas");
-    if (canvas) webgl2 = Boolean(canvas.getContext("webgl2"));
-  } catch {
-    webgl2 = false;
+  if (source === globalThis) {
+    // Shared, cached probe that releases its context (see webglSupport).
+    webgl2 = typeof document === "undefined" ? true : webglProbe().webgl2;
+  } else {
+    try {
+      const canvas = source?.document?.createElement?.("canvas");
+      if (canvas) {
+        const ctx = canvas.getContext("webgl2");
+        webgl2 = Boolean(ctx);
+        ctx?.getExtension?.("WEBGL_lose_context")?.loseContext();
+      }
+    } catch {
+      webgl2 = false;
+    }
   }
 
   return {
