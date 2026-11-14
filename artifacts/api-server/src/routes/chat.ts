@@ -152,6 +152,7 @@ import {
   type SceneMindCharacter,
   type SceneMindDecision,
 } from "../lib/sceneMind";
+import { builtInAliasesFor } from "../lib/companions/builtIn";
 import { createChatCompletionWithFailover } from "../lib/llmFailover";
 import {
   fetchRegionalWorldKnowledge,
@@ -2034,6 +2035,34 @@ router.post("/memories/:characterId/proposals/:factId", async (req, res) => {
   res.json({ review: result.review, changed: result.changed, identity_version: result.identity_version ?? null });
 });
 
+function uniqueAliasTerms(values: unknown[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const term = String(value ?? "").trim();
+    if (!term) continue;
+    const key = term.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(term);
+  }
+  return out;
+}
+
+function characterAliases(character: MsgData): string[] {
+  const raw: unknown[] = [
+    character.nickname,
+    character.aka,
+    ...(Array.isArray(character.aliases)
+      ? character.aliases
+      : character.aliases
+        ? [character.aliases]
+        : []),
+    ...builtInAliasesFor(character.name),
+  ];
+  return uniqueAliasTerms(raw);
+}
+
 function toSceneMindCharacters(characters: MsgData[]): SceneMindCharacter[] {
   return characters
     .map((c) => ({
@@ -2041,6 +2070,9 @@ function toSceneMindCharacters(characters: MsgData[]): SceneMindCharacter[] {
       name: String(c.name || ""),
       universe: c.universe ? String(c.universe) : null,
       personality: c.personality ? String(c.personality) : null,
+      nickname: c.nickname ? String(c.nickname) : null,
+      aka: c.aka ? String(c.aka) : null,
+      aliases: characterAliases(c),
     }))
     .filter((c) => c.id && c.name);
 }

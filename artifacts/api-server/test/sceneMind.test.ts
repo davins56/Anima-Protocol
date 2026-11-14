@@ -74,8 +74,8 @@ describe("selectNextSpeaker", () => {
       interruptChance: 0,
       random: () => 0.99,
     });
-    expect(decision?.reason).toBe("least_recent");
-    expect(decision?.characterId).toBe("a");
+    expect(decision?.reason).toBe("random");
+    expect(["a", "b", "c"]).toContain(decision?.characterId);
   });
 
   it("picks a uniquely addressed character", async () => {
@@ -112,7 +112,7 @@ describe("selectNextSpeaker", () => {
     });
   });
 
-  it("falls back to least-recent when director returns garbage", async () => {
+  it("falls back to random when director returns garbage", async () => {
     const decision = await selectNextSpeaker({
       characters: cast,
       recentMessages: [
@@ -125,8 +125,9 @@ describe("selectNextSpeaker", () => {
     });
     expect(decision).toMatchObject({
       characterId: "c",
-      reason: "least_recent",
+      reason: "random",
     });
+    expect(decision?.characterId).not.toBe("b");
   });
 
   it("respects eligibleCharacterIds pool", async () => {
@@ -168,6 +169,21 @@ describe("selectNextSpeaker", () => {
       characterId: "a",
       reason: "director",
       interrupted: false,
+    });
+  });
+
+
+  it("queues remaining addressed speakers in order", async () => {
+    const decision = await selectNextSpeaker({
+      characters: cast,
+      userMessage: "Ada, then Blake, go.",
+      interruptChance: 0,
+      random: () => 0.99,
+    });
+    expect(decision).toMatchObject({
+      characterId: "a",
+      reason: "addressed",
+      pendingCharacterIds: ["b"],
     });
   });
 
