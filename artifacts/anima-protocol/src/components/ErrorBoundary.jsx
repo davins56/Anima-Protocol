@@ -2,7 +2,7 @@ import { Component, Fragment } from "react";
 import { track } from "@/lib/analytics";
 import {
   hasAttemptedStaleChunkRecovery,
-  isStaleChunkError,
+  isRecoverableModuleError,
   recoverStaleChunk,
 } from "@/lib/staleChunkRecovery";
 
@@ -39,10 +39,13 @@ class ErrorBoundary extends Component {
     // Capture errors that escape React's render phase (event handlers, async
     // callbacks, rejected promises). Best-effort reporting only.
     this.onWindowError = (event) => {
-      this.report("Runtime Error Captured", event?.error || event?.message);
+      const error = event?.error || event?.message;
+      this.report("Runtime Error Captured", error);
+      this.maybeRecoverModuleError(error);
     };
     this.onRejection = (event) => {
       this.report("Unhandled Promise Rejection", event?.reason);
+      this.maybeRecoverModuleError(event?.reason);
     };
     try {
       window.addEventListener("error", this.onWindowError);
@@ -71,13 +74,11 @@ class ErrorBoundary extends Component {
     console.error("[ErrorBoundary] caught render error:", error, errorInfo);
     this.report("Error Boundary Triggered", error, errorInfo);
 
-    // HTML-as-JS MIME (stale hashed chunk) cannot remount-heal. One
-    // cache-clear + hard-reload per tab session; a second MIME failure falls
+    // HTML-as-JS MIME (stale hashed chunk) and Safari's "Importing a
+    // module script failed" cannot remount-heal. One unregister-SW +
+    // cache-clear + hard-reload per tab session; a second failure falls
     // through to the recovery panel instead of looping.
-    if (isStaleChunkError(error) && !hasAttemptedStaleChunkRecovery()) {
-      void recoverStaleChunk();
-      return;
-    }
+    if (this.maybeRecoverModuleError(error)) return;
 
     // First crash: attempt one silent in-place self-repair. If it throws again
     // the attempt counter blocks a retry loop and the manual panel takes over.
@@ -128,11 +129,22 @@ class ErrorBoundary extends Component {
     }
   }
 
+  maybeRecoverModuleError(error) {
+    if (
+      isRecoverableModuleError(error) &&
+      !hasAttemptedStaleChunkRecovery()
+    ) {
+      void recoverStaleChunk();
+      return true;
+    }
+    return false;
+  }
+
   handleSelfRepair = async () => {
     this.clearHealTimer();
 
     if (
-      isStaleChunkError(this.state.error) &&
+      isRecoverableModuleError(this.state.error) &&
       !hasAttemptedStaleChunkRecovery()
     ) {
       await recoverStaleChunk();
