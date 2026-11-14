@@ -55,6 +55,7 @@ import {
   type GraphEdge,
   type GraphNode,
 } from "../../lib/exploreInsights";
+import { compileChroniclesForUser } from "../../lib/chronicles/compileChronicles";
 
 /**
  * Partial test mocks omit this export and throw on access.
@@ -1194,14 +1195,27 @@ router.post("/invoke/:fnName", async (req, res) => {
 
     switch (fnName) {
       case "generateSessionSummary":
-      case "generateStorySummary":
-      case "compileDailyChronicles": {
+      case "generateStorySummary": {
         const msgs = (data.messages as { role: string; content: string; character_name?: string }[]) ?? [];
         const history = msgs.slice(-20).map(m => `${m.character_name || m.role}: ${m.content}`).join("\n");
         result = await llm(
           "You are a narrative chronicler. Summarize this story session in 2-3 vivid sentences, highlighting key emotional moments and decisions.",
           history || "No messages yet."
         );
+        break;
+      }
+
+      // Chronicles.jsx posts `{}` and expects { compiled, updated, skipped }.
+      // The old shared case only summarised request-body messages (usually
+      // none) and never wrote CharacterJournal rows, so Compile Now always
+      // showed "0 compiled · 0 skipped" and the page stayed empty.
+      case "compileDailyChronicles": {
+        const chronicleUserId = auth.userId || "";
+        if (!chronicleUserId) {
+          res.status(401).json({ error: "Unauthorized" });
+          return;
+        }
+        result = await compileChroniclesForUser(chronicleUserId);
         break;
       }
 

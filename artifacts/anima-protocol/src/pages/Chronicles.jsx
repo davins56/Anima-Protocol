@@ -267,7 +267,7 @@ export default function Chronicles() {
             <div>
               <h1 className="font-sacred text-primary glow-text tracking-[0.15em] text-xl">Chronicles</h1>
               <p className="font-mono text-[9px] text-primary/30 tracking-widest uppercase mt-0.5">
-                Daily diary of every character's inner world
+                A diary of every character's inner world
               </p>
             </div>
           </div>
@@ -275,7 +275,7 @@ export default function Chronicles() {
             onClick={handleCompileNow}
             disabled={compiling}
             className="flex items-center gap-2 px-3 py-2 border border-primary/30 bg-primary/5 text-primary/70 hover:text-primary hover:border-primary/50 font-mono text-[9px] tracking-widest uppercase transition-all disabled:opacity-40"
-            title="Compile chronicles for the last 24h"
+            title="Compile chronicles from chats since the last run"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${compiling ? "animate-spin" : ""}`} />
             <span className="hidden sm:inline">{compiling ? "Compiling..." : "Compile Now"}</span>
@@ -298,7 +298,7 @@ export default function Chronicles() {
               <span>
                 {compileResult.error
                   ? `Error: ${compileResult.error}`
-                  : `${compileResult.compiled ?? 0} new chronicle${compileResult.compiled !== 1 ? "s" : ""} compiled · ${compileResult.skipped ?? 0} skipped`
+                  : `${compileResult.compiled ?? 0} new chronicle${compileResult.compiled !== 1 ? "s" : ""} compiled · ${compileResult.updated ?? 0} updated · ${compileResult.skipped ?? 0} skipped`
                 }
               </span>
               <button onClick={() => setCompileResult(null)} className="opacity-50 hover:opacity-100">
@@ -356,8 +356,8 @@ export default function Chronicles() {
               </p>
               {journals.length === 0 && (
                 <p className="font-mono text-[9px] text-primary/20 mt-2 max-w-xs mx-auto leading-relaxed">
-                  Chronicles are compiled automatically every day from active sessions.
-                  Click "Compile Now" to generate entries for the last 24 hours.
+                  Chronicles are compiled automatically every few hours from recent chats.
+                  Click "Compile Now" to generate or update today's entries.
                 </p>
               )}
             </div>
