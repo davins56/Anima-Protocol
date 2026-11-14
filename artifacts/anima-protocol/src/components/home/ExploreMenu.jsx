@@ -73,6 +73,7 @@ export default function ExploreMenu({ open, onClose }) {
               transition={{ type: "spring", damping: 28, stiffness: 360 }}
               className="fixed left-1/2 top-1/2 z-[1001] w-[88%] max-w-xs -translate-x-1/2 -translate-y-1/2 bg-card border border-cyan-400/30 shadow-[0_0_30px_rgba(34,211,238,0.15)]"
               role="alertdialog"
+              data-glass-surface="modal"
               aria-modal="true"
               aria-labelledby="signout-title"
             >
@@ -118,6 +119,7 @@ export default function ExploreMenu({ open, onClose }) {
             />
             <motion.div
               id="explore-menu"
+              data-glass-surface="menu"
               data-testid="explore-menu"
               initial={{ y: "100%", opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -181,6 +183,7 @@ export default function ExploreMenu({ open, onClose }) {
                     <button
                       key={signOut ? "sign-out" : `${label}-${path}`}
                       type="button"
+                      aria-current={isActive ? "page" : undefined}
                       onClick={signOut ? handleSignOut : () => { navigate(path); onClose(); }}
                       className={`flex flex-col items-center justify-center gap-2 py-5 px-3 bg-card transition-all ${
                         isActive ? "bg-cyan-400/10 text-cyan-300" : "text-cyan-400/40 hover:bg-cyan-400/5 hover:text-cyan-300/80"

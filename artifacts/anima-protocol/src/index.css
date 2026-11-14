@@ -657,13 +657,7 @@ html[data-experience-bubble="terminal"] [data-message-bubble] {
 html[data-experience-bubble="outlined"] [data-message-bubble] {
   border-radius: .75rem; background: transparent; border-width: 2px;
 }
-html[data-experience-shell="frosted"] [data-message-bubble] {
-  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-}
-html[data-experience-shell="glass"] [data-message-bubble] {
-  background: rgba(16, 25, 40, .52);
-  backdrop-filter: blur(22px) saturate(140%); -webkit-backdrop-filter: blur(22px) saturate(140%);
-}
+/* Surface shell (frosted / glass) lives in styles/glass-shells.css. */
 /*
  * Navigation patterns (HomeDock + lib/navigationPattern.js). The painted
  * mechanic is on html[data-nav-mode]: tabs | rail | command.

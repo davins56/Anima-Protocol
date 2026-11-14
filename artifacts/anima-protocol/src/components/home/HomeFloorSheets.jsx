@@ -29,6 +29,7 @@ function SheetFrame({ title, children, onClose }) {
         data-no-swipe
         data-scroll-preserve
         data-home-sheet={title.toLowerCase()}
+        data-glass-surface="sheet"
       >
         <div className="flex items-center justify-between px-5 py-3 border-b border-cyan-400/10">
           <span className="font-mono text-[11px] tracking-[0.3em] text-cyan-400/80 uppercase">
