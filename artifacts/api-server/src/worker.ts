@@ -41,6 +41,8 @@ const expressHandler = httpServerHandler({ port: WORKER_API_PORT });
 
 /** wrangler.jsonc triggers.crons entry that runs the dream layer. */
 const DREAM_CRON = "0,15,30,45 * * * *";
+/** wrangler.jsonc triggers.crons entry that compiles CharacterJournal chronicles. */
+const CHRONICLES_CRON = "15 0,3,6,9,12,15,18,21 * * *";
 
 export default {
   async fetch(
@@ -99,6 +101,22 @@ export default {
     env: Env,
     ctx: ExecutionContext,
   ): Promise<void> {
+    if (controller?.cron === CHRONICLES_CRON) {
+      ctx.waitUntil(
+        (async () => {
+          try {
+            await applyCloudflareRequestEnv(env);
+            setAiBinding(env.AI);
+            const { runChroniclesCycle } = await import("./lib/chronicles/compileChronicles");
+            const { logger } = await import("./lib/logger");
+            logger.info(await runChroniclesCycle(), "Chronicles compile cycle");
+          } catch (err) {
+            console.error("Chronicles compile cycle failed", err);
+          }
+        })(),
+      );
+      return;
+    }
     if (controller?.cron === DREAM_CRON) {
       // Dream layer: quarter-hourly so the 30-minute inactivity window is honoured.
       ctx.waitUntil(
