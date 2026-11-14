@@ -225,9 +225,10 @@ describe("MainHome floor", () => {
     expect(mocks.navigate).toHaveBeenCalledWith("/net-battle");
 
     fireEvent.click(screen.getByRole("button", { name: "You" }));
-    expect(screen.getByText("Customise")).toBeTruthy();
-    expect(screen.getByText("Therapy")).toBeTruthy();
-    expect(screen.getByText("Settings")).toBeTruthy();
+    const you = screen.getByLabelText("You");
+    expect(within(you).getByText("Customise")).toBeTruthy();
+    expect(within(you).getByText("Therapy")).toBeTruthy();
+    expect(within(you).getByText("Settings")).toBeTruthy();
     expect(document.querySelector("[data-home-soulprint]")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Close" }));

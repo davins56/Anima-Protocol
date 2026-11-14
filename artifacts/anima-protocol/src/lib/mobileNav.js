@@ -15,6 +15,9 @@
  *   /memories, /moments          → Moments
  *   / (home floor)               → none (home is reached from Explore)
  *
+ * Settings stays on the You tab (/settings) and is also listed in Explore,
+ * because the dock label is You, not Settings.
+ *
  * Codespace / Repo Workspace stay steward-only in Explore — the API still
  * enforces its own checks; this only hides the entry.
  */
@@ -42,6 +45,13 @@ export const PRIMARY_TABS = DOCK_TABS.filter((tab) => tab.path).map((tab) => ({
   label: tab.label,
   key: tab.id,
 }));
+
+/**
+ * Dock roots that still appear in Explore. Settings is listed because the
+ * dock tab is labelled You, not Settings — the old bar had a Settings tab.
+ * @type {Set<string>}
+ */
+export const EXPLORE_ALSO_LISTS = new Set(["/settings"]);
 
 const PEOPLE_PREFIXES = [
   "/animas",
@@ -147,11 +157,14 @@ export function hidesAppDock(pathname) {
 export const STEWARD_ONLY_PATHS = new Set(["/codespace", "/repo-codespace"]);
 
 /**
- * Full Explore catalogue (Home is included because it is no longer a dock tab).
+ * Full Explore catalogue. Home is included because it is no longer a dock
+ * tab. Settings is included even though You opens /settings, so it can be
+ * found by name.
  * @type {{ label: string, path: string, icon: string, signOut?: boolean }[]}
  */
 export const EXPLORE_MODULES = [
   { label: "Home", path: "/", icon: "⌂" },
+  { label: "Settings", path: "/settings", icon: "⚙" },
   { label: "Hall of Origins", path: "/origins", icon: "✨" },
   { label: "Memory Crystals", path: "/memory-crystals", icon: "💎" },
   { label: "Constellation", path: "/constellation", icon: "🌌" },
@@ -198,8 +211,70 @@ export function exploreModules(modules, { isSteward = false } = {}) {
   return (Array.isArray(modules) ? modules : []).filter((m) => {
     if (!m || typeof m.path !== "string") return false;
     const pathOnly = m.path.split("?")[0];
-    if (!m.signOut && primary.has(pathOnly)) return false;
+    if (!m.signOut && primary.has(pathOnly) && !EXPLORE_ALSO_LISTS.has(pathOnly)) return false;
     if (STEWARD_ONLY_PATHS.has(pathOnly) && !isSteward) return false;
     return true;
   });
+}
+
+/**
+ * Every destination the retired six-tab bar exposed: its five pinned tabs
+ * plus the Explore catalogue (including Sign Out). Steward-only codespaces
+ * stay hidden for everyone else, as they were.
+ * @type {{ label: string, path: string, signOut?: boolean, stewardOnly?: boolean }[]}
+ */
+export const LEGACY_BAR_DESTINATIONS = [
+  { label: "Chat", path: "/chat" },
+  { label: "Companions", path: "/animas" },
+  { label: "Memories", path: "/memories" },
+  { label: "Home", path: "/" },
+  { label: "Settings", path: "/settings" },
+  { label: "Hall of Origins", path: "/origins" },
+  { label: "Memory Crystals", path: "/memory-crystals" },
+  { label: "Constellation", path: "/constellation" },
+  { label: "Book of Echoes", path: "/book-of-echoes" },
+  { label: "Codespace", path: "/codespace", stewardOnly: true },
+  { label: "Repo Workspace", path: "/repo-codespace", stewardOnly: true },
+  { label: "NetBattle", path: "/net-battle" },
+  { label: "Cyberworld", path: "/cyberworld" },
+  { label: "Storyboard", path: "/storyboard" },
+  { label: "Narrative", path: "/narrative" },
+  { label: "Flowchart", path: "/flowchart" },
+  { label: "What-If", path: "/what-if" },
+  { label: "Quest Journal", path: "/quest-journal" },
+  { label: "World Map", path: "/worldmap" },
+  { label: "Locations", path: "/locationsmap" },
+  { label: "Calendar", path: "/integrated-calendar" },
+  { label: "Chronicles", path: "/chronicles" },
+  { label: "World Codex", path: "/worldcodex" },
+  { label: "Lore Book", path: "/lorebook" },
+  { label: "Journals", path: "/journals" },
+  { label: "Session Wiki", path: "/wiki" },
+  { label: "Global Wiki", path: "/globalwiki" },
+  { label: "Memory Map", path: "/memory-map" },
+  { label: "Inventory", path: "/inventory" },
+  { label: "Energy Fragments", path: "/energy-fragments" },
+  { label: "Echo Keys", path: "/echo-keys" },
+  { label: "Characters", path: "/characters" },
+  { label: "Customise Anima", path: "/customise-anima?tab=look" },
+  { label: "Check-In", path: "/check-in" },
+  { label: "Therapy Mode", path: "/therapy" },
+  { label: "Reflect Log", path: "/reflection-log" },
+  { label: "Sign Out", path: "/", signOut: true },
+];
+
+/**
+ * How a path is reached from the five-tab dock or Explore.
+ * @param {string} path
+ * @param {{ isSteward?: boolean }} [opts]
+ * @returns {{ dock: boolean, explore: boolean }}
+ */
+export function dockOrExploreReach(path, { isSteward = false } = {}) {
+  const pathOnly = String(path || "").split("?")[0];
+  const dock = DOCK_TABS.some((tab) => tab.path === pathOnly);
+  const explore = exploreModules(EXPLORE_MODULES, { isSteward }).some((m) => {
+    if (m.signOut) return false;
+    return m.path.split("?")[0] === pathOnly;
+  });
+  return { dock, explore };
 }

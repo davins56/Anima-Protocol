@@ -49,7 +49,7 @@ describe("exploreModules", () => {
     { path: "/repo-codespace" },
     { path: "/", signOut: true },
   ];
-  it("hides dock destinations from Explore and keeps Home there", () => {
+  it("hides dock destinations from Explore except Settings, and keeps Home there", () => {
     expect(PRIMARY_TABS.map((t) => t.label)).toEqual(["Talk", "People", "You", "Moments"]);
     expect(exploreModules(modules).map((m) => m.path)).toEqual(["/worlds", "/"]);
     const withDock = exploreModules([
@@ -59,7 +59,7 @@ describe("exploreModules", () => {
       { path: "/memories" },
       { path: "/", label: "Home" },
     ]);
-    expect(withDock.map((m) => m.path)).toEqual(["/worlds", "/", "/"]);
+    expect(withDock.map((m) => m.path)).toEqual(["/worlds", "/", "/settings", "/"]);
   });
   it("shows Codespace entries only to the steward", () => {
     expect(exploreModules(modules, { isSteward: true }).map((m) => m.path)).toContain("/repo-codespace");
