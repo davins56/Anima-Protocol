@@ -45,6 +45,8 @@ beforeEach(() => {
   mocks.wide = false;
   mocks.steward = false;
   window.matchMedia = vi.fn((query) => ({
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
     matches: query.includes(`${NAV_RAIL_MIN_WIDTH}px`) ? mocks.wide : false,
     media: query,
     addEventListener: vi.fn(),
@@ -226,6 +228,36 @@ describe("Command", () => {
     expect(screen.getByRole("button", { name: "World" }).getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(screen.getByTestId("command-palette").querySelector('[data-command-entry="talk"]'));
     expect(mocks.navigate).toHaveBeenCalledWith("/chat");
+  });
+
+  it("keeps the selection in view, traps Tab, and returns focus to the trigger", () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    renderDock("/chat");
+    const trigger = screen.getByTestId("command-open");
+    trigger.focus();
+    fireEvent.click(trigger);
+    const input = screen.getByTestId("command-input");
+    fireEvent.keyDown(input, { key: "ArrowUp" });
+    const options = within(screen.getByTestId("command-palette")).getAllByRole("option");
+    expect(options[options.length - 1].getAttribute("aria-selected")).toBe("true");
+    expect(scroll).toHaveBeenLastCalledWith({ block: "nearest" });
+    const close = screen.getByRole("button", { name: "Close command palette" });
+    close.focus();
+    fireEvent.keyDown(close, { key: "Tab" });
+    expect(document.activeElement).toBe(input);
+    fireEvent.keyDown(input, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(close);
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(screen.queryByTestId("command-palette")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    delete Element.prototype.scrollIntoView;
+  });
+
+  it("caps the palette list to the keyboard-visible viewport", () => {
+    renderDock("/chat");
+    fireEvent.click(screen.getByTestId("command-open"));
+    expect(screen.getByRole("listbox").getAttribute("style")).toContain("var(--app-height, 100dvh)");
   });
 
   it("does not bind ⌘K in the other patterns", () => {

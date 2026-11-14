@@ -26,10 +26,13 @@ function subscribe(onChange) {
   } catch {
     mq = null;
   }
-  mq?.addEventListener?.("change", onChange);
+  // Older iOS WebViews only have the legacy addListener/removeListener pair.
+  if (mq?.addEventListener) mq.addEventListener("change", onChange);
+  else mq?.addListener?.(onChange);
   return () => {
     mo?.disconnect();
-    mq?.removeEventListener?.("change", onChange);
+    if (mq?.removeEventListener) mq.removeEventListener("change", onChange);
+    else mq?.removeListener?.(onChange);
   };
 }
 
