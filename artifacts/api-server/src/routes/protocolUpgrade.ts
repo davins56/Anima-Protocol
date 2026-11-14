@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { getAuth } from "@clerk/express";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db, userEntities, makeId } from "@workspace/db";
 import { createRateLimit } from "../lib/rateLimit";
 import { logger } from "../lib/logger";
@@ -11,11 +11,16 @@ import {
   classifyProtocolUpgrade,
   compactUpgradeRequest,
   mapCursorRunStatus,
+  UPGRADE_CONFIRM_TTL_MS,
+  serenityConfirmExpiredMessage,
+  serenityConfirmMessage,
   serenityDeniedMessage,
   serenityErrorMessage,
   serenityFinishedMessage,
   serenityLaunchMessage,
   serenityUnconfiguredMessage,
+  stewardDisplayLabel,
+  stewardUserIds,
   type ProtocolUpgradeRecord,
   type UpgradeJobStatus,
   type UpgradeScope,
@@ -107,6 +112,59 @@ async function loadUpgrade(
   return asRecord(row?.data);
 }
 
+function isExpiredPending(record: ProtocolUpgradeRecord, now = Date.now()): boolean {
+  if (record.status !== "awaiting_confirmation") return false;
+  const expires = record.expires_at ? Date.parse(record.expires_at) : NaN;
+  return !Number.isFinite(expires) || expires <= now;
+}
+
+/** Show a pending weave whose confirmation window lapsed as cancelled. */
+function presentUpgrade(record: ProtocolUpgradeRecord): ProtocolUpgradeRecord {
+  if (!isExpiredPending(record)) return record;
+  return {
+    ...record,
+    status: "cancelled",
+    expires_at: null,
+    serenity_message: serenityConfirmExpiredMessage(),
+  };
+}
+
+/**
+ * Atomically move a pending weave out of awaiting_confirmation so a double
+ * click (or two tabs) can't launch two Cursor agents for one request.
+ */
+async function claimPendingUpgrade(
+  userId: string,
+  record: ProtocolUpgradeRecord,
+  next: ProtocolUpgradeRecord,
+): Promise<boolean> {
+  const rows = await db
+    .update(userEntities)
+    .set({ data: next, updatedAt: new Date() })
+    .where(
+      and(
+        eq(userEntities.userId, userId),
+        eq(userEntities.entityName, PROTOCOL_UPGRADE_ENTITY),
+        eq(userEntities.entityId, record.id),
+        sql`${userEntities.data}->>'status' = 'awaiting_confirmation'`,
+      ),
+    )
+    .returning({ id: userEntities.entityId });
+  return rows.length > 0;
+}
+
+async function requireSteward(req: Request, res: Response, userId: string): Promise<boolean> {
+  const { sessionClaims } = getAuth(req);
+  const steward = await callerIsProtocolSteward({ userId, sessionClaims });
+  if (steward.allowed) return true;
+  res.status(403).json({
+    error: "Only the Protocol steward can authorize source upgrades.",
+    code: "not_steward",
+    serenity_message: serenityDeniedMessage(),
+  });
+  return false;
+}
+
 async function listUpgrades(userId: string, limit = 20): Promise<ProtocolUpgradeRecord[]> {
   const rows = await db
     .select()
@@ -119,14 +177,22 @@ async function listUpgrades(userId: string, limit = 20): Promise<ProtocolUpgrade
     )
     .orderBy(desc(userEntities.updatedAt))
     .limit(Math.min(Math.max(limit, 1), 50));
-  return rows.map((row) => asRecord(row.data)).filter((row): row is ProtocolUpgradeRecord => Boolean(row));
+  return rows
+    .map((row) => asRecord(row.data))
+    .filter((row): row is ProtocolUpgradeRecord => Boolean(row))
+    .map(presentUpgrade);
 }
 
 async function refreshUpgrade(
   userId: string,
   record: ProtocolUpgradeRecord,
 ): Promise<ProtocolUpgradeRecord> {
-  if (!record.agent_id || record.status === "finished" || record.status === "cancelled") {
+  if (
+    !record.agent_id ||
+    record.status === "awaiting_confirmation" ||
+    record.status === "finished" ||
+    record.status === "cancelled"
+  ) {
     return record;
   }
   try {
@@ -176,6 +242,10 @@ router.get("/capability", async (req, res) => {
   res.json({
     configured: Boolean(cursorApiKey()),
     isSteward: steward.allowed,
+    stewardConfigured: stewardUserIds().length > 0,
+    // Display only; identity is the Clerk user id.
+    stewardLabel: steward.allowed ? stewardDisplayLabel() : null,
+    requiresConfirmation: true,
     repo: cursorRepoUrl().replace(/^https?:\/\//, ""),
   });
 });
@@ -209,7 +279,7 @@ router.get("/:id", async (req, res) => {
       return;
     }
     const refreshed = await refreshUpgrade(userId, existing);
-    res.json(refreshed);
+    res.json(presentUpgrade(refreshed));
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load upgrade";
     res.status(500).json({ error: message });
@@ -247,16 +317,7 @@ router.post("/", async (req, res) => {
       ? body.scope
       : classified.scope;
 
-  const { sessionClaims } = getAuth(req);
-  const steward = await callerIsProtocolSteward({ userId, sessionClaims });
-  if (!steward.allowed) {
-    res.status(403).json({
-      error: "Only the Protocol steward can authorize source upgrades.",
-      code: "not_steward",
-      serenity_message: serenityDeniedMessage(),
-    });
-    return;
-  }
+  if (!(await requireSteward(req, res, userId))) return;
 
   if (!cursorApiKey()) {
     res.status(503).json({
@@ -267,44 +328,163 @@ router.post("/", async (req, res) => {
     return;
   }
 
-  const now = new Date().toISOString();
-  const id = makeId();
+  // Security audit 2026-11-14 (M3): a chat message alone never starts a Cursor
+  // agent. This only records the request; POST /:id/confirm (an explicit
+  // click on the confirm card) launches it.
+  const nowMs = Date.now();
+  const now = new Date(nowMs).toISOString();
   const surface = compactUpgradeRequest(body.surface, 40) || "chat";
   const sessionId =
     typeof body.session_id === "string" && body.session_id.trim()
-      ? body.session_id.trim()
+      ? body.session_id.trim().slice(0, 200)
       : null;
+  const record: ProtocolUpgradeRecord = {
+    id: makeId(),
+    request,
+    scope,
+    status: "awaiting_confirmation",
+    agent_id: null,
+    run_id: null,
+    agent_url: null,
+    pr_url: null,
+    branch: null,
+    result_summary: null,
+    surface,
+    session_id: sessionId,
+    serenity_message: serenityConfirmMessage({ scope }),
+    created_at: now,
+    updated_at: now,
+    expires_at: new Date(nowMs + UPGRADE_CONFIRM_TTL_MS).toISOString(),
+    confirmed_at: null,
+  };
+  try {
+    await persistUpgrade(userId, record);
+  } catch (err) {
+    logger.warn({ err }, "Failed to persist pending protocol upgrade");
+    res.status(500).json({
+      error: "Could not record the upgrade request.",
+      code: "persist_failed",
+      serenity_message: serenityErrorMessage("I could not hold the request for your confirmation"),
+    });
+    return;
+  }
+  res.status(202).json(record);
+});
 
+router.post("/:id/cancel", async (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  if (!(await requireSteward(req, res, userId))) return;
+  const existing = await loadUpgrade(userId, String(req.params.id)).catch(() => null);
+  if (!existing) {
+    res.status(404).json({ error: "Upgrade not found" });
+    return;
+  }
+  if (existing.status !== "awaiting_confirmation") {
+    res.status(409).json({ error: "Upgrade is not awaiting confirmation", code: "not_pending", upgrade: presentUpgrade(existing) });
+    return;
+  }
+  const next: ProtocolUpgradeRecord = {
+    ...existing,
+    status: "cancelled",
+    expires_at: null,
+    serenity_message: "I let that weave go. The source stays as it is.",
+    updated_at: new Date().toISOString(),
+  };
+  const claimed = await claimPendingUpgrade(userId, existing, next).catch(() => false);
+  if (!claimed) {
+    res.status(409).json({ error: "Upgrade is not awaiting confirmation", code: "not_pending" });
+    return;
+  }
+  res.json(next);
+});
+
+router.post("/:id/confirm", async (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  if (!(await requireSteward(req, res, userId))) return;
+
+  const existing = await loadUpgrade(userId, String(req.params.id)).catch(() => null);
+  if (!existing) {
+    res.status(404).json({ error: "Upgrade not found" });
+    return;
+  }
+  if (existing.status !== "awaiting_confirmation") {
+    res.status(409).json({
+      error: "Upgrade is not awaiting confirmation",
+      code: "not_pending",
+      upgrade: presentUpgrade(existing),
+    });
+    return;
+  }
+  if (isExpiredPending(existing)) {
+    res.status(410).json({
+      error: "The confirmation window has expired.",
+      code: "confirmation_expired",
+      serenity_message: serenityConfirmExpiredMessage(),
+    });
+    return;
+  }
+  if (!cursorApiKey()) {
+    res.status(503).json({
+      error: "CURSOR_API_KEY is not configured on the server.",
+      code: "cursor_unconfigured",
+      serenity_message: serenityUnconfiguredMessage(),
+    });
+    return;
+  }
+
+  const confirmedAt = new Date().toISOString();
+  const launching: ProtocolUpgradeRecord = {
+    ...existing,
+    status: "launching",
+    expires_at: null,
+    confirmed_at: confirmedAt,
+    updated_at: confirmedAt,
+  };
+  let claimed = false;
+  try {
+    claimed = await claimPendingUpgrade(userId, existing, launching);
+  } catch (err) {
+    logger.warn({ err }, "Failed to claim pending protocol upgrade");
+  }
+  if (!claimed) {
+    res.status(409).json({ error: "Upgrade is not awaiting confirmation", code: "not_pending" });
+    return;
+  }
+
+  const { request, scope } = existing;
   try {
     const created = await createCloudAgent({
       prompt: buildUpgradeAgentPrompt({ request, scope }),
       name: `Serenity ${scope} upgrade`,
     });
+    const agentUrl = created.agent.url || `https://cursor.com/agents/${created.agent.id}`;
     const record: ProtocolUpgradeRecord = {
-      id,
-      request,
-      scope,
+      ...launching,
       status: mapCursorRunStatus(created.run?.status || "CREATING"),
       agent_id: created.agent.id,
       run_id: created.run?.id || created.agent.latestRunId || null,
-      agent_url: created.agent.url || `https://cursor.com/agents/${created.agent.id}`,
-      pr_url: null,
-      branch: null,
-      result_summary: null,
-      surface,
-      session_id: sessionId,
-      serenity_message: serenityLaunchMessage({
-        scope,
-        agentUrl: created.agent.url || `https://cursor.com/agents/${created.agent.id}`,
-      }),
-      created_at: now,
-      updated_at: now,
+      agent_url: agentUrl,
+      serenity_message: serenityLaunchMessage({ scope, agentUrl }),
+      updated_at: new Date().toISOString(),
     };
     await persistUpgrade(userId, record).catch((err) => {
       logger.warn({ err }, "Failed to persist protocol upgrade");
     });
     res.status(201).json(record);
   } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to launch upgrade";
+    const failed: ProtocolUpgradeRecord = {
+      ...launching,
+      status: "error",
+      serenity_message:
+        err instanceof CursorCloudError && err.code === "cursor_unconfigured"
+          ? serenityUnconfiguredMessage()
+          : serenityErrorMessage(message),
+      updated_at: new Date().toISOString(),
+    };
+    await persistUpgrade(userId, failed).catch(() => undefined);
     if (err instanceof CursorCloudError && err.code === "cursor_unconfigured") {
       res.status(503).json({
         error: err.message,
@@ -313,7 +493,6 @@ router.post("/", async (req, res) => {
       });
       return;
     }
-    const message = err instanceof Error ? err.message : "Failed to launch upgrade";
     logger.warn({ err }, "Protocol upgrade launch failed");
     res.status(502).json({
       error: message,

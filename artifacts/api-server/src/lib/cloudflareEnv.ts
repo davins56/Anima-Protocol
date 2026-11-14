@@ -175,6 +175,12 @@ export const CLOUDFLARE_RUNTIME_ENV_NAMES = [
   "PRIVATE_OBJECT_DIR",
   "PUBLIC_OBJECT_SEARCH_PATHS",
   "SESSION_SECRET",
+  // Steward identity by Clerk user id (security audit 2026-11-14 M3). Read
+  // by lib/protocolUpgrade.ts; listed so a secret-typed value is mirrored.
+  "PROTOCOL_STEWARD_USER_IDS",
+  "PROTOCOL_UPGRADE_ADMIN_USER_IDS",
+  "PROTOCOL_STEWARD_LABEL",
+  "PROTOCOL_UPGRADE_ADMIN_EMAILS",
   "SUPABASE_ANON_KEY",
   "SUPABASE_PHOTO_BUCKET",
   "SUPABASE_DOCUMENT_BUCKET",

@@ -4,6 +4,8 @@ import {
   classifyProtocolUpgrade,
   emailFromSessionClaims,
   isProtocolSteward,
+  stewardDisplayLabel,
+  stewardUserIds,
   isTalkingToSerenity,
   mapCursorRunStatus,
   serenityDeniedMessage,
@@ -55,10 +57,41 @@ describe("classifyProtocolUpgrade", () => {
 });
 
 describe("protocol steward helpers", () => {
-  it("recognizes the default steward emails", () => {
-    expect(isProtocolSteward({ email: "davins56@hotmail.com" })).toBe(true);
-    expect(isProtocolSteward({ email: "davins56@gmail.com" })).toBe(true);
-    expect(isProtocolSteward({ email: "someone@example.com" })).toBe(false);
+  it("identifies the steward by Clerk user id only, never by email", () => {
+    const saved = {
+      a: process.env.PROTOCOL_STEWARD_USER_IDS,
+      b: process.env.PROTOCOL_UPGRADE_ADMIN_USER_IDS,
+      e: process.env.PROTOCOL_UPGRADE_ADMIN_EMAILS,
+    };
+    try {
+      delete process.env.PROTOCOL_STEWARD_USER_IDS;
+      delete process.env.PROTOCOL_UPGRADE_ADMIN_USER_IDS;
+      process.env.PROTOCOL_UPGRADE_ADMIN_EMAILS = "davins56@gmail.com";
+      // No ids configured: nobody is the steward (fail closed).
+      expect(isProtocolSteward({ userId: "user_Abc" })).toBe(false);
+      expect(
+        isProtocolSteward({ userId: "user_x", email: "davins56@gmail.com" } as { userId: string }),
+      ).toBe(false);
+      expect(stewardDisplayLabel()).toBe("davins56@gmail.com");
+
+      process.env.PROTOCOL_STEWARD_USER_IDS = "user_Abc, user_Def";
+      process.env.PROTOCOL_UPGRADE_ADMIN_USER_IDS = "user_Legacy";
+      expect(stewardUserIds()).toEqual(["user_Abc", "user_Def", "user_Legacy"]);
+      expect(isProtocolSteward({ userId: "user_Abc" })).toBe(true);
+      expect(isProtocolSteward({ userId: "user_Legacy" })).toBe(true);
+      // Exact match: Clerk ids are case-sensitive.
+      expect(isProtocolSteward({ userId: "user_abc" })).toBe(false);
+      expect(isProtocolSteward({ userId: "" })).toBe(false);
+    } finally {
+      for (const [key, value] of [
+        ["PROTOCOL_STEWARD_USER_IDS", saved.a],
+        ["PROTOCOL_UPGRADE_ADMIN_USER_IDS", saved.b],
+        ["PROTOCOL_UPGRADE_ADMIN_EMAILS", saved.e],
+      ] as const) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
   });
 
   it("reads email from Clerk session claims", () => {
