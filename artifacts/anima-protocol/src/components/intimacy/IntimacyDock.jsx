@@ -3,6 +3,10 @@ import { ShieldAlert, Heart } from "lucide-react";
 import { fetchIntimacyProfile, patchIntimacyProfile } from "@/lib/intimacyClient";
 import { fetchSynchro } from "@/lib/synchroClient";
 import ConnectionMeters from "./ConnectionMeters";
+import { liveHeatNow, meterHeat } from "@/lib/pulseHeat";
+
+/** How often the Heat meter re-checks its cooling during a pause. */
+export const HEAT_COOL_TICK_MS = 30_000;
 
 /** How long a live reply value outranks a re-read of the stored bond. */
 export const LIVE_SYNCHRO_WINDOW_MS = 6000;
@@ -12,8 +16,13 @@ export const LIVE_SYNCHRO_WINDOW_MS = 6000;
  * (companion_affect.synchro_strength). It updates the Synchro meter the moment
  * a reply lands, so it agrees with the Resonance Field instead of waiting on
  * the delayed re-read below.
+ *
+ * `livePulseHeat` is the Heat value the reply just reported (`pulse_heat` on
+ * the chat `done` event). The meter shows the higher of it and the stored
+ * profile, both cooled for the time since, so a re-read that lands before the
+ * turn's save cannot drag it back to Calm.
  */
-export default function IntimacyDock({ characterId, conversationId, refreshKey, onProfileUpdate, liveSynchroStrength = null }) {
+export default function IntimacyDock({ characterId, conversationId, refreshKey, onProfileUpdate, liveSynchroStrength = null, livePulseHeat = null }) {
   const [profile, setProfile] = useState(null);
   const [synchro, setSynchro] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -22,6 +31,27 @@ export default function IntimacyDock({ characterId, conversationId, refreshKey, 
   // finishes, so a re-read right after can still return the previous value;
   // within this window the live value wins over a fetched one.
   const liveRef = useRef({ characterId: null, strength: null, at: 0 });
+  const [liveHeat, setLiveHeat] = useState(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  // Cooling is time-based: re-evaluate on a slow tick, never per render.
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), HEAT_COOL_TICK_MS);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    setLiveHeat(null);
+  }, [characterId]);
+
+  useEffect(() => {
+    if (!characterId) return;
+    const value = typeof livePulseHeat === "number" ? livePulseHeat : livePulseHeat?.value;
+    if (typeof value !== "number" || !Number.isFinite(value)) return;
+    const at = Date.now();
+    setLiveHeat({ value: Math.max(0, Math.min(100, Math.round(value))), at });
+    setNow(at);
+  }, [characterId, livePulseHeat]);
 
   useEffect(() => {
     if (!characterId) return;
@@ -108,7 +138,7 @@ export default function IntimacyDock({ characterId, conversationId, refreshKey, 
     setTriggeringSafeword(false);
   };
 
-  const heat = profile?.heat || 0;
+  const heat = Math.max(meterHeat(profile, now), liveHeatNow(liveHeat, now));
   const isEnabled = Boolean(profile?.intimacyEnabled);
 
   return (

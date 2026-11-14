@@ -311,10 +311,12 @@ import {
 import {
   loadIntimacyProfile,
   saveIntimacyProfile,
+  savePulseIntensity,
   loadIntimacyScene,
   saveIntimacyScene,
 } from "../lib/intimacyStore";
 import { evaluateTurn, decayHeat } from "../lib/intimacyEngine";
+import { displayHeat, evolvePulseIntensity } from "../lib/heatIntensity";
 import type {
   IntimacyProfile,
   IntimacyScene,
@@ -2802,6 +2804,9 @@ router.post("/messages", async (req, res) => {
   let ensembleMinds: string[] | undefined;
   let ensembleCombined = false;
   let intimacyProfile: IntimacyProfile | null = null;
+  let pulseProfileLoad: Promise<IntimacyProfile | null> | null = null;
+  let pulseIntensityProfile: IntimacyProfile | null = null;
+  let pulseHeat: number | null = null;
   let intimacyScene: IntimacyScene | null = null;
   let synchroState: SynchroState | null = null;
   let companionAffect: CompanionAffect | null = null;
@@ -3271,6 +3276,14 @@ router.post("/messages", async (req, res) => {
   intimacyProfile = null;
   intimacyScene = null;
   let intimacyResult: IntimacyTurnResult | null = null;
+  // Heat meter, conversational half: with Pulse on, the meter shows right-now
+  // intensity even when the adult gate is closed. Loaded off the critical path
+  // and only for the non-adult case (the adult branch below loads the profile
+  // itself). It never reaches the prompt or the adult scene logic.
+  pulseProfileLoad =
+    activeCharacterId && !adultActive && !therapyActive
+      ? loadIntimacyProfile(userId, activeCharacterId).catch(() => null)
+      : null;
 
   if (activeCharacterId && adultActive && !therapyActive) {
     let profile = await loadIntimacyProfile(userId, activeCharacterId);
@@ -4174,6 +4187,29 @@ router.post("/messages", async (req, res) => {
     const photoDone = photoMeta
       ? { photo: photoMeta, ...(photoAttachments.length ? { attachments: photoAttachments } : {}) }
       : {};
+    // Heat meter: this exchange's right-now intensity, cooled for the pause
+    // since the last one. Adult branch: folded into intimacyProfile so its one
+    // save carries it (scene phases still read `heat` only). Otherwise saved
+    // on its own. Retry / edit / cut-off replies do not heat the moment again.
+    pulseIntensityProfile = null;
+    pulseHeat = null;
+    {
+      const pulseBase =
+        intimacyProfile ?? (pulseProfileLoad ? await pulseProfileLoad : null);
+      if (pulseBase?.intimacyEnabled && !therapyActive) {
+        const evolvedPulse =
+          skipAffect || replyCutOff
+            ? pulseBase
+            : evolvePulseIntensity(pulseBase, {
+                userText: String(content || ""),
+                replyText: fullResponse,
+                adult: adultActive,
+              });
+        if (intimacyProfile) intimacyProfile = evolvedPulse;
+        else if (evolvedPulse !== pulseBase) pulseIntensityProfile = evolvedPulse;
+        pulseHeat = displayHeat(evolvedPulse);
+      }
+    }
     const evolvedCompanion =
       skipAffect || !companionAffect
         ? null
@@ -4270,6 +4306,8 @@ router.post("/messages", async (req, res) => {
       persistence_status: checkpointSaved ? "generated" : "checkpoint_failed",
       persistence_owner: persistenceOwner,
       companion_affect: evolvedAffectSnapshot,
+      // Heat meter value after this exchange (Pulse on only).
+      ...(pulseHeat != null ? { pulse_heat: pulseHeat } : {}),
       ...(replyCutOff ? { reply_interrupted: true, cut_off: true } : {}),
       ...photoDone,
     });
@@ -4492,6 +4530,11 @@ router.post("/messages", async (req, res) => {
     // Retry and edit must not write a second heat/affect pass.
     if (!skipAffect && intimacyProfile) {
       void saveIntimacyProfile(intimacyProfile).catch((e) => logger.warn({ error: e }, "Failed to save intimacy profile"));
+    }
+    if (!skipAffect && !intimacyProfile && pulseIntensityProfile) {
+      const p = pulseIntensityProfile;
+      void savePulseIntensity(p.userId, p.characterId, Number(p.intensity) || 0, String(p.intensityAt || new Date().toISOString()))
+        .catch((e) => logger.warn({ error: e }, "Failed to save pulse intensity"));
     }
     if (!skipAffect && intimacyScene) {
       void saveIntimacyScene(intimacyScene).catch((e) => logger.warn({ error: e }, "Failed to save intimacy scene"));
