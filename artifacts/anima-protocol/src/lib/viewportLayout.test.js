@@ -78,6 +78,10 @@ describe("viewport shell contract", () => {
     expect(shell).toContain("flex-1 min-h-0 flex flex-col");
     expect(shell).toMatch(/showChrome && !isHomeFloor/);
     expect(shell).toContain("var(--tab-bar-height, 0px)");
+    expect(shell).toContain("components/home/HomeDock");
+    expect(shell).toContain('<HomeDock variant="fixed"');
+    expect(shell).not.toContain("BottomTabBar");
+    expect(shell).not.toContain("components/layout/BottomTabBar");
   });
 
   it("does not use a locked 100vh on html/body in the document entry", () => {
@@ -165,7 +169,7 @@ describe("representative page scroll contract", () => {
     // `--tab-bar-height` already includes the home indicator. Reserving that
     // once on `.app-shell-main` is enough for the fixed tab bar.
     expect(css).toMatch(
-      /--tab-bar-height:\s*calc\(56px \+ env\(safe-area-inset-bottom/,
+      /--tab-bar-height:\s*calc\(72px \+ env\(safe-area-inset-bottom/,
     );
     expect(shell).toContain("var(--tab-bar-height, 0px)");
     expect(shell).toMatch(/showChrome && !isHomeFloor/);
@@ -200,7 +204,7 @@ describe("representative page scroll contract", () => {
   it("keeps ChatInput above the tab bar when lg+ Memory Recall is showing", () => {
     const chat = readPage("Chat");
     const css = readSrc("index.css");
-    const tabBar = readSrc("components/layout/BottomTabBar.jsx");
+    const tabBar = readSrc("components/home/HomeDock.jsx");
     const input = readSrc("components/chat/ChatInput.jsx");
 
     // This is the confirmed iPad viewport: Memory Recall paints, the tab
@@ -239,7 +243,7 @@ describe("representative page scroll contract", () => {
 
   it("keeps reserved --tab-bar-height in sync with the painted tab bar", () => {
     const css = readSrc("index.css");
-    const tabBar = readSrc("components/layout/BottomTabBar.jsx");
+    const tabBar = readSrc("components/home/HomeDock.jsx");
     const chat = readPage("Chat");
 
     // The bar is fixed at every width — no lg:hidden. Zeroing the CSS
@@ -361,19 +365,19 @@ describe("edge-to-edge fill contract (iOS 26 / notched iPhone)", () => {
   });
 
   it("keeps the fixed tab bar clear of the home indicator", () => {
-    const tabBar = readSrc("components/layout/BottomTabBar.jsx");
+    const tabBar = readSrc("components/home/HomeDock.jsx");
     expect(tabBar).toContain(
-      'paddingBottom: "var(--safe-bottom, env(safe-area-inset-bottom, 0px))"',
+      'paddingBottom: "calc(8px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)))"',
     );
   });
 
   it("does not double-count the home indicator under in-flow bottom chrome", () => {
-    // `--tab-bar-height` = 56px + safe-area. The shell must not also apply
+    // `--tab-bar-height` = 72px + safe-area. The shell must not also apply
     // `--safe-bottom`, or the chat composer sits a home-indicator-height
     // above the tab bar when the keyboard is closed.
     const css = readSrc("index.css");
     expect(css).toMatch(
-      /--tab-bar-height:\s*calc\(56px \+ env\(safe-area-inset-bottom/,
+      /--tab-bar-height:\s*calc\(72px \+ env\(safe-area-inset-bottom/,
     );
     expect(css).toContain("Do not also pad `.app-shell` with");
   });

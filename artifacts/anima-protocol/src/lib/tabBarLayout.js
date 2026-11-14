@@ -3,7 +3,7 @@
 /**
  * Keep `--tab-bar-height` in sync with the *painted* bottom tab bar.
  *
- * The reservation must match visibility, not a breakpoint. BottomTabBar is
+ * The reservation must match visibility, not a breakpoint. The fixed HomeDock is
  * `position: fixed` at every width (no `lg:hidden`), so a
  * `@media (min-width: 1024px) { --tab-bar-height: 0 }` rule covers the
  * in-flow chat composer on iPad. Keyboard-open still wins: that path
