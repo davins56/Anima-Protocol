@@ -451,7 +451,7 @@ function SignUpPage() {
         />
       </ClerkLoaded>
       <ClerkFailed>
-        <div className="border border-primary/30 bg-[#090912] p-6 text-center space-y-3">
+        <div className="border border-primary/30 bg-card p-6 text-center space-y-3">
           <p className="font-mono text-[11px] leading-relaxed text-primary/70">
             Sign-up could not load. Continue from Sign in with GitHub or email.
           </p>

@@ -1,6 +1,7 @@
 @layer theme, base, clerk, components, utilities;
 
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 @import "tw-animate-css";
 @import "./styles/anima-tokens.css";
 
@@ -46,26 +47,49 @@
   }
 
   :root.light {
-    --background: 0 0% 100%;
-    --foreground: 220 20% 15%;
+    /* Canvas #F2F4F7, surfaces white, body text #171C26 (17:1), primary #007A85 (4.62:1 AA on canvas). */
+    --background: 220 25% 96%;
+    --foreground: 220 25% 12%;
     --card: 0 0% 100%;
-    --card-foreground: 220 20% 15%;
+    --card-foreground: 220 25% 12%;
     --popover: 0 0% 100%;
-    --popover-foreground: 220 20% 15%;
-    --primary: 185 100% 40%;
+    --popover-foreground: 220 25% 12%;
+    --primary: 185 100% 26%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 220 20% 85%;
-    --secondary-foreground: 220 20% 20%;
-    --muted: 220 20% 90%;
-    --muted-foreground: 220 20% 40%;
-    --accent: 185 80% 45%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 84% 50%;
+    --secondary: 220 20% 90%;
+    --secondary-foreground: 220 25% 16%;
+    --muted: 220 20% 91%;
+    --muted-foreground: 220 16% 32%;
+    --accent: 185 40% 90%;
+    --accent-foreground: 185 100% 20%;
+    --destructive: 0 72% 40%;
     --destructive-foreground: 0 0% 100%;
-    --border: 220 20% 80%;
+    --border: 220 16% 82%;
     --input: 220 20% 93%;
-    --ring: 185 100% 40%;
+    --ring: 185 100% 26%;
+    --cyan: 185 100% 26%;
+    --aura-violet: 185 90% 26%;
+    --aura-amethyst: 185 85% 30%;
+    --aura-rose: 185 100% 32%;
+    --aura-gold: 185 95% 28%;
     color-scheme: light;
+    /* Semantic Anima tokens (anima-tokens.css ships dark-only at :root). */
+    --anima-bg-canvas: #F2F4F7;
+    --anima-bg-surface: #FFFFFF;
+    --anima-bg-elevated: #FFFFFF;
+    --anima-bg-inset: #E6EAF1;
+    --anima-text-primary: #171C26;
+    --anima-text-secondary: #454D5F;
+    --anima-text-accent: #007A85;
+    --anima-text-on-accent: #FFFFFF;
+    --anima-border-default: #CACFD8;
+    --anima-border-accent: #7C3AED;
+    --anima-border-silver: #64748B;
+    --anima-accent-primary: #7C3AED;
+    --anima-accent-strong: #6D28D9;
+    --anima-accent-soft: #EDE9FE;
+    --anima-accent-silver: #475569;
+    --anima-accent-protocol: #007A85;
   }
 }
 
@@ -262,6 +286,7 @@ html[data-keyboard-open] .fixed-bottom-chrome {
   height: 100%;
   max-height: 100%;
   overflow: hidden;
+  background-color: hsl(var(--background));
   /*
    * Landscape on a notched iPhone insets the display horizontally. Without
    * these the shell either clips under the notch or leaves an unpainted
@@ -390,7 +415,7 @@ html[data-keyboard-open] .fixed-bottom-chrome {
     border-width: 0 1px 1px 0;
   }
   .scanline {
-    background: repeating-linear-gradient(
+    background-image: repeating-linear-gradient(
       0deg,
       transparent,
       transparent 2px,
@@ -417,14 +442,14 @@ html[data-keyboard-open] .fixed-bottom-chrome {
   width: 4px;
 }
 ::-webkit-scrollbar-track {
-  background: hsl(220 20% 4%);
+  background: hsl(var(--background));
 }
 ::-webkit-scrollbar-thumb {
-  background: hsl(185 50% 20%);
+  background: hsl(var(--border));
   border-radius: 2px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(185 100% 35%);
+  background: hsl(var(--primary) / 0.55);
 }
 
 /* Sacred / spiritual utility classes */
@@ -448,6 +473,9 @@ html[data-keyboard-open] .fixed-bottom-chrome {
 }
 .sacred-bg {
   background: linear-gradient(160deg, #0d0520 0%, #12052e 50%, #0a0a1a 100%);
+}
+:root.light .sacred-bg {
+  background: linear-gradient(160deg, #f4f0fb 0%, #ebe4f6 50%, #f2f4f7 100%);
 }
 
 /* Blinking cursor */
@@ -673,4 +701,103 @@ html[data-experience-background="grid"] [data-chat-theme-default] {
 }
 @media (prefers-reduced-motion: reduce) {
   html[data-experience-character] [data-anima-avatar] { transition: none; }
+}
+
+
+/*
+ * Color Theme vs Chat Background
+ * Layer 0 — app canvas: html, body, #root, .app-shell, .app-viewport-backdrop
+ *           use --background / --foreground (Color Theme or a Studio preset).
+ * Layer 1 — chat scene: [data-chat-background-layer] is the chosen Chat
+ *           Background (Nebula, Matrix, Grid, custom image). Named scenes keep
+ *           their own art and are not recolored by Color Theme. Default follows
+ *           Color Theme so a plain canvas matches the rest of the app.
+ * Layer 2 — surfaces: headers, cards, sheets, modals, the floating dock, and
+ *           inputs sit above the scene and use --card / --muted / --input /
+ *           --popover. The scene stays visible in any gaps around those
+ *           surfaces (for example, a Nebula chat behind a light composer).
+ */
+
+/* Legacy hardcoded dark chrome → semantic surfaces in Light. */
+:root.light .bg-\[\#090912\],
+:root.light .bg-\[\#050505\] {
+  background-color: hsl(var(--card));
+}
+
+:root.light .bg-black\/20,
+:root.light .bg-black\/30,
+:root.light .bg-black\/40,
+:root.light .bg-black\/50,
+:root.light .bg-black\/60 {
+  background-color: hsl(var(--card));
+}
+
+/* Mid-opacity chrome such as the floating dock — not a full-screen scrim. */
+:root.light .bg-black\/70 {
+  background-color: hsl(var(--card) / 0.92);
+}
+
+/*
+ * Keep dimmers inside the chat scene so Nebula / custom photos stay as chosen.
+ * Full-screen scrims (bg-black/75 and darker) also stay dark so dialogs dim
+ * the page in both themes.
+ */
+:root.light [data-chat-background-layer].bg-black\/20,
+:root.light [data-chat-background-layer] .bg-black\/20,
+:root.light [data-chat-background-layer].bg-black\/30,
+:root.light [data-chat-background-layer] .bg-black\/30,
+:root.light [data-chat-background-layer].bg-black\/40,
+:root.light [data-chat-background-layer] .bg-black\/40,
+:root.light [data-chat-background-layer].bg-black\/50,
+:root.light [data-chat-background-layer] .bg-black\/50,
+:root.light [data-chat-background-layer].bg-black\/60,
+:root.light [data-chat-background-layer] .bg-black\/60,
+:root.light [data-chat-background-layer].bg-black\/70,
+:root.light [data-chat-background-layer] .bg-black\/70 {
+  background-color: rgb(0 0 0 / 0.4);
+}
+
+/* Faded primary / cyan utilities were authored for a dark canvas. */
+:root.light .text-primary\/80,
+:root.light .text-primary\/70,
+:root.light .text-primary\/60 {
+  color: hsl(var(--primary));
+}
+:root.light .text-primary\/50,
+:root.light .text-primary\/40,
+:root.light .text-primary\/30,
+:root.light .text-primary\/20,
+:root.light .text-primary\/15 {
+  color: hsl(var(--muted-foreground));
+}
+
+:root.light .text-cyan-50,
+:root.light .text-cyan-100,
+:root.light .text-cyan-100\/90,
+:root.light .text-cyan-100\/80,
+:root.light .text-cyan-100\/70,
+:root.light .text-cyan-100\/60,
+:root.light .text-cyan-200,
+:root.light .text-cyan-200\/90 {
+  color: hsl(var(--foreground));
+}
+:root.light .text-cyan-300,
+:root.light .text-cyan-300\/80,
+:root.light .text-cyan-400,
+:root.light .text-cyan-400\/80,
+:root.light .text-cyan-400\/70 {
+  color: hsl(var(--primary));
+}
+:root.light .text-cyan-400\/60,
+:root.light .text-cyan-400\/50,
+:root.light .text-cyan-400\/45,
+:root.light .text-cyan-400\/40,
+:root.light .text-cyan-400\/25,
+:root.light .text-cyan-400\/20 {
+  color: hsl(var(--muted-foreground));
+}
+:root.light .placeholder-cyan-400\/25::placeholder,
+:root.light .placeholder-primary\/20::placeholder,
+:root.light .placeholder-primary\/15::placeholder {
+  color: hsl(var(--muted-foreground));
 }

@@ -1,3 +1,4 @@
+import { syncDocumentChrome } from "./colorScheme";
 // Global appearance preferences, independent of chat-specific backgrounds.
 export const APPEARANCE_KEY = "anima-appearance-v1";
 export const APPEARANCE_DEFAULTS = Object.freeze({ theme: "original", layout: "classic", radius: "default", scale: "normal", motion: "system" });
@@ -20,7 +21,9 @@ export function applyAppearance(value = readAppearance()) {
     root.classList.toggle("light", value.theme === "celestial");
     root.classList.toggle("dark", value.theme !== "celestial");
   }
+  syncDocumentChrome(root.classList.contains("light") ? "light" : "dark");
 }
+
 export function saveAppearance(patch) {
   const value = { ...readAppearance(), ...patch };
   localStorage.setItem(APPEARANCE_KEY, JSON.stringify(value));

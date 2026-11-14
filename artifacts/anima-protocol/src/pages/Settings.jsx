@@ -598,7 +598,7 @@ export default function Settings() {
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden bg-background scanline">
       {/* Header */}
-      <div className="border-b border-primary/20 bg-black/60 backdrop-blur-md px-4 sm:px-6 py-4 flex-shrink-0 relative z-40">
+      <div className="border-b border-primary/20 bg-card/90 backdrop-blur-md px-4 sm:px-6 py-4 flex-shrink-0 relative z-40">
         <div className="max-w-4xl mx-auto flex items-center gap-3 sm:gap-4">
           <button onClick={() => navigate(-1)} className="text-primary/40 hover:text-primary transition-colors flex-shrink-0">
             <ArrowLeft className="w-4 sm:w-5 h-4 sm:h-5" />
@@ -637,7 +637,7 @@ export default function Settings() {
           {section === SECTION.ACCOUNT && (
             <div className="space-y-4">
               <SectionTitle>Account Info</SectionTitle>
-              <div className="border border-primary/15 bg-black/40 p-5 space-y-4">
+              <div className="border border-primary/15 bg-card p-5 space-y-4">
                 <InfoRow label="Email" value={user?.email || authUser?.email || clerkIdentity?.email || "—"} />
                 <InfoRow label="Display Name" value={user?.full_name || authUser?.full_name || clerkIdentity?.full_name || "—"} />
                 <InfoRow label="Role" value={user?.role || authUser?.role || "user"} />
@@ -646,7 +646,7 @@ export default function Settings() {
               <SectionTitle>Your Profile</SectionTitle>
               <button
                 onClick={() => navigate("/profile")}
-                className="w-full text-left border border-primary/15 bg-black/40 p-5 hover:border-primary/40 transition-colors group"
+                className="w-full text-left border border-primary/15 bg-card p-5 hover:border-primary/40 transition-colors group"
               >
                 <div className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-1">
                   About you • seen by your Anima
@@ -660,7 +660,7 @@ export default function Settings() {
               <SectionTitle>Customise Anima</SectionTitle>
               <button
                 onClick={() => navigate("/customise-anima?tab=look")}
-                className="w-full text-left border border-primary/15 bg-black/40 p-5 hover:border-primary/40 transition-colors group"
+                className="w-full text-left border border-primary/15 bg-card p-5 hover:border-primary/40 transition-colors group"
               >
                 <div className="text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-1">
                   Look · personality · soulprint · expression · voice
@@ -675,7 +675,7 @@ export default function Settings() {
               </button>
 
               <SectionTitle>Display Name</SectionTitle>
-              <div className="border border-primary/15 bg-black/40 p-5">
+              <div className="border border-primary/15 bg-card p-5">
                 <label htmlFor="settings-display-name" className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-2">
                   Name shown in chat
                 </label>
@@ -688,7 +688,7 @@ export default function Settings() {
                   value={prefs.display_name}
                   onChange={(e) => setPref("display_name", e.target.value)}
                   placeholder="Enter your display name..."
-                  className="w-full bg-black/60 border border-primary/20 text-primary/80 placeholder-primary/20 font-mono text-sm px-3 py-2 focus:outline-none focus:border-primary/50 transition-colors"
+                  className="w-full bg-card/90 border border-primary/20 text-primary/80 placeholder-primary/20 font-mono text-sm px-3 py-2 focus:outline-none focus:border-primary/50 transition-colors"
                 />
               </div>
 
@@ -709,7 +709,7 @@ export default function Settings() {
           {section === SECTION.CUSTOMISE_ANIMA && (
             <div className="space-y-4">
               <SectionTitle>Customise Anima</SectionTitle>
-              <div className="border border-primary/15 bg-black/40 p-5 space-y-4">
+              <div className="border border-primary/15 bg-card p-5 space-y-4">
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 border border-primary/30 bg-primary/5 flex items-center justify-center flex-shrink-0">
                     <Palette className="w-5 h-5 text-primary/70" />
@@ -822,7 +822,7 @@ export default function Settings() {
           {section === SECTION.AI && (
             <div className="space-y-4">
               <SectionTitle>LLM Providers</SectionTitle>
-              <div className="border border-primary/15 bg-black/40 p-5 space-y-3">
+              <div className="border border-primary/15 bg-card p-5 space-y-3">
                 <p className="text-[9px] font-mono text-primary/30 leading-relaxed">
                   With ANIMA_CHAT_BRAIN=cloudflare, chat and background memory jobs run on Cloudflare Workers AI inside the Worker — no Fly.io or droplet. Otherwise chat prefers a self-hosted Anima LLM when ANIMA_LOCAL_LLM_BASE_URL is set (customOnly). MiniMax and Deepshi are not in the companion chat chain.
                 </p>
@@ -846,7 +846,7 @@ export default function Settings() {
 
               <SectionTitle>AI Behavior</SectionTitle>
 
-              <div className="border border-primary/15 bg-black/40 p-5 space-y-5">
+              <div className="border border-primary/15 bg-card p-5 space-y-5">
                 <OwnModelConsent />
 
                 {/* Creativity */}
@@ -917,7 +917,7 @@ export default function Settings() {
                     </div>
 
                     <SectionTitle>Voice Profiles</SectionTitle>
-                    <div className="border border-primary/15 bg-black/40 p-5">
+                    <div className="border border-primary/15 bg-card p-5">
                     <div className="flex items-center justify-between gap-4">
                     <div>
                       <p className="font-mono text-xs text-primary/70 tracking-wider uppercase flex items-center gap-2">
@@ -959,7 +959,7 @@ export default function Settings() {
                     </div>
 
               <SectionTitle>Conversation Style</SectionTitle>
-              <div className="border border-primary/15 bg-black/40 p-5">
+              <div className="border border-primary/15 bg-card p-5">
                 <TogglePref
                   label="Creative freedom"
                   description="More expressive characters, natural language, and room for dark or unusual fiction. Your boundaries still apply. Separate from adult mode; unavailable in therapy."
@@ -970,7 +970,7 @@ export default function Settings() {
 
               {/* 18+ Adult Content */}
               <SectionTitle>Content Rating</SectionTitle>
-              <div className={`border p-5 space-y-3 ${prefs.adult_content_enabled ? "border-rose-500/30 bg-rose-950/20" : "border-primary/15 bg-black/40"}`}>
+              <div className={`border p-5 space-y-3 ${prefs.adult_content_enabled ? "border-rose-500/30 bg-rose-950/20" : "border-primary/15 bg-card"}`}>
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
@@ -993,7 +993,7 @@ export default function Settings() {
                       }
                     }}
                     className={`relative w-10 h-5 border transition-all flex-shrink-0 ${
-                      prefs.adult_content_enabled ? "bg-rose-500/20 border-rose-500/50" : "bg-black/60 border-primary/15"
+                      prefs.adult_content_enabled ? "bg-rose-500/20 border-rose-500/50" : "bg-card/90 border-primary/15"
                     }`}
                   >
                     <span
@@ -1019,7 +1019,7 @@ export default function Settings() {
               <Suspense fallback={<SectionSkeleton />}><AnimaForge /></Suspense>
               <Suspense fallback={<SectionSkeleton />}><ForgeProfiles /></Suspense>
 
-              <div className="border border-primary/15 bg-black/40 p-5 space-y-0 divide-y divide-primary/10">
+              <div className="border border-primary/15 bg-card p-5 space-y-0 divide-y divide-primary/10">
                 <TogglePref
                   label="Show Timestamps"
                   description="Display message timestamps in chat"
@@ -1071,7 +1071,7 @@ export default function Settings() {
                 <Suspense fallback={<SectionSkeleton />}><DayRhythmSettings /></Suspense>
 
                 <SectionTitle>Theme</SectionTitle>
-                <div className="border border-primary/15 bg-black/40 p-5">
+                <div className="border border-primary/15 bg-card p-5">
                  <div className="flex items-center justify-between gap-4">
                    <div>
                      <p className="font-mono text-xs text-primary/70 tracking-wider uppercase">Color Theme</p>
@@ -1105,7 +1105,7 @@ export default function Settings() {
                 </div>
 
                 <SectionTitle>Chat Background</SectionTitle>
-              <div className="border border-primary/15 bg-black/40 p-5 space-y-4">
+              <div className="border border-primary/15 bg-card p-5 space-y-4">
                 <div className="grid grid-cols-3 gap-2">
                   {BACKGROUND_THEMES.map((t) => (
                     <button
@@ -1124,7 +1124,7 @@ export default function Settings() {
                       className={`relative flex flex-col items-center justify-center gap-1.5 p-3 border transition-all ${
                         prefs.chat_bg_theme === t.id
                           ? "border-primary/60 bg-primary/10 text-primary"
-                          : "border-primary/15 bg-black/40 text-primary/40 hover:border-primary/30"
+                          : "border-primary/15 bg-card text-primary/40 hover:border-primary/30"
                       }`}
                     >
                       <div className={`w-8 h-8 rounded ${t.preview} border border-white/10`} />
@@ -1183,7 +1183,7 @@ export default function Settings() {
                         setPrefs((p) => ({ ...p, chat_bg_image: value, chat_bg_theme: "custom" }));
                       }}
                       placeholder="Or paste image URL..."
-                      className="w-full bg-black/60 border border-primary/15 text-primary/70 placeholder-primary/15 font-mono text-[10px] px-3 py-2 focus:outline-none focus:border-primary/40 transition-colors"
+                      className="w-full bg-card/90 border border-primary/15 text-primary/70 placeholder-primary/15 font-mono text-[10px] px-3 py-2 focus:outline-none focus:border-primary/40 transition-colors"
                     />
                   </div>
                 )}
@@ -1211,14 +1211,14 @@ export default function Settings() {
           {section === SECTION.LEGAL && (
             <div className="space-y-4">
               <SectionTitle>Legal Documents</SectionTitle>
-              <div className="border border-primary/15 bg-black/40 p-5 space-y-0 divide-y divide-primary/10">
+              <div className="border border-primary/15 bg-card p-5 space-y-0 divide-y divide-primary/10">
                 <LegalLink href="/terms" label="Terms of Service" description="Usage rules and service agreements for Anima Protocol" />
                 <LegalLink href="/privacy-policy" label="Privacy Policy" description="How we collect, use, and protect your data" />
                 <LegalLink href="/disclaimer" label="Disclaimer" description="Important disclaimers regarding AI-generated content" />
               </div>
 
               <SectionTitle>About</SectionTitle>
-              <div className="border border-primary/15 bg-black/40 p-5 space-y-2">
+              <div className="border border-primary/15 bg-card p-5 space-y-2">
                 <InfoRow label="Operated By" value="Echoes of Eden Inc." />
                 <InfoRow label="Platform" value="Anima Protocol" />
                 <InfoRow label="Version" value="v4.3.0" />
@@ -1230,7 +1230,7 @@ export default function Settings() {
           {section === SECTION.DATA && (
             <div className="space-y-4">
               <SectionTitle>Storage</SectionTitle>
-              <div className="border border-primary/15 bg-black/40 p-5 grid grid-cols-2 gap-4">
+              <div className="border border-primary/15 bg-card p-5 grid grid-cols-2 gap-4">
                 <StatBox label="Chat Sessions" value={sessionCount} />
                 <StatBox label="Characters" value={charCount} />
               </div>
@@ -1238,7 +1238,7 @@ export default function Settings() {
               <SectionTitle>Anima device scan</SectionTitle>
               <Suspense fallback={<SectionSkeleton />}><DeviceScanPanel anima={anima} /></Suspense>
 
-              <div className="border border-primary/15 bg-black/40 p-5">
+              <div className="border border-primary/15 bg-card p-5">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="font-mono text-xs text-primary/70 tracking-wider uppercase flex items-center gap-2">
@@ -1289,7 +1289,7 @@ export default function Settings() {
               </div>
 
               <SectionTitle>Backup &amp; Restore</SectionTitle>
-              <div className="border border-primary/15 bg-black/40 p-5 space-y-4">
+              <div className="border border-primary/15 bg-card p-5 space-y-4">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="font-mono text-xs text-primary/70 tracking-wider uppercase flex items-center gap-2">
@@ -1351,7 +1351,7 @@ export default function Settings() {
               </div>
 
               <SectionTitle>Clear Data</SectionTitle>
-              <div className="border border-primary/15 bg-black/40 p-5 space-y-3">
+              <div className="border border-primary/15 bg-card p-5 space-y-3">
                 <DangerAction
                   label="Clear All Chat Sessions"
                   description="Permanently deletes all conversation history"
@@ -1413,7 +1413,7 @@ export default function Settings() {
               </div>
 
               <SectionTitle>Help</SectionTitle>
-              <div className="border border-primary/15 bg-black/40 p-5">
+              <div className="border border-primary/15 bg-card p-5">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <p className="font-mono text-xs text-primary/70 tracking-wider uppercase flex items-center gap-2">
@@ -1435,7 +1435,7 @@ export default function Settings() {
               </div>
 
               <SectionTitle>About</SectionTitle>
-              <div className="border border-primary/15 bg-black/40 p-5 space-y-2">
+              <div className="border border-primary/15 bg-card p-5 space-y-2">
                 <InfoRow label="Version" value="v4.3.0-RESONANCE" />
                 <InfoRow
                   label="AI Engine"
@@ -1716,7 +1716,7 @@ function SelectPref({ label, value, onChange, options }) {
     <div>
       <label className="block text-[9px] font-mono text-primary/40 tracking-[0.25em] uppercase mb-2">{label}</label>
       <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className="w-full bg-black/60 border-primary/20 text-primary/80 font-mono text-sm min-h-[44px]">
+        <SelectTrigger className="w-full bg-card/90 border-primary/20 text-primary/80 font-mono text-sm min-h-[44px]">
           <SelectValue />
         </SelectTrigger>
         <SelectContent className="bg-background border-primary/30">
@@ -1745,7 +1745,7 @@ function TogglePref({ label, description, value, onChange }) {
         aria-checked={Boolean(value)}
         onClick={() => onChange(!value)}
         className={`relative w-10 h-5 border transition-all flex-shrink-0 ${
-          value ? "bg-primary/20 border-primary/50" : "bg-black/60 border-primary/15"
+          value ? "bg-primary/20 border-primary/50" : "bg-card/90 border-primary/15"
         }`}
       >
         <span

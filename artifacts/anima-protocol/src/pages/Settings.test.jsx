@@ -303,6 +303,23 @@ describe("Settings custom chat background upload", () => {
     await act(async () => root.unmount());
   });
 
+  it("previews Light on the document and reverts classes if Settings unmounts without saving", async () => {
+    localStorage.setItem("app-color-scheme", "dark");
+    document.documentElement.classList.add("dark");
+    const { container, root } = renderPage();
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const interfaceBtn = Array.from(container.querySelectorAll("button")).find((btn) => btn.textContent?.includes("Interface"));
+    await act(async () => interfaceBtn.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const button = (text) => Array.from(container.querySelectorAll("button")).findLast((b) => b.textContent.trim() === text);
+    await act(async () => button("Light").click());
+    expect(document.documentElement.classList.contains("light")).toBe(true);
+    expect(localStorage.getItem("app-color-scheme")).toBe("dark");
+    await act(async () => root.unmount());
+    expect(document.documentElement.classList.contains("light")).toBe(false);
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(localStorage.getItem("app-color-scheme")).toBe("dark");
+  });
+
   it("keeps the draft on failure, prevents duplicate saves, and rejects mismatched readback", async () => {
     let finish;
     updateMeMock.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
