@@ -4,6 +4,8 @@
  * anchors; the scene (user language + structured chips) varies around it.
  */
 
+import { anatomyClause, anatomyFrom, anatomyNegativeTerms, type AnatomySpec } from "../companionPhotos/anatomy";
+
 export type VisualDescriptor = {
   age_range?: string;
   ethnicity?: string;
@@ -85,6 +87,22 @@ export function refinementClause(ref: Refinement | undefined): string {
   }
 }
 
+/** Every descriptor string, for the body-plan reader. */
+export function descriptorTexts(d: VisualDescriptor | null | undefined): string[] {
+  if (!d) return [];
+  const out: string[] = [];
+  for (const v of Object.values(d)) {
+    if (typeof v === "string") out.push(v);
+    else if (Array.isArray(v)) out.push(...v.filter((x): x is string => typeof x === "string"));
+  }
+  return out;
+}
+
+/** Body plan from the locked descriptor first, then any extra character text. */
+export function photoAnatomy(d: VisualDescriptor | null | undefined, extraTexts: string[] = []): AnatomySpec {
+  return anatomyFrom([...descriptorTexts(d), ...extraTexts]);
+}
+
 export function composePhotoPrompt(input: {
   characterName: string;
   descriptor: VisualDescriptor;
@@ -92,6 +110,8 @@ export function composePhotoPrompt(input: {
   scene?: SceneSpec;
   refinement?: Refinement;
   triggerWord?: string;
+  /** Body plan; defaults to what the descriptor states. */
+  anatomy?: AnatomySpec;
 }): string {
   const d = input.descriptor || {};
   const s = input.scene || {};
@@ -109,8 +129,12 @@ export function composePhotoPrompt(input: {
     s.angle && `angle: ${clean(s.angle)}`,
   ].filter(Boolean);
   const style = STYLE_SUFFIX[String(d.style || "photoreal")] || STYLE_SUFFIX.photoreal;
+  // Explicit counts right after the subject: FLUX ignores most negative prompts,
+  // so "exactly four arms" has to be said positively and early.
+  const anatomy = anatomyClause(clean(input.characterName, 60), input.anatomy ?? photoAnatomy(d));
   return [
     `Portrait photo of ${anchor}.`,
+    anatomy,
     refinementClause(input.refinement),
     sceneBits.join(", "),
     "Identity must match the reference face exactly: same facial structure, eye color, skin tone and hairline.",
@@ -121,9 +145,10 @@ export function composePhotoPrompt(input: {
     .slice(0, MAX);
 }
 
-export function negativePrompt(extra?: string): string {
+export function negativePrompt(extra?: string, anatomy?: AnatomySpec): string {
   return [
     "different person, face swap artifacts, deformed face, asymmetrical eyes, extra fingers, plastic skin, airbrushed, cartoon, 3d render, watermark, text",
+    anatomyNegativeTerms(anatomy),
     clean(extra, 400),
   ]
     .filter(Boolean)

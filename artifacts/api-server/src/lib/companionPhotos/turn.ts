@@ -33,7 +33,16 @@ import {
 } from "./rateLimit";
 import { buildSceneImagePrompt, composeSceneImagePrompt } from "./scenePrompt";
 import { characterIsMinor, decidePhotoSafety, type PhotoBlockReason } from "./safety";
-import { classifyImageError, generateCompanionImage, type ImageErrorKind } from "./workersAiImage";
+import { classifyImageError, generateCompanionImage, type GeneratedImage, type ImageErrorKind } from "./workersAiImage";
+import {
+  anatomyCheckConfig,
+  anatomyCheckMetadata,
+  renderWithAnatomyCheck,
+  workersAiAnatomyVerifier,
+  type AnatomyCheckConfig,
+  type AnatomyCheckResult,
+  type AnatomyVerifier,
+} from "./anatomyCheck";
 
 export type PhotoDeclineReason = PhotoBlockReason | "limit_hour" | "limit_day";
 
@@ -61,7 +70,14 @@ export type CompanionPhotoAttachment = {
 };
 
 export type PhotoOutcome =
-  | { status: "sent"; attachment: CompanionPhotoAttachment; usedReference: boolean; ms: number }
+  | {
+      status: "sent";
+      attachment: CompanionPhotoAttachment;
+      usedReference: boolean;
+      ms: number;
+      /** Present when the character has a non-human body plan. */
+      anatomy?: ReturnType<typeof anatomyCheckMetadata>;
+    }
   | { status: "failed"; errorKind: PhotoFailureKind; ms: number };
 
 export type PhotoFailureKind = ImageErrorKind | "timeout" | "storage";
@@ -253,6 +269,9 @@ export function startCompanionPhoto(input: {
   identityText?: string;
   complete?: IntentCompleter | null;
   sessionId?: string;
+  anatomyConfig?: AnatomyCheckConfig;
+  /** Override the vision check (tests). */
+  verifyAnatomy?: AnatomyVerifier;
 }): Promise<PhotoOutcome> {
   const config = input.config ?? companionPhotoConfig();
   const binding = input.binding ?? aiBinding;
@@ -301,22 +320,40 @@ export function startCompanionPhoto(input: {
       hasReference: false,
     });
     const { width, height } = photoSize(plan.intent, config.sizes, withRef.brief);
-    let image;
+    const anatomyConfig = input.anatomyConfig ?? anatomyCheckConfig();
+    const verify =
+      input.verifyAnatomy ??
+      workersAiAnatomyVerifier({ binding, config: anatomyConfig, name: input.companionName, spec: plan.look.anatomy ?? { counts: {} } });
+    let image: GeneratedImage;
+    let checked: AnatomyCheckResult<GeneratedImage>;
     try {
-      image = await generateCompanionImage({
-        binding,
-        model: config.model,
-        fallbackModel: config.fallbackModel,
-        prompt: withRef.prompt,
-        promptWithoutReference: withoutRefPrompt,
-        width,
-        height,
-        seed: companionSeed(input.characterId, input.turnId),
-        reference,
+      // Retries stay inside this one photo: the user is charged / rate-limited once (notePhotoSent below).
+      checked = await renderWithAnatomyCheck<GeneratedImage>({
+        render: (attempt) =>
+          generateCompanionImage({
+            binding,
+            model: config.model,
+            fallbackModel: config.fallbackModel,
+            prompt: withRef.prompt,
+            promptWithoutReference: withoutRefPrompt,
+            width,
+            height,
+            // Attempt 0 keeps the historic seed; each retry needs a new one.
+            seed: companionSeed(input.characterId, attempt ? `${input.turnId}:anatomy${attempt}` : input.turnId),
+            reference,
+          }),
+        bytesOf: (img) => img,
+        verify,
+        maxRetries: anatomyConfig.maxRetries,
+        deadlineAt: startedAt + config.timeoutMs,
       });
+      image = checked.result;
     } catch (err) {
       return { status: "failed", errorKind: classifyImageError(err), ms: Date.now() - startedAt };
     }
+    const anatomy = Object.keys(plan.look.anatomy?.counts ?? {}).length && checked.check !== "off"
+      ? anatomyCheckMetadata(plan.look.anatomy!, checked)
+      : undefined;
     let stored;
     try {
       stored = await (input.store ?? storeUploadedImage)(input.userId, {
@@ -334,6 +371,7 @@ export function startCompanionPhoto(input: {
       status: "sent",
       usedReference: image.usedReference,
       ms: Date.now() - startedAt,
+      ...(anatomy ? { anatomy } : {}),
       attachment: {
         type: "image",
         url: `/api/storage${UPLOADS_PATH_PREFIX}${stored.id}`,
@@ -407,6 +445,7 @@ export function photoMetadata(plan: PhotoPlan, outcome: PhotoOutcome | null): Re
       width: outcome.attachment.width,
       height: outcome.attachment.height,
       ms: outcome.ms,
+      ...(outcome.anatomy ? { anatomy: outcome.anatomy } : {}),
     };
   }
   return { status: "failed", source: plan.intent.source, trigger, error: outcome.errorKind, ms: outcome.ms };

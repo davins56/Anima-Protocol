@@ -32,6 +32,17 @@ Strategy per request (`providerRouter.pickStrategy`):
 3. **pulid** (`fal-ai/flux-pulid`): zero-shot face identity from the primary reference (default).
 4. **gemini**: fallback with the existing `geminiImage.ts` edit path when `FAL_KEY` is unset.
 
+## Anatomy
+`composePhotoPrompt` adds the body-plan sentence from `lib/companionPhotos/anatomy.ts`
+(descriptor first, then the character card read from `user_entities`) right after the
+identity anchor. PuLID's `negative_prompt` gets anatomy terms too, but fal PuLID only
+applies negatives with `true_cfg > 1` (`FAL_PULID_TRUE_CFG`, default 1, about 2x compute);
+Flux LoRA, Kontext and Gemini take no negative prompt at all. With
+`ANIMA_PHOTO_ANATOMY_CHECK=on` the finished image is checked by the Workers AI vision model
+and re-rendered on a mismatch (new seed, same `generated_images` row; see
+`docs/companion-photos.md`). Each fal retry is another fal render billed to the fal account;
+the user is not charged a photo credit (generation does not consume `photo_credits`).
+
 ## Streaming
 `POST /api/photo/generate` → SSE `accepted → status* → image → done` (or `error`), relayed from
 fal's `/status/stream`. The client uses the existing `readSseJsonStream`.

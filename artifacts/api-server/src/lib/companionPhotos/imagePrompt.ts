@@ -5,6 +5,7 @@
  */
 import type { PhotoFraming, PhotoIntent } from "./intent";
 import { SKIN_TONE_GUARD, type CompanionLook } from "./appearance";
+import { anatomyClause } from "./anatomy";
 import { DEFAULT_PHOTO_SIZES, type PhotoOrientation, type PhotoSizes } from "./config";
 import { safetyClause } from "./safety";
 
@@ -75,6 +76,9 @@ export function buildImagePrompt(input: ImagePromptInput): string {
       ? `${name}, the exact same character as in image 0 (same face, hair, features, colors and outfit style)`
       : name;
     parts.push(`${FRAMING[input.intent.framing] || FRAMING.selfie} of ${who}.`);
+    // Body plan right after the subject, before anything long can push it past the cap.
+    const anatomy = anatomyClause(name, input.look.anatomy, { framing: input.intent.framing });
+    if (anatomy) parts.push(anatomy);
     if (look) parts.push(`${name}: ${look}.`);
     const skin = clean(input.look.skinTone, 80);
     if (skin) parts.push(`${name}'s skin tone, exactly: ${skin}.`);

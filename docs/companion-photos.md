@@ -126,10 +126,38 @@ Postgres.
 | `ANIMA_COMPANION_PHOTO_SPONTANEOUS` | on | `off` disables unprompted photos |
 | `ANIMA_COMPANION_PHOTO_SPONTANEOUS_EXCHANGES` | 8 | minimum session turns after the last unprompted photo |
 | `ANIMA_COMPANION_PHOTO_SPONTANEOUS_COOLDOWN_MIN` | 20 | minimum minutes after the last unprompted photo |
+| `ANIMA_PHOTO_ANATOMY_CHECK` | off | `on` turns on the vision anatomy check (see Anatomy) |
+| `ANIMA_PHOTO_ANATOMY_CHECK_MODEL` | `@cf/meta/llama-4-scout-17b-16e-instruct` | Workers AI vision model; non-`@cf/`/`@hf/` values are ignored |
+| `ANIMA_PHOTO_ANATOMY_RETRIES` | 1 | extra renders after a mismatch (0–2) |
+| `ANIMA_PHOTO_ANATOMY_CHECK_TIMEOUT_MS` | 8000 | per check; a timed-out check passes the photo through |
 
 `GET /api/media/capabilities` returns `chat_photos: true` when photos are on
 and the `AI` binding exists. The client then drops its own `[IMAGE:]`
 instruction and image pipeline in solo chats.
+
+## Anatomy (four arms, wings, extra eyes)
+Image models default to a human body plan, so a four-armed companion often
+came back with six or eight arms. `lib/companionPhotos/anatomy.ts` reads
+explicit counts ("four arms", "four-armed", "a second pair of arms", "a pair of
+wings", "third eye") from every text that describes the character, in order:
+Customise Anima fields, card fields (`appearance`, `avatar_seed`, `description`,
+`traits`, …), the built-in look, then backstory / personality. Gestures ("in her
+arms", "one arm around you") never count. For a non-human body plan the prompt
+gets one positive sentence right after the subject, e.g. *"Anatomy, must match
+exactly: Vashti has exactly four (4) arms in total (two upper arms at the
+shoulders and two lower arms just below them at the ribcage …), so exactly four
+hands"*, plus "one hand holds the phone" for selfies. FLUX on Workers AI has no
+negative prompt, so the constraint is stated positively.
+
+Optional check (`ANIMA_PHOTO_ANATOMY_CHECK=on`): after rendering, the Workers AI
+vision model counts the character's arms / wings / heads / eyes. Extra parts are
+always a mismatch; missing parts only when the whole torso is in frame. A
+mismatch re-renders with a new seed (at most `ANIMA_PHOTO_ANATOMY_RETRIES`,
+never past the photo timeout); if every render mismatches, the closest one is
+sent. No `AI` binding means no check (never another provider). Retries stay
+inside one photo: hourly / daily limits count it once. Each retry costs one more
+image render and one vision call in Workers AI neurons. The `photo` done-payload
+metadata carries `anatomy: { expected, check, attempts, observed }`.
 
 ## SSE contract
 

@@ -6,6 +6,7 @@
  */
 import { SKIN_TONE_GUARD, userAppearanceFromFacts, type CompanionLook } from "./appearance";
 import { orientationOf, styleFor } from "./imagePrompt";
+import { anatomyClause } from "./anatomy";
 import { firstJsonObject, type IntentCompleter, type IntentMessage, type PhotoFraming, type PhotoIntent } from "./intent";
 import { safetyClause } from "./safety";
 import type { PhotoOrientation } from "./config";
@@ -199,6 +200,12 @@ export function composeSceneImagePrompt(input: ScenePromptInput): string {
     );
   } else {
     parts.push(`A photo of this scene, featuring ${present.join(" and ")}.`);
+  }
+
+  // Body plan right after the subject, before anything long can push it past the cap.
+  if (ofCompanion) {
+    const anatomy = anatomyClause(name, input.look.anatomy, { framing });
+    if (anatomy) parts.push(anatomy);
   }
 
   if (brief.scene) parts.push(`Scene: ${clean(brief.scene, 280)}.`);

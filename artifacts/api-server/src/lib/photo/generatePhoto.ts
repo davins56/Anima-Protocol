@@ -5,7 +5,17 @@
 import { currentVessel } from "../vessel/vesselStore";
 import { editImageWithGemini, generateImageWithGemini, hasGeminiImageKey } from "../geminiImage";
 import { falResult, falStatusStream, falSubmit, firstImage, hasFalKey } from "./falClient";
-import { composePhotoPrompt, negativePrompt, type Refinement, type SceneSpec } from "./promptComposer";
+import { composePhotoPrompt, negativePrompt, photoAnatomy, type Refinement, type SceneSpec } from "./promptComposer";
+import { aiBinding } from "../aiBinding";
+import { loadCharacterRecord } from "../voice/voiceStore";
+import { anatomyTexts } from "../companionPhotos/appearance";
+import { anatomySummary, hasAtypicalAnatomy } from "../companionPhotos/anatomy";
+import {
+  anatomyCheckConfig,
+  renderWithAnatomyCheck,
+  workersAiAnatomyVerifier,
+  type AnatomyCheckResult,
+} from "../companionPhotos/anatomyCheck";
 import { buildFalRequest, pickStrategy, type ImageSize } from "./providerRouter";
 import {
   getGeneration,
@@ -19,7 +29,16 @@ import { persistRemoteImage, signedUrlFor, storePhotoBytes, toProviderImageUrl }
 export type PhotoEvent =
   | { type: "accepted"; imageId: string; strategy: string; model: string; prompt: string }
   | { type: "status"; status: string; queuePosition?: number; log?: string }
-  | { type: "image"; imageId: string; url: string; width?: number; height?: number; seed?: number }
+  | {
+      type: "image";
+      imageId: string;
+      url: string;
+      width?: number;
+      height?: number;
+      seed?: number;
+      /** Body-plan check summary, only for non-human body plans (no prompt text). */
+      anatomy?: { expected: Record<string, number>; check: string; attempts: number };
+    }
   | { type: "done"; imageId: string }
   | { type: "error"; error: string; code?: string; imageId?: string };
 
@@ -42,6 +61,8 @@ export type GenerateRequest = {
   origin: string;
   cookie?: string;
   signal?: AbortSignal;
+  /** Character card loader (tests); defaults to the user_entities read. */
+  loadCharacter?: (userId: string, characterId: string) => Promise<Record<string, unknown> | null>;
   /** Optional hook (memory layer) called after a successful generation. */
   onCompleted?: (info: { imageId: string; prompt: string; characterId: string; sessionId?: string | null }) => Promise<void> | void;
 };
@@ -86,16 +107,21 @@ export async function generatePhoto(req: GenerateRequest, emit: (e: PhotoEvent) 
   const scene = refinement.op === "regenerate" && parent ? { ...parent.scene, ...(req.scene || {}) } : req.scene || {};
   const userPrompt = refinement.op === "regenerate" && parent && !req.prompt ? parent.user_prompt : req.prompt || "";
   const descriptor = { ...(identity?.descriptor || {}), extra: [...(identity?.descriptor?.extra || []), ...(req.extraDescriptor || [])] };
+  // Body plan: the locked descriptor first, then the character card (read only).
+  const characterRecord = await (req.loadCharacter ?? loadCharacterRecord)(req.userId, req.characterId).catch(() => null);
+  const anatomy = photoAnatomy(descriptor, characterRecord ? anatomyTexts(characterRecord) : []);
+  const characterName = identity?.character_name || req.characterName || "the companion";
 
   const prompt = composePhotoPrompt({
-    characterName: identity?.character_name || req.characterName || "the companion",
+    characterName,
     descriptor,
     userPrompt,
     scene,
     refinement,
     triggerWord: config.trigger_word,
+    anatomy,
   });
-  const negative = negativePrompt(identity?.negative_traits);
+  const negative = negativePrompt(identity?.negative_traits, anatomy);
 
   const referenceUrl =
     (await primaryReference(identity, req.origin)) || (await extraReference(req)) || null;
@@ -153,14 +179,14 @@ export async function generatePhoto(req: GenerateRequest, emit: (e: PhotoEvent) 
   });
   emit({ type: "accepted", imageId, strategy, model, prompt });
 
-  try {
-    let stored;
-    let width: number | undefined;
-    let height: number | undefined;
-    let outSeed: number | undefined = seed;
+  type Rendered = { url?: string; bytes?: Uint8Array; contentType?: string; width?: number; height?: number; seed?: number };
 
+  const renderOnce = async (attempt: number): Promise<Rendered> => {
     if (falReq) {
-      const submitted = await falSubmit(falReq.model, falReq.input);
+      // Each retry needs a new seed or it reproduces the same image.
+      const attemptSeed = attempt ? (seed + attempt * 7919) % 2 ** 31 : seed;
+      const input = attempt ? { ...falReq.input, seed: attemptSeed } : falReq.input;
+      const submitted = await falSubmit(falReq.model, input);
       await updateGeneration(imageId, { status: "running", provider_request_id: submitted.request_id });
       for await (const s of falStatusStream(submitted.status_url, req.signal)) {
         const log = s.logs?.length ? s.logs[s.logs.length - 1]?.message : undefined;
@@ -175,19 +201,59 @@ export async function generatePhoto(req: GenerateRequest, emit: (e: PhotoEvent) 
       }
       const img = firstImage(result);
       if (!img?.url) throw Object.assign(new Error("No image was returned."), { status: 502 });
-      width = img.width;
-      height = img.height;
-      outSeed = result.seed ?? seed;
-      stored = await persistRemoteImage({ userId: req.userId, characterId: req.characterId, url: img.url });
-    } else {
-      emit({ type: "status", status: "IN_PROGRESS", log: "Rendering with Gemini…" });
-      const src = parentUrl || referenceUrl;
-      const out = src
-        ? await editImageWithGemini(await toProviderImageUrl(src, req.origin, req.cookie), prompt)
-        : await generateImageWithGemini(prompt);
-      const { bytes, contentType } = dataUrlToBytes(out.image);
-      stored = await storePhotoBytes({ userId: req.userId, characterId: req.characterId, kind: "generated", bytes, contentType });
+      return { url: img.url, width: img.width, height: img.height, seed: result.seed ?? attemptSeed };
     }
+    emit({ type: "status", status: "IN_PROGRESS", log: attempt ? "Re-rendering with Gemini…" : "Rendering with Gemini…" });
+    const src = parentUrl || referenceUrl;
+    const out = src
+      ? await editImageWithGemini(await toProviderImageUrl(src, req.origin, req.cookie), prompt)
+      : await generateImageWithGemini(prompt);
+    const { bytes, contentType } = dataUrlToBytes(out.image);
+    return { bytes, contentType, seed };
+  };
+
+  const checkConfig = anatomyCheckConfig();
+  const verify = workersAiAnatomyVerifier({ binding: aiBinding, config: checkConfig, name: characterName, spec: anatomy });
+
+  try {
+    let stored;
+    // Retries stay inside this one generation row: one photo for the user, whatever it took.
+    const checked: AnatomyCheckResult<Rendered> = await renderWithAnatomyCheck<Rendered>({
+      render: renderOnce,
+      bytesOf: async (r) => {
+        if (r.bytes && r.contentType) return { bytes: r.bytes, contentType: r.contentType };
+        if (!r.url) return null;
+        const res = await fetch(r.url).catch(() => null);
+        if (!res?.ok) return null;
+        const type = (res.headers.get("content-type") || "image/jpeg").split(";")[0].trim();
+        return { bytes: new Uint8Array(await res.arrayBuffer()), contentType: type };
+      },
+      verify,
+      skip: !checkConfig.enabled || !hasAtypicalAnatomy(anatomy),
+      maxRetries: checkConfig.maxRetries,
+      onRetry: ({ attempt }) =>
+        emit({ type: "status", status: "IN_PROGRESS", log: `Anatomy check: re-rendering (attempt ${attempt + 1})…` }),
+    });
+    const rendered = checked.result;
+    const width = rendered.width;
+    const height = rendered.height;
+    const outSeed: number | undefined = rendered.seed ?? seed;
+    if (rendered.url) {
+      stored = await persistRemoteImage({ userId: req.userId, characterId: req.characterId, url: rendered.url });
+    } else if (rendered.bytes && rendered.contentType) {
+      stored = await storePhotoBytes({
+        userId: req.userId,
+        characterId: req.characterId,
+        kind: "generated",
+        bytes: rendered.bytes,
+        contentType: rendered.contentType,
+      });
+    } else {
+      throw Object.assign(new Error("No image was returned."), { status: 502 });
+    }
+    const anatomyInfo = hasAtypicalAnatomy(anatomy)
+      ? { expected: anatomySummary(anatomy), check: checked.check, attempts: checked.attempts }
+      : undefined;
 
     await updateGeneration(imageId, {
       status: "completed",
@@ -199,7 +265,15 @@ export async function generatePhoto(req: GenerateRequest, emit: (e: PhotoEvent) 
       ...(height ? { height } : {}),
       ...(typeof outSeed === "number" ? { seed: outSeed } : {}),
     });
-    emit({ type: "image", imageId, url: `/api/photo/images/${imageId}/file`, width, height, seed: outSeed });
+    emit({
+      type: "image",
+      imageId,
+      url: `/api/photo/images/${imageId}/file`,
+      width,
+      height,
+      seed: outSeed,
+      ...(anatomyInfo ? { anatomy: anatomyInfo } : {}),
+    });
     try {
       await req.onCompleted?.({ imageId, prompt, characterId: req.characterId, sessionId: req.sessionId });
     } catch {
