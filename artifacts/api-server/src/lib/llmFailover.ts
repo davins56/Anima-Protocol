@@ -49,7 +49,6 @@ import {
   OPENROUTER_VENICE_UNCENSORED,
   MINIMAX_DEFAULT_MODEL,
   openRouterCascadeMaxRetries,
-  openRouterKeyFingerprint,
   summarizeLocalLlmBaseUrl,
 } from "./openaiClient";
 import {
@@ -218,8 +217,6 @@ export interface LlmRoutingStatus {
     isFreeTier: boolean;
     /** Env var name that supplied the key (never the secret). */
     env: string | null;
-    /** Last 4 chars of the key so operators can confirm which key is loaded. */
-    keyTail: string | null;
     /** True when a paid model 402'd and later turns use the free-tier model. */
     creditFallback: boolean;
   };
@@ -1747,7 +1744,6 @@ export function getLlmRoutingStatus(tier: ModelTier = "standard"): LlmRoutingSta
       model: openRouterModel.model,
       isFreeTier,
       env: getOpenRouterApiKeySource(),
-      keyTail: openRouterKeyFingerprint(),
       creditFallback: openRouterCreditFallback,
     },
     minimax: {

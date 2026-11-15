@@ -35,6 +35,7 @@ import { safeClerkMiddleware } from "./middlewares/clerkAuthFallback";
 import clerkWebhookRouter from "./webhooks/clerk";
 import stripeWebhookRouter from "./webhooks/stripe";
 import healthRouter from "./routes/health";
+import botBridgeWebhookRouter from "./webhooks/botBridge";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { classifyDbError } from "./lib/dbErrors";
@@ -107,6 +108,9 @@ app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 app.use("/api/webhooks", clerkWebhookRouter);
 // Stripe webhook: raw body for signature verification (see webhooks/stripe.ts).
 app.use("/api/webhooks", stripeWebhookRouter);
+// Grok Bot → Anima bridge: HMAC over the raw body, behind ANIMA_BOT_BRIDGE
+// (off by default; 503 bridge_disabled). See webhooks/botBridge.ts.
+app.use("/api/webhooks/bot-bridge", botBridgeWebhookRouter);
 
 app.use(corsMiddleware);
 // Limit raised to accommodate base64 image data URLs (e.g. avatar AI edit,
@@ -116,8 +120,10 @@ app.use(corsMiddleware);
 app.use(express.json({ limit: "140mb" }));
 app.use(express.urlencoded({ extended: true, limit: "140mb" }));
 
-// Health checks must remain public so platform startup probes (/api/healthz)
-// can distinguish service availability from auth configuration problems.
+// Health mounts before Clerk. `/api/healthz` (liveness) stays public so
+// platform startup probes can tell service availability from auth problems;
+// the detailed diagnostics and live `?probe=1` calls need the ops bearer
+// (see routes/health.ts).
 app.use("/api", healthRouter);
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
@@ -133,7 +139,7 @@ const aiChatRateLimit = createRateLimit({
 // Operator chat probe. Same provider chain as signed-in chat. In production
 // a signed-in Clerk user or ANIMA_AI_CHAT_PROBE_KEY is required so the open
 // internet cannot queue the single Ollama slot. `/api/healthz/llm?probe=1`
-// stays public and does not use this route. Local Node stays open.
+// is ops-bearer only and does not use this route. Local Node stays open.
 app.post("/api/ai/chat", async (req: Request, res: Response) => {
   if (aiChatRequiresCredential()) {
     const probeOk = aiChatProbeAuthorized(req);

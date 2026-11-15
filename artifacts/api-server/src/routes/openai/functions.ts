@@ -6,6 +6,8 @@ import { getAuth } from "@clerk/express";
 import { db, userEntities, makeId } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { createRateLimit } from "../../lib/rateLimit";
+import { userRateLimit } from "../../lib/usage/userRateLimit";
+import { chargeUsage, refundOnErrorResponse, sendMeterDenied } from "../../lib/billing/meter";
 import { notifyUser } from "../../lib/storeEvents";
 import { resolveModel } from "../../lib/modelRouter";
 import {
@@ -1186,8 +1188,8 @@ async function characterDisplayName(userId: string, characterId: string) {
   return String(data.name ?? data.title ?? "Companion");
 }
 
-router.post("/invoke/:fnName", async (req, res) => {
-  const { fnName } = req.params;
+router.post("/invoke/:fnName", userRateLimit("invoke"), async (req, res) => {
+  const fnName = String(req.params.fnName);
   const data = req.body as Record<string, unknown>;
   const clientLeft = abortWhenClientLeaves(res);
   const auth = getAuth(req) as { userId?: string | null };
@@ -2749,6 +2751,14 @@ router.post("/image-edit", async (req, res) => {
   const trimmed = prompt.trim().slice(0, 2500);
   const dataUrl = `data:${mime};base64,${match[2]}`;
 
+  // One photo unit, charged before any provider call; refunded on an error reply.
+  const metered = await chargeUsage({ userId, kind: "photo" });
+  if (!metered.ok) {
+    sendMeterDenied(res, metered.denied);
+    return;
+  }
+  refundOnErrorResponse(res, metered.charge);
+
   // Prefer Gemini for edits too — better at applying complexion changes.
   if (hasGeminiImageKey() && isFreeImageFallbackEnabled()) {
     try {
@@ -2827,6 +2837,19 @@ router.post("/image-generate", async (req, res) => {
     res.status(400).json({ error: "A generation prompt is required." });
     return;
   }
+  const { userId } = getAuth(req);
+  if (!userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  // One photo unit, charged before any provider call; refunded on an error reply.
+  const metered = await chargeUsage({ userId, kind: "photo" });
+  if (!metered.ok) {
+    sendMeterDenied(res, metered.denied);
+    return;
+  }
+  refundOnErrorResponse(res, metered.charge);
 
   try {
     const result = await generateImageDataUrl(prompt);

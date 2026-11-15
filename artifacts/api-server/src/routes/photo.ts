@@ -11,6 +11,7 @@
 import { Router, type Request, type Response } from "express";
 import { getAuth } from "@clerk/express";
 import { rateLimit } from "../lib/rateLimit";
+import { chargeUsage, refundUsage, sendMeterDenied } from "../lib/billing/meter";
 import { generatePhoto, type GenerateRequest, type PhotoEvent } from "../lib/photo/generatePhoto";
 import {
   getGeneration,
@@ -123,6 +124,16 @@ router.post("/photo/generate", async (req, res) => {
     return;
   }
 
+  // Security audit 2026-11-14 (H1): burst limit, free daily allowance, then
+  // photo credits, all before fal / Gemini is called. Refunded below if no
+  // image comes back.
+  const metered = await chargeUsage({ userId, kind: "photo" });
+  if (!metered.ok) {
+    sendMeterDenied(res, metered.denied);
+    return;
+  }
+  const charge = metered.charge;
+
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
@@ -132,7 +143,9 @@ router.post("/photo/generate", async (req, res) => {
   if (typeof res.flushHeaders === "function") res.flushHeaders();
   const controller = new AbortController();
   req.on("close", () => controller.abort());
+  let delivered = false;
   const emit = (e: PhotoEvent) => {
+    if (e.type === "image") delivered = true;
     if (!res.writableEnded) res.write(`data: ${JSON.stringify(e)}\n\n`);
   };
   const keepAlive = setInterval(() => !res.writableEnded && res.write(`: ping\n\n`), 15_000);
@@ -166,6 +179,7 @@ router.post("/photo/generate", async (req, res) => {
     });
   } finally {
     clearInterval(keepAlive);
+    if (!delivered) await refundUsage(charge);
     res.end();
   }
 });

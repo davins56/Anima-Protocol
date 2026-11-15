@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { getAuth } from "@clerk/express";
 import { rateLimit } from "../lib/rateLimit";
+import { chargeUsage, refundUsage, sendMeterDenied, ttsUnitsForText } from "../lib/billing/meter";
 
 const router = Router();
 // Scope the limiter to this router's own paths. This router is mounted without a
@@ -99,6 +100,14 @@ router.post("/tts", async (req, res) => {
     return;
   }
   const clean = text.slice(0, 2500);
+  // Metered before ElevenLabs is called; refunded if it fails (audit H1).
+  const userId = getAuth(req).userId as string;
+  const metered = await chargeUsage({ userId, kind: "voice", units: ttsUnitsForText(clean) });
+  if (!metered.ok) {
+    sendMeterDenied(res, metered.denied);
+    return;
+  }
+  const charge = metered.charge;
   try {
     const r = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${voice_id || DEFAULT_VOICE_ID}`,
@@ -117,6 +126,7 @@ router.post("/tts", async (req, res) => {
       },
     );
     if (!r.ok) {
+      await refundUsage(charge);
       const errText = await r.text();
       res.status(r.status).json({
         error: `ElevenLabs ${r.status}: ${errText.slice(0, 300)}`,
@@ -128,6 +138,7 @@ router.post("/tts", async (req, res) => {
     res.setHeader("Cache-Control", "no-store");
     res.send(buf);
   } catch (err) {
+    await refundUsage(charge);
     res.status(500).json({
       error: err instanceof Error ? err.message : String(err),
     });

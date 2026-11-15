@@ -24,6 +24,7 @@ import {
 } from "./lib/workerBackground";
 
 export { LocalLlmSlot } from "./lib/localLlmSlotDo";
+export { UserRateLimiter } from "./lib/usage/userRateLimiterDo";
 
 interface Env {
   ASSETS: { fetch: (request: Request) => Promise<Response> };

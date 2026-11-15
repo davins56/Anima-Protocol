@@ -6,6 +6,7 @@
  */
 import { SKIN_TONE_GUARD, userAppearanceFromFacts, type CompanionLook } from "./appearance";
 import { orientationOf, styleFor } from "./imagePrompt";
+import { anatomyClause, fitPrompt } from "./anatomy";
 import { firstJsonObject, type IntentCompleter, type IntentMessage, type PhotoFraming, type PhotoIntent } from "./intent";
 import { safetyClause } from "./safety";
 import type { PhotoOrientation } from "./config";
@@ -201,6 +202,10 @@ export function composeSceneImagePrompt(input: ScenePromptInput): string {
     parts.push(`A photo of this scene, featuring ${present.join(" and ")}.`);
   }
 
+  // Body plan right after the subject; the cap never cuts it (see fitPrompt).
+  const head = parts.splice(0, parts.length);
+  if (ofCompanion) head.push(anatomyClause(name, input.look.anatomy, { framing }));
+
   if (brief.scene) parts.push(`Scene: ${clean(brief.scene, 280)}.`);
   if (brief.setting) parts.push(`Setting: ${clean(brief.setting, 160)}.`);
   parts.push(`Who is present: ${present.join(", ")}.`);
@@ -225,10 +230,8 @@ export function composeSceneImagePrompt(input: ScenePromptInput): string {
     }
   }
 
-  parts.push(SKIN_TONE_GUARD);
-  parts.push(style.text);
-  parts.push(safetyClause(input.level, ofCompanion));
-  return parts.join(" ").slice(0, MAX_PROMPT);
+  // Guards and the safety clause always survive the length cap.
+  return fitPrompt(head, parts, [SKIN_TONE_GUARD, style.text, safetyClause(input.level, ofCompanion)], MAX_PROMPT);
 }
 
 function skinFrom(text: string): string {

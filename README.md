@@ -289,7 +289,8 @@ pnpm --filter @workspace/mockup-sandbox run dev
 | `ELEVENLABS_API_KEY` | API | Optional TTS routes |
 | `CURSOR_API_KEY` | API | Optional. Lets Serenity launch Cursor Cloud Agents that upgrade Anima Protocol source when the steward asks. Alias: `CURSOR_CLOUD_API_KEY` |
 | `CURSOR_CLOUD_REPO_URL` | API | Optional. Defaults to `https://github.com/davins56/Anima-Protocol` |
-| `PROTOCOL_UPGRADE_ADMIN_EMAILS` | API | Optional comma-separated steward emails. Defaults to `davins56@gmail.com,davins56@hotmail.com` |
+| `PROTOCOL_STEWARD_USER_IDS` | API | **Required for any steward feature.** Comma-separated Clerk user ids (`user_…`) of the Protocol steward. The only thing that identifies the steward; empty means steward-only routes refuse everyone. Legacy alias: `PROTOCOL_UPGRADE_ADMIN_USER_IDS` (merged) |
+| `PROTOCOL_STEWARD_LABEL` | API | Optional display label for the steward (name or email). Never used for access. `PROTOCOL_UPGRADE_ADMIN_EMAILS` is read only as a fallback label |
 
 Sign-in offers Google, Apple, and GitHub via Clerk OAuth (`oauth_google`, `oauth_apple`, `oauth_github`). Enable each social connection in the Clerk Dashboard. Provider apps must allowlist `https://clerk.anima-protocol.com/v1/oauth_callback` (not the SPA `/sign-in/sso-callback` path). Clerk → Paths uses `/sign-in/sso-callback` and `/sign-up/sso-callback`. Operator checklist: `scripts/cloudflare/clerk-oauth.md`.
 
