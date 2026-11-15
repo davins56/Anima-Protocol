@@ -176,13 +176,15 @@ async function insertUploadedImageRow(row: {
   contentType: string;
   dataBase64: string;
   byteSize: number;
-}): Promise<void> {
+}, opts: { idempotent?: boolean } = {}): Promise<void> {
   // Same getPool().query path as /api/healthz/db. Drizzle + a large TEXT bind
   // through postgres.js/Hyperdrive is what surfaces as 503 "Database unavailable"
   // while SELECT 1 still succeeds.
+  // idempotent: a retry after a committed insert whose reply was lost is a
+  // no-op instead of a primary-key conflict (ids are fresh random UUIDs).
   await getPool().query(
     `INSERT INTO uploaded_images (id, user_id, content_type, data_base64, byte_size)
-     VALUES ($1, $2, $3, $4, $5)`,
+     VALUES ($1, $2, $3, $4, $5)${opts.idempotent ? " ON CONFLICT (id) DO NOTHING" : ""}`,
     [row.id, row.userId, row.contentType, row.dataBase64, row.byteSize],
   );
 }
@@ -194,14 +196,14 @@ async function insertRowEnsuringSchema(row: {
   contentType: string;
   dataBase64: string;
   byteSize: number;
-}): Promise<void> {
+}, opts: { idempotent?: boolean } = {}): Promise<void> {
   await withTransientDbRetry(async () => {
     try {
-      await insertUploadedImageRow(row);
+      await insertUploadedImageRow(row, opts);
     } catch (err) {
       if (!isMissingRelationError(err)) throw err;
       await ensureSchemaOnce();
-      await insertUploadedImageRow(row);
+      await insertUploadedImageRow(row, opts);
     }
   });
 }
@@ -331,38 +333,54 @@ export async function storeGeneratedImage(
   try {
     for (const part of splitImageBytes(bytes)) {
       const partId = randomUUID();
-      await insertRowEnsuringSchema({
-        id: partId,
-        userId,
-        contentType: IMAGE_PART_CONTENT_TYPE,
-        dataBase64: Buffer.from(part).toString("base64"),
-        byteSize: part.byteLength,
-      });
+      // Recorded before the insert so cleanup also covers a part that
+      // committed but whose reply was lost.
       partIds.push(partId);
+      await insertRowEnsuringSchema(
+        {
+          id: partId,
+          userId,
+          contentType: IMAGE_PART_CONTENT_TYPE,
+          dataBase64: Buffer.from(part).toString("base64"),
+          byteSize: part.byteLength,
+        },
+        { idempotent: true },
+      );
     }
     const manifest: ImageManifest = { v: 1, type: contentType, size: bytes.byteLength, parts: partIds };
     // The manifest goes in last, so its id never resolves to a partial image.
-    await insertRowEnsuringSchema({
-      id,
-      userId,
-      contentType: IMAGE_MANIFEST_CONTENT_TYPE,
-      dataBase64: Buffer.from(JSON.stringify(manifest), "utf8").toString("base64"),
-      byteSize: bytes.byteLength,
-    });
+    await insertRowEnsuringSchema(
+      {
+        id,
+        userId,
+        contentType: IMAGE_MANIFEST_CONTENT_TYPE,
+        dataBase64: Buffer.from(JSON.stringify(manifest), "utf8").toString("base64"),
+        byteSize: bytes.byteLength,
+      },
+      { idempotent: true },
+    );
   } catch (err) {
-    await deletePartRows(userId, partIds).catch(() => undefined);
+    // One statement removes the manifest (if it committed) and every part;
+    // retried once. If both attempts fail the rows stay unreferenced (no
+    // manifest points at them) and the original error is still thrown.
+    const cleanup = () => deleteImageRows(userId, [id, ...partIds]);
+    await cleanup().catch(() => cleanup()).catch((cleanupErr) => {
+      console.error("storeGeneratedImage: could not remove partial image rows:", cleanupErr);
+    });
     throw err;
   }
   return { id, objectPath: objectPathForUploadId(id), contentType, byteSize: bytes.byteLength };
 }
 
-async function deletePartRows(userId: string, ids: string[]): Promise<void> {
-  if (!ids.length) return;
+/** Owner-scoped delete of several rows in one atomic statement. */
+async function deleteImageRows(userId: string, ids: string[]): Promise<number> {
+  if (!ids.length) return 0;
   const placeholders = ids.map((_, i) => `$${i + 2}`).join(", ");
-  await getPool().query(
-    `DELETE FROM uploaded_images WHERE user_id = $1 AND content_type = '${IMAGE_PART_CONTENT_TYPE}' AND id IN (${placeholders})`,
+  const result = await getPool().query<{ id: string }>(
+    `DELETE FROM uploaded_images WHERE user_id = $1 AND id IN (${placeholders}) RETURNING id`,
     [userId, ...ids],
   );
+  return result.rows.length;
 }
 
 async function assembleManifest(row: UploadedImageRow): Promise<StoredImage | null> {
@@ -451,23 +469,20 @@ export async function storeUploadedAudio(
   return { id, objectPath: objectPathForUploadId(id), contentType: type, byteSize: bytes.byteLength };
 }
 
-/** Owner-only. False when the row is missing or belongs to someone else. */
+/**
+ * Owner-only. False when the row is missing or belongs to someone else.
+ * A multipart image's manifest and parts go in one DELETE, so a failure
+ * leaves the image whole (and the error surfaces) instead of half-deleted.
+ */
 export async function deleteUploadedImage(userId: string, id: string): Promise<boolean> {
   const owner = String(userId || "").trim();
   const imageId = String(id || "").trim();
   if (!owner || !imageId) return false;
-  const result = await getPool().query<{ id: string; content_type: string; data_base64: string }>(
-    `DELETE FROM uploaded_images WHERE id = $1 AND user_id = $2 AND content_type <> '${IMAGE_PART_CONTENT_TYPE}'
-     RETURNING id, content_type, data_base64`,
-    [imageId, owner],
-  );
-  const removed = result.rows[0];
-  if (!removed) return false;
-  if (isManifestType(String(removed.content_type || ""))) {
-    const manifest = parseManifest(String(removed.data_base64 || ""));
-    if (manifest) await deletePartRows(owner, manifest.parts).catch(() => undefined);
-  }
-  return true;
+  const row = await selectUploadedImageRow(imageId);
+  if (!row || row.user_id !== owner || isPartType(row.content_type)) return false;
+  const manifest = isManifestType(row.content_type) ? parseManifest(row.data_base64) : null;
+  const removed = await deleteImageRows(owner, [imageId, ...(manifest?.parts ?? [])]);
+  return removed > 0;
 }
 
 export async function getUploadedImage(

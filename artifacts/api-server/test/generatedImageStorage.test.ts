@@ -15,6 +15,10 @@ const query = vi.fn(async (sql: string, params: unknown[] = []) => {
   if (text.startsWith("INSERT INTO uploaded_images")) {
     const [id, user_id, content_type, data_base64, byte_size] = params as [string, string, string, string, number];
     insertSizes.push(String(data_base64).length);
+    if (rows.has(id)) {
+      if (text.includes("ON CONFLICT (id) DO NOTHING")) return { rows: [] };
+      throw new Error("duplicate key value violates unique constraint");
+    }
     rows.set(id, { id, user_id, content_type, data_base64, byte_size });
     return { rows: [] };
   }
@@ -30,16 +34,16 @@ const query = vi.fn(async (sql: string, params: unknown[] = []) => {
     // Out of order on purpose: assembly must follow the manifest.
     return { rows: out.reverse().map((r) => ({ id: r.id, data_base64: r.data_base64 })) };
   }
-  if (text.startsWith("DELETE FROM uploaded_images WHERE id = $1")) {
-    const row = rows.get(String(params[0]));
-    if (!row || row.user_id !== params[1] || row.content_type === "application/x-anima-image-part") return { rows: [] };
-    rows.delete(row.id);
-    return { rows: [{ id: row.id, content_type: row.content_type, data_base64: row.data_base64 }] };
-  }
   if (text.startsWith("DELETE FROM uploaded_images WHERE user_id = $1")) {
     const [userId, ...ids] = params as string[];
-    for (const id of ids) if (rows.get(id)?.user_id === userId) rows.delete(id);
-    return { rows: [] };
+    const out: { id: string }[] = [];
+    for (const id of ids) {
+      if (rows.get(id)?.user_id === userId) {
+        rows.delete(id);
+        out.push({ id });
+      }
+    }
+    return { rows: out };
   }
   throw new Error(`unexpected SQL: ${text}`);
 });
@@ -144,6 +148,37 @@ describe("storeGeneratedImage", () => {
     expect(rows.size).toBe(4);
     expect(await deleteUploadedImage("u1", stored.id)).toBe(true);
     expect(rows.size).toBe(0);
+  });
+
+  it("a retried part insert whose first reply was lost neither conflicts nor leaks", async () => {
+    const real = query.getMockImplementation()!;
+    let lost = false;
+    query.mockImplementation(async (sql: string, params: unknown[] = []) => {
+      const out = await real(sql, params);
+      if (!lost && sql.includes("INSERT INTO uploaded_images")) {
+        lost = true; // the row committed, but the reply never arrived
+        throw new Error("connection reset");
+      }
+      return out;
+    });
+    const { storeGeneratedImage: store } = await import("../src/lib/imageUploads");
+    // withTransientDbRetry is a pass-through here, so the lost reply surfaces:
+    await expect(
+      store("u1", { contentType: "image/jpeg", dataBase64: fakeJpeg(1_400_000).toString("base64") }),
+    ).rejects.toThrow(/connection reset/);
+    // ...and the committed first part is still cleaned up.
+    expect(rows.size).toBe(0);
+    query.mockImplementation(real);
+  });
+
+  it("a part row cannot be deleted through the public delete", async () => {
+    const stored = await storeGeneratedImage("u1", {
+      contentType: "image/jpeg",
+      dataBase64: fakeJpeg(1_200_000).toString("base64"),
+    });
+    const partId = [...rows.keys()].find((id) => id !== stored.id)!;
+    expect(await deleteUploadedImage("u1", partId)).toBe(false);
+    expect(rows.size).toBe(4);
   });
 
   it("cleans up parts when a later insert fails", async () => {

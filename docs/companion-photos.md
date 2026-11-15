@@ -159,7 +159,8 @@ to disable the instruction and ignore tags.
   can drift.
 - Generated high-res JPEGs are larger than the earlier 768×1024 shots
   (~0.8–1.5 MB). Photos over the 1 MB single-row cap are stored as ~512 KB
-  part rows plus a manifest row under the same id (`storeGeneratedImage` in
+  part rows (each with its own internal id) plus a manifest row under the
+  public id that lists them (`storeGeneratedImage` in
   `lib/imageUploads.ts`, no schema change, max 8 MB), so they no longer fail
   storage. Browser uploads keep the 1 MB cap.
 - Photo URLs are unguessable UUIDs but not owner-checked, like avatars.
