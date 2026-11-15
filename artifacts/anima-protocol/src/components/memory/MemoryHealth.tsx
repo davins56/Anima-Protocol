@@ -1,9 +1,16 @@
 /**
  * Compact memory-health pill for the chat header: how many memories she holds
  * and the oldest memory she surfaced recently ("recalled 7mo-old memory").
+ *
+ * The details panel is portaled to document.body. An in-flow `absolute z-40`
+ * dropdown is clipped by the header's overflow-x-auto scroller and trapped
+ * under later rows (Chats/Stage/Online, Resonance/Synchro) because those
+ * rows — and the glass header itself — create their own stacking contexts
+ * via backdrop-filter.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Brain } from "lucide-react";
+import PortaledFixedPanel from "@/components/chat/PortaledFixedPanel";
 import { formatAge, useMemoryHealth } from "@/hooks/useMemoryHealth";
 
 export default function MemoryHealth({
@@ -17,6 +24,30 @@ export default function MemoryHealth({
 }) {
   const health = useMemoryHealth(characterId, refreshKey);
   const [open, setOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    setOpen(false);
+  }, [characterId]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setOpen(false);
+        buttonRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open]);
+
+  const close = () => {
+    setOpen(false);
+    buttonRef.current?.focus();
+  };
+
   if (!health) return null;
 
   const oldest = health.oldest_recent_recall;
@@ -26,9 +57,13 @@ export default function MemoryHealth({
   return (
     <div className="relative">
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-label={`${characterName || "Companion"} memory health`}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        aria-controls={open ? "memory-health-panel" : undefined}
         className={`flex items-center gap-1 px-1.5 py-0.5 border font-mono text-[8px] sm:text-[9px] tracking-widest uppercase ${tone}`}
         title={oldest ? `Recently recalled a memory from ${formatAge(oldest.age_s)} ago` : "Memory core"}
       >
@@ -36,8 +71,16 @@ export default function MemoryHealth({
         <span>{health.memory_count}</span>
         {oldest && <span className="hidden sm:inline">· {formatAge(oldest.age_s)}</span>}
       </button>
-      {open && (
-        <div className="absolute z-40 mt-1 right-0 w-64 p-3 bg-black/90 border border-primary/30 font-mono text-[10px] text-primary/70 space-y-1.5">
+      <PortaledFixedPanel
+        open={open}
+        onDismiss={close}
+        anchorRef={buttonRef}
+        align="left"
+        className="w-64 max-w-[calc(100vw-16px)] p-3 bg-black/90 border border-primary/30 font-mono text-[10px] text-primary/70 overflow-y-auto"
+        panelTestId="memory-health-panel"
+        backdropTestId="memory-health-backdrop"
+      >
+        <div id="memory-health-panel" role="dialog" aria-label="Memory core" className="space-y-1.5">
           <p className="text-primary tracking-widest uppercase text-[9px]">Memory core</p>
           <p>{health.memory_count} memories{health.first_memory_at ? ` since ${new Date(health.first_memory_at).toLocaleDateString()}` : ""}</p>
           {health.identity_version != null && <p>Identity v{health.identity_version} (versioned, never overwritten)</p>}
@@ -48,7 +91,7 @@ export default function MemoryHealth({
             </p>
           )}
         </div>
-      )}
+      </PortaledFixedPanel>
     </div>
   );
 }
