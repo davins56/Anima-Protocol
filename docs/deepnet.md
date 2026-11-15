@@ -60,3 +60,13 @@ These are added to `CLOUDFLARE_RUNTIME_ENV_NAMES` but **not** to `wrangler.jsonc
 ### What the API never does
 - No model calls, no tools, and no outbound fetch. A test checks the imports and fetch usage.
 - No memory writes, no corruption and no sharing.
+
+## UI: `/deepnet` (`artifacts/anima-protocol/src/features/deepnet/`)
+
+- The route is lazy (`ExtraPage name="Deepnet"`). The page first calls `GET /api/deepnet/status`. On any non-2xx response, which includes the 404 when the flag is off, it shows "This area isn't available." and fetches nothing else.
+- There is **no client flag**. The server decides.
+- **`NetworkMap2D.tsx`**: an SVG map read from `DeepnetMap`. Locked nodes can't be selected, and the map is keyboard accessible. It's the fallback for every device; Anima 3D Visual's 3D map renders the same contract.
+- **`DeepnetPage.tsx`**: companion picker (the user's own companions only, no demo residents), then map, then Grey Corridor (enter, then the authored dialogue, then the resonance gate with the existing `FrequencyTuner`, then the outcome).
+- All server text is rendered as plain React text, and a test checks for `dangerouslySetInnerHTML`.
+- **`flow.ts`**: pure panel and dialogue helpers. Tests are in `deepnet.test.tsx`.
+- Not yet added: a portal from `/cyberworld` (this avoids touching 3D Visual's scene), and any memory or corruption display.

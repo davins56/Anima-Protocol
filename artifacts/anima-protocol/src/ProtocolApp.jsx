@@ -1061,6 +1061,12 @@ const AuthenticatedApp = () => {
                 }
               />
               <Route
+                path="/deepnet"
+                element={
+                    <ExtraPage name="Deepnet" />
+                }
+              />
+              <Route
                 path="/net-battle"
                 element={
                     <NetBattle />
