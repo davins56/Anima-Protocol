@@ -64,6 +64,9 @@ export default defineConfig({
       "test/characterResearch.test.ts",
       "test/dialogueVariety.test.ts",
       "test/replyFormatting.test.ts",
+      // Bot bridge: HMAC, schemas, fence, limits and the flag-gated routes (no DB).
+      "test/botBridge.test.ts",
+      "test/botBridgeRoute.test.ts",
     ],
     environment: "node",
     fileParallelism: false,
