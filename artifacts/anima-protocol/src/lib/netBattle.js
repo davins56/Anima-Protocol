@@ -16,6 +16,7 @@ import {
   getExpressionMeta,
 } from "./animaExpressions";
 import { chipsFromEchoFolder, echoResonanceChip } from "./echoKeys";
+import { battleModsFor, narrate, SEED_LIBRARY, stanceLine } from "@workspace/martial-core";
 
 export const COLS = 6;
 export const ROWS = 3;
@@ -148,8 +149,30 @@ function folderForBattle(opts, spectrum) {
 }
 
 /**
+ * #768: tilt NetBattle stats by the anima's fighting style, within ±15%
+ * (martial-core clamps style plus tone). attack × strike, incoming damage ×
+ * guard (defense ÷ guard), speed × speed. Client-only and non-authoritative.
+ */
+export function applyStyleToStats(stats, mods) {
+  return {
+    ...stats,
+    attack: stats.attack * mods.strike,
+    defense: stats.defense / mods.guard,
+    speed: stats.speed * mods.speed,
+  };
+}
+
+function resolveStyle(style) {
+  const pick = style?.pick;
+  if (!pick || !SEED_LIBRARY.byId.has(pick.style_id)) return null;
+  const tone = style.tone || "composed";
+  return { pick: { style_id: pick.style_id, variant_id: pick.variant_id ?? null }, tone, mods: battleModsFor(SEED_LIBRARY, pick, tone) };
+}
+
+/**
  * @param {object} opts
  * @param {object} [opts.anima]
+ * @param {{ pick: { style_id: string, variant_id?: string|null }, tone?: string }|null} [opts.style] #768 fighting style (absent = unchanged battle)
  * @param {'manual'|'auto'} [opts.controlMode]
  * @param {number} [opts.seed]
  * @param {{ id: string, code?: string, kind?: string }[]} [opts.echoFolder] Echo Key chips or raw {id,code} slots. Falls back to expression chips.
@@ -157,14 +180,16 @@ function folderForBattle(opts, spectrum) {
 export function createBattle(opts = {}) {
   const anima = opts.anima || {};
   const spectrum = anima.expression_spectrum;
-  const stats = mixedCombatStats(spectrum);
+  const style = resolveStyle(opts.style);
+  const baseStats = mixedCombatStats(spectrum);
+  const stats = style ? applyStyleToStats(baseStats, style.mods) : baseStats;
   const rng = createRng(opts.seed ?? Date.now() % 1_000_000);
   const folder = folderForBattle(opts, spectrum);
   const drawn = drawHand(folder, rng);
   const hp = unitHp(stats.hp);
   const buster = busterForSpectrum(spectrum);
 
-  return {
+  const state = {
     phase: "fighting",
     tick: 0,
     controlMode: opts.controlMode === "auto" ? "auto" : "manual",
@@ -198,6 +223,9 @@ export function createBattle(opts = {}) {
     chipsUsed: 0,
     winner: null,
   };
+  if (!style) return state;
+  const stance = stanceLine(SEED_LIBRARY, style.pick, anima.name || "Anima");
+  return { ...state, style, log: stance ? state.log.concat(stance) : state.log };
 }
 
 function pushLog(state, line) {
@@ -409,6 +437,9 @@ function resolveHits(state) {
   const projectiles = [];
   const slashes = [];
   let logLine = null;
+  let styleLine = null;
+  const styleHit = () =>
+    state.style ? narrate(SEED_LIBRARY, { type: "hit", sourceId: "navi", seq: state.tick }, state.style.pick, state.style.tone) : null;
 
   for (const p of state.projectiles) {
     const target = p.owner === "player" ? enemy : player;
@@ -417,6 +448,7 @@ function resolveHits(state) {
         const hit = damageUnit(enemy, p.damage, 1);
         enemy = hit.unit;
         logLine = `${p.name} hit ${enemy.name} for ${hit.dealt}`;
+        styleLine = styleHit();
       } else {
         const hit = damageUnit(player, p.damage, state.stats.defense);
         player = hit.unit;
@@ -434,6 +466,7 @@ function resolveHits(state) {
         const hit = damageUnit(enemy, s.damage, 1);
         enemy = hit.unit;
         logLine = `${s.name} struck ${enemy.name} for ${hit.dealt}`;
+        styleLine = styleHit();
       } else {
         const hit = damageUnit(player, s.damage, state.stats.defense);
         player = hit.unit;
@@ -445,6 +478,7 @@ function resolveHits(state) {
 
   let next = { ...state, player, enemy, projectiles, slashes };
   if (logLine) next = pushLog(next, logLine);
+  if (styleLine) next = pushLog(next, styleLine);
   return next;
 }
 

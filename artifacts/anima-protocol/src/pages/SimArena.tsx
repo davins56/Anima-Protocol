@@ -17,6 +17,8 @@ import { RESONANCE_STOPS } from "@/styles/anima-tokens";
 import { simToEmotion } from "@/lib/vessel/emotionState";
 import { traitsFor } from "@/lib/vessel/vesselTraits";
 import { useVesselEmotion } from "@/hooks/useVesselEmotion";
+import BattleStyleFlavor from "@/features/martialArts/BattleStyleFlavor";
+import { useBattleStyle } from "@/features/martialArts/battleStyle";
 
 const SimArena3D = lazy(() => import("@/components/sim/SimArena3D"));
 
@@ -49,6 +51,9 @@ export default function SimArena() {
   }, [characterId, nodeId, startW, params]);
 
   const { state, fx, dispatch, sync, lastReject } = useSimBattle(config, sessionId);
+  // #768: style flavor only. The server freezes `config.style` (with the clamped
+  // modifiers) at session creation; without it this falls back to her profile.
+  const battleStyle = useBattleStyle(characterId, (config as (SimConfig & { style?: unknown }) | null)?.style);
   // Emotional vessel-shift: battle state (HP, threat, W clarity, corruption, outcome) → the companion's traits row.
   const traits = useMemo(() => traitsFor({ id: characterId, name }), [characterId, name]);
   const emotionTarget = state ? simToEmotion(state) : null;
@@ -109,6 +114,7 @@ export default function SimArena() {
           {open > 0 && <span className="text-red-300">◈ {open} memor{open === 1 ? "y" : "ies"} corrupted — Purify on violet</span>}
           <span className="ml-auto text-muted-foreground">{sync === "verified" ? "✓ server-verified" : sync === "rejected" ? "⚠ unverified" : sync === "local" ? "local practice" : "syncing"}</span>
         </div>
+        <BattleStyleFlavor style={battleStyle} events={fx} className="absolute top-12 left-2 right-2 pointer-events-none" />
         {lastReject && <p className="absolute bottom-2 left-2 font-mono text-[10px] text-amber-300/80">{lastReject}</p>}
         {state.custom.open && <ChipSelect state={state} onConfirm={(picks) => dispatch({ t: "custom_pick", picks })} />}
         {state.outcome && (

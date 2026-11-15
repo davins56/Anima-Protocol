@@ -11,6 +11,8 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.js'],
+    // The pure shared libraries' tests run here too, so CI's frontend-tests job covers them.
+    include: ['**/*.{test,spec}.?(c|m)[jt]s?(x)', '../../lib/martial-core/test/**/*.test.ts'],
     exclude: ['node_modules/**', 'e2e/**'],
   },
   resolve: {

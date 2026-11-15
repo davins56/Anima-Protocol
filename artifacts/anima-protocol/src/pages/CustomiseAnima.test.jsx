@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   whenBootstrapReady: vi.fn(),
   waitForStoreAuth: vi.fn(),
   navigate: vi.fn(),
+  martialArtsEnabled: false,
   auth: {
     isAuthenticated: true,
     isLoadingAuth: false,
@@ -74,6 +75,12 @@ vi.mock("@/components/anima/AnimaVoicePanel", () => ({
 vi.mock("@/components/anima/AnimaExpressionPanel", () => ({
   default: () => <div>Expression panel</div>,
 }));
+vi.mock("@/features/martialArts/useMartialArts", () => ({
+  useMartialArtsEnabled: () => mocks.martialArtsEnabled,
+}));
+vi.mock("@/features/martialArts/StylePanel", () => ({
+  default: ({ characterId }) => <div>Style panel {characterId}</div>,
+}));
 vi.mock("@/components/anima/DeviceScanPanel", () => ({
   default: () => <div>Permissions panel</div>,
 }));
@@ -103,6 +110,24 @@ describe("Customise Anima hub", () => {
     mocks.waitForStoreAuth.mockResolvedValue("token");
     mocks.listAnima.mockResolvedValue([]);
     mocks.listCharacter.mockResolvedValue([]);
+    mocks.martialArtsEnabled = false;
+  });
+
+  it("#768: no Style tab while ANIMA_MARTIAL_ARTS is off (status 404); the tab appears when it's on", async () => {
+    const row = { id: "anima-1", name: "Serenity", assigned_user: "operator@example.com" };
+    mocks.listAnima.mockResolvedValue([row]);
+    const off = renderPage();
+    expect(await screen.findByText("Look panel Serenity")).toBeTruthy();
+    const offTabs = screen.getAllByRole("tab").map((t) => t.textContent);
+    expect(offTabs).toEqual(["Look", "Personality", "Soulprint", "Expression", "Voice", "Intimacy", "Permissions"]);
+    expect(screen.queryByRole("tab", { name: /Style/i })).toBeNull();
+    off.unmount();
+
+    mocks.martialArtsEnabled = true;
+    renderPage();
+    expect(await screen.findByText("Look panel Serenity")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: /Style/i }));
+    expect(await screen.findByText("Style panel anima-1")).toBeTruthy();
   });
 
   it("shows a signed-in empty list, not the misconfigured banner", async () => {

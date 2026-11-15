@@ -1,0 +1,20 @@
+{
+  "name": "@workspace/martial-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pure martial-arts style library for animas (#768): seed catalog v1.1 with seed|user source tags, deterministic trait-to-style selection, in-character explanation templates, narration tables and ±15% clamped battle effects. No I/O. Shared by client and api-server.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@workspace/sim-core": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^5.1.0"
+  }
+}
