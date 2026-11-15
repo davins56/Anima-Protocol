@@ -5,6 +5,7 @@ export default defineConfig({
     include: [
       "test/clerkDiagnostics.test.ts",
       "test/imageUploads.test.ts",
+      "test/generatedImageStorage.test.ts",
       "test/companionPhotos.test.ts",
       "test/sceneImages.test.ts",
       "test/consumeLlmStream.test.ts",
@@ -67,6 +68,9 @@ export default defineConfig({
       // Deepnet slice rules (#757): pure, no Postgres.
       "test/deepnetCore.test.ts",
       "test/deepnetRoute.test.ts",
+      // Bot bridge: HMAC, schemas, fence, limits and the flag-gated routes (no DB).
+      "test/botBridge.test.ts",
+      "test/botBridgeRoute.test.ts",
     ],
     environment: "node",
     fileParallelism: false,

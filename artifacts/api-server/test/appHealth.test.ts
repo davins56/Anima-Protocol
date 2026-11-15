@@ -41,8 +41,17 @@ describe("app health checks", () => {
     await expect(response.json()).resolves.toEqual({ status: "ok" });
   });
 
-  it("exposes presence-only env flags without secret values", async () => {
-    const response = await fetch(`${baseUrl}/api/healthz/env`);
+  it("locks the env presence probe behind the ops bearer", async () => {
+    const anon = await fetch(`${baseUrl}/api/healthz/env`);
+    expect(anon.status).toBe(401);
+    const wrong = await fetch(`${baseUrl}/api/healthz/env`, {
+      headers: { Authorization: "Bearer wrong-secret" },
+    });
+    expect(wrong.status).toBe(401);
+  });
+
+  it("exposes presence-only env flags without secret values to ops", async () => {
+    const response = await fetch(`${baseUrl}/api/healthz/env`, { headers: { Authorization: "Bearer test-schema-ops-secret" } });
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body).toEqual({
@@ -66,8 +75,14 @@ describe("app health checks", () => {
     });
   });
 
-  it("exposes a public database readiness probe", async () => {
-    const response = await fetch(`${baseUrl}/api/healthz/db`);
+  it("locks the database readiness probe behind the ops bearer", async () => {
+    const anon = await fetch(`${baseUrl}/api/healthz/db`);
+    expect(anon.status).toBe(401);
+    await expect(anon.json()).resolves.toMatchObject({ code: "ops_unauthorized" });
+  });
+
+  it("exposes an inspect-only database readiness probe to ops", async () => {
+    const response = await fetch(`${baseUrl}/api/healthz/db`, { headers: { Authorization: "Bearer test-schema-ops-secret" } });
     // Local CI has a real DATABASE_URL → 200; a dead URL would be 503 with
     // target metadata. Either way the probe must not 404/500.
     expect([200, 503]).toContain(response.status);
@@ -98,8 +113,10 @@ describe("app health checks", () => {
     }
   });
 
-  it("exposes a public GET schema inspect and requires an ops bearer for POST", async () => {
-    const getRes = await fetch(`${baseUrl}/api/healthz/schema`);
+  it("requires an ops bearer for GET schema inspect and for POST", async () => {
+    const anonGet = await fetch(`${baseUrl}/api/healthz/schema`);
+    expect(anonGet.status).toBe(401);
+    const getRes = await fetch(`${baseUrl}/api/healthz/schema`, { headers: { Authorization: "Bearer test-schema-ops-secret" } });
     expect([200, 503]).toContain(getRes.status);
     const getBody = await getRes.json();
     expect(getBody).toMatchObject({
@@ -137,5 +154,42 @@ describe("app health checks", () => {
       }),
     });
   });
-});
 
+  it("answers /healthz/llm publicly with status and chain only", async () => {
+    const response = await fetch(`${baseUrl}/api/healthz/llm`);
+    expect([200, 503]).toContain(response.status);
+    const body = await response.json();
+    expect(Object.keys(body).sort()).toEqual(["chain", "status"]);
+    expect(Array.isArray(body.chain)).toBe(true);
+    expect(JSON.stringify(body)).not.toMatch(/keyTail|openrouter|gateway|host/i);
+  });
+
+  it("shows full LLM routing to ops but never a key tail", async () => {
+    const response = await fetch(`${baseUrl}/api/healthz/llm`, { headers: { Authorization: "Bearer test-schema-ops-secret" } });
+    const body = await response.json();
+    expect(body).toHaveProperty("preferred");
+    expect(body).toHaveProperty("openrouter");
+    expect(JSON.stringify(body)).not.toContain("keyTail");
+  });
+
+  it("requires the ops bearer for a live LLM probe", async () => {
+    const response = await fetch(`${baseUrl}/api/healthz/llm?probe=1`);
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({ code: "ops_unauthorized" });
+  });
+
+  it("answers /healthz/clerk publicly with a bare status", async () => {
+    const response = await fetch(`${baseUrl}/api/healthz/clerk`);
+    const body = await response.json();
+    expect(Object.keys(body)).toEqual(["status"]);
+  });
+
+  it("shows the Clerk key report to ops without key tails, and gates the probe", async () => {
+    const ops = await fetch(`${baseUrl}/api/healthz/clerk`, { headers: { Authorization: "Bearer test-schema-ops-secret" } });
+    const body = await ops.json();
+    expect(body).toHaveProperty("secretKey");
+    expect(JSON.stringify(body)).not.toContain("keyTail");
+    const probe = await fetch(`${baseUrl}/api/healthz/clerk?probe=1`);
+    expect(probe.status).toBe(401);
+  });
+});

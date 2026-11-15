@@ -480,6 +480,17 @@ export const animaApi = {
           surface,
         }),
       }).then((r) => r.json()),
+    // Launch only records a pending weave; nothing starts until confirm().
+    confirm: (id) =>
+      request(`/protocol-upgrade/${encodeURIComponent(id)}/confirm`, {
+        method: "POST",
+        body: JSON.stringify({ confirm: true }),
+      }).then((r) => r.json()),
+    cancel: (id) =>
+      request(`/protocol-upgrade/${encodeURIComponent(id)}/cancel`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      }).then((r) => r.json()),
     list: () => request("/protocol-upgrade").then((r) => r.json()),
     get: (id) => request(`/protocol-upgrade/${id}`).then((r) => r.json()),
   },

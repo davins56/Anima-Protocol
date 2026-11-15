@@ -1,5 +1,7 @@
 # Custom Anima LLM — replace ChatGPT / Gemini / Groq
 
+> Since the 2026-11-14 security fixes, `/api/healthz/llm` answers the public with `{status, chain}` only. The fields used below and `?probe=1` need `-H "Authorization: Bearer $ADMIN_MIGRATION_SECRET"`. See `docs/health-endpoints.md`.
+
 **What "build an LLM" means here:** OpenAI, Google, and Groq do **not** publish ChatGPT / Gemini / Groq model weights or training code. You cannot copy those products. What *is* public — and what Anima uses — is:
 
 | Public piece | Role |

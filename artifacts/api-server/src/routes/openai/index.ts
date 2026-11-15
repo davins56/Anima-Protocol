@@ -3,6 +3,8 @@ import { db, conversations, messages } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { getAuth } from "@clerk/express";
 import { createRateLimit } from "../../lib/rateLimit";
+import { userRateLimit } from "../../lib/usage/userRateLimit";
+import { deepModeAllowed } from "../../lib/billing/meter";
 import { routeModel } from "../../lib/modelRouter";
 import {
   createChatCompletionWithFailover,
@@ -329,7 +331,7 @@ router.post("/conversations/:id/messages", async (req, res) => {
  * follow-ups. Clerk Bearer is required — `/api/ai/chat` staying 200 without
  * a session does not prove this path.
  */
-router.post("/v1/chat/completions", async (req, res) => {
+router.post("/v1/chat/completions", userRateLimit("chat_proxy"), async (req, res) => {
   const userId = requireUserId(req, res);
   if (!userId) return;
 
@@ -395,7 +397,10 @@ router.post("/v1/chat/completions", async (req, res) => {
   }
 
   const requestedMaxTokens = body.max_tokens ?? body.maxTokens;
-  const deepMode = Boolean(body.deepMode ?? body.deep_mode);
+  // Deep mode is a paid pass (security audit 2026-11-14 H1). Without an
+  // active pass the request quietly runs in normal mode; text stays free.
+  const deepMode =
+    Boolean(body.deepMode ?? body.deep_mode) && (await deepModeAllowed(userId));
   const stream = body.stream !== false;
 
   if (!stream) {

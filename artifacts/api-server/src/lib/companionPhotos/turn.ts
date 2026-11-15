@@ -13,7 +13,7 @@
  */
 import { aiBinding, type WorkersAiBinding } from "../aiBinding";
 import { isPreinstalledCharacter } from "../companions/builtIn";
-import { storeUploadedImage, UPLOADS_PATH_PREFIX } from "../imageUploads";
+import { storeGeneratedImage, UPLOADS_PATH_PREFIX } from "../imageUploads";
 import { appendMemoryEvent } from "../memoryCore/memoryCore";
 import { extractWorkersAiText, workersAiBackgroundModel } from "../workersAi";
 import { companionLook, loadReferenceImage, userAppearanceFromFacts, type CompanionLook } from "./appearance";
@@ -262,7 +262,7 @@ export function startCompanionPhoto(input: {
   config?: CompanionPhotoConfig;
   binding?: WorkersAiBinding;
   loadReference?: typeof loadReferenceImage;
-  store?: typeof storeUploadedImage;
+  store?: typeof storeGeneratedImage;
   recent?: IntentMessage[];
   userMessage?: string;
   userName?: string;
@@ -358,7 +358,7 @@ export function startCompanionPhoto(input: {
       : undefined;
     let stored;
     try {
-      stored = await (input.store ?? storeUploadedImage)(input.userId, {
+      stored = await (input.store ?? storeGeneratedImage)(input.userId, {
         contentType: image.contentType,
         dataBase64: Buffer.from(image.bytes).toString("base64"),
       });
