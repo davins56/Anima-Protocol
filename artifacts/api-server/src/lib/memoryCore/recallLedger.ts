@@ -196,12 +196,20 @@ export async function listRecallLedger(args: {
     return { character_id: args.characterId, batches: [], next_cursor: null, meta: metaFor(limit) };
   }
 
-  const times = pageBatches.map((b) => b.t);
-  const sessions = pageBatches.map((b) => b.session_id ?? "");
+  // postgres.js with fetch_types:false (Workers/Hyperdrive) cannot bind plain
+  // JS arrays as text[]. Keep every parameter scalar on both DB drivers.
+  const entryParams: unknown[] = [args.userId, args.characterId];
+  const pageValues = pageBatches.map((b) => {
+    entryParams.push(b.t, b.session_id);
+    return `($${entryParams.length - 1}::timestamptz, $${entryParams.length}::text)`;
+  });
+  const excludedTypes = NON_MEMORY_TYPES.map((type) => {
+    entryParams.push(type);
+    return `$${entryParams.length}::text`;
+  });
   const { rows } = await pool.query<EntryRow>(
-    `WITH page AS (
-       SELECT t::timestamptz AS recalled_at, NULLIF(s, '') AS session_id
-         FROM unnest($3::text[], $4::text[]) AS u(t, s)
+    `WITH page(recalled_at, session_id) AS (
+       VALUES ${pageValues.join(", ")}
      ),
      hits AS (
        SELECT r.*,
@@ -229,10 +237,10 @@ export async function listRecallLedger(args: {
          ON e.id = h.event_id
         AND e.user_id = $1
         AND e.character_id = $2
-        AND e.event_type <> ALL($5::text[])
+        AND e.event_type NOT IN (${excludedTypes.join(", ")})
       WHERE h.rn <= ${RECALL_LEDGER_MAX_PER_BATCH}
       ORDER BY h.recalled_at DESC, COALESCE(h.session_id, '') DESC, h.score DESC, h.id`,
-    [args.userId, args.characterId, times, sessions, NON_MEMORY_TYPES],
+    entryParams,
   );
 
   const byKey = new Map<string, RecallLedgerBatch>();
