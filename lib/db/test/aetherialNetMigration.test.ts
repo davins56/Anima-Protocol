@@ -45,7 +45,9 @@ describe("Migration S1 (aetherial_net) static shape", () => {
 
   it("drops every trigger before re-creating it (B1)", () => {
     for (const m of UP.matchAll(/CREATE TRIGGER\s+([a-z_]+)\s+[\s\S]*?ON\s+public\.([a-z_]+)/gi)) {
-      expect(UP).toContain(`DROP TRIGGER IF EXISTS ${m[1]} ON public.${m[2]};`);
+      const drop = UP.indexOf(`DROP TRIGGER IF EXISTS ${m[1]} ON public.${m[2]};`);
+      expect(drop, m[1]).toBeGreaterThan(-1);
+      expect(drop, m[1]).toBeLessThan(m.index ?? -1);
     }
   });
 
@@ -97,6 +99,9 @@ describe("Migration S1 (aetherial_net) static shape", () => {
     expect(DOWN).toContain("DROP DOMAIN IF EXISTS public.aetherial_net_stratum;");
     // N2: one transaction, each table locked before its emptiness check.
     expect(DOWN.trim().startsWith("BEGIN;")).toBe(true);
+    expect(DOWN).toMatch(/^BEGIN;\s*\nSET LOCAL lock_timeout = '\d+s';/m);
+    // Lock order follows the SL-4 write path: cap_counters before events.
+    expect(DOWN.indexOf("'aetherial_net_cap_counters'")).toBeLessThan(DOWN.indexOf("'aetherial_net_events'"));
     expect(DOWN.trim().endsWith("COMMIT;")).toBe(true);
     const lockAt = DOWN.indexOf("LOCK TABLE public.%I IN ACCESS EXCLUSIVE MODE");
     expect(lockAt).toBeGreaterThan(-1);
