@@ -274,6 +274,7 @@ export const animaApi = {
       region,
       ownModelReply,
       ownModelVersion,
+      scene,
     }) {
       // Resolve Clerk before arming the stream abort — a late OTP mint must
       // not consume the reply budget (same isolation as ChatSession create).
@@ -303,6 +304,10 @@ export const animaApi = {
           ...(typeof ownModelReply === "string"
             ? { own_model_reply: ownModelReply, own_model_version: ownModelVersion }
             : {}),
+          // #763 (ANIMA_SITUATIONAL_SCENES): plan-following fields
+          // (`scene_plan_id`, `responder_index`, `if_rev`). Absent with the
+          // flag off, so the body is unchanged.
+          ...(scene && typeof scene === "object" ? scene : {}),
         }),
       );
     },
@@ -335,6 +340,29 @@ export const animaApi = {
      */
     sessionContext: (sessionId) =>
       request(`/chat/sessions/${encodeURIComponent(sessionId)}/context`).then((r) => r.json()),
+
+    /**
+     * Situational scenes (#763, ANIMA_SITUATIONAL_SCENES). Owner-only; a
+     * thrown error keeps `status`, `code` and `payload` so callers can tell
+     * 409 `scenes_disabled` / `scene_conflict` (with `{ scene }`) apart.
+     */
+    scene: {
+      get: (sessionId) =>
+        request(`/chat/sessions/${encodeURIComponent(sessionId)}/scene`).then((r) => r.json()),
+      patch: (sessionId, partial) =>
+        request(`/chat/sessions/${encodeURIComponent(sessionId)}/scene`, {
+          method: "PATCH",
+          body: JSON.stringify(partial || {}),
+        }).then((r) => r.json()),
+      command: (sessionId, text, ifRev) =>
+        request(`/chat/sessions/${encodeURIComponent(sessionId)}/scene/command`, {
+          method: "POST",
+          body: JSON.stringify({
+            text: String(text || ""),
+            ...(Number.isSafeInteger(ifRev) ? { if_rev: ifRev } : {}),
+          }),
+        }).then((r) => r.json()),
+    },
 
     /**
      * Durable companion felt-state + memories for a character.

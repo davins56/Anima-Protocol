@@ -1,3 +1,4 @@
+import { sceneStageDirection } from "./situationalScene";
 /**
  * AI companion disclosures for the chat screen.
  *
@@ -104,23 +105,34 @@ export function isCrisisResourceMessage(message) {
   return message.role !== "user" && text === CRISIS_RESOURCE_CARD_TEXT;
 }
 
-/** Drop system notices and crisis cards before a transcript is sent to a model. */
+/**
+ * Drop system notices, crisis cards and #763 scene event rows
+ * (`role: 'event'`, server-written only) before a transcript is sent to a model.
+ */
 export function messagesForModel(messages) {
   return (Array.isArray(messages) ? messages : []).filter(
-    (message) => !isAiCompanionNoticeMessage(message) && !isCrisisResourceMessage(message) && message?.role !== "system",
+    (message) =>
+      !isAiCompanionNoticeMessage(message) &&
+      !isCrisisResourceMessage(message) &&
+      message?.role !== "system" &&
+      message?.role !== "event",
   );
 }
 
 /** The history block Chat places in the client prompt. */
 export function chatHistoryForLlm(messages, limit = 14) {
-  return messagesForModel(messages)
+  const list = Array.isArray(messages) ? messages : [];
+  return list
+    .filter((message) => message?.role === "event" || messagesForModel([message]).length === 1)
     .slice(-limit)
     .map((message) => {
+      if (message?.role === "event") return sceneStageDirection(message);
       const speaker = message.role === "user" ? "You" : (message.character_name || "Character");
       const text = String(message.content || "");
       const clipped = text.length > 800 ? `${text.slice(0, 799)}…` : text;
       return `${speaker}: ${clipped}`;
     })
+    .filter((line) => line !== "")
     .join("\n");
 }
 

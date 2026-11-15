@@ -2,7 +2,12 @@ import {
   createVisibleReplyFilter,
   finalizeAssistantReply,
 } from "./visibleAssistantReply";
-import { stripMachineTags, stripMachineTagsStreaming } from "./machineTags";
+import {
+  stripMachineTags,
+  stripMachineTagsStreaming,
+  stripStageMarkers,
+  stripStageMarkersStreaming,
+} from "./machineTags";
 
 const EMPTY_REPLY_MESSAGE =
   "The companion returned an empty reply. Please try again.";
@@ -41,10 +46,17 @@ function rememberChatClientTrace(err, trace) {
  * `{ affect }` frame; it is never part of the returned payload. Both default
  * off, which leaves the stream exactly as before.
  *
- * @param {AsyncIterable<{ content?: string, done?: boolean, error?: string, status?: string, affect?: unknown }>} events
- * @param {{ onDelta?: (accumulated: string) => void, onFirstToken?: (accumulated: string) => void, onStatus?: (event: object) => void, onAffect?: (frame: unknown) => void, stripTags?: boolean }} [hooks]
+ * With `onScene` (ANIMA_SITUATIONAL_SCENES on, #763) the additive
+ * `{ scene_plan }` and `{ scene_event }` frames are handed to the caller,
+ * `[[…]]` stage markers are hidden from the visible text (`stripStage`),
+ * and a turn whose server plan picked nobody (`speakers: []`) resolves with
+ * `scene_no_reply: true` instead of failing as an empty reply. All default
+ * off, which leaves the stream exactly as before.
+ *
+ * @param {AsyncIterable<{ content?: string, done?: boolean, error?: string, status?: string, affect?: unknown, scene_plan?: unknown, scene_event?: unknown }>} events
+ * @param {{ onDelta?: (accumulated: string) => void, onFirstToken?: (accumulated: string) => void, onStatus?: (event: object) => void, onAffect?: (frame: unknown) => void, stripTags?: boolean, stripStage?: boolean, onScene?: (frame: { scene_plan?: unknown, scene_event?: unknown }) => void }} [hooks]
  */
-export async function streamChatReply(events, { onDelta, onFirstToken, onStatus, onAffect, stripTags = false } = {}) {
+export async function streamChatReply(events, { onDelta, onFirstToken, onStatus, onAffect, stripTags = false, stripStage = false, onScene } = {}) {
   let content = "";
   let doneEvent = null;
   let crisisResource = null;
@@ -102,8 +114,12 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus,
     rafId = requestAnimationFrame(flush);
   };
 
-  const streamView = (text) => (stripTags ? stripMachineTagsStreaming(text) : text);
-  const finalView = (text) => (stripTags ? stripMachineTags(text) : text);
+  const streamView = (text) =>
+    stripTags ? stripMachineTagsStreaming(text) : stripStage ? stripStageMarkersStreaming(text) : text;
+  const finalView = (text) =>
+    stripTags ? stripMachineTags(text) : stripStage ? stripStageMarkers(text) : text;
+  // #763: the server plan for this turn picked nobody (natural mode / narrator).
+  let sceneNoSpeaker = false;
 
   const paintVisible = (next) => {
     const visible = finalizeAssistantReply(next, content);
@@ -146,6 +162,25 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus,
           // A cue is decoration; it never breaks the reply.
         }
       }
+      if (onScene && !event?.done && (event?.scene_plan || event?.scene_event)) {
+        const plan = event.scene_plan;
+        if (
+          plan &&
+          typeof plan === "object" &&
+          Array.isArray(/** @type {any} */ (plan).speakers) &&
+          /** @type {any} */ (plan).speakers.length === 0
+        ) {
+          sceneNoSpeaker = true;
+        }
+        try {
+          onScene({
+            ...(event.scene_plan ? { scene_plan: event.scene_plan } : {}),
+            ...(event.scene_event ? { scene_event: event.scene_event } : {}),
+          });
+        } catch {
+          // Scene UI is decoration around the reply; it never breaks it.
+        }
+      }
       if (event?.content && !event?.done) {
         replyFilter.push(event.content);
         paintVisible(streamView(replyFilter.peek()));
@@ -181,7 +216,17 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus,
     content,
   );
   if (stripTags) content = stripMachineTags(content).trim();
+  else if (stripStage) content = stripStageMarkers(content).trim();
   if (content && onDelta) onDelta(content);
+
+  // #763: nobody speaks this turn by design. Not an error, no blank bubble.
+  if (onScene && sceneNoSpeaker && !String(content || "").trim()) {
+    return {
+      ...(doneEvent || {}),
+      content: "",
+      scene_no_reply: true,
+    };
+  }
 
   // A stream that finished (or closed without `done`) with nothing visible
   // must fail loudly so the caller toasts instead of leaving a blank turn.
@@ -246,6 +291,8 @@ function defaultMintTurnId() {
  *   onStatus?: (event: object) => void,
  *   onAffect?: (frame: unknown) => void,
  *   stripTags?: boolean,
+ *   stripStage?: boolean,
+ *   onScene?: (frame: { scene_plan?: unknown, scene_event?: unknown }) => void,
  * }} args
  */
 export async function streamChatReplyWithTurnRetry({
@@ -258,6 +305,8 @@ export async function streamChatReplyWithTurnRetry({
   onStatus,
   onAffect,
   stripTags = false,
+  stripStage = false,
+  onScene,
 }) {
   let currentTurnId = turnId;
   let retried = false;
@@ -269,6 +318,8 @@ export async function streamChatReplyWithTurnRetry({
         onStatus,
         ...(onAffect ? { onAffect } : {}),
         ...(stripTags ? { stripTags: true } : {}),
+        ...(stripStage ? { stripStage: true } : {}),
+        ...(onScene ? { onScene } : {}),
       });
       if (result?.replayed && !retried) {
         retried = true;

@@ -115,3 +115,54 @@ export function stripMachineTagsStreaming(text) {
   const head = cut === -1 ? value : value.slice(0, cut);
   return stripMachineTags(head);
 }
+
+// Stage markers only (#763, ANIMA_SITUATIONAL_SCENES): `[[exit]]`,
+// `[[enter:Name]]`. Used when scenes are on but ANIMA_EMOTIONS is off, so
+// `[EMOTION: …]` handling stays exactly as before.
+const STAGE_LINE_START_RE = new RegExp(String.raw`(^|\n)[ \t]*${STAGE_TAG}[ \t]*`, "g");
+const STAGE_INLINE_RE = new RegExp(String.raw`[ \t]*${STAGE_TAG}`, "g");
+const STAGE_AT_START_RE = new RegExp(`^${STAGE_TAG}`);
+
+/**
+ * Could `fragment` (starting with "[") still grow into a `[[…]]` marker?
+ * @param {string} fragment
+ */
+function couldBecomeStageTag(fragment) {
+  if (fragment === "[") return true;
+  if (!fragment.startsWith("[[")) return false;
+  return couldBecomeTag(fragment);
+}
+
+/**
+ * Remove complete `[[…]]` stage markers. Unclosed fragments stay as text.
+ * @param {string} text
+ * @returns {string}
+ */
+export function stripStageMarkers(text) {
+  const value = String(text ?? "");
+  if (!value.includes("[[")) return value;
+  return value.replace(STAGE_LINE_START_RE, "$1").replace(STAGE_INLINE_RE, "");
+}
+
+/**
+ * Mid-stream view for stage markers: strip complete ones and hold back a
+ * trailing fragment that could still become one.
+ * @param {string} text
+ * @returns {string}
+ */
+export function stripStageMarkersStreaming(text) {
+  const value = String(text ?? "");
+  if (!value.includes("[")) return value;
+  const windowStart = Math.max(0, value.length - MAX_MACHINE_TAG_FRAGMENT);
+  let cut = -1;
+  for (let i = value.indexOf("[", windowStart); i !== -1; i = value.indexOf("[", i + 1)) {
+    const fragment = value.slice(i);
+    if (STAGE_AT_START_RE.test(fragment)) continue;
+    if (couldBecomeStageTag(fragment)) {
+      cut = i;
+      break;
+    }
+  }
+  const head = cut === -1 ? value : value.slice(0, cut);
+  return stripStageMarkers(head);
+}

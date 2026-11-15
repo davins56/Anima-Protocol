@@ -2,6 +2,9 @@ import { useLayoutEffect, useRef, useState } from "react";
 import MessageBubble from "./MessageBubble";
 import SystemDisclosure from "./SystemDisclosure";
 import NarratorBubble from "./NarratorBubble";
+import SceneEventRow from "./SceneEventRow";
+import HeardByCaption from "./HeardByCaption";
+import { isSceneEventRow } from "@/lib/situationalScene";
 import { isNarratorMessage } from "@/lib/storyNarrator";
 import { parseGroupResponse } from "@/lib/parseGroupResponse";
 import { lastReplyActionIndexes } from "@/lib/chatReplyActions";
@@ -127,6 +130,12 @@ export default function MessageList({ messages, session, characters, characterMe
       );
       continue;
     }
+    // #763: `role: 'event'` rows are scene lines (no bubble, no actions).
+    // Only the server writes them, so with the flag off none exist.
+    if (isSceneEventRow(msg)) {
+      elements.push(<SceneEventRow key={`scene-${msg.id ?? i}`} message={msg} />);
+      continue;
+    }
     if (isNarratorMessage(msg)) {
       elements.push(
         <NarratorBubble
@@ -211,6 +220,10 @@ export default function MessageList({ messages, session, characters, characterMe
         onTeach={msg.role === 'assistant' && onTeachMessage ? cb(`teach:${i}`, (l) => () => l.current.onTeachMessage?.(i)) : undefined}
         onRate={msg.role === 'assistant' && onRateMessage ? cb(`rate:${i}`, (l) => (rating, better, extra) => l.current.onRateMessage?.(i, rating, better, extra)) : undefined}
       />,
+    );
+    // #763: server-stamped `heard_by` only; renders nothing with the flag off.
+    elements.push(
+      <HeardByCaption key={`heard-${i}`} message={msg} align={msg.role === "user" ? "right" : "left"} />,
     );
   }
 

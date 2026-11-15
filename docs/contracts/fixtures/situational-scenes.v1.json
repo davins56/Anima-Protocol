@@ -1,0 +1,168 @@
+{
+  "$comment": "Shared wire fixtures for #763 situational scenes (ANIMA_SITUATIONAL_SCENES). Source: Part A + Backend Data's M1-M14 replies, R1-R3 (issuecomment-6898216126) and answers (issuecomment-6898600710). The frontend tests consume these; the server PRs should emit exactly these shapes. Character ids are fake.",
+  "context": {
+    "flag_on": { "scenes_enabled": true, "adult_gated": true },
+    "flag_off": { "characters": [] }
+  },
+  "scene": {
+    "group_rooftop": {
+      "version": 1,
+      "rev": 4,
+      "location": "Rooftop",
+      "narrator": false,
+      "mode": "natural",
+      "cast": {
+        "c_nat": { "presence": "here", "reach": "none", "since": "2026-11-15T18:00:00.000Z" },
+        "c_ser": { "presence": "here", "reach": "none", "since": "2026-11-15T18:00:00.000Z" },
+        "c_aeland": { "presence": "asleep", "reach": "none", "since": "2026-11-15T17:30:00.000Z" },
+        "c_scarlet": { "presence": "away", "reach": "phone", "since": "2026-11-15T17:45:00.000Z", "note": "at the archive" }
+      },
+      "adult_gated": true
+    },
+    "solo_open": {
+      "version": 1,
+      "rev": 1,
+      "location": null,
+      "narrator": false,
+      "mode": "natural",
+      "cast": { "c_nat": { "presence": "here", "reach": "none", "since": "2026-11-15T18:00:00.000Z" } },
+      "adult_gated": false
+    },
+    "group_no_gate_field": {
+      "version": 1,
+      "rev": 2,
+      "location": null,
+      "narrator": false,
+      "mode": "natural",
+      "cast": {
+        "c_nat": { "presence": "here", "reach": "none", "since": "2026-11-15T18:00:00.000Z" },
+        "c_ser": { "presence": "here", "reach": "none", "since": "2026-11-15T18:00:00.000Z" }
+      }
+    }
+  },
+  "rows": {
+    "event_exit": {
+      "id": "m_evt_1",
+      "session_id": "s_group",
+      "seq": 41,
+      "created_at": "2026-11-15T18:01:00.000Z",
+      "role": "event",
+      "content": "Scarlet slips away toward the archive.",
+      "metadata": { "kind": "exit", "character_id": "c_scarlet", "presence": "away", "heard_by": ["c_nat", "c_ser"] }
+    },
+    "event_enter": {
+      "id": "m_evt_2",
+      "session_id": "s_group",
+      "seq": 44,
+      "created_at": "2026-11-15T18:03:00.000Z",
+      "role": "event",
+      "content": "Serenity steps out onto the rooftop.",
+      "metadata": { "kind": "enter", "character_id": "c_ser", "presence": "here", "heard_by": ["c_nat", "c_ser"] }
+    },
+    "event_narration": {
+      "id": "m_evt_3",
+      "session_id": "s_group",
+      "seq": 46,
+      "created_at": "2026-11-15T18:04:00.000Z",
+      "role": "event",
+      "content": "Wind moves through the antennae. Nobody answers for a while.",
+      "metadata": { "kind": "narration", "heard_by": ["c_nat", "c_ser"] }
+    },
+    "user_heard_by_two": {
+      "id": "m_user_1",
+      "seq": 42,
+      "role": "user",
+      "content": "Is anyone still up?",
+      "metadata": { "heard_by": ["c_nat", "c_ser"] }
+    },
+    "user_heard_by_nobody": {
+      "id": "m_user_2",
+      "seq": 43,
+      "role": "user",
+      "content": "(restored after the tombstone expired)",
+      "metadata": { "heard_by": [] }
+    },
+    "assistant_legacy": {
+      "id": "m_old_1",
+      "seq": 3,
+      "role": "assistant",
+      "character_name": "Natasha",
+      "content": "An old line from before scenes existed."
+    }
+  },
+  "http": {
+    "patch_result": {
+      "scene": {
+        "version": 1, "rev": 5, "location": "Rooftop", "narrator": false, "mode": "natural",
+        "cast": {
+          "c_nat": { "presence": "here", "reach": "none", "since": "2026-11-15T18:00:00.000Z" },
+          "c_ser": { "presence": "here", "reach": "none", "since": "2026-11-15T18:00:00.000Z" },
+          "c_aeland": { "presence": "asleep", "reach": "none", "since": "2026-11-15T17:30:00.000Z" },
+          "c_scarlet": { "presence": "away", "reach": "phone", "since": "2026-11-15T18:01:00.000Z", "note": "at the archive" }
+        },
+        "adult_gated": true
+      },
+      "events": ["@rows.event_exit"]
+    },
+    "command_result": {
+      "scene": {
+        "version": 1, "rev": 6, "location": "Library", "narrator": false, "mode": "natural",
+        "cast": {
+          "c_nat": { "presence": "here", "reach": "none", "since": "2026-11-15T18:05:00.000Z" },
+          "c_ser": { "presence": "away", "reach": "none", "since": "2026-11-15T18:05:00.000Z" }
+        },
+        "adult_gated": false
+      },
+      "events": [],
+      "unresolved": ["Morpheus"]
+    },
+    "scenes_disabled": { "status": 409, "body": { "error": "scenes_disabled" } },
+    "routes_missing": { "status": 404, "body": { "error": "Not found" } },
+    "scene_conflict": {
+      "status": 409,
+      "body": {
+        "error": "scene_conflict",
+        "scene": { "version": 1, "rev": 9, "location": "Docks", "narrator": true, "mode": "everyone", "cast": {}, "adult_gated": true }
+      }
+    },
+    "scene_plan_stale": {
+      "status": 409,
+      "body": {
+        "error": "scene_plan_stale",
+        "scene": { "version": 1, "rev": 7, "location": "Rooftop", "narrator": false, "mode": "natural",
+          "cast": { "c_ser": { "presence": "away", "reach": "none", "since": "2026-11-15T18:06:00.000Z" } },
+          "adult_gated": true }
+      }
+    }
+  },
+  "sse": {
+    "user_turn_two_speakers": [
+      { "scene_plan": { "id": "plan_1", "speakers": [{ "character_id": "c_nat", "reason": "addressed" }, { "character_id": "c_ser", "reason": "affected" }], "blocked": [{ "id": "c_aeland", "presence": "asleep" }], "narrate": false, "mode": "natural" } },
+      { "content": "Still up. " },
+      { "content": "I'll check on her [[ex" },
+      { "content": "it]]" },
+      { "scene_event": "@rows.event_exit" },
+      { "scene_event": "@rows.event_exit" },
+      { "done": true, "visible": "Still up. I'll check on her", "assistant_character_id": "c_nat",
+        "scene": { "version": 1, "rev": 5, "location": "Rooftop", "narrator": false, "mode": "natural", "cast": {}, "adult_gated": true },
+        "next_speaker": { "character_id": "c_ser" },
+        "blocked": [{ "id": "c_aeland", "presence": "asleep" }] }
+    ],
+    "follow_up_skipped_speaker": [
+      { "content": "I'm heading out too. [[exit]]" },
+      { "done": true, "visible": "I'm heading out too.", "assistant_character_id": "c_ser",
+        "scene": { "version": 1, "rev": 6, "location": "Rooftop", "narrator": false, "mode": "natural", "cast": {}, "adult_gated": true },
+        "next_speaker": null,
+        "blocked": [{ "id": "c_scarlet", "presence": "away" }] }
+    ],
+    "zero_speakers_narrated": [
+      { "scene_plan": { "id": "plan_2", "speakers": [], "blocked": [], "narrate": true, "mode": "natural" } },
+      { "scene_event": "@rows.event_narration" },
+      { "done": true, "visible": "", "scene": { "version": 1, "rev": 6, "location": "Rooftop", "narrator": true, "mode": "natural", "cast": {}, "adult_gated": true }, "next_speaker": null }
+    ],
+    "zero_speakers_quiet": [
+      { "scene_plan": { "id": "plan_3", "speakers": [], "blocked": [{ "id": "c_aeland", "presence": "asleep" }], "narrate": false, "mode": "natural" } },
+      { "done": true, "visible": "", "next_speaker": null }
+    ]
+  }
+}
