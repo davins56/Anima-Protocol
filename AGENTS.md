@@ -91,7 +91,7 @@ pnpm --filter @workspace/scripts run verify:clerk-oauth -- --fix-redirects
 
 Optional: `ELEVENLABS_API_KEY` for TTS routes.
 
-Optional: `CURSOR_API_KEY` (alias `CURSOR_CLOUD_API_KEY`) lets Serenity launch Cursor Cloud Agents that upgrade Anima Protocol source when the steward asks for an interface or system weave. Default repo is `https://github.com/davins56/Anima-Protocol`. Restrict stewards with `PROTOCOL_UPGRADE_ADMIN_EMAILS` (defaults to `davins56@gmail.com,davins56@hotmail.com`).
+Optional: `CURSOR_API_KEY` (alias `CURSOR_CLOUD_API_KEY`) lets Serenity launch Cursor Cloud Agents that upgrade Anima Protocol source when the steward asks for an interface or system weave. Default repo is `https://github.com/davins56/Anima-Protocol`. The steward is identified only by Clerk user id: set `PROTOCOL_STEWARD_USER_IDS` (legacy alias `PROTOCOL_UPGRADE_ADMIN_USER_IDS`). Emails are a display label only. A chat request only records a pending weave; the Cursor agent starts when the steward presses Confirm weave (`POST /api/protocol-upgrade/:id/confirm`).
 
 ### Google Cloud staging / backup (manual, not production)
 

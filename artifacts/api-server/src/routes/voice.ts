@@ -11,6 +11,8 @@
 import { Router, type Request, type Response } from "express";
 import { getAuth } from "@clerk/express";
 import { createRateLimit, rateLimit } from "../lib/rateLimit";
+import { chargeUsage, refundUsage, sendMeterDenied, type Charge } from "../lib/billing/meter";
+import { readRuntimeEnv } from "../lib/cloudflareEnv";
 import {
   createClientSecret,
   createCustomVoice,
@@ -205,6 +207,16 @@ router.post("/:characterId/session", tokenLimit, async (req, res) => {
   const userId = uid(req, res);
   if (!userId || !requireEnabled(res)) return;
   const characterId = String(req.params.characterId);
+  // A realtime xAI session is paid. Charge voice units before the client
+  // secret is minted; refund if minting fails (security audit 2026-11-14 H1).
+  // ANIMA_VOICE_SESSION_UNITS approximates one session (default 1).
+  const sessionUnits = Math.max(1, Math.min(60, Number(readRuntimeEnv("ANIMA_VOICE_SESSION_UNITS")) || 1));
+  const metered = await chargeUsage({ userId, kind: "voice", units: sessionUnits });
+  if (!metered.ok) {
+    sendMeterDenied(res, metered.denied);
+    return;
+  }
+  const charge: Charge = metered.charge;
   try {
     const [character, voice] = await Promise.all([
       loadCharacterRecord(userId, characterId),
@@ -234,6 +246,7 @@ router.post("/:characterId/session", tokenLimit, async (req, res) => {
       voice_version: voice?.version ?? null,
     });
   } catch (err) {
+    await refundUsage(charge);
     fail(res, err);
   }
 });

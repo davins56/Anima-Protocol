@@ -123,13 +123,16 @@ function openRouterQuotaRepair(input: CodeRepairInput): CodeRepairAnalysis {
       {
         title: "Check routing status",
         detail:
-          "Verify the deployed API prefers the local/custom LLM (`preferred: \"local\"`, `chain` includes `local`). OpenRouter should not be primary when a custom LLM is configured.",
-        command: "curl https://www.anima-protocol.com/api/healthz/llm",
+          "Verify the deployed API prefers the local/custom LLM (`preferred: \"local\"`, `chain` includes `local`). OpenRouter should not be primary when a custom LLM is configured. Full routing details need the ops bearer; the public response is status and chain only.",
+        command:
+          'curl -H "Authorization: Bearer $ADMIN_MIGRATION_SECRET" https://www.anima-protocol.com/api/healthz/llm',
       },
       {
         title: "Probe the custom LLM",
-        detail: "Run a live provider probe after redeploying to confirm the self-hosted endpoint answers.",
-        command: "curl https://www.anima-protocol.com/api/healthz/llm?probe=1",
+        detail:
+          "Run a live provider probe after redeploying to confirm the self-hosted endpoint answers. The probe is operator-only: send the ADMIN_MIGRATION_SECRET (or CRON_SECRET) as a bearer token.",
+        command:
+          'curl -H "Authorization: Bearer $ADMIN_MIGRATION_SECRET" "https://www.anima-protocol.com/api/healthz/llm?probe=1"',
       },
     ],
     guardrails: [
@@ -163,8 +166,10 @@ function openRouterKeyRepair(): CodeRepairAnalysis {
     verificationSteps: [
       {
         title: "Verify selected key source",
-        detail: "The LLM health endpoint reports the secret-free env name that supplied the key.",
-        command: "curl https://www.anima-protocol.com/api/healthz/llm",
+        detail:
+          "The LLM health endpoint reports the secret-free env name that supplied the key (ops bearer required).",
+        command:
+          'curl -H "Authorization: Bearer $ADMIN_MIGRATION_SECRET" https://www.anima-protocol.com/api/healthz/llm',
       },
     ],
     guardrails: [

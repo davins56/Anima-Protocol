@@ -3,8 +3,10 @@ import { ExternalLink, GitBranch, Sparkles, Waves, X } from "lucide-react";
 import { animaApi } from "@/api/animaApi";
 import { track } from "@/lib/analytics";
 import { classifyProtocolUpgrade } from "@/lib/protocolUpgrade";
+import { cancelProtocolUpgrade, confirmProtocolUpgrade } from "@/lib/serenityProtocolUpgrade";
 
 function statusLabel(status) {
+  if (status === "awaiting_confirmation") return "Awaiting your confirmation";
   if (status === "finished") return "Weave complete";
   if (status === "error") return "Current snagged";
   if (status === "cancelled") return "Cancelled";
@@ -80,7 +82,7 @@ export default function ProtocolUpgradeConsole({ sessionId, onClose }) {
         session_id: sessionId,
         surface: "upgrade_console",
       });
-      track("protocol_upgrade_started", {
+      track("protocol_upgrade_requested", {
         scope: result.scope || classified.scope || scope,
         surface: "upgrade_console",
       });
@@ -88,6 +90,26 @@ export default function ProtocolUpgradeConsole({ sessionId, onClose }) {
       setRequest("");
     } catch (err) {
       setError(err?.payload?.serenity_message || (err instanceof Error ? err.message : "Unable to launch this weave."));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const decide = async (id, kind) => {
+    setError("");
+    setLoading(true);
+    try {
+      const result =
+        kind === "confirm"
+          ? await confirmProtocolUpgrade(id, { surface: "upgrade_console" })
+          : await cancelProtocolUpgrade(id);
+      setUpgrades((prev) => prev.map((item) => (item.id === id ? { ...item, ...result } : item)));
+    } catch (err) {
+      const latest = err?.payload?.upgrade;
+      if (latest?.id) {
+        setUpgrades((prev) => prev.map((item) => (item.id === id ? { ...item, ...latest } : item)));
+      }
+      setError(err?.payload?.serenity_message || (err instanceof Error ? err.message : "Unable to update this weave."));
     } finally {
       setLoading(false);
     }
@@ -104,8 +126,8 @@ export default function ProtocolUpgradeConsole({ sessionId, onClose }) {
             </h3>
           </div>
           <p className="mt-1 max-w-2xl text-xs leading-relaxed text-primary/45">
-            Ask Serenity to upgrade the interface or the system as a whole. She launches a Cursor cloud agent against the
-            Anima Protocol source and opens a pull request when the weave is ready.
+            Ask Serenity to upgrade the interface or the system as a whole. Once you confirm, she launches a Cursor cloud
+            agent against the Anima Protocol source and opens a pull request when the weave is ready.
           </p>
         </div>
         <button onClick={onClose} className="text-primary/30 transition-colors hover:text-primary/70" aria-label="Close protocol upgrade console">
@@ -199,6 +221,26 @@ export default function ProtocolUpgradeConsole({ sessionId, onClose }) {
                 )}
               </div>
               <p className="mt-1 text-xs leading-relaxed text-primary/60">{item.request}</p>
+              {item.status === "awaiting_confirmation" && (
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => decide(item.id, "confirm")}
+                    className="border border-cyan-400/40 bg-cyan-500/10 px-2 py-1 font-mono text-[9px] uppercase tracking-[0.18em] text-cyan-100 disabled:opacity-50"
+                  >
+                    Confirm weave
+                  </button>
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => decide(item.id, "cancel")}
+                    className="border border-primary/20 px-2 py-1 font-mono text-[9px] uppercase tracking-[0.18em] text-primary/60 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
               {item.pr_url && (
                 <a
                   href={item.pr_url}

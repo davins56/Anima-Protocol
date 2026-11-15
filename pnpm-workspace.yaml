@@ -89,10 +89,14 @@ overrides:
   '@tailwindcss/oxide>@tailwindcss/oxide-linux-x64-musl': '-'
   '@tailwindcss/oxide>@tailwindcss/oxide-win32-arm64-msvc': '-'
   '@tailwindcss/oxide>@tailwindcss/oxide-win32-x64-msvc': '-'
-  'body-parser@2': 2.3.0
+  # body-parser <2.4.0: DoS via trailing bytes (GHSA, audit 2026-11-14 M4).
+  'body-parser@2': 2.4.0
   'brace-expansion@2': 2.1.7
   'brace-expansion@5': 5.0.12
-  dompurify: 3.4.16
+  # dompurify <=3.4.16: SAFE_FOR_TEMPLATES / IN_PLACE bypasses (audit 2026-11-14 M4).
+  dompurify: 3.4.18
+  # zod <4.6.6: memory exhaustion. eslint-plugin-react-hooks pulled 4.5.4.
+  'zod@<4.6.6': 4.6.7
   esbuild: 0.28.1
   esbuild>@esbuild/aix-ppc64: '-'
   esbuild>@esbuild/android-arm: '-'

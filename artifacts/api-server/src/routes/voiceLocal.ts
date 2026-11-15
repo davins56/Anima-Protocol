@@ -16,6 +16,7 @@ import { createHash, randomUUID } from "node:crypto";
 import express, { Router, type Request, type Response } from "express";
 import { getAuth } from "@clerk/express";
 import { createRateLimit, rateLimit } from "../lib/rateLimit";
+import { userRateLimit } from "../lib/usage/userRateLimit";
 import { loadCharacterRecord } from "../lib/voice/voiceStore";
 import { cleanSpokenText } from "../lib/media/voiceClipCore";
 import {
@@ -129,7 +130,7 @@ function countWords(text: string): number {
   return (text.match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu) || []).length;
 }
 
-router.post("/:characterId/speak", rateLimit, speakLimit, async (req, res) => {
+router.post("/:characterId/speak", rateLimit, speakLimit, userRateLimit("voice"), async (req, res) => {
   const userId = uid(req, res);
   if (!userId) return;
   const b = (req.body || {}) as Record<string, unknown>;
@@ -432,7 +433,7 @@ export function parsePushToTalkAudio(contentType: string, bytes: Uint8Array): Pa
   return bad("Send audio/pcm;rate=16000 or a 16 kHz mono PCM16 WAV.");
 }
 
-router.post("/:characterId/transcribe", rateLimit, sttLimit, readRaw, async (req, res) => {
+router.post("/:characterId/transcribe", rateLimit, sttLimit, userRateLimit("voice"), readRaw, async (req, res) => {
   const userId = uid(req, res);
   if (!userId) return;
   if (!(await ownedCharacter(req, res, userId))) return;
