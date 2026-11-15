@@ -165,3 +165,29 @@ export function emotionalStateWithTurnBond(
 
   return { state, wroteMood, wroteRelationship, wroteSavedMoments };
 }
+
+/**
+ * Convert companion affect intensity (0..100) to memory_events.emotional_weight (0..1).
+ *
+ * A finite number is divided by 100 and clamped to 0..1, so a real 0 stays 0.
+ * Missing, null, NaN, non-number, or non-finite input falls back to 0.5.
+ * New turn events also stamp payload.emotional_weight_version so later
+ * appraisal can tell marked rows from historical, untrusted weights.
+ */
+export const TURN_EMOTIONAL_WEIGHT_VERSION = 2 as const;
+
+export function turnEmotionalWeight(intensity: unknown): number {
+  if (typeof intensity !== "number" || !Number.isFinite(intensity)) return 0.5;
+  return Math.min(1, Math.max(0, intensity / 100));
+}
+
+/** Weight column plus the payload marker for a newly normalized chat-turn event. */
+export function turnEmotionalWeightFields(intensity: unknown): {
+  emotionalWeight: number;
+  emotional_weight_version: typeof TURN_EMOTIONAL_WEIGHT_VERSION;
+} {
+  return {
+    emotionalWeight: turnEmotionalWeight(intensity),
+    emotional_weight_version: TURN_EMOTIONAL_WEIGHT_VERSION,
+  };
+}

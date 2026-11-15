@@ -271,6 +271,7 @@ import {
   moodTurnAlreadyWritten,
   relationshipTurnAlreadyWritten,
   savedMomentsTurnAlreadyWritten,
+  turnEmotionalWeightFields,
 } from "../lib/turnMoodWrite";
 import {
   discardReplacedCompanionReply,
@@ -4547,6 +4548,7 @@ router.post("/messages", async (req, res) => {
     // Append-only memory stream: one `turn` event per committed turn
     // (dedupe on turnId so persist retries never double-log).
     if (activeCharacterId && isMemoryCoreEnabled() && !replyCutOff) {
+      const turnWeight = turnEmotionalWeightFields(companionAffect?.intensity);
       void appendMemoryEvent({
         userId,
         characterId: activeCharacterId,
@@ -4556,8 +4558,13 @@ router.post("/messages", async (req, res) => {
             ? `\n(I sent a photo: ${photoOutcome.attachment.description.slice(0, 240)})`
             : ""
         }`,
-        payload: { turn_id: turnId, mode, is_crossover: isCrossover },
-        emotionalWeight: Math.min(1, Math.max(0, Number(companionAffect?.intensity ?? 0.5) || 0.5)),
+        payload: {
+          turn_id: turnId,
+          mode,
+          is_crossover: isCrossover,
+          emotional_weight_version: turnWeight.emotional_weight_version,
+        },
+        emotionalWeight: turnWeight.emotionalWeight,
         conversationId: sessionId,
         dedupeKey: `turn:${turnId}`,
         source: "chat",

@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  TURN_EMOTIONAL_WEIGHT_VERSION,
   emotionalStateWithTurnBond,
   emotionalStateWithTurnMood,
   moodLoopStops,
   moodTurnAlreadyWritten,
+  turnEmotionalWeight,
+  turnEmotionalWeightFields,
 } from "../src/lib/turnMoodWrite";
 
 describe("moodLoopStops", () => {
@@ -96,3 +99,43 @@ describe("emotionalStateWithTurnBond synchro rebase", () => {
     expect(out.state.synchroStrength).toBe(42);
   });
 });
+
+describe("turnEmotionalWeight", () => {
+  it("divides a finite intensity by 100 and clamps to 0..1, preserving an actual zero", () => {
+    expect(turnEmotionalWeight(0)).toBe(0);
+    expect(turnEmotionalWeight(22)).toBe(0.22);
+    expect(turnEmotionalWeight(70)).toBe(0.7);
+    expect(turnEmotionalWeight(100)).toBe(1);
+    expect(turnEmotionalWeight(-5)).toBe(0);
+    expect(turnEmotionalWeight(250)).toBe(1);
+  });
+
+  it("falls back to 0.5 for missing, non-number, or non-finite input", () => {
+    expect(turnEmotionalWeight(null)).toBe(0.5);
+    expect(turnEmotionalWeight(undefined)).toBe(0.5);
+    expect(turnEmotionalWeight(Number.NaN)).toBe(0.5);
+    expect(turnEmotionalWeight("abc")).toBe(0.5);
+    expect(turnEmotionalWeight(Number.POSITIVE_INFINITY)).toBe(0.5);
+    expect(turnEmotionalWeight(Number.NEGATIVE_INFINITY)).toBe(0.5);
+  });
+
+  it("stamps new turn events with emotional_weight_version 2", () => {
+    expect(TURN_EMOTIONAL_WEIGHT_VERSION).toBe(2);
+    const fields = turnEmotionalWeightFields(22);
+    expect(fields).toEqual({
+      emotionalWeight: 0.22,
+      emotional_weight_version: 2,
+    });
+    const missing = turnEmotionalWeightFields(undefined);
+    expect(missing).toEqual({
+      emotionalWeight: 0.5,
+      emotional_weight_version: 2,
+    });
+    const zero = turnEmotionalWeightFields(0);
+    expect(zero).toEqual({
+      emotionalWeight: 0,
+      emotional_weight_version: 2,
+    });
+  });
+});
+

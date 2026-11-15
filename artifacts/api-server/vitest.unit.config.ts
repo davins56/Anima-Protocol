@@ -43,6 +43,8 @@ export default defineConfig({
       // Header Feeling / Level / energy per turn and quiet-time drift (pure).
       "test/companionAffect.test.ts",
       "test/companionAffectShift.test.ts",
+      // Chat-turn memory_events.emotional_weight scale (0..100 intensity -> 0..1).
+      "test/turnMoodWrite.test.ts",
       "test/mindFactsSummary.test.ts",
       "test/mindGuards.test.ts",
       "test/mindPrompt.test.ts",
