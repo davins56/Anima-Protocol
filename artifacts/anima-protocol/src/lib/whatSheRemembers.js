@@ -12,13 +12,17 @@ export function safeMemoryReturn(from) {
   return value;
 }
 
-export function whatSheRemembersPath({ characterId, companionName, returnTo } = {}) {
+export function whatSheRemembersPath({ characterId, companionName, returnTo, memoryId, preview } = {}) {
   const id = String(characterId || "").trim();
   const params = new URLSearchParams();
   const name = typeof companionName === "string" ? companionName.trim() : "";
   const back = safeMemoryReturn(returnTo);
   if (name) params.set("name", name);
   if (back) params.set("from", back);
+  const memory = String(memoryId || "").trim();
+  if (memory) params.set("memory", memory);
+  const snippet = String(preview || "").replace(/\s+/g, " ").trim().slice(0, 120);
+  if (snippet) params.set("q", snippet);
   const query = params.toString();
   return `/what-she-remembers/${encodeURIComponent(id)}${query ? `?${query}` : ""}`;
 }
@@ -101,3 +105,40 @@ export function memoryEmptyLine(companionName) {
     ? `${name} hasn't remembered anything yet.`
     : "She hasn't remembered anything yet.";
 }
+
+function normalizeMemoryText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/**
+ * Find a review item to highlight after a "Forget this" jump from the recall ledger.
+ * Prefers an exact fact/event id; falls back to a preview text overlap.
+ * The ledger is memory_events; this screen lists companion_memories, so a
+ * match is not guaranteed.
+ */
+export function findMemoryForHighlight(review, { memoryId, preview } = {}) {
+  const shown = presentMemoryReview(review);
+  const all = [...shown.about_you, ...shown.companion, ...shown.core];
+  const id = String(memoryId || "").trim();
+  if (id) {
+    const exact = all.find(
+      (item) =>
+        item.fact_id === id ||
+        item.event_id === id ||
+        item.memory_event_id === id,
+    );
+    if (exact) return exact;
+  }
+  const needle = normalizeMemoryText(preview);
+  if (needle.length < 8) return null;
+  return (
+    all.find((item) => {
+      const text = normalizeMemoryText(item.text);
+      if (!text) return false;
+      return text.includes(needle) || needle.includes(text);
+    }) || null
+  );
+}
+
+export const MEMORY_HIGHLIGHT_MISSING =
+  "That recalled memory is not in this list, so it cannot be forgotten from here.";

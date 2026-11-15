@@ -6,3 +6,6 @@
 /playwright-report/
 /blob-report/
 /.playwright/
+
+# On-device MediaPipe assets (scripts/fetch-mediapipe-assets.mjs)
+/public/mediapipe/

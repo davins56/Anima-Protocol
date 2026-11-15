@@ -16,6 +16,14 @@ const cache = new Map<string, { at: number; value: VesselRecord | null }>();
 const inflight = new Map<string, Promise<VesselRecord | null>>();
 const listeners = new Set<(characterId: string) => void>();
 const TTL = 60_000;
+let cacheEpoch = 0;
+
+/** Invalidate private records and pending reads when the signed-in account changes. */
+export function clearVesselRecordCache() {
+  cacheEpoch += 1;
+  cache.clear();
+  inflight.clear();
+}
 
 async function json(res: Response) {
   const body = await res.json().catch(() => ({}));
@@ -33,6 +41,7 @@ export async function fetchVessel(characterId: string, force = false): Promise<V
   if (!force && hit && Date.now() - hit.at < TTL) return hit.value;
   const pending = inflight.get(characterId);
   if (pending) return pending;
+  const epoch = cacheEpoch;
   const p = (async () => {
     try {
       const res = await fetch(apiUrl(`/vessel/${encodeURIComponent(characterId)}`), {
@@ -41,16 +50,18 @@ export async function fetchVessel(characterId: string, force = false): Promise<V
       });
       const body = await json(res);
       const v = body.vessel ? { ...body.vessel, config: parseVesselConfig(body.vessel.config) } : null;
+      if (epoch !== cacheEpoch) return null;
       cache.set(characterId, { at: Date.now(), value: v });
       return v;
     } catch (err) {
+      if (epoch !== cacheEpoch) return null;
       if ((err as { code?: string }).code === "vessel_schema_missing") {
         cache.set(characterId, { at: Date.now(), value: null });
         return null;
       }
       throw err;
     } finally {
-      inflight.delete(characterId);
+      if (epoch === cacheEpoch) inflight.delete(characterId);
     }
   })();
   inflight.set(characterId, p);
@@ -94,4 +105,52 @@ export async function saveVessel(args: {
 /** Same-origin URL that 302s to the latest snapshot; usable as an extra photo reference. */
 export function vesselSnapshotUrl(characterId: string): string {
   return apiUrl(`/vessel/${encodeURIComponent(characterId)}/snapshot`);
+}
+
+/** Same-origin URL that 302s to a short-lived signed download of the current VRM/GLB. */
+export function vesselModelUrl(characterId: string): string {
+  return apiUrl(`/vessel/${encodeURIComponent(characterId)}/model`);
+}
+
+export type VesselModelUploadSign = {
+  bucket: string;
+  path: string;
+  uploadUrl: string;
+  token: string;
+  expiresIn: number;
+  maxBytes: number;
+  contentType: string;
+};
+
+/** Ask the API for a direct-to-storage signed upload URL. Do not POST the file to the Worker. */
+export async function signVesselModel(
+  characterId: string,
+  args: { byteSize: number; filename?: string; ext?: "vrm" | "glb" },
+): Promise<VesselModelUploadSign> {
+  const res = await fetch(apiUrl(`/vessel/${encodeURIComponent(characterId)}/model/sign`), {
+    method: "POST",
+    headers: { ...(await authHeaders()), "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(args),
+  });
+  return (await json(res)) as VesselModelUploadSign;
+}
+
+/** After the client PUTs the file to uploadUrl, inspect it and write a new vessel version. */
+export async function completeVesselModel(
+  characterId: string,
+  args: { path: string },
+): Promise<{ vessel: VesselRecord; identity_version: number; model: VesselConfig["model"] }> {
+  const res = await fetch(apiUrl(`/vessel/${encodeURIComponent(characterId)}/model/complete`), {
+    method: "POST",
+    headers: { ...(await authHeaders()), "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(args),
+  });
+  const out = await json(res);
+  if (out.vessel) {
+    cache.set(characterId, { at: Date.now(), value: { ...out.vessel, config: parseVesselConfig(out.vessel.config) } });
+    listeners.forEach((fn) => fn(characterId));
+  }
+  return out;
 }

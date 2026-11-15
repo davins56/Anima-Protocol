@@ -47,6 +47,31 @@ export const RENDERER_QUALITY = Object.freeze({
   }),
 });
 
+const webgl2Probes = new WeakMap();
+
+/**
+ * WebGL2 support, probed once per window. The probe context is released right
+ * away: every quality hook used to leave a live WebGL2 context behind (two per
+ * mount under StrictMode), counting against iOS Safari's small context budget.
+ */
+function probeWebgl2(source) {
+  const key = source && typeof source === "object" ? source : null;
+  if (key && webgl2Probes.has(key)) return webgl2Probes.get(key);
+  let webgl2 = true;
+  try {
+    const canvas = source?.document?.createElement?.("canvas");
+    if (canvas) {
+      const gl = canvas.getContext("webgl2");
+      webgl2 = Boolean(gl);
+      gl?.getExtension?.("WEBGL_lose_context")?.loseContext?.();
+    }
+  } catch {
+    webgl2 = false;
+  }
+  if (key) webgl2Probes.set(key, webgl2);
+  return webgl2;
+}
+
 export function detectRendererCapabilities(source = globalThis) {
   const navigatorValue = source?.navigator || {};
   let reducedMotion = false;
@@ -63,16 +88,7 @@ export function detectRendererCapabilities(source = globalThis) {
     // Shared, cached probe that releases its context (see webglSupport).
     webgl2 = typeof document === "undefined" ? true : webglProbe().webgl2;
   } else {
-    try {
-      const canvas = source?.document?.createElement?.("canvas");
-      if (canvas) {
-        const ctx = canvas.getContext("webgl2");
-        webgl2 = Boolean(ctx);
-        ctx?.getExtension?.("WEBGL_lose_context")?.loseContext();
-      }
-    } catch {
-      webgl2 = false;
-    }
+    webgl2 = probeWebgl2(source);
   }
 
   return {

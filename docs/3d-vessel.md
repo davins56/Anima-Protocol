@@ -49,3 +49,4 @@ still win.
 - The procedural placeholder ships with zero third-party assets.
 - `model.kind = gltf|vrm` + `model.url` loads a user-supplied glTF. VRM humanoid bones and expressions need `@pixiv/three-vrm` (MIT, not installed; TODO).
 - Use only models with clear licenses: VRoid Studio exports (per the author's VRM license fields), or CC0 / commissioned work.
+- Steward-uploaded VRM/GLB files (50 MB cap, signed direct-to-storage, schema 2 metadata): `docs/vessel-model-uploads.md`.

@@ -53,6 +53,9 @@ import {
   syncProactivePushIfEnabled,
 } from '@/lib/pushNotifications';
 
+import { clearVesselModelCache } from '@/lib/vessel/vesselModelAsset';
+import { clearVesselRecordCache } from '@/lib/vessel/vesselApi';
+
 const AuthContext = createContext();
 
 // Bridges Clerk's session into the app's existing auth interface. Identity is
@@ -93,6 +96,15 @@ export const AuthProvider = ({ children }) => {
     );
     identifyUser(identity.id);
   }, []);
+
+  useEffect(() => {
+    clearVesselModelCache();
+    clearVesselRecordCache();
+    return () => {
+      clearVesselModelCache();
+      clearVesselRecordCache();
+    };
+  }, [clerkUserId]);
 
   // Make session token available to non-React data layer
   useEffect(() => {

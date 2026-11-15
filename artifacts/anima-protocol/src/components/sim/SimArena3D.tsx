@@ -223,14 +223,22 @@ function Scene({ state, fx, model, previewW, shift = null, quality }: Props & { 
   );
 }
 
-type Props = { state: SimState; fx: EmittedEvent[]; model: BattleVesselModel; previewW: number | null; shift?: VesselShift | null };
+type Props = {
+  state: SimState;
+  fx: EmittedEvent[];
+  model: BattleVesselModel;
+  previewW: number | null;
+  shift?: VesselShift | null;
+  /** A full-screen 3D overlay (Sovereign Presence) is open: stop rendering underneath it. */
+  paused?: boolean;
+};
 
 export default function SimArena3D(props: Props) {
   const { quality, handleDecline, handleIncline } = useRendererQuality();
   const running = !props.state.outcome && !props.state.custom.open;
   return (
     <Canvas
-      frameloop={running ? "always" : "demand"}
+      frameloop={props.paused ? "never" : running ? "always" : "demand"}
       camera={{ position: [0, 5.6, 7.6], fov: 36, near: 0.1, far: 60 }}
       gl={{ alpha: false, antialias: quality.antialias, powerPreference: "high-performance" }}
       dpr={quality.dpr}
