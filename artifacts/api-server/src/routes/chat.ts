@@ -1,5 +1,8 @@
 import { Router, type Request, type Response } from "express";
 import { adultGate } from "../lib/safety/adultGate";
+import chatScenesRouter from "./chatScenes";
+import { computeAdultGated, scenesEnabled } from "../lib/scenes/sceneState";
+import { readStoredScene } from "../lib/scenes/sceneStore";
 import { creativeFreedomEnabled } from "../lib/chatStyle";
 import { userIsAdultAttested } from "../lib/safety/ageGate";
 import { getAuth } from "@clerk/express";
@@ -343,6 +346,9 @@ router.use(async (_req, _res, next) => {
   }
 });
 
+// Situational scenes (#763): GET/PATCH /sessions/:id/scene and /scene/command.
+// 409 scenes_disabled unless ANIMA_SITUATIONAL_SCENES is on.
+router.use(chatScenesRouter);
 
 function requireUser(req: Request, res: Response): string | null {
   const { userId } = getAuth(req);
@@ -723,7 +729,12 @@ async function readRecentStoreMessages(
       )
       .orderBy(sql`(${userEntities.data} ->> 'seq')::numeric desc`)
       .limit(limit);
-    return rows.map((row) => row.data as MsgData).reverse();
+    // Scene event rows (#763, role 'event') are scene lines for the UI, never
+    // model history. Only sessions with ANIMA_SITUATIONAL_SCENES on have them.
+    return rows
+      .map((row) => row.data as MsgData)
+      .filter((message) => message.role !== "event")
+      .reverse();
   });
 }
 
@@ -772,7 +783,8 @@ async function appendStoreMessage(
   });
 }
 
-async function syncTypedSession(params: {
+/** Exported for the #763 scene tests (scene must survive a turn's sync). */
+export async function syncTypedSession(params: {
   userId: string;
   sessionId: string;
   title: string;
@@ -800,7 +812,13 @@ async function syncTypedSession(params: {
         mode: params.mode || "solo",
         characterIds: params.characterIds,
         isCrossover: params.isCrossover,
-        metadata: params.metadata ?? {},
+        // Keep server-owned scene state (#763) across turns. Without either
+        // key this is exactly the incoming metadata, as before.
+        metadata: sql`${JSON.stringify(params.metadata ?? {})}::jsonb
+          || case when ${chatSessions.metadata} ? 'scene'
+               then jsonb_build_object('scene', ${chatSessions.metadata} -> 'scene') else '{}'::jsonb end
+          || case when ${chatSessions.metadata} ? 'awareness_tombstones'
+               then jsonb_build_object('awareness_tombstones', ${chatSessions.metadata} -> 'awareness_tombstones') else '{}'::jsonb end`,
         updatedAt: new Date(),
       },
     });
@@ -1824,7 +1842,27 @@ router.get("/sessions/:sessionId/context", async (req, res) => {
       skipMigrate: Boolean(data.messages_migrated),
     }),
   ]);
+  // #763: only with the flag on, so the flag-off response is unchanged.
+  const sceneFields: Record<string, unknown> = {};
+  if (scenesEnabled()) {
+    const universes = new Set(characters.map((c) => c.universe).filter(Boolean).map(String));
+    const isGroupMode = String(data.mode || "solo") === "group";
+    let rawScene: unknown;
+    try {
+      rawScene = await readStoredScene(userId, sessionId);
+    } catch (error) {
+      logger.warn({ error, sessionId }, "Scene read failed; adult gate closed");
+      rawScene = "unreadable";
+    }
+    sceneFields.scenes_enabled = true;
+    sceneFields.adult_gated = computeAdultGated({
+      rawScene,
+      characterIds: uniqueCharacterIds,
+      isCrossover: isGroupMode && universes.size >= 2,
+    });
+  }
   res.json({
+    ...sceneFields,
     session: data,
     characters,
     memories,
@@ -3200,9 +3238,23 @@ router.post("/messages", async (req, res) => {
   // adult_mode flag is only a hint. See lib/safety/adultGate.ts.
   const adultRequested =
     profileSettings.adult_content_enabled === true || body.metadata?.adult_mode === true;
+  // #763 R3: with scenes on, a scene that is not strictly solo closes the
+  // gate (fail closed on a read error). Only narrows; flag off skips this.
+  let sceneAdultGated: boolean | undefined;
+  if (scenesEnabled() && adultRequested && !therapyActive) {
+    let rawScene: unknown;
+    try {
+      rawScene = await readStoredScene(userId, sessionId);
+    } catch (error) {
+      logger.warn({ error, sessionId }, "Scene read failed; adult gate closed");
+      rawScene = "unreadable";
+    }
+    sceneAdultGated = computeAdultGated({ rawScene, characterIds, isCrossover: false });
+  }
   const adultDecision = adultGate({
     therapy: therapyActive,
     crossover: isCrossover || body.metadata?.is_crossover === true,
+    ...(sceneAdultGated !== undefined ? { scene: sceneAdultGated } : {}),
     ageAttested: adultRequested && !therapyActive ? await userIsAdultAttested(userId) : false,
     settingEnabled: profileSettings.adult_content_enabled === true,
     requested: body.metadata?.adult_mode === true,
