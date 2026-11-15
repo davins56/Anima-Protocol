@@ -211,8 +211,8 @@ describe("fragment library ownership", () => {
   });
 
   it("grants every catalog id only when the steward flag is set", () => {
-    expect(isEchoLibrarySteward({ email: "davins56@gmail.com" })).toBe(true);
-    expect(isEchoLibrarySteward({ username: "davins56" })).toBe(true);
+    expect(isEchoLibrarySteward({ is_steward: true })).toBe(true);
+    expect(isEchoLibrarySteward({ email: "davins56@gmail.com" })).toBe(false);
     expect(isEchoLibrarySteward({ role: "admin" })).toBe(false);
     expect(isEchoLibrarySteward({ email: "seeker@example.com" })).toBe(false);
 

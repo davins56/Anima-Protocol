@@ -76,6 +76,7 @@ describe("useEchoLibrary", () => {
     authState.user = {
       id: "user_davin",
       email: "davins56@gmail.com",
+      is_steward: true,
       settings: {
         echo_keys: { granted_full_library: false, owned_ids: starterOwnedIds() },
       },

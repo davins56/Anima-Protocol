@@ -28,8 +28,8 @@ describe("memory crystal milestone types", () => {
   });
 
   it("unlocks every milestone type only for the steward", () => {
-    expect(isEchoLibrarySteward({ email: "davins56@gmail.com" })).toBe(true);
-    expect(isEchoLibrarySteward({ username: "davins56" })).toBe(true);
+    expect(isEchoLibrarySteward({ is_steward: true })).toBe(true);
+    expect(isEchoLibrarySteward({ email: "davins56@gmail.com" })).toBe(false);
     expect(isEchoLibrarySteward({ role: "admin" })).toBe(false);
 
     const steward = defaultMemoryCrystalTypes({}, { grantAllTypes: true });

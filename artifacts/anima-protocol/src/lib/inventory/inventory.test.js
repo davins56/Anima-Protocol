@@ -40,11 +40,12 @@ describe("attainable inventory catalog", () => {
 
 describe("steward inventory grant", () => {
   it("grants only to the Echo Key steward, not a generic admin", () => {
-    expect(shouldGrantStewardInventory({ email: "davins56@gmail.com" })).toBe(true);
-    expect(shouldGrantStewardInventory({ username: "davins56" })).toBe(true);
+    expect(shouldGrantStewardInventory({ is_steward: true })).toBe(true);
+    expect(shouldGrantStewardInventory({ email: "davins56@gmail.com" })).toBe(false);
+    expect(shouldGrantStewardInventory({ username: "davins56" })).toBe(false);
     expect(shouldGrantStewardInventory({
       externalAccounts: [{ provider: "oauth_github", username: "davins56" }],
-    })).toBe(true);
+    })).toBe(false);
     expect(shouldGrantStewardInventory({ role: "admin" })).toBe(false);
     expect(shouldGrantStewardInventory({ email: "seeker@example.com" })).toBe(false);
     expect(isEchoLibrarySteward({ email: "davins56@hotmail.com" })).toBe(false);

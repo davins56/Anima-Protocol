@@ -37,6 +37,7 @@ import searchRouter from "./search";
 import sensesRouter from "./senses";
 import calendarRouter from "./calendar";
 import mediaRouter from "./media";
+import accountRouter from "./account";
 import botBridgeRouter from "./botBridge";
 
 const router: IRouter = Router();
@@ -77,6 +78,7 @@ router.use("/search", searchRouter);
 router.use("/senses", sensesRouter);
 router.use("/calendar", calendarRouter);
 router.use("/media", mediaRouter);
+router.use("/account", accountRouter);
 router.use("/bridge", botBridgeRouter);
 router.use("/store", storeRouter);
 router.use(photoRouter);

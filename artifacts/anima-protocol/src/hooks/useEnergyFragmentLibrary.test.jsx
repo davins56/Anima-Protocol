@@ -57,6 +57,7 @@ describe("useEnergyFragmentLibrary", () => {
     authState.user = {
       id: "user_davin",
       email: "davins56@gmail.com",
+      is_steward: true,
       settings: {
         energy_fragments: { granted_full_library: false, owned_ids: starterOwnedIds() },
       },
