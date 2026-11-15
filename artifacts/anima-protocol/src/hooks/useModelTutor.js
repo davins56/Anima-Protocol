@@ -37,8 +37,8 @@ export async function loadModelTutorStatus({ force = false } = {}) {
  * Model Tutor status for the signed-in user. `isSteward` gates every teach
  * affordance; the API refuses non-stewards anyway.
  *
- * Only accounts the app already treats as admins (the steward emails, plus
- * VITE_ADMIN_EMAILS) ask the server. Everyone else skips the call, so opening
+ * Only accounts the server already marked as admins (GET /api/account/role,
+ * merged into the user by animaClient.auth.me()) ask the server. Everyone else skips the call, so opening
  * Chat never costs them a steward lookup.
  */
 export function useModelTutor() {

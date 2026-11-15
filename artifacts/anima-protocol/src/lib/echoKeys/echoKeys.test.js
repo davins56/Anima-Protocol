@@ -200,11 +200,11 @@ describe("folder and profile library", () => {
   });
 
   it("grants the full Codex only to the steward", () => {
-    expect(isEchoLibrarySteward({ email: "davins56@gmail.com" })).toBe(true);
-    expect(isEchoLibrarySteward({ username: "davins56" })).toBe(true);
-    expect(isEchoLibrarySteward({
-      externalAccounts: [{ provider: "oauth_github", username: "davins56" }],
-    })).toBe(true);
+    expect(isEchoLibrarySteward({ is_steward: true })).toBe(true);
+    // The server decides; a bundled email or GitHub handle no longer grants it.
+    expect(isEchoLibrarySteward({ email: "davins56@gmail.com" })).toBe(false);
+    expect(isEchoLibrarySteward({ username: "davins56" })).toBe(false);
+    expect(isEchoLibrarySteward({ is_steward: "true" })).toBe(false);
     expect(isEchoLibrarySteward({ role: "admin" })).toBe(false);
     expect(isEchoLibrarySteward({ email: "seeker@example.com" })).toBe(false);
     expect(isEchoLibrarySteward(null)).toBe(false);

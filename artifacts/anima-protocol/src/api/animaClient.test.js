@@ -828,6 +828,57 @@ describe("auth.me Clerk identity", () => {
     expect(me.full_name).toBe("Ada Lovelace");
   });
 
+  it("takes admin and steward from GET /api/account/role, never from a bundled email list", async () => {
+    setAuthTokenGetter(() => "test-token");
+    const roleCalls = [];
+    global.fetch = vi.fn(async (url) => {
+      const { pathname } = new URL(String(url), "http://localhost");
+      if (pathname === "/api/account/role") {
+        roleCalls.push(pathname);
+        return Response.json({ role: "admin", isSteward: true });
+      }
+      if (pathname === "/api/store/profile") return Response.json({ display_name: "D" });
+      return Response.json({});
+    });
+    animaClient.auth.syncIdentity({ id: "user_steward", email: "someone@example.com" });
+    const me = await animaClient.auth.me();
+    expect(roleCalls).toHaveLength(1);
+    expect(me.role).toBe("admin");
+    expect(me.is_steward).toBe(true);
+  });
+
+  it("does not make the old hardcoded steward emails admin without the server", async () => {
+    setAuthTokenGetter(() => "test-token");
+    global.fetch = vi.fn(async (url) => {
+      const { pathname } = new URL(String(url), "http://localhost");
+      if (pathname === "/api/account/role") return Response.json({ role: "user", isSteward: false });
+      if (pathname === "/api/store/profile") {
+        // A stored profile cannot promote itself either.
+        return Response.json({ role: "admin", is_steward: true });
+      }
+      return Response.json({});
+    });
+    animaClient.auth.syncIdentity({ id: "user_x", email: "davins56@gmail.com" });
+    const me = await animaClient.auth.me();
+    expect(me.role).not.toBe("admin");
+    expect(me.is_steward).toBe(false);
+  });
+
+  it("treats a failed role lookup as a regular user", async () => {
+    setAuthTokenGetter(() => "test-token");
+    global.fetch = vi.fn(async (url) => {
+      const { pathname } = new URL(String(url), "http://localhost");
+      if (pathname === "/api/account/role") return new Response("nope", { status: 500 });
+      if (pathname === "/api/store/profile") return Response.json({ display_name: "Ada" });
+      return Response.json({});
+    });
+    animaClient.auth.syncIdentity({ id: "user_y", email: "ada@example.com" });
+    const me = await animaClient.auth.me();
+    expect(me.role).toBe("User");
+    expect(me.is_steward).toBe(false);
+    expect(me.display_name).toBe("Ada");
+  });
+
   it("peekMe returns synced identity without fetching /profile", async () => {
     setAuthTokenGetter(() => "test-token");
     global.fetch = vi.fn(async () => Response.json({ display_name: "Ada" }));

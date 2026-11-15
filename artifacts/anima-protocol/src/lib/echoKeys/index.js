@@ -66,8 +66,6 @@ export {
 } from "./rules.js";
 
 export {
-  ECHO_LIBRARY_STEWARD_EMAIL,
-  ECHO_LIBRARY_STEWARD_GITHUB,
   isEchoLibrarySteward,
 } from "./steward.js";
 

@@ -7,7 +7,11 @@
  *
  * - the request's own host (same-origin, including PR preview hosts)
  * - anima-protocol.com, www., and clerk.
- * - localhost / 127.0.0.1 on any port (local dev, Capacitor Android)
+ * - localhost / 127.0.0.1 / [::1] on any port, **outside production only**
+ *   (local dev). In production (`NODE_ENV=production`, set in wrangler.jsonc)
+ *   a loopback origin gets no CORS headers, so a local app or dev server on a
+ *   visitor's machine cannot make credentialed calls (security audit
+ *   2026-11-14, L1). `ANIMA_CORS_ALLOW_LOOPBACK=1` re-enables it on purpose.
  * - Capacitor / Ionic native shells (`capacitor://localhost`, `ionic://localhost`)
  * - anything listed in `ANIMA_CORS_ALLOWED_ORIGINS` (comma-separated, exact origins)
  *
@@ -38,6 +42,14 @@ export function extraAllowedOrigins(env: NodeJS.ProcessEnv = process.env): Set<s
   );
 }
 
+/** Loopback origins are a dev convenience; production refuses them by default. */
+export function allowsLoopbackOrigins(env: NodeJS.ProcessEnv = process.env): boolean {
+  const flag = String(env.ANIMA_CORS_ALLOW_LOOPBACK || "").trim().toLowerCase();
+  if (flag === "1" || flag === "true" || flag === "yes") return true;
+  if (flag === "0" || flag === "false" || flag === "no") return false;
+  return String(env.NODE_ENV || "").trim().toLowerCase() !== "production";
+}
+
 export function isAllowedCorsOrigin(
   origin: string | undefined | null,
   requestHost?: string | null,
@@ -49,12 +61,12 @@ export function isAllowedCorsOrigin(
 
   if (ANIMA_ORIGINS.has(normalized)) return true;
   if (NATIVE_SHELL_ORIGINS.has(normalized)) return true;
-  if (LOOPBACK_RE.test(normalized)) return true;
+  if (LOOPBACK_RE.test(normalized)) return allowsLoopbackOrigins(env);
   if (extraAllowedOrigins(env).has(normalized)) return true;
 
   // Same-origin: the browser still sends Origin on same-host POSTs. HTTPS
   // only, so a plain-HTTP page on the same host cannot read API responses.
-  // (Loopback HTTP is already allowed above for local dev.)
+  // (Loopback HTTP is handled above: dev only.)
   const host = String(requestHost || "").trim().toLowerCase();
   if (host) {
     try {

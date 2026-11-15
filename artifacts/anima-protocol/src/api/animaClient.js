@@ -1559,14 +1559,52 @@ const PROFILE_DEFAULTS = {
   selected_mode: 'companion',
 };
 
-const ADMIN_EMAILS = new Set([
-  'davins56@gmail.com',
-  'davins56@hotmail.com',
-  ...(import.meta.env.VITE_ADMIN_EMAILS || '')
-    .split(',')
-    .map((email) => email.trim().toLowerCase())
-    .filter(Boolean),
-]);
+// Admin / steward is decided by the server (GET /api/account/role). The
+// allowlist is server env only; no email list ships in this bundle.
+const SERVER_ROLE_TTL_MS = 5 * 60_000;
+const SERVER_ROLE_TIMEOUT_MS = 8_000;
+let serverRole = null; // { userId, role, isSteward, at }
+let serverRoleInflight = null;
+
+function serverRoleFor(userId) {
+  if (!serverRole || !userId || serverRole.userId !== userId) return null;
+  return serverRole;
+}
+
+async function loadServerRole(force = false) {
+  const userId = currentIdentity?.id || '';
+  if (!userId || String(userId).startsWith('local_')) return null;
+  const cached = serverRoleFor(userId);
+  if (!force && cached && Date.now() - cached.at < SERVER_ROLE_TTL_MS) return cached;
+  if (serverRoleInflight) return serverRoleInflight;
+  serverRoleInflight = (async () => {
+    try {
+      const token = await getToken();
+      if (!token) return serverRoleFor(userId);
+      const headers = await authHeaders(undefined, { waitForAuth: false, token });
+      const res = await fetch(apiUrl('/account/role'), {
+        headers,
+        credentials: 'same-origin',
+        signal: AbortSignal.timeout(SERVER_ROLE_TIMEOUT_MS),
+      });
+      if (!res.ok) return serverRoleFor(userId);
+      const body = await res.json().catch(() => ({}));
+      if (currentIdentity?.id !== userId) return null;
+      serverRole = {
+        userId,
+        role: body?.role === 'admin' ? 'admin' : 'user',
+        isSteward: body?.isSteward === true,
+        at: Date.now(),
+      };
+      return serverRole;
+    } catch {
+      return serverRoleFor(userId);
+    } finally {
+      serverRoleInflight = null;
+    }
+  })();
+  return serverRoleInflight;
+}
 
 let currentIdentity = null; // { id, email, full_name } from Clerk
 let profileCache = null; // server profile data
@@ -1600,14 +1638,21 @@ function parseLLMJsonResponse(text) {
 }
 
 function mergedUser(profileData) {
-  const email = currentIdentity?.email?.toLowerCase?.() || '';
-  const adminRole = ADMIN_EMAILS.has(email) ? { role: 'admin' } : {};
+  const granted = serverRoleFor(currentIdentity?.id);
+  const profile = { ...(profileData || {}) };
+  // A stored profile can never make itself admin or steward; only the server can.
+  if (profile.role === 'admin') delete profile.role;
+  delete profile.is_steward;
+  const identity = { ...(currentIdentity || {}) };
+  delete identity.role;
+  delete identity.is_steward;
   return {
     ...PROFILE_DEFAULTS,
     created_date: new Date().toISOString(),
-    ...(profileData || {}),
-    ...adminRole,
-    ...(currentIdentity || {}),
+    ...profile,
+    ...(granted?.role === 'admin' ? { role: 'admin' } : {}),
+    is_steward: granted?.isSteward === true,
+    ...identity,
   };
 }
 
@@ -1679,11 +1724,14 @@ export const animaClient = {
           // Fall through — mergedUser still overlays syncIdentity.
         }
       }
-      const profile = await loadProfile(false);
+      const [profile] = await Promise.all([loadProfile(false), loadServerRole()]);
       return mergedUser(profile);
     },
 
-    refreshMe: async () => mergedUser(await loadProfile(true, true)),
+    refreshMe: async () => {
+      const [profile] = await Promise.all([loadProfile(true, true), loadServerRole(true)]);
+      return mergedUser(profile);
+    },
 
     // Sync identity + cached profile only — no /profile GET. Sacred Space
     // uses this so a hung ensureSchemaOnce() cannot own AFFIRMATION_LOAD_TIMEOUT.
@@ -1698,6 +1746,7 @@ export const animaClient = {
         profileCache = null;
         profileExpiry = 0;
         currentIdentity = null;
+        serverRole = null;
         // Re-baseline cross-device sync so the next poll compares against the
         // NEW account, never firing a spurious change from the old account's
         // revision (and never missing the new account's first real change).
@@ -1723,6 +1772,7 @@ export const animaClient = {
 
     clearSession: () => {
       currentIdentity = null;
+      serverRole = null;
       profileCache = null;
       profileExpiry = 0;
       clearStoreCache();
@@ -1735,6 +1785,7 @@ export const animaClient = {
     // This only clears local caches.
     logout: async () => {
       currentIdentity = null;
+      serverRole = null;
       profileCache = null;
       profileExpiry = 0;
       clearStoreCache();
