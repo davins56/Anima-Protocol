@@ -1,0 +1,80 @@
+{
+  "$comment": "Shared wire fixtures for #765 emotions/time continuity, group surfaces (ANIMA_EMOTIONS). Source: Backend Data's E1-E3 (issuecomment-6898216311) and wire answers (issuecomment-6898600880); Serenity's remaining-work note (issuecomment-6899277014). Group UI reads group_affect / listener_affect, requires layer:'public', and shows since_last only from committed payloads. Character ids are fake.",
+  "baseline_dims": { "valence": 0.1, "arousal": 0.3, "dominance": 0, "warmth": 0.5, "stability": 0.85 },
+  "context": {
+    "group_before_public_update": {
+      "emotions_enabled": true,
+      "group_affect": {
+        "c_nat": { "version": 1, "layer": "public", "dims": { "valence": 0.1, "arousal": 0.3, "dominance": 0, "warmth": 0.5, "stability": 0.85 }, "expressed": false },
+        "c_ser": { "version": 1, "layer": "public", "dims": { "valence": 0.1, "arousal": 0.3, "dominance": 0, "warmth": 0.5, "stability": 0.85 }, "expressed": false }
+      },
+      "companion_affect": {
+        "c_nat": { "version": 1, "layer": "composed", "dims": { "valence": -0.6, "arousal": 0.7, "dominance": -0.3, "warmth": 0.2, "stability": 0.3 }, "undertone": { "kind": "grief", "intensity": 70 }, "expressed": true, "since_last": { "bucket": "days", "first_turn": true } }
+      }
+    },
+    "group_after_public_update": {
+      "emotions_enabled": true,
+      "group_affect": {
+        "c_nat": { "version": 1, "layer": "public", "dims": { "valence": 0.4, "arousal": 0.5, "dominance": 0.1, "warmth": 0.7, "stability": 0.8 }, "undertone": { "kind": "glow", "intensity": 30 }, "expressed": true },
+        "c_ser": { "version": 1, "layer": "public", "dims": { "valence": 0.1, "arousal": 0.3, "dominance": 0, "warmth": 0.5, "stability": 0.85 }, "expressed": false },
+        "c_stranger": { "version": 1, "layer": "public", "dims": { "valence": 0.9, "arousal": 0.9, "dominance": 0.9, "warmth": 0.9, "stability": 0.9 }, "expressed": true }
+      }
+    },
+    "group_layer_missing_or_composed": {
+      "emotions_enabled": true,
+      "group_affect": {
+        "c_nat": { "version": 1, "dims": { "valence": -0.6, "arousal": 0.7, "dominance": -0.3, "warmth": 0.2, "stability": 0.3 }, "undertone": { "kind": "hurt", "intensity": 60 }, "expressed": true },
+        "c_ser": { "version": 1, "layer": "composed", "dims": { "valence": -0.6, "arousal": 0.7, "dominance": -0.3, "warmth": 0.2, "stability": 0.3 }, "undertone": { "kind": "grief", "intensity": 60 }, "expressed": true }
+      }
+    },
+    "solo_composed_with_committed_gap": {
+      "emotions_enabled": true,
+      "companion_affect": {
+        "c_nat": { "version": 1, "layer": "composed", "dims": { "valence": 0.2, "arousal": 0.4, "dominance": 0, "warmth": 0.7, "stability": 0.7 }, "undertone": { "kind": "longing", "intensity": 34 }, "expressed": true, "since_last": { "bucket": "overnight", "first_turn": true, "turn_id": "turn_ckpt_1" } }
+      }
+    }
+  },
+  "early_frame": {
+    "group_public": { "character_id": "c_nat", "provisional": true, "snapshot": { "version": 1, "layer": "public", "dims": { "valence": 0.3, "arousal": 0.5, "dominance": 0, "warmth": 0.6, "stability": 0.8 }, "expressed": true } },
+    "group_composed": { "character_id": "c_nat", "provisional": true, "snapshot": { "version": 1, "layer": "composed", "dims": { "valence": -0.6, "arousal": 0.7, "dominance": -0.3, "warmth": 0.2, "stability": 0.3 }, "undertone": { "kind": "grief", "intensity": 70 }, "expressed": true } },
+    "with_forbidden_since_last": { "character_id": "c_nat", "provisional": true, "snapshot": { "version": 1, "layer": "public", "dims": { "valence": 0.3, "arousal": 0.5, "dominance": 0, "warmth": 0.6, "stability": 0.8 }, "expressed": true, "since_last": { "bucket": "days", "first_turn": true } } }
+  },
+  "done": {
+    "group_turn": {
+      "done": true,
+      "turn_id": "turn_g_7",
+      "assistant_character_id": "c_nat",
+      "visible": "I'm glad you're both here. 😊",
+      "companion_affect": { "version": 1, "layer": "public", "primary": "happy", "intensity": 40, "dims": { "valence": 0.4, "arousal": 0.5, "dominance": 0.1, "warmth": 0.7, "stability": 0.8 }, "expressed": true },
+      "group_affect": {
+        "c_nat": { "version": 1, "layer": "public", "dims": { "valence": 0.4, "arousal": 0.5, "dominance": 0.1, "warmth": 0.7, "stability": 0.8 }, "expressed": true },
+        "c_ser": { "version": 1, "layer": "public", "dims": { "valence": 0.2, "arousal": 0.35, "dominance": 0, "warmth": 0.6, "stability": 0.85 }, "undertone": { "kind": "glow", "intensity": 20 }, "expressed": false }
+      },
+      "listener_affect": {
+        "c_ser": { "version": 1, "layer": "public", "dims": { "valence": 0.2, "arousal": 0.35, "dominance": 0, "warmth": 0.6, "stability": 0.85 }, "undertone": { "kind": "glow", "intensity": 20 }, "expressed": false },
+        "c_nat": { "version": 1, "layer": "public", "dims": { "valence": 0.9, "arousal": 0.9, "dominance": 0.9, "warmth": 0.9, "stability": 0.9 }, "expressed": true }
+      }
+    },
+    "group_turn_private_leak_attempt": {
+      "done": true,
+      "turn_id": "turn_g_8",
+      "assistant_character_id": "c_nat",
+      "visible": "Hm.",
+      "companion_affect": { "version": 1, "layer": "composed", "primary": "sad", "intensity": 70, "dims": { "valence": -0.6, "arousal": 0.7, "dominance": -0.3, "warmth": 0.2, "stability": 0.3 }, "undertone": { "kind": "grief", "intensity": 70 }, "expressed": true },
+      "listener_affect": {
+        "c_ser": { "version": 1, "layer": "composed", "dims": { "valence": -0.6, "arousal": 0.7, "dominance": -0.3, "warmth": 0.2, "stability": 0.3 }, "undertone": { "kind": "hurt", "intensity": 70 }, "expressed": true }
+      }
+    },
+    "solo_committed_reunion": {
+      "done": true,
+      "turn_id": "turn_s_3",
+      "assistant_character_id": "c_nat",
+      "visible": "You're back. 💜",
+      "companion_affect": { "version": 1, "layer": "composed", "primary": "tender", "intensity": 45, "dims": { "valence": 0.3, "arousal": 0.4, "dominance": 0, "warmth": 0.8, "stability": 0.7 }, "undertone": { "kind": "longing", "intensity": 30 }, "expressed": true, "since_last": { "bucket": "days", "first_turn": true, "turn_id": "turn_s_3" } }
+    }
+  },
+  "text": {
+    "instrumented_reply": "Hi [EMOTION: sad] there. [[exit]] I missed you 😢💜 — truly.",
+    "visible_reply": "Hi there. I missed you 😢💜 — truly."
+  }
+}

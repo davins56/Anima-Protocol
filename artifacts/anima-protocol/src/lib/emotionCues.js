@@ -19,11 +19,13 @@
 /** @typedef {"grief"|"hurt"|"longing"|"worry"|"unease"|"glow"} UndertoneKind */
 /** @typedef {"moments"|"a_while"|"hours"|"overnight"|"days"|"weeks"|"months"} SinceLastBucket */
 /**
+ * @typedef {"public"|"composed"} AffectLayer
  * @typedef {{
  *   dims: CueDims | null,
  *   undertone: { kind: UndertoneKind, intensity: number } | null,
  *   expressed: boolean,
- *   since_last: { bucket: SinceLastBucket, first_turn: boolean } | null,
+ *   since_last: { bucket: SinceLastBucket, first_turn: boolean, turn_id?: string } | null,
+ *   layer?: AffectLayer,
  * }} AffectCue
  */
 
@@ -120,16 +122,138 @@ export function sanitizeAffectCue(raw) {
         bucket: /** @type {SinceLastBucket} */ (bucket),
         first_turn: raw.since_last.first_turn === true,
       };
+      // Opaque id of the committed turn that checkpointed this gap (#765 E2),
+      // used only to show the reunion cue once. Never displayed.
+      const turnId = raw.since_last.turn_id;
+      if (typeof turnId === "string" && TURN_ID_RE.test(turnId)) sinceLast.turn_id = turnId;
     }
   }
   const hasExpressed = typeof raw.expressed === "boolean";
   if (!dims && !undertone && !sinceLast && !hasExpressed) return null;
+  const layer = raw.layer === "public" || raw.layer === "composed" ? raw.layer : null;
   return {
     dims,
     undertone,
     expressed: raw.expressed === true,
     since_last: sinceLast,
+    ...(layer ? { layer: /** @type {AffectLayer} */ (layer) } : {}),
   };
+}
+
+const TURN_ID_RE = /^[A-Za-z0-9_:.-]{1,80}$/;
+
+/**
+ * Group, crossover and multi-present surfaces may show only the server's
+ * public layer (#765 E3, issuecomment-6898600880): every snapshot carries
+ * `layer`, and anything not explicitly `public` is dropped (fails closed,
+ * including legacy snapshots with no layer).
+ *
+ * @param {AffectCue | null | undefined} cue
+ * @returns {cue is AffectCue}
+ */
+export function isPublicCue(cue) {
+  return Boolean(cue) && cue?.layer === "public";
+}
+
+/**
+ * Keep only the cues a surface may show. Solo sessions show the composed
+ * header cue as before; group sessions only public-layer cues.
+ *
+ * @param {Record<string, AffectCue>} cues
+ * @param {{ group: boolean }} opts
+ * @returns {Record<string, AffectCue>}
+ */
+export function cuesForSurface(cues, { group }) {
+  if (!group) return cues || {};
+  /** @type {Record<string, AffectCue>} */
+  const out = {};
+  for (const [id, cue] of Object.entries(cues || {})) if (isPublicCue(cue)) out[id] = cue;
+  return out;
+}
+
+/**
+ * Group cues from `group_affect` on GET /context or `done` (public layer,
+ * allowlisted). Never falls back to `companion_affect`, characterEmotions or
+ * any other snapshot. Until the server has a public update for a character
+ * its entry is the personality baseline, which renders as a baseline-only
+ * (settled) cue.
+ *
+ * @param {unknown} groupAffect
+ * @param {{ castIds: string[] }} opts
+ * @returns {Record<string, AffectCue>}
+ */
+export function groupCuesFromPayload(groupAffect, { castIds }) {
+  /** @type {Record<string, AffectCue>} */
+  const out = {};
+  if (!isRecord(groupAffect)) return out;
+  const cast = new Set((castIds || []).map(String));
+  for (const [key, raw] of Object.entries(groupAffect)) {
+    if (key.startsWith("aspect:") || !cast.has(key)) continue;
+    const cue = sanitizeAffectCue(raw);
+    if (isPublicCue(cue)) out[key] = cue;
+  }
+  return out;
+}
+
+/**
+ * The key that makes a reunion cue show once per committed checkpoint
+ * (Serenity, #765 item 4: a context GET must not replay it indefinitely).
+ * Uses the checkpoint's committed turn id when the server sends one, else
+ * the committing turn's id from `done`, else (context read with no id) the
+ * bucket, which `reunionAlreadySeen` bounds by time.
+ *
+ * @param {string} sessionId
+ * @param {string} characterId
+ * @param {AffectCue} cue
+ * @param {string | null} [turnId]
+ */
+export function reunionKey(sessionId, characterId, cue, turnId = null) {
+  const checkpoint = cue?.since_last?.turn_id || (turnId && TURN_ID_RE.test(turnId) ? turnId : null);
+  const tail = checkpoint ? `turn:${checkpoint}` : `bucket:${cue?.since_last?.bucket || "none"}`;
+  return `${sessionId}:${characterId}:${tail}`;
+}
+
+/** How long a reunion keyed only by bucket stays suppressed. */
+export const REUNION_BUCKET_SUPPRESS_MS = 12 * 60 * 60 * 1000;
+const REUNION_STORE_KEY = "anima.reunionSeen.v1";
+const REUNION_STORE_MAX = 200;
+
+/**
+ * Persistent "already shown" check for reunion cues, so a reload or a
+ * repeated context GET does not replay the animation. Bounded list in
+ * localStorage; any storage failure falls back to "not seen" in memory.
+ *
+ * @param {string} key
+ * @param {{ storage?: Storage | null, now?: number }} [opts]
+ * @returns {boolean} true when the cue was already shown (and should not be again)
+ */
+export function reunionAlreadySeen(key, { storage = safeLocalStorage(), now = Date.now() } = {}) {
+  /** @type {{ k: string, at: number }[]} */
+  let seen = [];
+  try {
+    const parsed = JSON.parse(storage?.getItem(REUNION_STORE_KEY) || "[]");
+    if (Array.isArray(parsed)) seen = parsed.filter((e) => e && typeof e.k === "string" && typeof e.at === "number");
+  } catch {
+    seen = [];
+  }
+  const hit = seen.find((e) => e.k === key);
+  const byBucket = key.includes(":bucket:");
+  if (hit && (!byBucket || now - hit.at < REUNION_BUCKET_SUPPRESS_MS)) return true;
+  const next = [...seen.filter((e) => e.k !== key), { k: key, at: now }].slice(-REUNION_STORE_MAX);
+  try {
+    storage?.setItem(REUNION_STORE_KEY, JSON.stringify(next));
+  } catch {
+    // Storage full or blocked: the in-memory set in Chat still dedupes this load.
+  }
+  return false;
+}
+
+function safeLocalStorage() {
+  try {
+    return typeof window !== "undefined" ? window.localStorage : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Undertone family → prose. "{name}" is the companion's display name. */
@@ -278,7 +402,8 @@ export function listenerCuesForCast(listenerAffect, { castIds, speakerId = null,
     const id = canonicalAffectId(key, { soloCharacterId });
     if (!id || !cast.has(id) || id === speakerId) continue;
     const cue = sanitizeAffectCue(raw);
-    if (cue) out[id] = cue;
+    // listener_affect is public-layer only (#765 E3); anything else is dropped.
+    if (isPublicCue(cue)) out[id] = cue;
   }
   return out;
 }
@@ -298,7 +423,10 @@ export function provisionalCueFromFrame(frame, { castIds, soloCharacterId = null
   });
   if (!id || !(castIds || []).map(String).includes(id)) return null;
   const cue = sanitizeAffectCue(frame.snapshot);
-  return cue ? { id, cue } : null;
+  if (!cue) return null;
+  // `since_last` is never part of the early frame (it is committed-only);
+  // drop it defensively so a provisional tint can never show a reunion.
+  return { id, cue: cue.since_last ? { ...cue, since_last: null } : cue };
 }
 
 /**

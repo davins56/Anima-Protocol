@@ -122,8 +122,10 @@ describe("cueVisual", () => {
 
 describe("cast, speaker and aspects", () => {
   it("listener_affect only for cast members, never the speaker", () => {
+    // Final contract (#765 issuecomment-6898600880): listener snapshots are public-layer.
+    const pub = { ...FLAG_ON_SNAPSHOT, layer: "public" };
     const cues = listenerCuesForCast(
-      { natasha: FLAG_ON_SNAPSHOT, scarlet: FLAG_ON_SNAPSHOT, stranger: FLAG_ON_SNAPSHOT, "aspect:shadow": FLAG_ON_SNAPSHOT },
+      { natasha: pub, scarlet: pub, stranger: pub, "aspect:shadow": pub },
       { castIds: ["natasha", "scarlet"], speakerId: "scarlet" },
     );
     expect(Object.keys(cues)).toEqual(["natasha"]);

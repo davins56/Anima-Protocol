@@ -131,8 +131,13 @@ import {
   canonicalAffectId,
   cueReducer,
   emotionsEnabledFromContext,
+  cuesForSurface,
+  groupCuesFromPayload,
+  isPublicCue,
   isReunionCue,
   listenerCuesForCast,
+  reunionAlreadySeen,
+  reunionKey,
   provisionalCueFromFrame,
   sanitizeAffectCue,
   shownCue,
@@ -540,7 +545,11 @@ export default function Chat() {
   // that is no longer open (a stream that outlived a switch) are dropped.
   const cueSessionIsOpen = (sessionKey) =>
     Boolean(sessionKey) && openSessionIdRef.current === sessionKey;
-  const commitAffectCues = useCallback((cues, sessionKey) => {
+  // Group (and crossover) chats show only public-layer cues (#765 E3); the
+  // check runs on every commit so no path can paint a private/composed cue.
+  const cueSurfaceIsGroup = () => activeSessionRef.current?.mode === "group";
+  const commitAffectCues = useCallback((rawCues, sessionKey, turnId = null) => {
+    const cues = cuesForSurface(rawCues, { group: cueSurfaceIsGroup() });
     const ids = Object.keys(cues || {});
     if (!emotionsEnabledRef.current || !ids.length || !cueSessionIsOpen(sessionKey)) return;
     dispatchCue({ type: "commit", cues });
@@ -549,6 +558,8 @@ export default function Chat() {
       const key = `${sessionKey}:${id}`;
       if (reunionSeenRef.current.has(key)) continue;
       reunionSeenRef.current.add(key);
+      // Once per committed checkpoint, across reloads and context re-reads.
+      if (reunionAlreadySeen(reunionKey(sessionKey, id, cues[id], turnId))) continue;
       setReunionKeys((prev) => (prev.includes(key) ? prev : [...prev, key]));
       const timer = setTimeout(() => {
         reunionTimersRef.current.delete(timer);
@@ -567,13 +578,14 @@ export default function Chat() {
   }, []);
   const provisionalAffect = useCallback((provisional, sessionKey) => {
     if (!emotionsEnabledRef.current || !provisional || !cueSessionIsOpen(sessionKey)) return;
+    if (cueSurfaceIsGroup() && !isPublicCue(provisional.cue)) return;
     dispatchCue({ type: "provisional", ...provisional });
   }, []);
 
   // The header's Feeling / Level / Arousal for one companion, from the server
   // felt-state snapshot of a turn she spoke. Keyed by her id so group chats
   // keep each companion's own values.
-  const applyAffectToHeader = useCallback((snapshot, characterId, sessionKey = activeSessionRef.current?.id) => {
+  const applyAffectToHeader = useCallback((snapshot, characterId, sessionKey = activeSessionRef.current?.id, turnId = null) => {
     const fromAffect = characterEmotionFromAffect(snapshot);
     if (!fromAffect || !characterId) return;
     setCharacterEmotions((prev) => ({
@@ -581,7 +593,7 @@ export default function Chat() {
       [characterId]: { ...(prev[characterId] || {}), ...fromAffect },
     }));
     if (snapshot?.cue) {
-      commitAffectCues({ [characterId]: snapshot.cue }, sessionKey);
+      commitAffectCues({ [characterId]: snapshot.cue }, sessionKey, turnId);
     }
   }, [commitAffectCues]);
 
@@ -1416,7 +1428,14 @@ export default function Chat() {
     emotionsEnabledRef.current = true;
     setEmotionsEnabled(true);
     const castIds = affectCastIds(sessionForCast);
-    const soloCharacterId = sessionForCast?.mode === "group" ? null : sessionForCast?.character_id || null;
+    if (sessionForCast?.mode === "group") {
+      // #765 E3: group cues come only from the public `group_affect`
+      // projection, never from `companion_affect` (baseline-only until a
+      // public update arrives).
+      commitAffectCues(groupCuesFromPayload(payload?.group_affect, { castIds }), sid);
+      return;
+    }
+    const soloCharacterId = sessionForCast?.character_id || null;
     const cues = {};
     const byCharacter = payload?.companion_affect;
     if (byCharacter && typeof byCharacter === "object") {
@@ -3377,11 +3396,19 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         if (affectSnapshot) {
           setCompanionAffect(affectSnapshot);
           setCurrentMood(affectSnapshot.primary);
-          applyAffectToHeader(affectSnapshot, activeChar?.id, sendSessionId);
+          applyAffectToHeader(affectSnapshot, activeChar?.id, sendSessionId, turnId);
         } else if (!replyCutOff.reply_interrupted) {
           setCurrentMood(detectMood(result));
         }
         if (emotionsEnabledRef.current) {
+          if (activeSession.mode === "group") {
+            // Public projection for the whole cast (committed only).
+            commitAffectCues(
+              groupCuesFromPayload(resultPayload.group_affect, { castIds: affectCastIds(activeSession) }),
+              sendSessionId,
+              turnId,
+            );
+          }
           // Listeners in the current cast only; nothing about the speaker.
           commitAffectCues(
             listenerCuesForCast(resultPayload.listener_affect, {
@@ -3390,6 +3417,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
               soloCharacterId: activeSession.mode === "group" ? null : activeSession.character_id || null,
             }),
             sendSessionId,
+            turnId,
           );
         }
       }
