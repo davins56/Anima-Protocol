@@ -23,6 +23,9 @@
     },
     {
       "path": "../../lib/sim-core"
+    },
+    {
+      "path": "../../lib/deepnet-core"
     }
   ]
 }

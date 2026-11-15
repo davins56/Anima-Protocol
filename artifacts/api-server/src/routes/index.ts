@@ -28,6 +28,7 @@ import resonanceRouter from "./resonance";
 import voiceRouter from "./voice";
 import voiceLocalRouter from "./voiceLocal";
 import simRouter from "./sim";
+import deepnetRouter from "./deepnet";
 import replyRatingsRouter from "./replyRatings";
 import billingRouter from "./billing";
 import safetyRouter from "./safety";
@@ -69,6 +70,8 @@ router.use("/resonance", resonanceRouter);
 router.use("/voice", voiceLocalRouter);
 router.use("/voice", voiceRouter);
 router.use("/sim", simRouter);
+// Deepnet (working name) slice, #757: 404 unless ANIMA_DEEPNET is on.
+router.use("/deepnet", deepnetRouter);
 router.use("/ratings", replyRatingsRouter);
 router.use("/billing", billingRouter);
 router.use("/safety", safetyRouter);

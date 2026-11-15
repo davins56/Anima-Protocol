@@ -1,0 +1,16 @@
+{
+  "name": "@workspace/deepnet-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pure rules for the Deepnet (working name) vertical slice: network map, Grey Corridor, dialogue encounter, resonance decision and quest state. Shared by client and api-server. See docs/deepnet.md and issue #757.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@workspace/sim-core": "workspace:*"
+  }
+}

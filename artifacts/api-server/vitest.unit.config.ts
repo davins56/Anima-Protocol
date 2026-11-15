@@ -65,6 +65,9 @@ export default defineConfig({
       "test/characterResearch.test.ts",
       "test/dialogueVariety.test.ts",
       "test/replyFormatting.test.ts",
+      // Deepnet slice rules (#757): pure, no Postgres.
+      "test/deepnetCore.test.ts",
+      "test/deepnetRoute.test.ts",
       // Bot bridge: HMAC, schemas, fence, limits and the flag-gated routes (no DB).
       "test/botBridge.test.ts",
       "test/botBridgeRoute.test.ts",
