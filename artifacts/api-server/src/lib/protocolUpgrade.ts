@@ -26,9 +26,13 @@ export type ProtocolUpgradeRecord = {
   serenity_message: string;
   created_at: string;
   updated_at: string;
+  /** Set while status is awaiting_confirmation; confirm after this fails. */
+  expires_at?: string | null;
+  confirmed_at?: string | null;
 };
 
 export type UpgradeJobStatus =
+  | "awaiting_confirmation"
   | "launching"
   | "running"
   | "finished"
@@ -176,6 +180,18 @@ export function serenityLaunchMessage(input: {
   return `I heard you. I am weaving this into ${kind} now — a current is moving through the source.${watch} I will open a pull request when the work is ready.`;
 }
 
+/** How long a pending weave waits for the steward's explicit confirmation. */
+export const UPGRADE_CONFIRM_TTL_MS = 15 * 60_000;
+
+export function serenityConfirmMessage(input: { scope: UpgradeScope }): string {
+  const kind = input.scope === "interface" ? "the interface" : "the Protocol as a whole";
+  return `I can weave this into ${kind}. Nothing moves through the source until you confirm: press Confirm weave to start the Cursor agent, or Cancel to let it go.`;
+}
+
+export function serenityConfirmExpiredMessage(): string {
+  return "That weave waited too long for your confirmation and has gone quiet. Ask me again if you still want it.";
+}
+
 export function serenityDeniedMessage(): string {
   return "I hear the shape of what you want. Only the Protocol's steward can authorize changes to the source itself. I will remember the idea, but I cannot rewrite the weave from this bond.";
 }
@@ -213,24 +229,43 @@ export function parseCsvEnv(value: string | undefined | null): string[] {
     .filter(Boolean);
 }
 
-export function stewardEmails(): string[] {
-  const fromEnv = parseCsvEnv(process.env.PROTOCOL_UPGRADE_ADMIN_EMAILS);
-  if (fromEnv.length) return fromEnv;
-  return ["davins56@gmail.com", "davins56@hotmail.com"];
+/**
+ * Display label for the steward (e.g. "Dàvīn" or an email). Never used for
+ * authorization — only Clerk user ids authorize (security audit 2026-11-14 M3).
+ */
+export function stewardDisplayLabel(): string | null {
+  const label = String(process.env.PROTOCOL_STEWARD_LABEL || "").trim();
+  if (label) return label.slice(0, 120);
+  const legacy = parseCsvEnv(process.env.PROTOCOL_UPGRADE_ADMIN_EMAILS);
+  return legacy[0] || null;
 }
 
+/**
+ * Clerk user ids allowed to act as the Protocol steward. Exact, case-sensitive
+ * match. `PROTOCOL_STEWARD_USER_IDS` and the older
+ * `PROTOCOL_UPGRADE_ADMIN_USER_IDS` are merged. Empty means nobody is the
+ * steward (fail closed).
+ */
 export function stewardUserIds(): string[] {
-  return parseCsvEnv(process.env.PROTOCOL_UPGRADE_ADMIN_USER_IDS);
+  const ids = [
+    process.env.PROTOCOL_STEWARD_USER_IDS,
+    process.env.PROTOCOL_UPGRADE_ADMIN_USER_IDS,
+  ]
+    .flatMap((value) => String(value || "").split(","))
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return [...new Set(ids)];
 }
 
-export function isProtocolSteward(input: {
-  userId?: string | null;
-  email?: string | null;
-}): boolean {
-  const userId = String(input.userId || "").trim().toLowerCase();
-  if (userId && stewardUserIds().includes(userId)) return true;
-  const email = String(input.email || "").trim().toLowerCase();
-  return Boolean(email && stewardEmails().includes(email));
+/**
+ * Steward check by Clerk user id only. Email addresses are not identity: they
+ * can be changed or added on an account, so an email allowlist (the old
+ * built-in davins56@ defaults) is no longer consulted.
+ */
+export function isProtocolSteward(input: { userId?: string | null }): boolean {
+  const userId = String(input.userId || "").trim();
+  if (!userId) return false;
+  return stewardUserIds().includes(userId);
 }
 
 export function emailFromSessionClaims(claims: unknown): string | null {

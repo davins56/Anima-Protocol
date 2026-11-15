@@ -11,6 +11,9 @@ function serenityMessageFromError(err) {
   if (err?.code === "not_steward") {
     return "I hear the shape of what you want. Only the Protocol's steward can authorize changes to the source itself. I will remember the idea, but I cannot rewrite the weave from this bond.";
   }
+  if (err?.code === "not_pending") {
+    return "That weave is no longer waiting for confirmation. Ask me again if you still want it.";
+  }
   if (err?.code === "cursor_unconfigured") {
     return "I would weave this into the Protocol, but the Cursor key that opens the source is not set. Place CURSOR_API_KEY on the server, then ask me again.";
   }
@@ -83,13 +86,32 @@ function serenityUpgradeMessage(result, classification) {
     content: result.serenity_message,
     character_name: "Serenity",
     timestamp: new Date().toISOString(),
+    // The chat renders a confirm card from this. The server only recorded a
+    // pending weave; the Cursor agent starts when the steward presses Confirm.
     protocol_upgrade: {
       id: result.id,
       status: result.status,
-      agent_url: result.agent_url,
+      agent_url: result.agent_url || null,
       scope: result.scope || classification.scope,
+      request: result.request,
+      expires_at: result.expires_at || null,
     },
   };
+}
+
+/** Explicit steward click: start the Cursor agent for a pending weave. */
+export async function confirmProtocolUpgrade(id, { surface = "chat" } = {}) {
+  const result = await animaApi.protocolUpgrade.confirm(id);
+  track("protocol_upgrade_started", { scope: result.scope, surface });
+  return result;
+}
+
+export async function cancelProtocolUpgrade(id) {
+  return animaApi.protocolUpgrade.cancel(id);
+}
+
+export function protocolUpgradeErrorMessage(err) {
+  return serenityMessageFromError(err);
 }
 
 export async function maybeHandleProtocolUpgrade({
@@ -121,7 +143,7 @@ export async function maybeHandleProtocolUpgrade({
       session_id: activeSession?.id,
       surface,
     });
-    track("protocol_upgrade_started", {
+    track("protocol_upgrade_requested", {
       scope: result.scope || classification.scope,
       surface,
     });
@@ -165,11 +187,16 @@ export async function launchMentalLineUpgrade(thought, sessionId) {
       session_id: sessionId,
       surface: "mental_line",
     });
-    track("protocol_upgrade_started", {
+    track("protocol_upgrade_requested", {
       scope: result.scope || classification.scope,
       surface: "mental_line",
     });
-    return serenityUpgradeMessage(result, classification);
+    const message = serenityUpgradeMessage(result, classification);
+    // The mental line has no confirm card; point at the Protocol Weave console.
+    return {
+      ...message,
+      content: `${message.content} Open the Protocol Weave console in the chat toolbar to confirm it.`,
+    };
   } catch (err) {
     if (err?.code === "not_an_upgrade") return null;
     return {

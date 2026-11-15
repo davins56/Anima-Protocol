@@ -56,7 +56,9 @@ Nothing else changes: chat and profile enforcement read only the latest row.
 
 - `requireSteward()` (`lib/safety/stewardGate.ts`) returns 401 when signed
   out and 403 `not_steward` for anyone else. It uses
-  `callerIsProtocolSteward` (Clerk user id or email allow-list).
+  `callerIsProtocolSteward` (Clerk user id only, from
+  `PROTOCOL_STEWARD_USER_IDS` / `PROTOCOL_UPGRADE_ADMIN_USER_IDS`; emails no
+  longer authorize — security audit 2026-11-14).
 - `/api/repo-codespace/*` is steward-only for every route except
   `GET /status` and `/terminal`. `/terminal` keeps its ordered checks:
   worker, then opt-in, then steward. Previously any signed-in user could
