@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import fs from "fs";
 import { VitePWA } from "vite-plugin-pwa";
 import { config as loadEnv } from "dotenv";
 import { sanitizeClerkPublishableKey } from "./src/lib/clerkProxy.js";
@@ -106,6 +107,27 @@ export default defineConfig({
   },
   plugins: [
     react({ jsxRuntime: "automatic" }),
+    // public/mediapipe/ (24 MB, gitignored, dev-only photo-to-vessel lab assets) never ships
+    // unless the lab is explicitly built in with VITE_VESSEL_LAB=1.
+    {
+      name: "anima-drop-dev-mediapipe",
+      apply: "build",
+      buildStart() {
+        if (process.env.VITE_VESSEL_LAB !== "1") return;
+        for (const asset of ["wasm/vision_wasm_internal.js", "wasm/vision_wasm_internal.wasm", "models/face_landmarker.task", "models/pose_landmarker_lite.task"]) {
+          if (!fs.existsSync(path.resolve(import.meta.dirname, "public/mediapipe", asset))) {
+            this.error("Photo lab assets are missing. Run node scripts/fetch-mediapipe-assets.mjs from artifacts/anima-protocol before building with VITE_VESSEL_LAB=1.");
+          }
+        }
+      },
+      closeBundle: {
+        order: "pre",
+        handler() {
+          if (process.env.VITE_VESSEL_LAB === "1") return;
+          fs.rmSync(path.resolve(import.meta.dirname, "dist/public/mediapipe"), { recursive: true, force: true });
+        },
+      },
+    },
     tailwindcss({ optimize: false }),
     // Replit-only: Clerk load failures are handled in-app (guest landing fallback).
     ...(runtimeErrorOverlay ? [runtimeErrorOverlay()] : []),

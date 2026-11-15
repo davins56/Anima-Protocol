@@ -36,6 +36,10 @@ vi.mock("@/hooks/useMemoryHealth", async () => {
   };
 });
 
+vi.mock("./RecallLedgerPanel", () => ({
+  default: () => <div data-testid="recall-ledger">Why she said that</div>,
+}));
+
 import MemoryHealth from "./MemoryHealth";
 
 /** @type {{ container: HTMLElement, root: ReturnType<typeof createRoot>, clip: HTMLElement }[]} */
@@ -107,6 +111,7 @@ describe("MemoryHealth popover", () => {
     expect(panel?.textContent).toContain("Memory core");
     expect(panel?.textContent).toContain("1 memories");
     expect(panel?.textContent).toContain("She kept the key");
+    expect(panel?.textContent).toContain("Why she said that");
     expect(button?.getAttribute("aria-expanded")).toBe("true");
     expect(button?.getAttribute("aria-controls")).toBe("memory-health-panel");
   });

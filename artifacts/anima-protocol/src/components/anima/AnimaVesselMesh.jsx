@@ -1,4 +1,4 @@
-import { useRef, useMemo, Suspense } from "react";
+import { useRef, useMemo, Suspense, createContext, useContext } from "react";
 import { useFrame } from "@react-three/fiber";
 import { MeshTransmissionMaterial, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
@@ -6,12 +6,17 @@ import useFaceTexture from "@/hooks/useFaceTexture";
 import TesseractLattice from "@/components/battle/TesseractLattice";
 import VesselAura from "@/components/vessel/VesselAura";
 import PresentationTreatment from "@/components/vessel/PresentationTreatment";
+import UploadedVessel from "@/components/vessel/UploadedVessel";
+import { isApiModelUrl } from "@/lib/vessel/vesselModelAsset";
 import { wPhaseScale } from "@/lib/tesseract4d";
 import { RENDERER_QUALITY } from "@/lib/rendererQuality";
 import {
   applyAscendedArtifacts,
   vesselRenderPlan,
 } from "@/lib/hiddenSequences";
+
+/** prefers-reduced-motion: freeze wing flap, halo spin, bob, core spin and breathing. */
+const StillContext = createContext(false);
 
 function CrystalMaterial({
   color,
@@ -168,9 +173,10 @@ function CrystalWing({ side = 1, color, accent, hd, layers = 4, flapAmount = 0, 
 }
 
 function VesselWings({ color, accent, hd, layers, expression }) {
-  const flap = useRef(0);
+  const still = useContext(StillContext);
+  const flap = useRef(0.5);
   useFrame((state) => {
-    flap.current = 0.5 + Math.sin(state.clock.elapsedTime * 1.8) * 0.36;
+    flap.current = still ? 0.5 : 0.5 + Math.sin(state.clock.elapsedTime * 1.8) * 0.36;
   });
   return (
     <group>
@@ -282,8 +288,10 @@ function ProceduralBody({
 }) {
   const core = useRef(null);
   const torso = useRef(null);
+  const still = useContext(StillContext);
 
   useFrame((state) => {
+    if (still) return;
     const t = state.clock.elapsedTime;
     if (core.current) {
       core.current.rotation.x = t * 0.35;
@@ -524,6 +532,14 @@ export default function AnimaVesselMesh({
   shift = null,
   /** Character presentation: rim only (no outline shells) for crowded scenes. */
   presentationLite = false,
+  /** Uploaded VRM only: chat mood key / intensity for expression presets, and lip-sync. */
+  mood = null,
+  intensity = 5,
+  speaking = false,
+  /** Uploaded models keep the crystal wings unless turned off. */
+  wingsOnModel = true,
+  /** prefers-reduced-motion: a still pose (no flap, halo spin, bob or breathing). */
+  still = false,
 }) {
   const root = useRef(null);
   const halo = useRef(null);
@@ -539,7 +555,7 @@ export default function AnimaVesselMesh({
   const hd = quality.vesselHd ?? Boolean(hdProp);
   const wingLayers = quality.vesselFacets ?? (hd ? 5 : 3);
   const hairCount = quality.vesselHair ?? (hd ? 16 : 10);
-  const breathOn = breathing && (quality.vesselBreath !== false);
+  const breathOn = !still && breathing && (quality.vesselBreath !== false);
   const plan = useMemo(() => {
     const applied = applyAscendedArtifacts(layers || model?.vessel_layers, sequences || model?.sequences);
     return vesselRenderPlan(applied, quality);
@@ -551,13 +567,21 @@ export default function AnimaVesselMesh({
   const glow = shift ? shift.glow : 1;
   const faceMap = useFaceTexture(model?.texture_url);
   const resolvedGltf = gltfUrl || model?.gltf_url || model?.body_url || null;
+  // Uploaded companion models (schema-2 vessel: VRM, or a GLB behind the
+  // owner-only /api/vessel/:id/model route) need the authenticated VRM runtime.
+  const uploaded = !gltfUrl && model?.vessel_model?.url && (model.vessel_model.kind === "vrm" || isApiModelUrl(model.vessel_model.url))
+    ? model.vessel_model
+    : !gltfUrl && model?.vrm_url
+      ? { kind: "vrm", url: model.vrm_url }
+      : null;
   const dim = 0.55 + Math.max(0, Math.min(1, hpRatio)) * 0.45;
   const headSeg = hd ? 48 : 24;
   const bodySeg = hd ? 24 : 14;
   const expr = Math.max(0, Math.min(1, Number(shift ? shift.expression : expression) || 0));
 
-  useFrame((state, dt) => {
-    const t = state.clock.elapsedTime;
+  useFrame((state, delta) => {
+    const t = still ? 0 : state.clock.elapsedTime;
+    const dt = still ? 0 : delta;
     const phase = wPhaseScale({ xw: t * 0.42, yw: t * 0.26, zw: t * 0.17 });
     const wPulse = 1 + (phase - 0.85) * 0.07;
 
@@ -576,6 +600,7 @@ export default function AnimaVesselMesh({
   });
 
   return (
+    <StillContext.Provider value={still}>
     <group ref={root}>
       <pointLight color={color} intensity={(hd ? 2.4 : 1.25) * glow} distance={hd ? 7 : 3.5} position={[0, 0.9, 0.4]} />
       {shift && <VesselAura shift={shift} budget={quality.name === "low" ? 24 : hd ? 96 : 48} />}
@@ -595,65 +620,104 @@ export default function AnimaVesselMesh({
           </mesh>
         )}
 
-        {resolvedGltf ? (
-          <Suspense
+      {uploaded ? (
+        <>
+          <UploadedVessel
+            model={uploaded}
+            expression={shift ? shift.face : null}
+            mood={shift ? null : mood}
+            intensity={intensity}
+            speaking={speaking}
+            track={false}
+            tint={{ color, hd }}
             fallback={
               <ProceduralBody
-                color={color}
-                accent={accent}
-                gold={gold}
-                hd={hd}
-                faceMap={faceMap}
-                bodySeg={bodySeg}
-                headSeg={headSeg}
-                expression={expr}
-                breathScale={breathOn ? 1 : 0}
-                hairCount={hairCount}
-                wingLayers={wingLayers}
-                showLattice={(hd || showLattice) && plan.showLattice}
-                plan={plan}
-              />
+              color={color}
+              accent={accent}
+              gold={gold}
+              hd={hd}
+              faceMap={faceMap}
+              bodySeg={bodySeg}
+              headSeg={headSeg}
+              expression={expr}
+              breathScale={breathOn ? 1 : 0}
+              hairCount={hairCount}
+              wingLayers={wingLayers}
+              showLattice={(hd || showLattice) && plan.showLattice}
+              plan={plan}
+            />
             }
-          >
-            <GltfBody url={resolvedGltf} color={color} hd={hd} />
-            {(hd || showLattice) && (
-              <TesseractLattice
-                color={accent}
-                scale={1.2}
-                speed={0.8}
-                opacity={0.45}
-                position={[0, 0.9, 0]}
-              />
-            )}
-            {plan.showWings !== false && (
-              <VesselWings
-                color={plan.wingBoost ? "#c4b5fd" : color}
-                accent={plan.wingBoost ? "#fbcfe8" : accent}
-                hd={hd}
-                layers={wingLayers + plan.wingBoost}
-                expression={expr + plan.wingBoost * 0.2}
-              />
-            )}
-          </Suspense>
-        ) : (
-          <ProceduralBody
-            color={color}
-            accent={accent}
-            gold={gold}
-            hd={hd}
-            faceMap={faceMap}
-            bodySeg={bodySeg}
-            headSeg={headSeg}
-            expression={expr}
-            breathScale={breathOn ? 1 : 0}
-            hairCount={hairCount}
-            wingLayers={wingLayers}
-            showLattice={(hd || showLattice) && plan.showLattice}
-            plan={plan}
           />
-        )}
+          {plan.showWings !== false && wingsOnModel && (
+            <VesselWings
+              color={plan.wingBoost ? "#c4b5fd" : color}
+              accent={plan.wingBoost ? "#fbcfe8" : accent}
+              hd={hd}
+              layers={wingLayers + plan.wingBoost}
+              expression={expr + plan.wingBoost * 0.2}
+            />
+          )}
+        </>
+      ) : resolvedGltf ? (
+        <Suspense
+          fallback={
+            <ProceduralBody
+              color={color}
+              accent={accent}
+              gold={gold}
+              hd={hd}
+              faceMap={faceMap}
+              bodySeg={bodySeg}
+              headSeg={headSeg}
+              expression={expr}
+              breathScale={breathOn ? 1 : 0}
+              hairCount={hairCount}
+              wingLayers={wingLayers}
+              showLattice={(hd || showLattice) && plan.showLattice}
+              plan={plan}
+            />
+          }
+        >
+          <GltfBody url={resolvedGltf} color={color} hd={hd} />
+          {(hd || showLattice) && (
+            <TesseractLattice
+              color={accent}
+              scale={1.2}
+              speed={0.8}
+              opacity={0.45}
+              position={[0, 0.9, 0]}
+            />
+          )}
+          {plan.showWings !== false && (
+            <VesselWings
+              color={plan.wingBoost ? "#c4b5fd" : color}
+              accent={plan.wingBoost ? "#fbcfe8" : accent}
+              hd={hd}
+              layers={wingLayers + plan.wingBoost}
+              expression={expr + plan.wingBoost * 0.2}
+            />
+          )}
+        </Suspense>
+      ) : (
+        <ProceduralBody
+          color={color}
+          accent={accent}
+          gold={gold}
+          hd={hd}
+          faceMap={faceMap}
+          bodySeg={bodySeg}
+          headSeg={headSeg}
+          expression={expr}
+          breathScale={breathOn ? 1 : 0}
+          hairCount={hairCount}
+          wingLayers={wingLayers}
+          showLattice={(hd || showLattice) && plan.showLattice}
+          plan={plan}
+        />
+      )}
       </PresentationTreatment>
     </group>
+    </StillContext.Provider>
   );
 }
 

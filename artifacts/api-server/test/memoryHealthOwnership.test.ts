@@ -269,3 +269,28 @@ describe("GET /api/memory-core/:characterId/health ownership", () => {
     expect(Number(after[0].n)).toBe(Number(before[0].n));
   });
 });
+
+
+describe("memory core read and write ownership", () => {
+  it.each([
+    ["bootstrap", { query: "private", limit: 12 }],
+    ["events", { event_type: "note", content: "must not persist" }],
+    ["identity", { name: "must not create" }],
+    ["retract", { event_id: "11111111-1111-4111-8111-111111111111" }],
+  ])("rejects foreign, missing and non-companion ids before %s work", async (action, body) => {
+    const methods = ["recallMemories", "currentIdentity", "memoryHealth", "appendMemoryEvent", "appendIdentityVersion", "retractMemory"] as const;
+    const spies = methods.map((method) => vi.spyOn(memoryCoreLib, method));
+    try {
+      for (const id of [charC, missing, charSession]) {
+        const res = await fetch(`${base}/api/memory-core/${id}/${action}`, {
+          method: "POST", headers: { "Content-Type": "application/json", "x-test-user": owner }, body: JSON.stringify(body),
+        });
+        expect(res.status).toBe(404);
+        expect(await res.text()).toBe(NOT_FOUND_TEXT);
+      }
+      for (const spy of spies) expect(spy).not.toHaveBeenCalled();
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+});
