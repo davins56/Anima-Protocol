@@ -8,6 +8,8 @@
  * `radiationEventFromAffect` rather than a second mood source.
  */
 
+import { sanitizeAffectCue } from "./emotionCues";
+
 export const COMPANION_AFFECT_SOURCE = "companion_affect";
 export const COMPANION_AFFECT_VERSION = 1;
 
@@ -22,35 +24,54 @@ function isRecord(value) {
 }
 
 /**
+ * Parse a server `companion_affect` snapshot.
+ *
+ * With `emotionsEnabled` (ANIMA_EMOTIONS, #765) the server sends a sanitized
+ * shape without `focus`/`intent`; they stay absent (never defaulted, and
+ * dropped if present), and the allowlisted cue fields are attached as `cue`.
+ * Without it (flag off, today's behaviour) the old defaults apply, which is
+ * also what an older client does with a sanitized snapshot.
+ *
  * @param {unknown} raw
+ * @param {{ emotionsEnabled?: boolean }} [options]
  * @returns {null | {
  *   version: number,
  *   primary: string,
  *   intensity: number,
  *   mood: string,
  *   energy: number,
- *   focus: string,
- *   intent: string,
+ *   focus?: string,
+ *   intent?: string,
  *   updated_at: string,
  *   synchro_strength: number | null,
  *   baseline_primary: string,
  *   baseline_energy: number,
+ *   cue?: import("./emotionCues").AffectCue,
  * }}
  */
-export function parseCompanionAffectSnapshot(raw) {
+export function parseCompanionAffectSnapshot(raw, { emotionsEnabled = false } = {}) {
   if (!isRecord(raw)) return null;
   const primary = typeof raw.primary === "string" ? raw.primary.trim().toLowerCase() : "";
   if (!primary) return null;
   const intensity = Number(raw.intensity);
   const energy = Number(raw.energy);
+  /** @type {{ focus?: string, intent?: string }} */
+  const why = {};
+  // Flag on: focus/intent are server free text outside the cue allowlist, so
+  // they are never kept, even if an older server still sends them.
+  if (!emotionsEnabled) {
+    why.focus = typeof raw.focus === "string" ? raw.focus : "steward";
+    why.intent = typeof raw.intent === "string" ? raw.intent : "attend";
+  }
+  const cue = emotionsEnabled ? sanitizeAffectCue(raw) : null;
   return {
     version: Number(raw.version) === COMPANION_AFFECT_VERSION ? COMPANION_AFFECT_VERSION : 1,
     primary,
     intensity: Number.isFinite(intensity) ? Math.max(0, Math.min(100, Math.round(intensity))) : 22,
     mood: typeof raw.mood === "string" && raw.mood.trim() ? raw.mood.trim() : primary,
     energy: Number.isFinite(energy) ? Math.max(0, Math.min(100, Math.round(energy))) : 48,
-    focus: typeof raw.focus === "string" ? raw.focus : "steward",
-    intent: typeof raw.intent === "string" ? raw.intent : "attend",
+    ...why,
+    ...(cue ? { cue } : {}),
     updated_at: typeof raw.updated_at === "string" ? raw.updated_at : "",
     synchro_strength:
       typeof raw.synchro_strength === "number" && Number.isFinite(raw.synchro_strength)
@@ -237,12 +258,16 @@ function levelWord(value, low, high) {
  * "Why she feels this" — plain-language reasons from the same server
  * snapshot the mood chip shows (no second mood source, no model call).
  *
+ * With `emotionsEnabled` (#765) the focus/intent lines are skipped: the
+ * sanitized snapshot no longer carries them, and defaults are not invented.
+ *
  * @param {ReturnType<typeof parseCompanionAffectSnapshot>} snapshot
  * @param {string} [name]
  * @param {number} [now]
+ * @param {{ emotionsEnabled?: boolean }} [options]
  * @returns {string[]}
  */
-export function explainCompanionAffect(snapshot, name = "", now = Date.now()) {
+export function explainCompanionAffect(snapshot, name = "", now = Date.now(), { emotionsEnabled = false } = {}) {
   if (!snapshot) return [];
   const who = String(name || "").trim() || "She";
   const strength = snapshot.intensity >= 70 ? "strongly" : snapshot.intensity >= 40 ? "clearly" : "faintly";
@@ -251,13 +276,15 @@ export function explainCompanionAffect(snapshot, name = "", now = Date.now()) {
       ? `${who} feels ${strength} ${snapshot.primary} — "${snapshot.mood}".`
       : `${who} feels ${strength} ${snapshot.primary}.`,
   ];
-  const intent = INTENT_PHRASES[snapshot.intent] || (snapshot.intent ? snapshot.intent.replace(/-/g, " ") : "");
-  if (intent) lines.push(`Right now she wants to ${intent}.`);
-  lines.push(
-    snapshot.focus === "steward" || !snapshot.focus
-      ? "Her attention is on you and what you just said."
-      : `Her attention is on ${snapshot.focus}.`,
-  );
+  if (!emotionsEnabled) {
+    const intent = INTENT_PHRASES[snapshot.intent] || (snapshot.intent ? snapshot.intent.replace(/-/g, " ") : "");
+    if (intent) lines.push(`Right now she wants to ${intent}.`);
+    lines.push(
+      snapshot.focus === "steward" || !snapshot.focus
+        ? "Her attention is on you and what you just said."
+        : `Her attention is on ${snapshot.focus}.`,
+    );
+  }
   lines.push(`Her energy is ${levelWord(snapshot.energy, 34, 66)} (${snapshot.energy}/100).`);
   if (snapshot.synchro_strength != null) {
     lines.push(`Your bond signal is at ${snapshot.synchro_strength}% — it colours how openly she shows it.`);
