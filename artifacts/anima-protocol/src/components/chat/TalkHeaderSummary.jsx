@@ -1,5 +1,7 @@
 // @ts-check
 import VesselPortrait from "@/components/vessel/VesselPortrait";
+import AffectCue from "@/components/chat/AffectCue";
+import { useEmotionCues } from "@/components/chat/EmotionCuesContext";
 
 /**
  * Compact one-line companion header: avatar, name, and online/group status.
@@ -22,7 +24,11 @@ export default function TalkHeaderSummary({ session, characters = [], characterE
   const primaryChar = activeChars[0];
   const name = session?.title || (isGroup ? "Group" : primaryChar?.name || "Session");
   const status = isGroup ? `${activeChars.length} active` : "Online";
-  const feeling = !isGroup ? characterEmotions?.[primaryChar?.id]?.emotion : null;
+  // #765: with ANIMA_EMOTIONS on, a soft cue replaces the feeling label.
+  const emotionCues = useEmotionCues();
+  const cuesOn = emotionCues.enabled === true;
+  const primaryCue = cuesOn && !isGroup && primaryChar?.id ? emotionCues.cueFor(primaryChar.id) : null;
+  const feeling = !cuesOn && !isGroup ? characterEmotions?.[primaryChar?.id]?.emotion : null;
 
   return (
     <div className="flex items-center gap-2 min-w-0" data-testid="talk-header-summary">
@@ -56,6 +62,7 @@ export default function TalkHeaderSummary({ session, characters = [], characterE
             name={primaryChar.name}
             mood={characterEmotions?.[primaryChar.id]?.emotion}
             intensity={characterEmotions?.[primaryChar.id]?.intensity}
+            dims={primaryCue?.dims || undefined}
             fallback={
               primaryChar.avatar_url ? (
                 <img src={primaryChar.avatar_url} alt={primaryChar.name} className="w-full h-full object-cover" />
@@ -77,6 +84,9 @@ export default function TalkHeaderSummary({ session, characters = [], characterE
           {status}
         </span>
       </span>
+      {cuesOn && !isGroup && primaryChar?.id ? (
+        <AffectCue cue={primaryCue} name={primaryChar.name} size="sm" testId="talk-header-summary-cue" />
+      ) : null}
       {feeling ? (
         <span
           data-testid="talk-header-summary-feeling"

@@ -3,6 +3,8 @@ import { ChevronLeft, Zap, BookText, Check, Loader, BookOpen, Sparkles, Palette,
 import { useNavigate } from "react-router-dom";
 import { animaClient } from "@/api/animaClient";
 import MoodIndicator from "@/components/chat/MoodIndicator";
+import AffectCue from "@/components/chat/AffectCue";
+import { useEmotionCues } from "@/components/chat/EmotionCuesContext";
 import VesselPortrait from "@/components/vessel/VesselPortrait";
 import MemoryHealth from "@/components/memory/MemoryHealth";
 import PresenceIndicator from "@/components/continuity/PresenceIndicator";
@@ -27,6 +29,11 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
   const shownEmotions = useDriftingEmotions(characterEmotions);
   const primaryEmotion = primaryChar?.id ? shownEmotions?.[primaryChar.id] : null;
   const activeAt = useMemo(() => latestActivityAt(session?.messages), [session?.messages]);
+  // #765 (ANIMA_EMOTIONS): with the flag on, the label/number felt-state row
+  // and the mood chip give way to a soft cue. Off, nothing below changes.
+  const emotionCues = useEmotionCues();
+  const cuesOn = emotionCues.enabled === true;
+  const primaryCue = cuesOn && primaryChar?.id ? emotionCues.cueFor(primaryChar.id) : null;
 
   const handleSummarize = async () => {
     if (!session?.id || summarizing) return;
@@ -123,6 +130,7 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
             name={primaryChar.name}
             mood={primaryEmotion?.emotion}
             intensity={primaryEmotion?.intensity}
+            dims={primaryCue?.dims || undefined}
             fallback={
               primaryChar.avatar_url ? (
                 <img src={primaryChar.avatar_url} alt={primaryChar.name} className="w-full h-full object-cover" />
@@ -158,7 +166,29 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
               {isGroup ? `${activeChars.length} active` : "Online"}
             </span>
           </div>
-          {!isGroup && primaryEmotion && (
+          {cuesOn && !isGroup && primaryChar?.id && (
+            <AffectCue
+              cue={primaryCue}
+              name={primaryChar.name}
+              reunion={emotionCues.reunionIds.includes(primaryChar.id)}
+              testId="header-affect-cue"
+            />
+          )}
+          {cuesOn && isGroup && activeChars.length > 0 && (
+            <div className="hidden md:flex items-center gap-1.5" data-testid="header-group-affect-cues">
+              {activeChars.slice(0, 4).map((c) => (
+                <AffectCue
+                  key={c.id}
+                  cue={emotionCues.cueFor(c.id)}
+                  name={c.name}
+                  reunion={emotionCues.reunionIds.includes(c.id)}
+                  size="sm"
+                  testId={`header-affect-cue-${c.id}`}
+                />
+              ))}
+            </div>
+          )}
+          {!cuesOn && !isGroup && primaryEmotion && (
             <div className="hidden md:flex items-center gap-2 text-[8px] sm:text-[9px] font-mono" data-testid="header-felt-state">
               <div className="flex items-center gap-1">
                 <span className="text-primary/50 tracking-widest">Feeling:</span>
@@ -194,7 +224,7 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
               </div>
             </div>
           )}
-          {isGroup && activeChars.some((c) => shownEmotions?.[c.id]?.emotion) && (
+          {!cuesOn && isGroup && activeChars.some((c) => shownEmotions?.[c.id]?.emotion) && (
             <div className="hidden md:flex items-center gap-2 text-[8px] sm:text-[9px] font-mono" data-testid="header-group-felt-states">
               {activeChars.slice(0, 4).map((c) => {
                 const e = shownEmotions?.[c.id];
@@ -216,7 +246,7 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
               })}
             </div>
           )}
-          {!isGroup && mood && <MoodIndicator mood={mood} intensity={moodIntensity} />}
+          {!cuesOn && !isGroup && mood && <MoodIndicator mood={mood} intensity={moodIntensity} />}
           {!isGroup && primaryChar?.id && (
             <MemoryHealth
               characterId={primaryChar.id}

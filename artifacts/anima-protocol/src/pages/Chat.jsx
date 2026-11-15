@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, useReducer, lazy, Suspense } from "react";
 import { trackFirstReplyReceived } from "@/lib/funnelEvents";
 import MoodWhyPanel from "@/components/chat/MoodWhyPanel";
 import { buildRatingPayload, messageRatingId } from "@/lib/replyRatings";
@@ -126,6 +126,18 @@ import {
   characterEmotionFromAffect,
   parseCompanionAffectSnapshot,
 } from "@/lib/companionAffect";
+import {
+  EMPTY_CUE_STATE,
+  canonicalAffectId,
+  cueReducer,
+  emotionsEnabledFromContext,
+  isReunionCue,
+  listenerCuesForCast,
+  provisionalCueFromFrame,
+  sanitizeAffectCue,
+  shownCue,
+} from "@/lib/emotionCues";
+import { EMOTION_CUES_OFF, EmotionCuesContext } from "@/components/chat/EmotionCuesContext";
 import { determineEvolution, resonanceDelta, formatResonance, resonanceMood, getPathMeta } from "@/lib/soulprint";
 import { expressionPromptBlock } from "@/lib/animaExpressions";
 import { toast } from "sonner";
@@ -282,6 +294,26 @@ function replacementSendMetadata(messageData) {
     ...(ids.length > 0 ? { replaced_message_ids: ids } : {}),
   };
 }
+
+/**
+ * Parse a felt-state snapshot with the open session's ANIMA_EMOTIONS flag
+ * (#765). Flag off is exactly `parseCompanionAffectSnapshot(raw)`.
+ */
+function parseAffectSnapshot(raw, emotionsEnabledRef) {
+  return emotionsEnabledRef.current
+    ? parseCompanionAffectSnapshot(raw, { emotionsEnabled: true })
+    : parseCompanionAffectSnapshot(raw);
+}
+
+/** Characters whose cues the Talk screen may show: the session's cast. */
+function affectCastIds(session) {
+  if (!session) return [];
+  if (session.mode === "group") return (session.group_character_ids || []).map(String);
+  return session.character_id ? [String(session.character_id)] : [];
+}
+
+/** How long the one-time reunion cue stays up. */
+const REUNION_CUE_MS = 8000;
 
 export default function Chat() {
   const confirm = useConfirm();
@@ -457,6 +489,44 @@ export default function Chat() {
   const narratorBusyRef = useRef(null);
   const [characterEvolutions, setCharacterEvolutions] = useState({});
   const [characterEmotions, setCharacterEmotions] = useState({}); // keyed by character_id: {emotion, intensity, trigger}
+  // #765 (ANIMA_EMOTIONS): soft cues instead of labels. `emotionsEnabled`
+  // comes from the session context; while it is false none of this runs.
+  const [emotionsEnabled, setEmotionsEnabled] = useState(false);
+  const emotionsEnabledRef = useRef(false);
+  const [cueState, dispatchCue] = useReducer(cueReducer, EMPTY_CUE_STATE);
+  const [reunionIds, setReunionIds] = useState([]);
+  const reunionSeenRef = useRef(new Set());
+  const reunionTimersRef = useRef([]);
+  const commitAffectCues = useCallback((cues, sessionKey) => {
+    const ids = Object.keys(cues || {});
+    if (!emotionsEnabledRef.current || !ids.length) return;
+    dispatchCue({ type: "commit", cues });
+    for (const id of ids) {
+      if (!isReunionCue(cues[id])) continue;
+      const key = `${sessionKey || ""}:${id}`;
+      if (reunionSeenRef.current.has(key)) continue;
+      reunionSeenRef.current.add(key);
+      setReunionIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+      const timer = setTimeout(() => {
+        setReunionIds((prev) => prev.filter((x) => x !== id));
+      }, REUNION_CUE_MS);
+      reunionTimersRef.current.push(timer);
+    }
+  }, []);
+  useEffect(() => () => {
+    for (const timer of reunionTimersRef.current) clearTimeout(timer);
+  }, []);
+  const revertProvisionalAffect = useCallback(() => {
+    dispatchCue({ type: "revert" });
+  }, []);
+  const emotionCuesValue = useMemo(
+    () =>
+      emotionsEnabled
+        ? { enabled: true, cueFor: (id) => shownCue(cueState, id), reunionIds }
+        : EMOTION_CUES_OFF,
+    [emotionsEnabled, cueState, reunionIds],
+  );
+
   // The header's Feeling / Level / Arousal for one companion, from the server
   // felt-state snapshot of a turn she spoke. Keyed by her id so group chats
   // keep each companion's own values.
@@ -467,7 +537,10 @@ export default function Chat() {
       ...prev,
       [characterId]: { ...(prev[characterId] || {}), ...fromAffect },
     }));
-  }, []);
+    if (snapshot?.cue) {
+      commitAffectCues({ [characterId]: snapshot.cue }, activeSessionRef.current?.id);
+    }
+  }, [commitAffectCues]);
 
   const [worldEvent, setWorldEvent] = useState(null); // current system event
   const [calendar, setCalendar] = useState(null); // in-game calendar
@@ -1169,6 +1242,11 @@ export default function Chat() {
     setCurrentMood("neutral");
     setCompanionAffect(null);
     setLivePulseHeat(null);
+    emotionsEnabledRef.current = false;
+    setEmotionsEnabled(false);
+    dispatchCue({ type: "reset" });
+    setReunionIds([]);
+    loadEmotionsFlag(id, session);
     setCharacterMemories([]);
     setInventoryItems([]);
     loadRelationships(id);
@@ -1224,6 +1302,36 @@ export default function Chat() {
     setInventoryItems(data || []);
   };
 
+  // #765: read `emotions_enabled` (and the cast's sanitized cues) from the
+  // session context. A read only: it never consumes the time fact or moves
+  // affect on the server. Flag off or any failure leaves the screen as today.
+  const loadEmotionsFlag = async (sid, sessionForCast) => {
+    let payload;
+    try {
+      const request = animaApi.chat.sessionContext?.(sid);
+      payload = request ? await request : null;
+    } catch {
+      return;
+    }
+    if (!stillOpen(sid) || !emotionsEnabledFromContext(payload)) return;
+    emotionsEnabledRef.current = true;
+    setEmotionsEnabled(true);
+    const castIds = affectCastIds(sessionForCast);
+    const soloCharacterId = sessionForCast?.mode === "group" ? null : sessionForCast?.character_id || null;
+    const cues = {};
+    const byCharacter = payload?.companion_affect;
+    if (byCharacter && typeof byCharacter === "object") {
+      for (const [key, raw] of Object.entries(byCharacter)) {
+        if (key.startsWith("aspect:")) continue;
+        const id = canonicalAffectId(key, { soloCharacterId });
+        if (!id || !castIds.includes(id)) continue;
+        const cue = sanitizeAffectCue(raw);
+        if (cue) cues[id] = cue;
+      }
+    }
+    commitAffectCues(cues, sid);
+  };
+
   const loadCharacterEmotions = async (sid, characterId, sessionForAffect = null) => {
     const states = await animaClient.entities.CharacterEmotionalState.filter({ session_id: sid, is_current: true }, "-created_date", 50);
     const map = {};
@@ -1251,7 +1359,7 @@ export default function Chat() {
           try {
             const payload = await animaApi.chat.companionMemory(gid);
             if (!stillOpen(sid)) return;
-            const snapshot = parseCompanionAffectSnapshot(payload?.companion_affect);
+            const snapshot = parseAffectSnapshot(payload?.companion_affect, emotionsEnabledRef);
             if (snapshot) applyAffectToHeader(snapshot, gid);
           } catch {
             // Store-backed CharacterEmotionalState is enough until her next turn.
@@ -1266,7 +1374,7 @@ export default function Chat() {
     try {
       const payload = await animaApi.chat.companionMemory(characterIdForAffect);
       if (!stillOpen(sid)) return;
-      const snapshot = parseCompanionAffectSnapshot(payload?.companion_affect);
+      const snapshot = parseAffectSnapshot(payload?.companion_affect, emotionsEnabledRef);
       if (!snapshot) return;
       setCompanionAffect(snapshot);
       setCurrentMood(snapshot.primary);
@@ -1782,7 +1890,7 @@ export default function Chat() {
         if (turn?.turn_id && supersededTurnIdsRef.current.has(String(turn.turn_id))) return;
         const text = String(turn?.assistant_content || "").trim();
         if (!text) return;
-        const lateAffect = parseCompanionAffectSnapshot(turn.companion_affect);
+        const lateAffect = parseAffectSnapshot(turn.companion_affect, emotionsEnabledRef);
         if (lateAffect) {
           setCompanionAffect(lateAffect);
           setCurrentMood(lateAffect.primary);
@@ -1941,7 +2049,7 @@ export default function Chat() {
         }
         if (lateTurnRef.current?.turnId !== pending.turnId) return;
         lateTurnRef.current = null;
-        const lateAffect = parseCompanionAffectSnapshot(live.companion_affect);
+        const lateAffect = parseAffectSnapshot(live.companion_affect, emotionsEnabledRef);
         if (lateAffect) {
           setCompanionAffect(lateAffect);
           setCurrentMood(lateAffect.primary);
@@ -1991,7 +2099,7 @@ export default function Chat() {
         openSessionIdRef.current === sessionId &&
         !supersededTurnIdsRef.current.has(String(live?.turn_id || ""))
       ) {
-        const lateAffect = parseCompanionAffectSnapshot(live.companion_affect);
+        const lateAffect = parseAffectSnapshot(live.companion_affect, emotionsEnabledRef);
         if (lateAffect) {
           setCompanionAffect(lateAffect);
           setCurrentMood(lateAffect.primary);
@@ -2829,10 +2937,25 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         onRetry: (nextTurnId) => {
           streamedSoFar = "";
           if (nextTurnId) turnId = nextTurnId;
+          revertProvisionalAffect();
           streamUi.showTyping();
         },
         onDelta: streamUi.showStreamingPartial,
         onStatus: streamUi.showStatus,
+        // #765: machine tags hidden chunk-safely; the early affect frame only tints.
+        ...(emotionsEnabledRef.current
+          ? {
+              stripTags: true,
+              onAffect: (frame) => {
+                if (skipAffect) return;
+                const provisional = provisionalCueFromFrame(frame, {
+                  castIds: affectCastIds(activeSession),
+                  soloCharacterId: activeSession.mode === "group" ? null : activeSession.character_id || null,
+                });
+                if (provisional) dispatchCue({ type: "provisional", ...provisional });
+              },
+            }
+          : {}),
       });
       if (resultPayload.turn_id) {
         turnId = resultPayload.turn_id;
@@ -3014,7 +3137,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         setLivePulseHeat({ value: resultPayload.pulse_heat, turnId });
       }
       if (!skipAffect) {
-        const affectSnapshot = parseCompanionAffectSnapshot(resultPayload.companion_affect);
+        const affectSnapshot = parseAffectSnapshot(resultPayload.companion_affect, emotionsEnabledRef);
         if (affectSnapshot) {
           setCompanionAffect(affectSnapshot);
           setCurrentMood(affectSnapshot.primary);
@@ -3022,7 +3145,20 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         } else if (!replyCutOff.reply_interrupted) {
           setCurrentMood(detectMood(result));
         }
+        if (emotionsEnabledRef.current) {
+          // Listeners in the current cast only; nothing about the speaker.
+          commitAffectCues(
+            listenerCuesForCast(resultPayload.listener_affect, {
+              castIds: affectCastIds(activeSession),
+              speakerId: activeChar?.id || null,
+              soloCharacterId: activeSession.mode === "group" ? null : activeSession.character_id || null,
+            }),
+            activeSession.id,
+          );
+        }
       }
+      // The committed snapshot (or the last one) replaces any provisional tint.
+      revertProvisionalAffect();
 
       // In group mode, parse multi-character **Name:** format into separate bubbles
       let newAiMessages;
@@ -3663,6 +3799,8 @@ Return JSON:
       }
       }
     } catch (err) {
+      // Error, abort or retry: drop the provisional tint, keep the last committed cue.
+      revertProvisionalAffect();
       const restorePriorMessages = async () => {
         if (!Array.isArray(messageData.priorMessages)) return;
         let restored = messageData.priorMessages;
@@ -3862,7 +4000,7 @@ Return JSON:
             }
           }
           if (watch?.superseded) return false;
-          const lateAffect = parseCompanionAffectSnapshot(late.companion_affect);
+          const lateAffect = parseAffectSnapshot(late.companion_affect, emotionsEnabledRef);
           let painted = false;
           applyIfSendSession((prev) => {
             const result = paintLateCompanionReply(
@@ -4007,6 +4145,7 @@ Return JSON:
   const heldForThread = activeSession?.id ? gateSnap.heldBySession[activeSession.id] : null;
 
   return (
+    <EmotionCuesContext.Provider value={emotionCuesValue}>
     <div className="app-page-fill flex flex-col w-full overflow-hidden bg-background scanline relative" style={{ minHeight: 0, paddingBottom: "0" }}>
       <ChatBackground theme={bgTheme} imageUrl={bgTheme === "custom" ? bgImage : null} />
 
@@ -4239,6 +4378,7 @@ Return JSON:
                         affect={companionAffect}
                         fallbackMood={currentMood}
                         name={characters.find((c) => c.id === activeSession?.character_id)?.name}
+                        characterId={activeSession?.character_id || null}
                       />
                     </div>
                   </div>
@@ -4851,5 +4991,6 @@ Return JSON:
         </Suspense>
       ) : null}
     </div>
+    </EmotionCuesContext.Provider>
   );
 }

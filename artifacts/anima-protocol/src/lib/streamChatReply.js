@@ -2,6 +2,7 @@ import {
   createVisibleReplyFilter,
   finalizeAssistantReply,
 } from "./visibleAssistantReply";
+import { stripMachineTags, stripMachineTagsStreaming } from "./machineTags";
 
 const EMPTY_REPLY_MESSAGE =
   "The companion returned an empty reply. Please try again.";
@@ -34,10 +35,16 @@ function rememberChatClientTrace(err, trace) {
  * onDelta receives the accumulated visible text so far.
  * A thrown error gets `chatClientTrace` (timings and flags only, never reply text).
  *
- * @param {AsyncIterable<{ content?: string, done?: boolean, error?: string, status?: string }>} events
- * @param {{ onDelta?: (accumulated: string) => void, onFirstToken?: (accumulated: string) => void, onStatus?: (event: object) => void }} [hooks]
+ * With `stripTags` (ANIMA_EMOTIONS on, #765) machine tags (`[EMOTION:…]`,
+ * `[[…]]`) are hidden chunk-safely and removed from the final content, so
+ * streamed and stored text match. `onAffect` receives the provisional early
+ * `{ affect }` frame; it is never part of the returned payload. Both default
+ * off, which leaves the stream exactly as before.
+ *
+ * @param {AsyncIterable<{ content?: string, done?: boolean, error?: string, status?: string, affect?: unknown }>} events
+ * @param {{ onDelta?: (accumulated: string) => void, onFirstToken?: (accumulated: string) => void, onStatus?: (event: object) => void, onAffect?: (frame: unknown) => void, stripTags?: boolean }} [hooks]
  */
-export async function streamChatReply(events, { onDelta, onFirstToken, onStatus } = {}) {
+export async function streamChatReply(events, { onDelta, onFirstToken, onStatus, onAffect, stripTags = false } = {}) {
   let content = "";
   let doneEvent = null;
   let crisisResource = null;
@@ -95,6 +102,9 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus 
     rafId = requestAnimationFrame(flush);
   };
 
+  const streamView = (text) => (stripTags ? stripMachineTagsStreaming(text) : text);
+  const finalView = (text) => (stripTags ? stripMachineTags(text) : text);
+
   const paintVisible = (next) => {
     const visible = finalizeAssistantReply(next, content);
     if (!visible) return;
@@ -129,16 +139,23 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus 
         noteStreamStatus(event);
         onStatus?.(event);
       }
+      if (onAffect && event?.affect && !event?.done) {
+        try {
+          onAffect(event.affect);
+        } catch {
+          // A cue is decoration; it never breaks the reply.
+        }
+      }
       if (event?.content && !event?.done) {
         replyFilter.push(event.content);
-        paintVisible(replyFilter.peek());
+        paintVisible(streamView(replyFilter.peek()));
       }
       if (event?.done) {
         doneEvent = event;
         const terminal = event.visible || event.content;
         if (terminal) {
           paintVisible(
-            finalizeAssistantReply(terminal, replyFilter.peek(), content),
+            finalView(finalizeAssistantReply(terminal, replyFilter.peek(), content)),
           );
         }
         break;
@@ -163,6 +180,7 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus 
     finished.visible,
     content,
   );
+  if (stripTags) content = stripMachineTags(content).trim();
   if (content && onDelta) onDelta(content);
 
   // A stream that finished (or closed without `done`) with nothing visible
@@ -226,6 +244,8 @@ function defaultMintTurnId() {
  *   onDelta?: (accumulated: string) => void,
  *   onFirstToken?: (accumulated: string) => void,
  *   onStatus?: (event: object) => void,
+ *   onAffect?: (frame: unknown) => void,
+ *   stripTags?: boolean,
  * }} args
  */
 export async function streamChatReplyWithTurnRetry({
@@ -236,6 +256,8 @@ export async function streamChatReplyWithTurnRetry({
   onDelta,
   onFirstToken,
   onStatus,
+  onAffect,
+  stripTags = false,
 }) {
   let currentTurnId = turnId;
   let retried = false;
@@ -245,6 +267,8 @@ export async function streamChatReplyWithTurnRetry({
         onDelta,
         onFirstToken,
         onStatus,
+        ...(onAffect ? { onAffect } : {}),
+        ...(stripTags ? { stripTags: true } : {}),
       });
       if (result?.replayed && !retried) {
         retried = true;

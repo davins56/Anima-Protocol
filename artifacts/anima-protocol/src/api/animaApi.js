@@ -329,6 +329,14 @@ export const animaApi = {
       }).then((r) => r.json()),
 
     /**
+     * Session context (characters, memories, recent messages, companion_affect).
+     * Read only. With ANIMA_EMOTIONS on (#765) it also carries
+     * `emotions_enabled: true` and sanitized per-character snapshots.
+     */
+    sessionContext: (sessionId) =>
+      request(`/chat/sessions/${encodeURIComponent(sessionId)}/context`).then((r) => r.json()),
+
+    /**
      * Durable companion felt-state + memories for a character.
      * `companion_affect` is the mood/resonance contract (not a mood menu).
      */
