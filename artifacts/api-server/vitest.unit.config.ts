@@ -64,6 +64,8 @@ export default defineConfig({
       "test/characterResearch.test.ts",
       "test/dialogueVariety.test.ts",
       "test/replyFormatting.test.ts",
+      // Deepnet slice rules (#757): pure, no Postgres.
+      "test/deepnetCore.test.ts",
     ],
     environment: "node",
     fileParallelism: false,
