@@ -15,6 +15,15 @@ describe("companionAffect with ANIMA_EMOTIONS (#765)", () => {
     });
   });
 
+  it("flag on: focus/intent free text is dropped even when sent", () => {
+    const snap = parseCompanionAffectSnapshot(
+      { ...FLAG_ON_SNAPSHOT, focus: "the archive", intent: "withdraw" },
+      { emotionsEnabled: true },
+    );
+    expect(snap).not.toHaveProperty("focus");
+    expect(snap).not.toHaveProperty("intent");
+  });
+
   it("flag on: the why lines skip focus and intent", () => {
     const snap = parseCompanionAffectSnapshot(
       { ...FLAG_ON_SNAPSHOT, focus: "the archive", intent: "withdraw" },

@@ -18,8 +18,8 @@ export default function MoodWhyPanel({ affect, fallbackMood, name, characterId =
 
 function MoodProsePanel({ cue, name }) {
   const [open, setOpen] = useState(false);
+  // No snapshot yet: the settled sentence, so the affordance doesn't vanish.
   const lines = cueExplanation(cue, name);
-  if (!lines.length) return null;
   const who = String(name || "").trim() || "she";
   return (
     <span className="relative inline-flex flex-col items-end">

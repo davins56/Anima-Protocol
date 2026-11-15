@@ -2,8 +2,14 @@ import { describe, expect, it } from "vitest";
 import { stripMachineTags, stripMachineTagsStreaming, MAX_MACHINE_TAG_LENGTH } from "./machineTags";
 import { streamChatReply } from "./streamChatReply";
 
-/** Feed `text` split at `cut` (and at every char) and return what the UI last painted. */
-function streamedAt(text, cuts) {
+const collapse = (t) => t.replace(/\s+/g, " ").trim();
+
+/**
+ * Feed `text` split at `cuts` and check every painted state on its own: each
+ * must be a (whitespace-collapsed) prefix of the expected final text, so no
+ * tag fragment like "[EMO" or "[[" is ever painted and then taken back.
+ */
+function streamedAt(text, cuts, expected) {
   let acc = "";
   let shown = "";
   let prev = 0;
@@ -11,8 +17,9 @@ function streamedAt(text, cuts) {
     acc += text.slice(prev, cut);
     prev = cut;
     shown = stripMachineTagsStreaming(acc);
-    // Never paint a held-back tag fragment.
-    expect(shown).not.toMatch(/\[\s*EMOTION\s*:[^\]]*\]/i);
+    if (expected !== undefined) {
+      expect(collapse(expected).startsWith(collapse(shown))).toBe(true);
+    }
   }
   return { shown, final: stripMachineTags(acc) };
 }
@@ -37,12 +44,12 @@ describe("stripMachineTags", () => {
 
   it.each(CASES)("is chunk-boundary independent at every split: %j", (input, expected) => {
     for (let i = 0; i <= input.length; i += 1) {
-      const { final } = streamedAt(input, [i]);
+      const { final } = streamedAt(input, [i], expected);
       expect(final).toBe(expected);
     }
     // One character per chunk too (includes splits inside surrogate pairs).
     const every = [...Array(input.length).keys()].slice(1);
-    expect(streamedAt(input, every).final).toBe(expected);
+    expect(streamedAt(input, every, expected).final).toBe(expected);
   });
 
   it("holds back an incomplete tag mid-stream", () => {
@@ -51,6 +58,20 @@ describe("stripMachineTags", () => {
     expect(stripMachineTagsStreaming("Hello [[exit]")).toBe("Hello ");
     expect(stripMachineTagsStreaming("Hello [")).toBe("Hello ");
     expect(stripMachineTagsStreaming("Hello [Emotional")).toBe("Hello [Emotional");
+    // Padding before the colon is still a possible tag.
+    expect(stripMachineTagsStreaming("Hello [EMOTION ")).toBe("Hello ");
+    expect(stripMachineTagsStreaming("Hello [ EMOTION : sa")).toBe("Hello ");
+  });
+
+  it("does not treat a tag split across lines as a tag", () => {
+    expect(stripMachineTagsStreaming("Hi [EMOTION\n: sad] x")).toBe("Hi [EMOTION\n: sad] x");
+    expect(stripMachineTags("Hi [EMOTION\n: sad] x")).toBe("Hi [EMOTION\n: sad] x");
+  });
+
+  it("holds a long but legal tag body until it closes", () => {
+    const body = "y".repeat(119);
+    expect(stripMachineTagsStreaming(`Hey [EMOTION: ${body}`)).toBe("Hey ");
+    expect(stripMachineTags(`Hey [EMOTION: ${body}] there`)).toBe("Hey there");
   });
 
   it("flushes an unclosed tag as text at stream end", () => {
@@ -81,7 +102,10 @@ describe("streamChatReply stripTags", () => {
       });
       expect(result.content).toBe("Hi there. 💜");
       expect(painted.at(-1)).toBe(result.content);
-      for (const p of painted) expect(p).not.toContain("[EMOTION");
+      for (const p of painted) {
+        expect(p).not.toMatch(/\[E|\[\[/);
+        expect(collapse(result.content).startsWith(collapse(p))).toBe(true);
+      }
     }
   });
 

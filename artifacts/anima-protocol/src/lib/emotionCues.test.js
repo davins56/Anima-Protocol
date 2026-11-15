@@ -175,3 +175,9 @@ describe("cueReducer: provisional tint vs committed", () => {
     expect(shownCue(cueReducer(s, { type: "revert" }), "b")).toBeNull();
   });
 });
+
+describe("cueExplanation without a snapshot", () => {
+  it("falls back to the settled sentence instead of nothing", () => {
+    expect(cueExplanation(null, "Scarlet")).toEqual(["Scarlet seems settled."]);
+  });
+});

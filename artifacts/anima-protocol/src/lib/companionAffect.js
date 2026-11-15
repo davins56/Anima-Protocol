@@ -27,8 +27,8 @@ function isRecord(value) {
  * Parse a server `companion_affect` snapshot.
  *
  * With `emotionsEnabled` (ANIMA_EMOTIONS, #765) the server sends a sanitized
- * shape without `focus`/`intent`; they stay absent instead of being filled
- * with defaults, and the allowlisted cue fields are attached as `cue`.
+ * shape without `focus`/`intent`; they stay absent (never defaulted, and
+ * dropped if present), and the allowlisted cue fields are attached as `cue`.
  * Without it (flag off, today's behaviour) the old defaults apply, which is
  * also what an older client does with a sanitized snapshot.
  *
@@ -57,10 +57,9 @@ export function parseCompanionAffectSnapshot(raw, { emotionsEnabled = false } = 
   const energy = Number(raw.energy);
   /** @type {{ focus?: string, intent?: string }} */
   const why = {};
-  if (emotionsEnabled) {
-    if (typeof raw.focus === "string" && raw.focus) why.focus = raw.focus;
-    if (typeof raw.intent === "string" && raw.intent) why.intent = raw.intent;
-  } else {
+  // Flag on: focus/intent are server free text outside the cue allowlist, so
+  // they are never kept, even if an older server still sends them.
+  if (!emotionsEnabled) {
     why.focus = typeof raw.focus === "string" ? raw.focus : "steward";
     why.intent = typeof raw.intent === "string" ? raw.intent : "attend";
   }

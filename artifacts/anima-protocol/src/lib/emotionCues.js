@@ -199,7 +199,7 @@ export function cuePhrase(cue, name) {
  * @returns {string[]}
  */
 export function cueExplanation(cue, name) {
-  if (!cue) return [];
+  if (!cue) return [`${fill(SETTLED_PHRASE, name)}.`];
   const lines = [`${cuePhrase(cue, name)}.`];
   if (cue.undertone && isReunionCue(cue)) {
     const under = `${fill(UNDERTONE_PHRASES[cue.undertone.kind], name)}.`;

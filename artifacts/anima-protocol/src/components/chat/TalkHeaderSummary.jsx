@@ -85,7 +85,13 @@ export default function TalkHeaderSummary({ session, characters = [], characterE
         </span>
       </span>
       {cuesOn && !isGroup && primaryChar?.id ? (
-        <AffectCue cue={primaryCue} name={primaryChar.name} size="sm" testId="talk-header-summary-cue" />
+        <AffectCue
+          cue={primaryCue}
+          name={primaryChar.name}
+          reunion={emotionCues.reunionIds.includes(primaryChar.id)}
+          size="sm"
+          testId="talk-header-summary-cue"
+        />
       ) : null}
       {feeling ? (
         <span
