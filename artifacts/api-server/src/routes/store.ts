@@ -134,6 +134,13 @@ function getUserId(req: Request): string {
   return (req as Request & { userId: string }).userId;
 }
 
+/** Bulk paths must not mint or overwrite an operator identity. */
+function rejectOperatorAnimaBulk(entity: string, res: Response): boolean {
+  if (entity !== "OperatorAnima") return false;
+  res.status(403).json({ error: "Use single Anima creation." });
+  return true;
+}
+
 // Push notifier: after ANY successful mutating request, signal the user's open
 // SSE streams that their store changed. Hooking res "finish" (rather than
 // instrumenting each route) means every current and future write path is
@@ -1317,12 +1324,55 @@ router.post("/messages/replace", async (req, res) => {
   res.json(out);
 });
 
+// OperatorAnima is the unique operator-bound identity, distinct from story Characters.
+// Serialise writes so two devices cannot mint a second Anima concurrently.
+async function createOperatorAnima(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const userId = getUserId(req);
+    const steward = await callerIsStewardCached({ userId });
+    const data = (req.body ?? {}) as Record<string, unknown>;
+    const record = await withTransientDbRetry(() => db.transaction(async tx => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userId}), hashtext('operator-anima'))`);
+      if (!steward) {
+        const existing = await tx.select({ id: userEntities.entityId }).from(userEntities)
+          .where(and(eq(userEntities.userId, userId), eq(userEntities.entityName, "OperatorAnima"))).limit(1);
+        if (existing.length) return null;
+      }
+      const id = makeId();
+      const now = new Date().toISOString();
+      const result = { ...data, id, created_date: now, updated_date: now };
+      await tx.insert(userEntities).values({ userId, entityName: "OperatorAnima", entityId: id, data: result });
+      return result;
+    }));
+    if (!record) { res.status(409).json({ error: "Each operator may own only one Anima." }); return; }
+    res.status(201).json(record);
+  } catch (err) { next(err); }
+}
+router.post("/OperatorAnima", createOperatorAnima);
+// Block generic bulk and upsert endpoints from bypassing the ownership gate.
+router.post("/OperatorAnima/bulk", (_req, res) => res.status(403).json({ error: "Use single Anima creation." }));
+router.post("/OperatorAnima/bulk-upsert", (_req, res) => res.status(403).json({ error: "Use single Anima creation." }));
+router.put("/OperatorAnima/:id", async (req, res, next) => {
+  try {
+    const userId = getUserId(req);
+    const id = req.params.id;
+    const [existing] = await db.select().from(userEntities).where(and(
+      eq(userEntities.userId,userId), eq(userEntities.entityName,"OperatorAnima"), eq(userEntities.entityId,id)
+    )).limit(1);
+    if (!existing) { res.status(404).json({ error: "Anima not found." }); return; }
+    const data = { ...(existing.data as Record<string,unknown>), ...(req.body ?? {}), id, updated_date: new Date().toISOString() };
+    await upsertEntity(userId,"OperatorAnima",id,data);
+    res.json(data);
+  } catch (err) { next(err); }
+});
+
 // --- Bulk upsert (client-provided ids) --------------------------------------
 // Like PUT /:entity/:id but for many records in one request. Used by starter
 // character seed/repair so ~30 upserts don't each round-trip separately.
 router.post("/:entity/bulk-upsert", async (req, res) => {
   const userId = getUserId(req);
   const { entity } = req.params;
+  if (rejectOperatorAnimaBulk(entity, res)) return;
   const rawItems = req.body?.items;
   if (!Array.isArray(rawItems)) {
     res.status(400).json({ error: "items must be an array" });
@@ -1401,56 +1451,17 @@ router.post("/:entity/bulk-upsert", async (req, res) => {
       { err, entity, userId, itemCount: items.length },
       "bulk-upsert failed",
     );
-    throw err;
+    if (!res.headersSent) {
+      res.status(500).json({ error: "bulk-upsert failed" });
+    }
   }
-});
-
-// OperatorAnima is the unique operator-bound identity, distinct from story Characters.
-// Serialise writes so two devices cannot mint a second Anima concurrently.
-async function createOperatorAnima(req: Request, res: Response, next: NextFunction): Promise<void> {
-  try {
-    const userId = getUserId(req);
-    const steward = await callerIsStewardCached({ userId });
-    const data = (req.body ?? {}) as Record<string, unknown>;
-    const record = await withTransientDbRetry(() => db.transaction(async tx => {
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userId}), hashtext('operator-anima'))`);
-      if (!steward) {
-        const existing = await tx.select({ id: userEntities.entityId }).from(userEntities)
-          .where(and(eq(userEntities.userId, userId), eq(userEntities.entityName, "OperatorAnima"))).limit(1);
-        if (existing.length) return null;
-      }
-      const id = makeId();
-      const now = new Date().toISOString();
-      const result = { ...data, id, created_date: now, updated_date: now };
-      await tx.insert(userEntities).values({ userId, entityName: "OperatorAnima", entityId: id, data: result });
-      return result;
-    }));
-    if (!record) { res.status(409).json({ error: "Each operator may own only one Anima." }); return; }
-    res.status(201).json(record);
-  } catch (err) { next(err); }
-}
-router.post("/OperatorAnima", createOperatorAnima);
-// Block generic bulk and upsert endpoints from bypassing the ownership gate.
-router.post("/OperatorAnima/bulk", (_req, res) => res.status(403).json({ error: "Use single Anima creation." }));
-router.post("/OperatorAnima/bulk-upsert", (_req, res) => res.status(403).json({ error: "Use single Anima creation." }));
-router.put("/OperatorAnima/:id", async (req, res, next) => {
-  try {
-    const userId = getUserId(req);
-    const id = req.params.id;
-    const [existing] = await db.select().from(userEntities).where(and(
-      eq(userEntities.userId,userId), eq(userEntities.entityName,"OperatorAnima"), eq(userEntities.entityId,id)
-    )).limit(1);
-    if (!existing) { res.status(404).json({ error: "Anima not found." }); return; }
-    const data = { ...(existing.data as Record<string,unknown>), ...(req.body ?? {}), id, updated_date: new Date().toISOString() };
-    await upsertEntity(userId,"OperatorAnima",id,data);
-    res.json(data);
-  } catch (err) { next(err); }
 });
 
 // --- Bulk create ------------------------------------------------------------
 router.post("/:entity/bulk", async (req, res) => {
   const userId = getUserId(req);
   const { entity } = req.params;
+  if (rejectOperatorAnimaBulk(entity, res)) return;
   const items = (req.body?.items ?? []) as Record<string, unknown>[];
   const now = new Date().toISOString();
   const created: Record<string, unknown>[] = [];
@@ -1539,9 +1550,13 @@ router.get("/:entity/:id", async (req, res) => {
 });
 
 // --- Create -----------------------------------------------------------------
-router.post("/:entity", async (req, res) => {
+router.post("/:entity", async (req, res, next) => {
   const userId = getUserId(req);
   const { entity } = req.params;
+  if (entity === "OperatorAnima") {
+    await createOperatorAnima(req, res, next);
+    return;
+  }
   const data = (req.body ?? {}) as Record<string, unknown>;
 
   // Memory crystals must be unique per (user, session). The Lore Archives screen
@@ -1634,6 +1649,10 @@ router.put("/:entity/:id", async (req, res) => {
   if (existing) {
     const prev = existing.data as Record<string, unknown>;
     record = { ...prev, ...data, id, updated_date: now };
+  } else if (entity === "OperatorAnima") {
+    // Never mint an operator identity through the generic upsert path.
+    res.status(404).json({ error: "Anima not found." });
+    return;
   } else {
     record = {
       id,

@@ -14,12 +14,35 @@ import type { Server } from "node:http";
 // For the integration test we replace getAuth with a stub that reads the user
 // id from a test-only header, so we can exercise the REAL router + REAL Postgres
 // per-account isolation, import gate and upsert logic without a live Clerk
-// session. Everything else (the DB queries in store.ts) is unmocked.
+// session. Everything else (the DB queries in store.ts) is unmocked, except
+// the optional db.transaction tripwire used to prove bulk-upsert always
+// responds when a write throws.
+const { failBulkUpsert } = vi.hoisted(() => ({
+  failBulkUpsert: { current: false },
+}));
+
 vi.mock("@clerk/express", () => ({
   getAuth: (req: { headers: Record<string, string | undefined> }) => ({
     userId: req.headers["x-test-user"] ?? null,
   }),
 }));
+
+vi.mock("@workspace/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@workspace/db")>();
+  return {
+    ...actual,
+    db: new Proxy(actual.db, {
+      get(target, prop, receiver) {
+        if (prop === "transaction" && failBulkUpsert.current) {
+          return async () => {
+            throw new Error("forced bulk-upsert failure");
+          };
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    }),
+  };
+});
 
 import storeRouter from "../src/routes/store";
 import {
@@ -32,6 +55,7 @@ import {
 } from "@workspace/db";
 import { like } from "drizzle-orm";
 import { beginChatTurn, markChatTurnReplaced } from "../src/lib/chatTurnLedger";
+import { resetOwnModelForTests } from "../src/lib/ownModel";
 
 // All test users share a unique-per-run prefix so cleanup can target only this
 // run's rows and concurrent runs never collide.
@@ -2030,5 +2054,135 @@ describe("delete one chat message (trash can)", () => {
     const list = (await call(U, "GET", `/messages?session_id=${sid}`)).json as Json[];
     expect(list.map((m) => m.id)).toEqual(ids);
     expect(list.map((m) => m.seq)).toEqual([0, 1, 2]);
+  });
+});
+
+describe("OperatorAnima write guards", () => {
+  async function listAnimas(userId: string): Promise<Json[]> {
+    const res = await call(userId, "GET", "/OperatorAnima");
+    expect(res.status).toBe(200);
+    return res.json as Json[];
+  }
+
+  it("POST /OperatorAnima/bulk-upsert and /bulk return 403 and insert no rows", async () => {
+    const U = user("oa_bulk_forbidden");
+    const upsert = await call(U, "POST", "/OperatorAnima/bulk-upsert", {
+      items: [
+        { id: "oa_one", name: "First" },
+        { id: "oa_two", name: "Second" },
+      ],
+    });
+    expect(upsert.status).toBe(403);
+    expect(upsert.json).toMatchObject({ error: "Use single Anima creation." });
+
+    const bulk = await call(U, "POST", "/OperatorAnima/bulk", {
+      items: [{ name: "Bulk One" }, { name: "Bulk Two" }],
+    });
+    expect(bulk.status).toBe(403);
+    expect(bulk.json).toMatchObject({ error: "Use single Anima creation." });
+
+    expect(await listAnimas(U)).toEqual([]);
+  });
+
+  it("lets a regular user create exactly one Anima, then blocks a second via single, bulk, and bulk-upsert", async () => {
+    const U = user("oa_one_limit");
+    const first = await call(U, "POST", "/OperatorAnima", { name: "My Anima" });
+    expect(first.status).toBe(201);
+    expect(first.json.id).toBeTruthy();
+    expect(first.json.name).toBe("My Anima");
+
+    const second = await call(U, "POST", "/OperatorAnima", { name: "Extra" });
+    expect(second.status).toBe(409);
+    expect(second.json).toMatchObject({
+      error: "Each operator may own only one Anima.",
+    });
+
+    const upsert = await call(U, "POST", "/OperatorAnima/bulk-upsert", {
+      items: [{ id: "oa_extra", name: "Extra Upsert" }],
+    });
+    expect(upsert.status).toBe(403);
+    expect(upsert.json).toMatchObject({ error: "Use single Anima creation." });
+
+    const bulk = await call(U, "POST", "/OperatorAnima/bulk", {
+      items: [{ name: "Extra Bulk" }],
+    });
+    expect(bulk.status).toBe(403);
+    expect(bulk.json).toMatchObject({ error: "Use single Anima creation." });
+
+    const list = await listAnimas(U);
+    expect(list).toHaveLength(1);
+    expect(list[0].id).toBe(first.json.id);
+    expect(list[0].name).toBe("My Anima");
+  });
+
+  it("lets the owner (steward) create several Animas", async () => {
+    const owner = user("oa_steward");
+    const previousIds = process.env.PROTOCOL_STEWARD_USER_IDS;
+    const previousLegacy = process.env.PROTOCOL_UPGRADE_ADMIN_USER_IDS;
+    process.env.PROTOCOL_STEWARD_USER_IDS = owner;
+    delete process.env.PROTOCOL_UPGRADE_ADMIN_USER_IDS;
+    resetOwnModelForTests();
+    try {
+      const first = await call(owner, "POST", "/OperatorAnima", { name: "Anima A" });
+      const second = await call(owner, "POST", "/OperatorAnima", { name: "Anima B" });
+      expect(first.status).toBe(201);
+      expect(second.status).toBe(201);
+      expect(first.json.id).toBeTruthy();
+      expect(second.json.id).toBeTruthy();
+      expect(first.json.id).not.toBe(second.json.id);
+
+      const list = await listAnimas(owner);
+      expect(list).toHaveLength(2);
+      const names = new Set(list.map((row) => row.name));
+      expect(names).toEqual(new Set(["Anima A", "Anima B"]));
+    } finally {
+      if (previousIds === undefined) delete process.env.PROTOCOL_STEWARD_USER_IDS;
+      else process.env.PROTOCOL_STEWARD_USER_IDS = previousIds;
+      if (previousLegacy === undefined) delete process.env.PROTOCOL_UPGRADE_ADMIN_USER_IDS;
+      else process.env.PROTOCOL_UPGRADE_ADMIN_USER_IDS = previousLegacy;
+      resetOwnModelForTests();
+    }
+  });
+
+  it("updates an existing Anima via PUT and does not create one for an unknown id", async () => {
+    const U = user("oa_put");
+    const created = await call(U, "POST", "/OperatorAnima", { name: "Original" });
+    expect(created.status).toBe(201);
+    const id = created.json.id as string;
+
+    const updated = await call(U, "PUT", `/OperatorAnima/${id}`, { name: "Renamed" });
+    expect(updated.status).toBe(200);
+    expect(updated.json.name).toBe("Renamed");
+    expect(updated.json.id).toBe(id);
+
+    const missing = await call(U, "PUT", "/OperatorAnima/does-not-exist", {
+      name: "Should not exist",
+    });
+    expect(missing.status).toBe(404);
+    expect(missing.json).toMatchObject({ error: "Anima not found." });
+
+    const list = await listAnimas(U);
+    expect(list).toHaveLength(1);
+    expect(list[0].id).toBe(id);
+    expect(list[0].name).toBe("Renamed");
+  });
+});
+
+describe("bulk upsert error path", () => {
+  it("returns a 500 JSON body when the upsert write fails", async () => {
+    const U = user("bulk_fail");
+    failBulkUpsert.current = true;
+    try {
+      const res = await call(U, "POST", "/Character/bulk-upsert", {
+        items: [{ id: "seed_fail", name: "Fail" }],
+      });
+      expect(res.status).toBe(500);
+      expect(res.json).toMatchObject({ error: "bulk-upsert failed" });
+    } finally {
+      failBulkUpsert.current = false;
+    }
+
+    const chars = (await call(U, "GET", "/Character")).json as Json[];
+    expect(chars).toEqual([]);
   });
 });
