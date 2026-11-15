@@ -10,6 +10,8 @@ import {
   tickBattle,
 } from "@/lib/netBattle";
 import { dominantExpression, isExpressionBlend } from "@/lib/animaExpressions";
+import { ensureFirstBattleProfile } from "@/features/martialArts/api";
+import { pickLabel, SEED_LIBRARY } from "@workspace/martial-core";
 import {
   accountToLibrary,
   echoFolderToChips,
@@ -61,6 +63,8 @@ export default function NetBattle() {
   const [loading, setLoading] = useState(true);
   const [seed, setSeed] = useState(() => Date.now() % 1_000_000);
   const [gated, setGated] = useState(null);
+  // #768: her fighting style (null when ANIMA_MARTIAL_ARTS is off / 404).
+  const [battleStyle, setBattleStyle] = useState(null);
   const trackedEnd = useRef(false);
   const stampedFire = useRef(false);
 
@@ -79,6 +83,10 @@ export default function NetBattle() {
           animas?.[0] ||
           null;
         setAnima(chosen);
+        // D3: her first battle picks her style (server-side auto pick).
+        const styleProfile = chosen?.id ? await ensureFirstBattleProfile(chosen.id).catch(() => null) : null;
+        if (!active) return;
+        setBattleStyle(styleProfile?.primary ? { pick: styleProfile.primary, tone: "composed" } : null);
         setLibrary(
           normalizeEchoLibrary(profile?.settings?.echo_keys, {
             grantFullLibrary: isEchoLibrarySteward(profile),
@@ -142,6 +150,7 @@ export default function NetBattle() {
         seed: nextSeed,
         echoFolder: echoFolderToChips(library),
         enemy: started.entity,
+        ...(battleStyle ? { style: battleStyle } : {}),
       });
       setSeed(nextSeed);
       dispatch({ type: "replace", state: next });
@@ -151,7 +160,7 @@ export default function NetBattle() {
         ...meta,
       });
     },
-    [anima, library, hidden, searchParams],
+    [anima, library, hidden, searchParams, battleStyle],
   );
 
   useEffect(() => {
@@ -278,6 +287,11 @@ export default function NetBattle() {
           <h1 className="text-xl font-mono uppercase tracking-widest text-cyan-400">
             NetBattle Matrix
           </h1>
+          {state.style && (
+            <span data-testid="net-battle-style" className="text-[9px] font-mono uppercase tracking-[0.22em] text-cyan-200/70 border border-cyan-300/30 px-2 py-1">
+              {pickLabel(SEED_LIBRARY, state.style.pick)}
+            </span>
+          )}
           <button
             type="button"
             onClick={() => navigate("/echo-keys")}

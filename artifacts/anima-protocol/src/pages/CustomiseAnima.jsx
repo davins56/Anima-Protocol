@@ -8,6 +8,8 @@ import AnimaVoicePanel from "@/components/anima/AnimaVoicePanel";
 import AnimaExpressionPanel from "@/components/anima/AnimaExpressionPanel";
 import DeviceScanPanel from "@/components/anima/DeviceScanPanel";
 import IntimacyEditor from "@/components/intimacy/IntimacyEditor";
+import StylePanel from "@/features/martialArts/StylePanel";
+import { useMartialArtsEnabled } from "@/features/martialArts/useMartialArts";
 import {
   AlertTriangle,
   ChevronLeft,
@@ -20,6 +22,7 @@ import {
   Mic,
   Palette,
   ScanSearch,
+  Shield,
   Sparkles,
   Swords,
   UserCircle,
@@ -42,6 +45,9 @@ const TABS = [
   { id: "permissions", label: "Permissions", icon: ScanSearch, blurb: "Device scan & data access" },
 ];
 
+// #768: only shown when /api/martial-arts/status says the feature is on.
+const STYLE_TAB = { id: "style", label: "Style", icon: Shield, blurb: "Fighting style she favours" };
+
 const KIND_ICONS = {
   misconfigured: AlertTriangle,
   unsigned: LogIn,
@@ -59,7 +65,13 @@ export default function CustomiseAnima() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedId = searchParams.get("anima");
-  const activeTab = normalizeCustomiseAnimaTab(searchParams.get("tab"));
+  const martialArtsOn = useMartialArtsEnabled() === true;
+  const tabs = useMemo(() => (martialArtsOn ? [...TABS, STYLE_TAB] : TABS), [martialArtsOn]);
+  const requestedTab = searchParams.get("tab");
+  const activeTab =
+    martialArtsOn && String(requestedTab || "").toLowerCase() === STYLE_TAB.id
+      ? STYLE_TAB.id
+      : normalizeCustomiseAnimaTab(requestedTab);
   const { isAuthenticated, isLoadingAuth, user } = useAuth();
 
   const [animas, setAnimas] = useState([]);
@@ -146,8 +158,8 @@ export default function CustomiseAnima() {
   };
 
   const activeMeta = useMemo(
-    () => TABS.find((t) => t.id === activeTab) || TABS[0],
-    [activeTab],
+    () => tabs.find((t) => t.id === activeTab) || tabs[0],
+    [activeTab, tabs],
   );
 
   const emptyCopy = loadKind ? customiseAnimaLoadCopy(loadKind, loadMessage) : null;
@@ -229,7 +241,7 @@ export default function CustomiseAnima() {
               role="tablist"
               aria-label="Customise Anima sections"
             >
-              {TABS.map((tab) => {
+              {tabs.map((tab) => {
                 const Icon = tab.icon;
                 const selected = tab.id === activeTab;
                 return (
@@ -295,6 +307,9 @@ export default function CustomiseAnima() {
                 characterId={anima.id}
                 characterName={anima.name}
               />
+            )}
+            {activeTab === STYLE_TAB.id && (
+              <StylePanel key={`${anima.id}-style`} characterId={anima.id} name={anima.name || "She"} />
             )}
             {activeTab === "permissions" && (
               <DeviceScanPanel

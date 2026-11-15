@@ -10,6 +10,7 @@ import { listPersonalAnimas } from "@/lib/listPersonalAnimas";
 import { deepnetApi } from "./api";
 import { chooseDialogue, corridorProgress, isTerminal, OUTCOME_TEXT, panelFor, startDialogue, type DialogueCursor } from "./flow";
 import NetworkMap2D from "./NetworkMap2D";
+import EncounterStance from "@/features/martialArts/EncounterStance";
 import type { DeepnetMap, QuestView } from "./types";
 
 type Companion = { id: string; name: string };
@@ -167,6 +168,11 @@ export default function DeepnetPage() {
 
           {panel === "encounter" && node && cursor && (
             <div className="space-y-2" data-testid="deepnet-dialogue">
+              <EncounterStance
+                characterId={characterId}
+                name={companions.find((c) => c.id === characterId)?.name ?? "She"}
+                viewStyle={(view as QuestView & { style?: { style_id?: string; variant_id?: string | null } }).style}
+              />
               <p className="text-muted-foreground">{node.speaker}</p>
               <p>{node.line}</p>
               <div className="flex flex-wrap gap-2">

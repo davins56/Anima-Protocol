@@ -1,0 +1,588 @@
+{
+ "library_version": "seed@1.1",
+ "styles": {
+  "boxing": {
+   "strike": 1.08,
+   "weapon": 1.01,
+   "guard": 1.01,
+   "control": 0,
+   "weaponChips": [
+    "cannon"
+   ]
+  },
+  "muay_thai": {
+   "strike": 1.12,
+   "weapon": 1.0,
+   "guard": 1.015,
+   "control": 1,
+   "weaponChips": []
+  },
+  "lethwei": {
+   "strike": 1.12,
+   "weapon": 1.0,
+   "guard": 1.015,
+   "control": 1,
+   "weaponChips": []
+  },
+  "kickboxing": {
+   "strike": 1.07,
+   "weapon": 1.0,
+   "guard": 1.02,
+   "control": 0,
+   "weaponChips": [
+    "cannon"
+   ]
+  },
+  "savate": {
+   "strike": 1.0,
+   "weapon": 1.02,
+   "guard": 1.0,
+   "control": 0,
+   "weaponChips": [
+    "cannon",
+    "crack_shot"
+   ]
+  },
+  "taekwondo": {
+   "strike": 1.0,
+   "weapon": 1.02,
+   "guard": 1.0,
+   "control": 0,
+   "weaponChips": [
+    "cannon",
+    "crack_shot"
+   ]
+  },
+  "karate": {
+   "strike": 1.0,
+   "weapon": 1.02,
+   "guard": 0.965,
+   "control": 0,
+   "weaponChips": [
+    "cannon"
+   ]
+  },
+  "sanda": {
+   "strike": 1.04,
+   "weapon": 1.0,
+   "guard": 1.005,
+   "control": 0,
+   "weaponChips": [
+    "cannon"
+   ]
+  },
+  "wing_chun": {
+   "strike": 0.99,
+   "weapon": 1.03,
+   "guard": 0.935,
+   "control": 2,
+   "weaponChips": []
+  },
+  "hung_ga": {
+   "strike": 1.06,
+   "weapon": 1.0,
+   "guard": 0.985,
+   "control": 0,
+   "weaponChips": [
+    "cannon"
+   ]
+  },
+  "choy_li_fut": {
+   "strike": 1.06,
+   "weapon": 1.0,
+   "guard": 1.03,
+   "control": 0,
+   "weaponChips": [
+    "cannon",
+    "crack_shot"
+   ]
+  },
+  "changquan": {
+   "strike": 1.0,
+   "weapon": 1.01,
+   "guard": 1.0,
+   "control": 0,
+   "weaponChips": [
+    "cannon",
+    "crack_shot"
+   ]
+  },
+  "mantis": {
+   "strike": 1.0,
+   "weapon": 1.02,
+   "guard": 1.0,
+   "control": 0,
+   "weaponChips": []
+  },
+  "baguazhang": {
+   "strike": 0.99,
+   "weapon": 1.0,
+   "guard": 0.975,
+   "control": 0,
+   "weaponChips": [
+    "cannon"
+   ]
+  },
+  "xingyiquan": {
+   "strike": 1.06,
+   "weapon": 1.02,
+   "guard": 1.03,
+   "control": 0,
+   "weaponChips": []
+  },
+  "taijiquan": {
+   "strike": 0.97,
+   "weapon": 1.0,
+   "guard": 0.885,
+   "control": 2,
+   "weaponChips": []
+  },
+  "bajiquan": {
+   "strike": 1.1,
+   "weapon": 1.0,
+   "guard": 1.035,
+   "control": 0,
+   "weaponChips": []
+  },
+  "bjj": {
+   "strike": 0.99,
+   "weapon": 1.0,
+   "guard": 0.88,
+   "control": 3,
+   "weaponChips": []
+  },
+  "judo": {
+   "strike": 1.01,
+   "weapon": 1.01,
+   "guard": 0.95,
+   "control": 2,
+   "weaponChips": []
+  },
+  "wrestling": {
+   "strike": 1.06,
+   "weapon": 1.0,
+   "guard": 0.945,
+   "control": 2,
+   "weaponChips": []
+  },
+  "sambo": {
+   "strike": 1.02,
+   "weapon": 1.0,
+   "guard": 0.96,
+   "control": 2,
+   "weaponChips": []
+  },
+  "aikido": {
+   "strike": 0.98,
+   "weapon": 1.0,
+   "guard": 0.89,
+   "control": 2,
+   "weaponChips": []
+  },
+  "hapkido": {
+   "strike": 1.0,
+   "weapon": 1.0,
+   "guard": 0.96,
+   "control": 2,
+   "weaponChips": []
+  },
+  "jujutsu": {
+   "strike": 1.0,
+   "weapon": 1.0,
+   "guard": 0.96,
+   "control": 2,
+   "weaponChips": []
+  },
+  "sumo": {
+   "strike": 1.08,
+   "weapon": 1.0,
+   "guard": 1.01,
+   "control": 1,
+   "weaponChips": []
+  },
+  "krav_maga": {
+   "strike": 1.06,
+   "weapon": 1.0,
+   "guard": 1.03,
+   "control": 0,
+   "weaponChips": []
+  },
+  "mma": {
+   "strike": 1.02,
+   "weapon": 1.0,
+   "guard": 0.98,
+   "control": 0,
+   "weaponChips": [
+    "cannon"
+   ]
+  },
+  "capoeira": {
+   "strike": 1.0,
+   "weapon": 1.0,
+   "guard": 1.0,
+   "control": 0,
+   "weaponChips": [
+    "cannon",
+    "crack_shot"
+   ]
+  },
+  "silat": {
+   "strike": 1.0,
+   "weapon": 1.0,
+   "guard": 1.0,
+   "control": 0,
+   "weaponChips": []
+  },
+  "kalaripayattu": {
+   "strike": 0.99,
+   "weapon": 1.0,
+   "guard": 0.975,
+   "control": 0,
+   "weaponChips": [
+    "cannon"
+   ]
+  },
+  "systema": {
+   "strike": 0.98,
+   "weapon": 1.0,
+   "guard": 0.95,
+   "control": 0,
+   "weaponChips": []
+  },
+  "bokator": {
+   "strike": 1.05,
+   "weapon": 1.0,
+   "guard": 0.995,
+   "control": 0,
+   "weaponChips": []
+  },
+  "eskrima": {
+   "strike": 1.0,
+   "weapon": 1.12,
+   "guard": 1.0,
+   "control": 0,
+   "weaponChips": [
+    "wide_sword"
+   ]
+  },
+  "kendo": {
+   "strike": 1.03,
+   "weapon": 1.08,
+   "guard": 1.015,
+   "control": 0,
+   "weaponChips": [
+    "wide_sword"
+   ]
+  },
+  "kenjutsu": {
+   "strike": 1.0,
+   "weapon": 1.08,
+   "guard": 1.0,
+   "control": 0,
+   "weaponChips": [
+    "wide_sword"
+   ]
+  },
+  "iaido": {
+   "strike": 0.97,
+   "weapon": 1.12,
+   "guard": 0.925,
+   "control": 0,
+   "weaponChips": [
+    "wide_sword"
+   ]
+  },
+  "kyudo": {
+   "strike": 0.97,
+   "weapon": 1.12,
+   "guard": 0.925,
+   "control": 0,
+   "weaponChips": [
+    "cannon",
+    "crack_shot",
+    "resonance_lance"
+   ]
+  },
+  "kobudo": {
+   "strike": 1.0,
+   "weapon": 1.06,
+   "guard": 1.0,
+   "control": 0,
+   "weaponChips": [
+    "wide_sword"
+   ]
+  },
+  "staff_jp": {
+   "strike": 0.98,
+   "weapon": 1.0,
+   "guard": 0.91,
+   "control": 2,
+   "weaponChips": [
+    "wide_sword"
+   ]
+  },
+  "chinese_weapons": {
+   "strike": 1.0,
+   "weapon": 1.04,
+   "guard": 1.0,
+   "control": 0,
+   "weaponChips": [
+    "wide_sword"
+   ]
+  },
+  "hema": {
+   "strike": 1.03,
+   "weapon": 1.08,
+   "guard": 1.015,
+   "control": 0,
+   "weaponChips": [
+    "wide_sword"
+   ]
+  },
+  "fencing": {
+   "strike": 1.0,
+   "weapon": 1.14,
+   "guard": 1.0,
+   "control": 0,
+   "weaponChips": [
+    "wide_sword"
+   ]
+  },
+  "silambam": {
+   "strike": 1.0,
+   "weapon": 1.04,
+   "guard": 1.0,
+   "control": 0,
+   "weaponChips": [
+    "wide_sword"
+   ]
+  },
+  "gatka": {
+   "strike": 1.01,
+   "weapon": 1.0,
+   "guard": 0.99,
+   "control": 0,
+   "weaponChips": [
+    "wide_sword"
+   ]
+  },
+  "shuai_jiao": {
+   "strike": 1.01,
+   "weapon": 1.0,
+   "guard": 0.95,
+   "control": 2,
+   "weaponChips": []
+  },
+  "ssireum": {
+   "strike": 1.02,
+   "weapon": 1.0,
+   "guard": 0.96,
+   "control": 2,
+   "weaponChips": []
+  },
+  "kurash": {
+   "strike": 1.01,
+   "weapon": 1.0,
+   "guard": 0.95,
+   "control": 2,
+   "weaponChips": []
+  },
+  "glima": {
+   "strike": 1.0,
+   "weapon": 1.0,
+   "guard": 0.98,
+   "control": 2,
+   "weaponChips": []
+  },
+  "laamb": {
+   "strike": 1.08,
+   "weapon": 1.0,
+   "guard": 1.01,
+   "control": 1,
+   "weaponChips": []
+  },
+  "pankration": {
+   "strike": 1.02,
+   "weapon": 1.0,
+   "guard": 0.98,
+   "control": 0,
+   "weaponChips": [
+    "cannon"
+   ]
+  },
+  "taekkyon": {
+   "strike": 1.0,
+   "weapon": 1.0,
+   "guard": 1.0,
+   "control": 0,
+   "weaponChips": [
+    "cannon",
+    "crack_shot"
+   ]
+  },
+  "vovinam": {
+   "strike": 1.03,
+   "weapon": 1.0,
+   "guard": 1.015,
+   "control": 0,
+   "weaponChips": [
+    "cannon"
+   ]
+  },
+  "pradal_serey": {
+   "strike": 1.08,
+   "weapon": 1.0,
+   "guard": 1.01,
+   "control": 1,
+   "weaponChips": []
+  },
+  "bando": {
+   "strike": 1.0,
+   "weapon": 1.0,
+   "guard": 1.0,
+   "control": 0,
+   "weaponChips": []
+  },
+  "yaw_yan": {
+   "strike": 1.07,
+   "weapon": 1.01,
+   "guard": 1.02,
+   "control": 0,
+   "weaponChips": [
+    "cannon",
+    "crack_shot"
+   ]
+  },
+  "kajukenbo": {
+   "strike": 1.03,
+   "weapon": 1.0,
+   "guard": 1.015,
+   "control": 0,
+   "weaponChips": []
+  },
+  "dambe": {
+   "strike": 1.08,
+   "weapon": 1.0,
+   "guard": 1.01,
+   "control": 0,
+   "weaponChips": [
+    "cannon"
+   ]
+  },
+  "nguni_stick": {
+   "strike": 1.05,
+   "weapon": 1.0,
+   "guard": 0.995,
+   "control": 0,
+   "weaponChips": [
+    "wide_sword"
+   ]
+  },
+  "jogo_do_pau": {
+   "strike": 1.0,
+   "weapon": 1.02,
+   "guard": 0.98,
+   "control": 1,
+   "weaponChips": [
+    "wide_sword"
+   ]
+  },
+  "canne": {
+   "strike": 1.0,
+   "weapon": 1.06,
+   "guard": 1.0,
+   "control": 0,
+   "weaponChips": [
+    "wide_sword"
+   ]
+  },
+  "bartitsu": {
+   "strike": 1.0,
+   "weapon": 1.0,
+   "guard": 1.0,
+   "control": 0,
+   "weaponChips": [
+    "cannon"
+   ]
+  },
+  "naginatajutsu": {
+   "strike": 1.0,
+   "weapon": 1.02,
+   "guard": 0.96,
+   "control": 2,
+   "weaponChips": [
+    "wide_sword"
+   ]
+  },
+  "sojutsu": {
+   "strike": 1.03,
+   "weapon": 1.08,
+   "guard": 1.015,
+   "control": 0,
+   "weaponChips": [
+    "wide_sword"
+   ]
+  }
+ },
+ "built_in_defaults": {
+  "serenity": {
+   "primary": [
+    "taijiquan",
+    "yang"
+   ],
+   "secondary": [
+    "aikido",
+    "aikikai"
+   ],
+   "cue": "steady, protective warmth held under control"
+  },
+  "aeland": {
+   "primary": [
+    "wing_chun",
+    "yip_man_lineage"
+   ],
+   "secondary": [
+    "kyudo",
+    null
+   ],
+   "cue": "cool reserve over deep loyalty; guarded"
+  },
+  "scarlet": {
+   "primary": [
+    "muay_thai",
+    "muay_khao"
+   ],
+   "secondary": [
+    "eskrima",
+    "sinawali"
+   ],
+   "cue": "hot-blooded, playful provocation, fiercely protective; fire"
+  },
+  "linda": {
+   "primary": [
+    "boxing",
+    "counterpuncher"
+   ],
+   "secondary": [
+    "krav_maga",
+    "civilian"
+   ],
+   "cue": "wry, earthy, streetwise; blunt practical advice"
+  },
+  "sfink": {
+   "primary": [
+    "baguazhang",
+    "yin"
+   ],
+   "secondary": [
+    "iaido",
+    null
+   ],
+   "cue": "ancient, elemental, patient, riddling"
+  }
+ },
+ "counts": {
+  "styles": 63,
+  "variants": 106
+ }
+}
