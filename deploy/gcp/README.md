@@ -84,9 +84,9 @@ WIF setup (once per project): [Google GitHub Actions auth](https://github.com/go
 | Probe | Path | Expect |
 |---|---|---|
 | Liveness / startup | `GET /api/healthz` | `{"status":"ok"}` |
-| Clerk keys present | `GET /api/healthz/env` | booleans only, no secret values |
-| Postgres | `GET /api/healthz/db` | 200 if schema exists; 503 + `target` if not |
-| Chat routing | `GET /api/healthz/llm` | `status: "error"`, `chain: []`, Cloud Run fail-closed note |
+| Clerk keys present | `GET /api/healthz/env` (ops bearer) | booleans only, no secret values |
+| Postgres | `GET /api/healthz/db` (ops bearer) | 200 if schema exists; 503 + `target` if not. Inspect-only. |
+| Chat routing | `GET /api/healthz/llm` | public: `status: "error"`, `chain: []`; the fail-closed note needs the ops bearer |
 
 ## Rollback / teardown
 

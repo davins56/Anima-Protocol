@@ -108,6 +108,11 @@ export async function synthesizeVoiceClip(args: {
   signal?: AbortSignal;
   /** Explicit, per-request cloud opt-in. Default null: home box only. */
   cloudOptIn?: CloudVoiceOptIn;
+  /**
+   * Runs right before a paid cloud provider (xAI / ElevenLabs) is called, so
+   * the route can meter it. Throwing stops the clip. The home box is free.
+   */
+  beforeCloudCall?: (provider: VoiceClipProvider) => Promise<void>;
 }): Promise<VoiceClip> {
   const transcript = cleanSpokenText(args.text);
   if (!transcript) throw statusError("Nothing to say.", 400);
@@ -130,6 +135,7 @@ export async function synthesizeVoiceClip(args: {
         continue;
       }
     }
+    if (args.beforeCloudCall) await args.beforeCloudCall(provider);
     res =
       provider === "xai"
         ? await speakWithXai(args.userId, args.characterId, transcript, signal)

@@ -53,6 +53,15 @@ describe('API auth bridge', () => {
     });
   });
 
+  it('confirms a pending Serenity weave through its own endpoint', async () => {
+    await animaApi.protocolUpgrade.confirm('up/1');
+
+    const [url, options] = global.fetch.mock.calls[0];
+    expect(String(url)).toContain('/api/protocol-upgrade/up%2F1/confirm');
+    expect(options.method).toBe('POST');
+    expect(options.headers.Authorization).toBe('Bearer test-token');
+  });
+
   it('posts Serenity protocol upgrades through the authenticated API helper', async () => {
     await animaApi.protocolUpgrade.launch({
       request: 'Upgrade the interface to be darker.',

@@ -5,15 +5,16 @@ where noted; nothing here was changed in any third-party account.
 
 ## Clerk (safety gates — feature/safety-gates)
 
-1. **Steward identity by user id.** Set `PROTOCOL_UPGRADE_ADMIN_USER_IDS` to
-   the steward's Clerk user id(s) (`user_…`). Without it, the code falls back to
-   `PROTOCOL_UPGRADE_ADMIN_EMAILS` or the built-in email defaults, which needs a
-   Clerk API lookup.
-2. **Email claim in the session token** (Clerk Dashboard → Sessions →
+1. **Steward identity by user id (required).** Set `PROTOCOL_STEWARD_USER_IDS`
+   (or the legacy `PROTOCOL_UPGRADE_ADMIN_USER_IDS`) to the steward's Clerk
+   user id(s) (`user_…`) **before deploying** the security-audit steward
+   change. Emails no longer authorize anyone, so without it every
+   steward-only route returns 403.
+2. **Email claim in the session token** (display label only now) (Clerk Dashboard → Sessions →
    Customize session token): add `{"email": "{{user.primary_email_address}}"}`
-   so steward checks don't call the Clerk Backend API on cache misses.
-3. **`CLERK_SECRET_KEY`** must be set on the API host for the email fallback
-   (already required by other routes).
+   if you want the steward's email shown as a label.
+3. **`CLERK_SECRET_KEY`** is still required by other routes; steward checks
+   no longer call the Clerk Backend API.
 4. **Optional:** mirror age status into Clerk `publicMetadata` for other
    apps. This isn't needed; the source of truth is `age_attestations`.
 5. **Third-party age verification**: pick a provider before any regulated

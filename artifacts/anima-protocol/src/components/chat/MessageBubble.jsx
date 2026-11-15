@@ -10,6 +10,7 @@ import MediaLightbox from "./MediaLightbox";
 import PhotoAttachmentActions from "@/components/photo/PhotoAttachmentActions";
 import AudioPlayer from "./AudioPlayer";
 import DeviceScanCard from "./DeviceScanCard";
+import ProtocolUpgradeConfirmCard from "./ProtocolUpgradeConfirmCard";
 import PdfFileChip from "@/components/pdf/PdfFileChip";
 import { openPdfDocument } from "@/api/pdfDocuments";
 import { toast } from "sonner";
@@ -305,6 +306,9 @@ function MessageBubble({ message, onRewind, canRewind, onSpeak, character, chara
               payload={message.device_scan}
               animaName={character?.name || message.character_name}
             />
+          )}
+          {!isUser && message.protocol_upgrade?.id && (
+            <ProtocolUpgradeConfirmCard payload={message.protocol_upgrade} />
           )}
         </div>
 

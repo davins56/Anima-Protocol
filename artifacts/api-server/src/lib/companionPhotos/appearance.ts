@@ -12,6 +12,7 @@
 import { builtInKeyFor } from "../companions/builtIn";
 import { getUploadedImage, objectPathForUploadId } from "../imageUploads";
 import { assetsBinding } from "../assetsBinding";
+import { anatomyFrom, type AnatomySpec } from "./anatomy";
 
 export type CompanionLook = {
   /** Comma-joined visual anchors (no name). Empty when nothing is known. */
@@ -23,6 +24,11 @@ export type CompanionLook = {
   signature?: string;
   /** Canonical skin-tone phrase, taken verbatim from the profile when known. */
   skinTone: string;
+  /**
+   * Body plan (arm / wing / head counts …) from every text that describes
+   * the character, independent of which source supplied `description`.
+   */
+  anatomy?: AnatomySpec;
 };
 
 /**
@@ -113,8 +119,34 @@ export function minedLookSentences(text: string, max = 260): string {
   return clean(out, max);
 }
 
+/**
+ * Texts that may state the body plan, highest priority first. Unlike the look
+ * description (first source wins), anatomy reads all of them: a four-armed
+ * character keeps four arms even when Customise Anima only set skin and hair.
+ */
+export function anatomyTexts(character: Record<string, unknown> | null | undefined): string[] {
+  const c = (character || {}) as Record<string, unknown>;
+  const prompts = c.appearance_prompts && typeof c.appearance_prompts === "object" ? (c.appearance_prompts as Record<string, unknown>) : {};
+  const fromPrompts = Object.entries(prompts)
+    .filter(([k, v]) => k !== "setting" && k !== "mood" && typeof v === "string")
+    .map(([, v]) => clean(v, 400));
+  const card = [...CARD_FIELDS, "avatar_seed", "description", "traits", "tagline"].map((f) => {
+    const v = c[f];
+    return Array.isArray(v) ? clean(v.join(", "), 600) : clean(v, 600);
+  });
+  const key = builtInKeyFor(c.name);
+  const builtIn = key && (c._isAnima === true || !/^seed_/i.test(String(c.id ?? ""))) ? [BUILT_IN_LOOKS[key]] : [];
+  return [...fromPrompts, ...card, ...builtIn].filter(Boolean);
+}
+
+/** Backstory / personality: only explicit counts of three or more are read from these. */
+export function anatomyLoreTexts(character: Record<string, unknown> | null | undefined): string[] {
+  const c = (character || {}) as Record<string, unknown>;
+  return [clean(c.backstory, 2000), clean(c.personality, 2000)].filter(Boolean);
+}
+
 export function companionLook(character: Record<string, unknown> | null | undefined): CompanionLook {
-  const look = baseLook(character);
+  const look = { ...baseLook(character), anatomy: anatomyFrom(anatomyTexts(character), anatomyLoreTexts(character)) };
   const c = (character || {}) as Record<string, unknown>;
   const key = builtInKeyFor(c.name);
   if (key && look.source !== "appearance_prompts" && (c._isAnima === true || !/^seed_/i.test(String(c.id ?? "")))) {

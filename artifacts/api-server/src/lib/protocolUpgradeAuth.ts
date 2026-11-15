@@ -3,6 +3,7 @@ import { logger } from "./logger";
 import {
   emailFromSessionClaims,
   isProtocolSteward,
+  stewardUserIds,
 } from "./protocolUpgrade";
 
 type ClerkLikeUser = {
@@ -19,6 +20,10 @@ export function primaryEmailFromClerkUser(user: ClerkLikeUser | null | undefined
   return email ? email.trim().toLowerCase() : null;
 }
 
+/**
+ * The caller's email (session claim, else the Clerk Backend API). Used for
+ * display labels and non-steward checks; it never makes anyone the steward.
+ */
 export async function resolveCallerEmail(input: {
   userId: string;
   sessionClaims?: unknown;
@@ -34,18 +39,31 @@ export async function resolveCallerEmail(input: {
     const user = await client.users.getUser(input.userId);
     return primaryEmailFromClerkUser(user);
   } catch (err) {
-    logger.warn({ err }, "Failed to resolve Clerk email for protocol upgrade");
+    logger.warn({ err }, "Failed to resolve Clerk email");
     return null;
   }
 }
 
+let warnedUnconfigured = false;
+
+/**
+ * Steward gate shared by protocol upgrades, safety, repo codespace, own-model
+ * and tutor routes. Authorizes by Clerk user id only (PROTOCOL_STEWARD_USER_IDS
+ * / PROTOCOL_UPGRADE_ADMIN_USER_IDS). `email` is returned as a display label
+ * from the session claims when present; it never grants access.
+ */
 export async function callerIsProtocolSteward(input: {
   userId: string;
   sessionClaims?: unknown;
 }): Promise<{ allowed: boolean; email: string | null }> {
-  if (isProtocolSteward({ userId: input.userId, email: null })) {
-    return { allowed: true, email: emailFromSessionClaims(input.sessionClaims) };
+  if (!stewardUserIds().length && !warnedUnconfigured) {
+    warnedUnconfigured = true;
+    logger.warn(
+      "No steward configured: set PROTOCOL_STEWARD_USER_IDS to the steward's Clerk user id. Steward-only routes refuse everyone until then.",
+    );
   }
-  const email = await resolveCallerEmail(input);
-  return { allowed: isProtocolSteward({ userId: input.userId, email }), email };
+  return {
+    allowed: isProtocolSteward({ userId: input.userId }),
+    email: emailFromSessionClaims(input.sessionClaims),
+  };
 }

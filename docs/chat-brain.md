@@ -1,5 +1,7 @@
 # Chat brain on Cloudflare (no Fly.io, no DigitalOcean)
 
+> Since the 2026-11-14 security fixes, `/api/healthz/llm` answers the public with `{status, chain}` only. The fields used below and `?probe=1` need `-H "Authorization: Bearer $ADMIN_MIGRATION_SECRET"`. See `docs/health-endpoints.md`.
+
 The companion "brain" — identity, memory, prompt, model call, memory write —
 runs entirely inside the production Cloudflare Worker (`wrangler.jsonc`,
 `artifacts/api-server/src/worker.ts`). With `ANIMA_CHAT_BRAIN=cloudflare`

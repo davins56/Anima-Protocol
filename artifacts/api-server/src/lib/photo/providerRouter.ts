@@ -24,6 +24,16 @@ export type ProviderConfig = {
   base_seed?: number;
 };
 
+/**
+ * fal PuLID applies negative_prompt only with true CFG above 1, which costs
+ * about twice the compute. Default stays 1 (negatives ignored, as before);
+ * the server-side FAL_PULID_TRUE_CFG env var opts in (clamped 1–5).
+ */
+export function pulidTrueCfg(env: Record<string, string | undefined> = process.env): number {
+  const raw = Number(String(env.FAL_PULID_TRUE_CFG ?? "").trim() || NaN);
+  return Number.isFinite(raw) ? Math.min(5, Math.max(1, Number(raw))) : 1;
+}
+
 export const MODELS = {
   pulid: () => process.env.FAL_PULID_MODEL?.trim() || "fal-ai/flux-pulid",
   lora: () => process.env.FAL_LORA_MODEL?.trim() || "fal-ai/flux-lora",
@@ -100,7 +110,7 @@ export function buildFalRequest(args: {
           image_size: size,
           num_inference_steps: 20,
           guidance_scale: 4,
-          true_cfg: 1,
+          true_cfg: pulidTrueCfg(),
           seed,
         },
       };
