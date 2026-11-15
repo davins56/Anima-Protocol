@@ -273,6 +273,25 @@ import { mindLabel } from "@/lib/mindLabel";
 import { chatHistoryForLlm, crisisCardFromPayload, messagesForModel } from "@/lib/aiCompanionNotice";
 import { useAiCompanionNotice } from "@/hooks/useAiCompanionNotice";
 import SystemDisclosure from "@/components/chat/SystemDisclosure";
+import ScenePanel from "@/components/chat/ScenePanel";
+import { SITUATIONAL_SCENE_OFF, SituationalSceneContext } from "@/components/chat/SituationalSceneContext";
+import { useSituationalScene } from "@/hooks/useSituationalScene";
+import {
+  blockedFromServer,
+  blockedNotice,
+  castDisplayName,
+  castPatch,
+  castRows,
+  isSceneCommand,
+  isScenePlanStaleError,
+  mergeSceneEventRows,
+  nextPlanFollow,
+  planRequestFields,
+  sceneEventRow,
+  sceneFromErrorPayload,
+  scenePlanFromFrame,
+  withoutSceneEvents,
+} from "@/lib/situationalScene";
 
 function replacementSendMetadata(messageData) {
   const turnId = String(messageData?.replacedTurnId || "").trim();
@@ -509,6 +528,14 @@ export default function Chat() {
   const reunionSeenRef = useRef(new Set());
   const reunionTimersRef = useRef(new Set());
   const emotionsFlagReadyRef = useRef(null);
+  // #763 (ANIMA_SITUATIONAL_SCENES): server-owned scene state. Off until the
+  // session context says `scenes_enabled` and GET /scene answers.
+  const situational = useSituationalScene({
+    openSessionIdRef,
+    onEvents: (sid, rows) => insertSceneEvents(sid, rows),
+    onNotice: (kind, message) => (kind === "error" ? toast.error(message) : toast(message)),
+  });
+  const sceneFlagReadyRef = useRef(null);
   // Every cue write names the session it belongs to; writes for a session
   // that is no longer open (a stream that outlived a switch) are dropped.
   const cueSessionIsOpen = (sessionKey) =>
@@ -712,6 +739,10 @@ export default function Chat() {
   const [activeAspects, setActiveAspects] = useState([]);
   const [showAspectPicker, setShowAspectPicker] = useState(false);
   const toggleAspect = (id) => {
+    // #763 B1/M7: with scenes on, Invite Aspect is cast presence through the
+    // same PATCH (`aspect:<slug>` keys, solo only). "Keep at least one" stays.
+    const removing = activeAspects.includes(id);
+    if (removing && activeAspects.length <= 1) return;
     setActiveAspects((prev) => {
       if (prev.includes(id)) {
         const next = prev.filter((a) => a !== id);
@@ -719,6 +750,10 @@ export default function Chat() {
       }
       return [...prev, id];
     });
+    const sid = activeSession?.id;
+    if (sid && activeSession?.mode !== "group" && situational.enabledRef.current) {
+      situational.patch(sid, castPatch(`aspect:${id}`, { presence: removing ? "away" : "here" }));
+    }
   };
 
   // Warm the own-model check (Settings → Model Tutor) so a send never waits on it.
@@ -1014,7 +1049,8 @@ export default function Chat() {
     tts.stop();
     emotionalTTS.stop();
 
-    const fullStoryText = activeSession.messages
+    // #763: scene event rows (role 'event') are never voiced.
+    const fullStoryText = withoutSceneEvents(activeSession.messages)
       .filter(msg => msg.character_name !== "__typing__" && msg.type !== "event")
       .filter(msg =>
         msg.character_name !== "__typing__" &&
@@ -1262,7 +1298,14 @@ export default function Chat() {
     setEmotionsEnabled(false);
     dispatchCue({ type: "reset" });
     setReunionKeys([]);
-    emotionsFlagReadyRef.current = { sid: id, ready: loadEmotionsFlag(id, session) };
+    // One context read serves both flags (#765 emotions, #763 scenes).
+    const contextRead = readSessionContext(id);
+    emotionsFlagReadyRef.current = { sid: id, ready: loadEmotionsFlag(id, session, contextRead) };
+    situational.reset(id);
+    sceneFlagReadyRef.current = {
+      sid: id,
+      ready: contextRead.then((payload) => (stillOpen(id) ? situational.loadFromContext(id, payload) : false)),
+    };
     setCharacterMemories([]);
     setInventoryItems([]);
     loadRelationships(id);
@@ -1318,18 +1361,57 @@ export default function Chat() {
     setInventoryItems(data || []);
   };
 
+  // #763: server event rows (PATCH / command / `scene_event`) join the open
+  // thread once each, by id. Rows for a session that is not open are dropped.
+  const insertSceneEvents = (sid, rows) => {
+    if (!sid || openSessionIdRef.current !== sid || !Array.isArray(rows) || !rows.length) return;
+    setActiveSession((prev) => {
+      if (!prev || prev.id !== sid) return prev;
+      const merged = mergeSceneEventRows(prev.messages, rows);
+      return merged === prev.messages ? prev : { ...prev, messages: merged };
+    });
+  };
+
+  // #763 B7: one non-blocking toast per blocked speaker, from the server's
+  // `blocked` only, with a Wake / Bring in action (one PATCH).
+  const shownBlockedRef = useRef(new Set());
+  const showBlockedSpeakers = (sid, rawBlocked, turnKey) => {
+    if (!situational.enabledRef.current || openSessionIdRef.current !== sid) return;
+    const roster = characters;
+    for (const blocked of blockedFromServer(rawBlocked)) {
+      const key = `${sid}:${turnKey}:${blocked.id}`;
+      if (shownBlockedRef.current.has(key)) continue;
+      shownBlockedRef.current.add(key);
+      const name = castDisplayName(blocked.id, roster, getAspectName);
+      toast(blockedNotice(blocked, name), {
+        id: `scene-blocked-${blocked.id}`,
+        action: {
+          label: blocked.presence === "asleep" ? "Wake" : "Bring in",
+          onClick: () => {
+            situational.patch(sid, castPatch(blocked.id, { presence: "here" }));
+          },
+        },
+      });
+    }
+  };
+
+  // Session context read, shared by the emotions and scenes flags. Never rejects.
+  const readSessionContext = (sid) => {
+    try {
+      const request = animaApi.chat.sessionContext?.(sid);
+      return request ? Promise.resolve(request).catch(() => null) : Promise.resolve(null);
+    } catch {
+      return Promise.resolve(null);
+    }
+  };
+
   // #765: read `emotions_enabled` (and the cast's sanitized cues) from the
   // session context. A read only: it never consumes the time fact or moves
   // affect on the server. Flag off or any failure leaves the screen as today.
-  const loadEmotionsFlag = async (sid, sessionForCast) => {
+  const loadEmotionsFlag = async (sid, sessionForCast, contextRead = null) => {
     // Resolves once the flag is known; never rejects.
-    let payload;
-    try {
-      const request = animaApi.chat.sessionContext?.(sid);
-      payload = request ? await request : null;
-    } catch {
-      return;
-    }
+    const payload = await (contextRead || readSessionContext(sid));
+    if (!payload) return;
     if (!stillOpen(sid) || !emotionsEnabledFromContext(payload)) return;
     emotionsEnabledRef.current = true;
     setEmotionsEnabled(true);
@@ -2185,8 +2267,27 @@ export default function Chat() {
     }
   };
 
+  // #763 B6: `/scene <place>, <names…>` goes to POST /scene/command and is
+  // never sent as a chat message. With scenes off it is an ordinary message.
+  const runSceneCommand = async (text) => {
+    const sid = activeSession?.id;
+    if (!sid) return;
+    const result = await situational.command(sid, text);
+    if (result.unresolved?.length) {
+      toast(`Not in this scene: ${result.unresolved.join(", ")}`, { id: "scene-unresolved" });
+    }
+  };
+
   const handleComposerSend = (message) => {
     const data = typeof message === "string" ? { text: message } : message || {};
+    if (
+      situational.enabledRef.current &&
+      !data.replyAction &&
+      !(data.attachments && data.attachments.length) &&
+      isSceneCommand(data.text)
+    ) {
+      return runSceneCommand(String(data.text).trim());
+    }
     const query = searchStatus?.enabled ? parseSearchCommand(data.text) : null;
     if (query && !data.replyAction) return runSearchTurn(query, data);
     return handleSendMessage(message);
@@ -2297,6 +2398,12 @@ export default function Chat() {
     let settled = false;
     let shouldFollowAddressQueue = false;
     let addressFollowUpHistory = null;
+    // #763 (ANIMA_SITUATIONAL_SCENES): the server plan drives who speaks.
+    let scenesOnForSend = false;
+    let scenePlanSeen = null;
+    let sceneFollowUp = null;
+    let sceneReplan = null;
+    const sceneEventsThisTurn = [];
     const settleTurn = (reason, { skipFlush = false } = {}) => {
       if (settled) return;
       settled = true;
@@ -2495,7 +2602,11 @@ export default function Chat() {
         crossover:
           activeSession.mode === "group" && distinctUniverses >= 2,
       });
-      const adultMode = modePolicy.adultAllowed;
+      // #763: the server's `adult_gated` can only narrow this (never widen).
+      // The server still enforces the gate on every turn.
+      const adultMode =
+        modePolicy.adultAllowed &&
+        !(situational.enabledRef.current && situational.sceneRef.current?.adult_gated === true);
       const behaviorConfig = fetchedBehaviorConfig || aiBehaviorConfig;
 
       // Account-default user profile (set in /profile). Surfaced to every
@@ -2729,9 +2840,9 @@ ${lewdityGuide}`;
               ? intimacyEligibleChars
               : groupChars,
             userMessage: isContinue ? "" : content,
-            recentMessages: updatedMessages,
+            recentMessages: withoutSceneEvents(updatedMessages),
             forceCharacterId:
-              nextSpeaker || activeSession.next_speaker_id || null,
+              messageData.scenePlan?.speakerId || nextSpeaker || activeSession.next_speaker_id || null,
             isContinue,
           });
           let finalNextChar = speakerPick.character;
@@ -2921,7 +3032,24 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         ]);
         clearTimeout(flagTimer);
       }
+      // #763: likewise wait (briefly) for the scenes flag so stage markers are
+      // hidden and the plan fields go out on the first send.
+      const sceneRead = sceneFlagReadyRef.current;
+      if (sceneRead?.sid === sendSessionId && sceneRead.ready) {
+        let sceneTimer;
+        await Promise.race([
+          sceneRead.ready,
+          new Promise((resolve) => {
+            sceneTimer = setTimeout(resolve, EMOTIONS_FLAG_WAIT_MS);
+          }),
+        ]);
+        clearTimeout(sceneTimer);
+      }
       const emotionsOnForSend = emotionsEnabledRef.current;
+      scenesOnForSend = situational.enabledRef.current;
+      const sceneRequest = scenesOnForSend
+        ? planRequestFields(messageData.scenePlan || null, situational.sceneRef.current?.rev ?? null)
+        : null;
       const resultPayload = await streamChatReplyWithTurnRetry({
         turnId,
         mintTurnId: createChatTurnId,
@@ -2968,6 +3096,14 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             ...(ownModelTurn
               ? { ownModelReply: ownModelTurn.reply, ownModelVersion: ownModelTurn.version }
               : {}),
+            ...(sceneRequest
+              ? {
+                  scene: sceneRequest,
+                  ...(messageData.scenePlan?.speakerId
+                    ? { forceCharacterId: messageData.scenePlan.speakerId }
+                    : {}),
+                }
+              : {}),
           }),
         onRetry: (nextTurnId) => {
           streamedSoFar = "";
@@ -2993,7 +3129,70 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
               },
             }
           : {}),
+        // #763: scene frames; stage markers hidden chunk-safely (the emotions
+        // filter above already covers them when it is on).
+        ...(scenesOnForSend
+          ? {
+              ...(emotionsOnForSend ? {} : { stripStage: true }),
+              onScene: (frame) => {
+                if (frame.scene_plan) {
+                  scenePlanSeen = scenePlanFromFrame(frame.scene_plan);
+                  if (scenePlanSeen) showBlockedSpeakers(sendSessionId, scenePlanSeen.blocked, turnId);
+                }
+                if (frame.scene_event) {
+                  const row = sceneEventRow(frame.scene_event);
+                  if (row) {
+                    sceneEventsThisTurn.push(row);
+                    insertSceneEvents(sendSessionId, [row]);
+                  }
+                }
+              },
+            }
+          : {}),
       });
+      if (scenesOnForSend) {
+        // `done.scene` reconciles the header (its rev is the next `if_rev`);
+        // `blocked` and `next_speaker` come only from the server.
+        if (resultPayload.scene) situational.adopt(sendSessionId, resultPayload.scene);
+        showBlockedSpeakers(sendSessionId, resultPayload.blocked, turnId);
+        if (scenePlanSeen || messageData.scenePlan) {
+          shouldFollowAddressQueue = false;
+          sceneFollowUp = nextPlanFollow(resultPayload, messageData.scenePlan || null, scenePlanSeen);
+        }
+      }
+      if (scenesOnForSend && resultPayload.scene_no_reply) {
+        // #763 B8: the plan picked nobody. Dismiss the typing indicator, keep
+        // the user's line (and any narration row), no error, no blank bubble.
+        lateTurnRef.current = null;
+        applyIfSendSession((prev) => ({
+          ...prev,
+          messages: mergeSceneEventRows(
+            (prev.messages || []).filter(
+              (m) =>
+                m.character_name !== "__typing__" &&
+                m.character_name !== "__thinking__" &&
+                !(m.is_streaming && m.turn_id === turnId),
+            ),
+            sceneEventsThisTurn,
+          ),
+        }));
+        if (!omitUserRow) {
+          try {
+            await persistTurn({
+              sessionId: sendSessionId,
+              turnId,
+              messages: assignTurnMessageIds([userMessage], turnId),
+              content,
+              title: activeSession.title,
+            });
+            userMessagePersisted = true;
+          } catch (persistErr) {
+            console.warn("[Anima] Failed to persist user line:", persistErr);
+            pendingRemoteSyncRef.current = false;
+          }
+        }
+        return;
+      }
       if (resultPayload.turn_id) {
         turnId = resultPayload.turn_id;
         userMessage.id = `${turnId}:user`;
@@ -3291,8 +3490,14 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         // refresh so store history that lacks this turn cannot replace it.
         pendingRemoteSyncRef.current = false;
       }
+      if (sceneEventsThisTurn.length) insertSceneEvents(sendSessionId, sceneEventsThisTurn);
       if (shouldFollowAddressQueue && !replyCutOff.reply_interrupted) {
         addressFollowUpHistory = finalMessages;
+      }
+      if (sceneFollowUp && !replyCutOff.reply_interrupted) {
+        addressFollowUpHistory = finalMessages;
+      } else {
+        sceneFollowUp = null;
       }
       loadSessions().catch(() => {});
 
@@ -3304,7 +3509,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       // decides whether the story needs a scene update now (after one exchange
       // or ten). Local scene cues only decide when to ask. Never in therapy.
       const narratorCheck = storyModeEnabled(activeSession, { therapy: therapyActive })
-        ? narratorConsultation(finalMessages)
+        ? narratorConsultation(withoutSceneEvents(finalMessages))
         : null;
       if (narratorCheck?.consult && narratorBusyRef.current !== sendSessionId) {
         narratorBusyRef.current = sendSessionId;
@@ -3318,7 +3523,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           sidecar: true,
           max_tokens: 360,
           prompt: buildNarratorPrompt({
-            messages: finalMessages,
+            messages: withoutSceneEvents(finalMessages),
             characterNames: castNames,
             userName: user?.full_name || "",
             openingScene: activeSession.opening_scene || "",
@@ -3855,6 +4060,34 @@ Return JSON:
       };
       if (settled) {
         console.error(err);
+      } else if (scenesOnForSend && isScenePlanStaleError(err)) {
+        // #763 R2: another tab / a PATCH moved the scene. Stop the loop,
+        // adopt the current scene, and re-plan the user's turn once.
+        lateTurnRef.current = null;
+        pendingRemoteSyncRef.current = false;
+        if (sceneFromErrorPayload(err)) situational.adopt(sendSessionId, err.payload.scene);
+        else situational.refetch(sendSessionId);
+        if (!messageData.scenePlan && !messageData.sceneReplanned && !replyAction) {
+          applyIfSendSession((prev) => ({
+            ...prev,
+            messages: omitTurnMessages(prev?.messages, turnId),
+          }));
+          sceneReplan = { ...messageData, history: threadBeforeTurn, sceneReplanned: true };
+        } else {
+          applyIfSendSession((prev) => ({
+            ...prev,
+            messages: (prev.messages || []).filter(
+              (m) =>
+                m.character_name !== "__typing__" &&
+                m.character_name !== "__thinking__" &&
+                !(m.is_streaming && m.turn_id === turnId),
+            ),
+          }));
+          if (!omitUserRow && !userMessagePersisted && content.trim()) {
+            animaClient.messages.append(sendSessionId, userMessage).catch(() => {});
+            userMessagePersisted = true;
+          }
+        }
       } else if (isConversationBusyError(err)) {
         console.error(err);
         lateTurnRef.current = null;
@@ -4143,10 +4376,23 @@ Return JSON:
       openSessionIdRef.current === sendSessionId
     ) {
       const followHistory = addressFollowUpHistory;
+      const followPlan = sceneFollowUp;
       queueMicrotask(() => {
         if (openSessionIdRef.current !== sendSessionId) return;
-        handleSendMessageRef.current?.({ text: "", history: followHistory });
+        handleSendMessageRef.current?.({
+          text: "",
+          history: followHistory,
+          // #763: the next queued speaker of the server plan.
+          ...(followPlan ? { scenePlan: followPlan } : {}),
+        });
       });
+    }
+    if (sceneReplan && sendSessionId && openSessionIdRef.current === sendSessionId) {
+      const replan = sceneReplan;
+      setTimeout(() => {
+        if (openSessionIdRef.current !== sendSessionId) return;
+        handleSendMessageRef.current?.(replan);
+      }, 0);
     }
     };
   handleSendMessageRef.current = handleSendMessage;
@@ -4189,7 +4435,39 @@ Return JSON:
     return { enabled: true, cueFor: (id) => shownCue(cueState, id), reunionIds };
   }, [emotionsEnabled, cueState, reunionKeys, openCueSessionId]);
 
+  // #763: scene header rows and the view context (flag off -> OFF value).
+  const sceneParticipantIds = activeSession
+    ? activeSession.mode === "group"
+      ? (activeSession.group_character_ids || []).map(String)
+      : activeSession.character_id
+        ? [String(activeSession.character_id)]
+        : []
+    : [];
+  const sceneRows =
+    situational.enabled && situational.scene
+      ? castRows(situational.scene, {
+          participantIds: sceneParticipantIds,
+          roster: characters,
+          aspectName: getAspectName,
+        })
+      : [];
+  const sceneRowsKey = sceneRows.map((r) => `${r.id}:${r.name}:${r.presence}:${r.reach}`).join("|");
+  const sceneMentionCandidates = useMemo(
+    () => (sceneRowsKey ? sceneRows : undefined),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sceneRowsKey],
+  );
+  const sceneViewValue = useMemo(() => {
+    if (!situational.enabled || !situational.scene) return SITUATIONAL_SCENE_OFF;
+    return {
+      enabled: true,
+      narrator: situational.scene.narrator,
+      nameOf: (id) => castDisplayName(String(id), characters, getAspectName),
+    };
+  }, [situational.enabled, situational.scene, characters]);
+
   return (
+    <SituationalSceneContext.Provider value={sceneViewValue}>
     <EmotionCuesContext.Provider value={emotionCuesValue}>
     <div className="app-page-fill flex flex-col w-full overflow-hidden bg-background scanline relative" style={{ minHeight: 0, paddingBottom: "0" }}>
       <ChatBackground theme={bgTheme} imageUrl={bgTheme === "custom" ? bgImage : null} />
@@ -4302,6 +4580,13 @@ Return JSON:
                 refreshKey={isLoading ? null : activeSession.messages?.length || 0}
                 liveSynchroStrength={companionAffect?.synchro_strength ?? null}
                 livePulseHeat={livePulseHeat}
+              />
+            )}
+            {situational.enabled && situational.scene && (
+              <ScenePanel
+                scene={situational.scene}
+                rows={sceneRows}
+                onPatch={(partial) => situational.patch(activeSession.id, partial)}
               />
             )}
             {isTherapySession(
@@ -4726,6 +5011,7 @@ Return JSON:
                   }
                   onRestoreDraftApplied={handleHeldDraftRestored}
                   onRestoredDraftSettled={handleRestoredDraftSettled}
+                  mentionCandidates={sceneMentionCandidates}
                 />
               </div>
             </div>
@@ -5037,5 +5323,6 @@ Return JSON:
       ) : null}
     </div>
     </EmotionCuesContext.Provider>
+    </SituationalSceneContext.Provider>
   );
 }

@@ -8,6 +8,7 @@ import { pdfProgressLabel, uploadPdfDocument, deletePdfDocument, openPdfDocument
 import PdfFileChip from "@/components/pdf/PdfFileChip";
 import { formatImageUploadError } from "@/lib/characterAvatarUpload";
 import { CHAT_PHOTO_ACCEPT, CHAT_PHOTO_MAX_COUNT, chatPhotoRejection } from "@/lib/chatPhoto";
+import { PRESENCE_META, REACH_META, applyMention, mentionMatches, mentionQuery } from "@/lib/situationalScene";
 
 // Max height the input grows to before it starts scrolling internally (px).
 const MAX_INPUT_HEIGHT = 200;
@@ -30,6 +31,9 @@ function ChatInput({
   restoreDraft = null,
   onRestoreDraftApplied,
   onRestoredDraftSettled,
+  // #763 B5 (ANIMA_SITUATIONAL_SCENES): cast rows for `@` autocomplete.
+  // Undefined (flag off) renders nothing new.
+  mentionCandidates,
 }) {  const touchFirst = useTouchFirst();
 
   // A reply can still be in flight. The follow-up is held by the page
@@ -241,6 +245,14 @@ function ChatInput({
     }
   };
 
+  const mentionSuggestions = mentionCandidates
+    ? mentionMatches(mentionQuery(value), mentionCandidates)
+    : [];
+  const pickMention = (name) => {
+    setValue((prev) => applyMention(prev, name));
+    textareaRef.current?.focus();
+  };
+
   return (
     // In-flow composer. Parent Chat column is already sized to the visual
     // viewport (`--app-height`); iOS keyboard avoidance lives in
@@ -363,7 +375,33 @@ function ChatInput({
           )}
         </label>
 
-        <div className="flex-1 min-w-0">
+        <div className={mentionCandidates ? "flex-1 min-w-0 relative" : "flex-1 min-w-0"}>
+          {mentionSuggestions.length > 0 && (
+            <ul
+              role="listbox"
+              aria-label="Mention someone in the scene"
+              data-testid="mention-suggestions"
+              className="absolute bottom-full mb-1 left-0 z-20 min-w-[10rem] rounded-md border border-primary/30 bg-black/90 p-1"
+            >
+              {mentionSuggestions.map((row) => (
+                <li key={row.id}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected="false"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => pickMention(row.name)}
+                    className="w-full text-left font-mono text-[11px] px-2 py-1 text-primary/80 hover:bg-primary/10 flex items-center gap-1.5"
+                  >
+                    <span aria-hidden="true">{PRESENCE_META[row.presence]?.glyph}</span>
+                    {row.name}
+                    {row.reach !== "none" ? <span aria-label={REACH_META[row.reach].label}>{REACH_META[row.reach].glyph}</span> : null}
+                    <span className="sr-only">, {PRESENCE_META[row.presence]?.label}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           <textarea
             ref={textareaRef}
             value={value}
@@ -372,7 +410,14 @@ function ChatInput({
               setValue(next);
               settleIfComposerEmpty(next, attachmentsRef.current, pdfsRef.current);
             }}
-            onKeyDown={handleKeyDown}
+            onKeyDown={(e) => {
+              if (e.key === "Tab" && mentionSuggestions.length > 0) {
+                e.preventDefault();
+                pickMention(mentionSuggestions[0].name);
+                return;
+              }
+              handleKeyDown(e);
+            }}
             enterKeyHint={touchFirst ? "enter" : "send"}
             aria-label="Message"
             autoComplete="off"
