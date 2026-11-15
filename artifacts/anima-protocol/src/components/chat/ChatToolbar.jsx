@@ -12,6 +12,9 @@ import CodeRepairConsole from "./CodeRepairConsole";
 import ProtocolUpgradeConsole from "./ProtocolUpgradeConsole";
 import DeviceScanConsole from "./DeviceScanConsole";
 import PortaledFixedPanel from "./PortaledFixedPanel";
+import { TalkSectionSummaryBar, TalkSectionToggle, talkSectionIds } from "./CollapsibleTalkSection";
+import TalkHeaderSummary from "./TalkHeaderSummary";
+import { useTalkSectionCollapse } from "@/hooks/useTalkSectionCollapse";
 import { useAuth } from "@/lib/AuthContext";
 import { sessionMemoryTargets } from "@/lib/whatSheRemembers";
 
@@ -50,6 +53,8 @@ export default function ChatToolbar({
 }) {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const { collapsed: headerCollapsed, toggle: toggleHeader } = useTalkSectionCollapse("header");
+  const { panelId: headerPanelId, toggleId: headerToggleId } = talkSectionIds("header");
   const [showActionsPanel, setShowActionsPanel] = useState(false);
   const [showDocUpload, setShowDocUpload] = useState(false);
   const [showCodeRepair, setShowCodeRepair] = useState(false);
@@ -72,9 +77,44 @@ export default function ChatToolbar({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [showActionsPanel]);
 
+  useEffect(() => {
+    if (headerCollapsed) setShowActionsPanel(false);
+  }, [headerCollapsed]);
+
   return (
-    <div data-glass-surface="header" className="flex flex-col border-b border-primary/20 bg-black/60 backdrop-blur-md flex-shrink-0 relative">
+    <div
+      data-glass-surface="header"
+      data-testid="talk-section-header"
+      data-collapsed={headerCollapsed ? "true" : "false"}
+      className="flex flex-col border-b border-primary/20 bg-black/60 backdrop-blur-md flex-shrink-0 relative"
+    >
+      {headerCollapsed && (
+        <TalkSectionSummaryBar
+          section="header"
+          label="Companion header"
+          collapsed={headerCollapsed}
+          onToggle={toggleHeader}
+          className="px-3 py-1.5"
+        >
+          <TalkHeaderSummary
+            session={activeSession}
+            characters={characters}
+            characterEmotions={characterEmotions}
+            onAvatarClick={onAvatarClick}
+          />
+        </TalkSectionSummaryBar>
+      )}
+
       {/* Stack navigation on narrow screens; never let header actions overlap. */}
+      <div
+        id={headerPanelId}
+        role="region"
+        aria-label="Companion header"
+        aria-labelledby={headerToggleId}
+        hidden={headerCollapsed}
+        inert={headerCollapsed || undefined}
+        className={headerCollapsed ? "hidden" : "flex flex-col"}
+      >
       <div className="flex flex-col lg:flex-row lg:items-center min-w-0">
         <div className="min-w-0 w-full lg:flex-1 overflow-x-auto overscroll-x-contain">
           <ChatHeader
@@ -133,11 +173,19 @@ export default function ChatToolbar({
             Online
             <ChevronDown className={`w-3 h-3 transition-transform ${showActionsPanel ? "rotate-180" : ""}`} />
           </button>
+          {!headerCollapsed && (
+            <TalkSectionToggle
+              section="header"
+              label="Companion header"
+              collapsed={headerCollapsed}
+              onToggle={toggleHeader}
+            />
+          )}
         </div>
       </div>
 
       <PortaledFixedPanel
-        open={showActionsPanel}
+        open={showActionsPanel && !headerCollapsed}
         onDismiss={() => setShowActionsPanel(false)}
         anchorRef={onlineButtonRef}
         align="right"
@@ -398,6 +446,7 @@ export default function ChatToolbar({
           onClose={() => setShowDeviceScan(false)}
         />
       )}
+      </div>
     </div>
   );
 }

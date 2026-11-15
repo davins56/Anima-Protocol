@@ -119,7 +119,7 @@ import DeferredMount from "@/components/common/DeferredMount";
 // the stage is opened, not with the Chat chunk.
 const LivingPresence = lazy(() => import("@/components/chat/LivingPresence"));
 const LivingPresenceStage = lazy(() => import("@/components/chat/LivingPresenceStage"));
-import ResonanceField from "@/components/chat/ResonanceField";
+import TalkResonanceSection from "@/components/chat/TalkResonanceSection";
 import { resolvePresenceCast, highlightedCastId, lastSpokenLine } from "@/lib/livingPresence";
 import { useResonance } from "@/hooks/useResonance";
 import {
@@ -225,7 +225,6 @@ import MessageList from "@/components/chat/MessageList";
 import MemoryRecallPanel from "@/components/memory/MemoryRecallPanel";
 import ChatToolbarSection from "@/components/chat/ChatToolbarSection";
 import ChatWidgetsArea from "@/components/chat/ChatWidgetsArea";
-import IntimacyDock from "@/components/intimacy/IntimacyDock";
 import { useLoreKeywordScanning } from "@/hooks/useLoreKeywordScanning";
 import NarrativeDivergencePanel from "@/components/narrative/NarrativeDivergencePanel";
 import { useDivergentPaths } from "@/hooks/useDivergentPaths";
@@ -4112,20 +4111,14 @@ Return JSON:
               onOpenHistory={() => setShowMobileMenu(true)}
             />
             {activeSession?.mode === "solo" && activeSession?.character_id && (
-              <div className="px-3 py-1 flex items-center justify-between bg-black/40 border-b border-primary/10">
-                <ResonanceField
-                  value={resonance.value}
-                  label={resonance.label}
-                  resetKey={`${activeSession.character_id}:${resonance.source}`}
-                />
-                <IntimacyDock
-                  characterId={activeSession.character_id}
-                  conversationId={activeSession.id}
-                  refreshKey={isLoading ? null : activeSession.messages?.length || 0}
-                  liveSynchroStrength={companionAffect?.synchro_strength ?? null}
-                  livePulseHeat={livePulseHeat}
-                />
-              </div>
+              <TalkResonanceSection
+                characterId={activeSession.character_id}
+                conversationId={activeSession.id}
+                resonance={resonance}
+                refreshKey={isLoading ? null : activeSession.messages?.length || 0}
+                liveSynchroStrength={companionAffect?.synchro_strength ?? null}
+                livePulseHeat={livePulseHeat}
+              />
             )}
             {isTherapySession(
               activeSession,
