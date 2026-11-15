@@ -41,4 +41,11 @@ export const PROTECTED_SQL_TABLES = [
   "tool_pending_confirmations",
   "tool_action_log",
   "calendar_connections",
+  "aetherial_net_access_log",
+  "aetherial_net_events",
+  "aetherial_net_progress",
+  "aetherial_net_dissonance",
+  "aetherial_net_inventory",
+  "aetherial_net_reward_claims",
+  "aetherial_net_cap_counters",
 ] as const;
