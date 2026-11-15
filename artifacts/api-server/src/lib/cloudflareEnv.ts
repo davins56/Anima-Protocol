@@ -163,6 +163,8 @@ export const CLOUDFLARE_RUNTIME_ENV_NAMES = [
   // Dàvīn's Clerk user id and is set by him, never committed.
   "ANIMA_DEEPNET",
   "ANIMA_DEEPNET_USER_IDS",
+  // Situational scenes, #763. Unset is off (scene routes answer 409).
+  "ANIMA_SITUATIONAL_SCENES",
   "API_KEY",
   "CLERK_JWT_KEY",
   "CLERK_PUBLISHABLE_KEY",

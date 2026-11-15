@@ -49,7 +49,8 @@ export function recapLines(messages: RecapMessage[]): string[] {
     const name = text(m.character_name);
     const content = text(m.content);
     if (!content || name === "__typing__") continue;
-    if (role === "system") continue;
+    // Scene event rows (#763) are stage lines, not chat.
+    if (role === "system" || role === "event") continue;
     const speaker = role === "user" ? "User" : name || "Companion";
     const body =
       content.length > RECAP_MESSAGE_CHARS

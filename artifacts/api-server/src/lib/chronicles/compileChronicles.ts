@@ -450,6 +450,8 @@ export async function compileChroniclesForUser(
       if (charIds.length === 0) continue;
       const msgId = asString(data.id) || row.entityId;
       const role = asString(data.role) || "user";
+      // Scene event rows (#763) are stage lines, not dialogue.
+      if (role === "event") continue;
       const characterLabel = asString(data.character_name);
       const day = chronicleDateFor(createdDate, timeZone);
       for (const characterId of charIds) {
