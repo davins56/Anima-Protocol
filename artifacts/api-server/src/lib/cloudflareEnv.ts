@@ -139,6 +139,10 @@ export const CLOUDFLARE_RUNTIME_ENV_NAMES = [
   "ANIMA_KERNEL_RELATIONSHIP_MODEL",
   "ANIMA_KERNEL_SELF_MODEL",
   "ANIMA_KERNEL_SENSES",
+  // Deepnet (working name) slice, #757. Unset is off. The allowlist holds only
+  // Dàvīn's Clerk user id and is set by him, never committed.
+  "ANIMA_DEEPNET",
+  "ANIMA_DEEPNET_USER_IDS",
   "API_KEY",
   "CLERK_JWT_KEY",
   "CLERK_PUBLISHABLE_KEY",
