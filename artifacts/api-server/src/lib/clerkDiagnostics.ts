@@ -63,13 +63,11 @@ export interface ClerkKeyReport {
     source: PublishableKeySource;
     instanceType: "production" | "development" | null;
     frontendApiHost: string | null;
-    keyTail: string | null;
   };
   secretKey: {
     present: boolean;
     valid: boolean;
     kind: "live" | "test" | null;
-    keyTail: string | null;
   };
   keyPairing: KeyPairing;
   requestHost: string | null;
@@ -101,12 +99,6 @@ export interface ClerkProbeReport {
    */
   instanceMatch: boolean | null;
   sharedKids: string[];
-}
-
-/** Last 4 characters of a key — enough to compare against a dashboard value. */
-export function keyTail(key: string | undefined): string | null {
-  const trimmed = (key ?? "").trim();
-  return trimmed.length >= 4 ? trimmed.slice(-4) : null;
 }
 
 function decodeBase64(payload: string): string {
@@ -229,13 +221,11 @@ export function buildClerkKeyReport(req: {
       source,
       instanceType,
       frontendApiHost: decodeClerkFrontendHost(resolved),
-      keyTail: keyTail(resolved),
     },
     secretKey: {
       present: Boolean(envSecret),
       valid: secretValid,
       kind,
-      keyTail: keyTail(envSecret),
     },
     keyPairing,
     requestHost,

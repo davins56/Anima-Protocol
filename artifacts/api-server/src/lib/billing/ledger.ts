@@ -173,3 +173,24 @@ export async function consumeEntitlement(
     client.release?.();
   }
 }
+
+/**
+ * Give back a use (the provider call failed after consumeEntitlement). A new
+ * +units row with reason 'refund'; the key makes a repeated refund a no-op.
+ * Append-only like everything else here.
+ */
+export async function refundEntitlement(
+  input: { userId: string; entitlement: "photo_credits" | "voice_minutes"; units: number; idempotencyKey: string },
+  db: Queryable = getPool() as any,
+): Promise<boolean> {
+  if (!Number.isInteger(input.units) || input.units <= 0) throw new Error("units must be a positive integer");
+  const { rows } = await db.query(
+    `INSERT INTO public.entitlement_ledger (user_id, entitlement, delta, reason, idempotency_key)
+     SELECT $1, $2, $3, 'refund', $4
+      WHERE EXISTS (SELECT 1 FROM public.entitlement_ledger WHERE idempotency_key = $5 AND user_id = $1)
+     ON CONFLICT (idempotency_key) DO NOTHING
+     RETURNING id`,
+    [input.userId, input.entitlement, input.units, `refund:use:${input.idempotencyKey}`, `use:${input.idempotencyKey}`],
+  );
+  return rows.length > 0;
+}

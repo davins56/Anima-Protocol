@@ -3,7 +3,6 @@ import {
   buildClerkKeyReport,
   clerkDiagnosticStatus,
   decodeClerkFrontendHost,
-  keyTail,
   probeClerkInstance,
   resolveKeyPairing,
   secretKeyKind,
@@ -45,10 +44,12 @@ describe("publishable key decoding", () => {
     expect(decodeClerkFrontendHost(undefined)).toBeNull();
   });
 
-  it("returns only the last four characters of a key", () => {
-    expect(keyTail(LIVE_SECRET)).toBe("10aa");
-    expect(keyTail("abc")).toBeNull();
-    expect(keyTail(undefined)).toBeNull();
+  it("never reports a key tail in the key report", () => {
+    process.env.CLERK_PUBLISHABLE_KEY = LIVE_CUSTOM_KEY;
+    process.env.CLERK_SECRET_KEY = LIVE_SECRET;
+    const report = buildClerkKeyReport(APEX_REQ);
+    expect(JSON.stringify(report)).not.toContain("keyTail");
+    expect(JSON.stringify(report)).not.toContain(LIVE_SECRET.slice(-4));
   });
 });
 

@@ -350,9 +350,11 @@ describe("POST /api/ai/chat — local Ollama path", () => {
     }
   });
 
-  it("keeps /api/healthz/llm?probe=1 public", async () => {
+  it("keeps /api/healthz/llm?probe=1 off the open internet (ops bearer only)", async () => {
     process.env.ANIMA_RUNTIME = "worker";
     const health = await fetch(`${apiBase}/api/healthz/llm?probe=1`);
-    expect(health.status).not.toBe(401);
+    expect([401, 503]).toContain(health.status);
+    const body = await health.json();
+    expect(body.code).toMatch(/^ops_(unauthorized|secret_unconfigured)$/);
   });
 });

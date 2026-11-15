@@ -6,11 +6,12 @@
  * short-lived signed URLs from GET /api/photo/images/:id/file.
  *
  * Fallback (SUPABASE_URL unset, e.g. local dev): the existing Postgres-backed
- * uploaded_images table (1 MB cap), served at /api/storage/objects/uploads/:id.
+ * uploaded_images table (generated images over 1 MB are stored as parts, see
+ * storeGeneratedImage), served at /api/storage/objects/uploads/:id.
  */
 import { randomUUID } from "crypto";
 import { normalizeApiKey } from "../openaiClient";
-import { storeUploadedImage } from "../imageUploads";
+import { storeGeneratedImage } from "../imageUploads";
 
 export const PHOTO_BUCKET = () => process.env.SUPABASE_PHOTO_BUCKET?.trim() || "character-images";
 const SIGNED_URL_TTL_S = 60 * 60;
@@ -75,7 +76,7 @@ export async function storePhotoBytes(args: {
     }
     return { bucket, path, contentType, byteSize: args.bytes.byteLength };
   }
-  const stored = await storeUploadedImage(args.userId, {
+  const stored = await storeGeneratedImage(args.userId, {
     contentType,
     dataBase64: Buffer.from(args.bytes).toString("base64"),
   });

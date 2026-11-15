@@ -71,7 +71,7 @@ Code: `artifacts/api-server/src/lib/companionPhotos/` (server) and
      within the FLUX.2 Klein 4B range of 256–1920 px. Overridden by
      `ANIMA_COMPANION_PHOTO_SIZE_*`.
 5. **Attach.** The image is stored in Postgres (`uploaded_images`, same as
-   avatars) and served from `/api/storage/objects/uploads/<uuid>`. `done`
+   avatars; over 1 MB as parts + manifest) and served from `/api/storage/objects/uploads/<uuid>`. `done`
    waits at most `ANIMA_COMPANION_PHOTO_TIMEOUT_MS` for it. The attachment
    (`source: "companion_photo"`, description, size, model) goes on the
    assistant message, the turn ledger and the server-persisted message, so it
@@ -192,8 +192,11 @@ to disable the instruction and ignore tags.
   canonical complexion verbatim and a "do not lighten" guard, but results
   can drift.
 - Generated high-res JPEGs are larger than the earlier 768×1024 shots
-  (~0.8–1.5 MB). Anything over the upload cap fails with the in-character
-  line.
+  (~0.8–1.5 MB). Photos over the 1 MB single-row cap are stored as ~512 KB
+  part rows (each with its own internal id) plus a manifest row under the
+  public id that lists them (`storeGeneratedImage` in
+  `lib/imageUploads.ts`, no schema change, max 8 MB), so they no longer fail
+  storage. Browser uploads keep the 1 MB cap.
 - Photo URLs are unguessable UUIDs but not owner-checked, like avatars.
 - When the user's appearance is not in memory facts, "draw us" keeps their
   face unidentifiable rather than inventing a likeness.
