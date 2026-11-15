@@ -20,10 +20,33 @@ import {
   probeClerkInstance,
   summarizeClerkProbe,
 } from "../lib/clerkDiagnostics";
-import { requireOpsBearer } from "../lib/opsAuth";
+import { configuredOpsSecrets, matchesOpsBearer, requireOpsBearer } from "../lib/opsAuth";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
+
+/**
+ * Health access model (security audit 2026-11-14, M1):
+ *
+ * - `GET /healthz` is the public liveness ping (platform startup probes,
+ *   Cloud Run, the client's "API reachable" hint). It never touches a secret.
+ * - `GET /healthz/llm` and `GET /healthz/clerk` answer the public with a bare
+ *   status only (`/healthz/llm` also keeps `chain`, which the client reads to
+ *   decide whether the model is local-only). Full diagnostics need the ops
+ *   bearer (ADMIN_MIGRATION_SECRET or CRON_SECRET, constant-time compare).
+ * - `?probe=1` (live provider / Clerk Backend API calls) and `/healthz/env`,
+ *   `/healthz/db`, `/healthz/schema` are ops-only.
+ * - No response carries a key tail any more.
+ */
+function wantsProbe(query: Record<string, unknown>): boolean {
+  const probe = query.probe;
+  return probe === "1" || probe === "true" || probe === "yes";
+}
+
+/** True for a request carrying a valid ops bearer. */
+function isOpsRequest(req: Parameters<typeof matchesOpsBearer>[0]): boolean {
+  return configuredOpsSecrets().length > 0 && matchesOpsBearer(req);
+}
 
 // Do not throw on missing DATABASE_URL / CLERK_SECRET_KEY at import time.
 // Cloudflare Workers instantiate this module before secrets are copied from
@@ -39,7 +62,7 @@ router.get("/healthz", (_req, res) => {
  * Presence-only env probe. Never returns secret values — only whether the
  * isolate can see DATABASE_URL / Clerk keys after request-time remirror.
  */
-router.get("/healthz/env", (_req, res) => {
+router.get("/healthz/env", requireOpsBearer, (_req, res) => {
   res.json(runtimeEnvPresence());
 });
 
@@ -53,33 +76,40 @@ router.get("/healthz/env", (_req, res) => {
  */
 router.get("/healthz/llm", async (req, res) => {
   const routing = getLlmRoutingStatus("standard");
-  const wantProbe =
-    req.query.probe === "1" ||
-    req.query.probe === "true" ||
-    req.query.probe === "yes";
+  const httpStatus = routing.status === "ok" ? 200 : 503;
+  const probe = wantsProbe(req.query as Record<string, unknown>);
 
-  if (!wantProbe) {
-    res.status(routing.status === "ok" ? 200 : 503).json(routing);
+  if (!probe && !isOpsRequest(req)) {
+    // Public: status + chain only. The client's local-only guard reads
+    // `chain`; hosts, models, gateway names and quota state stay private.
+    res.status(httpStatus).json({ status: routing.status, chain: routing.chain });
+    return;
+  }
+  if (!probe) {
+    res.status(httpStatus).json(routing);
     return;
   }
 
-  try {
-    // Probe the routine chat tier (standard). Light used to report Gemini as
-    // dead solely because gemini-2.5-flash-lite is blocked for new AI Studio keys.
-    const probes = await probeLlmProviders("standard");
-    const anyOk = probes.some((p) => p.ok);
-    res.status(anyOk || routing.status === "ok" ? 200 : 503).json({
-      ...routing,
-      probes,
-      probeOk: anyOk,
-    });
-  } catch (err) {
-    res.status(503).json({
-      ...routing,
-      probeOk: false,
-      probeError: err instanceof Error ? err.message : String(err),
-    });
-  }
+  // A live probe calls every configured provider with a real key: ops only.
+  requireOpsBearer(req, res, async () => {
+    try {
+      // Probe the routine chat tier (standard). Light used to report Gemini as
+      // dead solely because gemini-2.5-flash-lite is blocked for new AI Studio keys.
+      const probes = await probeLlmProviders("standard");
+      const anyOk = probes.some((p) => p.ok);
+      res.status(anyOk || routing.status === "ok" ? 200 : 503).json({
+        ...routing,
+        probes,
+        probeOk: anyOk,
+      });
+    } catch (err) {
+      res.status(503).json({
+        ...routing,
+        probeOk: false,
+        probeError: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
 });
 
 /**
@@ -100,68 +130,64 @@ router.get("/healthz/llm", async (req, res) => {
  */
 router.get("/healthz/clerk", async (req, res) => {
   const report = buildClerkKeyReport(req);
-  const wantProbe =
-    req.query.probe === "1" ||
-    req.query.probe === "true" ||
-    req.query.probe === "yes";
+  const probe = wantsProbe(req.query as Record<string, unknown>);
 
-  if (!wantProbe) {
+  if (!probe && !isOpsRequest(req)) {
+    // Public: bare status only (no instance type, hosts, pairing or notes).
+    const { status, httpStatus } = clerkDiagnosticStatus(report);
+    res.status(httpStatus).json({ status });
+    return;
+  }
+  if (!probe) {
     const { status, httpStatus } = clerkDiagnosticStatus(report);
     res.status(httpStatus).json({ status, ...report });
     return;
   }
 
-  try {
-    const probe = await probeClerkInstance(
-      report,
-      readRuntimeEnv("CLERK_SECRET_KEY"),
-    );
-    const { status, httpStatus } = clerkDiagnosticStatus(report, probe);
-    res.status(httpStatus).json({
-      status,
-      ...report,
-      probe,
-      summary: summarizeClerkProbe(report, probe),
-    });
-  } catch (err) {
-    const { status, httpStatus } = clerkDiagnosticStatus(report);
-    res.status(httpStatus === 200 ? 503 : httpStatus).json({
-      status,
-      ...report,
-      probeError: err instanceof Error ? err.message : String(err),
-    });
-  }
+  // ?probe=1 calls the Clerk Backend API with CLERK_SECRET_KEY: ops only.
+  requireOpsBearer(req, res, async () => {
+    try {
+      const probeReport = await probeClerkInstance(
+        report,
+        readRuntimeEnv("CLERK_SECRET_KEY"),
+      );
+      const { status, httpStatus } = clerkDiagnosticStatus(report, probeReport);
+      res.status(httpStatus).json({
+        status,
+        ...report,
+        probe: probeReport,
+        summary: summarizeClerkProbe(report, probeReport),
+      });
+    } catch (err) {
+      const { status, httpStatus } = clerkDiagnosticStatus(report);
+      res.status(httpStatus === 200 ? 503 : httpStatus).json({
+        status,
+        ...report,
+        probeError: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
 });
 
 /**
- * Readiness probe that actually opens a Postgres connection.
- * Public (no Clerk) so operators can diagnose "Internal server error" on
- * /api/store/* without a session — /healthz alone only checks env presence.
- *
- * Also reports whether required tables exist. Connectivity can be fine while
- * the schema is missing (typical after pointing DATABASE_URL at a fresh
- * Supabase project) — that surfaces as "Database schema is missing or out of
- * date" on Character / ChatSession store calls.
+ * Readiness probe that actually opens a Postgres connection and inspects the
+ * schema. Ops-only (bearer): it used to be public and ran `ensureSchemaOnce()`
+ * (CREATE … IF NOT EXISTS) on every call. It is inspect-only now; schema
+ * creation stays on the lazy store/chat paths and `POST /healthz/schema`.
  */
-router.get("/healthz/db", async (_req, res) => {
+router.get("/healthz/db", requireOpsBearer, async (_req, res) => {
   const target = databaseTargetHint();
   try {
     const result = await withTransientDbRetry(() =>
       getPool().query("select 1::int as ok"),
     );
-    const ensured = await withTransientDbRetry(() => ensureSchemaOnce());
-    if (ensured.errors.length > 0) {
-      logger.error(
-        {
-          missingBefore: ensured.missingBefore,
-          createdTables: ensured.createdTables,
-          errors: ensured.errors,
-        },
-        "Database health check encountered schema creation errors",
-      );
+    let schema: Awaited<ReturnType<typeof inspectSchema>> | null = null;
+    try {
+      schema = await withTransientDbRetry(() => inspectSchema());
+    } catch (err) {
+      logger.error({ err }, "Database health check could not inspect the schema");
     }
-
-    const healthy = ensured.ok;
+    const healthy = Boolean(schema?.ok);
     res.status(healthy ? 200 : 503).json({
       status: healthy ? "ok" : "error",
       db: true,
@@ -169,12 +195,7 @@ router.get("/healthz/db", async (_req, res) => {
       ...(healthy
         ? {}
         : { reason: "schema" as const, code: "schema_missing" }),
-      schema: {
-        ok: ensured.ok,
-        missingTables: ensured.ok ? [] : ensured.missingBefore,
-        presentTables: ensured.ok ? ensured.createdTables : [],
-        hasPgTrgm: ensured.hasPgTrgm,
-      },
+      schema,
       target,
     });
   } catch (err) {
@@ -196,13 +217,13 @@ router.get("/healthz/db", async (_req, res) => {
 
 /**
  * Schema inspect + optional self-heal.
- * - GET  → inspect only (public — operators diagnose missing tables without a session)
+ * - GET  → inspect only
  * - POST → run idempotent ensureSchemaOnce() (CREATE IF NOT EXISTS)
  *
- * POST is operator-only. Health mounts before Clerk, so this uses the same
+ * Both are operator-only. Health mounts before Clerk, so this uses the same
  * ADMIN_MIGRATION_SECRET / CRON_SECRET bearer as `/api/admin/ensure-schema`.
  */
-router.get("/healthz/schema", async (_req, res) => {
+router.get("/healthz/schema", requireOpsBearer, async (_req, res) => {
   const target = databaseTargetHint();
   try {
     const schema = await inspectSchema();
