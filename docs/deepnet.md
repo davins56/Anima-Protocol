@@ -26,3 +26,37 @@ These are not built yet:
 - **Cross-companion sharing.** Opt-in, summaries only, also designed in #757.
 - **The surface-net proxy.**
 - **Database persistence.** Migrations U1 and U2 each need Dàvīn's OK.
+
+## API: `/api/deepnet/*` (`artifacts/api-server/src/routes/deepnet.ts`)
+
+The server checks requests in this order:
+1. `ANIMA_DEEPNET`. When it is unset or off, every route returns **404**.
+2. Clerk session, or **401**.
+3. `ANIMA_DEEPNET_USER_IDS`, or **403**, logged as `denied`.
+4. Rate limit.
+5. Ownership of `character_id`, or **403**, logged as `not_owner`.
+
+| Route | |
+|---|---|
+| `GET /status` | `{enabled, allowed, display_name}` |
+| `GET /map?character_id=` | `DeepnetMap`, with locks taken from server quest state |
+| `POST /enter {character_id, node_id}` | Locked nodes return 403. Logs `enter` |
+| `GET /quest?character_id=&quest_id=` | Quest state plus a content view. Gate option availability comes from the **server** bond tier (`anima_relationships.state.relationship_level`, read only) |
+| `POST /quest/events {character_id, quest_id, expected_seq, step, dialogue_choices?, option_id?, tuned_w?}` | Validated by `nextQuestEvent`. Any tier, outcome or band sent by the client is ignored. A stale `expected_seq` returns 409 |
+
+### Env
+These are added to `CLOUDFLARE_RUNTIME_ENV_NAMES` but **not** to `wrangler.jsonc`:
+
+| Var | Default | Meaning |
+|---|---|---|
+| `ANIMA_DEEPNET` | unset (off) | `on` / `1` / `true` / `yes` enables the routes |
+| `ANIMA_DEEPNET_USER_IDS` | unset (nobody) | Comma-separated Clerk user ids. Dàvīn sets it to his own id. It is never committed |
+
+### Stubs until migrations are approved
+- **Quest state:** `lib/deepnet/questStore.ts` keeps state **in memory**. It is lost on restart and not shared across Worker isolates. Migration U2 replaces it.
+- **Access log:** `lib/deepnet/accessLog.ts` writes structured app-log lines. Migration U1 replaces it.
+- Neither adapter runs SQL.
+
+### What the API never does
+- No model calls, no tools, and no outbound fetch. A test checks the imports and fetch usage.
+- No memory writes, no corruption and no sharing.

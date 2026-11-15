@@ -66,6 +66,7 @@ export default defineConfig({
       "test/replyFormatting.test.ts",
       // Deepnet slice rules (#757): pure, no Postgres.
       "test/deepnetCore.test.ts",
+      "test/deepnetRoute.test.ts",
     ],
     environment: "node",
     fileParallelism: false,
