@@ -10,6 +10,8 @@ const PAGES = {
   VesselStudio: lazy(() => import("../pages/VesselStudio")),
   SimArena: lazy(() => import("../pages/SimArena")),
   Cyberworld: lazy(() => import("../features/cyberworld/CyberworldPage")),
+  // Deepnet (working name) slice, #757. The page itself asks the server and stays hidden unless enabled.
+  Deepnet: lazy(() => import("../features/deepnet/DeepnetPage")),
   AIBehaviorSettings: lazy(() => import("../pages/AIBehaviorSettings")),
   BookOfEchoes: lazy(() => import("../pages/BookOfEchoes")),
   CalendarView: lazy(() => import("../pages/CalendarView")),
