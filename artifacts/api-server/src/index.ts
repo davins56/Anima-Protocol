@@ -8,6 +8,7 @@ import app from "./app";
 import { ensureClerkPreviewRedirects } from "./lib/ensureClerkPreviewRedirects";
 import { logger } from "./lib/logger";
 import { resolveNodeSpaDir, tryServeNodeSpa } from "./lib/nodeSpa";
+import { applySecurityHeaders } from "./lib/securityHeaders";
 
 // If the repo is run from a different CWD, dotenv/config may not find the
 // package-local or repository-root .env file. Load the first existing file.
@@ -68,6 +69,10 @@ const spaDir = resolveNodeSpaDir();
 const server = http.createServer((req, res) => {
   // Worker serves the SPA from Assets, never through Express/Clerk. Cloud Run
   // has one Node port, so intercept non-API GET/HEAD here first.
+  if (spaDir && !String(req.url || "").startsWith("/api")) {
+    // Same document headers as public/_headers on the Worker (audit H2).
+    applySecurityHeaders(res, "document");
+  }
   if (spaDir && tryServeNodeSpa(req, res)) return;
   app(req, res);
 });
