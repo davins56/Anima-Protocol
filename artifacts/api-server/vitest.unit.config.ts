@@ -3,6 +3,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: [
+      "test/recallLedgerWorker.test.ts",
       "test/clerkDiagnostics.test.ts",
       "test/imageUploads.test.ts",
       "test/generatedImageStorage.test.ts",
