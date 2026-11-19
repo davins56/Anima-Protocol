@@ -174,6 +174,12 @@ export type ScenePromptInput = {
   hasReference: boolean;
 };
 
+export function sceneDepictsCompanion(name: string, intent: PhotoIntent, brief: SceneBrief): boolean {
+  const who = (clean(name, 60) || "the companion").toLowerCase();
+  return intent.subject === "self" || !brief.present.length ||
+    brief.present.some((person) => person.toLowerCase() === who);
+}
+
 /**
  * Final image prompt: structured scene + each person's canonical appearance
  * injected verbatim (including skin tone) + the lightening guard.
@@ -189,7 +195,7 @@ export function composeSceneImagePrompt(input: ScenePromptInput): string {
   const present = brief.present.length ? brief.present : [name];
   const userPresent = present.some((p) => p.toLowerCase() === user.toLowerCase() || /\b(user|me|you)\b/i.test(p));
   const style = styleFor(input);
-  const ofCompanion = present.some((p) => p.toLowerCase() === name.toLowerCase()) || input.intent.subject === "self";
+  const ofCompanion = sceneDepictsCompanion(name, input.intent, brief);
   const parts: string[] = [];
 
   const framing = brief.framing || input.intent.framing;

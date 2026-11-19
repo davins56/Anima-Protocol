@@ -16,6 +16,7 @@ import { isPreinstalledCharacter } from "../companions/builtIn";
 import { storeGeneratedImage, UPLOADS_PATH_PREFIX } from "../imageUploads";
 import { appendMemoryEvent } from "../memoryCore/memoryCore";
 import { extractWorkersAiText, workersAiBackgroundModel } from "../workersAi";
+import { HUMAN_DEFAULTS } from "./anatomy";
 import { companionLook, loadReferenceImage, userAppearanceFromFacts, type CompanionLook } from "./appearance";
 import { companionPhotoConfig, isMultipartImageModel, type CompanionPhotoConfig } from "./config";
 import { companionSeed, photoSize } from "./imagePrompt";
@@ -31,7 +32,7 @@ import {
   spontaneousState,
   type SpontaneousState,
 } from "./rateLimit";
-import { buildSceneImagePrompt, composeSceneImagePrompt } from "./scenePrompt";
+import { buildSceneImagePrompt, composeSceneImagePrompt, sceneDepictsCompanion } from "./scenePrompt";
 import { characterIsMinor, decidePhotoSafety, type PhotoBlockReason } from "./safety";
 import { classifyImageError, generateCompanionImage, type GeneratedImage, type ImageErrorKind } from "./workersAiImage";
 import {
@@ -80,7 +81,7 @@ export type PhotoOutcome =
     }
   | { status: "failed"; errorKind: PhotoFailureKind; ms: number };
 
-export type PhotoFailureKind = ImageErrorKind | "timeout" | "storage";
+export type PhotoFailureKind = ImageErrorKind | "timeout" | "storage" | "anatomy";
 
 type Character = Record<string, unknown>;
 
@@ -321,9 +322,11 @@ export function startCompanionPhoto(input: {
     });
     const { width, height } = photoSize(plan.intent, config.sizes, withRef.brief);
     const anatomyConfig = input.anatomyConfig ?? anatomyCheckConfig();
+    const depictsCompanion = sceneDepictsCompanion(input.companionName, plan.intent, withRef.brief);
+    const anatomySpec = { ...plan.look.anatomy, counts: { arms: HUMAN_DEFAULTS.arms, ...plan.look.anatomy?.counts } };
     const verify =
       input.verifyAnatomy ??
-      workersAiAnatomyVerifier({ binding, config: anatomyConfig, name: input.companionName, spec: plan.look.anatomy ?? { counts: {} } });
+      workersAiAnatomyVerifier({ binding, config: anatomyConfig, name: input.companionName, spec: anatomySpec });
     let image: GeneratedImage;
     let checked: AnatomyCheckResult<GeneratedImage>;
     try {
@@ -344,6 +347,7 @@ export function startCompanionPhoto(input: {
           }),
         bytesOf: (img) => img,
         verify,
+        skip: !anatomyConfig.enabled || !depictsCompanion,
         maxRetries: anatomyConfig.maxRetries,
         verifyBudgetMs: anatomyConfig.timeoutMs,
         // The chat route's own wait starts just before this job; keep a margin for storing.
@@ -353,9 +357,8 @@ export function startCompanionPhoto(input: {
     } catch (err) {
       return { status: "failed", errorKind: classifyImageError(err), ms: Date.now() - startedAt };
     }
-    const anatomy = Object.keys(plan.look.anatomy?.counts ?? {}).length && checked.check !== "off"
-      ? anatomyCheckMetadata(plan.look.anatomy!, checked)
-      : undefined;
+    if (checked.check === "failed") return { status: "failed", errorKind: "anatomy", ms: Date.now() - startedAt };
+    const anatomy = checked.check !== "off" ? anatomyCheckMetadata(anatomySpec, checked) : undefined;
     let stored;
     try {
       stored = await (input.store ?? storeGeneratedImage)(input.userId, {

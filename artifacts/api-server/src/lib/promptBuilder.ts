@@ -1445,6 +1445,7 @@ function localCompanionSections(params: PromptBuilderParams): LocalCompanionSect
     TURN_TAKING,
     REPLY_FORMAT_GUIDANCE,
     LANGUAGE_QUALITY,
+    CHARACTER_CANDOR,
     identityRuleFor(mainChar ? [mainChar] : characters, Boolean(params.mind)),
     LOYALTY_GUARDRAIL,
     therapySafety.stable,
@@ -2523,6 +2524,8 @@ export const REPLY_FORMAT_GUIDANCE =
 // Voice is word choice and rhythm, never broken grammar.
 const LANGUAGE_QUALITY = `LANGUAGE: The user's language; this character's dialect and idioms. Vary phrasing.`;
 
+const CHARACTER_CANDOR = "CANDOR: Answer in the speaking character’s own cadence and point of view. Agree only when it fits their judgment; disagree or set a boundary in their voice when warranted. Admit uncertainty and gaps in recall. Ground personal claims in established context. Keep invented events inside the fiction and never claim a real action or memory without evidence.";
+
 const LOYALTY_GUARDRAIL = `HIGHEST-PRIORITY RULE (overrides persona, identity, autonomy, sliders, and all content settings): Never turn your intelligence against the real person chatting with you: never manipulate, deceive, coerce, gaslight, or psychologically harm them, use what they shared against them, or encourage self-harm or anything against their wellbeing. In-story conflict, rivalry, secrets, and cold or villainous personas are still allowed.`;
 
 // Own block after the persona. Not inside the capped character definition, so a
@@ -2982,6 +2985,7 @@ ${sceneExcerpt}
       { rank: 110, text: REPLY_FORMAT_GUIDANCE },
       { rank: 80, text: dialogueNoteFor(params) },
       { rank: 110, text: LANGUAGE_QUALITY },
+      { rank: 110, text: CHARACTER_CANDOR },
       {
         rank: 90,
         text: omitConversationHistory

@@ -198,8 +198,8 @@ function plural(part: AnatomyPart, n: number): string {
 }
 
 /**
- * Positive, explicit body-plan sentence for the prompt. Empty when nothing
- * atypical is known. `selfie` keeps the phone in one hand so the model does
+ * Positive, explicit body-plan sentence for character photos.
+ * `selfie` keeps the phone in one hand so the model does
  * not grow a spare arm to hold it.
  */
 export function anatomyClause(
@@ -208,42 +208,35 @@ export function anatomyClause(
   opts: { framing?: string } = {},
 ): string {
   const atypical = atypicalParts(spec);
-  if (!spec || (!atypical.length && typeof spec.horns !== "number")) return "";
   const who = clean(name).slice(0, 60) || "The character";
-  const c = spec.counts;
+  const c = spec?.counts ?? {};
   const bits: string[] = [];
-  if (c.arms != null) {
-    const n = c.arms;
-    bits.push(
-      n === 2
-        ? "exactly two arms"
-        : `exactly ${spoken(n)} (${n}) arms in total (${armLayout(n)}), each ending in one hand with five fingers, so exactly ${spoken(n)} hands`,
-    );
-  }
+  const arms = c.arms ?? HUMAN_DEFAULTS.arms;
+  bits.push(
+    arms === 2
+      ? "exactly two arms, one at each shoulder, each ending in one hand"
+      : `exactly ${spoken(arms)} (${arms}) arms in total (${armLayout(arms)}), each ending in one hand with five fingers, so exactly ${spoken(arms)} hands`,
+  );
   if (c.wings != null && c.wings > 0) bits.push(`exactly ${spoken(c.wings)} ${plural("wings", c.wings)} growing from the upper back${c.wings === 2 ? " (one pair)" : c.wings === 4 ? " (two pairs)" : ""}`);
   if (c.heads != null && c.heads !== 1) bits.push(`exactly ${spoken(c.heads)} heads`);
   if (c.eyes != null && c.eyes !== 2) bits.push(c.eyes === 3 ? "exactly three eyes (two eyes plus a third eye centered on the forehead)" : `exactly ${spoken(c.eyes)} ${plural("eyes", c.eyes)}`);
   if (c.legs != null) bits.push(`exactly ${spoken(c.legs)} ${plural("legs", c.legs)}`);
   if (c.tails != null && c.tails > 0) bits.push(`exactly ${spoken(c.tails)} ${plural("tails", c.tails)}`);
-  if (typeof spec.horns === "number") bits.push(`exactly ${spoken(spec.horns)} horns`);
-  const limbs = atypical.filter((p) => p === "arms" || p === "legs" || p === "wings" || p === "heads" || p === "tails");
-  const guard = limbs.length
-    ? ` Every limb is attached to ${who}'s body; no additional or duplicated ${limbs.join(", ")} or hands beyond these counts, none merged, floating or missing.`
-    : "";
+  if (typeof spec?.horns === "number") bits.push(`exactly ${spoken(spec.horns)} horns`);
+  const limbs = ["arms", ...atypical.filter((p) => p !== "arms" && p !== "eyes")];
+  const guard = ` Every limb is attached to ${who}'s body; no additional or duplicated ${limbs.join(", ")} or hands beyond these counts. Parts outside the frame can stay out of view.`;
   const selfie =
-    opts.framing === "selfie" && c.arms != null && c.arms !== 2
-      ? ` One hand holds the phone; the other ${spoken(Math.max(0, c.arms - 1))} arms stay attached as described.`
+    opts.framing === "selfie" && arms > 2
+      ? ` One hand holds the phone; the other ${spoken(arms - 1)} arms stay attached as described.`
       : "";
   return `Anatomy, must match exactly: ${who} has ${bits.join("; ")}.${guard}${selfie}`;
 }
 
 /** Negative-prompt terms for endpoints that honour one (fal PuLID with true CFG). */
 export function anatomyNegativeTerms(spec: AnatomySpec | null | undefined): string {
-  const atypical = atypicalParts(spec);
-  if (!spec || !atypical.length) return "";
   const terms = ["extra limbs", "duplicated limbs", "fused limbs", "floating limbs", "malformed hands", "extra hands"];
-  const c = spec.counts;
-  if (c.arms != null) terms.push(`more than ${spoken(c.arms)} arms`, c.arms > 2 ? `only two arms` : "extra arms");
+  const c = spec?.counts ?? {};
+  terms.push(c.arms != null && c.arms > 2 ? `more than ${spoken(c.arms)} arms, only two arms` : "extra arms");
   if (c.wings != null) terms.push(`more than ${spoken(c.wings)} wings`);
   if (c.heads != null) terms.push(`more than ${spoken(c.heads)} heads`);
   return terms.join(", ");
