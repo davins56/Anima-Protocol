@@ -1233,6 +1233,14 @@ export default function Settings() {
           {/* ── DATA & PRIVACY ── */}
           {section === SECTION.DATA && (
             <div className="space-y-4">
+              {authUser?.is_steward === true && clerkUser?.id === authUser.id && (
+                <Link
+                  to="/memory-security-lab"
+                  className="block border border-primary/15 bg-card p-5 text-primary hover:border-primary/40"
+                >
+                  Memory Security Lab
+                </Link>
+              )}
               <SectionTitle>Storage</SectionTitle>
               <div className="border border-primary/15 bg-card p-5 grid grid-cols-2 gap-4">
                 <StatBox label="Chat Sessions" value={sessionCount} />

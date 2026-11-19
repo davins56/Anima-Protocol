@@ -1,0 +1,13 @@
+<div class="shell">
+<aside><header class="brand"><span class="mark">◇</span><div>ANIMA PROTOCOL<small>SECURITY RESEARCH</small></div></header><nav id="nav" aria-label="Lab views"></nav><div class="asidefoot">OWNER WORKSPACE</div></aside>
+<main><header class="top"><span>ANIMA PROTOCOL <b>/</b> SECURITY LAB</span><button id="add">＋ New record</button></header>
+<section class="hero"><div><span class="eyebrow">MEMORY SYSTEMS</span><h1>Memory Security Lab</h1><p>Trace research to memory boundaries, code paths, and regression evidence.</p></div><div class="signal" aria-hidden="true"><i></i><i></i><i></i><strong>◇</strong></div></section>
+<section class="stats" id="stats" aria-label="Record counts"></section>
+<section class="workspace" aria-labelledby="view"><div class="sectionhead"><div><h2 id="view"></h2><p id="description"></p></div><button class="secondary" id="export">Export JSON</button></div>
+<div class="tools"><input id="search" type="search" placeholder="Search records, paths, and tests…" aria-label="Search records"><select id="kind" aria-label="Record type"><option value="">All record types</option></select><select id="status" aria-label="Implementation status"><option value="">All statuses</option></select></div>
+<div id="items"></div></section>
+<footer><strong>Architecture guardrails</strong><p>Owner can create multiple Anima. Other users are limited to one. Keep stable personality, session behavior, temporary memory, and durable memory distinct. Preserve user and character scope and explicit shared/private visibility across storage, retrieval, prompts, and tools.</p><span>Edits save in this browser for your account. Export JSON to keep a backup.</span><p><label>Import backup <input type="file" id="import" accept="application/json,.json"></label></p><label><input type="checkbox" id="replace-matching"> Replace matching records on import</label></footer>
+</main></div>
+<dialog id="detail" aria-labelledby="detail-title"><article><div class="sectionhead"><h2 id="detail-title"></h2><button class="secondary" id="close" aria-label="Close record">Close</button></div><div id="detail-body"></div></article></dialog>
+<dialog id="editor" aria-labelledby="editor-title"><form id="form"><div class="sectionhead"><h2 id="editor-title">New record</h2><button type="button" class="secondary" id="cancel">Cancel</button></div><div id="fields"></div><button type="submit">Save record</button></form></dialog>
+<div role="status" id="notice"></div>
