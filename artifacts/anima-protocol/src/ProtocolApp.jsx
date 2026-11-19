@@ -96,6 +96,7 @@ const NetBattle = lazy(() => import("./pages/NetBattle"));
 const MainHome = lazy(() => import("./pages/MainHome"));
 const Characters = lazy(() => import("./pages/Characters"));
 const Settings = lazy(() => import("./pages/Settings"));
+const MemorySecurityLab = lazy(() => import("./pages/MemorySecurityLab"));
 const UserProfile = lazy(() => import("./pages/UserProfile"));
 const Animas = lazy(() => import("./pages/Animas"));
 const EchoKeys = lazy(() => import("./pages/EchoKeys"));
@@ -1147,6 +1148,7 @@ const AuthenticatedApp = () => {
                     <Settings />
                 }
               />
+              <Route path="/memory-security-lab" element={<MemorySecurityLab />} />
               <Route
                 path="/profile"
                 element={
