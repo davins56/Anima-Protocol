@@ -169,6 +169,8 @@ describe("buildCompanionPrompt", () => {
 
     expect(prompt).toContain("VOICE ANCHORS");
     expect(prompt).toContain("wings unfurl slowly");
+    expect(prompt).toContain("disagree or set a boundary in their voice");
+    expect(prompt).toContain("Admit uncertainty and gaps in recall.");
   });
 
   it("includes crossover awareness when multiple characters present", () => {

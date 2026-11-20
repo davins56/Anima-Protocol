@@ -115,6 +115,7 @@
     // ("false" keeps background jobs off to save free-plan neurons).
     // See docs/chat-brain.md.
     "ANIMA_CHAT_BRAIN": "cloudflare",
+    "ANIMA_PHOTO_ANATOMY_CHECK": "on",
     "ANIMA_LOCAL_LLM_BACKEND": "ollama",
     "ANIMA_OLLAMA_MODEL_STANDARD": "anima-chat",
     // Temporary until Workers Paid / quota recovers. Hop after Workers AI 4006
