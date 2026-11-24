@@ -4,6 +4,7 @@
  */
 import { z } from "zod";
 import type { VisualDescriptor } from "@/lib/photo/photoApi";
+import { normalizeVesselCalibration, type VesselCalibration } from "./vesselCalibration";
 
 const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 
@@ -73,6 +74,17 @@ export const VesselConfigSchema = z.object({
       animationCount: z.number().int().min(0).max(256).optional(),
     })
     .default({ kind: "procedural" }),
+  /**
+   * Anima Essence Calibrate settings (vesselCalibration v1). Written only by
+   * the Essence route (the server carries it forward on studio saves), read
+   * here so it isn't stripped. Lenient read: clamped + defaulted, never fails
+   * the whole config. Applied at render time by resolveCalibratedLook, and
+   * only for fields whose source is `user`.
+   */
+  calibration: z.preprocess(
+    (v) => (v == null ? undefined : normalizeVesselCalibration(v)),
+    z.custom<VesselCalibration>((v) => v === undefined || (typeof v === "object" && v !== null)).optional(),
+  ),
 });
 
 export type VesselConfig = z.infer<typeof VesselConfigSchema>;
