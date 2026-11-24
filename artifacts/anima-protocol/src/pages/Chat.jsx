@@ -305,10 +305,12 @@ import {
   isScenePlanStaleError,
   mergeSceneEventRows,
   nextPlanFollow,
+  orderMessagesWithSceneEvents,
   planRequestFields,
   sceneEventRow,
   sceneFromErrorPayload,
   scenePlanFromFrame,
+  speakerFromServer,
   withoutSceneEvents,
 } from "@/lib/situationalScene";
 
@@ -969,7 +971,7 @@ export default function Chat() {
     if (openSessionIdRef.current !== sid) return { fetched: 0, exhausted: false };
     setActiveSession((prev) => {
       if (!prev || prev.id !== sid) return prev;
-      const merged = mergeOlderMessages(prev.messages, rows);
+      const merged = orderMessagesWithSceneEvents(mergeOlderMessages(prev.messages, rows));
       return merged === prev.messages ? prev : { ...prev, messages: merged };
     });
     return { fetched: rows.length, exhausted: rows.length < OLDER_MESSAGES_PAGE };
@@ -1334,7 +1336,11 @@ export default function Chat() {
 
   const applyOpenedSession = (session) => {
     const id = session.id;
-    setActiveSession((prev) => mergeOpenedSession(prev, session));
+    const opened = {
+      ...session,
+      messages: orderMessagesWithSceneEvents(session.messages),
+    };
+    setActiveSession((prev) => mergeOpenedSession(prev, opened));
     setMode(session.mode || "solo");
     setCurrentMood("neutral");
     setCompanionAffect(null);
@@ -1408,11 +1414,11 @@ export default function Chat() {
 
   // #763: server event rows (PATCH / command / `scene_event`) join the open
   // thread once each, by id. Rows for a session that is not open are dropped.
-  const insertSceneEvents = (sid, rows) => {
+  const insertSceneEvents = (sid, rows, afterTurnId = null) => {
     if (!sid || openSessionIdRef.current !== sid || !Array.isArray(rows) || !rows.length) return;
     setActiveSession((prev) => {
       if (!prev || prev.id !== sid) return prev;
-      const merged = mergeSceneEventRows(prev.messages, rows);
+      const merged = mergeSceneEventRows(prev.messages, rows, afterTurnId ? { afterTurnId } : undefined);
       return merged === prev.messages ? prev : { ...prev, messages: merged };
     });
   };
@@ -3066,6 +3072,24 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           streamedSoFar = accumulated;
         },
       });
+      // #763: the server plan (then done.assistant_character_id) is who
+      // spoke. Relabel the streaming bubble if the local pick was wrong.
+      const applyServerSpeaker = (done, plan) => {
+        const speaker = speakerFromServer(done, plan);
+        if (!speaker) return;
+        const fromRoster = characters.find((c) => c.id === speaker.id) || null;
+        const name = fromRoster?.name || speaker.name || charName;
+        if (fromRoster) activeChar = fromRoster;
+        else if (activeChar) activeChar = { ...activeChar, id: speaker.id, name };
+        charName = name;
+        replySpeakerName = name;
+        replySpeakerId = speaker.id;
+        if (activeSession.mode === "group") currentGroupSpeakerRef.current = activeChar;
+        if (lateTurnRef.current) {
+          lateTurnRef.current = { ...lateTurnRef.current, characterName: name };
+        }
+        streamUi.setSpeaker?.(name);
+      };
       // Brief typing affordance while waiting on first token (real network/model latency).
       streamUi.showTyping();
 
@@ -3203,13 +3227,16 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
               onScene: (frame) => {
                 if (frame.scene_plan) {
                   scenePlanSeen = scenePlanFromFrame(frame.scene_plan);
-                  if (scenePlanSeen) showBlockedSpeakers(sendSessionId, scenePlanSeen.blocked, turnId);
+                  if (scenePlanSeen) {
+                    showBlockedSpeakers(sendSessionId, scenePlanSeen.blocked, turnId);
+                    applyServerSpeaker(null, scenePlanSeen);
+                  }
                 }
                 if (frame.scene_event) {
                   const row = sceneEventRow(frame.scene_event);
                   if (row) {
                     sceneEventsThisTurn.push(row);
-                    insertSceneEvents(sendSessionId, [row]);
+                    insertSceneEvents(sendSessionId, [row], turnId);
                   }
                 }
               },
@@ -3219,6 +3246,8 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       if (scenesOnForSend) {
         // `done.scene` reconciles the header (its rev is the next `if_rev`);
         // `blocked` and `next_speaker` come only from the server.
+        // `done.assistant_character_id` is who actually spoke.
+        applyServerSpeaker(resultPayload, scenePlanSeen);
         if (resultPayload.scene) situational.adopt(sendSessionId, resultPayload.scene);
         showBlockedSpeakers(sendSessionId, resultPayload.blocked, turnId);
         if (scenePlanSeen || messageData.scenePlan) {
@@ -3226,13 +3255,16 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
           sceneFollowUp = nextPlanFollow(resultPayload, messageData.scenePlan || null, scenePlanSeen);
         }
       }
-      if (scenesOnForSend && resultPayload.scene_no_reply) {
-        // #763 B8: the plan picked nobody. Dismiss the typing indicator, keep
-        // the user's line (and any narration row), no error, no blank bubble.
+      const noAssistantBubble =
+        scenesOnForSend && (resultPayload.scene_no_reply || resultPayload.scene_event_only);
+      if (noAssistantBubble) {
+        // #763 B8: the plan picked nobody, or the speaker only left a
+        // stage-marker event (empty visible text). Dismiss typing, keep the
+        // user's line and event rows, no error, no blank bubble.
         lateTurnRef.current = null;
-        applyIfSendSession((prev) => ({
-          ...prev,
-          messages: mergeSceneEventRows(
+        let threadAfter = null;
+        applyIfSendSession((prev) => {
+          threadAfter = mergeSceneEventRows(
             (prev.messages || []).filter(
               (m) =>
                 m.character_name !== "__typing__" &&
@@ -3240,8 +3272,10 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
                 !(m.is_streaming && m.turn_id === turnId),
             ),
             sceneEventsThisTurn,
-          ),
-        }));
+            { afterTurnId: turnId },
+          );
+          return { ...prev, messages: threadAfter };
+        });
         if (!omitUserRow) {
           try {
             await persistTurn({
@@ -3257,6 +3291,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             pendingRemoteSyncRef.current = false;
           }
         }
+        if (sceneFollowUp) addressFollowUpHistory = threadAfter;
         return;
       }
       if (resultPayload.turn_id) {
@@ -3490,6 +3525,13 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
       if (resultPayload.brand) {
         newAiMessages = newAiMessages.map((m) => ({ ...m, llm_brand: resultPayload.brand }));
       }
+      if (replySpeakerId) {
+        newAiMessages = newAiMessages.map((m) => ({
+          ...m,
+          character_name: m.character_name || charName,
+          character_id: m.character_id || replySpeakerId,
+        }));
+      }
       if (replyCutOff.reply_interrupted) {
         newAiMessages = newAiMessages.map((m) => ({ ...m, ...replyCutOff }));
       }
@@ -3565,7 +3607,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         // refresh so store history that lacks this turn cannot replace it.
         pendingRemoteSyncRef.current = false;
       }
-      if (sceneEventsThisTurn.length) insertSceneEvents(sendSessionId, sceneEventsThisTurn);
+      if (sceneEventsThisTurn.length) insertSceneEvents(sendSessionId, sceneEventsThisTurn, turnId);
       if (shouldFollowAddressQueue && !replyCutOff.reply_interrupted) {
         addressFollowUpHistory = finalMessages;
       }

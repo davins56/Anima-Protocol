@@ -120,6 +120,8 @@ export function useChatStreaming(setActiveSession) {
       // the final message (with the image attachment) replaces the bubble.
       let photoPending = false;
       let lastAccumulated = "";
+      // The server plan / done.assistant_character_id may rename this mid-stream.
+      let speakerName = characterName;
       const resolveTurnId = () => (typeof turnId === "function" ? turnId() : turnId);
       const resolveOmit = (value) => (typeof value === "function" ? value() : value);
 
@@ -152,7 +154,7 @@ export function useChatStreaming(setActiveSession) {
         replaceTransient({
           role: "assistant",
           content: accumulated,
-          character_name: characterName,
+          character_name: speakerName,
           timestamp,
           is_streaming: true,
           ...(photoPending ? { photo_pending: true } : {}),
@@ -166,7 +168,7 @@ export function useChatStreaming(setActiveSession) {
             replaceTransient({
               role: "assistant",
               content: lastAccumulated,
-              character_name: characterName,
+              character_name: speakerName,
               timestamp,
               is_streaming: true,
               photo_pending: true,
@@ -222,7 +224,21 @@ export function useChatStreaming(setActiveSession) {
         });
       };
 
-      return { showTyping, showStreamingPartial, showStatus };
+      const setSpeaker = (name) => {
+        if (!name || name === speakerName) return;
+        speakerName = name;
+        if (!paintedTokens) return;
+        replaceTransient({
+          role: "assistant",
+          content: lastAccumulated,
+          character_name: speakerName,
+          timestamp,
+          is_streaming: true,
+          ...(photoPending ? { photo_pending: true } : {}),
+        });
+      };
+
+      return { showTyping, showStreamingPartial, showStatus, setSpeaker };
     },
     [setActiveSession],
   );

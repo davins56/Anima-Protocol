@@ -50,8 +50,10 @@ function rememberChatClientTrace(err, trace) {
  * `{ scene_plan }` and `{ scene_event }` frames are handed to the caller,
  * `[[…]]` stage markers are hidden from the visible text (`stripStage`),
  * and a turn whose server plan picked nobody (`speakers: []`) resolves with
- * `scene_no_reply: true` instead of failing as an empty reply. All default
- * off, which leaves the stream exactly as before.
+ * `scene_no_reply: true` instead of failing as an empty reply. A turn that
+ * produced only stage-marker event rows (empty visible text after stripping
+ * `[[exit]]` / `[[enter:…]]`) resolves with `scene_event_only: true`. All
+ * default off, which leaves the stream exactly as before.
  *
  * @param {AsyncIterable<{ content?: string, done?: boolean, error?: string, status?: string, affect?: unknown, scene_plan?: unknown, scene_event?: unknown }>} events
  * @param {{ onDelta?: (accumulated: string) => void, onFirstToken?: (accumulated: string) => void, onStatus?: (event: object) => void, onAffect?: (frame: unknown) => void, stripTags?: boolean, stripStage?: boolean, onScene?: (frame: { scene_plan?: unknown, scene_event?: unknown }) => void }} [hooks]
@@ -120,6 +122,7 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus,
     stripTags ? stripMachineTags(text) : stripStage ? stripStageMarkers(text) : text;
   // #763: the server plan for this turn picked nobody (natural mode / narrator).
   let sceneNoSpeaker = false;
+  let sawSceneEvent = false;
 
   const paintVisible = (next) => {
     const visible = finalizeAssistantReply(next, content);
@@ -164,6 +167,7 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus,
       }
       if (onScene && !event?.done && (event?.scene_plan || event?.scene_event)) {
         const plan = event.scene_plan;
+        if (event.scene_event) sawSceneEvent = true;
         if (
           plan &&
           typeof plan === "object" &&
@@ -225,6 +229,16 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus,
       ...(doneEvent || {}),
       content: "",
       scene_no_reply: true,
+    };
+  }
+
+  // #763: the speaker only left (or brought someone in). Events were already
+  // streamed; treating this as empty_reply would toast after a valid turn.
+  if (onScene && sawSceneEvent && !String(content || "").trim()) {
+    return {
+      ...(doneEvent || {}),
+      content: "",
+      scene_event_only: true,
     };
   }
 

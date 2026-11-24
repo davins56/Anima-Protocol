@@ -96,6 +96,47 @@ describe("zero-speaker turns (#763 B8)", () => {
   });
 });
 
+describe("marker-only (event-only) turns", () => {
+  const markerOnly = [
+    {
+      scene_plan: {
+        id: "plan_exit",
+        speakers: [{ character_id: "c_scarlet", reason: "forced" }],
+        blocked: [],
+        narrate: false,
+        mode: "natural",
+      },
+    },
+    { content: "[[exit]]" },
+    { scene_event: F.rows.event_exit },
+    { done: true, visible: "", assistant_character_id: "c_scarlet", next_speaker: null },
+  ];
+
+  it("resolves as a valid event-only turn instead of empty_reply", async () => {
+    const { promise, scene } = collect(markerOnly);
+    const result = await promise;
+    expect(result.scene_event_only).toBe(true);
+    expect(result.scene_no_reply).toBeFalsy();
+    expect(result.content).toBe("");
+    expect(result.assistant_character_id).toBe("c_scarlet");
+    expect(scene.filter((f) => f.scene_event)).toHaveLength(1);
+  });
+
+  it("flag off (no onScene): markers stay in the reply, like today", async () => {
+    const result = await streamChatReply(sseFrames(markerOnly));
+    expect(result.content).toContain("[[exit]]");
+    expect(result.scene_event_only).toBeUndefined();
+  });
+
+  it("an empty turn with a speaker plan but no events is still empty_reply", async () => {
+    const frames = [
+      { scene_plan: { id: "plan_x", speakers: [{ character_id: "c_nat" }], blocked: [], narrate: false, mode: "natural" } },
+      { done: true, visible: "", assistant_character_id: "c_nat" },
+    ];
+    await expect(collect(frames).promise).rejects.toMatchObject({ code: "empty_reply" });
+  });
+});
+
 describe("flag-off parity", () => {
   it("without scene hooks a reply with markers streams exactly as before", async () => {
     const frames = [{ content: "Hi [[exit]]" }, { done: true, visible: "Hi [[exit]]" }];
