@@ -8,7 +8,9 @@
  * back and records the outcome in chat_resting_deliveries (append-only).
  */
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { chatMessages, companionMemories, db, getPool, userEntities, asObject } from "@workspace/db";
+import { chatMessages, chatSessions, companionMemories, db, getPool, userEntities, asObject } from "@workspace/db";
+import { scenesEnabled } from "./scenes/sceneState";
+import { heardByCharacter } from "./scenes/awareness";
 import { createChatCompletionWithFailover } from "./llmFailover";
 import { localChatActivityActive } from "./localLlmPriority";
 import { acquireLocalLlmBackground } from "./localLlmSlot";
@@ -127,6 +129,16 @@ async function loadSessionCandidate(userId: string, sessionId: string, character
     .where(and(eq(chatMessages.userId, userId), eq(chatMessages.sessionId, sessionId)))
     .orderBy(desc(chatMessages.createdAt))
     .limit(24);
+  // #763: the stored cast bounds who can have heard anything.
+  let sceneCast: string[] = [];
+  if (scenesEnabled()) {
+    const [sessionRow] = await db
+      .select({ characterIds: chatSessions.characterIds })
+      .from(chatSessions)
+      .where(and(eq(chatSessions.userId, userId), eq(chatSessions.id, sessionId)))
+      .limit(1);
+    sceneCast = Array.isArray(sessionRow?.characterIds) ? sessionRow.characterIds.map(String) : [];
+  }
   return {
     sessionId,
     character: {
@@ -135,7 +147,11 @@ async function loadSessionCandidate(userId: string, sessionId: string, character
       name,
       ...(characterRow.entityName === "Anima" ? { _isAnima: true, universe: data.universe || "Anima" } : {}),
     } as CharacterData,
-    recentMessages: newestFirst.reverse().map((m) => ({
+    recentMessages: newestFirst
+      .reverse()
+      // #763: only lines she heard (stamped typed copies). Flag off: unchanged.
+      .filter((m) => !scenesEnabled() || heardByCharacter(m, characterId, sceneCast))
+      .map((m) => ({
       role: m.role,
       content: m.content,
       character_name: m.characterName || undefined,

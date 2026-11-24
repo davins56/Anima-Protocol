@@ -12,6 +12,8 @@
  * another. No schema change — the cursor lives on the journal JSON
  * (`chronicle_date`, `source_message_ids`, `last_source_at`).
  */
+import { scenesEnabled } from "../scenes/sceneState";
+import { heardByCharacter } from "../scenes/awareness";
 import { and, eq, gte, or, sql } from "drizzle-orm";
 import {
   CHAT_MESSAGE,
@@ -437,6 +439,7 @@ export async function compileChroniclesForUser(
     };
     const groups = new Map<string, Group>();
 
+    const scenesOn = scenesEnabled();
     for (const row of messageRows) {
       const data = asRecord(row.data);
       const content = asString(data.content);
@@ -454,7 +457,11 @@ export async function compileChroniclesForUser(
       if (role === "event") continue;
       const characterLabel = asString(data.character_name);
       const day = chronicleDateFor(createdDate, timeZone);
+      // #763: a character's chronicle holds only lines she heard. The cast
+      // bound is the session's stored characters. Flag off: unchanged.
+      const sceneCast = scenesOn && session ? sessionCharacterIds(session) : [];
       for (const characterId of charIds) {
+        if (scenesOn && !heardByCharacter(data, characterId, sceneCast)) continue;
         const key = `${characterId}::${day}`;
         let group = groups.get(key);
         if (!group) {

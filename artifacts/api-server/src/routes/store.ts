@@ -28,6 +28,16 @@ import type { Request, Response, NextFunction } from "express";
 import { addClient, removeClient, notifyUser } from "../lib/storeEvents";
 import { presentEntityData } from "../lib/entityRecord";
 import { logger } from "../lib/logger";
+import { scenesEnabled } from "../lib/scenes/sceneState";
+import { SceneOwnershipError } from "../lib/scenes/sceneStore";
+import { claimsAwareness, keepStoredAwareness, restoredHeardBy, withHeardBy } from "../lib/scenes/awareness";
+import {
+  loadAwarenessScope,
+  saveTombstones,
+  stampNewRow,
+  stampUnverifiedRow,
+  type AwarenessScope,
+} from "../lib/scenes/awarenessStore";
 import {
   deleteAllPdfDocumentsForUser,
   deleteChatPdfsForSession,
@@ -132,6 +142,83 @@ router.use((req, res, next) => {
 
 function getUserId(req: Request): string {
   return (req as Request & { userId: string }).userId;
+}
+
+// #763 (ANIMA_SITUATIONAL_SCENES): who heard a chat row is server-owned.
+// Chat rows are only written through the /messages routes, which stamp it.
+const GENERIC_CHAT_MESSAGE_ERROR = "Chat messages are written through /messages.";
+
+function rejectGenericChatMessageWrite(entity: string, res: Response): boolean {
+  if (entity !== CHAT_MESSAGE || !scenesEnabled()) return false;
+  res.status(403).json({ error: GENERIC_CHAT_MESSAGE_ERROR });
+  return true;
+}
+
+/**
+ * With scenes on, a generic ChatSession write cannot carry message rows (the
+ * legacy `messages` blob migrates into rows without a stamp) or rewrite the
+ * session's shared memory (server-written, stamped per fact). Only a new
+ * session's empty `shared_memory: []` passes. Flag off: unchanged.
+ */
+function guardGenericChatSessionWrite(entity: string, data: Record<string, unknown>, creating: boolean): Record<string, unknown> {
+  if (entity !== CHAT_SESSION || !scenesEnabled()) return data;
+  if (!("messages" in data) && !("shared_memory" in data)) return data;
+  const copy = { ...data };
+  delete copy.messages;
+  const shared = copy.shared_memory;
+  if (!(creating && Array.isArray(shared) && shared.length === 0)) delete copy.shared_memory;
+  return copy;
+}
+
+/**
+ * #763: import / backup-restore rows cannot prove who heard them. With
+ * scenes on, a ChatMessage that claims a stamp, or that lands in a session
+ * that ever had a scene, is heard by nobody; embedded legacy `messages` and
+ * shared facts that claim a stamp likewise. Flag off: the record unchanged.
+ */
+async function guardBackupRecord(
+  userId: string,
+  entityName: string,
+  record: Record<string, unknown>,
+  scopes: Map<string, AwarenessScope>,
+): Promise<Record<string, unknown>> {
+  if (!scenesEnabled()) return record;
+  if (entityName === CHAT_MESSAGE) {
+    const sessionId = String(record.session_id ?? "");
+    if (!sessionId) return withHeardBy(record, []);
+    let scope = scopes.get(sessionId);
+    if (!scope) {
+      scope = await loadAwarenessScope(db, userId, sessionId).catch(() => undefined);
+      if (scope) scopes.set(sessionId, scope);
+    }
+    return scope ? stampUnverifiedRow(scope, record, new Date().toISOString()) : withHeardBy(record, []);
+  }
+  if (entityName === CHAT_SESSION) {
+    const guarded = guardBackupSharedMemory(record);
+    if (!Array.isArray(guarded.messages)) return guarded;
+    return {
+      ...guarded,
+      messages: guarded.messages.map((m) =>
+        m && typeof m === "object" && !Array.isArray(m) && claimsAwareness(m)
+          ? withHeardBy(m as Record<string, unknown>, [])
+          : m,
+      ),
+    };
+  }
+  return record;
+}
+
+/** Shared facts from a backup cannot prove who heard them: a claimed stamp becomes nobody. */
+function guardBackupSharedMemory(record: Record<string, unknown>): Record<string, unknown> {
+  if (!Array.isArray(record.shared_memory)) return record;
+  return {
+    ...record,
+    shared_memory: record.shared_memory.map((item) =>
+      item && typeof item === "object" && !Array.isArray(item) && "heard_by" in (item as object)
+        ? { ...(item as Record<string, unknown>), heard_by: [] }
+        : item,
+    ),
+  };
 }
 
 /** Bulk paths must not mint or overwrite an operator identity. */
@@ -484,10 +571,12 @@ router.post("/import", async (req, res) => {
 
   let count = 0;
   const entities = body.entities || {};
+  const importScopes = new Map<string, AwarenessScope>();
   for (const [entityName, records] of Object.entries(entities)) {
     if (!Array.isArray(records)) continue;
-    for (const record of records) {
-      if (!record || typeof record !== "object") continue;
+    for (const rawRecord of records) {
+      if (!rawRecord || typeof rawRecord !== "object") continue;
+      const record = await guardBackupRecord(userId, entityName, rawRecord, importScopes);
       const entityId = String(record.id ?? makeId());
       await upsertEntity(userId, entityName, entityId, {
         ...record,
@@ -547,13 +636,29 @@ router.post("/restore", async (req, res) => {
     return;
   }
 
+  // #763: scopes are read before the transaction (they live in chat_sessions).
+  const restoreScopes = new Map<string, AwarenessScope>();
+  const guardedEntities: Record<string, Record<string, unknown>[]> = {};
+  for (const [entityName, records] of Object.entries(entities)) {
+    if (!Array.isArray(records)) continue;
+    const out: Record<string, unknown>[] = [];
+    for (const record of records) {
+      out.push(
+        record && typeof record === "object" && !Array.isArray(record)
+          ? await guardBackupRecord(userId, entityName, record, restoreScopes)
+          : record,
+      );
+    }
+    guardedEntities[entityName] = out;
+  }
+
   const result = await db.transaction(async (tx) => {
     if (mode === "replace") {
       await tx.delete(userEntities).where(eq(userEntities.userId, userId));
     }
 
     let count = 0;
-    for (const [entityName, records] of Object.entries(entities)) {
+    for (const [entityName, records] of Object.entries(guardedEntities)) {
       if (!Array.isArray(records)) continue;
       // ChatMessage rows are NOT a plain upsert-by-id (see below): merging a
       // backup whose message ids differ from the local ones would insert them
@@ -588,7 +693,7 @@ router.post("/restore", async (req, res) => {
     //   - replace: the whole table was already wiped above, so just insert.
     // Either way the backup's messages are re-seq'd 0..n-1 by their stored seq,
     // guaranteeing a gapless, unambiguous order regardless of the source.
-    const chatRecords = entities[CHAT_MESSAGE];
+    const chatRecords = guardedEntities[CHAT_MESSAGE];
     if (Array.isArray(chatRecords)) {
       const bySession = new Map<string, MsgData[]>();
       for (const record of chatRecords) {
@@ -1076,7 +1181,7 @@ router.post("/messages", async (req, res) => {
     const now = new Date().toISOString();
     const msg = asObject(body.message);
     const id = String(msg.id ?? makeId());
-    const data: MsgData = {
+    let data: MsgData = {
       ...msg,
       id,
       session_id: sessionId,
@@ -1085,14 +1190,31 @@ router.post("/messages", async (req, res) => {
       updated_date: now,
     };
     if (await nonUserTurnIsReplaced(tx, userId, data)) return null;
+    // #763: the server stamps heard_by; the client's value is never read.
+    let scope: AwarenessScope | null = null;
+    let consumed: string[] = [];
+    if (scenesEnabled()) {
+      scope = await loadAwarenessScope(tx, userId, sessionId);
+      const stamped = await stampNewRow(tx, userId, scope, data, now);
+      data = stamped.row;
+      consumed = stamped.consumed;
+    }
     await tx.insert(userEntities).values({
       userId,
       entityName: CHAT_MESSAGE,
       entityId: id,
       data,
     });
+    if (scope && consumed.length) await saveTombstones(tx, userId, scope, { consumed, now: new Date() });
     return data;
+  }).catch((error: unknown) => {
+    if (error instanceof SceneOwnershipError) return "not_found" as const;
+    throw error;
   });
+  if (created === "not_found") {
+    res.status(404).json({ error: "Session not found" });
+    return;
+  }
   if (!created) {
     res.status(409).json({ error: "Turn was replaced" });
     return;
@@ -1129,7 +1251,13 @@ router.delete("/messages/:messageId", async (req, res) => {
           ),
         )
         .returning({ data: userEntities.data });
-      return removed[0] ? (removed[0].data as MsgData) : null;
+      const row = removed[0] ? (removed[0].data as MsgData) : null;
+      // #763 R1: the tombstone is written in the delete's own transaction.
+      if (row && scenesEnabled()) {
+        const scope = await loadAwarenessScope(tx, userId, sessionId);
+        await saveTombstones(tx, userId, scope, { added: [row], now: new Date() });
+      }
+      return row;
     }),
   );
   if (!deleted) {
@@ -1172,13 +1300,52 @@ router.post("/messages/restore", async (req, res) => {
   const stored: Record<string, unknown> = { ...msg };
   delete stored.is_streaming;
   delete stored.is_typing;
-  const data: MsgData = { ...stored, id: messageId, session_id: sessionId, updated_date: new Date().toISOString() };
+  let data: MsgData = { ...stored, id: messageId, session_id: sessionId, updated_date: new Date().toISOString() };
+  if (scenesEnabled()) {
+    // #763 R1: heard_by comes only from the tombstone the delete wrote, and
+    // only while the content is unchanged; otherwise nobody hears it. Under
+    // the session lock, so a concurrent delete / replace / restore serializes.
+    const outcome = await withTransientDbRetry(() =>
+      db.transaction(async (tx) => {
+        await migrateSessionMessages(tx, userId, sessionId);
+        const [present] = await tx
+          .select({ data: userEntities.data })
+          .from(userEntities)
+          .where(
+            and(
+              eq(userEntities.userId, userId),
+              eq(userEntities.entityName, CHAT_MESSAGE),
+              eq(userEntities.entityId, messageId),
+            ),
+          )
+          .limit(1);
+        if (present) return { row: present.data as MsgData };
+        const scope = await loadAwarenessScope(tx, userId, sessionId);
+        const nowIso = new Date().toISOString();
+        const row = withHeardBy(data, restoredHeardBy(data, scope.tombstones[messageId]), nowIso);
+        await tx.insert(userEntities).values({ userId, entityName: CHAT_MESSAGE, entityId: messageId, data: row });
+        if (scope.tombstones[messageId]) {
+          await saveTombstones(tx, userId, scope, { consumed: [messageId], now: new Date() });
+        }
+        return { row };
+      }),
+    ).catch((error: unknown) => {
+      if (error instanceof SceneOwnershipError) return null;
+      throw error;
+    });
+    if (!outcome) {
+      res.status(404).json({ error: "Session not found" });
+      return;
+    }
+    data = outcome.row;
+  } else {
   await withTransientDbRetry(() =>
     db
       .insert(userEntities)
       .values({ userId, entityName: CHAT_MESSAGE, entityId: messageId, data })
       .onConflictDoNothing(),
   );
+  }
   try {
     await unforgetDeletedMessage(userId, messageId);
   } catch (error) {
@@ -1263,6 +1430,13 @@ router.post("/messages/replace", async (req, res) => {
     const kept = new Set<string>();
     const result: MsgData[] = [];
     const replacedTurns = new Map<string, boolean>();
+    // #763 R1: existing ids keep their stored heard_by byte-for-byte; new ids
+    // are stamped (tombstone > turn stamp > current scene); rows this replace
+    // deletes leave tombstones, all in this transaction.
+    const scope: AwarenessScope | null = scenesEnabled()
+      ? await loadAwarenessScope(tx, userId, sessionId)
+      : null;
+    const consumed: string[] = [];
     let i = 0;
     for (const raw of incoming) {
       const msg = asObject(raw);
@@ -1274,7 +1448,7 @@ router.post("/messages/replace", async (req, res) => {
       const prev = existingId
         ? (currentById.get(existingId)!.data as MsgData)
         : null;
-      const data: MsgData = {
+      let data: MsgData = {
         ...msg,
         id,
         session_id: sessionId,
@@ -1282,6 +1456,14 @@ router.post("/messages/replace", async (req, res) => {
         created_date: prev?.created_date ?? msg.created_date ?? now,
         updated_date: now,
       };
+      if (scope) {
+        if (prev) data = keepStoredAwareness(data, prev);
+        else {
+          const stamped = await stampNewRow(tx, userId, scope, data, now);
+          data = stamped.row;
+          consumed.push(...stamped.consumed);
+        }
+      }
       if (
         await nonUserTurnIsReplaced(tx, userId, data, {
           blockNewUser: data.role === "user" && !existingId,
@@ -1305,9 +1487,11 @@ router.post("/messages/replace", async (req, res) => {
       result.push(data);
       i += 1;
     }
+    const removedRows: MsgData[] = [];
     for (const r of current) {
       const rid = String((r.data as MsgData).id);
       if (!kept.has(rid)) {
+        removedRows.push(r.data as MsgData);
         await tx
           .delete(userEntities)
           .where(
@@ -1319,8 +1503,22 @@ router.post("/messages/replace", async (req, res) => {
           );
       }
     }
+    if (scope && (removedRows.length || consumed.length)) {
+      await saveTombstones(tx, userId, scope, {
+        added: removedRows.filter((row) => !consumed.includes(String(row.id))),
+        consumed: consumed.filter((id) => !removedRows.some((row) => String(row.id) === id)),
+        now: new Date(),
+      });
+    }
     return result;
+  }).catch((error: unknown) => {
+    if (error instanceof SceneOwnershipError) return null;
+    throw error;
   });
+  if (!out) {
+    res.status(404).json({ error: "Session not found" });
+    return;
+  }
   res.json(out);
 });
 
@@ -1373,6 +1571,7 @@ router.post("/:entity/bulk-upsert", async (req, res) => {
   const userId = getUserId(req);
   const { entity } = req.params;
   if (rejectOperatorAnimaBulk(entity, res)) return;
+  if (rejectGenericChatMessageWrite(entity, res)) return;
   const rawItems = req.body?.items;
   if (!Array.isArray(rawItems)) {
     res.status(400).json({ error: "items must be an array" });
@@ -1418,10 +1617,11 @@ router.post("/:entity/bulk-upsert", async (req, res) => {
         const data = items[i];
         const id = ids[i];
         const prev = existingById.get(id);
+        const guarded = guardGenericChatSessionWrite(entity, data, !prev);
         const record = stripUndefined(
           prev
-            ? { ...prev, ...data, id, updated_date: now }
-            : { id, created_date: now, updated_date: now, ...data },
+            ? { ...prev, ...guarded, id, updated_date: now }
+            : { id, created_date: now, updated_date: now, ...guarded },
         );
         await tx
           .insert(userEntities)
@@ -1462,6 +1662,7 @@ router.post("/:entity/bulk", async (req, res) => {
   const userId = getUserId(req);
   const { entity } = req.params;
   if (rejectOperatorAnimaBulk(entity, res)) return;
+  if (rejectGenericChatMessageWrite(entity, res)) return;
   const items = (req.body?.items ?? []) as Record<string, unknown>[];
   const now = new Date().toISOString();
   const created: Record<string, unknown>[] = [];
@@ -1471,7 +1672,7 @@ router.post("/:entity/bulk", async (req, res) => {
       id,
       created_date: now,
       updated_date: now,
-      ...data,
+      ...guardGenericChatSessionWrite(entity, data, true),
     };
     await upsertEntity(userId, entity, id, record);
     created.push(record);
@@ -1557,7 +1758,8 @@ router.post("/:entity", async (req, res, next) => {
     await createOperatorAnima(req, res, next);
     return;
   }
-  const data = (req.body ?? {}) as Record<string, unknown>;
+  if (rejectGenericChatMessageWrite(entity, res)) return;
+  const data = guardGenericChatSessionWrite(entity, (req.body ?? {}) as Record<string, unknown>, true);
 
   // Memory crystals must be unique per (user, session). The Lore Archives screen
   // auto-generates them from a load effect with no concurrency guard, so a
@@ -1628,7 +1830,8 @@ router.post("/:entity", async (req, res, next) => {
 router.put("/:entity/:id", async (req, res) => {
   const userId = getUserId(req);
   const { entity, id } = req.params;
-  const data = (req.body ?? {}) as Record<string, unknown>;
+  if (rejectGenericChatMessageWrite(entity, res)) return;
+  const rawData = (req.body ?? {}) as Record<string, unknown>;
 
   const [existing] = await withTransientDbRetry(() =>
     db
@@ -1644,6 +1847,7 @@ router.put("/:entity/:id", async (req, res) => {
       .limit(1),
   );
 
+  const data = guardGenericChatSessionWrite(entity, rawData, !existing);
   const now = new Date().toISOString();
   let record: Record<string, unknown>;
   if (existing) {
