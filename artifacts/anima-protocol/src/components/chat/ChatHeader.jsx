@@ -10,6 +10,11 @@ import MemoryHealth from "@/components/memory/MemoryHealth";
 import PresenceIndicator from "@/components/continuity/PresenceIndicator";
 import { useDriftingEmotions } from "@/hooks/useDriftingEmotions";
 import { latestActivityAt } from "@/lib/continuity";
+import RichPresencePill from "@/components/chat/RichPresencePill";
+import { describePresence, richPresenceEnabled, useDeviceOnline, useHomeModelState } from "@/lib/richPresence";
+
+// Chat upgrade 6b: off by default; with it off the "Online" pill is unchanged.
+const RICH_PRESENCE_ENABLED = richPresenceEnabled();
 import {
   llmDisplayBadgeClass,
   llmDisplayLabel,
@@ -34,6 +39,17 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
   const emotionCues = useEmotionCues();
   const cuesOn = emotionCues.enabled === true;
   const primaryCue = cuesOn && primaryChar?.id ? emotionCues.cueFor(primaryChar.id) : null;
+  const homeModel = useHomeModelState(RICH_PRESENCE_ENABLED);
+  const deviceOnline = useDeviceOnline(RICH_PRESENCE_ENABLED);
+  const richPresence = RICH_PRESENCE_ENABLED
+    ? describePresence({
+        messages: session?.messages,
+        replying,
+        homeModel,
+        deviceOnline,
+        name: isGroup ? "Someone" : primaryChar?.name,
+      })
+    : null;
 
   const handleSummarize = async () => {
     if (!session?.id || summarizing) return;
@@ -161,12 +177,16 @@ export default function ChatHeader({ session, characters, mood, moodIntensity, c
           />
         )}
         <div className="flex items-center gap-1.5 sm:gap-3 mt-0.5 flex-wrap">
-          <div className="flex items-center gap-1">
-            <div className="w-1 sm:w-1.5 h-1 sm:h-1.5 bg-primary rounded-full animate-pulse" />
-            <span className="text-[8px] sm:text-[9px] font-mono text-primary/40 tracking-widest uppercase">
-              {isGroup ? `${activeChars.length} active` : "Online"}
-            </span>
-          </div>
+          {richPresence && !(isGroup && richPresence.kind === "here") ? (
+            <RichPresencePill presence={richPresence} />
+          ) : (
+            <div className="flex items-center gap-1">
+              <div className="w-1 sm:w-1.5 h-1 sm:h-1.5 bg-primary rounded-full animate-pulse" />
+              <span className="text-[8px] sm:text-[9px] font-mono text-primary/40 tracking-widest uppercase">
+                {isGroup ? `${activeChars.length} active` : "Online"}
+              </span>
+            </div>
+          )}
           {cuesOn && !isGroup && primaryChar?.id && (
             <AffectCue
               cue={primaryCue}

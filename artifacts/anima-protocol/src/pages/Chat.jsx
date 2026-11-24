@@ -20,6 +20,9 @@ import { useConfirm } from "@/lib/ConfirmDialog";
 import { deleteSessionFlow, deleteMessageFlow } from "@/lib/chatDeleteHandlers";
 import { rewindToMessageFlow, regenerateMessageFlow, switchSiblingFlow } from "@/lib/chatRewindHandlers";
 import { replySiblingsEnabled } from "@/lib/replySiblings";
+import { reactionsEnabled, reactToMessageFlow } from "@/lib/chatReactions";
+import { checkHomeModel, describePresence, isHomeOfflineKind, richPresenceEnabled, useDeviceOnline, useHomeModelState } from "@/lib/richPresence";
+import HomeModelOfflineStrip from "@/components/chat/HomeModelOfflineStrip";
 import { editMessageFlow } from "@/lib/chatEditHandlers";
 import {
   syncActiveMessages as runActiveMessageSync,
@@ -161,6 +164,9 @@ const PHOTO_STUDIO_ENABLED = String(import.meta.env.VITE_PHOTO_STUDIO ?? "on").t
 const LOCAL_VOICE_ENABLED = localVoiceEnabled();
 // Chat upgrade 2: sibling regenerates. Off unless VITE_ANIMA_REPLY_SIBLINGS=1.
 const REPLY_SIBLINGS_ENABLED = replySiblingsEnabled();
+// Chat upgrade 6: emoji reactions and richer presence. Both off by default.
+const REACTIONS_ENABLED = reactionsEnabled();
+const RICH_PRESENCE_ENABLED = richPresenceEnabled();
 
 import { useAutoQuestManager } from "@/components/quests/AutoQuestManager";
 import QuestDetectionMessage from "@/components/chat/QuestDetectionMessage";
@@ -470,6 +476,9 @@ export default function Chat() {
     ),
   });
   const replyActionsDisabledRef = useRef(false);
+  // Chat upgrade 6b: shared probe with the header pill (one request).
+  const homeModelState = useHomeModelState(RICH_PRESENCE_ENABLED);
+  const deviceOnline = useDeviceOnline(RICH_PRESENCE_ENABLED);
   replyActionsDisabledRef.current = replyActionsDisabled;
   /** Same user line while the self-hosted model is still generating. */
   const lateTurnRef = useRef(null);
@@ -1699,6 +1708,12 @@ export default function Chat() {
       keepSiblings: REPLY_SIBLINGS_ENABLED,
     });
 
+  const handleReactToMessage = (messageId, emoji) =>
+    reactToMessageFlow(messageId, emoji, {
+      activeSession,
+      isLoading: () => replyActionsDisabledRef.current,
+      setActiveSession,
+    });
   const handleSwitchSibling = (parentIndex, key) =>
     switchSiblingFlow(parentIndex, key, {
       activeSession,
@@ -4822,6 +4837,7 @@ Return JSON:
                 onDeleteMessage={handleDeleteMessage}
                 onRegenerateMessage={handleRegenerateMessage}
                 onSwitchSibling={REPLY_SIBLINGS_ENABLED ? handleSwitchSibling : undefined}
+                onReactToMessage={REACTIONS_ENABLED ? handleReactToMessage : undefined}
                 actionsDisabled={replyActionsDisabled}
                 onAvatarClick={setBioCharacter}
                 onRateMessage={async (index, rating, betterReply, extra) => {
@@ -5051,6 +5067,24 @@ Return JSON:
                       />
                     </Suspense>
                   );
+                })()}
+                {RICH_PRESENCE_ENABLED && (() => {
+                  const soloName = activeSession.mode === "group"
+                    ? ""
+                    : characters.find((c) => c.id === activeSession.character_id)?.name;
+                  const presence = describePresence({
+                    messages: activeSession.messages,
+                    replying: composerBusy,
+                    homeModel: homeModelState,
+                    deviceOnline,
+                    name: soloName,
+                  });
+                  return isHomeOfflineKind(presence.kind) ? (
+                    <HomeModelOfflineStrip
+                      presence={presence}
+                      onCheckAgain={presence.kind === "home_offline" ? () => checkHomeModel({ force: true }) : undefined}
+                    />
+                  ) : null;
                 })()}
                 <WebSearchToggle
                   status={searchStatus}
