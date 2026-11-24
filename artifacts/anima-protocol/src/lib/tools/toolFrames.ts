@@ -34,6 +34,16 @@ export const TOOL_EVENTS = [
 ] as const;
 export type ToolEvent = (typeof TOOL_EVENTS)[number];
 
+/**
+ * Server contract §3.2: confirmations exist only for these tools (the
+ * tool_pending_confirmations.tool CHECK). /search and /read never ask.
+ */
+export const CONFIRMABLE_TOOLS: ReadonlySet<string> = new Set(["webhook", "browser"]);
+
+export function isConfirmableTool(tool: string | null | undefined): boolean {
+  return CONFIRMABLE_TOOLS.has(String(tool || ""));
+}
+
 export const TERMINAL_EVENTS: ReadonlySet<ToolEvent> = new Set(["succeeded", "failed", "denied", "expired", "stopped"]);
 
 export interface ToolSource {
@@ -138,16 +148,18 @@ export function parseToolFrame(raw: unknown): Omit<ToolAction, "pending" | "erro
   const seq = typeof r.seq === "number" && Number.isInteger(r.seq) ? r.seq : NaN;
   if (!actionId || !(TOOL_EVENTS as readonly string[]).includes(event) || !(seq >= 1)) return null;
   const result = r.result && typeof r.result === "object" ? (r.result as Record<string, unknown>) : null;
+  const tool = str(r.tool) || "tool";
   return {
     action_id: actionId,
-    tool: str(r.tool) || "tool",
+    tool,
     turn_id: str(r.turn_id) || null,
     user_message_id: str(r.user_message_id) || null,
     seq,
     event,
     summary: str(r.summary).slice(0, 500),
     reason: str(r.reason) || null,
-    confirmation: parseConfirmation(r.confirmation),
+    // A confirmation for any other tool is not actionable (never shown).
+    confirmation: isConfirmableTool(tool) ? parseConfirmation(r.confirmation) : null,
     sources: parseSources(result?.sources),
     result: result
       ? {
@@ -190,6 +202,7 @@ export function patchAction(map: ToolActionMap, actionId: string, patch: Partial
 
 export function isWaitingForUser(action: ToolAction, now = Date.now()): boolean {
   if (action.event !== "confirmation_required" || !action.confirmation) return false;
+  if (!isConfirmableTool(action.tool)) return false;
   const exp = Date.parse(action.confirmation.expires_at);
   return !Number.isFinite(exp) || exp > now;
 }
@@ -200,7 +213,8 @@ export function canStop(action: ToolAction): boolean {
 
 const REASON_COPY: Record<string, string> = {
   not_allowed: "This tool isn't allowed for this companion.",
-  killed: "Tools are switched off.",
+  killed: "Tools are switched off (kill switch).",
+  tools_disabled: "Tools are off on this server.",
   limit: "Daily limit reached.",
   ssrf_blocked: "That address isn't allowed.",
   not_user_turn: "Tools only run when you ask for them.",

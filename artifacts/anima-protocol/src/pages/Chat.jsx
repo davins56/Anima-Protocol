@@ -4912,6 +4912,8 @@ Return JSON:
                   onDeny={(id) => void toolActions.decide(id, "deny")}
                   onStop={(id) => void toolActions.stop(id)}
                   onStopAll={() => void toolActions.stopAll()}
+                  onPreview={toolActions.preview}
+                  server={toolActions.server}
                 />
               )}
               {aiNotices.filter((notice) => notice.placement === "repeat").map((notice) => (

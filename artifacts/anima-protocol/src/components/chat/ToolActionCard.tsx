@@ -5,7 +5,7 @@
  * Stop while it runs. Never starts a tool by itself.
  */
 import { useEffect, useState } from "react";
-import { Globe, Square, Check, X, Link2 } from "lucide-react";
+import { Globe, Square, Check, X, Link2, Eye } from "lucide-react";
 import {
   canStop,
   isWaitingForUser,
@@ -42,12 +42,32 @@ export default function ToolActionCard({
   onConfirm,
   onDeny,
   onStop,
+  onPreview,
+  killed = false,
+  disabled = false,
 }: {
   action: ToolAction;
   onConfirm: (id: string) => void;
   onDeny: (id: string) => void;
   onStop: (id: string) => void;
+  /** Browser actions only. Resolves to the text to show (501 copy until phase 3). */
+  onPreview?: (id: string) => Promise<string | null>;
+  /** 423 kill switch: Confirm is blocked, No and Stop still work. */
+  killed?: boolean;
+  /** 503 tools_disabled: nothing can be sent. */
+  disabled?: boolean;
 }) {
+  const [previewNote, setPreviewNote] = useState<string | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const preview = async () => {
+    if (!onPreview || previewing) return;
+    setPreviewing(true);
+    try {
+      setPreviewNote(await onPreview(action.action_id));
+    } finally {
+      setPreviewing(false);
+    }
+  };
   const waitingRaw = action.event === "confirmation_required";
   const now = useNow(waitingRaw);
   const waiting = isWaitingForUser(action, now);
@@ -92,11 +112,34 @@ export default function ToolActionCard({
             </p>
           )}
           {left != null && <p className="text-[11px] text-primary/40">Expires in {left}s</p>}
+          {killed && (
+            <p className="text-[12px] text-red-300/90" data-testid="tool-killed-note">
+              Tools are switched off (kill switch), so this can't be confirmed. You can still say no.
+            </p>
+          )}
+          {action.tool === "browser" && onPreview && (
+            <div>
+              <button
+                type="button"
+                onClick={preview}
+                disabled={previewing || disabled}
+                className="inline-flex items-center gap-1 min-h-[36px] px-2 border border-primary/30 text-primary/70 font-mono text-[10px] tracking-widest uppercase disabled:opacity-40"
+                data-testid="tool-preview"
+              >
+                <Eye className="w-3.5 h-3.5" /> {previewing ? "Loading…" : "Preview page"}
+              </button>
+              {previewNote && (
+                <p className="mt-1 text-[12px] text-primary/60" data-testid="tool-preview-note">
+                  {previewNote}
+                </p>
+              )}
+            </div>
+          )}
           <div className="flex gap-2 pt-1">
             <button
               type="button"
               onClick={() => onConfirm(action.action_id)}
-              disabled={Boolean(action.pending)}
+              disabled={Boolean(action.pending) || killed || disabled}
               className="inline-flex items-center gap-1 min-h-[40px] px-3 border border-emerald-400/40 text-emerald-200/90 font-mono text-[10px] tracking-widest uppercase disabled:opacity-40"
               data-testid="tool-confirm"
             >
@@ -105,7 +148,7 @@ export default function ToolActionCard({
             <button
               type="button"
               onClick={() => onDeny(action.action_id)}
-              disabled={Boolean(action.pending)}
+              disabled={Boolean(action.pending) || disabled}
               className="inline-flex items-center gap-1 min-h-[40px] px-3 border border-primary/30 text-primary/70 font-mono text-[10px] tracking-widest uppercase disabled:opacity-40"
               data-testid="tool-deny"
             >
@@ -144,7 +187,7 @@ export default function ToolActionCard({
         <button
           type="button"
           onClick={() => onStop(action.action_id)}
-          disabled={action.pending === "stop"}
+          disabled={action.pending === "stop" || disabled}
           className="mt-2 inline-flex items-center gap-1 min-h-[40px] px-3 border border-red-400/40 text-red-200/90 font-mono text-[10px] tracking-widest uppercase disabled:opacity-40"
           data-testid="tool-stop"
         >

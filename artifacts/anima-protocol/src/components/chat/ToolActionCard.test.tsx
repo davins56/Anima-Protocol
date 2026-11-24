@@ -68,3 +68,50 @@ describe("ToolActionCard", () => {
     expect(screen.getByTestId("tool-sources").textContent).toContain("[1]");
   });
 });
+
+describe("ToolActionCard server states (contract §3)", () => {
+  const base = {
+    action_id: "a9",
+    tool: "browser",
+    turn_id: "t1",
+    user_message_id: "u1",
+    seq: 1,
+    event: "confirmation_required" as const,
+    summary: "Open a page",
+    reason: null,
+    confirmation: {
+      id: "c1",
+      action_kind: "open",
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      request_hash: "h",
+      target: "https://example.com",
+      payload_summary: "open",
+    },
+    sources: [],
+    result: null,
+  };
+
+  it("blocks Confirm under the kill switch but keeps No", () => {
+    const onDeny = vi.fn();
+    render(<ToolActionCard action={base} onConfirm={vi.fn()} onDeny={onDeny} onStop={vi.fn()} killed />);
+    expect(screen.getByTestId("tool-killed-note")).toBeTruthy();
+    expect((screen.getByTestId("tool-confirm") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId("tool-deny"));
+    expect(onDeny).toHaveBeenCalledWith("a9");
+  });
+
+  it("shows the preview-not-available copy for browser actions", async () => {
+    const onPreview = vi.fn(async () => "Page preview isn't available yet. It comes in a later phase.");
+    render(<ToolActionCard action={base} onConfirm={vi.fn()} onDeny={vi.fn()} onStop={vi.fn()} onPreview={onPreview} />);
+    fireEvent.click(screen.getByTestId("tool-preview"));
+    expect(await screen.findByTestId("tool-preview-note")).toBeTruthy();
+    expect(screen.getByTestId("tool-preview-note").textContent).toMatch(/isn't available yet/);
+  });
+
+  it("has no preview button for webhooks", () => {
+    render(
+      <ToolActionCard action={{ ...base, tool: "webhook" }} onConfirm={vi.fn()} onDeny={vi.fn()} onStop={vi.fn()} onPreview={vi.fn()} />,
+    );
+    expect(screen.queryByTestId("tool-preview")).toBeNull();
+  });
+});
