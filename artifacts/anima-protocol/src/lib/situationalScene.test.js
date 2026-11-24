@@ -12,9 +12,11 @@ import {
   isSceneEventRow,
   isScenePlanStaleError,
   isScenesDisabledError,
+  eventTurnId,
   mergeSceneEventRows,
   nextPlanFollow,
   normalizeScene,
+  orderMessagesWithSceneEvents,
   planRequestFields,
   sceneEventMeta,
   sceneEventRow,
@@ -23,6 +25,7 @@ import {
   sceneStageDirection,
   sceneSummaryLine,
   scenesEnabledFromContext,
+  speakerFromServer,
   withoutSceneEvents,
 } from "./situationalScene";
 import { httpFixtureError, sceneFixtures } from "./situationalScene.fixtures";
@@ -158,6 +161,43 @@ describe("event rows", () => {
     expect(withoutSceneEvents(plain)).toBe(plain);
     expect(withoutSceneEvents([F.rows.event_exit, ...plain])).toEqual(plain);
   });
+
+  it("places a marker event after the turn's reply even when its seq is lower", () => {
+    const user = { id: "turn_1:user", turn_id: "turn_1", role: "user", content: "Hi", seq: 50 };
+    const reply = { id: "turn_1:assistant", turn_id: "turn_1", role: "assistant", content: "Bye.", character_name: "Scarlet", character_id: "c_scarlet", seq: 51 };
+    const event = {
+      ...F.rows.event_exit,
+      seq: 49,
+      metadata: { ...F.rows.event_exit.metadata, turn_id: "turn_1" },
+    };
+    expect(eventTurnId(event)).toBe("turn_1");
+    // Seq-only order would put the event first; the reply is the source of the exit.
+    const merged = mergeSceneEventRows([user, reply], [event]);
+    expect(merged.map((m) => m.id)).toEqual(["turn_1:user", "turn_1:assistant", "m_evt_1"]);
+    const viaOpt = mergeSceneEventRows([user, reply], [{ ...F.rows.event_exit, seq: 49 }], { afterTurnId: "turn_1" });
+    expect(viaOpt.map((m) => m.id)).toEqual(["turn_1:user", "turn_1:assistant", "m_evt_1"]);
+  });
+
+  it("reorders a reloaded thread from stamped turn_id and leaves unstamped events in seq order", () => {
+    const user = { id: "turn_1:user", turn_id: "turn_1", role: "user", content: "Hi", seq: 50 };
+    const reply = { id: "turn_1:assistant", turn_id: "turn_1", role: "assistant", content: "Bye.", seq: 51 };
+    const stamped = {
+      ...F.rows.event_exit,
+      seq: 49,
+      metadata: { ...F.rows.event_exit.metadata, turn_id: "turn_1" },
+    };
+    // After reload the store returns seq order: event, user, reply.
+    const reloaded = [stamped, user, reply];
+    expect(orderMessagesWithSceneEvents(reloaded).map((m) => m.id)).toEqual([
+      "turn_1:user",
+      "turn_1:assistant",
+      "m_evt_1",
+    ]);
+    // Unstamped events (PATCH / command, or a server that has not added turn_id)
+    // stay in seq order. Identity is preserved when nothing is stamped.
+    const unstamped = [F.rows.event_exit, F.rows.user_heard_by_two];
+    expect(orderMessagesWithSceneEvents(unstamped)).toBe(unstamped);
+  });
 });
 
 describe("heard_by is rendered only from the server stamp", () => {
@@ -192,6 +232,20 @@ describe("plans, blocked speakers and if_rev", () => {
       narrate: false,
       mode: "natural",
     });
+  });
+
+  it("takes the speaker from done, then from scene_plan, never from a local pick", () => {
+    const frames = F.sse.user_turn_two_speakers;
+    const plan = scenePlanFromFrame(frames[0].scene_plan);
+    const done = frames[frames.length - 1];
+    expect(speakerFromServer(null, plan)).toEqual({ id: "c_nat", name: null });
+    expect(speakerFromServer(done, plan)).toEqual({ id: "c_nat", name: null });
+    // A stale local pick (asleep / away) must not win over done.
+    expect(speakerFromServer(
+      { assistant_character_id: "c_ser", assistant_character_name: "Serenity" },
+      plan,
+    )).toEqual({ id: "c_ser", name: "Serenity" });
+    expect(speakerFromServer({}, null)).toBeNull();
   });
 
   it("blocked toasts come only from server ids, deduped and sanitized", () => {

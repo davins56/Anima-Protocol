@@ -355,12 +355,52 @@ export function sceneEventRow(raw) {
 }
 
 /**
- * Add server event rows to a thread once each (by id), keeping seq order
+ * The chat turn a scene event belongs to, when the server stamped it.
+ * PATCH / command events have none and stay in seq order.
+ * @param {any} row
+ * @returns {string | null}
+ */
+export function eventTurnId(row) {
+  const meta = isRecord(row?.metadata) ? row.metadata : {};
+  const raw = meta.turn_id ?? row?.turn_id;
+  if (raw == null || raw === "") return null;
+  return String(raw);
+}
+
+/**
+ * Index to insert a row just after this turn's reply (last non-event
+ * message of the turn, then any events already placed for it). `-1`
+ * means the turn's reply is not on the thread yet.
+ * @param {any[]} messages
+ * @param {string} turnId
+ */
+function indexAfterTurnReply(messages, turnId) {
+  let last = -1;
+  for (let i = 0; i < messages.length; i += 1) {
+    const m = messages[i];
+    if (!m || isSceneEventRow(m)) continue;
+    const tid = m.turn_id == null ? null : String(m.turn_id);
+    if (tid === turnId) last = i;
+  }
+  if (last === -1) return -1;
+  let at = last + 1;
+  while (at < messages.length && isSceneEventRow(messages[at]) && eventTurnId(messages[at]) === turnId) {
+    at += 1;
+  }
+  return at;
+}
+
+/**
+ * Add server event rows to a thread once each (by id). Events stamped
+ * with a `turn_id` (or `opts.afterTurnId`) go after that turn's reply,
+ * even when their `seq` is lower because the server wrote them before
+ * the client persisted the assistant row. Other events keep seq order
  * when both sides carry `seq`.
  * @param {any[] | undefined} messages
  * @param {any[]} rows
+ * @param {{ afterTurnId?: string | null }} [opts]
  */
-export function mergeSceneEventRows(messages, rows) {
+export function mergeSceneEventRows(messages, rows, opts) {
   const list = Array.isArray(messages) ? messages : [];
   const fresh = [];
   const have = new Set(list.map((m) => (m?.id == null ? null : String(m.id))).filter(Boolean));
@@ -373,6 +413,14 @@ export function mergeSceneEventRows(messages, rows) {
   if (!fresh.length) return list;
   const out = [...list];
   for (const row of fresh) {
+    const afterTurnId = opts?.afterTurnId ? String(opts.afterTurnId) : eventTurnId(row);
+    if (afterTurnId) {
+      const at = indexAfterTurnReply(out, afterTurnId);
+      if (at !== -1) {
+        out.splice(at, 0, row);
+        continue;
+      }
+    }
     const seq = Number(row.seq);
     if (Number.isFinite(seq)) {
       // Insert before the first later row that has a seq.
@@ -385,6 +433,44 @@ export function mergeSceneEventRows(messages, rows) {
     out.push(row);
   }
   return out;
+}
+
+/**
+ * Re-place event rows that carry a `turn_id` after that turn's reply.
+ * Returns the same array when nothing needs to move (flag-off / no stamps).
+ * @param {any[] | undefined} messages
+ */
+export function orderMessagesWithSceneEvents(messages) {
+  const list = Array.isArray(messages) ? messages : [];
+  if (!list.some((m) => isSceneEventRow(m) && eventTurnId(m))) return list;
+  const rest = list.filter((m) => !isSceneEventRow(m));
+  const events = list.filter((m) => isSceneEventRow(m));
+  return mergeSceneEventRows(rest, events);
+}
+
+/**
+ * Who actually spoke: `done.assistant_character_id` is authoritative;
+ * while streaming, the first `scene_plan` speaker is the best preview.
+ * The client's local pick is ignored when the server names someone.
+ *
+ * @param {any} [done]
+ * @param {ReturnType<typeof scenePlanFromFrame> | null} [plan]
+ * @returns {{ id: string, name: string | null } | null}
+ */
+export function speakerFromServer(done, plan) {
+  const doneId = done?.assistant_character_id;
+  if (doneId != null && String(doneId) !== "") {
+    const name = done?.assistant_character_name;
+    return {
+      id: String(doneId),
+      name: typeof name === "string" && name.trim() ? name.trim() : null,
+    };
+  }
+  const first = plan?.speakers?.[0];
+  if (first != null && String(first) !== "") {
+    return { id: String(first), name: null };
+  }
+  return null;
 }
 
 /**
