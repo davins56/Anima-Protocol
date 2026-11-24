@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   CALIBRATION_UNKNOWN_BYTES,
   DEFAULT_CALIBRATION,
-  RENDERED_TYPES,
+  CONTROLS_BY_FORM,
+  controlApplies,
+  resetCalibrationField,
   VESSEL_TYPES,
   addReflectionDraft,
   loadEssenceProfile,
@@ -68,9 +70,33 @@ describe("normalizeVesselCalibration (v1)", () => {
     expect(base.hair.color).toBe(DEFAULT_CALIBRATION.hair.color);
   });
 
-  it("only Humanoid renders for now, but every type is selectable", () => {
-    expect([...RENDERED_TYPES]).toEqual(["humanoid"]);
+  it("re-exports the canonical controls: eye colour applies to every form, hair/shape only to humanoid", () => {
     expect(VESSEL_TYPES).toHaveLength(6);
+    for (const f of VESSEL_TYPES) expect(controlApplies(f, "eyes.color")).toBe(true);
+    for (const f of ["orb", "flame", "crystal"] as const) {
+      expect(controlApplies(f, "shape")).toBe(false);
+      expect(controlApplies(f, "hair.style")).toBe(false);
+      expect(controlApplies(f, "eyes.shape")).toBe(false);
+    }
+    expect(CONTROLS_BY_FORM.humanoid).toContain("hair.color");
+  });
+
+  it("reset drops a field back to 'from her vessel' (default value, no source)", () => {
+    const edited = setCalibrationField(setCalibrationField(DEFAULT_CALIBRATION, "hair.color", "#112233"), "netForm", "orb");
+    const back = resetCalibrationField(edited, "hair.color");
+    expect(back.hair.color).toBe(DEFAULT_CALIBRATION.hair.color);
+    expect(back.source).toEqual({ netForm: "user" });
+    const noNet = resetCalibrationField(back, "netForm");
+    expect(noNet.netForm).toBeUndefined();
+    expect(noNet.source).toEqual({});
+  });
+
+  it("delegates known fields to the canonical normalizer", async () => {
+    const canonical = await import("@/lib/vessel/vesselCalibration");
+    const raw = { vesselType: " Flame ", hair: { color: "#ABCDEF" }, resonance: { intensity: "101" }, netForm: "humanoid" };
+    const ours = normalizeVesselCalibration(raw);
+    const theirs = canonical.normalizeVesselCalibration(raw);
+    expect({ ...ours, source: {} }).toEqual({ ...theirs, source: {} });
   });
 
   it("silver tone runs cool platinum → warm moonlight", () => {
