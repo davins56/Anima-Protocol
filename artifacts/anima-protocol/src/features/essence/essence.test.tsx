@@ -123,3 +123,16 @@ describe("EssencePage", () => {
     expect(screen.getByTestId("essence-themes").textContent).toMatch(/lantern/);
   });
 });
+
+describe("Calibrate name rules", () => {
+  it("rejects a name over 60 characters with a clear message", async () => {
+    renderAt("/essence/c1/calibrate");
+    await screen.findByTestId("vessel-portrait");
+    const input = screen.getAllByRole("textbox")[0];
+    input.removeAttribute("maxlength");
+    fireEvent.change(input, { target: { value: "x".repeat(61) } });
+    fireEvent.click(screen.getByRole("button", { name: "Save calibration" }));
+    expect(screen.getByRole("alert").textContent).toMatch(/1–60 characters/);
+    expect(localStorage.getItem("anima_essence_v1")).toBeNull();
+  });
+});

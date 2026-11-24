@@ -40,6 +40,7 @@ import calendarRouter from "./calendar";
 import mediaRouter from "./media";
 import accountRouter from "./account";
 import botBridgeRouter from "./botBridge";
+import bugSquasherRouter from "./bugSquasher";
 
 const router: IRouter = Router();
 
@@ -83,6 +84,7 @@ router.use("/calendar", calendarRouter);
 router.use("/media", mediaRouter);
 router.use("/account", accountRouter);
 router.use("/bridge", botBridgeRouter);
+router.use("/bug-squasher", bugSquasherRouter);
 router.use("/store", storeRouter);
 router.use(photoRouter);
 router.use(storageRouter);

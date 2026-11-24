@@ -10,7 +10,10 @@ import {
   VESSEL_TYPE_COPY,
   loadEssenceProfile,
   resonanceGlow,
+  NAME_MAX,
+  TAGLINE_MAX,
   saveEssenceProfile,
+  validateEssenceIdentity,
   setCalibrationField,
   silverToneColor,
   type EssenceProfile,
@@ -126,7 +129,7 @@ export default function CalibrateScreen({ characterId, companionName, avatarUrl 
   // Name falls back to the companion's name at display time, so the companion
   // list arriving late never wipes edits in progress.
   const [profile, setProfile] = useState<EssenceProfile>(() => loadEssenceProfile(characterId));
-  const [status, setStatus] = useState<"idle" | "saved" | "failed">("idle");
+  const [status, setStatus] = useState<"idle" | "saved" | "failed" | "invalid_name" | "invalid_tagline">("idle");
   useEffect(() => {
     setProfile(loadEssenceProfile(characterId));
     setStatus("idle");
@@ -138,7 +141,14 @@ export default function CalibrateScreen({ characterId, companionName, avatarUrl 
     setProfile((p) => ({ ...p, calibration: setCalibrationField(p.calibration, path, value) }));
   };
   const save = () => {
-    const saved = saveEssenceProfile(characterId, profile);
+    // An empty name field means "keep her current name", as the placeholder shows.
+    const candidate = { ...profile, name: profile.name.trim() || companionName };
+    const errors = validateEssenceIdentity(candidate.name, candidate.tagline);
+    if (errors.length) {
+      setStatus(errors.includes("invalid_name") ? "invalid_name" : "invalid_tagline");
+      return;
+    }
+    const saved = saveEssenceProfile(characterId, candidate);
     if (saved) setProfile(saved);
     setStatus(saved ? "saved" : "failed");
   };
@@ -157,11 +167,11 @@ export default function CalibrateScreen({ characterId, companionName, avatarUrl 
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block text-xs text-slate-300 space-y-1">
             <span className="font-mono text-[10px] tracking-[0.22em] uppercase text-slate-400">Name</span>
-            <input value={profile.name} maxLength={60} placeholder={companionName} onChange={(e) => { setStatus("idle"); setProfile((p) => ({ ...p, name: e.target.value })); }} className="w-full rounded-md bg-slate-900 border border-slate-700 px-2 py-1.5 text-sm text-slate-100" />
+            <input value={profile.name} maxLength={NAME_MAX} placeholder={companionName} onChange={(e) => { setStatus("idle"); setProfile((p) => ({ ...p, name: e.target.value })); }} className="w-full rounded-md bg-slate-900 border border-slate-700 px-2 py-1.5 text-sm text-slate-100" />
           </label>
           <label className="block text-xs text-slate-300 space-y-1">
             <span className="font-mono text-[10px] tracking-[0.22em] uppercase text-slate-400">Tagline</span>
-            <input value={profile.tagline} maxLength={120} placeholder="A receptacle for consciousness" onChange={(e) => { setStatus("idle"); setProfile((p) => ({ ...p, tagline: e.target.value })); }} className="w-full rounded-md bg-slate-900 border border-slate-700 px-2 py-1.5 text-sm text-slate-100" />
+            <input value={profile.tagline} maxLength={TAGLINE_MAX} placeholder="A receptacle for consciousness" onChange={(e) => { setStatus("idle"); setProfile((p) => ({ ...p, tagline: e.target.value })); }} className="w-full rounded-md bg-slate-900 border border-slate-700 px-2 py-1.5 text-sm text-slate-100" />
           </label>
         </div>
         <Chips label="Vessel type" options={VESSEL_TYPES} value={cal.vesselType} onPick={(v) => set("vesselType", v)} render={(v) => `${VESSEL_TYPE_COPY[v].label}${RENDERED_TYPES.has(v) ? "" : " ·"}`} />
@@ -184,6 +194,8 @@ export default function CalibrateScreen({ characterId, companionName, avatarUrl 
           </button>
           {status === "saved" ? <span role="status" className="text-xs text-emerald-300">Saved on this device.</span> : null}
           {status === "failed" ? <span role="alert" className="text-xs text-rose-300">Couldn't save here (storage blocked).</span> : null}
+          {status === "invalid_name" ? <span role="alert" className="text-xs text-rose-300">Her name needs 1–{NAME_MAX} characters.</span> : null}
+          {status === "invalid_tagline" ? <span role="alert" className="text-xs text-rose-300">The tagline can be up to {TAGLINE_MAX} characters.</span> : null}
         </div>
         <PendingNote testId="essence-calibration-local">
           Saved on this device only for now. It syncs to her vessel once the calibration storage route is agreed and approved. Her name in chat doesn't change here.

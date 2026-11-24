@@ -84,33 +84,164 @@ function obj(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 }
 
-/** Clamp 0-100, hex colours, enums; keep unknown fields; never throws. */
+/* ---------- unknown fields (server rules: docs/anima-essence-frontend.md, design §4.7) ---------- */
+
+/** Matches the server's `calibration_unknown_bytes` limit. */
+export const CALIBRATION_UNKNOWN_BYTES = 1024;
+export const CALIBRATION_UNKNOWN_KEYS = 16;
+export const CALIBRATION_MAX_DEPTH = 3;
+export const CALIBRATION_SOURCE_MAX = 32;
+
+const KNOWN_TOP = new Set(["version", "vesselType", "netForm", "shape", "hair", "eyes", "resonance", "silverWarmth", "theme", "source"]);
+const KNOWN_NESTED: Record<string, Set<string>> = {
+  hair: new Set(["style", "color"]),
+  eyes: new Set(["shape", "color"]),
+  resonance: new Set(["intensity", "glow"]),
+};
+export const KNOWN_LEAF_PATHS = [
+  "vesselType",
+  "netForm",
+  "shape",
+  "hair.style",
+  "hair.color",
+  "eyes.shape",
+  "eyes.color",
+  "resonance.intensity",
+  "resonance.glow",
+  "silverWarmth",
+  "theme",
+] as const;
+/** Name and tagline live on the Character/Anima row; the server rejects them inside calibration. */
+const FORBIDDEN_KEYS = new Set(["name", "tagline", "__proto__", "constructor", "prototype"]);
+const UNKNOWN_KEY = /^[A-Za-z][A-Za-z0-9_]{0,31}$/;
+
+/** Nesting depth of a JSON value: primitives 0, `{}`/`[]` 1, and so on. */
+function jsonDepth(v: unknown): number {
+  if (!v || typeof v !== "object") return 0;
+  const kids = Array.isArray(v) ? v : Object.values(v as Record<string, unknown>);
+  return 1 + kids.reduce<number>((m, k) => Math.max(m, jsonDepth(k)), 0);
+}
+
+function utf8Bytes(s: string): number {
+  return new TextEncoder().encode(s).length;
+}
+
+function jsonSafe(v: unknown): unknown {
+  try {
+    const text = JSON.stringify(v);
+    return text === undefined ? undefined : JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+type UnknownEntry = { path: string; parent: string | null; key: string; value: unknown };
+
+function collectUnknown(r: Record<string, unknown>): UnknownEntry[] {
+  const out: UnknownEntry[] = [];
+  const consider = (parent: string | null, key: string, raw: unknown) => {
+    if (FORBIDDEN_KEYS.has(key) || !UNKNOWN_KEY.test(key)) return;
+    const value = jsonSafe(raw);
+    if (value === undefined) return;
+    // Whole calibration depth ≤ 3: the root is 1, a top-level key's object value 2.
+    const allowed = CALIBRATION_MAX_DEPTH - (parent ? 2 : 1);
+    if (jsonDepth(value) > allowed) return;
+    out.push({ path: parent ? `${parent}.${key}` : key, parent, key, value });
+  };
+  for (const [k, v] of Object.entries(r)) if (!KNOWN_TOP.has(k)) consider(null, k, v);
+  for (const parent of Object.keys(KNOWN_NESTED)) {
+    for (const [k, v] of Object.entries(obj(r[parent]))) if (!KNOWN_NESTED[parent].has(k)) consider(parent, k, v);
+  }
+  return out;
+}
+
+function unknownTree(entries: UnknownEntry[]): Record<string, unknown> {
+  const tree: Record<string, unknown> = {};
+  for (const e of entries) {
+    if (!e.parent) tree[e.key] = e.value;
+    else tree[e.parent] = { ...obj(tree[e.parent]), [e.key]: e.value };
+  }
+  return tree;
+}
+
+/**
+ * Picks which unknown fields survive. Deterministic: candidates are sorted by
+ * path (code-unit order), then taken greedily while the serialized unknown
+ * fields stay ≤ 1024 UTF-8 bytes and ≤ 16 keys. A field that would overflow is
+ * dropped and later, smaller ones may still fit. Same input → same output,
+ * whatever the original key order.
+ */
+export function capUnknownFields(entries: UnknownEntry[]): UnknownEntry[] {
+  const sorted = [...entries].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  const kept: UnknownEntry[] = [];
+  for (const e of sorted) {
+    if (kept.length >= CALIBRATION_UNKNOWN_KEYS) break;
+    const trial = [...kept, e];
+    if (utf8Bytes(JSON.stringify(unknownTree(trial))) <= CALIBRATION_UNKNOWN_BYTES) kept.push(e);
+  }
+  return kept;
+}
+
+/** Serialized size of a calibration's unknown fields, as the server counts them. */
+export function unknownFieldBytes(cal: unknown): number {
+  return utf8Bytes(JSON.stringify(unknownTree(collectUnknown(obj(cal)))));
+}
+
+/**
+ * Clamp 0-100, hex colours, enums; keep unknown fields within the server's
+ * caps (see capUnknownFields); never carries name/tagline; never throws.
+ */
 export function normalizeVesselCalibration(raw: unknown): VesselCalibration {
   const r = obj(raw);
   const d = DEFAULT_CALIBRATION;
   const hair = obj(r.hair);
   const eyes = obj(r.eyes);
   const res = obj(r.resonance);
+  const kept = capUnknownFields(collectUnknown(r));
+  const extras = unknownTree(kept);
+  const allowedSource = new Set<string>([...KNOWN_LEAF_PATHS, ...kept.map((e) => e.path)]);
   const source: Record<string, CalibrationSource> = {};
-  for (const [k, v] of Object.entries(obj(r.source))) {
-    if (v === "photo" || v === "user" || v === "default") source[k] = v;
+  for (const [k, v] of Object.entries(obj(r.source)).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    if (Object.keys(source).length >= CALIBRATION_SOURCE_MAX) break;
+    if (allowedSource.has(k) && (v === "photo" || v === "user" || v === "default")) source[k] = v;
   }
   const out: VesselCalibration = {
-    ...r,
+    ...extras,
     version: 1,
     vesselType: oneOf(VESSEL_TYPES, r.vesselType, d.vesselType),
     shape: oneOf(VESSEL_SHAPES, r.shape, d.shape),
-    hair: { style: oneOf(HAIR_STYLES, hair.style, d.hair.style), color: hex(hair.color, d.hair.color) },
-    eyes: { shape: oneOf(EYE_SHAPES, eyes.shape, d.eyes.shape), color: hex(eyes.color, d.eyes.color) },
-    resonance: { intensity: clamp100(res.intensity, d.resonance.intensity), glow: clamp100(res.glow, d.resonance.glow) },
+    hair: { ...obj(extras.hair), style: oneOf(HAIR_STYLES, hair.style, d.hair.style), color: hex(hair.color, d.hair.color) },
+    eyes: { ...obj(extras.eyes), shape: oneOf(EYE_SHAPES, eyes.shape, d.eyes.shape), color: hex(eyes.color, d.eyes.color) },
+    resonance: {
+      ...obj(extras.resonance),
+      intensity: clamp100(res.intensity, d.resonance.intensity),
+      glow: clamp100(res.glow, d.resonance.glow),
+    },
     silverWarmth: clamp100(r.silverWarmth, d.silverWarmth),
     theme: oneOf(THEMES, r.theme, d.theme),
     source,
   };
   const net = oneOf(VESSEL_TYPES, r.netForm, "humanoid");
   if (net !== "humanoid") out.netForm = net as NetForm;
-  else delete out.netForm;
   return out;
+}
+
+/* ---------- name / tagline (server: 1–60 chars, no control chars; tagline 0–120) ---------- */
+
+export const NAME_MAX = 60;
+export const TAGLINE_MAX = 120;
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
+
+export type IdentityError = "invalid_name" | "invalid_tagline";
+
+/** Same rules the server applies on PUT calibration; trims first. */
+export function validateEssenceIdentity(name: string, tagline: string): IdentityError[] {
+  const errors: IdentityError[] = [];
+  const n = name.trim();
+  const t = tagline.trim();
+  if (n.length < 1 || n.length > NAME_MAX || CONTROL.test(n)) errors.push("invalid_name");
+  if (t.length > TAGLINE_MAX || CONTROL.test(t)) errors.push("invalid_tagline");
+  return errors;
 }
 
 /**
@@ -187,8 +318,8 @@ export function loadEssenceProfile(
 ): EssenceProfile {
   const row = obj(obj(readAll(storage)[characterId]).profile);
   return {
-    name: typeof row.name === "string" ? row.name.slice(0, 60) : fallbackName,
-    tagline: typeof row.tagline === "string" ? row.tagline.slice(0, 120) : "",
+    name: typeof row.name === "string" && validateEssenceIdentity(row.name, "").length === 0 ? row.name.trim() : fallbackName,
+    tagline: typeof row.tagline === "string" && validateEssenceIdentity("x", row.tagline).length === 0 ? row.tagline.trim() : "",
     calibration: normalizeVesselCalibration(row.calibration),
     savedAt: typeof row.savedAt === "string" ? row.savedAt : null,
   };
@@ -201,10 +332,11 @@ export function saveEssenceProfile(
   now = new Date(),
 ): EssenceProfile | null {
   if (!characterId) return null;
+  if (validateEssenceIdentity(profile.name, profile.tagline).length) return null;
   const all = readAll(storage);
   const saved: EssenceProfile = {
-    name: profile.name.trim().slice(0, 60),
-    tagline: profile.tagline.trim().slice(0, 120),
+    name: profile.name.trim(),
+    tagline: profile.tagline.trim(),
     calibration: normalizeVesselCalibration(profile.calibration),
     savedAt: now.toISOString(),
   };
