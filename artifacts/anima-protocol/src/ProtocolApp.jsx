@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import UpdateAvailablePrompt from "@/components/app/UpdateAvailablePrompt";
 import OfflineBanner from "@/components/app/OfflineBanner";
 import UserActivitySync from "@/components/app/UserActivitySync";
+import BugSquasherSync from "@/components/bugSquasher/BugSquasherSync";
 import ConsentBanner from "@/components/ConsentBanner";
 import { usePageMeta, ROUTE_META } from "./lib/usePageMeta";
 
@@ -97,6 +98,7 @@ const MainHome = lazy(() => import("./pages/MainHome"));
 const Characters = lazy(() => import("./pages/Characters"));
 const Settings = lazy(() => import("./pages/Settings"));
 const MemorySecurityLab = lazy(() => import("./pages/MemorySecurityLab"));
+const BugSquasher = lazy(() => import("./pages/BugSquasher"));
 const UserProfile = lazy(() => import("./pages/UserProfile"));
 const Animas = lazy(() => import("./pages/Animas"));
 const EchoKeys = lazy(() => import("./pages/EchoKeys"));
@@ -1149,6 +1151,7 @@ const AuthenticatedApp = () => {
                 }
               />
               <Route path="/memory-security-lab" element={<MemorySecurityLab />} />
+              <Route path="/bug-squasher" element={<BugSquasher />} />
               <Route
                 path="/profile"
                 element={
@@ -1728,6 +1731,7 @@ export default function ProtocolApp() {
           <ClerkProviderWithRoutes>
             <AuthProvider>
               <UserActivitySync />
+              <BugSquasherSync />
               <ExperienceRuntimeSync />
               <ConfirmProvider>
                 <InAppBrowserWarning />
