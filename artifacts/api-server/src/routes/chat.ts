@@ -2570,8 +2570,9 @@ router.post("/turns/:turnId/commit", async (req, res) => {
     });
     return;
   }
-  // #763: a scene turn where nobody answers is committed when it starts.
-  if (asObject(turn.metadata).scene_no_reply === true) {
+  // #763: a scene turn where nobody answers is committed when it starts; a
+  // marker-only reply has no assistant row to wait for.
+  if (asObject(turn.metadata).scene_no_reply === true || asObject(turn.metadata).scene_event_only === true) {
     res.json({ turn_id: turn.id, persistence_status: "committed" });
     return;
   }
@@ -3142,6 +3143,8 @@ router.post("/messages", async (req, res) => {
   leaseHeartbeat.unref?.();
   hintLocalLlmWarm();
   let streamSucceeded = false;
+  // #763: the reply was only stage markers (no visible text, no assistant row).
+  let sceneEventOnly = false;
   let fullResponse = "";
   // Checkpoint metadata for a late persist retry if the first write timed out.
   let pipelineMetadata: Record<string, unknown> = turnMetadata;
@@ -4551,20 +4554,25 @@ router.post("/messages", async (req, res) => {
     // An empty completion used to look like a successful turn on the client
     // (thinking/typing cleared, no visible reply). Fail loudly instead.
     // Unclosed / think-only DeepSeek R1 output is recovered by finalizeAssistantReply.
-    if (!String(fullResponse).trim()) {
-      throw emptyReplyError();
-    }
-
-    streamSucceeded = true;
-    // #763: the stream and the stored reply lose the same markers.
+    // #763: markers come off first (the stream and the stored reply lose the
+    // same ones), then the check. A reply that was only markers is a valid
+    // marker-only turn: `done.visible: ""` plus its scene_event rows. The
+    // stream filter's markers count too, in case the settled text lost them.
     let stageMarkers: StageMarker[] = [];
     if (stageFilter) {
       const tail = stageFilter.finish();
       if (tail) writeSse(res, { content: tail });
       const extracted = extractStageMarkers(fullResponse);
-      stageMarkers = extracted.markers;
+      stageMarkers = extracted.markers.length ? extracted.markers : [...stageFilter.markers];
       if (extracted.markers.length) fullResponse = extracted.visible.trim();
     }
+    sceneEventOnly = Boolean(stageFilter) && stageMarkers.length > 0 && !String(fullResponse).trim();
+    if (sceneEventOnly) fullResponse = "";
+    if (!sceneEventOnly && !String(fullResponse).trim()) {
+      throw emptyReplyError();
+    }
+
+    streamSucceeded = true;
     // The companion chose to show something on her own ([IMAGE: …] tag).
     // Same safety gate and limits as a request; the tag never reaches the bubble.
     const tagIntent = photoTagIntent(fullResponse);
@@ -4677,6 +4685,7 @@ router.post("/messages", async (req, res) => {
           responderIndex: sceneTurn.responderIndex,
           markers: replyCutOff ? [] : stageMarkers,
           blocked: sceneTurn.blocked,
+          turnId,
         });
       } catch (error) {
         logger.warn({ error, sessionId }, "Scene finish failed; the plan ends here");
@@ -4691,6 +4700,8 @@ router.post("/messages", async (req, res) => {
     const generatedMetadata = {
       ...clientTurnMetadata(body.metadata),
       ...(scenesOn ? { scene_awareness: { cast: sceneCast, user: userHeardBy, assistant: assistantHeardBy } } : {}),
+      // #763: a marker-only reply has no assistant row; the turn commits without one.
+      ...(sceneEventOnly ? { scene_event_only: true } : {}),
       mode,
       session_title: String(sessionData.title || "New session"),
       character_ids: characterIds,
@@ -4898,6 +4909,13 @@ router.post("/messages", async (req, res) => {
         await preStreamPersist;
       } catch (error) {
         logger.warn({ error, turnId }, "Pre-stream chat persistence failed");
+      }
+      if (streamSucceeded && sceneEventOnly) {
+        // Nothing to persist but the user line (already written above).
+        await markTurnCommitted(turnId, userId).catch((error) =>
+          logger.warn({ error, turnId }, "Marker-only turn commit failed"),
+        );
+        return;
       }
       if (!streamSucceeded || !String(fullResponse).trim()) return;
 

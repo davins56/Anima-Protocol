@@ -72,6 +72,7 @@ export function clientTurnMetadata(metadata: unknown): Record<string, unknown> {
   // #763: who heard the turn is server-written; a client can never set it.
   delete copy.scene_awareness;
   delete copy.scene_no_reply;
+  delete copy.scene_event_only;
   return copy;
 }
 

@@ -250,6 +250,8 @@ export async function finishSceneTurn(input: {
   responderIndex: number | null;
   markers: readonly StageMarker[];
   blocked: readonly BlockedSpeaker[];
+  /** The chat turn whose reply carried the markers (stamped on its event rows). */
+  turnId?: string | null;
   now?: Date;
 }): Promise<SceneTurnFinish | null> {
   const now = input.now ?? new Date();
@@ -287,6 +289,7 @@ export async function finishSceneTurn(input: {
           scene: effectiveScene(nextStored, info),
           nameOf: sceneNameOf(info),
           nowIso,
+          turnId: input.turnId ?? null,
         });
       }
     }

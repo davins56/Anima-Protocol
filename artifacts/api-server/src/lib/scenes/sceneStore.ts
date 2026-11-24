@@ -252,6 +252,8 @@ export async function insertSceneEvents(
     scene: SceneState;
     nameOf: (id: string) => string;
     nowIso: string;
+    /** Marker-generated rows only: the chat turn that emitted them. PATCH / command rows stay unstamped. */
+    turnId?: string | null;
   },
 ): Promise<MsgData[]> {
   if (input.changes.length === 0) return [];
@@ -280,6 +282,7 @@ export async function insertSceneEvents(
       kind: change.kind,
       heard_by: heardBy,
       scene_rev: input.scene.rev,
+      ...(input.turnId ? { turn_id: input.turnId } : {}),
     };
     if (subject) {
       metadata.character_id = subject;
