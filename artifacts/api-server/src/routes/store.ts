@@ -183,24 +183,40 @@ async function guardBackupRecord(
   scopes: Map<string, AwarenessScope>,
 ): Promise<Record<string, unknown>> {
   if (!scenesEnabled()) return record;
+  // Another user's session id is rejected (SceneOwnershipError propagates);
+  // any other read failure fails closed: the session counts as scened.
+  const scopeFor = async (sessionId: string): Promise<AwarenessScope | null> => {
+    const cached = scopes.get(sessionId);
+    if (cached) return cached;
+    try {
+      const scope = await loadAwarenessScope(db, userId, sessionId);
+      scopes.set(sessionId, scope);
+      return scope;
+    } catch (error) {
+      if (error instanceof SceneOwnershipError) throw error;
+      return null;
+    }
+  };
+  const nowIso = new Date().toISOString();
   if (entityName === CHAT_MESSAGE) {
     const sessionId = String(record.session_id ?? "");
     if (!sessionId) return withHeardBy(record, []);
-    let scope = scopes.get(sessionId);
-    if (!scope) {
-      scope = await loadAwarenessScope(db, userId, sessionId).catch(() => undefined);
-      if (scope) scopes.set(sessionId, scope);
-    }
-    return scope ? stampUnverifiedRow(scope, record, new Date().toISOString()) : withHeardBy(record, []);
+    const scope = await scopeFor(sessionId);
+    return scope ? stampUnverifiedRow(scope, record, nowIso) : withHeardBy(record, []);
   }
   if (entityName === CHAT_SESSION) {
-    const guarded = guardBackupSharedMemory(record);
+    const sessionId = String(record.id ?? "");
+    const scope = sessionId ? await scopeFor(sessionId) : null;
+    // Same rule as a standalone row: a claimed stamp, or a session that
+    // already has a scene (or can't be read), means nobody heard it.
+    const scened = !scope || scope.hasStoredScene;
+    const guarded = guardBackupSharedMemory(record, scened);
     if (!Array.isArray(guarded.messages)) return guarded;
     return {
       ...guarded,
       messages: guarded.messages.map((m) =>
-        m && typeof m === "object" && !Array.isArray(m) && claimsAwareness(m)
-          ? withHeardBy(m as Record<string, unknown>, [])
+        m && typeof m === "object" && !Array.isArray(m) && (scened || claimsAwareness(m))
+          ? withHeardBy(m as Record<string, unknown>, [], nowIso)
           : m,
       ),
     };
@@ -208,17 +224,47 @@ async function guardBackupRecord(
   return record;
 }
 
-/** Shared facts from a backup cannot prove who heard them: a claimed stamp becomes nobody. */
-function guardBackupSharedMemory(record: Record<string, unknown>): Record<string, unknown> {
+/**
+ * Shared facts from a backup cannot prove who heard them: a claimed stamp,
+ * or any fact restored into a scened session, becomes nobody.
+ */
+function guardBackupSharedMemory(record: Record<string, unknown>, scened: boolean): Record<string, unknown> {
   if (!Array.isArray(record.shared_memory)) return record;
   return {
     ...record,
     shared_memory: record.shared_memory.map((item) =>
-      item && typeof item === "object" && !Array.isArray(item) && "heard_by" in (item as object)
+      item && typeof item === "object" && !Array.isArray(item) && (scened || "heard_by" in (item as object))
         ? { ...(item as Record<string, unknown>), heard_by: [] }
         : item,
     ),
   };
+}
+
+/** Guard every backup record before anything is written; null = another user's session. */
+async function guardBackupEntities(
+  userId: string,
+  entities: Record<string, unknown>,
+): Promise<Record<string, unknown[]> | null> {
+  const scopes = new Map<string, AwarenessScope>();
+  const out: Record<string, unknown[]> = {};
+  try {
+    for (const [entityName, records] of Object.entries(entities)) {
+      if (!Array.isArray(records)) continue;
+      const guarded: unknown[] = [];
+      for (const record of records) {
+        guarded.push(
+          record && typeof record === "object" && !Array.isArray(record)
+            ? await guardBackupRecord(userId, entityName, record as Record<string, unknown>, scopes)
+            : record,
+        );
+      }
+      out[entityName] = guarded;
+    }
+  } catch (error) {
+    if (error instanceof SceneOwnershipError) return null;
+    throw error;
+  }
+  return out;
 }
 
 /** Bulk paths must not mint or overwrite an operator identity. */
@@ -570,13 +616,17 @@ router.post("/import", async (req, res) => {
   }
 
   let count = 0;
-  const entities = body.entities || {};
-  const importScopes = new Map<string, AwarenessScope>();
+  // #763: guarded before anything is written (another user's session id is a 404).
+  const entities = await guardBackupEntities(userId, body.entities || {});
+  if (!entities) {
+    res.status(404).json({ error: "Session not found" });
+    return;
+  }
   for (const [entityName, records] of Object.entries(entities)) {
     if (!Array.isArray(records)) continue;
     for (const rawRecord of records) {
       if (!rawRecord || typeof rawRecord !== "object") continue;
-      const record = await guardBackupRecord(userId, entityName, rawRecord, importScopes);
+      const record = rawRecord as Record<string, unknown>;
       const entityId = String(record.id ?? makeId());
       await upsertEntity(userId, entityName, entityId, {
         ...record,
@@ -637,20 +687,12 @@ router.post("/restore", async (req, res) => {
   }
 
   // #763: scopes are read before the transaction (they live in chat_sessions).
-  const restoreScopes = new Map<string, AwarenessScope>();
-  const guardedEntities: Record<string, Record<string, unknown>[]> = {};
-  for (const [entityName, records] of Object.entries(entities)) {
-    if (!Array.isArray(records)) continue;
-    const out: Record<string, unknown>[] = [];
-    for (const record of records) {
-      out.push(
-        record && typeof record === "object" && !Array.isArray(record)
-          ? await guardBackupRecord(userId, entityName, record, restoreScopes)
-          : record,
-      );
-    }
-    guardedEntities[entityName] = out;
+  const guarded = await guardBackupEntities(userId, entities);
+  if (!guarded) {
+    res.status(404).json({ error: "Session not found" });
+    return;
   }
+  const guardedEntities = guarded as Record<string, Record<string, unknown>[]>;
 
   const result = await db.transaction(async (tx) => {
     if (mode === "replace") {
@@ -1456,12 +1498,13 @@ router.post("/messages/replace", async (req, res) => {
         created_date: prev?.created_date ?? msg.created_date ?? now,
         updated_date: now,
       };
+      let consumes: string[] = [];
       if (scope) {
         if (prev) data = keepStoredAwareness(data, prev);
         else {
           const stamped = await stampNewRow(tx, userId, scope, data, now);
           data = stamped.row;
-          consumed.push(...stamped.consumed);
+          consumes = stamped.consumed;
         }
       }
       if (
@@ -1472,6 +1515,8 @@ router.post("/messages/replace", async (req, res) => {
       ) {
         continue;
       }
+      // A row that is not written keeps its tombstone for a later restore.
+      consumed.push(...consumes);
       await tx
         .insert(userEntities)
         .values({ userId, entityName: CHAT_MESSAGE, entityId: id, data })

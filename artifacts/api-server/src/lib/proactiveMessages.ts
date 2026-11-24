@@ -243,7 +243,8 @@ async function loadCandidate(
         ),
       )
       .orderBy(desc(chatMessages.createdAt))
-      .limit(24);
+      // #763: read further back so unheard lines don't crowd out heard ones.
+      .limit(scenesEnabled() ? 96 : 24);
     if (newestFirst.length === 0) continue;
     if (!newestFirst.some((message) => message.role === "user")) continue;
     if (newestFirst[0]!.createdAt > inactiveBefore) continue;
@@ -282,6 +283,7 @@ async function loadCandidate(
         .reverse()
         // #763: she only recalls lines she heard (typed copies carry the stamp).
         .filter((message) => !scenesEnabled() || heardByCharacter(message, characterId, session.characterIds))
+        .slice(-24)
         .map((message) => ({
           role: message.role,
           content: message.content,

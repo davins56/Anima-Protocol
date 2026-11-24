@@ -205,10 +205,11 @@ async function memoryFacts(characterId: string): Promise<string[]> {
   return ((row?.facts as any[]) ?? []).map((f) => String(f.text ?? ""));
 }
 
-async function embeddingTexts(characterId: string): Promise<string[]> {
-  const r = await getPool()
-    .query(`SELECT text FROM memory_embeddings WHERE user_id = $1 AND character_id = $2`, [userA, characterId])
-    .catch(() => ({ rows: [] as Array<{ text: string }> }));
+/** null when this database has no memory_embeddings table (no pgvector type in the test schema). */
+async function embeddingTexts(characterId: string): Promise<string[] | null> {
+  const reg = await getPool().query(`SELECT to_regclass('memory_embeddings') AS t`);
+  if (!(reg.rows as Array<{ t: unknown }>)[0]?.t) return null;
+  const r = await getPool().query(`SELECT text FROM memory_embeddings WHERE user_id = $1 AND character_id = $2`, [userA, characterId]);
   return (r.rows as Array<{ text: string }>).map((x) => x.text);
 }
 
@@ -256,7 +257,7 @@ describe("awareness rules (pure)", () => {
   it("absent = legacy (stored cast only), [] = nobody, malformed = nobody", () => {
     expect(readHeardBy({ content: "x" })).toEqual({ kind: "legacy" });
     expect(readHeardBy({ metadata: { heard_by: [] } })).toEqual({ kind: "list", ids: [] });
-    for (const bad of ["oops", 3, null, [1], [""], { a: 1 }, Array(65).fill("x")]) {
+    for (const bad of ["oops", 3, null, [1], [""], { a: 1 }, Array(257).fill(0).map((_, i) => `x${i}`)]) {
       expect(readHeardBy({ metadata: { heard_by: bad } }).kind, JSON.stringify(bad)).toBe("malformed");
     }
     expect(readHeardBy({ metadata: "junk" }).kind).toBe("malformed");
@@ -282,6 +283,20 @@ describe("awareness rules (pure)", () => {
     const trailing = historyForCharacter(rows.slice(0, 2), AEL, cast);
     expect(trailing.trailingGapNote).toBe(AWAY_GAP_NOTE);
     expect(historyForCharacter(rows, NAT, cast).rows.map((r) => r.id)).toEqual(["1", "2", "3"]);
+  });
+
+  it("@mentions need a token start and do not double-count a longer name", () => {
+    const names = new Map([[NAT, "Mary"], [SER, "Mary Jane"], [AEL, "Aeland"]]);
+    expect(mentionedCastIds("hi @Mary Jane", names)).toEqual([SER]);
+    expect(mentionedCastIds("mail foo@aeland.com", names)).toEqual([]);
+    expect(mentionedCastIds("(@aeland) and @mary", names).sort()).toEqual([AEL, NAT].sort());
+  });
+
+  it("the tombstone digest is type-preserving", () => {
+    const base = { role: "user", content: "1", attachments: [] };
+    expect(rowDigest(base)).not.toBe(rowDigest({ ...base, content: 1 }));
+    expect(rowDigest(base)).not.toBe(rowDigest({ ...base, attachments: {} }));
+    expect(rowDigest(base)).not.toBe(rowDigest({ ...base, attachments: undefined }));
   });
 
   it("@mentions resolve to cast ids, longest name first", () => {
@@ -470,6 +485,16 @@ describe("flag on: every write path stamps heard_by on the server", () => {
     expect(restore.status).toBe(200);
     expect((await storedRow(s, `${P}bk1`))!.metadata.heard_by).toEqual([]);
     expect((await storedRow(s, `${P}bk2`))!.metadata.heard_by).toEqual([]);
+    // Embedded legacy messages and shared facts restored into a scened session: nobody heard them.
+    const embedded = await call("POST", "/store/restore", {
+      mode: "merge",
+      entities: { ChatSession: [{ id: s, title: "Group", mode: "group", group_character_ids: CAST, messages: [{ role: "user", content: "embedded unstamped" }], shared_memory: [{ text: "unstamped fact" }] }] },
+    });
+    expect(embedded.status).toBe(200);
+    const [sessRow] = await db.select({ data: userEntities.data }).from(userEntities).where(and(eq(userEntities.userId, userA), eq(userEntities.entityName, "ChatSession"), eq(userEntities.entityId, s)));
+    const sessData = sessRow!.data as Record<string, any>;
+    for (const m of sessData.messages ?? []) expect(m.metadata.heard_by).toEqual([]);
+    expect(sessData.shared_memory).toEqual([{ text: "unstamped fact", heard_by: [] }]);
     // Scene and tombstones live in chat_sessions: no generic route reaches them.
     const before = await tombstones(s);
     await call("PUT", `/store/ChatSession/${s}`, { awareness_tombstones: { x: { heard_by: [AEL] } }, scene: { cast: {} } });
@@ -479,6 +504,7 @@ describe("flag on: every write path stamps heard_by on the server", () => {
   it("cross-user ids: another user's character never hears A's session, and B cannot touch A's tombstones", async () => {
     flag(true);
     const s = await seedSession();
+    await patch(s, { [NAT]: { presence: "here" }, [AEL]: { presence: "here" } });
     await append(s, { role: "user", content: "A-only words" });
     const res = await call("POST", "/chat/messages", {
       turn_id: `${P}xu1`,
@@ -501,7 +527,9 @@ describe("flag on: every write path stamps heard_by on the server", () => {
     if (!done.assistant_character_id) expect(llm.prompts.join("\n")).not.toContain("A-only words");
     // B, using A's session id, gets its own (empty) world and cannot restore A's rows.
     const bs = await call("POST", "/store/messages/restore", { session_id: s, message: { id: "zz", role: "user", content: "x" } }, userB);
-    expect([201, 404]).toContain(bs.status);
+    expect(bs.status).toBe(404);
+    expect((await call("POST", "/store/messages", { session_id: s, message: { role: "user", content: "x" } }, userB)).status).toBe(404);
+    expect((await call("POST", "/store/restore", { mode: "merge", entities: { ChatMessage: [{ id: `${P}xb`, session_id: s, role: "user", content: "x" }] } }, userB)).status).toBe(404);
     expect((await stored(s)).some((m) => m.id === "zz")).toBe(false);
   });
 
@@ -515,7 +543,12 @@ describe("flag on: every write path stamps heard_by on the server", () => {
     expect((await memoryFacts(SER)).some((f) => f.includes("MEMORY-SECRET"))).toBe(true);
     await new Promise((r) => setTimeout(r, 800));
     expect((await memoryFacts(AEL)).some((f) => f.includes("MEMORY-SECRET"))).toBe(false);
-    expect((await embeddingTexts(AEL)).some((x) => x.includes("MEMORY-SECRET"))).toBe(false);
+    const aelEmbeddings = await embeddingTexts(AEL);
+    if (aelEmbeddings === null) {
+      console.warn("memory_embeddings is not available in this database; embedding isolation is covered by the per-listener upsert only");
+    } else {
+      expect(aelEmbeddings.some((x) => x.includes("MEMORY-SECRET"))).toBe(false);
+    }
     // The client's forged stamp on its own user row was ignored (ledger stamp).
     expect((await storedRow(s, `${t.turnId}:user`))!.metadata.heard_by.sort()).toEqual([NAT, SER].sort());
     expect((await storedRow(s, `${t.turnId}:assistant`))!.metadata.heard_by.sort()).toEqual([NAT, SER].sort());
