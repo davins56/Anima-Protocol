@@ -38,10 +38,16 @@ ollama pull dolphin-mistral
 ollama create anima-uncensored -f scripts/llm/Modelfile.anima-uncensored
 export ANIMA_OLLAMA_MODEL_STANDARD=anima-uncensored
 
-# Or OpenRouter (free API key at https://openrouter.ai/keys) — Venice Uncensored:
+# Or OpenRouter (free API key at https://openrouter.ai/keys).
+# Adult turns default to Venice Uncensored :free
+# (cognitivecomputations/dolphin-mistral-24b-venice-edition:free).
+# As of 2026-11-24 that slug has no live OpenRouter endpoints — adult
+# chat then hops here to anima-uncensored, or fails closed.
+# Override: ANIMA_ADULT_MODEL, ANIMA_ADULT_MODEL_FALLBACKS,
+# ANIMA_ADULT_LOCAL_MODEL=anima-uncensored
 export OPENROUTER_API_KEY=sk-or-…
-# $0 accounts auto-fall back to minimax/minimax-m2.7:free on HTTP 402.
-# To skip Venice from the first turn: ANIMA_OPENROUTER_FREE=true
+# Non-adult $0 accounts auto-fall back to minimax/minimax-m2.7:free on HTTP 402.
+# To skip paid Venice on non-adult turns: ANIMA_OPENROUTER_FREE=true
 ```
 
 ### No GPU / no network to Ollama or Hugging Face? Smoke-test the wiring

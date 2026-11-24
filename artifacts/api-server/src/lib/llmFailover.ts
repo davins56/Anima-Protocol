@@ -47,6 +47,7 @@ import {
   OPENROUTER_FREE_MODEL,
   OPENROUTER_FREE_MODEL_CANDIDATES,
   OPENROUTER_VENICE_UNCENSORED,
+  OPENROUTER_VENICE_UNCENSORED_FREE,
   MINIMAX_DEFAULT_MODEL,
   openRouterCascadeMaxRetries,
   summarizeLocalLlmBaseUrl,
@@ -531,7 +532,18 @@ export function resolveDeepshiModel(tier: ModelTier): ResolvedModel {
 }
 
 /** Resolve model for local vLLM / Ollama OpenAI-compatible serving. */
-export function resolveLocalModel(tier: ModelTier): ResolvedModel {
+export function resolveLocalModel(
+  tier: ModelTier,
+  opts?: { adultActive?: boolean },
+): ResolvedModel {
+  if (opts?.adultActive) {
+    const maxTokens = tier === "light" ? 4096 : tier === "heavy" ? 16384 : 8192;
+    const model =
+      process.env.ANIMA_ADULT_LOCAL_MODEL?.trim() ||
+      process.env.ANIMA_OLLAMA_MODEL_ADULT?.trim() ||
+      "anima-uncensored";
+    return { tier, model, maxTokens };
+  }
   // Default to ollama (bootstrap anima-chat). Set ANIMA_LOCAL_LLM_BACKEND=vllm
   // for GPU Ministral / OpenAI-compatible vLLM serve.
   const backend = (process.env.ANIMA_LOCAL_LLM_BACKEND || "").trim().toLowerCase();
@@ -611,17 +623,22 @@ async function refuseBackgroundSendWhileChatActive(localOnly?: boolean): Promise
 export type ProviderChainOpts = { adultActive?: boolean };
 
 /**
- * Adult chat must run on OpenRouter Venice Uncensored only. An empty chain
- * means the route is unavailable — callers must fail closed.
+ * Adult chat may use OpenRouter (default: Venice Uncensored :free) and/or a
+ * self-hosted uncensored model. An empty chain means the route is
+ * unavailable — callers must fail closed. Workers AI, OpenAI, and Gemini
+ * never appear in this chain.
  */
 export function adultChatRouteAvailable(): boolean {
-  return hasOpenRouterKey();
+  return getProviderChain({ adultActive: true }).length > 0;
 }
 
 export const ADULT_ROUTE_UNAVAILABLE =
-  "Adult mode needs OpenRouter with Venice Uncensored " +
-  `(${OPENROUTER_VENICE_UNCENSORED}). Set OPENROUTER_API_KEY on the API server ` +
-  "(Cloudflare Worker secret). Adult turns never use Workers AI, OpenAI, or Gemini.";
+  "Adult mode needs a $0 uncensored route: OpenRouter Venice Uncensored " +
+  `free (${OPENROUTER_VENICE_UNCENSORED_FREE}) or a self-hosted model ` +
+  "(Ollama `anima-uncensored`). Set OPENROUTER_API_KEY and/or " +
+  "ANIMA_LOCAL_LLM_BASE_URL on the API server. Override the OpenRouter " +
+  "model with ANIMA_ADULT_MODEL and optional ANIMA_ADULT_MODEL_FALLBACKS " +
+  "(comma-separated). Adult turns never use Workers AI, OpenAI, or Gemini.";
 
 export function adultRouteUnavailableError(): Error {
   const err = new Error(ADULT_ROUTE_UNAVAILABLE);
@@ -629,15 +646,42 @@ export function adultRouteUnavailableError(): Error {
   return err;
 }
 
-/** Always Venice Uncensored — ignores ANIMA_OPENROUTER_FREE and family overrides. */
-export function resolveAdultOpenRouterModel(tier: ModelTier = "standard"): ResolvedModel {
+function splitModelList(raw: string | undefined | null): string[] {
+  if (!raw) return [];
+  return raw
+    .split(/[,;\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Adult OpenRouter models: ANIMA_ADULT_MODEL (default Venice :free), then
+ * ANIMA_ADULT_MODEL_FALLBACKS. Family / ANIMA_OPENROUTER_FREE / general
+ * :free candidates (Gemma, MiniMax, Nemotron) are not appended — those
+ * models are not uncensored. Paid Venice is used only if the operator
+ * puts that id in the env list.
+ */
+export function resolveAdultOpenRouterModels(tier: ModelTier = "standard"): ResolvedModel[] {
   const maxTokens = tier === "light" ? 4096 : tier === "heavy" ? 16384 : 8192;
-  return { tier, model: OPENROUTER_VENICE_UNCENSORED, maxTokens };
+  const primary =
+    process.env.ANIMA_ADULT_MODEL?.trim() || OPENROUTER_VENICE_UNCENSORED_FREE;
+  const models: string[] = [];
+  for (const model of [primary, ...splitModelList(process.env.ANIMA_ADULT_MODEL_FALLBACKS)]) {
+    if (model && !models.includes(model)) models.push(model);
+  }
+  return models.map((model) => ({ tier, model, maxTokens }));
+}
+
+export function resolveAdultOpenRouterModel(tier: ModelTier = "standard"): ResolvedModel {
+  return resolveAdultOpenRouterModels(tier)[0];
 }
 
 export function getProviderChain(opts?: ProviderChainOpts): LlmProviderId[] {
   if (opts?.adultActive) {
-    return hasOpenRouterKey() ? ["openrouter"] : [];
+    const chain: LlmProviderId[] = [];
+    if (hasOpenRouterKey()) chain.push("openrouter");
+    if (localUsable()) chain.push("local");
+    return chain;
   }
   if (localUsable()) {
     const chain: LlmProviderId[] = ["local"];
@@ -675,8 +719,14 @@ export function shouldTryNextProvider(
   provider: LlmProviderId,
   err: unknown,
   hasNext: boolean,
+  opts?: { adultActive?: boolean; nextProvider?: LlmProviderId },
 ): boolean {
   if (!hasNext) return false;
+  // Adult OpenRouter failures (no live :free endpoint, daily 50-request cap,
+  // 404, credits) may hop to a configured self-hosted uncensored model.
+  if (opts?.adultActive && provider === "openrouter" && opts.nextProvider === "local") {
+    return true;
+  }
   if (provider === "local") {
     return isProviderConnectionError(err) || isLlmAbortOrTimeoutError(err);
   }
@@ -2230,6 +2280,42 @@ async function withOpenRouterCreditFallback<T>(
 }
 
 /**
+ * Adult OpenRouter cascade: only ANIMA_ADULT_MODEL + ANIMA_ADULT_MODEL_FALLBACKS
+ * (default Venice :free). Does not walk the general :free candidate list, so
+ * adult turns never land on Gemma, MiniMax, or other non-uncensored slugs,
+ * and never silently upgrade to paid Venice.
+ */
+async function withAdultOpenRouterFallback<T>(
+  preferred: ResolvedModel,
+  run: (resolved: ResolvedModel, remainingCandidates: number) => Promise<T>,
+): Promise<{ value: T; resolved: ResolvedModel }> {
+  let lastErr: unknown;
+  const candidates = resolveAdultOpenRouterModels(preferred.tier);
+  for (let i = 0; i < candidates.length; i += 1) {
+    const candidate = candidates[i];
+    const remainingCandidates = candidates.length - i - 1;
+    try {
+      const value = await run(candidate, remainingCandidates);
+      return { value, resolved: candidate };
+    } catch (err) {
+      lastErr = err;
+      if (err && typeof err === "object") {
+        (err as { openRouterModel?: string }).openRouterModel = candidate.model;
+      }
+      const next = candidates[i + 1];
+      if (next && shouldTryNextOpenRouterFreeModel(err, candidate.model)) {
+        console.warn(
+          `[llm] OpenRouter adult model ${candidate.model} failed (${summarizeError(err)}); retrying ${next.model}.`,
+        );
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr ?? adultRouteUnavailableError();
+}
+
+/**
  * Pull the first iterator result before treating an OpenRouter stream as
  * open. `chat.completions.create({ stream: true })` can resolve while the
  * first SSE event is still a 429 / provider error — that used to skip the
@@ -2294,26 +2380,31 @@ async function runOpenRouterStream(
     ? resolveAdultOpenRouterModel(req.tier)
     : resolveOpenRouterModel(req.tier);
   if (req.adultActive) {
-    const raw = await client.chat.completions.create(
-      {
-        model: preferred.model,
-        max_tokens: Math.min(hostedTokens(req, preferred.model), preferred.maxTokens),
-        messages: req.messages,
-        stream: true,
-        ...openRouterSamplingFields(req),
-      },
-      {
-        ...(req.signal ? { signal: req.signal } : {}),
-        maxRetries: 0,
+    const { value: stream, resolved } = await withAdultOpenRouterFallback(
+      preferred,
+      async (m, remaining) => {
+        const raw = await client.chat.completions.create(
+          {
+            model: m.model,
+            max_tokens: Math.min(hostedTokens(req, m.model), m.maxTokens),
+            messages: req.messages,
+            stream: true,
+            ...openRouterSamplingFields(req),
+          },
+          {
+            ...(req.signal ? { signal: req.signal } : {}),
+            maxRetries: openRouterCascadeMaxRetries(remaining),
+          },
+        );
+        return ensureChatStreamOpens(raw);
       },
     );
-    const stream = await ensureChatStreamOpens(raw);
     return {
       stream,
       provider: "openrouter",
       brand: "openrouter",
-      model: preferred.model,
-      tier: preferred.tier,
+      model: resolved.model,
+      tier: resolved.tier,
       failedOver,
     };
   }
@@ -2408,28 +2499,32 @@ async function runOpenRouterCompletion(
     ? resolveAdultOpenRouterModel(req.tier)
     : resolveOpenRouterModel(req.tier);
   if (req.adultActive) {
-    const completion = await client.chat.completions.create(
-      {
-        model: preferred.model,
-        max_tokens: Math.min(req.maxTokens, preferred.maxTokens),
-        messages: req.messages,
-        ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
-        ...(req.tools && req.tools.length
-          ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" }
-          : {}),
-      },
-      {
-        ...(req.signal ? { signal: req.signal } : {}),
-        maxRetries: 0,
-      },
+    const { value: completion, resolved } = await withAdultOpenRouterFallback(
+      preferred,
+      (m, remaining) =>
+        client.chat.completions.create(
+          {
+            model: m.model,
+            max_tokens: Math.min(req.maxTokens, m.maxTokens),
+            messages: req.messages,
+            ...(typeof req.temperature === "number" ? { temperature: req.temperature } : {}),
+            ...(req.tools && req.tools.length
+              ? { tools: req.tools, tool_choice: req.toolChoice ?? "auto" }
+              : {}),
+          },
+          {
+            ...(req.signal ? { signal: req.signal } : {}),
+            maxRetries: openRouterCascadeMaxRetries(remaining),
+          },
+        ),
     );
     const content = completion.choices?.[0]?.message?.content ?? "";
     return {
       content: typeof content === "string" ? content : "",
       provider: "openrouter",
       brand: "openrouter",
-      model: preferred.model,
-      tier: preferred.tier,
+      model: resolved.model,
+      tier: resolved.tier,
       failedOver,
       toolCalls: completion.choices?.[0]?.message?.tool_calls ?? null,
     };
@@ -2535,7 +2630,7 @@ async function streamFromLocalHost(
 ): Promise<ChatStreamResult> {
   const client = openAiClientForLocalBase(baseUrl);
   if (!client) throw new Error(LOCAL_LLM_SETUP_HINT);
-  const preferred = resolveLocalModel(req.tier);
+  const preferred = resolveLocalModel(req.tier, { adultActive: req.adultActive });
   // Live companion chat posts to Ollama's native /api/chat (the tunnel
   // serves :11434 directly). A body that ends without `done: true` throws,
   // and consumeLlmStream keeps that partial. ANIMA_OLLAMA_NATIVE_CHAT=0
@@ -2580,7 +2675,7 @@ async function completeFromLocalHost(
 ): Promise<ChatCompletionResult> {
   const client = openAiClientForLocalBase(baseUrl);
   if (!client) throw new Error(LOCAL_LLM_SETUP_HINT);
-  const preferred = resolveLocalModel(req.tier);
+  const preferred = resolveLocalModel(req.tier, { adultActive: req.adultActive });
   const hasTools = Boolean(req.tools && req.tools.length);
   const { value: completion, resolved } = await withModelFallback(client, preferred, async (m) => {
     if (useOllamaNativeChat(hasTools)) {
@@ -2700,7 +2795,7 @@ async function runLocalCompletionWithOptionalBackup(
 export async function createChatStreamWithFailover(req: ChatStreamRequest): Promise<ChatStreamResult> {
   beginChatProviderTurn();
   if (req.adultActive) {
-    if (!hasOpenRouterKey()) throw adultRouteUnavailableError();
+    if (!adultChatRouteAvailable()) throw adultRouteUnavailableError();
   } else if (cloudFlagshipMisconfigured() && !hasWorkersAiBinding() && !req.localOnly) {
     throw new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }
@@ -2776,7 +2871,11 @@ export async function createChatStreamWithFailover(req: ChatStreamRequest): Prom
         openRouterZdrBlocked = true;
       }
       const hasNext = chain.indexOf(provider) < chain.length - 1;
-      if (shouldTryNextProvider(provider, err, hasNext)) {
+      const nextProvider = hasNext ? chain[chain.indexOf(provider) + 1] : undefined;
+      if (shouldTryNextProvider(provider, err, hasNext, {
+        adultActive: req.adultActive,
+        nextProvider,
+      })) {
         console.warn(
           `[llm] ${provider} failed (${summarizeError(err)}); trying next provider in chain=[${chain.join(",")}]`,
         );
@@ -2806,7 +2905,7 @@ export async function createChatCompletionWithFailover(
 ): Promise<ChatCompletionResult> {
   beginChatProviderTurn();
   if (req.adultActive) {
-    if (!hasOpenRouterKey()) throw adultRouteUnavailableError();
+    if (!adultChatRouteAvailable()) throw adultRouteUnavailableError();
   } else if (cloudFlagshipMisconfigured() && !hasWorkersAiBinding() && !req.localOnly) {
     throw new Error(CLOUD_FLAGSHIP_SETUP_HINT);
   }
@@ -2883,7 +2982,11 @@ export async function createChatCompletionWithFailover(
         openRouterZdrBlocked = true;
       }
       const hasNext = chain.indexOf(provider) < chain.length - 1;
-      if (shouldTryNextProvider(provider, err, hasNext)) {
+      const nextProvider = hasNext ? chain[chain.indexOf(provider) + 1] : undefined;
+      if (shouldTryNextProvider(provider, err, hasNext, {
+        adultActive: req.adultActive,
+        nextProvider,
+      })) {
         console.warn(
           `[llm] ${provider} failed (${summarizeError(err)}); trying next provider in chain=[${chain.join(",")}]`,
         );

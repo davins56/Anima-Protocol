@@ -90,11 +90,22 @@ now follows the same decision.
 
 ## 4. Adult chat routing and companion age (feat/mature-mode-gaps)
 
-- Adult turns (`adultGate()` reason `allowed`) run on OpenRouter **Venice Uncensored**
-  (`cognitivecomputations/dolphin-mistral-24b-venice-edition`) only. They never
-  use Workers AI, OpenAI, or Gemini. If `OPENROUTER_API_KEY` (or
-  `ANIMA_OPENROUTER_API_KEY`) is missing, the turn fails closed with
-  `adult_route_unavailable`.
+- Adult turns (`adultGate()` reason `allowed`) run on a $0 uncensored route:
+  OpenRouter **Venice Uncensored free**
+  (`cognitivecomputations/dolphin-mistral-24b-venice-edition:free`, override
+  with `ANIMA_ADULT_MODEL` / `ANIMA_ADULT_MODEL_FALLBACKS`) and, if that
+  fails or no key is set, a self-hosted uncensored model when
+  `ANIMA_LOCAL_LLM_BASE_URL` is configured (default tag `anima-uncensored`,
+  override with `ANIMA_ADULT_LOCAL_MODEL`). They never use Workers AI,
+  OpenAI, or Gemini, and they never hop to non-uncensored `:free` slugs
+  (Gemma, Nemotron, MiniMax, and so on). If neither OpenRouter nor a local
+  host is available, the turn fails closed with `adult_route_unavailable`.
+  Live check (2026-11-24): the Venice `:free` slug has no OpenRouter
+  endpoints, so production needs a live `ANIMA_ADULT_MODEL`, the self-hosted
+  path, or (if the operator later funds the account) the paid Venice id.
+  OpenRouter `:free` limits: 20 requests/minute and 50/day on a $0 account
+  (1,000/day after $10 in purchased credits). A negative balance blocks
+  free models. See https://openrouter.ai/docs/api_reference/limits.
 - The server mode contract (`modePolicyPrompt`) always includes hard limits:
   no one under 18 or age-ambiguous / teen-coded, no loli/shota tropes, and no
   non-consent or sexual violence. Safeword and user limits still apply.

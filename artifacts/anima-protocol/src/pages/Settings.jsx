@@ -1024,7 +1024,7 @@ export default function Settings() {
                       <p className="font-mono text-xs text-primary/70 tracking-wider uppercase">Adult Content Mode</p>
                     </div>
                     <p className="text-[9px] font-mono text-primary/30 leading-relaxed">
-                      Enables mature roleplay for adults after the age check. Follow your pace and boundaries. Also enable Pulse intimacy on each companion you want this to apply to. Available outside therapy, crossover scenes, and Deep mode. Adult chats use OpenRouter Venice Uncensored; they never use Workers AI, OpenAI, or Gemini.
+                      Enables mature roleplay for adults after the age check. Follow your pace and boundaries. Also enable Pulse intimacy on each companion you want this to apply to. Available outside therapy, crossover scenes, and Deep mode. Adult chats use a free OpenRouter uncensored model (Venice Uncensored free when it has a live endpoint) or a self-hosted uncensored model if you have one configured; they never use Workers AI, OpenAI, or Gemini.
                     </p>
                     {safetyStatus && (
                       <p className="text-[9px] font-mono text-primary/40 mt-1.5" data-testid="age-status">
