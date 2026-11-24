@@ -109,11 +109,14 @@ export function createBotBridgeWebhookRouter(options: BotBridgeWebhookOptions = 
     }
 
     const storage = storageFor();
+    const replayKey = `${auth.botId}:${auth.signature}`;
+    let remembered = false;
     try {
       if (!(await storage.isAvailable())) return disabled(res);
-      if (replayCache.checkAndRemember(`${auth.botId}:${auth.signature}`, nowMs)) {
+      if (replayCache.checkAndRemember(replayKey, nowMs)) {
         return res.status(200).json({ status: "duplicate" });
       }
+      remembered = true;
       const bot = await storage.resolveBot(auth.botId);
       if (!bot) {
         logger.warn({ route: `bot-bridge/${kind}`, reason: "not_registered", bot: auth.botId }, "bot bridge request rejected");
@@ -131,6 +134,8 @@ export function createBotBridgeWebhookRouter(options: BotBridgeWebhookOptions = 
       const counts = await storage.countInbound(bot.userId, bot.botId, nowMs);
       if (counts.botLastMinute >= limits.inboundPerMinutePerBot || counts.userLastDay >= limits.inboundPerDayPerUser) {
         await storage.logDenied(bot, "rate_limited", nowMs);
+        // Not processed: let the bot's retry of this exact request through later.
+        replayCache.forget(replayKey);
         const retryAfter = counts.botLastMinute >= limits.inboundPerMinutePerBot ? 60 : 3600;
         res.setHeader("Retry-After", String(retryAfter));
         return deny(res, 429, "rate_limited", "Too many bridge requests.");
@@ -156,6 +161,8 @@ export function createBotBridgeWebhookRouter(options: BotBridgeWebhookOptions = 
       // Push to the owner (quiet hours respected) lands with M4; see docs/bot-bridge.md.
       return res.status(202).json({ status: "accepted", id: out.id });
     } catch (err) {
+      // Nothing was stored; a retry of the same signed request must not read as a duplicate.
+      if (remembered) replayCache.forget(replayKey);
       logger.error({ route: `bot-bridge/${kind}`, err: err instanceof Error ? err.message : "error" }, "bot bridge storage failed");
       return disabled(res);
     }

@@ -221,6 +221,31 @@ describe("bot bridge webhooks: with (test-only) storage", () => {
     expect(s.denied.at(-1)?.reason).toBe("rate_limited");
   });
 
+  it("processes a retry of the same signed request after a 429 (not a false duplicate)", async () => {
+    const s = memory();
+    env.ANIMA_BRIDGE_INBOUND_PER_MINUTE = "1";
+    expect((await post("message", messageBody({ dedupe_key: "msg-000001" }))).status).toBe(202);
+    const body = messageBody({ dedupe_key: "msg-000002" });
+    expect((await post("message", body)).status).toBe(429);
+    env.ANIMA_BRIDGE_INBOUND_PER_MINUTE = "10";
+    // Same bytes, same timestamp, same signature: the bot's retry.
+    const retry = await post("message", body);
+    expect(retry.status).toBe(202);
+    expect(retry.json.status).toBe("accepted");
+    expect(s.messages).toHaveLength(2);
+  });
+
+  it("processes a retry of the same signed request after a storage failure", async () => {
+    storage = { ...createMemoryBotBridgeStorage(BOTS, COMPANIONS), resolveBot: async () => { throw new Error("db down"); } };
+    const body = messageBody({ dedupe_key: "msg-retry01" });
+    expect((await post("message", body)).status).toBe(503);
+    const s = memory();
+    const retry = await post("message", body);
+    expect(retry.status).toBe(202);
+    expect(retry.json.status).toBe("accepted");
+    expect(s.messages).toHaveLength(1);
+  });
+
   it("drops adult content and flags instruction-like text", async () => {
     const s = memory();
     const adult = await post("message", messageBody({ dedupe_key: "msg-adult01", body: "nsfw pics attached" }));
