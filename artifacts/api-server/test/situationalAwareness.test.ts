@@ -491,8 +491,14 @@ describe("flag on: every write path stamps heard_by on the server", () => {
       persistence_owner: "client",
     }, userA);
     expect(res.status).toBe(200);
-    await res.text();
-    expect(llm.prompts.join("\n")).not.toContain("A-only words");
+    const sse = await res.text();
+    // B's character never speaks in (or hears) A's session: with the PR 3
+    // planner the turn goes to a stored cast member instead, and a prompt
+    // written for B_CHAR never exists.
+    const done = JSON.parse(sse.split("\n\n").map((b) => b.replace(/^data: /m, "")).find((b) => b.includes('"done":true'))!.split("\n").find((l) => l.startsWith("{"))!);
+    if (done.assistant_character_id) expect(CAST).toContain(done.assistant_character_id);
+    expect(llm.prompts.join("\n")).not.toContain("Intruder");
+    if (!done.assistant_character_id) expect(llm.prompts.join("\n")).not.toContain("A-only words");
     // B, using A's session id, gets its own (empty) world and cannot restore A's rows.
     const bs = await call("POST", "/store/messages/restore", { session_id: s, message: { id: "zz", role: "user", content: "x" } }, userB);
     expect([201, 404]).toContain(bs.status);

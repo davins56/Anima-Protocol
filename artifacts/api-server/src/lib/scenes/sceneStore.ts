@@ -243,7 +243,7 @@ export class SceneOwnershipError extends Error {
  * One `role:'event'` ChatMessage row per change, appended after the current
  * max seq (the session lock is already held). Returns the full persisted rows.
  */
-async function insertSceneEvents(
+export async function insertSceneEvents(
   tx: Tx,
   input: {
     userId: string;
