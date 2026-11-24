@@ -123,6 +123,15 @@ export class RecentSignatureCache {
     return false;
   }
 
+  /**
+   * Undo `checkAndRemember` for a request that was not processed (rate limited
+   * or storage failure), so the sender's retry of the same signed request is
+   * handled instead of being answered as a duplicate.
+   */
+  forget(key: string): void {
+    this.seen.delete(key);
+  }
+
   clear(): void {
     this.seen.clear();
   }
