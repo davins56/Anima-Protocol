@@ -24,6 +24,7 @@ import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import type { FrameloopGate } from "@/lib/vessel/frameloopGate";
 import { RenderDemandContext, type RenderDemand } from "./renderDemand";
 import { detectRendererCapabilities, selectRendererQuality } from "@/lib/rendererQuality";
+import { STAGES, type StageTheme } from "@/lib/vessel/vesselCalibration";
 
 /** Idle (nothing moving but breathing/blink) render rate for full mode. */
 export const IDLE_FPS = 15;
@@ -50,6 +51,10 @@ type Props = {
   focus?: "body" | "head";
   /** Dev/lab: pin ARKit face morph weights on plain GLB vessels. */
   faceOverride?: ArkitFaceWeights | null;
+  /** Anima Essence calibration override (preview); defaults to config.calibration. */
+  calibration?: unknown;
+  /** Per-vessel stage light rig (Essence theme). Omitted = the usual studio lights. */
+  stage?: StageTheme | null;
 };
 
 function useVisible(ref: React.RefObject<HTMLElement | null>) {
@@ -102,7 +107,7 @@ function DemandBridge({ gate }: { gate: FrameloopGate }) {
 }
 
 const VesselCanvas = forwardRef<VesselCanvasHandle, Props>(function VesselCanvas(
-  { config, expression, mode = "full", hd = false, className, shift = null, mood, intensity, speaking = false, focus = "body", faceOverride = null },
+  { config, expression, mode = "full", hd = false, className, shift = null, mood, intensity, speaking = false, focus = "body", faceOverride = null, calibration, stage = null },
   ref,
 ) {
   const host = useRef<HTMLDivElement>(null);
@@ -133,7 +138,7 @@ const VesselCanvas = forwardRef<VesselCanvasHandle, Props>(function VesselCanvas
   // animate for a moment (eased weights, aura); render through it, then rest.
   useEffect(() => {
     if (!portrait) demand.pulse(CHANGE_PULSE_MS);
-  }, [portrait, demand, shift, expression, mood, intensity, faceOverride, config]);
+  }, [portrait, demand, shift, expression, mood, intensity, faceOverride, config, calibration, stage]);
   // Live speech (jaw / visemes) keeps the loop running for its whole duration.
   useEffect(() => {
     if (portrait || !speaking) return;
@@ -165,8 +170,9 @@ const VesselCanvas = forwardRef<VesselCanvasHandle, Props>(function VesselCanvas
         gl={{ antialias: !portrait && hd && tier.antialias, powerPreference: "low-power", preserveDrawingBuffer: false, alpha: true }}
       >
         <RenderDemandContext.Provider value={demand}>
-        <ambientLight intensity={0.6} />
-        <directionalLight position={[1.5, 3, 2]} intensity={1.1} />
+        <ambientLight intensity={stage ? STAGES[stage].ambient : 0.6} />
+        <directionalLight position={[1.5, 3, 2]} intensity={stage ? STAGES[stage].key : 1.1} />
+        {stage ? <directionalLight position={[-2, 2.2, -2]} intensity={STAGES[stage].rim} color={stage === "light" ? "#ffffff" : "#93c5fd"} /> : null}
         <pointLight position={[-1.5, 1.6, 1]} intensity={0.6} color={config.effects.color} />
         <VesselModel
           config={config}
@@ -178,6 +184,7 @@ const VesselCanvas = forwardRef<VesselCanvasHandle, Props>(function VesselCanvas
           intensity={intensity}
           speaking={speaking}
           faceOverride={faceOverride}
+          calibration={calibration}
           reducedMotion={reduced}
           onLoaded={() => demand.pulse(LOAD_PULSE_MS)}
           presentationTier={dpr <= 0.75 ? "low" : undefined}

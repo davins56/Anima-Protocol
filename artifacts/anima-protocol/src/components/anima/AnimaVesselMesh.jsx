@@ -7,6 +7,7 @@ import TesseractLattice from "@/components/battle/TesseractLattice";
 import VesselAura from "@/components/vessel/VesselAura";
 import PresentationTreatment from "@/components/vessel/PresentationTreatment";
 import UploadedVessel from "@/components/vessel/UploadedVessel";
+import VesselForm from "@/components/vessel/VesselForm";
 import { isApiModelUrl } from "@/lib/vessel/vesselModelAsset";
 import { wPhaseScale } from "@/lib/tesseract4d";
 import { RENDERER_QUALITY } from "@/lib/rendererQuality";
@@ -609,6 +610,20 @@ export default function AnimaVesselMesh({
 
       {/* Appearance Studio "Character presentation" (portrait | hologram | netnavi). */}
       <PresentationTreatment tier={quality.name} lite={presentationLite}>
+      {model?.net_form ? (
+        /* Anima Essence net form (Cyberworld / net surfaces): replaces the navi body, halo and wings. */
+        <VesselForm
+          form={model.net_form}
+          coreColor={model.net_look?.core || color}
+          silver={model.net_look?.silver}
+          glow={model.net_look?.glow}
+          aura={model.net_look?.aura}
+          budget={quality.name === "low" ? 0 : hd ? 40 : 20}
+          hd={hd}
+          reducedMotion={still}
+        />
+      ) : (
+      <>
         {plan.showHalo !== false && (
           <mesh ref={halo} position={[0, 1.62, -0.02]}>
             <torusGeometry args={[0.2, hd ? 0.014 : 0.016, hd ? 16 : 10, hd ? 64 : 32]} />
@@ -714,6 +729,8 @@ export default function AnimaVesselMesh({
           showLattice={(hd || showLattice) && plan.showLattice}
           plan={plan}
         />
+      )}
+      </>
       )}
       </PresentationTreatment>
     </group>

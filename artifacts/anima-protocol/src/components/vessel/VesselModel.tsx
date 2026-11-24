@@ -21,6 +21,8 @@ import { useArkitFace } from "./useArkitFace";
 import { useVesselMaterial } from "@/lib/vessel/materialCache";
 import { createRefCache } from "@/lib/vessel/refCache";
 import { VRMUtils } from "@pixiv/three-vrm";
+import { EYE_SHAPE_SCALE, resolveCalibratedLook, type CalibratedLook } from "@/lib/vessel/vesselCalibration";
+import VesselForm, { ResonanceAura } from "./VesselForm";
 
 /** Calm flame shift for a saved `effects.aura: "flame"` vessel when no live emotion drives it. */
 function useStaticFlameShift(config: VesselConfig, active: boolean): VesselShift | null {
@@ -58,7 +60,14 @@ type Props = {
   reducedMotion?: boolean;
   /** An external model finished loading (demand-frameloop hosts render it in). */
   onLoaded?: () => void;
+  /**
+   * Anima Essence calibration override (previews). Defaults to
+   * `config.calibration`. Only user-sourced fields apply (resolveCalibratedLook).
+   */
+  calibration?: unknown;
 };
+
+type BodyProps = Props & { look: CalibratedLook };
 
 const BODY: Record<string, { w: number; hip: number; h: number }> = {
   slender: { w: 0.2, hip: 0.24, h: 1 },
@@ -185,7 +194,7 @@ function Aura({ config, hologram, still = false }: { config: VesselConfig; holog
   );
 }
 
-function ProceduralVessel({ config, expression: exprProp, hd = false, hologram = false, track = true, onFrame, shift = null, reducedMotion = false }: Props) {
+function ProceduralVessel({ config, expression: exprProp, hd = false, hologram = false, track = true, onFrame, shift = null, reducedMotion = false, look }: BodyProps) {
   const expression = shift ? shift.face : exprProp;
   const flameShift = useStaticFlameShift(config, !shift && !hologram);
   const seg = hd ? 20 : 8;
@@ -196,13 +205,17 @@ function ProceduralVessel({ config, expression: exprProp, hd = false, hologram =
   const browL = useRef<THREE.Mesh>(null);
   const browR = useRef<THREE.Mesh>(null);
   const eyes = useRef<THREE.Group>(null);
+  const hairSway = useRef<THREE.Group>(null);
   const root = useRef<THREE.Group>(null);
   const { pointer } = useThree();
 
   const skin = useMat(config.skinTone, hologram);
   const hair = useMat(config.hair.color, hologram);
   const cloth = useMat(config.outfit.color, hologram);
-  const accent = useMat(config.outfit.accent, hologram, config.outfit.accent, 0.25);
+  // Silver Tone (calibration) tints the metal accents; Glow strength lifts their emissive.
+  const metal = look.silver ?? config.outfit.accent;
+  const accent = useMat(metal, hologram, metal, 0.25 + (look.glow ?? 0) * 0.6);
+  const eyeScale = look.eyeShape ? EYE_SHAPE_SCALE[look.eyeShape] : null;
   const eye = useMat(config.eyes.color, hologram, config.eyes.color, 0.4 + config.eyes.glow * 2);
   const dark = useMat("#1f1a1a", hologram);
 
@@ -233,8 +246,12 @@ function ProceduralVessel({ config, expression: exprProp, hd = false, hologram =
       browL.current.rotation.z = -e.brow * 0.25;
       browR.current.rotation.z = e.brow * 0.25;
     }
+    if (hairSway.current && look.hairSway > 0) {
+      hairSway.current.rotation.x = still ? 0 : Math.sin(t * 1.3) * 0.06 * look.hairSway;
+      hairSway.current.rotation.z = still ? 0 : Math.sin(t * 0.9 + 1) * 0.04 * look.hairSway;
+    }
     if (eyes.current) {
-      const blink = !still && Math.sin(t * 0.9) > 0.985 ? 0.1 : 1;
+      const blink = !still && look.eyeShape !== "closed" && Math.sin(t * 0.9) > 0.985 ? 0.1 : 1;
       eyes.current.scale.y = Math.max(0.1, e.eyeOpen * blink);
     }
     if (root.current && config.effects.aura === "glitch" && !still) {
@@ -300,7 +317,7 @@ function ProceduralVessel({ config, expression: exprProp, hd = false, hologram =
         </mesh>
         <group ref={eyes} position={[0, 0.015, 0.105]}>
           {[-1, 1].map((s) => (
-            <mesh key={s} material={eye} position={[s * 0.04, 0, 0]}>
+            <mesh key={s} material={eye} position={[s * 0.04, 0, 0]} scale={eyeScale ? [eyeScale[0], eyeScale[1], 1] : undefined}>
               <sphereGeometry args={[0.016, seg, seg]} />
             </mesh>
           ))}
@@ -314,7 +331,13 @@ function ProceduralVessel({ config, expression: exprProp, hd = false, hologram =
         <mesh ref={mouth} material={dark} position={[0, -0.045, 0.108]}>
           <torusGeometry args={[0.022, 0.004, 4, 12, Math.PI]} />
         </mesh>
-        <Hair style={config.hair.style} mat={hair} seg={seg} />
+        {!look.hairHidden && (
+          <group ref={hairSway} position={[0, 0.05, 0]}>
+            <group position={[0, -0.05, 0]}>
+              <Hair style={config.hair.style} mat={hair} seg={seg} />
+            </group>
+          </group>
+        )}
         {has("circlet") && (
           <mesh material={accent} position={[0, 0.06, 0]} rotation={[Math.PI / 2 - 0.15, 0, 0]}>
             <torusGeometry args={[0.125, 0.006, 4, seg * 3]} />
@@ -339,6 +362,7 @@ function ProceduralVessel({ config, expression: exprProp, hd = false, hologram =
       </group>
       <Aura config={config} hologram={hologram} still={reducedMotion} />
       {(shift || flameShift) && !hologram && <VesselAura shift={(shift || flameShift)!} budget={hd ? 72 : track ? 40 : 0} />}
+      {look.aura != null && !hologram && <ResonanceAura strength={look.aura} budget={hd ? 48 : track ? 28 : 0} still={reducedMotion} />}
     </group>
   );
 }
@@ -398,9 +422,29 @@ export function usesUploadedRuntime(model: VesselConfig["model"]): boolean {
   return Boolean(model?.url) && (model.kind === "vrm" || isApiModelUrl(model.url));
 }
 
-function VesselModelBody(props: Props) {
+function VesselModelBody(props: BodyProps) {
   const [loadedKey, setLoadedKey] = useState("");
+  const { look } = props;
+  // Calibrated non-humanoid form (user-chosen): replaces the body, uploaded models included.
+  if (look.form !== "humanoid") {
+    return (
+      <VesselForm
+        form={look.form}
+        coreColor={look.coreColor}
+        silver={look.silver}
+        glow={look.glow}
+        aura={look.aura}
+        budget={props.hd ? 48 : props.track !== false ? 28 : 0}
+        hd={props.hd}
+        hologram={props.hologram}
+        reducedMotion={props.reducedMotion}
+      />
+    );
+  }
   const procedural = <ProceduralVessel {...props} />;
+  // Uploaded / glTF bodies keep their own hair, eyes and proportions; the
+  // resonance aura is the calibration that applies to them.
+  const resonance = look.aura != null && !props.hologram ? <ResonanceAura strength={look.aura} budget={props.hd ? 48 : props.track !== false ? 28 : 0} still={props.reducedMotion} /> : null;
   const { model } = props.config;
   const { kind, url } = model;
   if (kind === "procedural" || !url) return procedural;
@@ -426,6 +470,7 @@ function VesselModelBody(props: Props) {
           faceOverride={props.faceOverride}
         />
         {props.shift && loadedKey === modelCacheKey(model) && <VesselAura shift={props.shift} budget={props.hd ? 72 : props.track !== false ? 40 : 0} />}
+        {resonance}
       </group>
     );
   }
@@ -440,13 +485,16 @@ function VesselModelBody(props: Props) {
           faceOverride={props.faceOverride}
           onLoaded={props.onLoaded}
         />
+        {resonance}
       </Suspense>
     </AssetBoundary>
   );
 }
 
 export default function VesselModel(props: Props) {
+  // Anima Essence calibration, after precedence (only user-set fields apply).
+  const look = useMemo(() => resolveCalibratedLook(props.config, props.calibration), [props.config, props.calibration]);
   return <PresentationTreatment lite={props.track === false} tier={props.presentationTier}>
-    <VesselModelBody {...props} />
+    <VesselModelBody {...props} config={look.config} look={look} />
   </PresentationTreatment>;
 }
