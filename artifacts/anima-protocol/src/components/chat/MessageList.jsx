@@ -11,6 +11,8 @@ import { lastReplyActionIndexes } from "@/lib/chatReplyActions";
 import { mayHaveOlderMessages, oldestSeq } from "@/lib/olderMessages";
 import { siblingPagerAt } from "@/lib/replySiblings";
 import ReplySiblingPager from "./ReplySiblingPager";
+import MessageReactions from "./MessageReactions";
+import { canReactTo } from "@/lib/chatReactions";
 import { ChevronUp, Loader } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -50,7 +52,7 @@ function useIndexedCallbacks(latest) {
   };
 }
 
-export default function MessageList({ messages, session, characters, characterMemories = EMPTY, characterEmotions, loreLinks, onRewindToMessage, onSpeak, onEditMessage, onDeleteMessage, onRegenerateMessage, onAvatarClick, onTeachMessage, onRateMessage, onLoadOlder, scrollContainerRef, actionsDisabled = false, onSwitchSibling }) {
+export default function MessageList({ messages, session, characters, characterMemories = EMPTY, characterEmotions, loreLinks, onRewindToMessage, onSpeak, onEditMessage, onDeleteMessage, onRegenerateMessage, onAvatarClick, onTeachMessage, onRateMessage, onLoadOlder, scrollContainerRef, actionsDisabled = false, onSwitchSibling, onReactToMessage }) {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(false);
   const [serverExhausted, setServerExhausted] = useState(false);
@@ -63,7 +65,7 @@ export default function MessageList({ messages, session, characters, characterMe
   const rosterKey = groupChars.map((c) => `${c.id}:${c.name}`).join("|");
 
   const latest = useRef(null);
-  latest.current = { messages: rows, groupChars, rosterKey, onRewindToMessage, onSpeak, onEditMessage, onDeleteMessage, onRegenerateMessage, onTeachMessage, onRateMessage };
+  latest.current = { messages: rows, groupChars, rosterKey, onRewindToMessage, onSpeak, onEditMessage, onDeleteMessage, onRegenerateMessage, onTeachMessage, onRateMessage, onReactToMessage };
   const cb = useIndexedCallbacks(latest);
   const { lastUser, lastAssistant } = lastReplyActionIndexes(rows);
   const askAgainFromUser = lastUser >= 0 && lastAssistant < lastUser;
@@ -227,6 +229,19 @@ export default function MessageList({ messages, session, characters, characterMe
     elements.push(
       <HeardByCaption key={`heard-${i}`} message={msg} align={msg.role === "user" ? "right" : "left"} />,
     );
+    // Chat upgrade 6a: only passed when VITE_ANIMA_REACTIONS is on.
+    if (onReactToMessage && canReactTo(msg)) {
+      const reactKey = String(msg.id);
+      elements.push(
+        <MessageReactions
+          key={`reactions-${reactKey}`}
+          message={msg}
+          onReact={cb(`react:${reactKey}`, (l) => (emoji) => l.current.onReactToMessage?.(reactKey, emoji))}
+          disabled={actionsDisabled}
+          companionName={msg.character_name}
+        />,
+      );
+    }
     // Chat upgrade 2: only passed when VITE_ANIMA_REPLY_SIBLINGS is on.
     if (onSwitchSibling) {
       const pager = siblingPagerAt(rows, i);

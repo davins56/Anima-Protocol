@@ -1,151 +1,106 @@
 /**
- * vesselCalibration v1, as proposed by Anima 3D Visual for the Essence
- * Calibrate screen:
+ * Essence wrapper around 3D Visual's canonical vesselCalibration v1 module
+ * (src/lib/vessel/vesselCalibration.ts). Types, enums, labelled options,
+ * defaults, the normalizer (with the server's unknown-field and source rules),
+ * setCalibrationField and CONTROLS_BY_FORM all come from there.
  *
- *   { version: 1, vesselType, netForm?, shape, hair:{style,color}, eyes:{shape,color},
- *     resonance:{intensity,glow}, silverWarmth, theme, source:{[fieldPath]:'photo'|'user'|'default'} }
- *
- * 3D Visual owns the canonical module (src/lib/vessel/vesselCalibration once it
- * lands on main). This is a client-side mirror so the screen can validate and
- * save; swap the import when theirs ships. Nothing here touches the rendered
- * vessel.
- *
- * Storage: there is no agreed server route yet (Backend Data stores it next to
- * character_vessel / character_visual_identity once Dàvīn approves any schema
- * change). Until then settings are kept on this device only, per character,
- * and the UI says so.
+ * Kept here: the name/tagline rules (they live on the character's entry, not
+ * in calibration), resetCalibrationField (client side of `reset_paths`), and
+ * the on-device store. No server route is wired yet, so settings stay on this
+ * device per character, and the UI says so.
  */
-export const VESSEL_TYPES = ["humanoid", "crystal", "orb", "chalice", "flame", "tree"] as const;
-export const VESSEL_SHAPES = ["slender", "curved", "tall", "compact"] as const;
-export const HAIR_STYLES = ["flowing", "long", "short", "braided", "none"] as const;
-export const EYE_SHAPES = ["almond", "round", "narrow", "closed"] as const;
-export const THEMES = ["dark", "light"] as const;
+import {
+  DEFAULT_CALIBRATION,
+  normalizeVesselCalibration,
+  type CalibrationPath,
+  type VesselCalibration,
+} from "@/lib/vessel/vesselCalibration";
 
-export type VesselType = (typeof VESSEL_TYPES)[number];
-export type NetForm = Exclude<VesselType, "humanoid">;
-export type CalibrationSource = "photo" | "user" | "default";
-
-export type VesselCalibration = {
-  version: 1;
-  vesselType: VesselType;
-  netForm?: NetForm;
-  shape: (typeof VESSEL_SHAPES)[number];
-  hair: { style: (typeof HAIR_STYLES)[number]; color: string };
-  eyes: { shape: (typeof EYE_SHAPES)[number]; color: string };
-  resonance: { intensity: number; glow: number };
-  silverWarmth: number;
-  theme: (typeof THEMES)[number];
-  source: Record<string, CalibrationSource>;
-  /** Unknown fields from a newer version are kept, never dropped. */
-  [extra: string]: unknown;
-};
-
-/** Only Humanoid renders fully until 3D Visual ships the other forms. */
-export const RENDERED_TYPES: ReadonlySet<VesselType> = new Set(["humanoid"]);
-
-export const VESSEL_TYPE_COPY: Record<VesselType, { label: string; blurb: string }> = {
-  humanoid: { label: "Humanoid", blurb: "Her familiar form." },
-  crystal: { label: "Crystal", blurb: "Faceted light, held still." },
-  orb: { label: "Orb", blurb: "A sphere of quiet resonance." },
-  chalice: { label: "Chalice", blurb: "A vessel that holds what is poured in." },
-  flame: { label: "Flame", blurb: "Restless, warm, never the same twice." },
-  tree: { label: "Tree", blurb: "Rooted, slow, growing toward the light." },
-};
-
-export const DEFAULT_CALIBRATION: VesselCalibration = {
-  version: 1,
-  vesselType: "humanoid",
-  shape: "slender",
-  hair: { style: "flowing", color: "#c8ccd4" },
-  eyes: { shape: "almond", color: "#3b82f6" },
-  resonance: { intensity: 60, glow: 50 },
-  silverWarmth: 50,
-  theme: "dark",
-  source: {},
-};
-
-const HEX = /^#[0-9a-f]{6}$/i;
-
-function oneOf<T extends string>(list: readonly T[], v: unknown, fallback: T): T {
-  return typeof v === "string" && (list as readonly string[]).includes(v.toLowerCase()) ? (v.toLowerCase() as T) : fallback;
-}
-
-function clamp100(v: unknown, fallback: number): number {
-  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
-  if (!Number.isFinite(n)) return fallback;
-  return Math.round(Math.min(100, Math.max(0, n)));
-}
-
-function hex(v: unknown, fallback: string): string {
-  return typeof v === "string" && HEX.test(v.trim()) ? v.trim().toLowerCase() : fallback;
-}
+export {
+  CALIBRATION_MAX_DEPTH,
+  CALIBRATION_PATHS,
+  CALIBRATION_SOURCE_MAX,
+  CALIBRATION_UNKNOWN_BYTES,
+  CALIBRATION_UNKNOWN_KEYS,
+  CONTROLS_BY_FORM,
+  DEFAULT_CALIBRATION,
+  EYE_SHAPES,
+  EYE_SHAPE_OPTIONS,
+  HAIR_STYLES,
+  HAIR_STYLE_OPTIONS,
+  NET_FORMS,
+  NET_FORM_OPTIONS,
+  SHAPE_OPTIONS,
+  THEMES,
+  THEME_OPTIONS,
+  VESSEL_SHAPES,
+  VESSEL_TYPES,
+  VESSEL_TYPE_OPTIONS,
+  controlApplies,
+  isUserSet,
+  labelOf,
+  normalizeVesselCalibration,
+  setCalibrationField,
+  silverToneColor,
+  sourceOf,
+  unknownFieldBytes,
+  utf8ByteLength,
+} from "@/lib/vessel/vesselCalibration";
+export type {
+  CalibrationControl,
+  CalibrationPath,
+  CalibrationSource,
+  NetForm,
+  Option,
+  VesselCalibration,
+  VesselType,
+} from "@/lib/vessel/vesselCalibration";
 
 function obj(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 }
 
-/** Clamp 0-100, hex colours, enums; keep unknown fields; never throws. */
-export function normalizeVesselCalibration(raw: unknown): VesselCalibration {
-  const r = obj(raw);
-  const d = DEFAULT_CALIBRATION;
-  const hair = obj(r.hair);
-  const eyes = obj(r.eyes);
-  const res = obj(r.resonance);
-  const source: Record<string, CalibrationSource> = {};
-  for (const [k, v] of Object.entries(obj(r.source))) {
-    if (v === "photo" || v === "user" || v === "default") source[k] = v;
-  }
-  const out: VesselCalibration = {
-    ...r,
-    version: 1,
-    vesselType: oneOf(VESSEL_TYPES, r.vesselType, d.vesselType),
-    shape: oneOf(VESSEL_SHAPES, r.shape, d.shape),
-    hair: { style: oneOf(HAIR_STYLES, hair.style, d.hair.style), color: hex(hair.color, d.hair.color) },
-    eyes: { shape: oneOf(EYE_SHAPES, eyes.shape, d.eyes.shape), color: hex(eyes.color, d.eyes.color) },
-    resonance: { intensity: clamp100(res.intensity, d.resonance.intensity), glow: clamp100(res.glow, d.resonance.glow) },
-    silverWarmth: clamp100(r.silverWarmth, d.silverWarmth),
-    theme: oneOf(THEMES, r.theme, d.theme),
-    source,
-  };
-  const net = oneOf(VESSEL_TYPES, r.netForm, "humanoid");
-  if (net !== "humanoid") out.netForm = net as NetForm;
-  else delete out.netForm;
-  return out;
+/* ---------- name / tagline (server: 1–60 chars, no control chars; tagline 0–120) ---------- */
+
+export const NAME_MAX = 60;
+export const TAGLINE_MAX = 120;
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
+
+export type IdentityError = "invalid_name" | "invalid_tagline";
+
+/** Same rules the server applies on PUT calibration; trims first. */
+export function validateEssenceIdentity(name: string, tagline: string): IdentityError[] {
+  const errors: IdentityError[] = [];
+  const n = name.trim();
+  const t = tagline.trim();
+  if (n.length < 1 || n.length > NAME_MAX || CONTROL.test(n)) errors.push("invalid_name");
+  if (t.length > TAGLINE_MAX || CONTROL.test(t)) errors.push("invalid_tagline");
+  return errors;
 }
 
 /**
- * Applies a user edit at `path` (e.g. "hair.color") and marks it 'user'.
- * Fields the photo-to-vessel creator set ('photo') are only replaced by an
- * explicit user edit, never by defaults.
+ * Drops a user/photo value back to "from her vessel": the value returns to the
+ * calibration default and its source entry is removed, so precedence lets her
+ * existing vessel drive that field again (the client side of `reset_paths`).
  */
-export function setCalibrationField(cal: VesselCalibration, path: string, value: unknown): VesselCalibration {
+export function resetCalibrationField(cal: VesselCalibration, path: CalibrationPath): VesselCalibration {
   const next = JSON.parse(JSON.stringify(cal)) as Record<string, unknown>;
   const parts = path.split(".");
   let cur = next;
+  let def: unknown = JSON.parse(JSON.stringify(DEFAULT_CALIBRATION));
   for (const p of parts.slice(0, -1)) {
     cur[p] = obj(cur[p]);
     cur = cur[p] as Record<string, unknown>;
+    def = obj(def)[p];
   }
-  cur[parts[parts.length - 1]] = value;
-  const normalized = normalizeVesselCalibration(next);
-  normalized.source = { ...normalized.source, [path]: "user" };
-  return normalized;
-}
-
-/** Silver Tone warmth: 0 = cool platinum, 100 = warm moonlight. */
-export function silverToneColor(warmth: number): string {
-  const t = Math.min(100, Math.max(0, warmth)) / 100;
-  const cool = [0xd9, 0xe2, 0xec];
-  const warm = [0xf1, 0xe4, 0xc8];
-  return `#${cool.map((c, i) => Math.round(c + (warm[i] - c) * t).toString(16).padStart(2, "0")).join("")}`;
-}
-
-/** CSS glow for the 2D preview; strength from Sapphire Resonance. */
-export function resonanceGlow(cal: VesselCalibration): string {
-  const a = (cal.resonance.intensity / 100) * 0.85;
-  const blur = 8 + Math.round((cal.resonance.glow / 100) * 56);
-  const alpha = Math.round(a * 255).toString(16).padStart(2, "0");
-  return `0 0 ${blur}px ${Math.round(blur / 3)}px #2563eb${alpha}`;
+  const leaf = parts[parts.length - 1];
+  const value = obj(def)[leaf];
+  if (value === undefined) delete cur[leaf];
+  else cur[leaf] = value;
+  const source = { ...obj(next.source) };
+  delete source[path];
+  next.source = source;
+  return normalizeVesselCalibration(next);
 }
 
 /* ---------- on-device store (until Backend Data's route is agreed) ---------- */
@@ -187,8 +142,8 @@ export function loadEssenceProfile(
 ): EssenceProfile {
   const row = obj(obj(readAll(storage)[characterId]).profile);
   return {
-    name: typeof row.name === "string" ? row.name.slice(0, 60) : fallbackName,
-    tagline: typeof row.tagline === "string" ? row.tagline.slice(0, 120) : "",
+    name: typeof row.name === "string" && validateEssenceIdentity(row.name, "").length === 0 ? row.name.trim() : fallbackName,
+    tagline: typeof row.tagline === "string" && validateEssenceIdentity("x", row.tagline).length === 0 ? row.tagline.trim() : "",
     calibration: normalizeVesselCalibration(row.calibration),
     savedAt: typeof row.savedAt === "string" ? row.savedAt : null,
   };
@@ -201,10 +156,11 @@ export function saveEssenceProfile(
   now = new Date(),
 ): EssenceProfile | null {
   if (!characterId) return null;
+  if (validateEssenceIdentity(profile.name, profile.tagline).length) return null;
   const all = readAll(storage);
   const saved: EssenceProfile = {
-    name: profile.name.trim().slice(0, 60),
-    tagline: profile.tagline.trim().slice(0, 120),
+    name: profile.name.trim(),
+    tagline: profile.tagline.trim(),
     calibration: normalizeVesselCalibration(profile.calibration),
     savedAt: now.toISOString(),
   };

@@ -74,6 +74,9 @@ export default defineConfig({
       // Bot bridge: HMAC, schemas, fence, limits and the flag-gated routes (no DB).
       "test/botBridge.test.ts",
       "test/botBridgeRoute.test.ts",
+      // Bug Squasher: scrubbing, fingerprints, ingest validation and routes (mocked store).
+      "test/bugSquasherCore.test.ts",
+      "test/bugSquasherRoute.test.ts",
     ],
     environment: "node",
     fileParallelism: false,

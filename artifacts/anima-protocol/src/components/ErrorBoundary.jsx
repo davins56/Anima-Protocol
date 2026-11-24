@@ -1,5 +1,7 @@
 import { Component, Fragment } from "react";
 import { track } from "@/lib/analytics";
+import { captureReactCrash } from "@/lib/bugSquasher/capture";
+import { openBugReport } from "@/lib/bugSquasher/api";
 import {
   hasAttemptedStaleChunkRecovery,
   isRecoverableModuleError,
@@ -73,6 +75,12 @@ class ErrorBoundary extends Component {
     // Always log so the crash is diagnosable in the browser console.
     console.error("[ErrorBoundary] caught render error:", error, errorInfo);
     this.report("Error Boundary Triggered", error, errorInfo);
+    // Bug Squasher: deduped, scrubbed crash report (no-op until installed).
+    try {
+      captureReactCrash(error, errorInfo);
+    } catch {
+      /* never let error reporting throw */
+    }
 
     // HTML-as-JS MIME (stale hashed chunk) and Safari's "Importing a
     // module script failed" cannot remount-heal. One unregister-SW +
@@ -188,6 +196,15 @@ class ErrorBoundary extends Component {
     window.location.reload();
   };
 
+  handleReportBug = () => {
+    const message = this.state.error?.message || String(this.state.error || "");
+    const opened = openBugReport({
+      description: "",
+      context: { crash: { message: message.slice(0, 300) } },
+    });
+    if (!opened) this.setState({ reportUnavailable: true });
+  };
+
   render() {
     if (!this.state.hasError) {
       // Keyed so a self-repair remounts the subtree (clearing any bad state).
@@ -258,6 +275,21 @@ class ErrorBoundary extends Component {
             >
               Reload
             </button>
+          </div>
+          <div className="mt-4">
+            {this.state.reportUnavailable ? (
+              <p className="font-mono text-[10px] text-primary/40">
+                This crash was reported automatically.
+              </p>
+            ) : (
+              <button
+                type="button"
+                onClick={this.handleReportBug}
+                className="font-mono text-[10px] tracking-[0.2em] uppercase text-primary/50 underline hover:text-primary"
+              >
+                Report this bug
+              </button>
+            )}
           </div>
         </div>
       </div>

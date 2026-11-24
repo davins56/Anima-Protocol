@@ -41,8 +41,16 @@ Essence never marks dreams read (it calls `fetchDreamJournal` directly, not
   source: { [fieldPath]: 'photo'|'user'|'default' } }
 ```
 
-`normalizeVesselCalibration` clamps 0–100, validates hex and enums, keeps
-unknown fields, and never throws. A user edit marks that field `user`; fields
+`normalizeVesselCalibration` clamps 0–100, validates hex and enums, and never
+throws. Unknown fields follow the server rules accepted by Backend Data: kept
+only at the top level and inside `hair` / `eyes` / `resonance`; keys match
+`^[A-Za-z][A-Za-z0-9_]{0,31}$` (no `__proto__` / `constructor` / `prototype`,
+never `name` / `tagline`); whole-calibration depth ≤ 3; at most 16 keys and
+**≤ 1024 UTF-8 bytes** of serialized unknown fields (`calibration_unknown_bytes`).
+Extras are dropped deterministically: sorted by path, taken greedily while
+under the caps. `source` keys are limited to known leaf paths and kept unknown
+paths (≤ 32). Name is 1–60 characters and tagline 0–120 (trimmed, no control
+characters), matching the server's `invalid_name` rules. A user edit marks that field `user`; fields
 marked `photo` are only replaced by an explicit edit. When 3D Visual's
 canonical module lands in `src/lib/vessel/`, this file should re-export it.
 

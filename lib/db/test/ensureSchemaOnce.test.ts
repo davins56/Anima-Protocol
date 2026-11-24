@@ -25,6 +25,12 @@ function presentQueryable(
       if (/pg_extension/i.test(text)) {
         return { rows: [{ exists: true }] };
       }
+      // Read-only probe for the chat_turns lease columns (ensureChatTurnLeaseColumns).
+      if (/information_schema\.columns/i.test(text) && /chat_turns/i.test(text)) {
+        return {
+          rows: ["id", "lease_expires_at", "waiting_until"].map((column_name) => ({ column_name })),
+        };
+      }
       onUnexpected?.(text);
       throw new Error(`unexpected SQL: ${text.slice(0, 120)}`);
     },

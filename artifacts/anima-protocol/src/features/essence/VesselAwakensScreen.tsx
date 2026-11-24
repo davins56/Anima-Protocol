@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { formatDreamDate } from "@/lib/dreamJournal";
-import { VesselPreview } from "./CalibrateScreen";
+import { VesselPreview } from "./VesselPreview";
 import { ASPECTS } from "./aspects";
 import { loadEssenceProfile, loadReflectionDrafts } from "./calibration";
 import { essencePath } from "./flag";
@@ -11,7 +11,6 @@ import type { MemoryHealth } from "@/hooks/useMemoryHealth";
 export default function VesselAwakensScreen({
   characterId,
   companionName,
-  avatarUrl,
   dreams,
   health,
 }: {
@@ -28,7 +27,7 @@ export default function VesselAwakensScreen({
     <div className="space-y-4">
       <Panel className="flex flex-col items-center text-center gap-3 py-8">
         <p className="font-mono text-[10px] tracking-[0.3em] uppercase text-blue-300/60">The vessel awakens</p>
-        <VesselPreview characterId={characterId} name={profile.name || companionName} cal={profile.calibration} avatarUrl={avatarUrl} />
+        <VesselPreview characterId={characterId} name={profile.name || companionName} cal={profile.calibration} className="w-full max-w-sm h-64 rounded-xl" />
         <h2 className="font-serif text-3xl text-slate-100">{profile.name || companionName || "Anima"}</h2>
         <p className="text-slate-400 italic">{profile.tagline || "A receptacle for consciousness"}</p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full max-w-xl pt-2">

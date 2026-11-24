@@ -4,6 +4,7 @@ import {
   chatFailureTypeById,
   isChatFailurePhase,
 } from "./chatFailureTypes.js";
+import { captureChatFailure } from "./bugSquasher/capture.js";
 
 const ID_RE = /^[A-Za-z0-9_.:-]{1,80}$/;
 const VERSION_RE = /^[A-Za-z0-9._+-]{1,64}$/;
@@ -434,6 +435,35 @@ export async function deliverChatClientFailure(input) {
 export function reportChatClientFailure(input) {
   try {
     void deliverChatClientFailure(input).catch(() => {});
+  } catch {
+    /* never into the UI */
+  }
+  noteChatFailureForBugSquasher(input);
+}
+
+/**
+ * Also file the failed / empty turn with Bug Squasher (grouped by failure
+ * type + phase). Same allowlist as the report above: no message text.
+ *
+ * @param {Parameters<typeof buildChatClientFailureReport>[0]} input
+ */
+function noteChatFailureForBugSquasher(input) {
+  try {
+    if (isIgnoredChatClientFailure(input)) return;
+    const classified = classifyChatClientFailure(input);
+    const facts = errorFacts(input?.error);
+    const trace = traceOf(input?.error);
+    const startedAt = typeof trace.startedAt === "number" ? trace.startedAt : null;
+    captureChatFailure({
+      failureType: classified.id,
+      phase: classified.phase,
+      message: facts.message,
+      code: facts.code,
+      sessionId: cleanId(input?.sessionId),
+      turnId: cleanId(input?.turnId),
+      partialKept: input?.partialKept === true || trace.partialKept === true,
+      msToFailure: input?.msToFailure ?? (startedAt == null ? null : Date.now() - startedAt),
+    });
   } catch {
     /* never into the UI */
   }

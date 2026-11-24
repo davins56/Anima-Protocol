@@ -56,7 +56,19 @@ function urlFor(name: string, src: string) {
   return u;
 }
 
+const loaded = new WeakMap<AudioContext, Promise<void>>();
+
 export async function loadWorklets(ctx: AudioContext) {
-  await ctx.audioWorklet.addModule(urlFor("mic", MIC));
-  await ctx.audioWorklet.addModule(urlFor("player", PLAYER));
+  // Registering the same processor name twice on one context throws, so each
+  // context loads the modules once.
+  let p = loaded.get(ctx);
+  if (!p) {
+    p = (async () => {
+      await ctx.audioWorklet.addModule(urlFor("mic", MIC));
+      await ctx.audioWorklet.addModule(urlFor("player", PLAYER));
+    })();
+    loaded.set(ctx, p);
+    p.catch(() => loaded.delete(ctx));
+  }
+  await p;
 }
