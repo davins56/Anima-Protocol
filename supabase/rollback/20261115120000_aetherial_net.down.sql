@@ -7,8 +7,13 @@
 -- Atomic: one transaction. Each existing table is locked ACCESS EXCLUSIVE BEFORE
 -- it is checked, so no row can commit between the emptiness check and the DROPs,
 -- and a failure part-way leaves the schema untouched.
+-- Locks are taken in the SL-4 write order (cap_counters before events), and
+-- lock_timeout makes the run fail fast instead of queueing behind an open
+-- transaction. Postgres's deadlock detector covers anything else; either way the
+-- whole transaction rolls back and nothing is dropped.
 
 BEGIN;
+SET LOCAL lock_timeout = '10s';
 
 DO $$
 DECLARE
@@ -16,9 +21,9 @@ DECLARE
   n bigint;
 BEGIN
   FOREACH t IN ARRAY ARRAY[
-    'aetherial_net_access_log', 'aetherial_net_events', 'aetherial_net_progress',
-    'aetherial_net_dissonance', 'aetherial_net_inventory', 'aetherial_net_reward_claims',
-    'aetherial_net_cap_counters'
+    'aetherial_net_access_log', 'aetherial_net_cap_counters', 'aetherial_net_events',
+    'aetherial_net_progress', 'aetherial_net_dissonance', 'aetherial_net_reward_claims',
+    'aetherial_net_inventory'
   ] LOOP
     IF to_regclass('public.' || t) IS NOT NULL THEN
       EXECUTE format('LOCK TABLE public.%I IN ACCESS EXCLUSIVE MODE', t);
