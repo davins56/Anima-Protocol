@@ -1761,7 +1761,13 @@ async function applyRelationshipPostProcessFromTurn(turn: ChatTurn): Promise<voi
   const turnAwareness = scenesEnabled() ? turnAwarenessOf(metadata) : null;
   await applyRelationshipPostProcess({
     ...(turnAwareness
-      ? { heardCharacterIds: turnListeners(characterIds, turnAwareness).map((l) => l.id) }
+      ? {
+          // Relationship, milestone and arc passes read both lines, so only
+          // characters who heard both take part (a continue has no user line).
+          heardCharacterIds: turnListeners(characterIds, turnAwareness)
+            .filter((l) => (l.user || metadata.is_continue === true) && l.reply)
+            .map((l) => l.id),
+        }
       : {}),
     userId: turn.userId,
     sessionId: turn.sessionId,
@@ -4787,8 +4793,11 @@ router.post("/messages", async (req, res) => {
       await applyRelationshipPostProcess({
         ...(scenesOn
           ? {
+              // Both lines feed these passes: only who heard both.
               heardCharacterIds: sceneCast.filter(
-                (id) => userHeardBy.includes(id) || pipelineAssistantHeardBy(pipelineMetadata).includes(id),
+                (id) =>
+                  (Boolean(body.is_continue) || userHeardBy.includes(id)) &&
+                  pipelineAssistantHeardBy(pipelineMetadata).includes(id),
               ),
             }
           : {}),

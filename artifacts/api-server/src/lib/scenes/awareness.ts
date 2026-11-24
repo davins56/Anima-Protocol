@@ -22,7 +22,7 @@
 import { createHash } from "node:crypto";
 import { isAspectKey, sceneHeardBy, type SceneState } from "./sceneState";
 
-export const HEARD_BY_MAX = 64;
+export const HEARD_BY_MAX = 256;
 export const TOMBSTONE_CAP = 50;
 export const TOMBSTONE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 /** M12: one stage direction for a character who missed part of the thread. */
@@ -124,22 +124,28 @@ export function historyForCharacter<T extends Row>(
  * longest name wins so "Ser" never shadows "Serenity").
  */
 export function mentionedCastIds(content: unknown, names: ReadonlyMap<string, string>): string[] {
-  const text = typeof content === "string" ? content.toLowerCase() : "";
+  let text = typeof content === "string" ? content.toLowerCase() : "";
   if (!text.includes("@")) return [];
   const out: string[] = [];
+  // Longest names first; a matched span is blanked so "@Mary Jane" never
+  // also counts as "@Mary". The "@" must start a token ("a@b.com" is not a
+  // mention) and the name must end at a word boundary.
   const entries = [...names.entries()]
     .filter(([, name]) => name.trim())
-    .sort((a, b) => b[1].length - a[1].length);
+    .sort((a, b) => b[1].trim().length - a[1].trim().length);
   for (const [id, name] of entries) {
     const needle = `@${name.trim().toLowerCase()}`;
     let from = 0;
     for (;;) {
       const at = text.indexOf(needle, from);
       if (at < 0) break;
+      const before = at > 0 ? text.charAt(at - 1) : "";
       const after = text.charAt(at + needle.length);
-      if (!after || !/[\p{L}\p{N}_]/u.test(after)) {
+      const startsToken = !before || !/[\p{L}\p{N}_.@-]/u.test(before);
+      const endsToken = !after || !/[\p{L}\p{N}_]/u.test(after);
+      if (startsToken && endsToken) {
         if (!out.includes(id)) out.push(id);
-        break;
+        text = `${text.slice(0, at)}${" ".repeat(needle.length)}${text.slice(at + needle.length)}`;
       }
       from = at + needle.length;
     }
@@ -166,14 +172,16 @@ export function stampHeardBy(input: {
 /** Digest of what a row says, binding a tombstone to its exact content. */
 export function rowDigest(row: Row): string {
   const metadata = isObject(row.metadata) ? row.metadata : {};
+  // Raw values, type-preserving: any change to what the row says (or a
+  // different type for the same text) is a different digest.
   const parts = [
-    String(row.role ?? ""),
-    String(row.content ?? ""),
-    String(row.character_id ?? metadata.character_id ?? ""),
-    String(row.character_name ?? ""),
-    JSON.stringify(Array.isArray(row.attachments) ? row.attachments : []),
+    row.role ?? null,
+    row.content ?? null,
+    row.character_id ?? metadata.character_id ?? null,
+    row.character_name ?? null,
+    row.attachments ?? null,
   ];
-  return createHash("sha256").update(parts.join("\u0000")).digest("hex");
+  return createHash("sha256").update(JSON.stringify(parts)).digest("hex");
 }
 
 export type AwarenessTombstone = {

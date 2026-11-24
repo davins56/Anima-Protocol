@@ -46,16 +46,24 @@ export async function loadAwarenessScope(
 ): Promise<AwarenessScope> {
   const info = await loadSceneSession(userId, sessionId, executor);
   const [row] = await executor
-    .select({ userId: chatSessions.userId, metadata: chatSessions.metadata })
+    .select({
+      userId: chatSessions.userId,
+      metadata: chatSessions.metadata,
+      characterIds: chatSessions.characterIds,
+      mode: chatSessions.mode,
+    })
     .from(chatSessions)
     .where(eq(chatSessions.id, sessionId))
     .limit(1);
   if (row && row.userId !== userId) throw new SceneOwnershipError();
   const metadata = row ? asObject(row.metadata) : {};
-  const cast = info?.characterIds ?? [];
+  // The typed session's server-stored cast is the fallback when the store
+  // entity is missing (never request ids).
+  const typedCast = Array.isArray(row?.characterIds) ? row!.characterIds.map(String).filter(Boolean) : [];
+  const cast = info?.characterIds ?? typedCast;
   const scene = effectiveScene(normalizeStoredScene(metadata.scene), {
     characterIds: cast,
-    isGroup: info?.isGroup ?? false,
+    isGroup: info?.isGroup ?? (row?.mode === "group" || typedCast.length > 1),
   });
   return {
     sessionId,
