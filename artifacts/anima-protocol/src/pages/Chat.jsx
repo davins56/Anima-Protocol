@@ -3256,11 +3256,15 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         }
       }
       const noAssistantBubble =
-        scenesOnForSend && (resultPayload.scene_no_reply || resultPayload.scene_event_only);
+        scenesOnForSend &&
+        (resultPayload.scene_no_reply ||
+          resultPayload.scene_event_only ||
+          resultPayload.scene_quiet_noop);
       if (noAssistantBubble) {
-        // #763 B8: the plan picked nobody, or the speaker only left a
-        // stage-marker event (empty visible text). Dismiss typing, keep the
-        // user's line and event rows, no error, no blank bubble.
+        // #763 B8: the plan picked nobody, the speaker only left a
+        // stage-marker event, or every marker was rejected (successful
+        // empty `done`, no scene_event). Dismiss typing, keep the user's
+        // line and any event rows, no error, no blank bubble.
         lateTurnRef.current = null;
         let threadAfter = null;
         applyIfSendSession((prev) => {

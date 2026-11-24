@@ -52,8 +52,12 @@ function rememberChatClientTrace(err, trace) {
  * and a turn whose server plan picked nobody (`speakers: []`) resolves with
  * `scene_no_reply: true` instead of failing as an empty reply. A turn that
  * produced only stage-marker event rows (empty visible text after stripping
- * `[[exit]]` / `[[enter:…]]`) resolves with `scene_event_only: true`. All
- * default off, which leaves the stream exactly as before.
+ * `[[exit]]` / `[[enter:…]]`) resolves with `scene_event_only: true`. A
+ * successful `done` with empty visible text and no `scene_event` (every
+ * marker was rejected) is a quiet no-op (`scene_quiet_noop: true`): no
+ * empty_reply, no blank bubble. Only an explicit `code: "empty_reply"`
+ * error frame is a failure. All default off, which leaves the stream
+ * exactly as before.
  *
  * @param {AsyncIterable<{ content?: string, done?: boolean, error?: string, status?: string, affect?: unknown, scene_plan?: unknown, scene_event?: unknown }>} events
  * @param {{ onDelta?: (accumulated: string) => void, onFirstToken?: (accumulated: string) => void, onStatus?: (event: object) => void, onAffect?: (frame: unknown) => void, stripTags?: boolean, stripStage?: boolean, onScene?: (frame: { scene_plan?: unknown, scene_event?: unknown }) => void }} [hooks]
@@ -239,6 +243,20 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus,
       ...(doneEvent || {}),
       content: "",
       scene_event_only: true,
+    };
+  }
+
+  // #763: a successful `done` with nothing visible and no events — every
+  // marker was rejected, or the server recorded `scene_event_only`. Keep
+  // the user line, show no bubble, and do not toast. Only `code:
+  // "empty_reply"` on an error frame is a failure.
+  const successfulDone =
+    Boolean(doneEvent?.done) && !doneEvent.error && doneEvent.code !== "empty_reply";
+  if (onScene && successfulDone && !String(content || "").trim()) {
+    return {
+      ...doneEvent,
+      content: "",
+      ...(doneEvent.scene_event_only === true ? { scene_event_only: true } : { scene_quiet_noop: true }),
     };
   }
 
