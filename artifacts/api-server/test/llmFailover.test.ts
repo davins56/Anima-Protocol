@@ -321,6 +321,10 @@ import {
   createChatStreamWithFailover,
   getLlmRoutingStatus,
   getProviderChain,
+  adultChatRouteAvailable,
+  adultRouteUnavailableError,
+  resolveAdultOpenRouterModel,
+  ADULT_ROUTE_UNAVAILABLE,
   usesFreeTierOpenBudget,
   isAnimaCustomMode,
   isWorkersAiHoppableError,
@@ -2662,5 +2666,88 @@ describe("chatCompletionHttpFailure", () => {
       if (previous === undefined) delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
       else process.env.ANIMA_LOCAL_LLM_BASE_URL = previous;
     }
+  });
+});
+
+describe("adult mode OpenRouter Venice routing", () => {
+  const SAVED = { ...process.env };
+  afterEach(() => {
+    process.env = { ...SAVED };
+    resetAiBindingForTests();
+    createMock.mockReset();
+  });
+  beforeEach(() => {
+    process.env = { ...SAVED };
+    resetAiBindingForTests();
+    createMock.mockReset();
+  });
+
+  it("resolves Venice Uncensored even when the free-tier flag is on", () => {
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    process.env.ANIMA_OPENROUTER_MODEL_STANDARD = "minimax/minimax-m2.7:free";
+    expect(resolveAdultOpenRouterModel("standard").model).toBe(
+      "cognitivecomputations/dolphin-mistral-24b-venice-edition",
+    );
+  });
+
+  it("uses only the OpenRouter chain when adultActive, never Workers AI or local", () => {
+    process.env.ANIMA_LOCAL_LLM_BASE_URL = "https://llm.anima-protocol.com/v1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    setAiBinding({ run: async () => ({ response: "ok" }) });
+    expect(getProviderChain()).toEqual(["local"]);
+    expect(getProviderChain({ adultActive: true })).toEqual(["openrouter"]);
+    expect(getProviderChain({ adultActive: true })).not.toContain("workersai");
+    expect(adultChatRouteAvailable()).toBe(true);
+  });
+
+  it("fails closed when adultActive and no OpenRouter key is configured", () => {
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.ANIMA_OPENROUTER_API_KEY;
+    delete process.env.OPEN_ROUTER_API_KEY;
+    setAiBinding({ run: async () => ({ response: "ok" }) });
+    expect(getProviderChain({ adultActive: true })).toEqual([]);
+    expect(adultChatRouteAvailable()).toBe(false);
+    expect(adultRouteUnavailableError().message).toBe(ADULT_ROUTE_UNAVAILABLE);
+  });
+
+  it("streams Venice Uncensored for adult turns and does not hop to a free model", async () => {
+    delete process.env.ANIMA_LOCAL_LLM_BASE_URL;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.VLLM_BASE_URL;
+    process.env.VERCEL = "1";
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.ANIMA_OPENROUTER_FREE = "true";
+    process.env.ANIMA_OPENROUTER_FALLBACK = "true";
+    setAiBinding({ run: async () => ({ response: "from workersai" }) });
+    createMock.mockResolvedValueOnce(fakeStream("venice"));
+    const result = await createChatStreamWithFailover({
+      tier: "standard",
+      model: "anima-chat",
+      maxTokens: 32,
+      messages: [{ role: "user", content: "hello" }],
+      adultActive: true,
+    });
+    expect(result.provider).toBe("openrouter");
+    expect(result.model).toBe("cognitivecomputations/dolphin-mistral-24b-venice-edition");
+    expect(createMock).toHaveBeenCalledTimes(1);
+    const body = createMock.mock.calls[0][0];
+    expect(body.model).toBe("cognitivecomputations/dolphin-mistral-24b-venice-edition");
+  });
+
+  it("throws a clear error for adult turns when the OpenRouter key is missing", async () => {
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.ANIMA_OPENROUTER_API_KEY;
+    delete process.env.OPEN_ROUTER_API_KEY;
+    setAiBinding({ run: async () => ({ response: "from workersai" }) });
+    await expect(
+      createChatStreamWithFailover({
+        tier: "standard",
+        model: "anima-chat",
+        maxTokens: 32,
+        messages: [{ role: "user", content: "hello" }],
+        adultActive: true,
+      }),
+    ).rejects.toMatchObject({ code: "adult_route_unavailable", message: ADULT_ROUTE_UNAVAILABLE });
+    expect(createMock).not.toHaveBeenCalled();
   });
 });

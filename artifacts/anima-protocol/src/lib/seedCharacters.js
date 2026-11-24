@@ -629,6 +629,62 @@ async function doBackfillPhotos() {
 // characters while accounts with existing/migrated data are left untouched.
 // Race-safety against StrictMode double-invoke is provided by the module-level
 // promise lock in seedCharactersIfNeeded().
+
+// Confirmed adult vs canon-minor / age-ambiguous cards. Unknown names default
+// to not adult (adult mode cannot apply until the card is marked 18+).
+const STARTER_CHARACTER_AGES = {
+  Korra: { age: 21, age_is_adult: true },
+  "Asami Sato": { age: 21, age_is_adult: true },
+  Mako: { age: 21, age_is_adult: true },
+  Bolin: { age: 21, age_is_adult: true },
+  Tenzin: { age: 51, age_is_adult: true },
+  "Lin Beifong": { age: 50, age_is_adult: true },
+  Zaheer: { age: 40, age_is_adult: true },
+  Jinora: { age: 15, age_is_adult: false },
+  "Tony Stark": { age: 48, age_is_adult: true },
+  "Steve Rogers": { age: 100, age_is_adult: true },
+  "Natasha Romanoff": { age: 35, age_is_adult: true },
+  "Thor Odinson": { age: 1500, age_is_adult: true },
+  "Wanda Maximoff": { age: 32, age_is_adult: true },
+  Loki: { age: 1050, age_is_adult: true },
+  "Peter Parker": { age: 17, age_is_adult: false },
+  "T'Challa": { age: 35, age_is_adult: true },
+  "Bruce Banner": { age: 45, age_is_adult: true },
+  "Nick Fury": { age: 70, age_is_adult: true },
+  Sersi: { age: 7000, age_is_adult: true },
+  Ikaris: { age: 7000, age_is_adult: true },
+  Thena: { age: 7000, age_is_adult: true },
+  Gilgamesh: { age: 7000, age_is_adult: true },
+  Kingo: { age: 7000, age_is_adult: true },
+  Phastos: { age: 7000, age_is_adult: true },
+  Makkari: { age: 7000, age_is_adult: true },
+  Druig: { age: 7000, age_is_adult: true },
+  Sprite: { age: 11, age_is_adult: false },
+  Ajak: { age: 7000, age_is_adult: true },
+  "Mark Grayson": { age: 17, age_is_adult: false },
+  "Nolan Grayson": { age: 2000, age_is_adult: true },
+  "Atom Eve": { age: 17, age_is_adult: false },
+  "Debbie Grayson": { age: 45, age_is_adult: true },
+  "Allen the Alien": { age: 30, age_is_adult: true },
+  "Cecil Stedman": { age: 55, age_is_adult: true },
+  "Rex Splode": { age: 17, age_is_adult: false },
+  "William Clockwell": { age: 17, age_is_adult: false },
+  "Peter Quill": { age: 40, age_is_adult: true },
+  Gamora: { age: 29, age_is_adult: true },
+  Drax: { age: 49, age_is_adult: true },
+  Rocket: { age: 20, age_is_adult: true },
+  Groot: { age: 4, age_is_adult: false },
+  Nebula: { age: 30, age_is_adult: true },
+  Mantis: { age: 32, age_is_adult: true },
+};
+
+export function withCharacterAge(char) {
+  if (!char || typeof char !== "object") return char;
+  const marked = STARTER_CHARACTER_AGES[char.name];
+  if (marked) return { ...char, ...marked };
+  return { ...char, age_is_adult: false };
+}
+
 // Stable id for a starter character derived from its universe + name. Using a
 // deterministic id (instead of a server-generated random one) makes seeding
 // idempotent: if two devices sign in to the same fresh account simultaneously
@@ -643,7 +699,7 @@ export function seedId(char) {
 }
 
 function withSeedIds(chars) {
-  return chars.map((char) => ({ ...char, id: seedId(char) }));
+  return chars.map((char) => withCharacterAge({ ...char, id: seedId(char) }));
 }
 
 // Full starter roster with stable ids — used for first-time seeding and repair.
@@ -655,7 +711,7 @@ export function getStarterRoster() {
     ...INVINCIBLE_CHARACTERS,
   ].map((char) => {
     const id = seedId(char);
-    return { ...char, id };
+    return withCharacterAge({ ...char, id });
   });
 }
 

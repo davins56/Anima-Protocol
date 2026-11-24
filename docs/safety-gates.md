@@ -87,3 +87,20 @@ now follows the same decision.
 
 `api-server/test/safetyGates.test.ts`, `test/repoCodespace.test.ts` (non-steward 403s),
 `anima-protocol/src/components/settings/AgeGateDialog.test.jsx`.
+
+## 4. Adult chat routing and companion age (feat/mature-mode-gaps)
+
+- Adult turns (`adultGate()` reason `allowed`) run on OpenRouter **Venice Uncensored**
+  (`cognitivecomputations/dolphin-mistral-24b-venice-edition`) only. They never
+  use Workers AI, OpenAI, or Gemini. If `OPENROUTER_API_KEY` (or
+  `ANIMA_OPENROUTER_API_KEY`) is missing, the turn fails closed with
+  `adult_route_unavailable`.
+- The server mode contract (`modePolicyPrompt`) always includes hard limits:
+  no one under 18 or age-ambiguous / teen-coded, no loli/shota tropes, and no
+  non-consent or sexual violence. Safeword and user limits still apply.
+- Every companion card needs `age` and/or `age_is_adult`. Unknown age is not
+  adult. The intimacy dock (`intimacyEnabled`) is the per-companion opt-in;
+  adult mode requires attestation + the global toggle + that opt-in.
+- Follow-ups (not in this change): a third-party age-assurance provider, geo
+  blocking for jurisdictions that require more than self-declaration, and
+  keeping mature mode off any App Store / Play binary.

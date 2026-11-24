@@ -59,6 +59,25 @@ vi.mock("sonner", () => ({
   toast: { error: toastErrorMock, success: vi.fn() },
 }));
 
+const safetyStatusMock = vi.hoisted(() => vi.fn(async () => ({
+  is_steward: false,
+  age: null,
+  adult_eligible: false,
+  self_declaration_locked: false,
+})));
+const revokeAgeMock = vi.hoisted(() => vi.fn(async () => ({ status: "revoked", adult_eligible: false })));
+
+vi.mock("@/api/animaApi", () => ({
+  animaApi: {
+    safety: {
+      status: (...args) => safetyStatusMock(...args),
+      revokeAge: (...args) => revokeAgeMock(...args),
+      attestAge: vi.fn(),
+    },
+  },
+}));
+
+
 vi.mock("@/lib/AuthContext", () => ({
   useAuth: () => authState,
 }));
@@ -179,6 +198,10 @@ describe("Settings custom chat background upload", () => {
     refreshMeMock.mockReset();
     listMock.mockReset();
     toastErrorMock.mockReset();
+    safetyStatusMock.mockReset();
+    safetyStatusMock.mockResolvedValue({ is_steward: false, age: null, adult_eligible: false, self_declaration_locked: false });
+    revokeAgeMock.mockReset();
+    revokeAgeMock.mockResolvedValue({ status: "revoked", adult_eligible: false });
     authState.isAuthenticated = true;
     authState.user = {
       id: "user_clerk",

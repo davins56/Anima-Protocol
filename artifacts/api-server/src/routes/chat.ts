@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { adultGate } from "../lib/safety/adultGate";
+import { allCharactersAreAdult } from "../lib/safety/characterAge";
 import chatScenesRouter from "./chatScenes";
 import { computeAdultGated, scenesEnabled } from "../lib/scenes/sceneState";
 import { readStoredScene } from "../lib/scenes/sceneStore";
@@ -35,6 +36,8 @@ import {
 } from "../lib/repositoryKnowledge";
 import { routeModel } from "../lib/modelRouter";
 import {
+  adultChatRouteAvailable,
+  adultRouteUnavailableError,
   createChatStreamWithFailover,
   isLocalOnlyProviderChain,
   usesFreeTierOpenBudget,
@@ -3233,9 +3236,10 @@ router.post("/messages", async (req, res) => {
     sessionData.companion_mode === "therapy" ||
     body.metadata?.therapy_mode === true ||
     mode === "therapy";
-  // Server-enforced adult gate: needs a stored age attestation, and is
-  // always off in therapy and crossover scenes (P1-11). The client's
-  // adult_mode flag is only a hint. See lib/safety/adultGate.ts.
+  // Server-enforced adult gate: needs a stored age attestation, confirmed
+  // adult companions, and per-companion opt-in (intimacyEnabled). Always off
+  // in therapy and crossover scenes (P1-11). The client's adult_mode flag
+  // is only a hint. See lib/safety/adultGate.ts.
   const adultRequested =
     profileSettings.adult_content_enabled === true || body.metadata?.adult_mode === true;
   // #763 R3: with scenes on, a scene that is not strictly solo closes the
@@ -3251,6 +3255,16 @@ router.post("/messages", async (req, res) => {
     }
     sceneAdultGated = computeAdultGated({ rawScene, characterIds, isCrossover: false });
   }
+  const ageCards = (characters.length ? characters : activeChar ? [activeChar] : []) as Array<{
+    age?: unknown;
+    age_is_adult?: unknown;
+  }>;
+  const characterAdult = allCharactersAreAdult(ageCards);
+  let preloadedIntimacy: IntimacyProfile | null = null;
+  if (activeCharacterId && adultRequested && !therapyActive) {
+    preloadedIntimacy = await loadIntimacyProfile(userId, activeCharacterId).catch(() => null);
+  }
+  const companionOptIn = Boolean(preloadedIntimacy?.intimacyEnabled);
   const adultDecision = adultGate({
     therapy: therapyActive,
     crossover: isCrossover || body.metadata?.is_crossover === true,
@@ -3258,8 +3272,34 @@ router.post("/messages", async (req, res) => {
     ageAttested: adultRequested && !therapyActive ? await userIsAdultAttested(userId) : false,
     settingEnabled: profileSettings.adult_content_enabled === true,
     requested: body.metadata?.adult_mode === true,
+    characterAdult,
+    companionOptIn,
   });
   const adultActive = adultDecision.adult;
+  // Reason only — no user id, DOB, or message text.
+  logger.info({ adult: adultActive, reason: adultDecision.reason }, "adult gate");
+  if (adultActive && !adultChatRouteAvailable()) {
+    const routeErr = adultRouteUnavailableError();
+    logger.warn({ reason: adultDecision.reason }, "adult route unavailable");
+    writeSse(res, { error: routeErr.message, code: "adult_route_unavailable" });
+    try {
+      flight.fail(routeErr);
+    } catch {
+      // The flight was already settled.
+    }
+    try {
+      await markTurnFailed(turnStart.turn.id, userId, routeErr);
+    } catch (markErr) {
+      logger.warn({ err: markErr, turnId }, "Failed to mark adult-route failure");
+    }
+    stopHeartbeat();
+    try {
+      if (!res.writableEnded) res.end();
+    } catch {
+      // The browser already left.
+    }
+    return;
+  }
   const modePolicy = resolveChatModePolicy({
     requestedMode: mode,
     therapy: therapyActive,
@@ -3335,11 +3375,11 @@ router.post("/messages", async (req, res) => {
   // itself). It never reaches the prompt or the adult scene logic.
   pulseProfileLoad =
     activeCharacterId && !adultActive && !therapyActive
-      ? loadIntimacyProfile(userId, activeCharacterId).catch(() => null)
+      ? Promise.resolve(preloadedIntimacy)
       : null;
 
   if (activeCharacterId && adultActive && !therapyActive) {
-    let profile = await loadIntimacyProfile(userId, activeCharacterId);
+    let profile = preloadedIntimacy ?? (await loadIntimacyProfile(userId, activeCharacterId));
     if (profile.lastSceneAt) {
       const idle = (Date.now() - Date.parse(profile.lastSceneAt)) / 60000;
       if (idle >= 8) {
@@ -3662,6 +3702,7 @@ router.post("/messages", async (req, res) => {
           messages: appendFinalUserReminder(messages, reminder),
           temperature: COMPANION_CHAT_TEMPERATURE,
           signal: combineAbortSignals(retryOpen.signal, abandoned.signal, replacedController.signal),
+          adultActive,
         });
         const retried = await consumeLlmStream(retry.stream, {
           ...consumeOpts,
@@ -3859,6 +3900,7 @@ router.post("/messages", async (req, res) => {
               ? { sampling: mindProfile.sampling, ...(excludeProviders.length ? { excludeProviders } : {}) }
               : {}),
             signal: generateSignal,
+            adultActive,
           });
         } finally {
           // Headers are in. The open timer must not cut a slow prefill once
@@ -4088,6 +4130,7 @@ router.post("/messages", async (req, res) => {
             messages: messagesForRepeatRetry(messages, copiedReply || fullResponse),
             temperature: OLLAMA_MAX_TEMPERATURE,
             signal: combineAbortSignals(retryOpen.signal, abandoned.signal, replacedController.signal),
+            adultActive,
           });
           const retried = await consumeLlmStream(retry.stream, {
             ...consumeOpts,

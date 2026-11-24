@@ -41,6 +41,7 @@ const CHARACTER_MINOR_RE =
 /** The companion's own card describes them as under 18. */
 export function characterIsMinor(character: Record<string, unknown> | null | undefined): boolean {
   if (!character) return false;
+  if ((character as { age_is_adult?: unknown }).age_is_adult === false) return true;
   const age = Number((character as { age?: unknown }).age);
   if (Number.isFinite(age) && age > 0 && age < 18) return true;
   const text = ["personality", "backstory", "tagline", "archetype", "description", "appearance"]

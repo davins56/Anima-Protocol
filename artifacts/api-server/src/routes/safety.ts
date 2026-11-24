@@ -20,6 +20,7 @@ import {
   selfDeclarationLocked,
   type AgeVerificationProvider,
 } from "../lib/safety/ageGate";
+import { setProfileAdultContentEnabled } from "../lib/safety/profileAdultFlag";
 
 type Deps = {
   steward: (input: { userId: string; sessionClaims?: unknown }) => Promise<{ allowed: boolean }>;
@@ -28,6 +29,8 @@ type Deps = {
   provider: () => AgeVerificationProvider;
   /** Repairs the attestation table on a database that only ever ran db push. */
   ensureSchema?: () => Promise<unknown>;
+  /** Persist settings.adult_content_enabled immediately (attest on, revoke off). */
+  setAdultFlag?: (userId: string, enabled: boolean) => Promise<void>;
 };
 
 const defaults: Deps = {
@@ -39,6 +42,7 @@ const defaults: Deps = {
   append: (row) => withTransientDbRetry(() => appendAttestation(row)),
   provider: () => activeAgeProvider(),
   ensureSchema: () => ensureSchemaOnce(),
+  setAdultFlag: setProfileAdultContentEnabled,
 };
 
 export function createSafetyRouter(deps: Deps = defaults): IRouter {
@@ -107,10 +111,18 @@ export function createSafetyRouter(deps: Deps = defaults): IRouter {
         birthYear: result.birthYear,
         ageYears: result.ageYears,
       });
+      const adultEligible = isAdultAttested(row);
+      if (adultEligible) {
+        try {
+          await deps.setAdultFlag?.(userId, true);
+        } catch (flagErr) {
+          logger.error({ err: flagErr }, "failed to persist adult_content_enabled after attestation");
+        }
+      }
       res.status(result.status === "attested" ? 200 : 403).json({
         status: row.status,
         attested_at: row.attested_at,
-        adult_eligible: isAdultAttested(row),
+        adult_eligible: adultEligible,
         ...(result.status === "rejected" ? { code: "under_age", error: "Adult mode is for people 18 and over." } : {}),
       });
     } catch (err) {
@@ -159,6 +171,11 @@ export function createSafetyRouter(deps: Deps = defaults): IRouter {
     }
     try {
       const row = await deps.append({ userId, status: "revoked", method: deps.provider().method });
+      try {
+        await deps.setAdultFlag?.(userId, false);
+      } catch (flagErr) {
+        logger.error({ err: flagErr }, "failed to clear adult_content_enabled after revoke");
+      }
       res.json({ status: row.status, adult_eligible: false });
     } catch (err) {
       logger.error({ err }, "age attestation revoke failed");

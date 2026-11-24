@@ -24,7 +24,8 @@ import {
 } from "../src/lib/safety/ageGate";
 import { profileWriteNeedsStewardCheck, requireSteward, sanitizeProfileWrite } from "../src/lib/safety/stewardGate";
 import { createSafetyRouter } from "../src/routes/safety";
-import { resolveChatModePolicy } from "../src/lib/chatModeRegistry";
+import { resolveChatModePolicy, modePolicyPrompt } from "../src/lib/chatModeRegistry";
+import { allCharactersAreAdult, characterIsAdult } from "../src/lib/safety/characterAge";
 
 const NOW = new Date("2026-10-22T12:00:00Z");
 
@@ -59,11 +60,25 @@ describe("age check", () => {
 });
 
 describe("adult gate (server)", () => {
-  const base = { therapy: false, crossover: false, ageAttested: true, settingEnabled: true, requested: true };
-  it("allows only attested, non-therapy, non-crossover requests", () => {
+  const base = {
+    therapy: false,
+    crossover: false,
+    ageAttested: true,
+    settingEnabled: true,
+    requested: true,
+    characterAdult: true,
+    companionOptIn: true,
+  };
+  it("allows only attested, opted-in, confirmed-adult, non-therapy, non-crossover requests", () => {
     expect(adultGate(base)).toEqual({ adult: true, reason: "allowed" });
     expect(adultGate({ ...base, ageAttested: false })).toEqual({ adult: false, reason: "not_attested" });
     expect(adultGate({ ...base, settingEnabled: false, requested: false })).toEqual({ adult: false, reason: "not_requested" });
+  });
+  it("is off when the companion is not a confirmed adult or opt-in is missing", () => {
+    expect(adultGate({ ...base, characterAdult: false })).toEqual({ adult: false, reason: "character_age" });
+    expect(adultGate({ ...base, characterAdult: undefined })).toEqual({ adult: false, reason: "character_age" });
+    expect(adultGate({ ...base, companionOptIn: false })).toEqual({ adult: false, reason: "companion_opt_in" });
+    expect(adultGate({ ...base, companionOptIn: undefined })).toEqual({ adult: false, reason: "companion_opt_in" });
   });
   it("is always off in crossover scenes, even when attested and requested (P1-11)", () => {
     const d = adultGate({ ...base, crossover: true });
@@ -115,6 +130,7 @@ describe("HTTP gates", () => {
   let server: Server;
   let base = "";
   const rows: Array<AttestationRow & { user_id: string }> = [];
+  const flags: Array<{ userId: string; enabled: boolean }> = [];
   const deps = {
     steward: async ({ userId }: { userId: string }) => ({ allowed: userId === "steward" }),
     history: async (userId: string) => rows.filter((r) => r.user_id === userId).slice().reverse(),
@@ -124,6 +140,9 @@ describe("HTTP gates", () => {
       return row;
     },
     provider: () => selfDeclaredDobProvider,
+    setAdultFlag: async (userId: string, enabled: boolean) => {
+      flags.push({ userId, enabled });
+    },
   };
 
   beforeAll(async () => {
@@ -156,6 +175,7 @@ describe("HTTP gates", () => {
     expect(body).toMatchObject({ status: "attested", adult_eligible: true });
     expect(body.attested_at).toBeTruthy();
     expect(JSON.stringify(rows)).not.toContain("05-17");
+    expect(flags).toEqual([{ userId: "adult", enabled: true }]);
     const status = await (await fetch(`${base}/api/safety/status`, { headers: { "x-test-user": "adult" } })).json();
     expect(status).toMatchObject({ is_steward: false, adult_eligible: true, age: { status: "attested" } });
   });
@@ -174,6 +194,7 @@ describe("HTTP gates", () => {
     const res = await post("/api/safety/age-attestation/revoke", {});
     expect((await res.json()).adult_eligible).toBe(false);
     expect(rows.filter((r) => r.user_id === "adult").map((r) => r.status)).toEqual(["attested", "revoked"]);
+    expect(flags.filter((f) => f.userId === "adult").map((f) => f.enabled)).toEqual([true, false]);
   });
 
   it("steward middleware: 401 signed out, 403 non-steward, 200 steward", async () => {
@@ -182,5 +203,25 @@ describe("HTTP gates", () => {
     expect(denied.status).toBe(403);
     expect((await denied.json()).code).toBe("not_steward");
     expect((await fetch(`${base}/api/steward-only`, { headers: { "x-test-user": "steward" } })).status).toBe(200);
+  });
+});
+
+describe("character age cards", () => {
+  it("defaults unknown age to not adult", () => {
+    expect(characterIsAdult({})).toBe(false);
+    expect(characterIsAdult(null)).toBe(false);
+    expect(characterIsAdult({ name: "Serenity" })).toBe(false);
+    expect(allCharactersAreAdult([])).toBe(false);
+  });
+  it("treats numeric age >= 18 or age_is_adult true as adult, and under-18 always wins", () => {
+    expect(characterIsAdult({ age: 21 })).toBe(true);
+    expect(characterIsAdult({ age_is_adult: true })).toBe(true);
+    expect(characterIsAdult({ age: 17, age_is_adult: true })).toBe(false);
+    expect(characterIsAdult({ age: 15, age_is_adult: false })).toBe(false);
+    expect(characterIsAdult({ age: 30, age_is_adult: false })).toBe(false);
+  });
+  it("requires every companion in the turn to be a confirmed adult", () => {
+    expect(allCharactersAreAdult([{ age: 21 }, { age: 40 }])).toBe(true);
+    expect(allCharactersAreAdult([{ age: 21 }, { name: "Jinora", age: 15 }])).toBe(false);
   });
 });

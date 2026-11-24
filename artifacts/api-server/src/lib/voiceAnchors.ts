@@ -15,6 +15,10 @@ export interface CharacterData {
   universe?: string;
   archetype?: string;
   tagline?: string;
+  /** Apparent or stated age in years. Missing age is not treated as adult. */
+  age?: number | null;
+  /** Explicit 18+ mark. Under-18 numeric age always wins over a true flag. */
+  age_is_adult?: boolean;
   expression_spectrum?: unknown;
   _isAnima?: boolean;
   [key: string]: unknown;
