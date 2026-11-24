@@ -15,7 +15,11 @@
  * is the server's write-side validator. It has not landed on main yet, so this
  * module carries the read-side normalizer, written to the same rules (exact
  * enums, `#rrggbb` lowercase, 0-100 rounded, lenient read: clamp + defaults,
- * never throws). When the package lands, `normalizeVesselCalibration` should
+ * never throws). Unknown fields are kept only within the server's caps
+ * (design §4.7: key regex, depth ≤ 3, ≤ 16 keys, ≤ 1024 UTF-8 bytes of
+ * serialized JSON), chosen deterministically in path order; anything over the
+ * caps is dropped. `source` keys are limited to known leaf paths and kept
+ * unknown paths (§4.8), at most 32, in path order. When the package lands, `normalizeVesselCalibration` should
  * delegate to its read normalizer and the enum lists should be re-exported
  * from it; the exports below stay the same so callers don't change.
  *
@@ -78,7 +82,7 @@ export type VesselCalibration = {
   theme: StageTheme;
   /** Written by the server; per leaf path. */
   source: Partial<Record<string, CalibrationSource>>;
-  /** Unknown fields from a newer client are kept, never dropped. */
+  /** Unknown fields from a newer client, kept within the server's caps (see normalizeVesselCalibration). */
   [extra: string]: unknown;
 };
 
@@ -161,8 +165,17 @@ const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 /** Never part of calibration (they have one home on the character's entry). */
 const EXCLUDED_KEYS = new Set(["name", "tagline"]);
 const KNOWN_TOP = new Set(["version", "vesselType", "netForm", "shape", "hair", "eyes", "resonance", "silverWarmth", "theme", "source"]);
-const MAX_UNKNOWN_KEYS = 16;
-const MAX_UNKNOWN_BYTES = 1024;
+const KNOWN_NESTED: Readonly<Record<"hair" | "eyes" | "resonance", ReadonlySet<string>>> = {
+  hair: new Set(["style", "color"]),
+  eyes: new Set(["shape", "color"]),
+  resonance: new Set(["intensity", "glow"]),
+};
+
+/** Server caps (design §4.7 / §4.8); over them the server answers 413 calibration_too_large. */
+export const CALIBRATION_UNKNOWN_BYTES = 1024;
+export const CALIBRATION_UNKNOWN_KEYS = 16;
+export const CALIBRATION_MAX_DEPTH = 3;
+export const CALIBRATION_SOURCE_MAX = 32;
 
 function obj(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
@@ -186,36 +199,97 @@ export function normalizeHex(v: unknown, fallback: string): string {
   return typeof v === "string" && HEX.test(v.trim()) ? v.trim().toLowerCase() : fallback;
 }
 
-function depthOk(v: unknown, depth: number): boolean {
-  if (!v || typeof v !== "object") return true;
-  if (depth >= 3) return false;
-  return Object.values(v as Record<string, unknown>).every((x) => depthOk(x, depth + 1));
+/** Code-unit order: the same on every engine and on the server. */
+const byPath = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+/** UTF-8 byte length (what the server measures), without TextEncoder. */
+export function utf8ByteLength(s: string): number {
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c < 0x80) n += 1;
+    else if (c < 0x800) n += 2;
+    else if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length && (s.charCodeAt(i + 1) & 0xfc00) === 0xdc00) {
+      n += 4;
+      i++;
+    } else n += 3;
+  }
+  return n;
 }
 
-/** Keep unknown fields the server would keep (key regex, depth ≤ 3, ≤ 16 keys, ≤ 1 KB). */
-function unknownFields(r: Record<string, unknown>, known: Set<string>, budget: { keys: number; bytes: number }, depth: number) {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(r)) {
-    if (known.has(k) || EXCLUDED_KEYS.has(k) || FORBIDDEN_KEYS.has(k) || !UNKNOWN_KEY.test(k)) continue;
-    if (v === undefined || typeof v === "function" || !depthOk(v, depth)) continue;
-    let bytes = 0;
-    try {
-      bytes = JSON.stringify(v).length + k.length;
-    } catch {
-      continue;
-    }
-    if (budget.keys + 1 > MAX_UNKNOWN_KEYS || budget.bytes + bytes > MAX_UNKNOWN_BYTES) continue;
-    budget.keys += 1;
-    budget.bytes += bytes;
-    out[k] = v;
+/** JSON nesting depth: primitives 0, `{}`/`[]` 1, and so on. */
+function jsonDepth(v: unknown): number {
+  if (!v || typeof v !== "object") return 0;
+  const kids = Array.isArray(v) ? v : Object.values(v as Record<string, unknown>);
+  return 1 + kids.reduce<number>((m, k) => Math.max(m, jsonDepth(k)), 0);
+}
+
+/** A JSON round-trip copy, or undefined for values JSON can't carry. */
+function jsonSafe(v: unknown): unknown {
+  try {
+    const text = JSON.stringify(v);
+    return text === undefined ? undefined : JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+type UnknownEntry = { path: string; parent: "hair" | "eyes" | "resonance" | null; key: string; value: unknown };
+
+function collectUnknown(r: Record<string, unknown>): UnknownEntry[] {
+  const out: UnknownEntry[] = [];
+  const consider = (parent: UnknownEntry["parent"], key: string, raw: unknown) => {
+    if (FORBIDDEN_KEYS.has(key) || EXCLUDED_KEYS.has(key) || !UNKNOWN_KEY.test(key)) return;
+    const value = jsonSafe(raw);
+    if (value === undefined) return;
+    // Whole calibration depth ≤ 3: the root object is 1, a top-level key's object value 2.
+    if (jsonDepth(value) > CALIBRATION_MAX_DEPTH - (parent ? 2 : 1)) return;
+    out.push({ path: parent ? `${parent}.${key}` : key, parent, key, value });
+  };
+  for (const k of Object.keys(r)) if (!KNOWN_TOP.has(k)) consider(null, k, r[k]);
+  for (const parent of ["hair", "eyes", "resonance"] as const) {
+    const o = obj(r[parent]);
+    for (const k of Object.keys(o)) if (!KNOWN_NESTED[parent].has(k)) consider(parent, k, o[k]);
   }
   return out;
 }
 
+function unknownTree(entries: readonly UnknownEntry[]): Record<string, unknown> {
+  const tree: Record<string, unknown> = {};
+  for (const e of entries) {
+    if (!e.parent) tree[e.key] = e.value;
+    else tree[e.parent] = { ...obj(tree[e.parent]), [e.key]: e.value };
+  }
+  return tree;
+}
+
+/**
+ * Which unknown fields survive. Deterministic: candidates sorted by path, then
+ * taken greedily while the serialized unknown fields stay ≤ 1024 UTF-8 bytes
+ * and ≤ 16 keys. A field that would overflow is dropped; later, smaller ones
+ * may still fit. Same input → same output, whatever the original key order.
+ */
+function capUnknown(entries: readonly UnknownEntry[]): UnknownEntry[] {
+  const sorted = [...entries].sort((a, b) => byPath(a.path, b.path));
+  const kept: UnknownEntry[] = [];
+  for (const e of sorted) {
+    if (kept.length >= CALIBRATION_UNKNOWN_KEYS) break;
+    if (utf8ByteLength(JSON.stringify(unknownTree([...kept, e]))) <= CALIBRATION_UNKNOWN_BYTES) kept.push(e);
+  }
+  return kept;
+}
+
+/** Serialized UTF-8 size of a calibration's unknown fields, as the server counts them. */
+export function unknownFieldBytes(cal: unknown): number {
+  return utf8ByteLength(JSON.stringify(unknownTree(collectUnknown(obj(cal)))));
+}
+
 /**
  * Read-side normalizer: validates hex, clamps and rounds 0-100, exact enums
- * (case-folded), falls back to defaults, keeps bounded unknown fields, drops
- * name/tagline. Never throws. `null`/non-objects give a fresh default.
+ * (case-folded), falls back to defaults, drops name/tagline. Unknown fields
+ * are kept only within the server caps (sorted by path; over the caps they
+ * are dropped). `source` keeps only known leaf paths and kept unknown paths,
+ * ≤ 32 in path order. Never throws. `null`/non-objects give a fresh default.
  */
 export function normalizeVesselCalibration(raw: unknown): VesselCalibration {
   const r = obj(raw);
@@ -223,33 +297,37 @@ export function normalizeVesselCalibration(raw: unknown): VesselCalibration {
   const hair = obj(r.hair);
   const eyes = obj(r.eyes);
   const res = obj(r.resonance);
-  const budget = { keys: 0, bytes: 0 };
+  const kept = capUnknown(collectUnknown(r));
+  const extras = unknownTree(kept);
+  const allowedSource = new Set<string>([...CALIBRATION_PATHS, ...kept.map((e) => e.path)]);
   const source: Record<string, CalibrationSource> = {};
   let n = 0;
-  for (const [k, v] of Object.entries(obj(r.source))) {
-    if (n >= 32 || FORBIDDEN_KEYS.has(k)) continue;
-    if (v === "photo" || v === "user" || v === "default") {
+  const rawSource = obj(r.source);
+  for (const k of Object.keys(rawSource).sort(byPath)) {
+    if (n >= CALIBRATION_SOURCE_MAX) break;
+    const v = rawSource[k];
+    if (allowedSource.has(k) && (v === "photo" || v === "user" || v === "default")) {
       source[k] = v;
       n++;
     }
   }
   const out: VesselCalibration = {
-    ...unknownFields(r, KNOWN_TOP, budget, 1),
+    ...extras,
     version: 1,
     vesselType: oneOf(VESSEL_TYPES, r.vesselType, d.vesselType),
     shape: oneOf(VESSEL_SHAPES, r.shape, d.shape),
     hair: {
-      ...unknownFields(hair, new Set(["style", "color"]), budget, 2),
+      ...obj(extras.hair),
       style: oneOf(HAIR_STYLES, hair.style, d.hair.style),
       color: normalizeHex(hair.color, d.hair.color),
     },
     eyes: {
-      ...unknownFields(eyes, new Set(["shape", "color"]), budget, 2),
+      ...obj(extras.eyes),
       shape: oneOf(EYE_SHAPES, eyes.shape, d.eyes.shape),
       color: normalizeHex(eyes.color, d.eyes.color),
     },
     resonance: {
-      ...unknownFields(res, new Set(["intensity", "glow"]), budget, 2),
+      ...obj(extras.resonance),
       intensity: clamp100(res.intensity, d.resonance.intensity),
       glow: clamp100(res.glow, d.resonance.glow),
     },

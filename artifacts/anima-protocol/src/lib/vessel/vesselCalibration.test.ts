@@ -14,8 +14,11 @@ import {
   VESSEL_TYPES,
   VESSEL_TYPE_OPTIONS,
   hairMeshFor,
+  CALIBRATION_UNKNOWN_BYTES,
   normalizeVesselCalibration,
   resolveCalibratedLook,
+  unknownFieldBytes,
+  utf8ByteLength,
   setCalibrationField,
   silverToneColor,
 } from "./vesselCalibration";
@@ -65,6 +68,75 @@ describe("normalizeVesselCalibration", () => {
     expect(c).not.toHaveProperty("bad-key");
     const many = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`k${i}`, i]));
     expect(Object.keys(normalizeVesselCalibration(many)).filter((k) => /^k\d+$/.test(k))).toHaveLength(16);
+  });
+
+  it("keeps unknown fields by sorted path, not arrival order (Builder repro, #794)", () => {
+    const big = "x".repeat(400);
+    const a = normalizeVesselCalibration({ zeta: big, alpha: big, mid: big });
+    const b = normalizeVesselCalibration({ alpha: big, mid: big, zeta: big });
+    const keys = (c: Record<string, unknown>) => ["alpha", "mid", "zeta"].filter((k) => k in c);
+    expect(keys(a)).toEqual(["alpha", "mid"]);
+    expect(keys(b)).toEqual(["alpha", "mid"]);
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+    // Nested unknowns sort by full path too ("hair.sheen" < "zeta").
+    const n1 = normalizeVesselCalibration({ zeta: big, hair: { sheen: big }, alpha: big });
+    const n2 = normalizeVesselCalibration({ alpha: big, hair: { sheen: big }, zeta: big });
+    expect(JSON.stringify(n1)).toBe(JSON.stringify(n2));
+    expect((n1.hair as Record<string, unknown>).sheen).toBe(big);
+    expect(n1).not.toHaveProperty("zeta");
+  });
+
+  it("caps unknown fields at 1024 UTF-8 bytes of serialized JSON (Builder repros, #794)", () => {
+    expect(utf8ByteLength("é")).toBe(2);
+    expect(utf8ByteLength("😀")).toBe(4);
+    // Two 500×"é" fields: ~2015 bytes serialized → the server would 413; only one is kept.
+    const accents = normalizeVesselCalibration({ a1: "é".repeat(500), a2: "é".repeat(500) });
+    expect("a1" in accents).toBe(true);
+    expect("a2" in accents).toBe(false);
+    expect(unknownFieldBytes(accents)).toBeLessThanOrEqual(CALIBRATION_UNKNOWN_BYTES);
+    // Sixteen 55-char fields: punctuation pushes the serialized JSON past 1024, so not all 16 fit.
+    const sixteen = Object.fromEntries(Array.from({ length: 16 }, (_, i) => [`f${String(i).padStart(2, "0")}`, "y".repeat(55)]));
+    const capped = normalizeVesselCalibration(sixteen);
+    const kept = Object.keys(capped).filter((k) => /^f\d\d$/.test(k));
+    expect(kept.length).toBeLessThan(16);
+    expect(kept).toEqual(Object.keys(sixteen).slice(0, kept.length)); // in path order
+    expect(unknownFieldBytes(capped)).toBeLessThanOrEqual(CALIBRATION_UNKNOWN_BYTES);
+    expect(unknownFieldBytes(sixteen)).toBeGreaterThan(CALIBRATION_UNKNOWN_BYTES);
+  });
+
+  it("drops unknown values that make the calibration deeper than 3 (root = 1)", () => {
+    const c = normalizeVesselCalibration({ ok: { a: { b: 1 } }, deep: { a: { b: { c: 1 } } }, hair: { okish: { a: 1 }, deeper: { a: { b: 1 } } } });
+    expect(c.ok).toEqual({ a: { b: 1 } });
+    expect(c).not.toHaveProperty("deep");
+    expect((c.hair as Record<string, unknown>).okish).toEqual({ a: 1 });
+    expect(c.hair).not.toHaveProperty("deeper");
+  });
+
+  it("restricts source keys to known and kept paths, capped at 32 in sorted order (Builder repro, #794)", () => {
+    const c = normalizeVesselCalibration({ future: 1, hair: { sheen: 2 }, source: { bogus: "user", "hair.nope": "photo", future: "user", "hair.sheen": "photo", shape: "user" } });
+    expect(c.source).toEqual({ future: "user", "hair.sheen": "photo", shape: "user" });
+    // A source tag for an unknown field that was dropped by the caps is dropped too.
+    const big = "x".repeat(1100);
+    expect(normalizeVesselCalibration({ huge: big, source: { huge: "user" } }).source).toEqual({});
+    // 16 kept unknowns + 11 known paths = 27 allowed; with 40 junk/extra tags the cap and order still hold.
+    const extras = Object.fromEntries(Array.from({ length: 16 }, (_, i) => [`u${String(i).padStart(2, "0")}`, i]));
+    const src: Record<string, string> = {};
+    for (const k of [...Object.keys(extras), "vesselType", "netForm", "shape", "theme", "silverWarmth", "hair.style", "hair.color", "eyes.shape", "eyes.color", "resonance.intensity", "resonance.glow"]) src[k] = "user";
+    for (let i = 0; i < 40; i++) src[`junk${i}`] = "user";
+    const reversed = Object.fromEntries(Object.entries(src).reverse());
+    const s1 = normalizeVesselCalibration({ ...extras, source: src }).source;
+    const s2 = normalizeVesselCalibration({ ...extras, source: reversed }).source;
+    expect(Object.keys(s1)).toHaveLength(27);
+    expect(Object.keys(s1).some((k) => k.startsWith("junk"))).toBe(false);
+    expect(JSON.stringify(s1)).toBe(JSON.stringify(s2));
+  });
+
+  it("applies the 32-entry source cap in sorted path order", () => {
+    const extras = Object.fromEntries(Array.from({ length: 16 }, (_, i) => [`k${String(i).padStart(2, "0")}`, 0]));
+    // Tags arrive in reverse order; the kept map comes out in path order.
+    const src = Object.fromEntries([...Object.keys(extras), "shape", "theme"].reverse().map((k) => [k, "user"]));
+    const out = normalizeVesselCalibration({ ...extras, source: src }).source;
+    expect(Object.keys(out)).toEqual([...Object.keys(out)].sort());
   });
 
   it("keeps only valid source tags", () => {
