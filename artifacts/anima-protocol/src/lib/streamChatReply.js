@@ -54,9 +54,13 @@ function rememberChatClientTrace(err, trace) {
  * off, which leaves the stream exactly as before.
  *
  * @param {AsyncIterable<{ content?: string, done?: boolean, error?: string, status?: string, affect?: unknown, scene_plan?: unknown, scene_event?: unknown }>} events
- * @param {{ onDelta?: (accumulated: string) => void, onFirstToken?: (accumulated: string) => void, onStatus?: (event: object) => void, onAffect?: (frame: unknown) => void, stripTags?: boolean, stripStage?: boolean, onScene?: (frame: { scene_plan?: unknown, scene_event?: unknown }) => void }} [hooks]
+ * With `onTool` (chat upgrade 4, VITE_ANIMA_TOOLS on) each additive
+ * `{ tool }` frame is handed to the caller. Off by default; today's client
+ * ignores those frames, as before.
+ *
+ * @param {{ onDelta?: (accumulated: string) => void, onFirstToken?: (accumulated: string) => void, onStatus?: (event: object) => void, onAffect?: (frame: unknown) => void, stripTags?: boolean, stripStage?: boolean, onScene?: (frame: { scene_plan?: unknown, scene_event?: unknown }) => void, onTool?: (frame: unknown) => void }} [hooks]
  */
-export async function streamChatReply(events, { onDelta, onFirstToken, onStatus, onAffect, stripTags = false, stripStage = false, onScene } = {}) {
+export async function streamChatReply(events, { onDelta, onFirstToken, onStatus, onAffect, stripTags = false, stripStage = false, onScene, onTool } = {}) {
   let content = "";
   let doneEvent = null;
   let crisisResource = null;
@@ -181,6 +185,13 @@ export async function streamChatReply(events, { onDelta, onFirstToken, onStatus,
           // Scene UI is decoration around the reply; it never breaks it.
         }
       }
+      if (onTool && !event?.done && event?.tool) {
+        try {
+          onTool(event.tool);
+        } catch {
+          // Tool cards are UI around the reply; they never break it.
+        }
+      }
       if (event?.content && !event?.done) {
         replyFilter.push(event.content);
         paintVisible(streamView(replyFilter.peek()));
@@ -293,6 +304,7 @@ function defaultMintTurnId() {
  *   stripTags?: boolean,
  *   stripStage?: boolean,
  *   onScene?: (frame: { scene_plan?: unknown, scene_event?: unknown }) => void,
+ *   onTool?: (frame: unknown) => void,
  * }} args
  */
 export async function streamChatReplyWithTurnRetry({
@@ -307,6 +319,7 @@ export async function streamChatReplyWithTurnRetry({
   stripTags = false,
   stripStage = false,
   onScene,
+  onTool,
 }) {
   let currentTurnId = turnId;
   let retried = false;
@@ -320,6 +333,7 @@ export async function streamChatReplyWithTurnRetry({
         ...(stripTags ? { stripTags: true } : {}),
         ...(stripStage ? { stripStage: true } : {}),
         ...(onScene ? { onScene } : {}),
+        ...(onTool ? { onTool } : {}),
       });
       if (result?.replayed && !retried) {
         retried = true;
