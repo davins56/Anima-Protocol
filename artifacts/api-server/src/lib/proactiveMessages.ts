@@ -28,6 +28,9 @@ import { createChatCompletionWithFailover } from "./llmFailover";
 import { localChatActivityActive } from "./localLlmPriority";
 import { acquireLocalLlmBackground } from "./localLlmSlot";
 import { routeModel } from "./modelRouter";
+import { scenesEnabled } from "./scenes/sceneState";
+import { heardByCharacter } from "./scenes/awareness";
+import { stampServerRow } from "./scenes/awarenessStore";
 import { buildCompanionPrompt, type CharacterData } from "./promptBuilder";
 import { loadOperatorModel } from "./operatorModel";
 import { notifyUser } from "./storeEvents";
@@ -240,7 +243,8 @@ async function loadCandidate(
         ),
       )
       .orderBy(desc(chatMessages.createdAt))
-      .limit(24);
+      // #763: read further back so unheard lines don't crowd out heard ones.
+      .limit(scenesEnabled() ? 96 : 24);
     if (newestFirst.length === 0) continue;
     if (!newestFirst.some((message) => message.role === "user")) continue;
     if (newestFirst[0]!.createdAt > inactiveBefore) continue;
@@ -277,6 +281,9 @@ async function loadCandidate(
       } as CharacterData,
       recentMessages: newestFirst
         .reverse()
+        // #763: she only recalls lines she heard (typed copies carry the stamp).
+        .filter((message) => !scenesEnabled() || heardByCharacter(message, characterId, session.characterIds))
+        .slice(-24)
         .map((message) => ({
           role: message.role,
           content: message.content,
@@ -410,14 +417,16 @@ async function appendStoreMessage(
     const seq = Number(agg?.maxSeq ?? -1) + 1;
     const now = new Date().toISOString();
     const id = String(message.id || makeId());
-    const data = {
+    // #763: a proactive / outreach line is heard by whoever is in earshot
+    // (and its speaker), like any other row. Flag off: unchanged.
+    const data = await stampServerRow(tx, userId, sessionId, {
       ...message,
       id,
       session_id: sessionId,
       seq,
       created_date: message.created_date ?? message.timestamp ?? now,
       updated_date: now,
-    };
+    }, scenesEnabled());
     await tx.insert(userEntities).values({
       userId,
       entityName: CHAT_MESSAGE,
@@ -466,7 +475,10 @@ export async function persistCompanionMessage(
     ...extra,
     metadata,
   };
-  await appendStoreMessage(userId, candidate.sessionId, message);
+  const stored = await appendStoreMessage(userId, candidate.sessionId, message);
+  const typedMetadata = scenesEnabled() && stored.metadata && typeof stored.metadata === "object"
+    ? (stored.metadata as Record<string, unknown>)
+    : metadata;
   await Promise.all([
     db.insert(chatMessages).values({
       id: makeId(),
@@ -477,7 +489,7 @@ export async function persistCompanionMessage(
       characterId: String(candidate.character.id),
       characterName: candidate.character.name,
       isCrossover: false,
-      metadata,
+      metadata: typedMetadata,
       createdAt: now,
     }),
     db

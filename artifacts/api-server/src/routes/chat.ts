@@ -3,6 +3,20 @@ import { adultGate } from "../lib/safety/adultGate";
 import chatScenesRouter from "./chatScenes";
 import { computeAdultGated, scenesEnabled } from "../lib/scenes/sceneState";
 import { readStoredScene } from "../lib/scenes/sceneStore";
+import {
+  heardByCharacter,
+  historyForCharacter,
+  sharedFactsHeardBy,
+  stampHeardBy,
+  withHeardBy,
+} from "../lib/scenes/awareness";
+import {
+  loadAwarenessScope,
+  stampServerRow,
+  turnAwarenessOf,
+  turnListeners,
+  type AwarenessScope,
+} from "../lib/scenes/awarenessStore";
 import { creativeFreedomEnabled } from "../lib/chatStyle";
 import { userIsAdultAttested } from "../lib/safety/ageGate";
 import { getAuth } from "@clerk/express";
@@ -761,14 +775,15 @@ async function appendStoreMessage(
     const now = new Date().toISOString();
     const msg = asObject(message);
     const id = String(msg.id ?? makeId());
-    const data: MsgData = {
+    // #763: server-written rows are stamped like client appends (flag on only).
+    const data: MsgData = await stampServerRow(tx, userId, sessionId, {
       ...msg,
       id,
       session_id: sessionId,
       seq,
       created_date: msg.created_date ?? msg.timestamp ?? now,
       updated_date: now,
-    };
+    }, scenesEnabled());
     const inserted = await tx
       .insert(userEntities)
       .values({
@@ -937,6 +952,11 @@ async function loadMemories(userId: string, characterIds: string[]) {
   }
 }
 
+function pipelineAssistantHeardBy(metadata: Record<string, unknown>): string[] {
+  const awareness = turnAwarenessOf(metadata);
+  return awareness?.assistant ?? [];
+}
+
 /** Profile display name for the answer-last instruction. Never an email. */
 function profileDisplayName(
   profile: Record<string, unknown>,
@@ -1100,7 +1120,9 @@ async function writeTurnMessagesInOrder(
       includeUser: Boolean(messages.user),
     });
     const now = new Date().toISOString();
-    const insertRow = async (data: MsgData) => {
+    const insertRow = async (row: MsgData) => {
+      // #763: the turn's own stamps (ledger), flag on only.
+      const data = await stampServerRow(tx, turn.userId, turn.sessionId, row, scenesEnabled());
       await tx
         .insert(userEntities)
         .values({
@@ -1254,12 +1276,16 @@ async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
           })
           .onConflictDoNothing();
       };
+      // #763: typed copies carry the same server stamps (flag on only).
+      const typedAwareness = scenesEnabled() ? turnAwarenessOf(metadata) : null;
       if (userMessage) {
         await insertTyped({
           id: turn.userMessageId,
           role: "user",
           content: turn.userContent,
-          metadata: { turn_id: turn.id },
+          metadata: typedAwareness
+            ? withHeardBy({ metadata: { turn_id: turn.id } }, typedAwareness.user ?? []).metadata as Record<string, unknown>
+            : { turn_id: turn.id },
           createdAt: turn.createdAt,
         });
       }
@@ -1269,7 +1295,9 @@ async function persistLedgerTurn(turn: ChatTurn): Promise<void> {
         content: turn.assistantContent,
         characterId: activeCharacterId,
         characterName: activeCharacterName,
-        metadata,
+        metadata: typedAwareness
+          ? withHeardBy({ metadata }, typedAwareness.assistant ?? []).metadata as Record<string, unknown>
+          : metadata,
         createdAt: new Date(turn.createdAt.getTime() + 1),
       });
       return true;
@@ -1371,6 +1399,9 @@ async function recordTurnContinuity(turn: ChatTurn): Promise<void> {
   const characterIds = asStringArray(metadata.character_ids);
   const isCrossover = metadata.is_crossover === true;
   const cutOff = isCutOffReply(metadata);
+  // #763: with scenes on, only characters who heard the turn learn from it.
+  const awareness = scenesEnabled() ? turnAwarenessOf(metadata) : null;
+  const listeners = turnListeners(characterIds, awareness);
   const sharedFact = isCrossover
     ? {
         type: "crossover_turn",
@@ -1379,6 +1410,10 @@ async function recordTurnContinuity(turn: ChatTurn): Promise<void> {
           ? `User: ${truncate(turn.userContent, 180)}`
           : `User: ${truncate(turn.userContent, 180)} | Reply: ${truncate(turn.assistantContent, 260)}`,
         created_at: new Date().toISOString(),
+        // Read back per character (only those who heard both lines).
+        ...(awareness
+          ? { heard_by: listeners.filter((l) => l.user && (cutOff || l.reply)).map((l) => l.id) }
+          : {}),
       }
     : undefined;
   await updateStoreSessionMetadata(
@@ -1387,18 +1422,37 @@ async function recordTurnContinuity(turn: ChatTurn): Promise<void> {
     cutOff ? turn.userContent : turn.userContent || turn.assistantContent,
     sharedFact,
   );
-  await upsertTurnMemory({
-    turnId: turn.id,
-    userId: turn.userId,
-    characterIds,
-    sessionId: turn.sessionId,
-    userContent: turn.userContent,
-    assistantContent: cutOff ? "" : turn.assistantContent,
-    omitAssistant: cutOff,
-  });
-  const activeId = metadata.active_character_id
+  if (!awareness) {
+    await upsertTurnMemory({
+      turnId: turn.id,
+      userId: turn.userId,
+      characterIds,
+      sessionId: turn.sessionId,
+      userContent: turn.userContent,
+      assistantContent: cutOff ? "" : turn.assistantContent,
+      omitAssistant: cutOff,
+    });
+  } else {
+    // Each listener's turn fact (and its embedding) holds only what she heard.
+    for (const listener of listeners) {
+      const omitAssistant = cutOff || !listener.reply;
+      await upsertTurnMemory({
+        turnId: turn.id,
+        userId: turn.userId,
+        characterIds: [listener.id],
+        sessionId: turn.sessionId,
+        userContent: listener.user ? turn.userContent : "",
+        assistantContent: omitAssistant ? "" : turn.assistantContent,
+        omitAssistant,
+      });
+    }
+  }
+  const activeIdRaw = metadata.active_character_id
     ? String(metadata.active_character_id)
     : characterIds[0];
+  // The speaker's private consolidation job only runs if she heard the line.
+  const activeId =
+    activeIdRaw && awareness && !listeners.some((l) => l.id === activeIdRaw && l.user) ? undefined : activeIdRaw;
   const companionName = metadata.active_character_name
     ? String(metadata.active_character_name)
     : "";
@@ -1447,6 +1501,11 @@ async function applyRelationshipPostProcess(params: {
    * activeCharacterId; the commit path passes only a speaker recorded on the turn.
    */
   affectSpeakerId?: string | null;
+  /**
+   * #763: with scenes on, the characters who heard this turn. Only they get
+   * the turn's content (conversation count, milestone evolution summary).
+   */
+  heardCharacterIds?: string[] | null;
 }): Promise<void> {
   const {
     userId,
@@ -1473,7 +1532,10 @@ async function applyRelationshipPostProcess(params: {
       ? `User said: ${truncate(content, 420)}`
       : `User said: ${truncate(content, 420)}\nCompanion replied: ${truncate(assistantContent, 520)}`;
 
-    for (const animaId of characterIds) {
+    const evolutionIds = params.heardCharacterIds
+      ? characterIds.filter((id) => params.heardCharacterIds!.includes(id))
+      : characterIds;
+    for (const animaId of evolutionIds) {
       const updated = await incrementConversationCount({
         userId,
         animaId,
@@ -1696,7 +1758,17 @@ async function applyRelationshipPostProcessFromTurn(turn: ChatTurn): Promise<voi
       }
     }
   }
+  const turnAwareness = scenesEnabled() ? turnAwarenessOf(metadata) : null;
   await applyRelationshipPostProcess({
+    ...(turnAwareness
+      ? {
+          // Relationship, milestone and arc passes read both lines, so only
+          // characters who heard both take part (a continue has no user line).
+          heardCharacterIds: turnListeners(characterIds, turnAwareness)
+            .filter((l) => (l.user || metadata.is_continue === true) && l.reply)
+            .map((l) => l.id),
+        }
+      : {}),
     userId: turn.userId,
     sessionId: turn.sessionId,
     turnId: turn.id,
@@ -2505,12 +2577,32 @@ router.post("/messages", async (req, res) => {
     body.persistence_owner === "client" || body.persist === false
       ? "client"
       : "server";
+  // #763 (ANIMA_SITUATIONAL_SCENES): who hears the user's line is stamped
+  // now, from the scene at the start of the turn, and kept on the ledger so
+  // whoever appends the row later (client or server) gets this stamp. A
+  // failed scene read fails closed: nobody hears it, nobody learns from it.
+  const scenesOn = scenesEnabled();
+  let sceneScope: AwarenessScope | null = null;
+  let userHeardBy: string[] = [];
+  if (scenesOn) {
+    try {
+      sceneScope = await loadAwarenessScope(db, userId, sessionId);
+    } catch (error) {
+      logger.warn({ error, sessionId }, "Scene read failed; this turn is heard by nobody");
+    }
+    userHeardBy =
+      sceneScope && !body.is_continue
+        ? stampHeardBy({ scene: sceneScope.scene, content, names: sceneScope.names })
+        : [];
+  }
+  const sceneCast = sceneScope?.cast ?? [];
   const turnMetadata = {
     ...clientTurnMetadata(body.metadata),
     mode,
     character_ids: characterIds,
     ...(replyAction ? { reply_action: replyAction, skip_affect: true } : {}),
     ...(skipAffect ? { skip_affect: true } : {}),
+    ...(scenesOn ? { scene_awareness: { cast: sceneCast, user: userHeardBy } } : {}),
   };
   const telemetry = new ChatPipelineTelemetry({
     turnId,
@@ -2988,7 +3080,11 @@ router.post("/messages", async (req, res) => {
               sessionId,
               query: content,
               profile: mindProfile,
-              historyTexts: history.map((m) => String(m.content ?? "")).filter(Boolean),
+              historyTexts: history
+                // #763: recall is seeded only from lines this character heard.
+                .filter((m) => !scenesOn || heardByCharacter(m, hintedCharId, sceneCast))
+                .map((m) => String(m.content ?? ""))
+                .filter(Boolean),
             });
           },
           "",
@@ -3073,7 +3169,7 @@ router.post("/messages", async (req, res) => {
     discardedReply.turnIds.length > 0 ||
     discardedReply.messageIds.length > 0 ||
     discardedReply.fromSeq != null;
-  const promptRecentMessages = promptDropsReplaced
+  let promptRecentMessages = promptDropsReplaced
     ? recentMessages.filter((message) => !shouldDiscardStoredMessage(message, discardedReply))
     : recentMessages;
   // What this turn actually sent the model, plus the ceiling the optional
@@ -3177,6 +3273,21 @@ router.post("/messages", async (req, res) => {
     loadedName: activeChar?.name ?? null,
   });
   restingCharacterName = activeCharacterName || null;
+  // #763: the speaker's history holds only rows she heard (legacy rows: the
+  // session's stored cast; explicit []: nobody; malformed: nobody), plus one
+  // M12 stage direction after a gap. The client's prompt text carries its own
+  // transcript, so with scenes on it is dropped in group scenes or whenever
+  // she missed something (the server history is authoritative).
+  let sceneAwayNote: string | null = null;
+  let sceneDropsClientContext = false;
+  if (scenesOn) {
+    const heard = activeCharacterId
+      ? historyForCharacter(promptRecentMessages, activeCharacterId, sceneCast)
+      : { rows: [] as MsgData[], trailingGapNote: null, dropped: promptRecentMessages.length };
+    promptRecentMessages = heard.rows;
+    sceneAwayNote = heard.trailingGapNote;
+    sceneDropsClientContext = mode === "group" || heard.dropped > 0;
+  }
   const [activeEvolutionRow, activeRelationshipState, activeArcState] =
     activeCharacterId && hintedCharId && activeCharacterId === hintedCharId
       ? hintedState
@@ -3424,18 +3535,18 @@ router.post("/messages", async (req, res) => {
             mindTurnNote,
           }
         : {}),
-      clientContext: body.system_prompt,
+      clientContext: sceneDropsClientContext ? "" : body.system_prompt,
       repositoryKnowledge,
       pdfContext: [pdfContext, webSearchContext].filter(Boolean).join("\n\n") || pdfContext,
       memoryCoreContext: [mindProfile ? mindKnowledge : memoryCoreContext, resolvedCorrections]
         .filter(Boolean)
         .join("\n\n"),
-      photoNote: [photoNote, mindProfile ? "" : companionPhotoNote].filter(Boolean).join("\n\n"),
+      photoNote: [photoNote, mindProfile ? "" : companionPhotoNote, sceneAwayNote ?? ""].filter(Boolean).join("\n\n"),
       characters: adaptedChars,
       activeCharacter: activeChar,
       memories: promptMemories,
       recentMessages: promptRecentMessages,
-      sharedMemory: promptSharedMemory,
+      sharedMemory: scenesOn ? sharedFactsHeardBy(promptSharedMemory, activeCharacterId, sceneCast) : promptSharedMemory,
       mode,
       content,
       replyAction,
@@ -3471,7 +3582,12 @@ router.post("/messages", async (req, res) => {
       companionName: activeChar?.name ? String(activeChar.name) : undefined,
       // Facts are shared across this user's companions, except what was
       // said in therapy or adult turns, which stays with this companion.
-      factScope: factScopeForTurn({ mode, therapy: therapyActive, adult: adultActive }),
+      // #763: what was said while someone was out of earshot stays with
+      // this companion (shared user facts would reach the absent one).
+      factScope:
+        scenesOn && !sceneCast.every((id) => userHeardBy.includes(id))
+          ? "companion"
+          : factScopeForTurn({ mode, therapy: therapyActive, adult: adultActive }),
     };
   }
 
@@ -3540,7 +3656,9 @@ router.post("/messages", async (req, res) => {
         role: "user",
         content,
         isCrossover,
-        metadata: body.metadata,
+        metadata: scenesOn
+          ? (withHeardBy({ metadata: body.metadata ?? {} }, userHeardBy).metadata as Record<string, unknown>)
+          : body.metadata,
       });
     }
   })();
@@ -4288,8 +4406,24 @@ router.post("/messages", async (req, res) => {
     const evolvedMoodSelfState = evolvedCompanion
       ? serializeCompanionAffect(evolvedCompanion)
       : null;
+    // #763: the reply is heard by whoever is in earshot when it is written.
+    let assistantHeardBy: string[] = [];
+    if (scenesOn && sceneScope) {
+      try {
+        const now = await loadAwarenessScope(db, userId, sessionId);
+        assistantHeardBy = stampHeardBy({
+          scene: now.scene,
+          content: fullResponse,
+          names: now.names,
+          speakerId: activeCharacterId,
+        });
+      } catch (error) {
+        logger.warn({ error, sessionId }, "Scene read failed; the reply is heard by nobody");
+      }
+    }
     const generatedMetadata = {
       ...clientTurnMetadata(body.metadata),
+      ...(scenesOn ? { scene_awareness: { cast: sceneCast, user: userHeardBy, assistant: assistantHeardBy } } : {}),
       mode,
       session_title: String(sessionData.title || "New session"),
       character_ids: characterIds,
@@ -4599,7 +4733,10 @@ router.post("/messages", async (req, res) => {
     if (skipAffect) return;
     // Append-only memory stream: one `turn` event per committed turn
     // (dedupe on turnId so persist retries never double-log).
-    if (activeCharacterId && isMemoryCoreEnabled() && !replyCutOff) {
+    // #763: a speaker who did not hear the line never logs or learns it.
+    const speakerHeardLine =
+      !scenesOn || Boolean(body.is_continue) || Boolean(activeCharacterId && userHeardBy.includes(activeCharacterId));
+    if (activeCharacterId && isMemoryCoreEnabled() && !replyCutOff && speakerHeardLine) {
       const turnWeight = turnEmotionalWeightFields(companionAffect?.intensity);
       void appendMemoryEvent({
         userId,
@@ -4625,7 +4762,7 @@ router.post("/messages", async (req, res) => {
     // Chat mind learning (facts + rolling summary) runs on the background
     // model after the reply is saved; it never delays the stream.
     let mindLearning: Promise<void> = Promise.resolve();
-    if (mindTurn && activeCharacterId && isMemoryCoreEnabled() && !replyCutOff && fullResponse.trim()) {
+    if (mindTurn && activeCharacterId && isMemoryCoreEnabled() && !replyCutOff && fullResponse.trim() && speakerHeardLine) {
       mindLearning = runMindPostTurn(
         {
           userId,
@@ -4639,7 +4776,12 @@ router.post("/messages", async (req, res) => {
           profile: mindTurn.profile,
           factScope: mindTurn.factScope,
           loadRecentMessages: (limit) =>
-            readRecentStoreMessages(userId, sessionId, limit, { skipMigrate: true }),
+            readRecentStoreMessages(userId, sessionId, limit, { skipMigrate: true }).then((rows) =>
+              // #763: the rolling summary is built from lines she heard.
+              scenesOn && activeCharacterId
+                ? historyForCharacter(rows, activeCharacterId, sceneCast).rows
+                : rows,
+            ),
         },
         (msg, meta) => logger.info(meta, msg),
       ).catch((e) => logger.warn({ error: e, turnId }, "Chat mind post-turn failed"));
@@ -4649,6 +4791,16 @@ router.post("/messages", async (req, res) => {
         | { learned_life?: unknown[] }
         | undefined;
       await applyRelationshipPostProcess({
+        ...(scenesOn
+          ? {
+              // Both lines feed these passes: only who heard both.
+              heardCharacterIds: sceneCast.filter(
+                (id) =>
+                  (Boolean(body.is_continue) || userHeardBy.includes(id)) &&
+                  pipelineAssistantHeardBy(pipelineMetadata).includes(id),
+              ),
+            }
+          : {}),
         userId,
         sessionId,
         turnId,

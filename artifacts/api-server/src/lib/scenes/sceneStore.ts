@@ -57,8 +57,9 @@ function asStringArray(value: unknown): string[] {
 export async function loadSceneSession(
   userId: string,
   sessionId: string,
+  executor: Pick<typeof db, "select"> = db,
 ): Promise<SceneSessionInfo | null> {
-  const [row] = await db
+  const [row] = await executor
     .select()
     .from(userEntities)
     .where(
@@ -80,7 +81,7 @@ export async function loadSceneSession(
   const names = new Map<string, string>();
   const universes = new Set<string>();
   if (characterIds.length) {
-    const rows = await db
+    const rows = await executor
       .select({ entityName: userEntities.entityName, entityId: userEntities.entityId, data: userEntities.data })
       .from(userEntities)
       .where(
