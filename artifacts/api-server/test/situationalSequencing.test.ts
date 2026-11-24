@@ -43,6 +43,7 @@ vi.mock("../src/lib/llmFailover", () => ({
   usesFreeTierOpenBudget: () => false,
   isOpenRouterAlreadyFreeTier: () => false,
   isOpenRouterGenericProviderError: () => false,
+  isProviderQuotaError: () => false,
   isOpenRouterZdrOrDataPolicyError: () => false,
   isLocalOnlyProviderChain: () => true,
   isWorkerSubrequestLimitError: () => false,
@@ -606,9 +607,53 @@ describe("flag on: plans, sequencing and stage markers over SSE", () => {
     expect(turns).toHaveLength(1);
   });
 
+  it("marker event rows carry metadata.turn_id of the chat turn that emitted them; PATCH events stay unstamped", async () => {
+    flag(true);
+    const s = await seedSession([NAT, SER]);
+    await patch(s, { cast: { [SER]: { presence: "away" } } });
+    const t = await send(s, { speaker: NAT, chunks: ["Back in a bit [[exit]]"] });
+    expect(t.status).toBe(200);
+    const streamedEvent = t.frames.find((f) => f.scene_event)!.scene_event;
+    expect(streamedEvent.metadata.turn_id).toBe(t.turnId);
+    const rows = await eventRows(s);
+    const marker = rows.find((r) => r.id === streamedEvent.id)!;
+    expect(marker.metadata).toMatchObject({ kind: "exit", character_id: NAT, turn_id: t.turnId });
+    const patchRows = rows.filter((r) => r.id !== streamedEvent.id);
+    expect(patchRows.length).toBeGreaterThan(0);
+    for (const r of patchRows) expect(r.metadata).not.toHaveProperty("turn_id");
+  });
+
+  it("a marker-only reply resolves cleanly: 200, done.visible '', one scene_event, no error frame; the turn commits without an assistant row", async () => {
+    flag(true);
+    const s = await seedSession([NAT, SER, AEL]);
+    const t = await send(s, { speaker: NAT, chunks: ["[[ex", "it]]"] });
+    expect(t.status).toBe(200);
+    expect(t.frames.some((f) => f.error || f.code === "empty_reply")).toBe(false);
+    expect(streamed(t.frames)).toBe("");
+    const done = doneOf(t.frames);
+    expect(done.visible).toBe("");
+    const events = t.frames.filter((f) => f.scene_event).map((f) => f.scene_event);
+    expect(events).toHaveLength(1);
+    expect(events[0].metadata).toMatchObject({ kind: "exit", character_id: NAT, turn_id: t.turnId });
+    expect(done.scene.cast[NAT].presence).toBe("away");
+    const commit = await call("POST", `/chat/turns/${t.turnId}/commit`, {});
+    expect(commit.status).toBe(200);
+    // Whitespace around the marker is still marker-only.
+    const w = await send(s, { speaker: SER, chunks: ["  ", "[[exit]]", "\n"] });
+    expect(w.status).toBe(200);
+    expect(doneOf(w.frames).visible).toBe("");
+    expect(w.frames.filter((f) => f.scene_event)).toHaveLength(1);
+    // A genuinely empty reply (no markers) still fails as empty_reply.
+    const e = await send(s, { speaker: AEL, chunks: ["   "] });
+    expect(e.frames.find((f) => f.scene_plan)!.scene_plan.speakers[0].character_id).toBe(AEL);
+    expect(e.frames.some((f) => f.code === "empty_reply")).toBe(true);
+    expect(e.frames.some((f) => f.done)).toBe(false);
+  });
+
   it("solo sessions: done carries the scene, no plan frame, no markers parsed", async () => {
     flag(true);
     const s = await seedSession([NAT], "solo");
+    llm.chunks = ["Hi there"];
     const res = await call("POST", "/chat/messages", {
       turn_id: `${P}solo1`, session_id: s, content: "hi", character_id: NAT, character_ids: [NAT], assistant_character_id: NAT, mode: "solo", persist: false, persistence_owner: "client", if_rev: 0,
     });
