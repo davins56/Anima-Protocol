@@ -251,10 +251,16 @@ function collectUnknown(r: Record<string, unknown>): UnknownEntry[] {
     if (FORBIDDEN_KEYS.has(key) || EXCLUDED_KEYS.has(key) || !UNKNOWN_KEY.test(key)) return;
     // Whole calibration depth ≤ 3: the root object is 1, a top-level key's object value 2.
     const allowed = CALIBRATION_MAX_DEPTH - (parent ? 2 : 1);
-    // Depth first (bounded), so deeply nested junk never reaches JSON.stringify.
-    if (jsonDepth(raw, allowed) > allowed) return;
-    const value = jsonSafe(raw);
-    if (value === undefined || jsonDepth(value, allowed) > allowed) return;
+    let value: unknown;
+    try {
+      // Depth first (bounded), so deeply nested junk never reaches JSON.stringify.
+      // try: a throwing getter / proxy trap drops the field instead of the read.
+      if (jsonDepth(raw, allowed) > allowed) return;
+      value = jsonSafe(raw);
+      if (value === undefined || jsonDepth(value, allowed) > allowed) return;
+    } catch {
+      return;
+    }
     out.push({ path: parent ? `${parent}.${key}` : key, parent, key, value });
   };
   for (const k of Object.keys(r)) if (!KNOWN_TOP.has(k)) consider(null, k, r[k]);

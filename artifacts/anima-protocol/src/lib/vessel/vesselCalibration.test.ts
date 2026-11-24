@@ -125,6 +125,13 @@ describe("normalizeVesselCalibration", () => {
     expect(c.hair).not.toHaveProperty("junk");
   });
 
+  it("drops an unknown field whose getter throws instead of throwing", () => {
+    const evil = { get x() { throw new Error("boom"); } };
+    const c = normalizeVesselCalibration({ evil, fine: 1 });
+    expect(c).not.toHaveProperty("evil");
+    expect(c.fine).toBe(1);
+  });
+
   it("restricts source keys to known and kept paths, capped at 32 in sorted order (Builder repro, #794)", () => {
     const c = normalizeVesselCalibration({ future: 1, hair: { sheen: 2 }, source: { bogus: "user", "hair.nope": "photo", future: "user", "hair.sheen": "photo", shape: "user" } });
     expect(c.source).toEqual({ future: "user", "hair.sheen": "photo", shape: "user" });
