@@ -107,6 +107,8 @@ const CompanionGenerator = lazy(() => import("./pages/CompanionGenerator"));
 const OnboardingFlow = lazy(() => import("./pages/OnboardingFlow"));
 const ExtraPage = lazy(() => import("./app/extraPages"));
 // Dev-only photo-to-vessel lab; compiled out of production unless VITE_VESSEL_LAB=1.
+// Anima Essence (in-house rebuild); off unless the build sets VITE_ANIMA_ESSENCE=1.
+const ESSENCE_ENABLED = import.meta.env.VITE_ANIMA_ESSENCE === "1";
 const VESSEL_LAB = import.meta.env.DEV || import.meta.env.VITE_VESSEL_LAB === "1";
 const VesselLab = VESSEL_LAB ? lazy(() => import("./pages/VesselLab")) : null;
 
@@ -1618,6 +1620,12 @@ const AuthenticatedApp = () => {
                     <ExtraPage name="DreamJournal" />
                 }
               />
+              {ESSENCE_ENABLED && (
+                <Route
+                  path="/essence/:characterId?/:screen?"
+                  element={<ExtraPage name="Essence" />}
+                />
+              )}
               <Route
                 path="/what-she-remembers/:characterId"
                 element={
