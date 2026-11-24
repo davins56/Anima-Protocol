@@ -50,6 +50,7 @@ const ProactiveMessageSettings = lazy(() => import("@/components/settings/Proact
 const DayRhythmSettings = lazy(() => import("@/components/settings/DayRhythmSettings"));
 // Renders nothing unless the server reports the bot bridge enabled.
 const BotBridgeSettings = lazy(() => import("@/components/botBridge/BotBridgeSettings"));
+const BugSquasherSettingsCard = lazy(() => import("@/components/bugSquasher/BugSquasherSettingsCard"));
 const AppearanceStudio = lazy(() => import("@/components/settings/AppearanceStudio"));
 const AnimaForge = lazy(() => import("@/components/settings/AnimaForge"));
 const ForgeProfiles = lazy(() => import("@/components/settings/ForgeProfiles"));
@@ -1260,6 +1261,10 @@ export default function Settings() {
                   Memory Security Lab
                 </Link>
               )}
+              <SectionTitle>Bug Squasher</SectionTitle>
+              <Suspense fallback={<SectionSkeleton />}>
+                <BugSquasherSettingsCard isAdmin={authUser?.role === "admin"} />
+              </Suspense>
               <SectionTitle>Storage</SectionTitle>
               <div className="border border-primary/15 bg-card p-5 grid grid-cols-2 gap-4">
                 <StatBox label="Chat Sessions" value={sessionCount} />
