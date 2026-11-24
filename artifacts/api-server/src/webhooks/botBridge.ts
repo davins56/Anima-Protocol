@@ -134,7 +134,9 @@ export function createBotBridgeWebhookRouter(options: BotBridgeWebhookOptions = 
       const counts = await storage.countInbound(bot.userId, bot.botId, nowMs);
       if (counts.botLastMinute >= limits.inboundPerMinutePerBot || counts.userLastDay >= limits.inboundPerDayPerUser) {
         await storage.logDenied(bot, "rate_limited", nowMs);
-        // Not processed: let the bot's retry of this exact request through later.
+        // Not processed: a retry of this exact signed request inside the skew
+        // window (the per-minute case) is handled, not answered as a duplicate.
+        // After the daily cap the bot has to re-sign (the old timestamp is stale).
         replayCache.forget(replayKey);
         const retryAfter = counts.botLastMinute >= limits.inboundPerMinutePerBot ? 60 : 3600;
         res.setHeader("Retry-After", String(retryAfter));
