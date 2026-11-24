@@ -117,7 +117,8 @@ export function readPlan(raw: unknown): ScenePlan | null {
   const { id, rev, queue, index, expires_at } = raw;
   if (typeof id !== "string" || !id) return null;
   if (!Number.isSafeInteger(rev) || !Number.isSafeInteger(index)) return null;
-  if (!Array.isArray(queue) || !queue.every((q) => typeof q === "string" && q)) return null;
+  if (!Array.isArray(queue) || !queue.length || !queue.every((q) => typeof q === "string" && q)) return null;
+  if (Number(index) < 0 || Number(index) > queue.length) return null;
   if (typeof expires_at !== "string" || Number.isNaN(Date.parse(expires_at))) return null;
   const reasons = Array.isArray(raw.reasons) ? (raw.reasons as SpeakerReason[]) : [];
   const addressed = Array.isArray(raw.addressed) ? (raw.addressed as unknown[]).filter((a): a is string => typeof a === "string") : [];

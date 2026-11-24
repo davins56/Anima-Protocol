@@ -177,26 +177,18 @@ export async function beginSceneTurn(input: {
       };
     }
     const existing = readPlan(rawObj.plan);
-    if (
-      existing &&
-      input.turnId &&
-      rawObj.plan &&
-      asObject(rawObj.plan).turn_id === input.turnId &&
-      existing.index === 0 &&
-      existing.rev === stored.rev &&
-      Date.parse(existing.expires_at) > now.getTime()
-    ) {
-      const next = revalidateQueue(existing, scene, 0);
-      if (next.index === 0) {
-        return {
-          ...base,
-          speakerId: existing.queue[0]!,
-          frame: { id: existing.id, speakers: remainingSpeakers(existing, scene, 0), blocked: next.blocked, narrate: false, mode: existing.mode },
-          planId: existing.id,
-          responderIndex: 0,
-          blocked: next.blocked,
-        };
-      }
+    // A repeat (or replay) of the turn that made the current plan never
+    // replaces it: the ledger replays or joins that turn, and the plan keeps
+    // whatever progress it has made.
+    if (existing && input.turnId && asObject(rawObj.plan).turn_id === input.turnId) {
+      return {
+        ...base,
+        speakerId: existing.queue[0]!,
+        frame: { id: existing.id, speakers: remainingSpeakers(existing, scene, 0), blocked: [], narrate: false, mode: existing.mode },
+        planId: existing.id,
+        responderIndex: 0,
+        blocked: [],
+      };
     }
     const mentioned = input.isContinue ? [] : mentionedCastIds(input.content, info.names);
     const planned = planSpeakers({

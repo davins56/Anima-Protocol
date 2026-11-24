@@ -1031,6 +1031,7 @@ async function writeSceneNoReply(input: {
   const { res, userId, sessionId, sceneTurn } = input;
   let turnId = input.turnId;
   let started: Awaited<ReturnType<typeof beginChatTurn>> | null = null;
+  let replay = false;
   try {
     started = await beginChatTurn({
       id: turnId,
@@ -1040,7 +1041,10 @@ async function writeSceneNoReply(input: {
       persistenceOwner: input.persistenceOwner,
       metadata: { ...input.turnMetadata, scene_no_reply: true },
     });
-    if (!started.created) {
+    // The same no-reply turn sent again: replay it (no second row, no second narration).
+    if (!started.created && asObject(started.turn.metadata).scene_no_reply === true && started.turn.userContent === input.content) {
+      replay = true;
+    } else if (!started.created) {
       turnId = normalizeTurnId("");
       started = await beginChatTurn({
         id: turnId,
@@ -1051,8 +1055,8 @@ async function writeSceneNoReply(input: {
         metadata: { ...input.turnMetadata, scene_no_reply: true },
       });
     }
-    await markTurnCommitted(turnId, userId);
-    if (input.persistenceOwner === "server" && !input.body.is_continue && input.content.trim()) {
+    if (!replay) await markTurnCommitted(turnId, userId);
+    if (!replay && input.persistenceOwner === "server" && !input.body.is_continue && input.content.trim()) {
       await appendStoreMessage(userId, sessionId, {
         id: started.turn.userMessageId,
         role: "user",
@@ -1062,13 +1066,16 @@ async function writeSceneNoReply(input: {
       });
     }
   } catch (error) {
+    // Nothing was committed: say so, so the client can retry.
     logger.warn({ error, sessionId }, "Scene no-reply turn could not be recorded");
+    res.status(503).json({ error: "Could not record this turn. Try again." });
+    return;
   }
   const sse = openChatSse(res);
   try {
     const frame = sceneTurn.frame!;
     writeSse(res, { scene_plan: frame });
-    if (frame.narrate) {
+    if (frame.narrate && !replay) {
       const present = Object.entries(sceneTurn.state.cast)
         .filter(([, entry]) => entry.presence === "here")
         .map(([id]) => sceneTurn.info.names.get(id))
@@ -2809,6 +2816,9 @@ router.post("/messages", async (req, res) => {
     if (sceneTurn?.frame) {
       const speakerId = sceneTurn.speakerId;
       if (speakerId) {
+        // The planned speaker is always a stored cast member; make sure the
+        // turn loads her even when the request listed only part of the cast.
+        if (!characterIds.includes(speakerId)) characterIds.push(speakerId);
         body.force_character_id = speakerId;
         body.assistant_character_id = speakerId;
         body.assistant_character_name = sceneTurn.info.names.get(speakerId) ?? null;

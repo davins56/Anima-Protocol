@@ -569,6 +569,43 @@ describe("flag on: plans, sequencing and stage markers over SSE", () => {
     expect(ids.every((id) => id === storedPlanId)).toBe(true);
   });
 
+  it("review fixes: a planned speaker missing from character_ids still answers; a repeated turn id keeps an advanced plan; a repeated no-reply turn replays once", async () => {
+    flag(true);
+    // The request lists only the asleep character; the plan's speaker is loaded anyway.
+    const s1 = await seedSession([NAT, SER]);
+    const p1 = await patch(s1, { cast: { [NAT]: { presence: "asleep" } } });
+    const only = await send(s1, { speaker: NAT, castIds: [NAT], scene: { if_rev: p1.scene.rev } });
+    expect(doneOf(only.frames).assistant_character_id).toBe(SER);
+
+    // Same turn_id sent again after the first answer advanced the plan.
+    const s2 = await seedSession([NAT, SER]);
+    n += 1;
+    const turnId = `${P}again${n}`;
+    const body = { turn_id: turnId, session_id: s2, content: "@Serenity again", character_ids: [NAT, SER], assistant_character_id: NAT, use_scene_mind: false, mode: "group", persist: false, persistence_owner: "client", if_rev: 0 };
+    const first = frames(await (await call("POST", "/chat/messages", body)).text());
+    const planId = first.find((f) => f.scene_plan)!.scene_plan.id;
+    const advanced = (await rawScene(s2)).plan;
+    expect(advanced).toMatchObject({ id: planId, index: 1 });
+    await (await call("POST", "/chat/messages", body)).text();
+    expect((await rawScene(s2)).plan).toMatchObject({ id: planId, index: 1 });
+    const follow = await send(s2, { isContinue: true, speaker: SER, scene: { if_rev: doneOf(first).scene.rev, scene_plan_id: planId, responder_index: 1 } });
+    expect(follow.status).toBe(200);
+
+    // A narrated no-reply turn sent twice: one ledger row, one narration row.
+    const s3 = await seedSession([NAT, SER]);
+    const p3 = await patch(s3, { narrator: true, cast: { [NAT]: { presence: "asleep" }, [SER]: { presence: "away" } } });
+    n += 1;
+    const quietId = `${P}quiet${n}`;
+    const quiet = { turn_id: quietId, session_id: s3, content: "Hello?", character_ids: [NAT, SER], use_scene_mind: false, mode: "group", persist: false, persistence_owner: "client", if_rev: p3.scene.rev };
+    const r1 = frames(await (await call("POST", "/chat/messages", quiet)).text());
+    const r2 = frames(await (await call("POST", "/chat/messages", quiet)).text());
+    expect(doneOf(r1).turn_id).toBe(quietId);
+    expect(doneOf(r2).turn_id).toBe(quietId);
+    expect((await eventRows(s3)).filter((r) => r.metadata?.kind === "narration")).toHaveLength(1);
+    const turns = await db.select({ id: chatTurns.id }).from(chatTurns).where(eq(chatTurns.sessionId, s3));
+    expect(turns).toHaveLength(1);
+  });
+
   it("solo sessions: done carries the scene, no plan frame, no markers parsed", async () => {
     flag(true);
     const s = await seedSession([NAT], "solo");
