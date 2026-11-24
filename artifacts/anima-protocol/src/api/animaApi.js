@@ -2,6 +2,7 @@ import { apiUrl } from '@/lib/apiOrigin';
 import { authHeaders } from './authBridge';
 import { readSseJsonStream } from '@/lib/readSseJsonStream';
 import { streamChatReply } from '@/lib/streamChatReply';
+import { base64ToBytes, bytesToBase64 } from '@/lib/ownModel/base64.js';
 
 export function chatAuthRequiredError() {
   const err = new Error(

@@ -20,6 +20,9 @@ import { useConfirm } from "@/lib/ConfirmDialog";
 import { deleteSessionFlow, deleteMessageFlow } from "@/lib/chatDeleteHandlers";
 import { rewindToMessageFlow, regenerateMessageFlow, switchSiblingFlow } from "@/lib/chatRewindHandlers";
 import { replySiblingsEnabled } from "@/lib/replySiblings";
+import { reactionsEnabled, reactToMessageFlow } from "@/lib/chatReactions";
+import { checkHomeModel, describePresence, isHomeOfflineKind, richPresenceEnabled, useDeviceOnline, useHomeModelState } from "@/lib/richPresence";
+import HomeModelOfflineStrip from "@/components/chat/HomeModelOfflineStrip";
 import { editMessageFlow } from "@/lib/chatEditHandlers";
 import {
   syncActiveMessages as runActiveMessageSync,
@@ -155,11 +158,17 @@ import VoiceInputPanel from "@/components/chat/VoiceInputPanel";
 // Identity-locked photo studio — lazy so the chat bundle stays lean on iPad.
 const InlinePhotoComposer = lazy(() => import("@/components/photo/InlinePhotoComposer"));
 const VoiceLauncher = lazy(() => import("@/components/voice/VoiceLauncher"));
+const LocalVoiceBar = lazy(() => import("@/components/voice/LocalVoiceBar"));
 const PHOTO_STUDIO_ENABLED = String(import.meta.env.VITE_PHOTO_STUDIO ?? "on").toLowerCase() !== "off";
+// V6 voice UI (chat upgrade 5): home-box voice. Off unless VITE_ANIMA_LOCAL_VOICE=1.
+const LOCAL_VOICE_ENABLED = localVoiceEnabled();
 // Chat upgrade 2: sibling regenerates. Off unless VITE_ANIMA_REPLY_SIBLINGS=1.
 const REPLY_SIBLINGS_ENABLED = replySiblingsEnabled();
 // Chat upgrade 4: tool action cards. Off unless VITE_ANIMA_TOOLS=1.
 const TOOLS_UI_ENABLED = toolsUiEnabled();
+// Chat upgrade 6: emoji reactions and richer presence. Both off by default.
+const REACTIONS_ENABLED = reactionsEnabled();
+const RICH_PRESENCE_ENABLED = richPresenceEnabled();
 
 import { useAutoQuestManager } from "@/components/quests/AutoQuestManager";
 import QuestDetectionMessage from "@/components/chat/QuestDetectionMessage";
@@ -167,6 +176,8 @@ import CharacterPresencePanel from "@/components/chat/CharacterPresencePanel";
 import ToolActionsTray from "@/components/chat/ToolActionsTray";
 import { toolsUiEnabled } from "@/lib/tools/toolFrames";
 import { useToolActions } from "@/lib/tools/useToolActions";
+import { localVoiceEnabled, getLocalVoicePrefs } from "@/lib/voice/localVoicePrefs";
+import { useLocalVoice } from "@/hooks/useLocalVoice";
 import { getCompanionModePrompt, getMultiAspectPrompt, getAspectName, ASPECT_META } from "@/lib/companionModePrompts";
 import {
   isTherapySession,
@@ -470,6 +481,9 @@ export default function Chat() {
     ),
   });
   const replyActionsDisabledRef = useRef(false);
+  // Chat upgrade 6b: shared probe with the header pill (one request).
+  const homeModelState = useHomeModelState(RICH_PRESENCE_ENABLED);
+  const deviceOnline = useDeviceOnline(RICH_PRESENCE_ENABLED);
   replyActionsDisabledRef.current = replyActionsDisabled;
   /** Same user line while the self-hosted model is still generating. */
   const lateTurnRef = useRef(null);
@@ -667,6 +681,10 @@ export default function Chat() {
   // ElevenLabs and Web Speech are opt-in only (lib/voicePrefs.js, all off by
   // default), so there is no automatic native -> ElevenLabs -> Web Speech
   // cascade any more. Home-box playback in chat is the Builder's V6.
+  // V6: home-box voice (Kokoro). Fail closed: offline means text only.
+  const localVoice = useLocalVoice(LOCAL_VOICE_ENABLED);
+  const localVoiceSpeak = localVoice.speak;
+  const localVoiceStop = localVoice.stop;
   const speakMessageNative = useCallback((content, charName) => {
     const char = characters.find((c) => c.name === charName);
     const voiceId = char?.elevenlabs_voice_id;
@@ -684,8 +702,10 @@ export default function Chat() {
     else if (route === 'emotional') emotionalTTS.speakWithEmotion(content, voiceId, emotion, intensity);
     else if (route === 'elevenlabs') elTTS.speak(content, voiceId, intensity, emotion);
     else if (route === 'webSpeech') tts.speak(content);
-    // route null: TODO(V6) play the home-box /api/voice/:id/speak stream here.
-  }, [isNative, speakNative, characters, emotionalTTS, elTTS, tts, characterEmotions]);
+    // route null: her home-box voice, only when the steward turned on
+    // "Read each new reply aloud" (off by default). Never a cloud fallback.
+    else if (LOCAL_VOICE_ENABLED && getLocalVoicePrefs().autoSpeak) void localVoiceSpeak(char?.id, content);
+  }, [isNative, speakNative, characters, emotionalTTS, elTTS, tts, characterEmotions, localVoiceSpeak]);
 
   const questManager = useAutoQuestManager({
     sessionId: activeSession?.id,
@@ -1060,8 +1080,18 @@ export default function Chat() {
     if (route === 'emotional') emotionalTTS.speakWithEmotion(content, voiceId, emotion, intensity);
     else if (route === 'elevenlabs') elTTS.speak(content, voiceId, intensity, emotion);
     else if (route === 'webSpeech') tts.speak(content);
-    // route null: TODO(V6) home-box playback.
-  }, [characters, emotionalTTS, elTTS, tts, characterEmotions]);
+    // route null: her home-box voice (V6). Offline stays text only.
+    else if (LOCAL_VOICE_ENABLED) void localVoiceSpeak(char?.id, content);
+  }, [characters, emotionalTTS, elTTS, tts, characterEmotions, localVoiceSpeak]);
+
+  // V6: switching sessions cuts her voice; sending a new line talks over her.
+  useEffect(() => {
+    if (LOCAL_VOICE_ENABLED) localVoiceStop("navigation");
+  }, [activeSession?.id, localVoiceStop]);
+  const lastRoleForVoice = activeSession?.messages?.[activeSession.messages.length - 1]?.role;
+  useEffect(() => {
+    if (LOCAL_VOICE_ENABLED && lastRoleForVoice === "user") localVoiceStop("barge_in");
+  }, [lastRoleForVoice, activeSession?.messages?.length, localVoiceStop]);
 
   const handleReadStory = async () => {
     if (!activeSession?.messages || activeSession.messages.length === 0) return;
@@ -1685,6 +1715,12 @@ export default function Chat() {
       keepSiblings: REPLY_SIBLINGS_ENABLED,
     });
 
+  const handleReactToMessage = (messageId, emoji) =>
+    reactToMessageFlow(messageId, emoji, {
+      activeSession,
+      isLoading: () => replyActionsDisabledRef.current,
+      setActiveSession,
+    });
   const handleSwitchSibling = (parentIndex, key) =>
     switchSiblingFlow(parentIndex, key, {
       activeSession,
@@ -4810,6 +4846,7 @@ Return JSON:
                 onDeleteMessage={handleDeleteMessage}
                 onRegenerateMessage={handleRegenerateMessage}
                 onSwitchSibling={REPLY_SIBLINGS_ENABLED ? handleSwitchSibling : undefined}
+                onReactToMessage={REACTIONS_ENABLED ? handleReactToMessage : undefined}
                 actionsDisabled={replyActionsDisabled}
                 onAvatarClick={setBioCharacter}
                 onRateMessage={async (index, rating, betterReply, extra) => {
@@ -5049,6 +5086,24 @@ Return JSON:
                     </Suspense>
                   );
                 })()}
+                {RICH_PRESENCE_ENABLED && (() => {
+                  const soloName = activeSession.mode === "group"
+                    ? ""
+                    : characters.find((c) => c.id === activeSession.character_id)?.name;
+                  const presence = describePresence({
+                    messages: activeSession.messages,
+                    replying: composerBusy,
+                    homeModel: homeModelState,
+                    deviceOnline,
+                    name: soloName,
+                  });
+                  return isHomeOfflineKind(presence.kind) ? (
+                    <HomeModelOfflineStrip
+                      presence={presence}
+                      onCheckAgain={presence.kind === "home_offline" ? () => checkHomeModel({ force: true }) : undefined}
+                    />
+                  ) : null;
+                })()}
                 <WebSearchToggle
                   status={searchStatus}
                   busy={searchBusy || composerBusy}
@@ -5056,6 +5111,21 @@ Return JSON:
                   saveAsMemory={searchSaveAsMemory}
                   onSaveChange={setSearchSaveAsMemory}
                 />
+                {LOCAL_VOICE_ENABLED && (
+                  <Suspense fallback={null}>
+                    <LocalVoiceBar
+                      voice={localVoice}
+                      characterId={
+                        activeSession.character_id ||
+                        (activeSession.group_character_ids || [])[0] ||
+                        null
+                      }
+                      companionName={characters.find((c) => c.id === activeSession.character_id)?.name}
+                      onTranscript={(text) => stableComposerSend(text)}
+                      disabled={composerBusy}
+                    />
+                  </Suspense>
+                )}
                 <ChatInput
                   key={activeSession.id}
                   onSend={stableComposerSend}

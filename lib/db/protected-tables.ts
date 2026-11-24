@@ -48,4 +48,6 @@ export const PROTECTED_SQL_TABLES = [
   "aetherial_net_inventory",
   "aetherial_net_reward_claims",
   "aetherial_net_cap_counters",
+  "bug_reports",
+  "bug_report_admins",
 ] as const;
