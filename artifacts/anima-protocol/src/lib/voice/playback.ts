@@ -3,6 +3,11 @@ import { pcm16ToFloat, resampleLinear } from "./pcm";
 
 export class StreamPlayer {
   private node: AudioWorkletNode;
+  /**
+   * V6: optional AnalyserNode between the player and the speakers, for the 3D
+   * vessel's mouth (live output level). Null unless `{ analyser: true }`.
+   */
+  readonly analyser: AnalyserNode | null = null;
   /** Frames played (at ctx rate) since the current assistant item started. */
   private playedAtItemStart = 0;
   private played = 0;
@@ -15,9 +20,19 @@ export class StreamPlayer {
   constructor(
     private ctx: AudioContext,
     private sourceRate: number,
+    opts: { analyser?: boolean } = {},
   ) {
     this.node = new AudioWorkletNode(ctx, "anima-player", { outputChannelCount: [1] });
-    this.node.connect(ctx.destination);
+    if (opts.analyser) {
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.5;
+      this.node.connect(analyser);
+      analyser.connect(ctx.destination);
+      this.analyser = analyser;
+    } else {
+      this.node.connect(ctx.destination);
+    }
     this.node.port.onmessage = (e) => {
       const m = e.data as { type: string; played: number };
       this.played = m.played;
@@ -68,5 +83,6 @@ export class StreamPlayer {
 
   close() {
     this.node.disconnect();
+    this.analyser?.disconnect();
   }
 }

@@ -155,13 +155,18 @@ import VoiceInputPanel from "@/components/chat/VoiceInputPanel";
 // Identity-locked photo studio — lazy so the chat bundle stays lean on iPad.
 const InlinePhotoComposer = lazy(() => import("@/components/photo/InlinePhotoComposer"));
 const VoiceLauncher = lazy(() => import("@/components/voice/VoiceLauncher"));
+const LocalVoiceBar = lazy(() => import("@/components/voice/LocalVoiceBar"));
 const PHOTO_STUDIO_ENABLED = String(import.meta.env.VITE_PHOTO_STUDIO ?? "on").toLowerCase() !== "off";
+// V6 voice UI (chat upgrade 5): home-box voice. Off unless VITE_ANIMA_LOCAL_VOICE=1.
+const LOCAL_VOICE_ENABLED = localVoiceEnabled();
 // Chat upgrade 2: sibling regenerates. Off unless VITE_ANIMA_REPLY_SIBLINGS=1.
 const REPLY_SIBLINGS_ENABLED = replySiblingsEnabled();
 
 import { useAutoQuestManager } from "@/components/quests/AutoQuestManager";
 import QuestDetectionMessage from "@/components/chat/QuestDetectionMessage";
 import CharacterPresencePanel from "@/components/chat/CharacterPresencePanel";
+import { localVoiceEnabled, getLocalVoicePrefs } from "@/lib/voice/localVoicePrefs";
+import { useLocalVoice } from "@/hooks/useLocalVoice";
 import { getCompanionModePrompt, getMultiAspectPrompt, getAspectName, ASPECT_META } from "@/lib/companionModePrompts";
 import {
   isTherapySession,
@@ -660,6 +665,10 @@ export default function Chat() {
   // ElevenLabs and Web Speech are opt-in only (lib/voicePrefs.js, all off by
   // default), so there is no automatic native -> ElevenLabs -> Web Speech
   // cascade any more. Home-box playback in chat is the Builder's V6.
+  // V6: home-box voice (Kokoro). Fail closed: offline means text only.
+  const localVoice = useLocalVoice(LOCAL_VOICE_ENABLED);
+  const localVoiceSpeak = localVoice.speak;
+  const localVoiceStop = localVoice.stop;
   const speakMessageNative = useCallback((content, charName) => {
     const char = characters.find((c) => c.name === charName);
     const voiceId = char?.elevenlabs_voice_id;
@@ -677,8 +686,10 @@ export default function Chat() {
     else if (route === 'emotional') emotionalTTS.speakWithEmotion(content, voiceId, emotion, intensity);
     else if (route === 'elevenlabs') elTTS.speak(content, voiceId, intensity, emotion);
     else if (route === 'webSpeech') tts.speak(content);
-    // route null: TODO(V6) play the home-box /api/voice/:id/speak stream here.
-  }, [isNative, speakNative, characters, emotionalTTS, elTTS, tts, characterEmotions]);
+    // route null: her home-box voice, only when the steward turned on
+    // "Read each new reply aloud" (off by default). Never a cloud fallback.
+    else if (LOCAL_VOICE_ENABLED && getLocalVoicePrefs().autoSpeak) void localVoiceSpeak(char?.id, content);
+  }, [isNative, speakNative, characters, emotionalTTS, elTTS, tts, characterEmotions, localVoiceSpeak]);
 
   const questManager = useAutoQuestManager({
     sessionId: activeSession?.id,
@@ -1053,8 +1064,18 @@ export default function Chat() {
     if (route === 'emotional') emotionalTTS.speakWithEmotion(content, voiceId, emotion, intensity);
     else if (route === 'elevenlabs') elTTS.speak(content, voiceId, intensity, emotion);
     else if (route === 'webSpeech') tts.speak(content);
-    // route null: TODO(V6) home-box playback.
-  }, [characters, emotionalTTS, elTTS, tts, characterEmotions]);
+    // route null: her home-box voice (V6). Offline stays text only.
+    else if (LOCAL_VOICE_ENABLED) void localVoiceSpeak(char?.id, content);
+  }, [characters, emotionalTTS, elTTS, tts, characterEmotions, localVoiceSpeak]);
+
+  // V6: switching sessions cuts her voice; sending a new line talks over her.
+  useEffect(() => {
+    if (LOCAL_VOICE_ENABLED) localVoiceStop("navigation");
+  }, [activeSession?.id, localVoiceStop]);
+  const lastRoleForVoice = activeSession?.messages?.[activeSession.messages.length - 1]?.role;
+  useEffect(() => {
+    if (LOCAL_VOICE_ENABLED && lastRoleForVoice === "user") localVoiceStop("barge_in");
+  }, [lastRoleForVoice, activeSession?.messages?.length, localVoiceStop]);
 
   const handleReadStory = async () => {
     if (!activeSession?.messages || activeSession.messages.length === 0) return;
@@ -5038,6 +5059,21 @@ Return JSON:
                   saveAsMemory={searchSaveAsMemory}
                   onSaveChange={setSearchSaveAsMemory}
                 />
+                {LOCAL_VOICE_ENABLED && (
+                  <Suspense fallback={null}>
+                    <LocalVoiceBar
+                      voice={localVoice}
+                      characterId={
+                        activeSession.character_id ||
+                        (activeSession.group_character_ids || [])[0] ||
+                        null
+                      }
+                      companionName={characters.find((c) => c.id === activeSession.character_id)?.name}
+                      onTranscript={(text) => stableComposerSend(text)}
+                      disabled={composerBusy}
+                    />
+                  </Suspense>
+                )}
                 <ChatInput
                   key={activeSession.id}
                   onSend={stableComposerSend}
