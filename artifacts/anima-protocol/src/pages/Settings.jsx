@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState, useEffect, useRef } from "react";
+import { onDeviceMindEnabled } from "@/lib/onDevice/flag";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useUser } from "@clerk/react";
 import { animaClient, exportData } from "@/api/animaClient";
@@ -51,6 +52,10 @@ const BotBridgeSettings = lazy(() => import("@/components/botBridge/BotBridgeSet
 const AppearanceStudio = lazy(() => import("@/components/settings/AppearanceStudio"));
 const AnimaForge = lazy(() => import("@/components/settings/AnimaForge"));
 const ForgeProfiles = lazy(() => import("@/components/settings/ForgeProfiles"));
+// Chat upgrade 3: on-device mind. Off unless VITE_ANIMA_ON_DEVICE_MIND=1; the
+// panel and its model libraries load only when the flag is on.
+const ON_DEVICE_MIND = onDeviceMindEnabled();
+const OnDeviceMindPanel = ON_DEVICE_MIND ? lazy(() => import("@/components/settings/OnDeviceMindPanel")) : null;
 
 function SectionSkeleton() {
   return (
@@ -823,6 +828,11 @@ export default function Settings() {
           {/* ── AI BEHAVIOR ── */}
           {section === SECTION.AI && (
             <div className="space-y-4">
+              {OnDeviceMindPanel && (
+                <Suspense fallback={null}>
+                  <OnDeviceMindPanel />
+                </Suspense>
+              )}
               <SectionTitle>LLM Providers</SectionTitle>
               <div className="border border-primary/15 bg-card p-5 space-y-3">
                 <p className="text-[9px] font-mono text-primary/30 leading-relaxed">

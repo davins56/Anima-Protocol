@@ -18,7 +18,8 @@ import { usePaginatedEntities } from "@/hooks/usePaginatedEntities";
 import { useStoreSync } from "@/lib/useStoreSync";
 import { useConfirm } from "@/lib/ConfirmDialog";
 import { deleteSessionFlow, deleteMessageFlow } from "@/lib/chatDeleteHandlers";
-import { rewindToMessageFlow, regenerateMessageFlow } from "@/lib/chatRewindHandlers";
+import { rewindToMessageFlow, regenerateMessageFlow, switchSiblingFlow } from "@/lib/chatRewindHandlers";
+import { replySiblingsEnabled } from "@/lib/replySiblings";
 import { editMessageFlow } from "@/lib/chatEditHandlers";
 import {
   syncActiveMessages as runActiveMessageSync,
@@ -155,6 +156,8 @@ import VoiceInputPanel from "@/components/chat/VoiceInputPanel";
 const InlinePhotoComposer = lazy(() => import("@/components/photo/InlinePhotoComposer"));
 const VoiceLauncher = lazy(() => import("@/components/voice/VoiceLauncher"));
 const PHOTO_STUDIO_ENABLED = String(import.meta.env.VITE_PHOTO_STUDIO ?? "on").toLowerCase() !== "off";
+// Chat upgrade 2: sibling regenerates. Off unless VITE_ANIMA_REPLY_SIBLINGS=1.
+const REPLY_SIBLINGS_ENABLED = replySiblingsEnabled();
 // Chat upgrade 4: tool action cards. Off unless VITE_ANIMA_TOOLS=1.
 const TOOLS_UI_ENABLED = toolsUiEnabled();
 
@@ -1679,6 +1682,14 @@ export default function Chat() {
       isLoading: () => replyActionsDisabledRef.current,
       setActiveSession,
       sendMessage: handleSendMessage,
+      keepSiblings: REPLY_SIBLINGS_ENABLED,
+    });
+
+  const handleSwitchSibling = (parentIndex, key) =>
+    switchSiblingFlow(parentIndex, key, {
+      activeSession,
+      isLoading: () => replyActionsDisabledRef.current,
+      setActiveSession,
     });
 
   const handleChoiceMade = async (choice) => {
@@ -4798,6 +4809,7 @@ Return JSON:
                 onEditMessage={handleEditMessage}
                 onDeleteMessage={handleDeleteMessage}
                 onRegenerateMessage={handleRegenerateMessage}
+                onSwitchSibling={REPLY_SIBLINGS_ENABLED ? handleSwitchSibling : undefined}
                 actionsDisabled={replyActionsDisabled}
                 onAvatarClick={setBioCharacter}
                 onRateMessage={async (index, rating, betterReply, extra) => {

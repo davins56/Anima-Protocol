@@ -386,3 +386,70 @@ describe("regenerateMessageFlow (confirm-and-rewrite a reply)", () => {
     expect(stored.last_message).toBe("from another device");
   });
 });
+
+describe("chat upgrade 2: sibling regenerates (keepSiblings)", () => {
+  it("keeps the retried reply as a sibling, then switches back to it", async () => {
+    const { switchSiblingFlow } = await import("@/lib/chatRewindHandlers");
+    const session = await animaClient.entities.ChatSession.create({
+      id: "sib-session",
+      messages: [
+        { id: "t1:user", role: "user", content: "hi" },
+        { id: "t1:assistant", role: "assistant", content: "first", character_name: "Serenity" },
+      ],
+    });
+    let view = session;
+    const setActiveSession = (fn) => {
+      view = typeof fn === "function" ? fn(view) : fn;
+    };
+    const sendMessage = vi.fn(async ({ history }) => {
+      const next = [...history, { id: "t2:assistant", role: "assistant", content: "second", character_name: "Serenity" }];
+      await animaClient.entities.ChatSession.update(session.id, { messages: next });
+      setActiveSession((prev) => ({ ...prev, messages: next }));
+      return { started: true };
+    });
+    await regenerateMessageFlow(1, {
+      confirm: async () => true,
+      activeSession: session,
+      isLoading: false,
+      setActiveSession,
+      sendMessage,
+      keepSiblings: true,
+    });
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(view.messages.map((m) => m.content)).toEqual(["hi", "second"]);
+    const siblings = view.messages[0].reply_siblings;
+    expect(siblings).toHaveLength(1);
+    expect(siblings[0].messages[0].content).toBe("first");
+
+    const result = await switchSiblingFlow(0, siblings[0].key, {
+      activeSession: view,
+      isLoading: false,
+      setActiveSession,
+    });
+    expect(result).toEqual({ ok: true });
+    expect(view.messages.map((m) => m.content)).toEqual(["hi", "first"]);
+    expect(view.messages[0].reply_siblings.map((s) => s.messages[0].content)).toEqual(["second"]);
+    const stored = await animaClient.entities.ChatSession.get(session.id);
+    expect(stored.messages.map((m) => m.content)).toEqual(["hi", "first"]);
+  });
+
+  it("without keepSiblings still discards the old reply", async () => {
+    const session = await animaClient.entities.ChatSession.create({
+      id: "nosib-session",
+      messages: [
+        { id: "t1:user", role: "user", content: "hi" },
+        { id: "t1:assistant", role: "assistant", content: "first" },
+      ],
+    });
+    let view = session;
+    await regenerateMessageFlow(1, {
+      confirm: async () => true,
+      activeSession: session,
+      isLoading: false,
+      setActiveSession: (fn) => { view = fn(view); },
+      sendMessage: async () => ({ started: true }),
+    });
+    expect(view.messages).toHaveLength(1);
+    expect(view.messages[0].reply_siblings).toBeUndefined();
+  });
+});

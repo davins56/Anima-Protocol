@@ -12,6 +12,7 @@
 
 import { animaClient } from "@/api/animaClient";
 import { planRetryReply } from "@/lib/chatReplyActions";
+import { keepRetriedBranch, switchToSibling } from "@/lib/replySiblings";
 
 // Compute the short "last_message" preview the page stores alongside a session.
 function lastMessagePreview(messages) {
@@ -66,7 +67,7 @@ function replacementBlocked(isLoading) {
  */
 export async function regenerateMessageFlow(
   idx,
-  { confirm, activeSession, isLoading, setActiveSession, sendMessage, correction = null, skipConfirm = false },
+  { confirm, activeSession, isLoading, setActiveSession, sendMessage, correction = null, skipConfirm = false, keepSiblings = false },
 ) {
   if (!activeSession || replacementBlocked(isLoading)) return;
   const askingAgain = idx >= (activeSession.messages || []).length;
@@ -75,7 +76,9 @@ export async function regenerateMessageFlow(
     title: askingAgain ? "Ask her again?" : "Retry her reply?",
     message: askingAgain
       ? "This asks for a reply to your message. It is not sent a second time."
-      : "This discards this reply and anything after it, then writes a new one. Your message stays as it is.",
+      : keepSiblings
+        ? "This writes a new reply. This one and anything after it are kept as an earlier version you can switch back to."
+        : "This discards this reply and anything after it, then writes a new one. Your message stays as it is.",
     confirmLabel: "Retry",
   });
   if (!ok || replacementBlocked(isLoading)) return;
@@ -86,14 +89,17 @@ export async function regenerateMessageFlow(
   const messages = fresh?.messages || activeSession.messages || [];
   const plan = planRetryReply(messages, idx);
   if (!plan.ok) return;
-  const last_message = plan.kept[plan.kept.length - 1]?.content?.slice(0, 60) || "";
-  await animaClient.entities.ChatSession.update(activeSession.id, { messages: plan.kept, last_message });
-  setActiveSession((prev) => ({ ...prev, messages: plan.kept, last_message }));
+  // Chat upgrade 2 (VITE_ANIMA_REPLY_SIBLINGS): the discarded branch is kept
+  // on his user line as an earlier sibling instead of being lost.
+  const kept = keepSiblings ? keepRetriedBranch(messages, plan) : plan.kept;
+  const last_message = kept[kept.length - 1]?.content?.slice(0, 60) || "";
+  await animaClient.entities.ChatSession.update(activeSession.id, { messages: kept, last_message });
+  setActiveSession((prev) => ({ ...prev, messages: kept, last_message }));
   if (!plan.userContent) return;
   const result = await sendMessage({
     text: plan.userContent,
     replyAction: "retry",
-    history: plan.kept,
+    history: kept,
     priorMessages: messages,
     replacedTurnId: plan.replacedTurnId || "",
     replacedTurnIds: plan.replacedTurnIds || [],
@@ -115,4 +121,32 @@ export async function regenerateMessageFlow(
         : prev,
     );
   }
+}
+
+// Chat upgrade 2 (VITE_ANIMA_REPLY_SIBLINGS): make an earlier sibling the live
+// reply again. The current reply (and anything after it) becomes a sibling, so
+// switching is never destructive. Re-reads the session first for the same
+// reason as the flows above.
+//
+// deps:
+//   activeSession    — the session currently open
+//   isLoading        — true, or a function that is true, while a turn is in flight
+//   setActiveSession — state setter used to reflect the change in the page view
+export async function switchSiblingFlow(parentIndex, key, { activeSession, isLoading, setActiveSession }) {
+  if (!activeSession || replacementBlocked(isLoading)) return { ok: false, reason: "busy" };
+  const fresh = await animaClient.entities.ChatSession.get(activeSession.id);
+  const messages = fresh?.messages || activeSession.messages || [];
+  const plan = switchToSibling(messages, parentIndex, key);
+  if (!plan.ok) return plan;
+  if (replacementBlocked(isLoading)) return { ok: false, reason: "busy" };
+  const last_message = lastMessagePreview(plan.messages);
+  const saved = await animaClient.entities.ChatSession.update(activeSession.id, {
+    messages: plan.messages,
+    last_message,
+  });
+  const next = Array.isArray(saved?.messages) ? saved.messages : plan.messages;
+  setActiveSession((prev) =>
+    prev && prev.id === activeSession.id ? { ...prev, messages: next, last_message } : prev,
+  );
+  return { ok: true };
 }

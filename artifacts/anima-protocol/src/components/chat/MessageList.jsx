@@ -9,6 +9,8 @@ import { isNarratorMessage } from "@/lib/storyNarrator";
 import { parseGroupResponse } from "@/lib/parseGroupResponse";
 import { lastReplyActionIndexes } from "@/lib/chatReplyActions";
 import { mayHaveOlderMessages, oldestSeq } from "@/lib/olderMessages";
+import { siblingPagerAt } from "@/lib/replySiblings";
+import ReplySiblingPager from "./ReplySiblingPager";
 import { ChevronUp, Loader } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -48,7 +50,7 @@ function useIndexedCallbacks(latest) {
   };
 }
 
-export default function MessageList({ messages, session, characters, characterMemories = EMPTY, characterEmotions, loreLinks, onRewindToMessage, onSpeak, onEditMessage, onDeleteMessage, onRegenerateMessage, onAvatarClick, onTeachMessage, onRateMessage, onLoadOlder, scrollContainerRef, actionsDisabled = false }) {
+export default function MessageList({ messages, session, characters, characterMemories = EMPTY, characterEmotions, loreLinks, onRewindToMessage, onSpeak, onEditMessage, onDeleteMessage, onRegenerateMessage, onAvatarClick, onTeachMessage, onRateMessage, onLoadOlder, scrollContainerRef, actionsDisabled = false, onSwitchSibling }) {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(false);
   const [serverExhausted, setServerExhausted] = useState(false);
@@ -225,6 +227,22 @@ export default function MessageList({ messages, session, characters, characterMe
     elements.push(
       <HeardByCaption key={`heard-${i}`} message={msg} align={msg.role === "user" ? "right" : "left"} />,
     );
+    // Chat upgrade 2: only passed when VITE_ANIMA_REPLY_SIBLINGS is on.
+    if (onSwitchSibling) {
+      const pager = siblingPagerAt(rows, i);
+      if (pager) {
+        const parentKey = rows[i - 1]?.id ?? i - 1;
+        elements.push(
+          <ReplySiblingPager
+            key={`siblings-${parentKey}-${pager.total}`}
+            pager={pager}
+            onSwitch={onSwitchSibling}
+            disabled={actionsDisabled}
+            companionName={msg.character_name}
+          />,
+        );
+      }
+    }
   }
 
   return (
