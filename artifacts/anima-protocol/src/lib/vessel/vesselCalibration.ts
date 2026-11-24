@@ -217,11 +217,20 @@ export function utf8ByteLength(s: string): number {
   return n;
 }
 
-/** JSON nesting depth: primitives 0, `{}`/`[]` 1, and so on. */
-function jsonDepth(v: unknown): number {
+/**
+ * JSON nesting depth (primitives 0, `{}`/`[]` 1, ...), counted only up to
+ * `limit + 1`: deep junk is rejected without recursing through all of it.
+ */
+function jsonDepth(v: unknown, limit: number): number {
   if (!v || typeof v !== "object") return 0;
+  if (limit <= 0) return 1;
   const kids = Array.isArray(v) ? v : Object.values(v as Record<string, unknown>);
-  return 1 + kids.reduce<number>((m, k) => Math.max(m, jsonDepth(k)), 0);
+  let max = 0;
+  for (const k of kids) {
+    max = Math.max(max, jsonDepth(k, limit - 1));
+    if (max >= limit) break;
+  }
+  return 1 + max;
 }
 
 /** A JSON round-trip copy, or undefined for values JSON can't carry. */
@@ -240,10 +249,12 @@ function collectUnknown(r: Record<string, unknown>): UnknownEntry[] {
   const out: UnknownEntry[] = [];
   const consider = (parent: UnknownEntry["parent"], key: string, raw: unknown) => {
     if (FORBIDDEN_KEYS.has(key) || EXCLUDED_KEYS.has(key) || !UNKNOWN_KEY.test(key)) return;
-    const value = jsonSafe(raw);
-    if (value === undefined) return;
     // Whole calibration depth ≤ 3: the root object is 1, a top-level key's object value 2.
-    if (jsonDepth(value) > CALIBRATION_MAX_DEPTH - (parent ? 2 : 1)) return;
+    const allowed = CALIBRATION_MAX_DEPTH - (parent ? 2 : 1);
+    // Depth first (bounded), so deeply nested junk never reaches JSON.stringify.
+    if (jsonDepth(raw, allowed) > allowed) return;
+    const value = jsonSafe(raw);
+    if (value === undefined || jsonDepth(value, allowed) > allowed) return;
     out.push({ path: parent ? `${parent}.${key}` : key, parent, key, value });
   };
   for (const k of Object.keys(r)) if (!KNOWN_TOP.has(k)) consider(null, k, r[k]);

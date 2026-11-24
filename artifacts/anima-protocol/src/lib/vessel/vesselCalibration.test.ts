@@ -112,6 +112,19 @@ describe("normalizeVesselCalibration", () => {
     expect(c.hair).not.toHaveProperty("deeper");
   });
 
+  it("never throws on pathologically deep unknown values", () => {
+    let deep: Record<string, unknown> = {};
+    const root = deep;
+    for (let i = 0; i < 200000; i++) {
+      const next: Record<string, unknown> = {};
+      deep.a = next;
+      deep = next;
+    }
+    const c = normalizeVesselCalibration({ junk: root, hair: { junk: root } });
+    expect(c).not.toHaveProperty("junk");
+    expect(c.hair).not.toHaveProperty("junk");
+  });
+
   it("restricts source keys to known and kept paths, capped at 32 in sorted order (Builder repro, #794)", () => {
     const c = normalizeVesselCalibration({ future: 1, hair: { sheen: 2 }, source: { bogus: "user", "hair.nope": "photo", future: "user", "hair.sheen": "photo", shape: "user" } });
     expect(c.source).toEqual({ future: "user", "hair.sheen": "photo", shape: "user" });
