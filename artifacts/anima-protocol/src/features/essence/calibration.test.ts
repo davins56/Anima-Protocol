@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CALIBRATION_UNKNOWN_BYTES,
   DEFAULT_CALIBRATION,
   RENDERED_TYPES,
   VESSEL_TYPES,
@@ -11,6 +12,8 @@ import {
   saveEssenceProfile,
   setCalibrationField,
   silverToneColor,
+  unknownFieldBytes,
+  validateEssenceIdentity,
 } from "./calibration";
 import { dreamMoods, dreamThemes, dreamsPerWeek } from "./patterns";
 import { essencePath, essenceScreenOf, ESSENCE_SCREENS } from "./flag";
@@ -127,5 +130,84 @@ describe("patterns + routing helpers", () => {
     expect(ESSENCE_SCREENS.map((s) => s.key)).toEqual(["calibrate", "vessel", "aspects", "reflections", "patterns"]);
     expect(essenceScreenOf("nope")).toBe("calibrate");
     expect(essencePath("a b", "patterns")).toBe("/essence/a%20b/patterns");
+  });
+});
+
+describe("unknown-field cap (server calibration_unknown_bytes = 1024)", () => {
+  const big = (n: number) => "x".repeat(n);
+
+  it("keeps small unknown fields at the top level and inside hair/eyes/resonance", () => {
+    const out = normalizeVesselCalibration({ aura: "soft", hair: { shine: 3 }, eyes: { sparkle: true }, resonance: { pulse: { hz: 2 } } });
+    expect(out.aura).toBe("soft");
+    expect(out.hair).toMatchObject({ shine: 3 });
+    expect(out.eyes).toMatchObject({ sparkle: true });
+    expect(out.resonance).toMatchObject({ pulse: { hz: 2 } });
+    expect(unknownFieldBytes(out)).toBeLessThanOrEqual(CALIBRATION_UNKNOWN_BYTES);
+  });
+
+  it("caps serialized unknown fields at 1024 bytes, dropping extras deterministically by path", () => {
+    const raw = { zeta: big(400), alpha: big(400), mid: big(400), tiny: 1 };
+    const out = normalizeVesselCalibration(raw);
+    // Sorted: alpha, mid, tiny, zeta. alpha+mid fit; tiny still fits; zeta would overflow.
+    expect(Object.keys(out).filter((k) => ["alpha", "mid", "tiny", "zeta"].includes(k)).sort()).toEqual(["alpha", "mid", "tiny"]);
+    expect(unknownFieldBytes(out)).toBeLessThanOrEqual(CALIBRATION_UNKNOWN_BYTES);
+    // Key order of the input doesn't matter.
+    const reordered = normalizeVesselCalibration({ tiny: 1, mid: big(400), zeta: big(400), alpha: big(400) });
+    expect(JSON.stringify(reordered)).toBe(JSON.stringify(out));
+    // Idempotent.
+    expect(normalizeVesselCalibration(out)).toEqual(out);
+  });
+
+  it("counts UTF-8 bytes, not characters", () => {
+    const out = normalizeVesselCalibration({ a: "é".repeat(400), b: "é".repeat(400) });
+    expect(out.a).toBeDefined();
+    expect(out.b).toBeUndefined();
+  });
+
+  it("drops a single unknown field larger than the cap", () => {
+    expect(normalizeVesselCalibration({ huge: big(2000) }).huge).toBeUndefined();
+  });
+
+  it("keeps at most 16 unknown keys", () => {
+    const raw: Record<string, number> = {};
+    for (let i = 0; i < 20; i++) raw[`k${String(i).padStart(2, "0")}`] = i;
+    const out = normalizeVesselCalibration(raw);
+    const kept = Object.keys(out).filter((k) => /^k\d\d$/.test(k)).sort();
+    expect(kept).toHaveLength(16);
+    expect(kept[15]).toBe("k15");
+  });
+
+  it("never carries name/tagline, bad keys, prototype keys, or too-deep values", () => {
+    const raw = JSON.parse('{"name":"S","tagline":"t","__proto__":{"x":1},"constructor":1,"9bad":1,"bad-key":1,"deep":{"a":{"b":{"c":1}}},"ok":{"a":{"b":1}},"hair":{"deep":{"a":{"b":1}},"ok2":{"a":1},"flat":1}}');
+    const out = normalizeVesselCalibration(raw);
+    for (const k of ["name", "tagline", "constructor", "9bad", "bad-key", "deep"]) expect(Object.prototype.hasOwnProperty.call(out, k)).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(out, "__proto__")).toBe(false);
+    expect(out.ok).toEqual({ a: { b: 1 } });
+    expect(out.hair).toEqual({ style: "flowing", color: "#c8ccd4", flat: 1, ok2: { a: 1 } });
+  });
+
+  it("restricts source keys to known leaf paths and kept unknown paths", () => {
+    const out = normalizeVesselCalibration({ aura: 1, source: { "hair.color": "photo", aura: "user", dropped: "user", "hair.nope": "user" } });
+    expect(out.source).toEqual({ aura: "user", "hair.color": "photo" });
+  });
+});
+
+describe("name and tagline rules (server: name 1–60, tagline 0–120)", () => {
+  it("validates after trimming", () => {
+    expect(validateEssenceIdentity("  Serenity ", "")).toEqual([]);
+    expect(validateEssenceIdentity("   ", "")).toEqual(["invalid_name"]);
+    expect(validateEssenceIdentity("x".repeat(60), "y".repeat(120))).toEqual([]);
+    expect(validateEssenceIdentity("x".repeat(61), "y".repeat(121))).toEqual(["invalid_name", "invalid_tagline"]);
+    expect(validateEssenceIdentity("Ser\u0007enity", "line\nbreak")).toEqual(["invalid_name", "invalid_tagline"]);
+  });
+
+  it("refuses to save an invalid name and ignores invalid stored values", () => {
+    const s = memStore();
+    expect(saveEssenceProfile("c1", { name: " ", tagline: "", calibration: DEFAULT_CALIBRATION, savedAt: null }, s)).toBeNull();
+    expect(s.getItem("anima_essence_v1")).toBeNull();
+    s.setItem("anima_essence_v1", JSON.stringify({ c1: { profile: { name: "x".repeat(61), tagline: "y".repeat(121) } } }));
+    const back = loadEssenceProfile("c1", "Fallback", s);
+    expect(back.name).toBe("Fallback");
+    expect(back.tagline).toBe("");
   });
 });
