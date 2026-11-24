@@ -14,7 +14,7 @@
  * background is CSS (alpha canvas), not a WebGL pass. The chat header is not
  * this component: it stays a still image (VesselPortrait).
  */
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import VesselCanvas from "./VesselCanvas";
 import { useCharacterVessel } from "@/hooks/useCharacterVessel";
 import { expressionFor } from "@/lib/vessel/emotion";
@@ -38,8 +38,21 @@ type Props = {
 const NEUTRAL = expressionFor("neutral", 50);
 
 export default function CalibratedVessel({ calibration, characterId, name, config, className, focus = "body" }: Props) {
-  const { vessel } = useCharacterVessel(config ? null : characterId);
-  const saved = vessel?.config;
+  const fetchId = config ? null : characterId || null;
+  const { vessel, loading } = useCharacterVessel(fetchId);
+  // Hold the canvas until her saved vessel has loaded (or is known missing), so
+  // the preview never flashes the preset default or the previous character.
+  const [settledFor, setSettledFor] = useState<string | null>(null);
+  const wasLoading = useRef(false);
+  useEffect(() => {
+    if (loading) wasLoading.current = true;
+    else if (wasLoading.current) {
+      wasLoading.current = false;
+      setSettledFor(fetchId);
+    }
+  }, [loading, fetchId]);
+  const ready = !fetchId || settledFor === fetchId;
+  const saved = ready ? vessel?.config : undefined;
   const base = useMemo(() => config ?? saved ?? defaultVesselFor({ name: name || "" }), [config, saved, name]);
   const look = useMemo(() => resolveCalibratedLook(base, calibration), [base, calibration]);
   const theme: StageTheme = look.theme ?? "dark";
@@ -50,16 +63,20 @@ export default function CalibratedVessel({ calibration, characterId, name, confi
       data-testid="calibrated-vessel"
       data-vessel-form={look.form}
       data-stage={theme}
+      data-ready={ready ? "1" : "0"}
     >
+      {ready ? (
       <VesselCanvas
         config={base}
         calibration={calibration}
         expression={NEUTRAL}
         mode="full"
         focus={look.form === "humanoid" ? focus : "body"}
-        stage={theme}
+        // Studio lights unless the user picked a theme (null keeps them).
+        stage={look.theme}
         className="absolute inset-0"
       />
+      ) : null}
     </div>
   );
 }

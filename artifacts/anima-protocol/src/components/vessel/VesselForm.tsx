@@ -199,7 +199,9 @@ const hash = (i: number) => {
 
 /**
  * Sapphire Resonance: `strength` 0..1 sets the aura (shell opacity, mote
- * count/size, light). Additive only; no bloom. Motes are one InstancedMesh.
+ * count/size). Additive, unlit meshes only: no extra light (iPad fragment
+ * cost; light count stays constant when the aura toggles), no bloom. Motes
+ * are one InstancedMesh.
  */
 export function ResonanceAura({ strength, budget = 32, color = SAPPHIRE, still = false, center = 1.0 }: { strength: number; budget?: number; color?: string; still?: boolean; center?: number }) {
   const s = Math.max(0, Math.min(1, strength));
@@ -234,7 +236,6 @@ export function ResonanceAura({ strength, budget = 32, color = SAPPHIRE, still =
   if (s <= 0) return null;
   return (
     <group>
-      <pointLight color={color} intensity={0.4 + s * 1.6} distance={3.5} position={[0, center, 0.5]} />
       <mesh material={shellMat} position={[0, center, 0]} scale={[0.75, 1.15, 0.75]}>
         <sphereGeometry args={[0.85, 16, 12]} />
       </mesh>

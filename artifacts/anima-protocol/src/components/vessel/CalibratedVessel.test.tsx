@@ -1,8 +1,8 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 
-const vesselState: { vessel: unknown } = { vessel: null };
-vi.mock("@/hooks/useCharacterVessel", () => ({ useCharacterVessel: () => ({ vessel: vesselState.vessel, loading: false }) }));
+const vesselState: { vessel: unknown; loading: boolean } = { vessel: null, loading: false };
+vi.mock("@/hooks/useCharacterVessel", () => ({ useCharacterVessel: () => ({ vessel: vesselState.vessel, loading: vesselState.loading }) }));
 const canvasProps: Record<string, unknown>[] = [];
 vi.mock("./VesselCanvas", () => ({
   default: (p: Record<string, unknown>) => {
@@ -19,17 +19,24 @@ describe("CalibratedVessel (Essence live preview)", () => {
   beforeEach(() => {
     canvasProps.length = 0;
     vesselState.vessel = null;
+    vesselState.loading = false;
   });
 
   it("renders one canvas over her saved vessel; defaults change nothing", () => {
     const saved = defaultVesselFor({ name: "Scarlet" });
+    vesselState.loading = true;
+    const cal = normalizeVesselCalibration({ vesselType: "orb", theme: "light" });
+    const { rerender } = render(<CalibratedVessel characterId="c1" calibration={cal} />);
+    // Held while her vessel loads: no preset flash.
+    expect(screen.queryByTestId("vessel-canvas")).toBeNull();
+    vesselState.loading = false;
     vesselState.vessel = { config: saved };
-    render(<CalibratedVessel characterId="c1" calibration={normalizeVesselCalibration({ vesselType: "orb", theme: "light" })} />);
+    rerender(<CalibratedVessel characterId="c1" calibration={cal} />);
     expect(screen.getAllByTestId("vessel-canvas")).toHaveLength(1);
     const el = screen.getByTestId("calibrated-vessel");
     expect(el.dataset.vesselForm).toBe("humanoid");
     expect(el.dataset.stage).toBe("dark");
-    expect(canvasProps.at(-1)).toMatchObject({ config: saved, mode: "full", stage: "dark" });
+    expect(canvasProps.at(-1)).toMatchObject({ config: saved, mode: "full", stage: null });
   });
 
   it("follows user edits: form and stage theme", () => {

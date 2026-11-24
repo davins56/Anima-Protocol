@@ -246,9 +246,11 @@ function ProceduralVessel({ config, expression: exprProp, hd = false, hologram =
       browL.current.rotation.z = -e.brow * 0.25;
       browR.current.rotation.z = e.brow * 0.25;
     }
-    if (hairSway.current && look.hairSway > 0) {
-      hairSway.current.rotation.x = still ? 0 : Math.sin(t * 1.3) * 0.06 * look.hairSway;
-      hairSway.current.rotation.z = still ? 0 : Math.sin(t * 0.9 + 1) * 0.04 * look.hairSway;
+    if (hairSway.current) {
+      // Back to upright when sway is off (style changed away from "flowing") or motion is reduced.
+      const k = still ? 0 : look.hairSway;
+      hairSway.current.rotation.x = Math.sin(t * 1.3) * 0.06 * k;
+      hairSway.current.rotation.z = Math.sin(t * 0.9 + 1) * 0.04 * k;
     }
     if (eyes.current) {
       const blink = !still && look.eyeShape !== "closed" && Math.sin(t * 0.9) > 0.985 ? 0.1 : 1;
@@ -428,6 +430,7 @@ function VesselModelBody(props: BodyProps) {
   // Calibrated non-humanoid form (user-chosen): replaces the body, uploaded models included.
   if (look.form !== "humanoid") {
     return (
+      <group>
       <VesselForm
         form={look.form}
         coreColor={look.coreColor}
@@ -439,6 +442,9 @@ function VesselModelBody(props: BodyProps) {
         hologram={props.hologram}
         reducedMotion={props.reducedMotion}
       />
+      {/* Emotion vessel-shift aura still plays around a non-humanoid form. */}
+      {props.shift && !props.hologram && <VesselAura shift={props.shift} budget={props.hd ? 72 : props.track !== false ? 40 : 0} />}
+      </group>
     );
   }
   const procedural = <ProceduralVessel {...props} />;
@@ -470,7 +476,8 @@ function VesselModelBody(props: BodyProps) {
           faceOverride={props.faceOverride}
         />
         {props.shift && loadedKey === modelCacheKey(model) && <VesselAura shift={props.shift} budget={props.hd ? 72 : props.track !== false ? 40 : 0} />}
-        {resonance}
+        {/* The procedural fallback carries its own aura while the model loads. */}
+        {loadedKey === modelCacheKey(model) && resonance}
       </group>
     );
   }
