@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState, useEffect, useRef } from "react";
+import { localVoiceEnabled } from "@/lib/voice/localVoicePrefs";
 import { onDeviceMindEnabled } from "@/lib/onDevice/flag";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useUser } from "@clerk/react";
@@ -52,6 +53,9 @@ const BotBridgeSettings = lazy(() => import("@/components/botBridge/BotBridgeSet
 const AppearanceStudio = lazy(() => import("@/components/settings/AppearanceStudio"));
 const AnimaForge = lazy(() => import("@/components/settings/AnimaForge"));
 const ForgeProfiles = lazy(() => import("@/components/settings/ForgeProfiles"));
+// V6 voice UI. Off unless VITE_ANIMA_LOCAL_VOICE=1.
+const LOCAL_VOICE = localVoiceEnabled();
+const VoiceSettingsPanel = LOCAL_VOICE ? lazy(() => import("@/components/settings/VoiceSettingsPanel")) : null;
 // Chat upgrade 3: on-device mind. Off unless VITE_ANIMA_ON_DEVICE_MIND=1; the
 // panel and its model libraries load only when the flag is on.
 const ON_DEVICE_MIND = onDeviceMindEnabled();
@@ -828,6 +832,11 @@ export default function Settings() {
           {/* ── AI BEHAVIOR ── */}
           {section === SECTION.AI && (
             <div className="space-y-4">
+              {VoiceSettingsPanel && (
+                <Suspense fallback={<SectionSkeleton />}>
+                  <VoiceSettingsPanel />
+                </Suspense>
+              )}
               {OnDeviceMindPanel && (
                 <Suspense fallback={null}>
                   <OnDeviceMindPanel />
