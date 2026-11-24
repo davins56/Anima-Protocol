@@ -145,8 +145,8 @@ Customise Anima fields, card fields (`appearance`, `avatar_seed`, `description`,
 only for explicit counts of three or more ("born with four arms"), so idioms such
 as "spread her wings" or "her third eye" never change the body. Gestures ("in her
 arms", "one arm around you") never count, and "no wings" / "wingless" in a
-higher-priority field overrides built-in wings. For a non-human body plan the prompt
-gets one positive sentence right after the subject, e.g. *"Anatomy, must match
+higher-priority field overrides built-in wings. The prompt sets the companion’s arm count right after the subject, defaulting to
+two arms when the character has no explicit count. For example, *"Anatomy, must match
 exactly: Vashti has exactly four (4) arms in total (two upper arms at the
 shoulders and two lower arms just below them at the ribcage …), so exactly four
 hands"*, plus "one hand holds the phone" for selfies. FLUX on Workers AI has no
@@ -156,13 +156,14 @@ Optional check (`ANIMA_PHOTO_ANATOMY_CHECK=on`): after rendering, the Workers AI
 vision model counts the character's arms / wings / heads / eyes. Extra parts are
 always a mismatch; missing parts only when the whole torso is in frame. A
 mismatch re-renders with a new seed (at most `ANIMA_PHOTO_ANATOMY_RETRIES`,
-never past the photo timeout); if every render mismatches, the closest one is
-sent. No `AI` binding means no check (never another provider). Retries stay
+never past the photo timeout). A confirmed mismatch still present after the
+retry budget blocks delivery. If the vision check is unavailable or inconclusive,
+the current image can pass through. The production Worker enables this check. No `AI` binding means no check (never another provider). Retries stay
 inside one photo: hourly / daily limits count it once. A check is not started
 unless it can finish before the photo deadline, and a retry that runs past it is
-abandoned for the best render so far. Each retry costs one more image render and
-one vision call in Workers AI neurons. When the check is on and the character has
-a non-human body plan, the `photo` done-payload metadata carries
+abandoned. Each retry costs one more image render and
+one vision call in Workers AI neurons. When the check is on and the photo depicts
+the companion, the `photo` done-payload metadata carries
 `anatomy: { expected, check, attempts, observed }`; otherwise the field is absent.
 
 ## SSE contract

@@ -9,7 +9,7 @@ import { composePhotoPrompt, negativePrompt, photoAnatomy, type Refinement, type
 import { aiBinding } from "../aiBinding";
 import { loadCharacterRecord } from "../voice/voiceStore";
 import { anatomyLoreTexts, anatomyTexts } from "../companionPhotos/appearance";
-import { anatomySummary, hasAtypicalAnatomy } from "../companionPhotos/anatomy";
+import { anatomySummary, HUMAN_DEFAULTS } from "../companionPhotos/anatomy";
 import {
   anatomyCheckConfig,
   renderWithAnatomyCheck,
@@ -241,7 +241,7 @@ export async function generatePhoto(req: GenerateRequest, emit: (e: PhotoEvent) 
         }
       },
       verify,
-      skip: !checkConfig.enabled || !hasAtypicalAnatomy(anatomy),
+      skip: !checkConfig.enabled || typeof aiBinding?.run !== "function",
       maxRetries: checkConfig.maxRetries,
       verifyBudgetMs: checkConfig.timeoutMs,
       // Interactive / outreach generations: retries never push the whole request past ~2 minutes.
@@ -249,6 +249,7 @@ export async function generatePhoto(req: GenerateRequest, emit: (e: PhotoEvent) 
       onRetry: ({ attempt }) =>
         emit({ type: "status", status: "IN_PROGRESS", log: `Anatomy check: re-rendering (attempt ${attempt + 1})…` }),
     });
+    if (checked.check === "failed") throw new Error("The generated photo did not pass the anatomy check. Try again.");
     const rendered = checked.result;
     const width = rendered.width;
     const height = rendered.height;
@@ -266,8 +267,8 @@ export async function generatePhoto(req: GenerateRequest, emit: (e: PhotoEvent) 
     } else {
       throw Object.assign(new Error("No image was returned."), { status: 502 });
     }
-    const anatomyInfo = hasAtypicalAnatomy(anatomy)
-      ? { expected: anatomySummary(anatomy), check: checked.check, attempts: checked.attempts }
+    const anatomyInfo = checked.check !== "off"
+      ? { expected: { arms: HUMAN_DEFAULTS.arms, ...anatomySummary(anatomy) }, check: checked.check, attempts: checked.attempts }
       : undefined;
 
     await updateGeneration(imageId, {

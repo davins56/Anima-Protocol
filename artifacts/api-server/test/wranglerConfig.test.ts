@@ -188,6 +188,9 @@ describe("Cloudflare wrangler config", () => {
     expect(vars.ANIMA_OPENROUTER_FALLBACK).toBe("true");
     // Non-secret feature flag: turns on Day Rhythm (/api/senses, /api/calendar).
     expect(vars.ANIMA_KERNEL_SENSES).toBe("1");
+    // Non-secret feature flag: the Workers AI anatomy check on character
+    // photos (#780). Model and timeout stay on their code defaults.
+    expect(vars.ANIMA_PHOTO_ANATOMY_CHECK).toBe("on");
     // Public tunnel URL stays out of committed vars. Bind it only via
     // Secrets Store (see wrangler.jsonc runbook).
     expect(vars).not.toHaveProperty("ANIMA_LOCAL_LLM_BASE_URL");
@@ -203,6 +206,7 @@ describe("Cloudflare wrangler config", () => {
         "ANIMA_OLLAMA_MODEL_STANDARD",
         "ANIMA_OPENROUTER_FALLBACK",
         "ANIMA_OPENROUTER_FREE",
+        "ANIMA_PHOTO_ANATOMY_CHECK",
         "ANIMA_RUNTIME",
         "NODE_ENV",
       ].sort(),

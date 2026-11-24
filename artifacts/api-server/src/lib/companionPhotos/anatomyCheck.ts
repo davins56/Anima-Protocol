@@ -3,11 +3,11 @@
  * character's arms / wings / heads / … in the finished image, and a photo
  * that grew extra limbs is re-rendered with a new seed (bounded retries).
  *
- * Off by default (ANIMA_PHOTO_ANATOMY_CHECK=on to enable). Runs only for
- * characters whose body plan differs from a human's, only on the Worker's
+ * Opt-in (ANIMA_PHOTO_ANATOMY_CHECK=on). Checks arms on character photos
+ * and any other atypical parts, using the Worker's
  * existing Workers AI binding: no binding means the check is skipped, never
  * routed to another cloud service. A failed or timed-out check passes the
- * image through (the check can only improve a photo, never block one).
+ * image through. A confirmed mismatch can be withheld by the caller.
  */
 import type { WorkersAiBinding } from "../aiBinding";
 import { extractWorkersAiText } from "../workersAi";
@@ -65,7 +65,7 @@ export function anatomyCheckMessages(name: string, spec: AnatomySpec, parts: Ana
       content:
         "You check generated character images for anatomy errors. Count only body parts attached to the main character, " +
         "including parts partly hidden behind the body if you can see where they attach. Use null when a part is cut off by the frame " +
-        "or impossible to count. Never guess. Reply with JSON only.",
+        "or impossible to count. Count a reflection only once and ignore other people. Never guess. Reply with JSON only.",
     },
     {
       role: "user",
@@ -120,9 +120,8 @@ export function workersAiAnatomyVerifier(args: {
   const parts = atypicalParts(args.spec);
   const binding = args.binding;
   if (!args.config.enabled) return async () => ({ status: "skipped", reason: "off" });
-  if (!parts.length) return async () => ({ status: "skipped", reason: "not_needed" });
   if (typeof binding?.run !== "function") return async () => ({ status: "skipped", reason: "no_binding" });
-  // Also check arms whenever any limb is atypical: extra arms are the common failure.
+  // Extra arms are a common failure even with a standard body plan.
   const checkParts = parts.includes("arms") ? parts : (["arms", ...parts] as AnatomyPart[]);
   return async (image) => {
     if (!image.bytes.byteLength || image.bytes.byteLength > MAX_CHECK_BYTES) return { status: "skipped", reason: "too_large" };
@@ -161,14 +160,13 @@ export type AnatomyCheckResult<T> = {
  * new seed per attempt. A retry starts only if the remaining time can fit
  * another render plus check (based on the first attempt's duration). If a
  * retry throws (flagged, quota, outage) the best image so far is kept. When
- * every attempt mismatches, the closest one is returned so the user still
- * gets a photo; the caller counts it as one photo either way.
+ * every attempt mismatches, the closest one is returned with check=failed so the caller can withhold it.
  */
 export async function renderWithAnatomyCheck<T>(args: {
   render: (attempt: number) => Promise<T>;
   bytesOf: (result: T) => Promise<{ bytes: Uint8Array; contentType: string } | null> | { bytes: Uint8Array; contentType: string } | null;
   verify: AnatomyVerifier;
-  /** Known up front that no check will run (off / human body plan): render once, no byte reads. */
+  /** Known up front that no check will run (off / no character subject): render once, no byte reads. */
   skip?: boolean;
   /** Upper bound of one check; a check that could not finish before `deadlineAt` is not started. */
   verifyBudgetMs?: number;

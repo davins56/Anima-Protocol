@@ -119,9 +119,9 @@ describe("anatomy clause", () => {
     expect(anatomyClause("Vashti", anatomyFrom(["four arms"]), { framing: "selfie" })).toContain("One hand holds the phone; the other three arms");
   });
 
-  it("is empty for a human body plan", () => {
-    expect(anatomyClause("Mia", anatomyFrom(["two arms"]))).toBe("");
-    expect(anatomyNegativeTerms(anatomyFrom(["brown hair"]))).toBe("");
+  it("applies the standard arm count when no other count is specified", () => {
+    expect(anatomyClause("Mia", undefined)).toContain("exactly two arms, one at each shoulder");
+    expect(anatomyNegativeTerms(anatomyFrom(["brown hair"]))).toContain("extra arms");
   });
 
   it("goes right after the subject in the chat selfie prompt, before scene and look", () => {
@@ -187,11 +187,11 @@ describe("length cap", () => {
     expect(p.endsWith(".")).toBe(true);
   });
 
-  it("human prompts are unchanged when they fit", () => {
+  it("puts standard anatomy before appearance in a selfie", () => {
     const look = companionLook({ id: "c", name: "Mia", appearance: "short red hair, green eyes" });
     const p = buildImagePrompt({ companionName: "Mia", look, intent: intent(), level: "sfw", preinstalled: false, hasReference: false });
-    expect(p).not.toContain("Anatomy");
-    expect(p.startsWith("A casual smartphone selfie taken at arm's length, looking into the camera of Mia. Mia: short red hair")).toBe(true);
+    expect(p).toContain("Mia has exactly two arms");
+    expect(p.indexOf("exactly two arms")).toBeLessThan(p.indexOf("Mia: short red hair"));
   });
 });
 
@@ -216,9 +216,10 @@ describe("photo generator prompt (fal / Gemini)", () => {
     expect(p).toContain("exactly six (6) arms");
   });
 
-  it("adds anatomy negatives only for non-human body plans", () => {
+  it("adds count-aware anatomy negatives for both body plans", () => {
     expect(negativePrompt(undefined, anatomyFrom(["four arms"]))).toContain("extra limbs");
-    expect(negativePrompt()).not.toContain("extra limbs");
+    expect(negativePrompt()).toContain("extra limbs");
+    expect(negativePrompt(undefined, anatomyFrom(["four arms"]))).toContain("more than four arms");
   });
 
   it("PuLID true CFG stays 1 unless the server opts in", () => {
@@ -249,14 +250,25 @@ describe("anatomy check", () => {
     expect(judgeAnatomy(spec, ["arms"], null).status).toBe("skipped");
   });
 
-  it("skips (never another provider) without a binding, when off, or for humans", async () => {
+  it("skips without a binding or when disabled", async () => {
     const on = anatomyCheckConfig({ ANIMA_PHOTO_ANATOMY_CHECK: "on" });
     const img = { bytes: JPEG, contentType: "image/jpeg" };
     expect(await workersAiAnatomyVerifier({ binding: undefined, config: on, name: "V", spec })(img)).toEqual({ status: "skipped", reason: "no_binding" });
     expect(await workersAiAnatomyVerifier({ binding: { run: vi.fn() }, config: anatomyCheckConfig({}), name: "V", spec })(img)).toEqual({ status: "skipped", reason: "off" });
-    expect(await workersAiAnatomyVerifier({ binding: { run: vi.fn() }, config: on, name: "V", spec: anatomyFrom(["two arms"]) })(img)).toEqual({
-      status: "skipped",
-      reason: "not_needed",
+  });
+
+  it("flags a third arm on a standard companion even with a cropped torso", async () => {
+    const binding = { run: vi.fn(async () => ({ response: '{"arms": 3, "torso_fully_visible": false}' })) };
+    const verify = workersAiAnatomyVerifier({
+      binding,
+      config: anatomyCheckConfig({ ANIMA_PHOTO_ANATOMY_CHECK: "on" }),
+      name: "Mia",
+      spec: anatomyFrom([]),
+    });
+    expect(await verify({ bytes: JPEG, contentType: "image/jpeg" })).toMatchObject({
+      status: "mismatch",
+      observed: { arms: 3 },
+      mismatches: ["arms"],
     });
   });
 
@@ -400,5 +412,28 @@ describe("chat photo with the anatomy check", () => {
     if (out.status === "sent") {
       expect(out.anatomy).toMatchObject({ expected: { arms: 4 }, check: "passed", attempts: 2 });
     }
+  });
+
+  it("withholds a standard companion photo when the extra arm persists after retry", async () => {
+    const character = { id: "char_mia", name: "Mia", appearance: "short red hair" };
+    const binding = { run: vi.fn(async () => ({ image: Buffer.from(JPEG).toString("base64") })) };
+    const store = vi.fn();
+    const outcome = await startCompanionPhoto({
+      plan: { action: "send", intent: intent(), level: "sfw", look: companionLook(character), preinstalled: false },
+      userId: "u_anatomy_standard",
+      characterId: character.id,
+      companionName: "Mia",
+      character,
+      turnId: "t1",
+      binding,
+      loadReference: async () => null,
+      store: store as never,
+      complete: null,
+      anatomyConfig: { enabled: true, model: "@cf/x/y", maxRetries: 1, timeoutMs: 1000 },
+      verifyAnatomy: vi.fn().mockResolvedValue({ status: "mismatch", observed: { arms: 3 }, mismatches: ["arms"], score: 1 }),
+    });
+    expect(outcome).toMatchObject({ status: "failed", errorKind: "anatomy" });
+    expect(binding.run).toHaveBeenCalledTimes(2);
+    expect(store).not.toHaveBeenCalled();
   });
 });
