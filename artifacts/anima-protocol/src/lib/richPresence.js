@@ -6,11 +6,13 @@
 // Everything is derived from data the chat already has: the transient
 // thinking / typing / streaming rows, the server's `resting_notice` row (the
 // home model or its tunnel was down and the message was queued), the browser's
-// online flag, and the public `/api/healthz/llm` status (503 = no usable chat
-// provider). Nothing here switches to another model or turns on a cloud
-// provider; it only reports.
+// online flag, and the signed-in `GET /api/chat/mind-status` answer
+// (chat-upgrade-server-contracts.md §2). Public `/api/healthz/llm` is config
+// only and is no longer used for home-mind detection. Nothing here switches
+// to another model or turns on a cloud provider; it only reports.
 import { useEffect, useState } from "react";
 import { apiUrl } from "@/lib/apiOrigin";
+import { requireChatAuthHeaders } from "@/api/animaApi";
 
 /** Build-time flag. "1", "true" or "on" turn it on; anything else is off. */
 export function richPresenceEnabled(env = import.meta.env) {
@@ -24,7 +26,11 @@ export function richPresenceEnabled(env = import.meta.env) {
  *   | "thinking" | "waiting" | "typing" | "photo" | "here"} PresenceKind
  */
 
-export const HOME_MODEL_POLL_MS = 60_000;
+/** Poll window: clamp(retry_after_s, 15, 60) seconds (contract §2.4). */
+export const HOME_MODEL_POLL_MIN_MS = 15_000;
+export const HOME_MODEL_POLL_MAX_MS = 60_000;
+/** Kept for callers; the longest poll interval. */
+export const HOME_MODEL_POLL_MS = HOME_MODEL_POLL_MAX_MS;
 
 export const PRESENCE_COPY = Object.freeze({
   homeOfflineTitle: "Home mind offline",
@@ -106,7 +112,8 @@ export function isHomeOfflineKind(kind) {
 
 /** @type {HomeModelState} */
 let homeState = "unknown";
-let lastCheckedAt = 0;
+/** ms epoch before which a non-forced check returns the cached state. */
+let nextCheckAt = 0;
 /** @type {Promise<HomeModelState> | null} */
 let inflight = null;
 /** @type {Set<() => void>} */
@@ -121,61 +128,143 @@ export function homeModelState() {
   return homeState;
 }
 
+/** @param {unknown} seconds */
+export function pollDelayMs(seconds) {
+  const s = Number(seconds);
+  const ms = Number.isFinite(s) ? s * 1000 : HOME_MODEL_POLL_MAX_MS;
+  return Math.min(HOME_MODEL_POLL_MAX_MS, Math.max(HOME_MODEL_POLL_MIN_MS, ms));
+}
+
+/** ms until the next poll is due (for the hook's timer). */
+export function homeModelNextCheckInMs(now = Date.now()) {
+  return Math.max(0, nextCheckAt - now);
+}
+
 /**
- * Probe the public `/api/healthz/llm` (status + chain only, no secrets).
- * 200 → online, 503 → offline, anything else or a network error →
- * unreachable. `force` skips the cache (the "Check again" button).
+ * Map a mind-status `home_mind` value (contract §2.2/§2.4).
+ * `not_used` (cloud brain, no home box in use) reads as online: no strip.
  *
- * @param {{ force?: boolean, fetchImpl?: typeof fetch, now?: number }} [opts]
+ * @param {unknown} homeMind
+ * @returns {HomeModelState}
+ */
+export function homeStateFromMind(homeMind) {
+  if (homeMind === "online" || homeMind === "not_used") return "online";
+  if (homeMind === "offline") return "offline";
+  return "unknown";
+}
+
+function settle(state, delayMs) {
+  homeState = state;
+  nextCheckAt = Date.now() + delayMs;
+  publish();
+  return state;
+}
+
+/**
+ * The chat stream reported `resting: true` (the home model or its tunnel is
+ * down). Go offline at once instead of waiting for the next poll. The server
+ * records the same failure in its breaker, so the next poll agrees.
+ */
+export function markHomeModelOffline() {
+  if (homeState === "offline") return;
+  settle("offline", HOME_MODEL_POLL_MIN_MS);
+}
+
+/**
+ * Ask `GET /api/chat/mind-status` (signed in). Responses:
+ *  200 home_mind online|not_used → online, offline → offline, unknown → unknown;
+ *  401 / 409 mind_status_disabled → unknown (today's behaviour);
+ *  429 → keep the last state and wait `retry_after`;
+ *  any other status → unknown; a network error → unreachable.
+ * The next poll is due after clamp(retry_after_s, 15, 60) s. `force` skips
+ * the wait and asks for `?fresh=1` (the "Check again" button).
+ *
+ * @param {{ force?: boolean, fetchImpl?: typeof fetch, authHeaders?: (extra?: Record<string, string>) => Promise<Record<string, string>>, now?: number }} [opts]
  * @returns {Promise<HomeModelState>}
  */
-export function checkHomeModel({ force = false, fetchImpl = globalThis.fetch, now = Date.now() } = {}) {
-  if (!force && homeState !== "unknown" && now - lastCheckedAt < HOME_MODEL_POLL_MS) return Promise.resolve(homeState);
+export function checkHomeModel({
+  force = false,
+  fetchImpl = globalThis.fetch,
+  authHeaders = requireChatAuthHeaders,
+  now = Date.now(),
+} = {}) {
   if (inflight) return inflight;
-  inflight = Promise.resolve()
-    .then(() => fetchImpl(apiUrl("/healthz/llm"), { credentials: "same-origin", cache: "no-store" }))
-    .then((res) => {
-      if (res.ok) return /** @type {HomeModelState} */ ("online");
-      if (res.status === 503) return /** @type {HomeModelState} */ ("offline");
-      return /** @type {HomeModelState} */ ("unreachable");
-    })
-    .catch(() => /** @type {HomeModelState} */ ("unreachable"))
-    .then((state) => {
-      homeState = state;
-      lastCheckedAt = Date.now();
-      return state;
-    })
-    .finally(() => {
-      inflight = null;
-      publish();
-    });
+  if (!force && nextCheckAt > 0 && now < nextCheckAt) return Promise.resolve(homeState);
+  inflight = (async () => {
+    let headers;
+    try {
+      headers = await authHeaders({ Accept: "application/json" });
+    } catch {
+      // Not signed in: nothing to ask. Same as a 401.
+      return settle("unknown", HOME_MODEL_POLL_MAX_MS);
+    }
+    let res;
+    try {
+      res = await fetchImpl(apiUrl(force ? "/chat/mind-status?fresh=1" : "/chat/mind-status"), {
+        method: "GET",
+        headers,
+        cache: "no-store",
+      });
+    } catch {
+      return settle("unreachable", HOME_MODEL_POLL_MIN_MS);
+    }
+    /** @type {Record<string, unknown> | null} */
+    const body = await res.json().catch(() => null);
+    if (res.ok) {
+      return settle(homeStateFromMind(body?.home_mind), pollDelayMs(body?.retry_after_s));
+    }
+    if (res.status === 429) {
+      const wait = Number(body?.retry_after);
+      const ms = Number.isFinite(wait) && wait > 0 ? Math.max(HOME_MODEL_POLL_MIN_MS, wait * 1000) : HOME_MODEL_POLL_MAX_MS;
+      return settle(homeState, ms);
+    }
+    // 401, 409 mind_status_disabled, and anything else: unknown.
+    return settle("unknown", HOME_MODEL_POLL_MAX_MS);
+  })().finally(() => {
+    inflight = null;
+  });
   return inflight;
 }
 
 export function resetHomeModelForTests() {
   homeState = "unknown";
-  lastCheckedAt = 0;
+  nextCheckAt = 0;
   inflight = null;
   listeners.clear();
 }
 
 /**
- * Re-renders on home-model changes. Polls while the tab is visible and the
- * flag is on; does nothing when `enabled` is false.
+ * Re-renders on home-model changes. Polls on the server's schedule while the
+ * tab is visible; does nothing when `enabled` is false.
  */
 export function useHomeModelState(enabled = true) {
   const [state, setState] = useState(homeState);
   useEffect(() => {
     if (!enabled) return undefined;
+    let timer = null;
+    let alive = true;
     const onChange = () => setState(homeState);
     listeners.add(onChange);
-    void checkHomeModel();
-    const timer = setInterval(() => {
-      if (typeof document === "undefined" || document.visibilityState !== "hidden") void checkHomeModel();
-    }, HOME_MODEL_POLL_MS);
+    const schedule = () => {
+      if (!alive) return;
+      clearTimeout(timer);
+      timer = setTimeout(tick, Math.max(1_000, homeModelNextCheckInMs()));
+    };
+    const tick = () => {
+      const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
+      if (hidden) return schedule();
+      void checkHomeModel().finally(schedule);
+    };
+    void checkHomeModel().finally(schedule);
+    const onVisible = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") void checkHomeModel();
+    };
+    if (typeof document !== "undefined") document.addEventListener("visibilitychange", onVisible);
     return () => {
+      alive = false;
+      clearTimeout(timer);
       listeners.delete(onChange);
-      clearInterval(timer);
+      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onVisible);
     };
   }, [enabled]);
   return enabled ? state : "unknown";

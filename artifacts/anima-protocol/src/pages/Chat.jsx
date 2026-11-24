@@ -21,7 +21,7 @@ import { deleteSessionFlow, deleteMessageFlow } from "@/lib/chatDeleteHandlers";
 import { rewindToMessageFlow, regenerateMessageFlow, switchSiblingFlow } from "@/lib/chatRewindHandlers";
 import { replySiblingsEnabled } from "@/lib/replySiblings";
 import { reactionsEnabled, reactToMessageFlow } from "@/lib/chatReactions";
-import { checkHomeModel, describePresence, isHomeOfflineKind, richPresenceEnabled, useDeviceOnline, useHomeModelState } from "@/lib/richPresence";
+import { checkHomeModel, markHomeModelOffline, describePresence, isHomeOfflineKind, richPresenceEnabled, useDeviceOnline, useHomeModelState } from "@/lib/richPresence";
 import HomeModelOfflineStrip from "@/components/chat/HomeModelOfflineStrip";
 import { editMessageFlow } from "@/lib/chatEditHandlers";
 import {
@@ -4339,6 +4339,9 @@ Return JSON:
 
       const connectionDropped = isConnectionDroppedError(err);
       const recovery = lateReplyRecoveryPlan(err);
+      // Chat upgrade 6b: an SSE `resting: true` means the home mind is down
+      // now; show it at once rather than on the next mind-status poll.
+      if (RICH_PRESENCE_ENABLED && isRestingError(err)) markHomeModelOffline();
       if (!retained && isRestingError(err)) {
         // She's resting (model/tunnel down). The server queued this message;
         // show the in-character state, not an error, and keep the user's turn.
