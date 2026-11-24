@@ -128,10 +128,53 @@ describe("marker-only (event-only) turns", () => {
     expect(result.scene_event_only).toBeUndefined();
   });
 
-  it("an empty turn with a speaker plan but no events is still empty_reply", async () => {
+  it("rejected markers: a successful empty done with no scene_event is a quiet no-op", async () => {
+    // e.g. a speaker who is not allowed to [[exit]]: the server still
+    // returns 200 / done.visible "" and no event row. No toast, no bubble.
     const frames = [
-      { scene_plan: { id: "plan_x", speakers: [{ character_id: "c_nat" }], blocked: [], narrate: false, mode: "natural" } },
+      {
+        scene_plan: {
+          id: "plan_x",
+          speakers: [{ character_id: "c_nat" }],
+          blocked: [],
+          narrate: false,
+          mode: "natural",
+        },
+      },
+      { content: "[[exit]]" },
       { done: true, visible: "", assistant_character_id: "c_nat" },
+    ];
+    const { promise, scene } = collect(frames);
+    const result = await promise;
+    expect(result.scene_quiet_noop).toBe(true);
+    expect(result.scene_event_only).toBeFalsy();
+    expect(result.scene_no_reply).toBeFalsy();
+    expect(result.content).toBe("");
+    expect(result.assistant_character_id).toBe("c_nat");
+    expect(scene.filter((f) => f.scene_event)).toHaveLength(0);
+  });
+
+  it("honours done.scene_event_only as a no-assistant turn even without a scene_event frame", async () => {
+    const frames = [
+      { scene_plan: { id: "plan_y", speakers: [{ character_id: "c_ser" }], blocked: [], narrate: false, mode: "natural" } },
+      { done: true, visible: "", assistant_character_id: "c_ser", scene_event_only: true },
+    ];
+    const result = await collect(frames).promise;
+    expect(result).toMatchObject({ content: "", scene_event_only: true });
+    expect(result.scene_quiet_noop).toBeFalsy();
+  });
+
+  it("only an explicit empty_reply error code fails the turn", async () => {
+    const frames = [
+      { scene_plan: { id: "plan_z", speakers: [{ character_id: "c_nat" }], blocked: [], narrate: false, mode: "natural" } },
+      { error: "The companion returned an empty reply. Please try again.", code: "empty_reply", turn_id: "turn_z" },
+    ];
+    await expect(collect(frames).promise).rejects.toMatchObject({ code: "empty_reply", turnId: "turn_z" });
+  });
+
+  it("a stream that closes with no done and no events is still empty_reply", async () => {
+    const frames = [
+      { scene_plan: { id: "plan_z", speakers: [{ character_id: "c_nat" }], blocked: [], narrate: false, mode: "natural" } },
     ];
     await expect(collect(frames).promise).rejects.toMatchObject({ code: "empty_reply" });
   });
