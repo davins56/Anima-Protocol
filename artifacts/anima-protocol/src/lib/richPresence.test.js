@@ -1,6 +1,14 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+
+vi.mock("@/api/animaApi", () => ({
+  requireChatAuthHeaders: vi.fn(async (extra = {}) => ({ ...extra, Authorization: "Bearer default" })),
+}));
 import {
   checkHomeModel,
+  homeModelNextCheckInMs,
+  homeStateFromMind,
+  markHomeModelOffline,
+  pollDelayMs,
   describePresence,
   homeModelState,
   isHomeOfflineKind,
@@ -57,32 +65,95 @@ describe("richPresence", () => {
     expect(describePresence({ messages: [user], replying: true, homeModel: "offline", name: "Lyra" }).kind).toBe("thinking");
   });
 
-  it("maps /healthz/llm: 200 online, 503 offline, other or network error unreachable", async () => {
-    const respond = (status) => async () => ({ ok: status >= 200 && status < 300, status });
-    expect(await checkHomeModel({ force: true, fetchImpl: respond(200) })).toBe("online");
-    expect(homeModelState()).toBe("online");
-    expect(await checkHomeModel({ force: true, fetchImpl: respond(503) })).toBe("offline");
-    expect(await checkHomeModel({ force: true, fetchImpl: respond(500) })).toBe("unreachable");
-    expect(
-      await checkHomeModel({
-        force: true,
-        fetchImpl: async () => {
-          throw new TypeError("Failed to fetch");
-        },
-      }),
-    ).toBe("unreachable");
+  const auth = async (extra = {}) => ({ ...extra, Authorization: "Bearer t" });
+  const respond = (status, body) => async () => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+
+  it("asks GET /api/chat/mind-status with auth and maps home_mind", async () => {
+    let seen = null;
+    const fetchImpl = async (url, init) => {
+      seen = { url: String(url), init };
+      return { ok: true, status: 200, json: async () => ({ v: 1, home_mind: "online", retry_after_s: 15, queued: 0 }) };
+    };
+    expect(await checkHomeModel({ force: true, fetchImpl, authHeaders: auth })).toBe("online");
+    expect(seen.url).toContain("/chat/mind-status?fresh=1");
+    expect(seen.url).not.toContain("healthz");
+    expect(seen.init.headers.Authorization).toBe("Bearer t");
+    expect(await checkHomeModel({ force: true, fetchImpl: respond(200, { home_mind: "offline", retry_after_s: 30 }), authHeaders: auth })).toBe("offline");
+    expect(await checkHomeModel({ force: true, fetchImpl: respond(200, { home_mind: "not_used", retry_after_s: 300 }), authHeaders: auth })).toBe("online");
+    expect(await checkHomeModel({ force: true, fetchImpl: respond(200, { home_mind: "unknown", retry_after_s: 5 }), authHeaders: auth })).toBe("unknown");
   });
 
-  it("caches a fresh result unless forced", async () => {
+  it("maps 401, 409 mind_status_disabled and other errors to unknown, a network error to unreachable", async () => {
+    expect(await checkHomeModel({ force: true, fetchImpl: respond(401, { error: "unauthorized" }), authHeaders: auth })).toBe("unknown");
+    expect(await checkHomeModel({ force: true, fetchImpl: respond(409, { error: "mind_status_disabled" }), authHeaders: auth })).toBe("unknown");
+    expect(await checkHomeModel({ force: true, fetchImpl: respond(500, null), authHeaders: auth })).toBe("unknown");
+    const down = async () => {
+      throw new TypeError("Failed to fetch");
+    };
+    expect(await checkHomeModel({ force: true, fetchImpl: down, authHeaders: auth })).toBe("unreachable");
+    const signedOut = async () => {
+      throw new Error("auth required");
+    };
+    let called = false;
+    const spy = async () => {
+      called = true;
+      return { ok: true, status: 200, json: async () => ({}) };
+    };
+    expect(await checkHomeModel({ force: true, fetchImpl: spy, authHeaders: signedOut })).toBe("unknown");
+    expect(called).toBe(false);
+  });
+
+  it("polls at clamp(retry_after_s, 15, 60)", async () => {
+    expect(pollDelayMs(5)).toBe(15_000);
+    expect(pollDelayMs(30)).toBe(30_000);
+    expect(pollDelayMs(300)).toBe(60_000);
+    expect(pollDelayMs(undefined)).toBe(60_000);
+    const t0 = Date.now();
+    await checkHomeModel({ force: true, fetchImpl: respond(200, { home_mind: "online", retry_after_s: 300 }), authHeaders: auth });
+    const wait = homeModelNextCheckInMs(t0);
+    expect(wait).toBeGreaterThan(55_000);
+    expect(wait).toBeLessThanOrEqual(61_000);
+  });
+
+  it("honours 429 retry_after and keeps the last state", async () => {
+    await checkHomeModel({ force: true, fetchImpl: respond(200, { home_mind: "offline", retry_after_s: 20 }), authHeaders: auth });
+    const t0 = Date.now();
+    expect(await checkHomeModel({ force: true, fetchImpl: respond(429, { error: "rate_limited", retry_after: 90 }), authHeaders: auth })).toBe("offline");
+    expect(homeModelNextCheckInMs(t0)).toBeGreaterThan(85_000);
+    let calls = 0;
+    const counting = async () => {
+      calls += 1;
+      return { ok: true, status: 200, json: async () => ({ home_mind: "online" }) };
+    };
+    expect(await checkHomeModel({ fetchImpl: counting, authHeaders: auth })).toBe("offline");
+    expect(calls).toBe(0);
+  });
+
+  it("caches until the next poll is due unless forced", async () => {
     let calls = 0;
     const fetchImpl = async () => {
       calls += 1;
-      return { ok: true, status: 200 };
+      return { ok: true, status: 200, json: async () => ({ home_mind: "online", retry_after_s: 15 }) };
     };
-    await checkHomeModel({ fetchImpl });
-    await checkHomeModel({ fetchImpl });
+    await checkHomeModel({ fetchImpl, authHeaders: auth });
+    await checkHomeModel({ fetchImpl, authHeaders: auth });
     expect(calls).toBe(1);
-    await checkHomeModel({ fetchImpl, force: true });
+    await checkHomeModel({ fetchImpl, authHeaders: auth, force: true });
     expect(calls).toBe(2);
+  });
+
+  it("goes offline at once on an SSE resting:true, and the strip shows", () => {
+    expect(homeModelState()).toBe("unknown");
+    markHomeModelOffline();
+    expect(homeModelState()).toBe("offline");
+    expect(isHomeOfflineKind(describePresence({ messages: [user], homeModel: homeModelState() }).kind)).toBe(true);
+  });
+
+  it("maps home_mind values", () => {
+    expect(homeStateFromMind("online")).toBe("online");
+    expect(homeStateFromMind("not_used")).toBe("online");
+    expect(homeStateFromMind("offline")).toBe("offline");
+    expect(homeStateFromMind("unknown")).toBe("unknown");
+    expect(homeStateFromMind(undefined)).toBe("unknown");
   });
 });
