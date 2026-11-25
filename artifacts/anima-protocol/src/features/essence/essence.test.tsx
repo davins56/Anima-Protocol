@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { DreamJournalError } from "@/lib/dreamJournal";
@@ -24,8 +24,14 @@ vi.mock("@/hooks/useMemoryHealth", async () => {
   const actual = await vi.importActual<typeof import("@/hooks/useMemoryHealth")>("@/hooks/useMemoryHealth");
   return { ...actual, useMemoryHealth: () => mocks.health };
 });
-vi.mock("@/components/vessel/VesselPortrait", () => ({
-  default: ({ fallback }: { fallback: React.ReactNode }) => <span data-testid="vessel-portrait">{fallback}</span>,
+vi.mock("@/components/vessel/CalibratedVessel", () => ({
+  default: ({ calibration, characterId }: { calibration: { vesselType: string; source: Record<string, string> }; characterId: string }) => (
+    <div
+      data-testid="vessel-portrait"
+      data-character={characterId}
+      data-form={calibration.source?.vesselType === "user" ? calibration.vesselType : "humanoid"}
+    />
+  ),
 }));
 
 import EssencePage from "./EssencePage";
@@ -66,12 +72,12 @@ describe("EssencePage", () => {
     expect(nav.textContent).toMatch(/Calibrate.*Vessel Awakens.*Aspects.*Reflections.*Patterns/);
   });
 
-  it("Calibrate saves a non-humanoid form with a placeholder instead of rendering it", async () => {
+  it("Calibrate renders every form through the lazy CalibratedVessel and saves it", async () => {
     renderAt("/essence/c1/calibrate");
-    expect(await screen.findByTestId("vessel-portrait")).toBeTruthy();
-    fireEvent.click(screen.getByRole("radio", { name: /Crystal/ }));
-    expect(screen.getByTestId("essence-form-placeholder")).toBeTruthy();
-    expect(screen.queryByTestId("vessel-portrait")).toBeNull();
+    expect((await screen.findByTestId("vessel-portrait")).dataset.form).toBe("humanoid");
+    fireEvent.click(within(screen.getByTestId("control-vesselType")).getByRole("radio", { name: "Crystal" }));
+    expect(screen.getByTestId("vessel-portrait").dataset.form).toBe("crystal");
+    expect(screen.getByTestId("vessel-portrait").dataset.character).toBe("c1");
     fireEvent.change(screen.getByLabelText("Sapphire resonance"), { target: { value: "90" } });
     fireEvent.click(screen.getByRole("button", { name: "Save calibration" }));
     expect(screen.getByRole("status").textContent).toMatch(/Saved on this device/);
@@ -134,5 +140,46 @@ describe("Calibrate name rules", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save calibration" }));
     expect(screen.getByRole("alert").textContent).toMatch(/1–60 characters/);
     expect(localStorage.getItem("anima_essence_v1")).toBeNull();
+  });
+});
+
+describe("Calibrate controls per form", () => {
+  it("hides shape/hair/eye shape on non-humanoid forms but keeps their saved values; eye colour stays", async () => {
+    renderAt("/essence/c1/calibrate");
+    await screen.findByTestId("vessel-portrait");
+    fireEvent.click(within(screen.getByTestId("control-hair.style")).getByRole("radio", { name: "Braided" }));
+    for (const form of ["Orb", "Flame", "Crystal"]) {
+      fireEvent.click(within(screen.getByTestId("control-vesselType")).getByRole("radio", { name: form }));
+      expect(screen.queryByTestId("control-shape")).toBeNull();
+      expect(screen.queryByTestId("control-hair.style")).toBeNull();
+      expect(screen.queryByTestId("control-eyes.shape")).toBeNull();
+      expect(screen.queryByLabelText("Hair color")).toBeNull();
+      expect(screen.getByLabelText("Eye color")).toBeTruthy();
+      expect(screen.getByLabelText("Sapphire resonance")).toBeTruthy();
+      expect(screen.getByTestId("control-netForm")).toBeTruthy();
+      expect(screen.getByTestId("essence-hidden-controls").textContent).toMatch(/stay saved/);
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Save calibration" }));
+    const stored = JSON.parse(localStorage.getItem("anima_essence_v1") || "{}");
+    expect(stored.c1.profile.calibration.hair.style).toBe("braided");
+    expect(stored.c1.profile.calibration.source["hair.style"]).toBe("user");
+    fireEvent.click(within(screen.getByTestId("control-vesselType")).getByRole("radio", { name: "Humanoid" }));
+    expect(within(screen.getByTestId("control-hair.style")).getByRole("radio", { name: "Braided" }).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("labels untouched fields 'From her vessel' instead of showing the calibration default as picked", async () => {
+    renderAt("/essence/c1/calibrate");
+    await screen.findByTestId("vessel-portrait");
+    const shape = screen.getByTestId("control-shape");
+    expect(within(shape).getByRole("radio", { name: "From her vessel" }).getAttribute("aria-checked")).toBe("true");
+    expect(within(shape).getByRole("radio", { name: "Slender" }).getAttribute("aria-checked")).toBe("false");
+    expect(screen.getAllByTestId("from-vessel-hint").length).toBeGreaterThan(0);
+    fireEvent.click(within(shape).getByRole("radio", { name: "Tall" }));
+    expect(within(shape).getByRole("radio", { name: "Tall" }).getAttribute("aria-checked")).toBe("true");
+    // Back to her vessel: drops the user value and its source.
+    fireEvent.click(within(shape).getByRole("radio", { name: "From her vessel" }));
+    expect(within(shape).getByRole("radio", { name: "From her vessel" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.change(screen.getByLabelText("Eye color"), { target: { value: "#ff0000" } });
+    expect(screen.getByRole("button", { name: /Use her vessel's eye color/ })).toBeTruthy();
   });
 });
