@@ -164,6 +164,8 @@ const PHOTO_STUDIO_ENABLED = String(import.meta.env.VITE_PHOTO_STUDIO ?? "on").t
 const LOCAL_VOICE_ENABLED = localVoiceEnabled();
 // Chat upgrade 2: sibling regenerates. Off unless VITE_ANIMA_REPLY_SIBLINGS=1.
 const REPLY_SIBLINGS_ENABLED = replySiblingsEnabled();
+// Chat upgrade 4: tool action cards. Off unless VITE_ANIMA_TOOLS=1.
+const TOOLS_UI_ENABLED = toolsUiEnabled();
 // Chat upgrade 6: emoji reactions and richer presence. Both off by default.
 const REACTIONS_ENABLED = reactionsEnabled();
 const RICH_PRESENCE_ENABLED = richPresenceEnabled();
@@ -171,6 +173,9 @@ const RICH_PRESENCE_ENABLED = richPresenceEnabled();
 import { useAutoQuestManager } from "@/components/quests/AutoQuestManager";
 import QuestDetectionMessage from "@/components/chat/QuestDetectionMessage";
 import CharacterPresencePanel from "@/components/chat/CharacterPresencePanel";
+import ToolActionsTray from "@/components/chat/ToolActionsTray";
+import { toolsUiEnabled } from "@/lib/tools/toolFrames";
+import { useToolActions } from "@/lib/tools/useToolActions";
 import { localVoiceEnabled, getLocalVoicePrefs } from "@/lib/voice/localVoicePrefs";
 import { useLocalVoice } from "@/hooks/useLocalVoice";
 import { getCompanionModePrompt, getMultiAspectPrompt, getAspectName, ASPECT_META } from "@/lib/companionModePrompts";
@@ -554,6 +559,8 @@ export default function Chat() {
   const emotionsFlagReadyRef = useRef(null);
   // #763 (ANIMA_SITUATIONAL_SCENES): server-owned scene state. Off until the
   // session context says `scenes_enabled` and GET /scene answers.
+  // Chat upgrade 4 (VITE_ANIMA_TOOLS): tool frames for the open session.
+  const toolActions = useToolActions(TOOLS_UI_ENABLED ? activeSession?.id : null);
   const situational = useSituationalScene({
     openSessionIdRef,
     onEvents: (sid, rows) => insertSceneEvents(sid, rows),
@@ -3203,6 +3210,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
         },
         onDelta: streamUi.showStreamingPartial,
         onStatus: streamUi.showStatus,
+        ...(TOOLS_UI_ENABLED ? { onTool: toolActions.onFrame } : {}),
         // #765: machine tags hidden chunk-safely; the early affect frame only tints.
         ...(emotionsOnForSend
           ? {
@@ -3243,6 +3251,7 @@ ${c.speaking_style ? `Voice: ${c.speaking_style}` : ""}${rel}`;
             }
           : {}),
       });
+      if (TOOLS_UI_ENABLED) toolActions.adoptDone(resultPayload?.tool_actions);
       if (scenesOnForSend) {
         // `done.scene` reconciles the header (its rev is the next `if_rev`);
         // `blocked` and `next_speaker` come only from the server.
@@ -4945,6 +4954,17 @@ Return JSON:
                     : undefined
                 }
               />
+              {TOOLS_UI_ENABLED && (
+                <ToolActionsTray
+                  actions={toolActions.actions}
+                  onConfirm={(id) => void toolActions.decide(id, "confirm")}
+                  onDeny={(id) => void toolActions.decide(id, "deny")}
+                  onStop={(id) => void toolActions.stop(id)}
+                  onStopAll={() => void toolActions.stopAll()}
+                  onPreview={toolActions.preview}
+                  server={toolActions.server}
+                />
+              )}
               {aiNotices.filter((notice) => notice.placement === "repeat").map((notice) => (
                 <SystemDisclosure key={notice.id} tone="info" testId="ai-companion-notice" />
               ))}
