@@ -306,6 +306,45 @@ export default function CharacterCustomizer({
             />
           </div>
 
+          {/* Age — adult mode is fail-closed unless the card is marked 18+ */}
+          <div>
+            <label className="text-[9px] font-mono text-primary/40 tracking-widest uppercase block mb-2">
+              Age (years)
+            </label>
+            <input
+              type="number"
+              min="0"
+              max="15000"
+              value={form.age ?? ""}
+              onChange={(e) => {
+                const raw = e.target.value;
+                const age = raw === "" ? "" : Number(raw);
+                const under = typeof age === "number" && Number.isFinite(age) && age < 18;
+                setForm({
+                  ...form,
+                  age: raw === "" ? undefined : age,
+                  age_is_adult: under ? false : form.age_is_adult,
+                });
+              }}
+              placeholder="Leave blank if unknown — unknown is not treated as adult"
+              className="w-full bg-black/60 border border-primary/20 text-primary/80 placeholder-primary/20 font-mono text-[9px] px-3 py-2 focus:outline-none focus:border-primary/40 transition-colors"
+            />
+            <label className="mt-2 flex items-start gap-2 font-mono text-[9px] text-primary/50">
+              <input
+                type="checkbox"
+                checked={form.age_is_adult === true && !(Number(form.age) > 0 && Number(form.age) < 18)}
+                onChange={(e) => {
+                  const under = Number(form.age) > 0 && Number(form.age) < 18;
+                  setForm({ ...form, age_is_adult: under ? false : e.target.checked });
+                }}
+              />
+              <span>
+                This companion is 18 or older. Adult mode cannot apply unless this is checked
+                and their age is not under 18. Unknown age is not treated as adult.
+              </span>
+            </label>
+          </div>
+
           {/* Status */}
           {!isAnima && (
             <div>

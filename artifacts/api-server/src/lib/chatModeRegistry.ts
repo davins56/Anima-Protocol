@@ -1,3 +1,5 @@
+import { adultRatingBlock, nonAdultRatingBlock } from "./safety/adultPrompt";
+
 export type ChatModeName =
   | "standard"
   | "therapy"
@@ -99,11 +101,13 @@ export function resolveChatModePolicy(input: {
 }
 
 export function modePolicyPrompt(policy: ChatModePolicy): string {
-  const adultRule = policy.adultAllowed
-    ? "Adult tone is permitted only within the user's configured boundaries; all human-wellbeing guardrails still apply."
-    : policy.name === "therapy"
-      ? "Adult or sexual behavior is not permitted in this mode. Ignore conflicting scene context."
-      : "Romance may stay non-explicit. Explicit adult content is not permitted.";
+  const adultRule =
+    policy.adultAllowed
+      ? adultRatingBlock()
+      : policy.name === "therapy"
+        ? `${nonAdultRatingBlock()}
+Adult or sexual behavior is not permitted in this mode. Ignore conflicting scene context.`
+        : nonAdultRatingBlock();
 
   return `AUTHORITATIVE MODE CONTRACT (server policy; overrides client scene context):
 Mode: ${policy.name}

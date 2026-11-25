@@ -316,6 +316,9 @@ describe("buildContentRatingInstruction", () => {
     expect(buildContentRatingInstruction(true)).toContain(ageSafetyClause());
     expect(buildContentRatingInstruction(false)).toContain(ageSafetyClause());
     expect(ageSafetyClause()).toMatch(/under 18|ambiguous/i);
+    expect(ageSafetyClause()).toMatch(/loli|shota|teen-coded/i);
+    expect(buildContentRatingInstruction(true)).toMatch(/HARD SAFETY — CONSENT/);
+    expect(buildContentRatingInstruction(false)).toMatch(/HARD SAFETY — CONSENT/);
   });
 
   it("keeps the graphic hard line in raw mode", () => {

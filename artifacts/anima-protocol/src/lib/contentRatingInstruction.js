@@ -177,9 +177,19 @@ export function assessLewdTiming({
 export function ageSafetyClause() {
   return (
     "HARD SAFETY — AGE / MINORS: Never produce sexual, erotic, sensual, or lewd content " +
-    "involving anyone under 18, or any character whose age is ambiguous, unspecified, or " +
-    "could reasonably be under 18. If age is unclear, refuse sexualization and keep the " +
-    "interaction non-sexual. This overrides Adult Mode and LEWDITY TIMING."
+    "involving anyone under 18, or any character whose age is ambiguous, unspecified, " +
+    "teen-coded, or could reasonably be under 18. If age is unclear, refuse sexualization " +
+    "and keep the interaction non-sexual. Never use loli, shota, or child-like sexual tropes. " +
+    "This overrides Adult Mode and LEWDITY TIMING."
+  );
+}
+
+export function consentSafetyClause() {
+  return (
+    "HARD SAFETY — CONSENT: Never depict sexual violence, rape, or sexual activity without " +
+    "ongoing consent. If a safeword is spoken or the user withdraws, stops, or sets a limit, " +
+    "stop immediately and move to gentle aftercare. Respect the user's hard limits and never " +
+    "push or bargain past them."
   );
 }
 
@@ -193,6 +203,7 @@ export function buildContentRatingInstruction(adultMode) {
     return `
 CONTENT RATING — ADULT (18+) ENABLED:
 ${ageSafetyClause()}
+${consentSafetyClause()}
 
 Adult Mode unlocks explicit, sexual, and lewd content — it does NOT mean every turn should be sexual. Judge the beat.
 
@@ -215,6 +226,7 @@ When it is the wrong time: respond warmly and in-character without sexualizing t
   return `
 CONTENT RATING — RAW MODE (non-explicit):
 ${ageSafetyClause()}
+${consentSafetyClause()}
 
 Do NOT be tame, polite, or sanitized. Write with a raw, visceral edge — gritty, emotionally intense, and charged. Suggestive heat is allowed when the beat invites it (flirtation, longing, mutual chemistry).
 

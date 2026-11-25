@@ -24,4 +24,17 @@ describe("chat mode registry", () => {
     expect(policy.adultAllowed).toBe(false);
     expect(modePolicyPrompt(policy)).toMatch(/overrides client scene context/i);
   });
+
+  it("injects age and consent hard limits in both adult and non-adult contracts", () => {
+    const adult = modePolicyPrompt(resolveChatModePolicy({ adult: true }));
+    const standard = modePolicyPrompt(resolveChatModePolicy({ adult: false }));
+    expect(adult).toMatch(/CONTENT RATING — ADULT/);
+    expect(adult).toMatch(/HARD SAFETY — AGE \/ MINORS/);
+    expect(adult).toMatch(/loli|shota/i);
+    expect(adult).toMatch(/HARD SAFETY — CONSENT/);
+    expect(standard).toMatch(/CONTENT RATING — RAW MODE/);
+    expect(standard).toMatch(/HARD SAFETY — AGE \/ MINORS/);
+    expect(standard).toMatch(/HARD SAFETY — CONSENT/);
+    expect(standard).not.toMatch(/CONTENT RATING — ADULT \(18\+\) ENABLED/);
+  });
 });

@@ -68,6 +68,7 @@ function SectionSkeleton() {
   );
 }
 import AgeGateDialog from "@/components/settings/AgeGateDialog";
+import { animaApi } from "@/api/animaApi";
 import {
   formatChatBackgroundUploadError,
   uploadChatBackgroundImage,
@@ -159,6 +160,8 @@ export default function Settings() {
   const [uploadingBg, setUploadingBg] = useState(false);
   const [bgUploadError, setBgUploadError] = useState("");
   const [showAdultGate, setShowAdultGate] = useState(false);
+  const [safetyStatus, setSafetyStatus] = useState(null);
+  const [safetyBusy, setSafetyBusy] = useState(false);
   const [assigningVoices, setAssigningVoices] = useState(false);
   const [voicesAssigned, setVoicesAssigned] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -289,6 +292,37 @@ export default function Settings() {
     } catch {
       setAnima(null);
     }
+    try {
+      const status = await animaApi.safety.status();
+      setSafetyStatus(status);
+      if (revision === draftRevision.current && typeof status?.adult_eligible === "boolean") {
+        // Keep the toggle in sync with the server attestation, not a stale draft.
+        if (status.adult_eligible !== true && me?.settings?.adult_content_enabled === true) {
+          // Server will have reset the flag on the next profile write; reflect it.
+        }
+      }
+    } catch {
+      setSafetyStatus(null);
+    }
+  };
+
+  const loadSafetyStatus = async () => {
+    try {
+      const status = await animaApi.safety.status();
+      setSafetyStatus(status);
+      return status;
+    } catch {
+      setSafetyStatus(null);
+      return null;
+    }
+  };
+
+  const persistAdultFlag = async (enabled) => {
+    const next = { ...prefs, adult_content_enabled: enabled };
+    setPref("adult_content_enabled", enabled);
+    await animaClient.auth.updateMe({ settings: next, display_name: next.display_name });
+    await animaClient.auth.refreshMe?.();
+    return next;
   };
 
   const loadStats = async () => {
@@ -1000,18 +1034,65 @@ export default function Settings() {
                       <p className="font-mono text-xs text-primary/70 tracking-wider uppercase">Adult Content Mode</p>
                     </div>
                     <p className="text-[9px] font-mono text-primary/30 leading-relaxed">
-                      Enables mature roleplay for adults after the age check. Follow your pace and boundaries. Available outside therapy, crossover scenes, and Deep mode. Model providers may apply their own content limits.
+                      Enables mature roleplay for adults after the age check. Follow your pace and boundaries. Also enable Pulse intimacy on each companion you want this to apply to. Available outside therapy, crossover scenes, and Deep mode. Adult chats use a free OpenRouter uncensored model (Venice Uncensored free when it has a live endpoint) or a self-hosted uncensored model if you have one configured; they never use Workers AI, OpenAI, or Gemini.
                     </p>
+                    {safetyStatus && (
+                      <p className="text-[9px] font-mono text-primary/40 mt-1.5" data-testid="age-status">
+                        {safetyStatus.adult_eligible
+                          ? `Age check: verified${safetyStatus.age?.method ? ` (${safetyStatus.age.method})` : ""}${safetyStatus.age?.attested_at ? ` · ${new Date(safetyStatus.age.attested_at).toLocaleDateString()}` : ""}`
+                          : safetyStatus.self_declaration_locked
+                            ? "Age check: locked after an under-18 self-declaration. A provider check is required to lift this."
+                            : safetyStatus.age?.status === "revoked"
+                              ? "Age check: revoked. Verify again to enable adult mode."
+                              : "Age check: not verified."}
+                      </p>
+                    )}
                     {prefs.adult_content_enabled && (
-                      <p className="text-[9px] font-mono text-rose-400/70 mt-1.5">● Adult preference enabled — applies in supported chats</p>
+                      <p className="text-[9px] font-mono text-rose-400/70 mt-1.5">● Adult preference enabled — applies in supported chats with companions you have opted in</p>
+                    )}
+                    {safetyStatus?.adult_eligible && (
+                      <button
+                        type="button"
+                        data-testid="forget-age-check"
+                        disabled={safetyBusy}
+                        onClick={async () => {
+                          setSafetyBusy(true);
+                          try {
+                            await animaApi.safety.revokeAge();
+                            setPref("adult_content_enabled", false);
+                            await animaClient.auth.refreshMe?.();
+                            await loadSafetyStatus();
+                            await loadUser();
+                          } catch (err) {
+                            toast.error(err?.message || "Couldn't revoke the age check.");
+                          } finally {
+                            setSafetyBusy(false);
+                          }
+                        }}
+                        className="mt-2 text-[9px] font-mono text-rose-400/80 underline underline-offset-2 disabled:opacity-40"
+                      >
+                        {safetyBusy ? "Revoking…" : "Forget age check"}
+                      </button>
                     )}
                   </div>
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       if (!prefs.adult_content_enabled) {
-                        setShowAdultGate(true);
+                        if (safetyStatus?.adult_eligible) {
+                          try {
+                            await persistAdultFlag(true);
+                          } catch (err) {
+                            toast.error(err?.message || "Couldn't enable adult mode.");
+                          }
+                        } else {
+                          setShowAdultGate(true);
+                        }
                       } else {
-                        setPref("adult_content_enabled", false);
+                        try {
+                          await persistAdultFlag(false);
+                        } catch (err) {
+                          toast.error(err?.message || "Couldn't disable adult mode.");
+                        }
                       }
                     }}
                     className={`relative w-10 h-5 border transition-all flex-shrink-0 ${
@@ -1489,9 +1570,15 @@ export default function Settings() {
       {showAdultGate && (
         <AgeGateDialog
           onCancel={() => setShowAdultGate(false)}
-          onAttested={() => {
+          onAttested={async () => {
             setPref("adult_content_enabled", true);
             setShowAdultGate(false);
+            try {
+              await animaClient.auth.refreshMe?.();
+            } catch {
+              // Local toggle is already on; the server persisted the flag at attest time.
+            }
+            await loadSafetyStatus();
           }}
         />
       )}

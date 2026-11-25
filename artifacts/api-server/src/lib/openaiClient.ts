@@ -32,6 +32,24 @@ export const OPENROUTER_VENICE_UNCENSORED =
   "cognitivecomputations/dolphin-mistral-24b-venice-edition";
 
 /**
+ * Zero-cost catalog variant of Venice Uncensored. Prefer this for adult
+ * turns when the operator has no OpenRouter credits.
+ *
+ * Live check (2026-11-24): GET /api/v1/models does not list this slug, and
+ * GET /api/v1/models/...:free/endpoints returns `"endpoints": []`. The
+ * marketing page still exists but is not routable until a provider returns.
+ * Paid Venice (OPENROUTER_VENICE_UNCENSORED) remains live at $0.20/$0.90
+ * per 1M tokens. Defaulting here keeps $0 as the adult default; failover
+ * hops to ANIMA_ADULT_MODEL_FALLBACKS, then a self-hosted uncensored
+ * model if configured, otherwise fails closed. Never hop to Gemma /
+ * Nemotron / other non-uncensored :free slugs.
+ * @see https://openrouter.ai/venice/uncensored:free
+ * @see https://openrouter.ai/api/v1/models
+ */
+export const OPENROUTER_VENICE_UNCENSORED_FREE =
+  "cognitivecomputations/dolphin-mistral-24b-venice-edition:free";
+
+/**
  * Zero-cost OpenRouter free-tier model (not uncensored-branded).
  * Must stay on a slug that still appears in GET /api/v1/models `:free`
  * *and* accepts a live completion with a valid OpenRouter key.
