@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  CALIBRATION_MAX_DEPTH,
+  CALIBRATION_SOURCE_MAX,
   CALIBRATION_UNKNOWN_BYTES,
+  CALIBRATION_UNKNOWN_KEYS,
+  CALIBRATION_PATHS,
+  utf8ByteLength,
   DEFAULT_CALIBRATION,
-  RENDERED_TYPES,
+  CONTROLS_BY_FORM,
+  controlApplies,
+  resetCalibrationField,
   VESSEL_TYPES,
   addReflectionDraft,
   loadEssenceProfile,
@@ -68,9 +75,32 @@ describe("normalizeVesselCalibration (v1)", () => {
     expect(base.hair.color).toBe(DEFAULT_CALIBRATION.hair.color);
   });
 
-  it("only Humanoid renders for now, but every type is selectable", () => {
-    expect([...RENDERED_TYPES]).toEqual(["humanoid"]);
+  it("re-exports the canonical controls: eye colour applies to every form, hair/shape only to humanoid", () => {
     expect(VESSEL_TYPES).toHaveLength(6);
+    for (const f of VESSEL_TYPES) expect(controlApplies(f, "eyes.color")).toBe(true);
+    for (const f of ["orb", "flame", "crystal"] as const) {
+      expect(controlApplies(f, "shape")).toBe(false);
+      expect(controlApplies(f, "hair.style")).toBe(false);
+      expect(controlApplies(f, "eyes.shape")).toBe(false);
+    }
+    expect(CONTROLS_BY_FORM.humanoid).toContain("hair.color");
+  });
+
+  it("reset drops a field back to 'from her vessel' (default value, no source)", () => {
+    const edited = setCalibrationField(setCalibrationField(DEFAULT_CALIBRATION, "hair.color", "#112233"), "netForm", "orb");
+    const back = resetCalibrationField(edited, "hair.color");
+    expect(back.hair.color).toBe(DEFAULT_CALIBRATION.hair.color);
+    expect(back.source).toEqual({ netForm: "user" });
+    const noNet = resetCalibrationField(back, "netForm");
+    expect(noNet.netForm).toBeUndefined();
+    expect(noNet.source).toEqual({});
+  });
+
+  it("is the canonical normalizer and setter, not a mirror", async () => {
+    const canonical = await import("@/lib/vessel/vesselCalibration");
+    expect(normalizeVesselCalibration).toBe(canonical.normalizeVesselCalibration);
+    expect(setCalibrationField).toBe(canonical.setCalibrationField);
+    expect(unknownFieldBytes).toBe(canonical.unknownFieldBytes);
   });
 
   it("silver tone runs cool platinum → warm moonlight", () => {
@@ -173,7 +203,7 @@ describe("unknown-field cap (server calibration_unknown_bytes = 1024)", () => {
     for (let i = 0; i < 20; i++) raw[`k${String(i).padStart(2, "0")}`] = i;
     const out = normalizeVesselCalibration(raw);
     const kept = Object.keys(out).filter((k) => /^k\d\d$/.test(k)).sort();
-    expect(kept).toHaveLength(16);
+    expect(kept).toHaveLength(CALIBRATION_UNKNOWN_KEYS);
     expect(kept[15]).toBe("k15");
   });
 
@@ -209,5 +239,61 @@ describe("name and tagline rules (server: name 1–60, tagline 0–120)", () => 
     const back = loadEssenceProfile("c1", "Fallback", s);
     expect(back.name).toBe("Fallback");
     expect(back.tagline).toBe("");
+  });
+});
+
+describe("server-matching limits via the canonical exports (former #792 repro cases)", () => {
+  const big = (n: number) => "x".repeat(n);
+  const unknownKeys = (cal: object) => Object.keys(cal).filter((k) => !["version", "vesselType", "netForm", "shape", "hair", "eyes", "resonance", "silverWarmth", "theme", "source"].includes(k)).sort();
+
+  it("exports the server's limits", () => {
+    expect(CALIBRATION_UNKNOWN_BYTES).toBe(1024);
+    expect(CALIBRATION_UNKNOWN_KEYS).toBe(16);
+    expect(CALIBRATION_MAX_DEPTH).toBe(3);
+    expect(CALIBRATION_SOURCE_MAX).toBe(32);
+    expect(CALIBRATION_PATHS).toHaveLength(11);
+    expect(utf8ByteLength("é")).toBe(2);
+    expect(utf8ByteLength("abc")).toBe(3);
+  });
+
+  it("repro 1: the kept set no longer depends on input key order", () => {
+    const a = normalizeVesselCalibration({ zeta: big(400), alpha: big(400), mid: big(400) });
+    const b = normalizeVesselCalibration({ alpha: big(400), mid: big(400), zeta: big(400) });
+    expect(unknownKeys(a)).toEqual(["alpha", "mid"]);
+    expect(unknownKeys(b)).toEqual(["alpha", "mid"]);
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+
+  it("repro 2: counts UTF-8 bytes of the serialized JSON (two 500×'é' fields no longer both fit)", () => {
+    // Was ~2015 bytes kept; now only "a" (1008 bytes) fits.
+    const out = normalizeVesselCalibration({ a: "é".repeat(500), b: "é".repeat(500) });
+    expect(unknownKeys(out)).toEqual(["a"]);
+    expect(unknownFieldBytes(out)).toBe(1008);
+    const one = normalizeVesselCalibration({ a: "é".repeat(400), b: "é".repeat(400) });
+    expect(unknownKeys(one)).toEqual(["a"]);
+    expect(unknownFieldBytes(one)).toBeLessThanOrEqual(CALIBRATION_UNKNOWN_BYTES);
+  });
+
+  it("repro 3: sixteen 55-char fields are trimmed to fit the serialized 1024-byte budget", () => {
+    const many: Record<string, string> = {};
+    for (let i = 0; i < 16; i++) many[`k${String(i).padStart(2, "0")}`] = big(55);
+    const out = normalizeVesselCalibration(many);
+    expect(unknownFieldBytes(out)).toBeLessThanOrEqual(CALIBRATION_UNKNOWN_BYTES);
+    expect(utf8ByteLength(JSON.stringify(Object.fromEntries(unknownKeys(out).map((k) => [k, (out as Record<string, unknown>)[k]]))))).toBe(unknownFieldBytes(out));
+  });
+
+  it("repro 4: source keys are limited to known paths plus kept unknowns, sorted, capped at 32", () => {
+    expect(normalizeVesselCalibration({ source: { bogus: "user", "hair.nope": "photo", "hair.color": "photo" } }).source).toEqual({ "hair.color": "photo" });
+    const raw: Record<string, unknown> = { source: {} };
+    for (let i = 0; i < 16; i++) raw[`u${String(i).padStart(2, "0")}`] = 1;
+    for (const k of [...Object.keys(raw).filter((k) => k !== "source"), ...CALIBRATION_PATHS]) (raw.source as Record<string, string>)[k] = "user";
+    const src = Object.keys(normalizeVesselCalibration(raw).source);
+    expect(src.length).toBeLessThanOrEqual(CALIBRATION_SOURCE_MAX);
+    expect(src).toEqual([...src].sort());
+  });
+
+  it("depth stays ≤ 3 for the whole calibration", () => {
+    const out = normalizeVesselCalibration({ ok: { a: { b: 1 } }, deep: { a: { b: { c: 1 } } } });
+    expect(unknownKeys(out)).toEqual(["ok"]);
   });
 });
