@@ -12,9 +12,9 @@
     "eval:mind": "vitest run --config vitest.eval.config.ts --reporter=verbose --silent=false"
   },
   "dependencies": {
-    "@clerk/backend": "^3.27.0",
-    "@clerk/express": "^2.1.88",
-    "@clerk/shared": "^4.44.1",
+    "@clerk/backend": "^3.31.4",
+    "@clerk/express": "^2.1.96",
+    "@clerk/shared": "^4.48.3",
     "@google-cloud/storage": "^8.4.0",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
@@ -23,18 +23,18 @@
     "@workspace/sim-core": "workspace:*",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
-    "dotenv": "^18.0.9",
+    "dotenv": "^18.0.10",
     "drizzle-orm": "catalog:",
     "express": "^5.3.0",
-    "google-auth-library": "^11.3.3",
-    "http-proxy-middleware": "^4.2.1",
-    "openai": "^7.53.0",
+    "google-auth-library": "^11.3.4",
+    "http-proxy-middleware": "^4.2.2",
+    "openai": "^7.62.0",
     "pino": "^10.4.0",
     "pino-http": "^11.0.0",
     "postgres": "^3.4.9",
-    "stripe": "23.1.0",
-    "svix": "^2.9.1",
-    "unpdf": "^2.1.0",
+    "stripe": "23.2.0",
+    "svix": "^2.11.0",
+    "unpdf": "^2.2.1",
     "web-push": "^4.0.0",
     "zod": "catalog:"
   },
@@ -50,6 +50,6 @@
     "pg": "8.23.1",
     "pino-pretty": "^13.2.0",
     "thread-stream": "4.2.1",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.1"
   }
 }
